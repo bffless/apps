@@ -46,3 +46,16 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: studio
+
+      # AI skills (e.g. image-prompts, loaded by the /api/thumbnail/draft ai_handler).
+      # base-path pins the served prefix to .bffless since the source lives under
+      # apps/studio/.bffless (the default would derive apps/studio/.bffless).
+      - name: Upload AI skills to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/studio/.bffless
+          base-path: .bffless
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: studio
+          description: 'Studio AI skills'

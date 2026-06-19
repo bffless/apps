@@ -41,6 +41,23 @@ Also:
 | **Storage backend** (default bucket) | Uploads/serves write under `<owner>/<repo>/uploads/<kind>/…` sub-dirs (`source/`, `audio/`, `voice/`, `narration/`, `scene-clip/`, `export/`, `thumbnails/`, …) — created on demand. |
 | **Data tables** for `studio_jobs` + projects | The async job poll (`/api/studio/job`) and `/api/projects*` use BFFless data handlers. |
 
+## Cross-origin isolation (required for ffmpeg threading)
+
+The export's `/api/*` proxy rules are the backend, but Studio's **Export** step assembles video with
+multithreaded `ffmpeg.wasm`, which needs `SharedArrayBuffer` — i.e. the page must be
+**cross-origin isolated**. That comes from a **response-header rule** (separate from the proxy rule
+set, so it is *not* in `studio.proxy-rules.json`). Without it, `getFFmpeg()` silently falls back to
+the single-threaded core (slower, 2 GiB cap) — you'll see `ffmpeg core: single-threaded` in the
+console.
+
+Add this once per project (BFFless dashboard → Settings → Response Headers, or via MCP
+`create_response_header_rule`):
+
+- **Path pattern:** `**`
+- **Headers:** `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`
+
+After adding it, hard-reload the deployment; the console should report the multithreaded core.
+
 ## Portability: storage paths are deployment-relative
 
 The custom functions that rebuild a bucket storage path (transcribe, `/api/uploads/sign`, thumbnail,
