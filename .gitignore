@@ -1,0 +1,22 @@
+# dependencies
+node_modules
+
+# builds
+dist
+*.tsbuildinfo
+.node_modules
+
+# test / coverage artifacts
+coverage
+playwright-report
+test-results
+screenshots
+
+# local scratch
+*.local
+.studio-test.mp4
+.bffless-backups/
+
+# editor / OS
+.DS_Store
+.claude/settings.local.json

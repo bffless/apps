@@ -1,0 +1,195 @@
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@theme {
+  /* Warm "paper" surfaces */
+  --color-paper: #ece3d2;
+  --color-paper-deep: #e4d9c4;
+  --color-paper-line: #d5c8ae;
+
+  /* Warm charcoal "ink" text */
+  --color-ink: #171513;
+  --color-ink-soft: #3a352e;
+  --color-ink-mute: #7a7268;
+  --color-ink-faint: #a9a095;
+
+  /* Terracotta accent */
+  --color-terracotta: #d85a3d;
+  --color-terracotta-hover: #c24e33;
+  --color-terracotta-ink: #7a2d1d;
+
+  /* Muted sage green — the "voiced" span highlight in the diff viewer */
+  --color-voice: #4f8a5b;
+  --color-voice-ink: #2f5c39;
+
+  --font-sans:
+    'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+  --font-serif: 'Fraunces', 'EB Garamond', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --animate-slide-up: slide-up 0.3s ease-out;
+  --animate-in: anim-in 0.2s ease-out;
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes anim-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-paper);
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(23, 21, 19, 0.06) 1px,
+      transparent 0
+    );
+    background-size: 28px 28px;
+    background-attachment: fixed;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-terracotta);
+    color: var(--color-paper);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    color: var(--color-ink);
+    margin: 0;
+  }
+
+  a {
+    color: inherit;
+  }
+}
+
+@layer components {
+  .container-page {
+    width: 100%;
+    max-width: 1280px;
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+
+  .rule {
+    border-color: var(--color-paper-line);
+  }
+
+  .meta-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-ink-mute);
+  }
+
+  .pill-cta,
+  .pill-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1.4rem;
+    border-radius: 999px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
+  }
+
+  .pill-cta {
+    background-color: var(--color-terracotta);
+    color: var(--color-paper);
+    border: 1px solid var(--color-terracotta);
+  }
+  .pill-cta:hover {
+    background-color: var(--color-terracotta-hover);
+    border-color: var(--color-terracotta-hover);
+  }
+
+  .pill-ghost {
+    background-color: transparent;
+    color: var(--color-ink);
+    border: 1px solid var(--color-ink);
+  }
+  .pill-ghost:hover {
+    background-color: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  .pill-cta:disabled,
+  .pill-ghost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Decorative L-shaped corner brackets */
+  .corner-marks {
+    position: relative;
+  }
+  .corner-marks::before,
+  .corner-marks::after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--color-ink);
+    pointer-events: none;
+  }
+  .corner-marks::before {
+    top: -1px;
+    left: -1px;
+    border-right: none;
+    border-bottom: none;
+  }
+  .corner-marks::after {
+    bottom: -1px;
+    right: -1px;
+    border-left: none;
+    border-top: none;
+  }
+}
