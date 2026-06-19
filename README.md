@@ -1,6 +1,6 @@
 # bffless-apps
 
-A pnpm monorepo of give-away apps for the [BFFless](https://bffless.dev) platform. BFFless is the
+A pnpm monorepo of give-away apps for the [BFFless](https://bffless.app) platform. BFFless is the
 platform; each app here is a self-contained frontend you can clone and deploy on your own BFFless
 project.
 
