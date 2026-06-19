@@ -25,6 +25,14 @@ Root aliases exist too: `pnpm studio:dev|build|lint|test`.
 `stories/` holds the design. Read `00-architecture-and-state.md` first, then the specific story.
 Don't re-derive the design from chat history or git log.
 
+## Backend (`/api/*`)
+
+There is no app server. The `/api/*` endpoints are a BFFless proxy rule set, exported to
+`bffless/studio.proxy-rules.json` (39 rules) so a forker can import it into their own project — see
+`bffless/README.md` for import steps + prerequisites (storage, Replicate/Anthropic tokens,
+`HF_TOKEN`). Locally, unhandled `/api/*` falls through the Vite proxy to `j5s.dev`. After changing
+rules in the dashboard, re-export and commit the updated JSON.
+
 ## The locked pipeline
 
 Prep runs six stages **one at a time** (`STAGE_DEFS` in `src/lib/pipeline.ts`; top-level stepper is

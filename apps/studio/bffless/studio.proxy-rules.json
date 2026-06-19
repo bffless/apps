@@ -1,0 +1,2687 @@
+{
+  "version": 2,
+  "exportedAt": "2026-06-19T12:52:29.461Z",
+  "kind": "bffless-proxy-rule-set",
+  "ruleSet": {
+    "name": "studio",
+    "description": null,
+    "environment": null
+  },
+  "rules": [
+    {
+      "pathPattern": "/api/uploads/youtube-thumbnail",
+      "method": "POST",
+      "targetUrl": "http://internal/pipeline",
+      "stripPrefix": true,
+      "order": 0,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Upload youtube_thumbnail",
+        "steps": [
+          {
+            "id": "upload",
+            "name": "upload",
+            "config": {
+              "subDir": "youtube-thumbnail",
+              "schemaId": "504045c5-bc4d-4d67-a095-7f3e333911ab",
+              "dateBucket": false,
+              "maxFileSize": 10485760,
+              "allowedMimeTypes": [
+                "image/*"
+              ]
+            },
+            "isEnabled": true,
+            "handlerType": "file_upload_handler"
+          },
+          {
+            "id": "response",
+            "name": "Return Upload Result",
+            "config": {
+              "body": "{{{steps.upload}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "isEnabled": true,
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ],
+        "description": "Upload files to youtube_thumbnail"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Upload files to youtube_thumbnail"
+    },
+    {
+      "pathPattern": "/api/uploads/source/*",
+      "method": "GET",
+      "targetUrl": "",
+      "stripPrefix": true,
+      "order": 1,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio_source",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "source"
+            },
+            "isEnabled": true,
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from studio_source"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio_source"
+    },
+    {
+      "pathPattern": "/api/uploads/projects/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 1,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio per-project uploads",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "projects"
+            },
+            "isEnabled": true,
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from projects/<id>/... nested subDirs"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from per-project nested subDirs (projects/&lt;id&gt;/...)"
+    },
+    {
+      "pathPattern": "/api/uploads/youtube-thumbnail/*",
+      "method": "GET",
+      "targetUrl": "http://internal/pipeline",
+      "stripPrefix": true,
+      "order": 1,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve youtube_thumbnail",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "youtube-thumbnail"
+            },
+            "isEnabled": true,
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from youtube_thumbnail"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from youtube_thumbnail"
+    },
+    {
+      "pathPattern": "/api/uploads/source/prepare",
+      "method": "POST",
+      "targetUrl": "",
+      "stripPrefix": true,
+      "order": 2,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio_source upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/source",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 2147483648,
+              "allowedMimeTypes": [
+                "video/*"
+              ]
+            },
+            "isEnabled": true,
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "isEnabled": true,
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Mint a presigned PUT URL so the browser uploads the source clip straight to the bucket (bypasses the 1MB proxy cap)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio source upload"
+    },
+    {
+      "pathPattern": "/api/uploads/source/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 3,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio_source upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/source",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 2147483648,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "video/*"
+              ]
+            },
+            "isEnabled": true,
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "isEnabled": true,
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Verify the bucket object and write the studio_source record (finalize step of the direct-to-bucket flow)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Register: finalize a direct-to-bucket studio source upload into studio_source"
+    },
+    {
+      "pathPattern": "/api/uploads/audio/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 4,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio_audio upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/audio",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 2147483648,
+              "allowedMimeTypes": [
+                "audio/*"
+              ]
+            },
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Mint a presigned PUT URL so the browser uploads the extracted WAV straight to the bucket (bypasses the 1MB proxy cap), so transcription can hand Replicate an audio URL."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio audio (WAV) upload"
+    },
+    {
+      "pathPattern": "/api/uploads/audio/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 5,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio_audio upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/audio",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 2147483648,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "audio/*"
+              ]
+            },
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket audio flow). Reuses the studio_source schema; the audio/ subDir distinguishes records."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Register: finalize a direct-to-bucket studio audio upload into studio_source"
+    },
+    {
+      "pathPattern": "/api/uploads/audio/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 6,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio_audio",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "audio"
+            },
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from the audio subDir"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio audio (Range-aware) so Replicate can fetch the WAV"
+    },
+    {
+      "pathPattern": "/api/transcribe",
+      "method": "POST",
+      "targetUrl": "",
+      "stripPrefix": true,
+      "order": 7,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Transcribe audio (WhisperX, async)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var audioUrl = body.audioUrl || ''\n  // Rebuild the bucket storage path the signer expects from the public serve path.\n  var key = String(audioUrl).replace(/^\\/+/, '')\n  key = key.replace(/^api\\/uploads\\//, '')\n  var storagePath = deployment.owner + '/' + deployment.repo + '/uploads/' + key\n  return { storagePath: storagePath, diarize: body.diarize === true }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "createJob",
+            "name": "createJob",
+            "config": {
+              "fields": {
+                "kind": "'transcribe'",
+                "status": "'pending'",
+                "request": "request.body"
+              },
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\n  \"jobId\": \"{{steps.createJob.id}}\",\n  \"status\": \"pending\"\n}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "postSteps": [
+          {
+            "id": "setRunning",
+            "name": "setRunning",
+            "config": {
+              "fields": {
+                "status": "'running'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "sign",
+            "name": "sign",
+            "config": {
+              "path": "steps.prep.storagePath",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "whisper",
+            "name": "whisper",
+            "config": {
+              "input": {
+                "debug": false,
+                "audio_file": "steps.sign.url",
+                "batch_size": 64,
+                "diarization": "steps.prep.diarize",
+                "temperature": 0,
+                "align_output": true,
+                "huggingface_access_token": "secrets.HF_TOKEN"
+              },
+              "model": "victor-upmeet/whisperx",
+              "timeout": 280000,
+              "version": "655845d6190ef70573c669245f245892cd039df4b880a1e3a65852c09252f5cc"
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "flatten",
+            "name": "flatten",
+            "config": {
+              "code": "function handler({ steps }) {\n  // WhisperX returns { segments: [{ start, end, text, speaker, words: [{ word, start, end, score, speaker }] }] }.\n  // With diarization on each word carries a speaker; the segment carries one too as a backstop.\n  var whisper = steps.whisper || {}\n  var out = whisper.output != null ? whisper.output : whisper\n  var segments = (out && out.segments) || []\n  var words = []\n  var parts = []\n  for (var i = 0; i < segments.length; i++) {\n    var seg = segments[i] || {}\n    if (typeof seg.text === 'string' && seg.text.length > 0) {\n      parts.push(seg.text.trim())\n    }\n    var segSpeaker = typeof seg.speaker === 'string' && seg.speaker ? seg.speaker : null\n    var segWords = seg.words || []\n    for (var j = 0; j < segWords.length; j++) {\n      var w = segWords[j] || {}\n      var text = ''\n      if (w.word != null) { text = String(w.word) }\n      else if (w.text != null) { text = String(w.text) }\n      var start = typeof w.start === 'number' ? w.start : null\n      var end = typeof w.end === 'number' ? w.end : null\n      var speaker = typeof w.speaker === 'string' && w.speaker ? w.speaker : segSpeaker\n      words.push({ text: text.trim(), start: start, end: end, speaker: speaker })\n    }\n  }\n  var text = parts.join(' ').replace(/\\s+/g, ' ').trim()\n  return { words: words, text: text }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "config": {
+              "code": "function handler({ steps }) {\n  var f = (steps && steps.flatten) || null\n  var words = f && f.words\n  var ok = !!(f && words && typeof words.length === 'number')\n  if (ok) return { ok: true, notOk: false, error: '', data: { words: words, text: (f.text || '') } }\n  return { ok: false, notOk: true, error: 'Transcription failed', data: null }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "finishOk",
+            "name": "finishOk",
+            "config": {
+              "fields": {
+                "result": "steps.check.data",
+                "status": "'done'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "condition": "steps.check.ok"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "finishErr",
+            "name": "finishErr",
+            "config": {
+              "fields": {
+                "error": "steps.check.error",
+                "status": "'error'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "condition": "steps.check.notOk"
+            },
+            "handlerType": "data_update"
+          }
+        ],
+        "validators": [],
+        "description": "audioUrl (already in bucket) -> ENQUEUE a job (kind 'transcribe') and return its id; the WhisperX call (+ optional pyannote diarization when request.body.diarize) runs in postSteps so it can't hit the 30s edge timeout. Flattened { words, text } (each word carries a speaker when diarized) lands in the job row's result, polled via /api/studio/job. Story 10e."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Transcribe an already-uploaded WAV with word-level timestamps. Mints a presigned GCS download URL for the audio (already in the bucket) and hands it to Replicate WhisperX (align_output:true), then flattens segments to { words: [{text,start,end}], text }. No validators yet — auth_required + rate_limit deferred to story 07 (mirrors the upload rules), so local unauthenticated dev works."
+    },
+    {
+      "pathPattern": "/api/uploads/thumbnails/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 8,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio thumbnails upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/thumbnails",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 10485760,
+              "allowedMimeTypes": [
+                "image/*"
+              ]
+            },
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Mint a presigned PUT URL so the browser uploads each director contact sheet straight to the bucket (image/*), so story 03 can hand the director real image URLs."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio thumbnail (contact-sheet) upload"
+    },
+    {
+      "pathPattern": "/api/uploads/thumbnails/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 9,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio thumbnails upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/thumbnails",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 10485760,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "image/*"
+              ]
+            },
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket thumbnail flow). Reuses the studio_source schema; the thumbnails/ subDir distinguishes records."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Register: finalize a direct-to-bucket studio thumbnail upload into studio_source"
+    },
+    {
+      "pathPattern": "/api/uploads/thumbnails/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 10,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio thumbnails",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "thumbnails"
+            },
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from the thumbnails subDir"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio thumbnails (Range-aware) so the director can fetch the contact sheets"
+    },
+    {
+      "pathPattern": "/api/scenes",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 11,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Master director (async enqueue + poll)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var urls = body.sheetUrls\n  if (!urls || typeof urls.length !== 'number') urls = []\n  var prefix = deployment.owner + '/' + deployment.repo + '/uploads/'\n  var out = {}\n  for (var i = 0; i < 10; i++) {\n    var p = ''\n    if (i < urls.length && urls[i]) {\n      var key = String(urls[i]).replace(/^\\/+/, '')\n      key = key.replace(/^api\\/uploads\\//, '')\n      p = prefix + key\n    }\n    out['path' + i] = p\n  }\n  var transcript = typeof body.transcript === 'string' ? body.transcript : ''\n  var direction = typeof body.direction === 'string' ? body.direction : ''\n  var duration = typeof body.duration === 'number' ? body.duration : 0\n\n  var sys = ''\n  sys += 'You are the Master Director: an award-winning film and YouTube editor who turns long, rambling screen recordings into tight, compelling shorts.\\n'\n  sys += 'You are given (1) a timestamped transcript and (2) contact-sheet images: grids of frames sampled across the recording, each with its wall-clock timestamp burned into a corner. Use BOTH the words and the frames to understand what happens and when.\\n\\n'\n  sys += 'Your job is the BIG PICTURE only. You do NOT write the final narration — a second-pass editor does that for each scene.\\n'\n  sys += '1. Write a one-sentence SYNOPSIS (a logline) of the whole talk: punchy, like a movie one-liner.\\n'\n  sys += '2. Break the recording into logical SCENES (chapters), roughly 2-5 minutes each. Never split a strong continuous run just to hit a number. Give each a short chapter TITLE.\\n'\n  sys += '3. For EACH scene write a REFINE PROMPT (refinePrompt): a one-to-two sentence imperative instruction to the second-pass editor who will cut and re-voice THIS scene. Say what to tighten or drop, the pacing and tone, anything on-screen to preserve, and a rough target length. This is a DIRECTION for the editor, NOT narration — do NOT write the script yourself.\\n'\n  sys += '4. For EACH scene give the ORIGINAL-VIDEO span it maps to (start, end in seconds) AND the obvious footage spans to CUT within it (cuts: array of {start,end} in seconds) - clear dead air, tangents, false starts. The second-pass editor refines these; you give the coarse pass.\\n\\n'\n  sys += 'Rules for timestamps: all values are SECONDS from the start of the recording. For every scene start < end. Scenes are ordered earliest-first and must NOT overlap. Every cut lies inside its own scene [start,end]. Use the transcript timestamps and the frame timestamps to be accurate.\\n\\n'\n  sys += 'MULTI-VIDEO: if the transcript contains \"--- VIDEO n: ... ---\" boundary markers, it is several source recordings concatenated onto one timeline. A scene must NEVER start in one video and end in another - keep every scene entirely within a single video (between consecutive markers, or a marker and the recording end).\\n\\n'\n  sys += 'Output STRICT JSON only - no markdown fences, no commentary - exactly this shape:\\n'\n  sys += '{\"synopsis\": string, \"scenes\": [{\"title\": string, \"start\": number, \"end\": number, \"transcript\": string, \"refinePrompt\": string, \"voicing\": \"original\"|\"revoice\"|\"mixed\", \"cuts\": [{\"start\": number, \"end\": number}]}]}\\n'\n  sys += 'Where title is a short chapter title, transcript is the original words spoken in that span, and refinePrompt is your per-scene instruction to the editor. For each scene also return voicing - your plan for whose voice ships that scene: \"original\" when the scene should keep the creator\\'s own recorded audio and only be trimmed, \"revoice\" when it should be re-voiced in a tightened script, \"mixed\" when parts keep the original audio and parts are re-voiced. If the user\\'s direction asks to keep their own voice or only remove filler (\"just cut the ums\"), prefer voicing \"original\", say so in refinePrompt, and express what to remove as cuts. Return nothing but the JSON object.'\n\n  var prompt = ''\n  prompt += 'TIMESTAMPED TRANSCRIPT (each line starts with its [m:ss] time):\\n\\n' + transcript + '\\n\\n'\n  prompt += 'The full recording is ' + Math.round(duration) + ' seconds long. The attached images are the contact sheets described in your instructions.\\n\\n'\n  if (direction) {\n    prompt += 'EXTRA DIRECTION FROM THE CREATOR (weight this heavily): ' + direction + '\\n\\n'\n  }\n  prompt += 'Now produce the synopsis and the scene breakdown as STRICT JSON exactly as specified. Return nothing but the JSON object.'\n\n  out.transcript = transcript\n  out.direction = direction\n  out.duration = duration\n  out.system = sys\n  out.prompt = prompt\n  return out\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "createJob",
+            "name": "createJob",
+            "config": {
+              "fields": {
+                "kind": "'scenes'",
+                "prompt": "steps.prep.prompt",
+                "status": "'pending'",
+                "system": "steps.prep.system",
+                "request": "request.body"
+              },
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\n  \"jobId\": \"{{steps.createJob.id}}\",\n  \"status\": \"pending\"\n}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "postSteps": [
+          {
+            "id": "setRunning",
+            "name": "setRunning",
+            "config": {
+              "fields": {
+                "status": "'running'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "sign0",
+            "name": "sign0",
+            "config": {
+              "path": "steps.prep.path0",
+              "condition": "steps.prep.path0",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign1",
+            "name": "sign1",
+            "config": {
+              "path": "steps.prep.path1",
+              "condition": "steps.prep.path1",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign2",
+            "name": "sign2",
+            "config": {
+              "path": "steps.prep.path2",
+              "condition": "steps.prep.path2",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign3",
+            "name": "sign3",
+            "config": {
+              "path": "steps.prep.path3",
+              "condition": "steps.prep.path3",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign4",
+            "name": "sign4",
+            "config": {
+              "path": "steps.prep.path4",
+              "condition": "steps.prep.path4",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign5",
+            "name": "sign5",
+            "config": {
+              "path": "steps.prep.path5",
+              "condition": "steps.prep.path5",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign6",
+            "name": "sign6",
+            "config": {
+              "path": "steps.prep.path6",
+              "condition": "steps.prep.path6",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign7",
+            "name": "sign7",
+            "config": {
+              "path": "steps.prep.path7",
+              "condition": "steps.prep.path7",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign8",
+            "name": "sign8",
+            "config": {
+              "path": "steps.prep.path8",
+              "condition": "steps.prep.path8",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign9",
+            "name": "sign9",
+            "config": {
+              "path": "steps.prep.path9",
+              "condition": "steps.prep.path9",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "collect",
+            "name": "collect",
+            "config": {
+              "code": "function handler({ steps }) {\n  var images = []\n  for (var i = 0; i < 10; i++) {\n    var st = steps['sign' + i]\n    if (st && st.url) images.push(st.url)\n  }\n  return { images: images, count: images.length }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "director",
+            "name": "director",
+            "config": {
+              "input": {
+                "images": "steps.collect.images",
+                "prompt": "steps.prep.prompt",
+                "temperature": 0.6,
+                "thinking_level": "'high'",
+                "max_output_tokens": 32000,
+                "system_instruction": "steps.prep.system"
+              },
+              "model": "google/gemini-3.1-pro",
+              "timeout": 280000
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ steps }) {\n  function num(v) {\n    return (typeof v === 'number' && isFinite(v)) ? v : 0\n  }\n\n  var d = (steps && steps.director) || {}\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') {\n    text = raw\n  } else if (raw && typeof raw.length === 'number') {\n    for (var a = 0; a < raw.length; a++) {\n      text += String(raw[a])\n    }\n  } else if (raw && typeof raw.text === 'string') {\n    text = raw.text\n  }\n\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  if (sIdx >= 0 && eIdx > sIdx) {\n    text = text.slice(sIdx, eIdx + 1)\n  }\n\n  var parsed = null\n  try {\n    parsed = JSON.parse(text)\n  } catch (err) {\n    parsed = null\n  }\n  if (!parsed || typeof parsed !== 'object') {\n    return { ok: false, notOk: true, error: 'Could not parse director output', data: { synopsis: '', scenes: [] } }\n  }\n\n  var prep = (steps && steps.prep) || {}\n  var duration = (typeof prep.duration === 'number' && prep.duration > 0) ? prep.duration : 1000000000\n\n  var rawScenes = parsed.scenes\n  if (!rawScenes || typeof rawScenes.length !== 'number') rawScenes = []\n  var arr = []\n  for (var j = 0; j < rawScenes.length; j++) {\n    arr.push(rawScenes[j])\n  }\n  arr.sort(function (x, y) {\n    return num(x && x.start) - num(y && y.start)\n  })\n\n  var scenes = []\n  var cursor = 0\n  for (var k = 0; k < arr.length; k++) {\n    var sc = arr[k] || {}\n    var start = Math.min(Math.max(num(sc.start), cursor), duration)\n    var end = Math.min(Math.max(num(sc.end), start), duration)\n    if (end <= start) {\n      end = Math.min(start + 0.05, duration)\n    }\n    cursor = end\n\n    var cutsIn = sc.cuts\n    if (!cutsIn || typeof cutsIn.length !== 'number') cutsIn = []\n    var cuts = []\n    for (var c = 0; c < cutsIn.length; c++) {\n      var cc = cutsIn[c] || {}\n      var cs = Math.min(Math.max(num(cc.start), start), end)\n      var ce = Math.min(Math.max(num(cc.end), start), end)\n      if (ce - cs > 0.05) {\n        cuts.push({ start: cs, end: ce })\n      }\n    }\n\n    var title = (typeof sc.title === 'string' && sc.title) ? sc.title : ('Scene ' + (k + 1))\n    var transcript = (typeof sc.transcript === 'string') ? sc.transcript : ''\n    var refinePrompt = (typeof sc.refinePrompt === 'string') ? sc.refinePrompt : ''\n    var sceneOut = { title: title, start: start, end: end, transcript: transcript, cuts: cuts }\n    if (refinePrompt) { sceneOut.refinePrompt = refinePrompt }\n    if (sc.voicing === 'original' || sc.voicing === 'revoice' || sc.voicing === 'mixed') {\n      sceneOut.voicing = sc.voicing\n    }\n    scenes.push(sceneOut)\n  }\n\n  var synopsis = (typeof parsed.synopsis === 'string') ? parsed.synopsis : ''\n  return { ok: true, notOk: false, error: '', data: { synopsis: synopsis, scenes: scenes } }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "finishOk",
+            "name": "finishOk",
+            "config": {
+              "fields": {
+                "result": "steps.parse.data",
+                "status": "'done'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "condition": "steps.parse.ok"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "finishErr",
+            "name": "finishErr",
+            "config": {
+              "fields": {
+                "error": "steps.parse.error",
+                "status": "'error'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "condition": "steps.parse.notOk"
+            },
+            "handlerType": "data_update"
+          }
+        ],
+        "validators": [],
+        "description": "Story 03f Part 0: enqueue a studio_jobs row and return { jobId } immediately; the slow Gemini call + parse run in postSteps and write the row to done/error. The FE polls /api/studio/job. 03m: createJob also stores the stitched prompt + system instruction on the row so the FE prompt disclosure can fetch them. 03q: prep asks for per-scene refinePrompt (not draftText); parse emits refinePrompt."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Master director (story 03; async fire-and-poll as of 03f Part 0). ENQUEUE-ONLY response path: prep builds the prompt/system + signed-sheet paths, createJob inserts a studio_jobs row, respond returns { jobId, status:'pending' } immediately. The slow Gemini 3.1 Pro call + parse run in postSteps (replicate step timeout raised to 280s, off the response path) and write the row to { status:'done', result:{synopsis,scenes} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (auth_required + rate_limit deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/uploads/voice/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 12,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio voice upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/voice",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 2147483648,
+              "allowedMimeTypes": [
+                "audio/*"
+              ]
+            },
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Mint a presigned PUT URL so the browser uploads the recorded voice-clone sample straight to the bucket (audio/*)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio voice (clone sample) upload. auth_required deferred to story 07 (mirrors source/audio/thumbnails)."
+    },
+    {
+      "pathPattern": "/api/uploads/voice/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 13,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio voice upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/voice",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 2147483648,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "audio/*"
+              ]
+            },
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket voice flow). Reuses the studio_source schema; the voice/ subDir distinguishes records."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Register: finalize a direct-to-bucket studio voice upload into studio_source (voice/ subDir). auth_required deferred to story 07."
+    },
+    {
+      "pathPattern": "/api/uploads/voice/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 14,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio voice",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "voice"
+            },
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from the voice subDir"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio voice (Range-aware) so Replicate can fetch the clone sample when cloning is enabled."
+    },
+    {
+      "pathPattern": "/api/voice/clone",
+      "method": "POST",
+      "targetUrl": "",
+      "stripPrefix": true,
+      "order": 15,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Voice clone (minimax/voice-cloning)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var sampleUrl = body.sampleUrl || ''\n  // Rebuild the bucket storage path from the public serve path (mirrors\n  // /api/transcribe resolvePath) so the signer can mint a download URL.\n  var key = String(sampleUrl).replace(/^\\/+/, '')\n  key = key.replace(/^api\\/uploads\\//, '')\n  var storagePath = deployment.owner + '/' + deployment.repo + '/uploads/' + key\n  // Preset fallback id, only used if the clone step is ever disabled again.\n  return { sampleUrl: sampleUrl, storagePath: storagePath, voiceId: 'Friendly_Person' }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sign",
+            "name": "sign",
+            "config": {
+              "path": "steps.prep.storagePath",
+              "expiresIn": 3600
+            },
+            "isEnabled": true,
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "clone",
+            "name": "clone",
+            "config": {
+              "input": {
+                "model": "'speech-02-turbo'",
+                "accuracy": 0.7,
+                "voice_file": "steps.sign.url",
+                "need_noise_reduction": false,
+                "need_volume_normalization": false
+              },
+              "model": "minimax/voice-cloning"
+            },
+            "isEnabled": true,
+            "handlerType": "replicate"
+          },
+          {
+            "id": "pickVoice",
+            "name": "pickVoice",
+            "config": {
+              "code": "function handler({ steps }) {\n  var c = (steps && steps.clone) || {}\n  var out = c.output != null ? c.output : c\n  var voiceId = ''\n  var previewUrl = ''\n  if (typeof out === 'string') {\n    voiceId = out\n  } else if (out && typeof out === 'object') {\n    if (typeof out.voice_id === 'string') { voiceId = out.voice_id }\n    else if (typeof out.voiceId === 'string') { voiceId = out.voiceId }\n    else if (typeof out.id === 'string') { voiceId = out.id }\n    if (typeof out.preview === 'string') { previewUrl = out.preview }\n  }\n  return { voiceId: voiceId, previewUrl: previewUrl }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\"voiceId\": \"{{steps.pickVoice.voiceId}}\", \"previewUrl\": \"{{steps.pickVoice.previewUrl}}\"}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "postSteps": [],
+        "validators": [],
+        "description": "Resolve the uploaded WAV's storage path, sign it, run minimax/voice-cloning, and return { voiceId, previewUrl }. Costs $3 per call."
+      },
+      "isEnabled": true,
+      "debugEnabled": true,
+      "description": "Voice clone (story 04) — ENABLED. Resolves the uploaded WAV sample's storage path → signs it → minimax/voice-cloning (voice_file only, matches the model's canonical example) → extracts the voice_id → returns { voiceId }. ⚠️ COSTS $3 PER CALL. To disable again: set sign+clone isEnabled:false and point respond at {{steps.prep.voiceId}} (preset stub). auth_required + rate_limit deferred to story 07. Needs the project Replicate token."
+    },
+    {
+      "pathPattern": "/api/voice/say",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 16,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Voice say (TTS preview)",
+        "steps": [
+          {
+            "id": "tts",
+            "name": "tts",
+            "config": {
+              "input": {
+                "text": "request.body.text",
+                "voice_id": "request.body.voiceId"
+              },
+              "model": "minimax/speech-2.8-turbo"
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "config": {
+              "code": "function handler({ request, steps }) {\n  var tts = (steps && steps.tts) || {}\n  var out = tts.output != null ? tts.output : tts\n  var url = ''\n  if (typeof out === 'string') {\n    url = out\n  } else if (out && typeof out.length === 'number' && out.length) {\n    url = String(out[0])\n  } else if (out && typeof out.audio === 'string') {\n    url = out.audio\n  } else if (out && typeof out.url === 'string') {\n    url = out.url\n  }\n  var body = (request && request.body) || {}\n  var text = typeof body.text === 'string' ? body.text : ''\n  var trimmed = text.replace(/^\\s+|\\s+$/g, '')\n  var words = trimmed ? trimmed.split(/\\s+/).length : 0\n  var durationSeconds = Math.max(1, Math.round(words / 2.5))\n  return { audioUrl: url, durationSeconds: durationSeconds }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\"audioUrl\": \"{{steps.pick.audioUrl}}\", \"durationSeconds\": {{steps.pick.durationSeconds}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "text + voiceId -> minimax/speech-2.8-turbo -> { audioUrl, durationSeconds }."
+      },
+      "isEnabled": true,
+      "debugEnabled": true,
+      "description": "Voice say (story 04) — LIVE TTS via minimax/speech-2.8-turbo. Speaks request.body.text in request.body.voiceId (preset or cloned id) and returns { audioUrl, durationSeconds }. Used for the short post-selection preview sample (cheap). Needs the project Replicate API token. auth_required + rate_limit deferred to story 07."
+    },
+    {
+      "pathPattern": "/api/refine-scene",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 17,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Per-scene refiner (async enqueue + poll)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request, deployment }) {\n  function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0 }\n  var NL = String.fromCharCode(10)\n  var body = (request && request.body) || {}\n  var urls = body.sheetUrls\n  if (!urls || typeof urls.length !== 'number') urls = []\n  var prefix = deployment.owner + '/' + deployment.repo + '/uploads/'\n  var out = {}\n  for (var i = 0; i < 10; i++) {\n    var p = ''\n    if (i < urls.length && urls[i]) {\n      var key = String(urls[i])\n      while (key.charAt(0) === '/') { key = key.slice(1) }\n      if (key.indexOf('api/uploads/') === 0) { key = key.slice(12) }\n      p = prefix + key\n    }\n    out['path' + i] = p\n  }\n\n  var audioUrl = typeof body.audioUrl === 'string' ? body.audioUrl : ''\n  if (!audioUrl) { throw new Error('audioUrl is required: cut the scene first (story 03k)') }\n  var akey = audioUrl\n  while (akey.charAt(0) === '/') { akey = akey.slice(1) }\n  if (akey.indexOf('api/uploads/') === 0) { akey = akey.slice(12) }\n  out.audioPath = prefix + akey\n\n  var start = num(body.start)\n  var end = num(body.end)\n  if (end <= start) { end = start + 0.05 }\n  var wordTimings = typeof body.wordTimings === 'string' ? body.wordTimings : ''\n  var direction = typeof body.direction === 'string' ? body.direction.trim() : ''\n  var directorDirection = typeof body.directorDirection === 'string' ? body.directorDirection.trim() : ''\n  var sceneNumber = num(body.sceneNumber)\n  var sceneCount = num(body.sceneCount)\n  var previousContext = typeof body.previousContext === 'string' ? body.previousContext.trim() : ''\n\n  var sys = ''\n  sys += \"You are the Scene Editor: an expert film and YouTube editor cutting ONE scene of a longer talk down to a tight, watchable take. There is NO first-pass script - you build the tightened cut from scratch.\" + NL\n  sys += \"You are given (1) the scene WORD TIMINGS - every spoken word with its exact start and end time in seconds, (2) contact-sheet images sampled DENSELY across just this scene, each frame with its wall-clock timestamp burned into a corner, and (3) this scene's own AUDIO. Use the words, the frames AND the audio.\" + NL + NL\n  sys += \"Decide precisely:\" + NL\n  sys += \"1. segments: the tightened narration laid onto the original-video timeline as one or more runs, each {text, start, end} in seconds. Use MORE THAN ONE segment when a kept pause or held beat of silence should separate two runs of speech - each segment is one continuous run of narration and the gaps between segments are intentional kept silence. Keep the speaker's points and voice; cut filler, rambling, repeated takes and false starts. For each segment also return source: \\\"original\\\" when that segment should be voiced by the recording's own audio for its span, \\\"revoice\\\" when its text is new narration to be re-voiced. Set start and end by COPYING the exact times of the first and last kept word from the WORD TIMINGS list. To drop words (an um, a false start, a stumble, a repeated take), do not omit them silently: end the segment before them and start the next segment after them, so the gap between segments carries the removal, and add a matching cut. If the creator's direction asks to keep their own voice, prefer \\\"original\\\" wherever the words are spoken cleanly.\" + NL\n  sys += \"2. cuts: the footage spans to DROP within this scene, each {start, end} in seconds (dead air, tangents, coughs, repeated takes, anything the tightened narration no longer needs).\" + NL + NL\n  sys += \"BIAS TOWARD INCLUDING MORE, NOT LESS: the creator can trim further by hand afterwards but CANNOT recover audio you remove, so when in doubt, KEEP it. Never clip a kept word - set a segment's start at or a little BEFORE its first kept word's start time, and its end at or a little AFTER its last kept word's end time (pad each edge outward by about 0.2s into the adjacent silence, staying within the scene span and not overlapping the next segment), so word onsets and tails are never cut off. Make cuts only around CLEARLY unwanted material (coughs, obvious false starts, repeated takes, long dead air); keep each cut's edges just INSIDE the unwanted span so a cut never touches a word you are keeping. Prefer slightly longer segments and slightly fewer, smaller cuts.\" + NL + NL\n  sys += \"AUDIO: the attached audio file is this scene's soundtrack, cut to exactly the scene span - audio time 0:00 corresponds to \" + start + \"s on the shared timeline used by the word timings, the segments and the cuts; add \" + start + \" to any time you hear before using it as a boundary. Listen and align every cut and segment boundary to the natural flow of speech. Anything that does not belong in the final cut - a cough, a shout or an interruption (e.g. yelling at a pet), a throat clear, an off-script noise, a restart - must NOT start, end, or sit inside a kept segment: nudge the boundary to exclude it, or split the segment into two around it so the gap (or a cut) carries the removal. Never tag a segment \\\"original\\\" if its span contains such a sound.\" + NL + NL\n  sys += \"Rules: all values are SECONDS from the start of the whole recording and MUST lie within the scene span [\" + start + \", \" + end + \"]. For every segment and cut start < end. Segments are ordered earliest-first and must NOT overlap. Use the word timings and frame timestamps to be accurate.\" + NL + NL\n  sys += \"CONTINUITY: this scene is one of several stitched together in order. You may be told its position in the talk and where the PREVIOUS scene's narration ended. When given, make this scene's OPENING narration follow on naturally from that lead-in - pick up the thread and match the cadence, and do NOT re-introduce or repeat what was just said. The previous-scene text is context only: never include, repeat or re-voice it as part of this scene.\" + NL + NL\n  sys += \"Output STRICT JSON only - no markdown fences, no commentary - exactly this shape:\" + NL\n  sys += '{\"segments\": [{\"text\": string, \"start\": number, \"end\": number, \"source\": \"original\"|\"revoice\"}], \"cuts\": [{\"start\": number, \"end\": number}]}' + NL\n  sys += \"Return nothing but the JSON object.\"\n\n  var prompt = ''\n  prompt += \"SCENE SPAN: start=\" + start + \"s, end=\" + end + \"s (duration \" + Math.round(end - start) + \"s).\" + NL + NL\n  prompt += \"SCENE WORD TIMINGS (one line per spoken word, \\\"start end word\\\" in seconds on the shared timeline; copy these exact numbers for your segment and cut boundaries):\" + NL + NL + wordTimings + NL + NL\n  prompt += \"The attached images are dense contact sheets for THIS scene.\" + NL + NL\n  prompt += \"The attached audio is this scene's own soundtrack (audio 0:00 = \" + start + \"s on the shared timeline).\" + NL + NL\n  if (directorDirection) {\n    prompt += \"THE CREATOR'S OVERALL DIRECTION FOR THE WHOLE VIDEO (context for this scene): \" + directorDirection + NL + NL\n  }\n  if (direction) {\n    prompt += \"THE CREATOR'S INSTRUCTIONS FOR THIS SCENE (follow these): \" + direction + NL + NL\n  }\n  if (sceneNumber && sceneCount) {\n    prompt += \"POSITION IN THE TALK: this is scene \" + sceneNumber + \" of \" + sceneCount + \".\" + NL + NL\n  }\n  if (previousContext) {\n    prompt += \"THE PREVIOUS SCENE'S NARRATION ENDED WITH (lead-in context only - NOT part of this scene; do not repeat, include or re-voice it): \\\"\" + previousContext + \"\\\"\" + NL + NL\n    prompt += \"Open this scene's narration so it flows naturally on from that lead-in.\" + NL + NL\n  }\n  prompt += \"Now build the tightened cut FROM SCRATCH from the exact word timings above, and produce the segments and cuts as STRICT JSON exactly as specified. Return nothing but the JSON object.\"\n\n  out.start = start\n  out.end = end\n  out.system = sys\n  out.prompt = prompt\n  return out\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "createJob",
+            "name": "createJob",
+            "config": {
+              "fields": {
+                "kind": "'refine'",
+                "prompt": "steps.prep.prompt",
+                "status": "'pending'",
+                "system": "steps.prep.system",
+                "request": "request.body"
+              },
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\n  \"jobId\": \"{{steps.createJob.id}}\",\n  \"status\": \"pending\"\n}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "postSteps": [
+          {
+            "id": "setRunning",
+            "name": "setRunning",
+            "config": {
+              "fields": {
+                "status": "'running'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "sign0",
+            "name": "sign0",
+            "config": {
+              "path": "steps.prep.path0",
+              "condition": "steps.prep.path0",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign1",
+            "name": "sign1",
+            "config": {
+              "path": "steps.prep.path1",
+              "condition": "steps.prep.path1",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign2",
+            "name": "sign2",
+            "config": {
+              "path": "steps.prep.path2",
+              "condition": "steps.prep.path2",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign3",
+            "name": "sign3",
+            "config": {
+              "path": "steps.prep.path3",
+              "condition": "steps.prep.path3",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign4",
+            "name": "sign4",
+            "config": {
+              "path": "steps.prep.path4",
+              "condition": "steps.prep.path4",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign5",
+            "name": "sign5",
+            "config": {
+              "path": "steps.prep.path5",
+              "condition": "steps.prep.path5",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign6",
+            "name": "sign6",
+            "config": {
+              "path": "steps.prep.path6",
+              "condition": "steps.prep.path6",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign7",
+            "name": "sign7",
+            "config": {
+              "path": "steps.prep.path7",
+              "condition": "steps.prep.path7",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign8",
+            "name": "sign8",
+            "config": {
+              "path": "steps.prep.path8",
+              "condition": "steps.prep.path8",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "sign9",
+            "name": "sign9",
+            "config": {
+              "path": "steps.prep.path9",
+              "condition": "steps.prep.path9",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "signAudio",
+            "name": "signAudio",
+            "config": {
+              "path": "steps.prep.audioPath",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "collect",
+            "name": "collect",
+            "config": {
+              "code": "function handler({ steps }) {\n  var images = []\n  for (var i = 0; i < 10; i++) {\n    var st = steps['sign' + i]\n    if (st && st.url) images.push(st.url)\n  }\n  return { images: images, count: images.length }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "refiner",
+            "name": "refiner",
+            "config": {
+              "input": {
+                "audio": "steps.signAudio.url",
+                "images": "steps.collect.images",
+                "prompt": "steps.prep.prompt",
+                "temperature": 0.5,
+                "thinking_level": "'high'",
+                "max_output_tokens": 32000,
+                "system_instruction": "steps.prep.system"
+              },
+              "model": "google/gemini-3.1-pro",
+              "timeout": 280000
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ steps }) {\n  function num(v) {\n    return (typeof v === 'number' && isFinite(v)) ? v : 0\n  }\n\n  var d = (steps && steps.refiner) || {}\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') {\n    text = raw\n  } else if (raw && typeof raw.length === 'number') {\n    for (var a = 0; a < raw.length; a++) {\n      text += String(raw[a])\n    }\n  } else if (raw && typeof raw.text === 'string') {\n    text = raw.text\n  }\n\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  if (sIdx >= 0 && eIdx > sIdx) {\n    text = text.slice(sIdx, eIdx + 1)\n  }\n\n  var parsed = null\n  try {\n    parsed = JSON.parse(text)\n  } catch (err) {\n    parsed = null\n  }\n  if (!parsed || typeof parsed !== 'object') {\n    return { ok: false, notOk: true, error: 'Could not parse refiner output', data: { segments: [], cuts: [] } }\n  }\n\n  var prep = (steps && steps.prep) || {}\n  var lo = num(prep.start)\n  var hi = num(prep.end)\n  if (hi <= lo) {\n    hi = lo + 0.05\n  }\n\n  var rawSegs = parsed.segments\n  if (!rawSegs || typeof rawSegs.length !== 'number') rawSegs = []\n  var segArr = []\n  for (var j = 0; j < rawSegs.length; j++) {\n    segArr.push(rawSegs[j])\n  }\n  segArr.sort(function (x, y) {\n    return num(x && x.start) - num(y && y.start)\n  })\n\n  var segments = []\n  var cursor = lo\n  for (var k = 0; k < segArr.length; k++) {\n    var sg = segArr[k] || {}\n    var t = (typeof sg.text === 'string') ? sg.text.trim() : ''\n    if (!t) {\n      continue\n    }\n    var s = Math.min(Math.max(num(sg.start), cursor), hi)\n    var e = Math.min(Math.max(num(sg.end), lo), hi)\n    if (e - s <= 0.05) {\n      continue\n    }\n    var segOut = { text: t, start: s, end: e }\n    if (sg.source === 'original' || sg.source === 'revoice') {\n      segOut.source = sg.source\n    }\n    segments.push(segOut)\n    cursor = e\n  }\n\n  var cutsIn = parsed.cuts\n  if (!cutsIn || typeof cutsIn.length !== 'number') cutsIn = []\n  var cuts = []\n  for (var c = 0; c < cutsIn.length; c++) {\n    var cc = cutsIn[c] || {}\n    var cs = Math.min(Math.max(num(cc.start), lo), hi)\n    var ce = Math.min(Math.max(num(cc.end), lo), hi)\n    if (ce - cs > 0.05) {\n      cuts.push({ start: cs, end: ce })\n    }\n  }\n\n  return { ok: true, notOk: false, error: '', data: { segments: segments, cuts: cuts } }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "finishOk",
+            "name": "finishOk",
+            "config": {
+              "fields": {
+                "result": "steps.parse.data",
+                "status": "'done'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "condition": "steps.parse.ok"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "finishErr",
+            "name": "finishErr",
+            "config": {
+              "fields": {
+                "error": "steps.parse.error",
+                "status": "'error'"
+              },
+              "recordId": "steps.createJob.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "condition": "steps.parse.notOk"
+            },
+            "handlerType": "data_update"
+          }
+        ],
+        "validators": [],
+        "description": "Per-scene refiner (story 03c; async fire-and-poll 03f Part 0; hears the scene audio 03k; creator prompts 03l). 03p: prep builds the prompt from per-word WORD TIMINGS (request.body.wordTimings) and asks the model to build the tightened cut FROM SCRATCH - the 8s-bucketed transcript and the director's first-pass script/cuts (draftText/cuts) are no longer sent or used. 03p boundary tuning: the prompt biases toward INCLUDING more (pad kept-segment edges ~0.2s into adjacent silence, conservative cuts that stay clear of kept words) so word onsets/tails are not clipped - the creator can trim by hand but cannot recover removed audio. ENQUEUE-ONLY response path: prep builds prompt/system + signed-sheet paths + scene-audio path (request.audioUrl REQUIRED - prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. Gemini 3.1 Pro refine + parse run in postSteps (replicate timeout 280s): sign0-9 sign the sheets, signAudio signs the scene's cut soundtrack and feeds Gemini's audio input so cut/segment boundaries align to the natural flow (coughs/shouts/interruptions excluded). 03l: prep injects the creator's global director prompt (request.body.directorDirection) and per-scene prompt (request.body.direction), each labeled, only when non-empty. Writes the row to { status:'done', result:{segments,cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Per-scene refiner (story 03c; async fire-and-poll as of 03f Part 0; hears the scene audio as of 03k; creator prompts as of 03l). ENQUEUE-ONLY response path: prep builds the prompt/system + signed-sheet paths + the scene-audio path (request.audioUrl REQUIRED — prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. The Gemini 3.1 Pro refine + parse run in postSteps (replicate step timeout 280s): sign0-9 sign the sheets, signAudio signs the scene's cut soundtrack and feeds Gemini's audio input so cut/segment boundaries align to the natural flow (coughs/shouts/interruptions excluded). 03l: prep injects the creator's global director prompt (request.body.directorDirection) and per-scene prompt (request.body.direction) into the prompt, each labeled, only when non-empty. Writes the row to { status:'done', result:{segments,cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/voice/narrate",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 18,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Scene narration (persisted TTS)",
+        "steps": [
+          {
+            "id": "tts",
+            "name": "tts",
+            "config": {
+              "input": {
+                "text": "request.body.text",
+                "voice_id": "request.body.voiceId"
+              },
+              "model": "minimax/speech-2.8-turbo"
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "pickUrl",
+            "name": "pickUrl",
+            "config": {
+              "code": "function handler({ steps }) {\n  var tts = (steps && steps.tts) || {}\n  var out = tts.output != null ? tts.output : tts\n  var url = ''\n  if (typeof out === 'string') {\n    url = out\n  } else if (out && typeof out.length === 'number' && out.length) {\n    url = String(out[0])\n  } else if (out && typeof out.audio === 'string') {\n    url = out.audio\n  } else if (out && typeof out.url === 'string') {\n    url = out.url\n  }\n  return { url: url }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "store",
+            "name": "store",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/narration",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "sourceUrl": "steps.pickUrl.url",
+              "allowedMimeTypes": [
+                "audio/*"
+              ]
+            },
+            "handlerType": "file_upload_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\"audioUrl\": \"{{steps.store.url}}\"}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Speak the narration in the chosen voice and store the mp3 in the bucket."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Scene narration TTS (story 03c): text + saved voiceId -> minimax/speech-2.8-turbo (mp3) -> PERSIST the mp3 to the bucket (narration/ subDir) so it survives reload and can be assembled later (story 05) -> { audioUrl } (a durable /api/uploads/narration/... serve path). Unlike /api/voice/say (ephemeral replicate URL, used for the short preview), this stores the clip. Client measures real duration off the served file. Needs the project Replicate token. auth_required + rate_limit deferred to story 07."
+    },
+    {
+      "pathPattern": "/api/uploads/narration/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 19,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio narration",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "narration"
+            },
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from the narration subDir"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio narration (Range-aware) so the browser can play the generated scene narration mp3s."
+    },
+    {
+      "pathPattern": "/api/uploads/export/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 20,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio export upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/export",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 2147483648,
+              "allowedMimeTypes": [
+                "video/*"
+              ]
+            },
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Mint a presigned PUT URL so the browser uploads the assembled final-cut MP4 straight to the bucket (bypasses the 1MB proxy cap) — story 05."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio export (final cut MP4) upload. Mirrors source/voice (video/*). auth_required deferred to story 07."
+    },
+    {
+      "pathPattern": "/api/uploads/export/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 21,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio export upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/export",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 2147483648,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "video/*"
+              ]
+            },
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket export flow). Reuses the studio_source schema; the export/ subDir distinguishes records."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Register: finalize a direct-to-bucket studio export upload into studio_source (export/ subDir). auth_required deferred to story 07."
+    },
+    {
+      "pathPattern": "/api/uploads/export/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 22,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio export",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "export"
+            },
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from the export subDir"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio export (Range-aware) so the browser can play/download the saved final cut after reload."
+    },
+    {
+      "pathPattern": "/api/studio/job",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 40,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Studio job poll",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "recordId": "request.query.id",
+              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var q = (steps && steps.query) || {}\n\n  function asObj(v) {\n    if (v == null) return null\n    if (typeof v === 'string') {\n      try {\n        return JSON.parse(v)\n      } catch (e) {\n        return null\n      }\n    }\n    return v\n  }\n\n  return {\n    status: (typeof q.status === 'string') ? q.status : 'pending',\n    kind: (typeof q.kind === 'string') ? q.kind : '',\n    result: asObj(q.result),\n    error: (typeof q.error === 'string' && q.error) ? q.error : null,\n    prompt: (typeof q.prompt === 'string' && q.prompt) ? q.prompt : null,\n    system: (typeof q.system === 'string' && q.system) ? q.system : null,\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Read a studio_jobs row by id for the FE poll loop (story 03f Part 0). 03m: also returns the stored prompt + system instruction for the FE prompt disclosure (null on pre-03m rows)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Studio job poll (story 03f Part 0): read a studio_jobs row by id → { status, kind, result, error }. Cache-Control: no-store so polls never read a stale pending. No validators yet (auth_required + rate_limit deferred to story 07, mirrors the other studio rules)."
+    },
+    {
+      "pathPattern": "/api/uploads/scene-clip/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 41,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio_scene_clip upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/scene-clip",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 2147483648,
+              "allowedMimeTypes": [
+                "video/*"
+              ]
+            },
+            "isEnabled": true,
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "isEnabled": true,
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Presigned PUT URL for a per-scene clip (story 03g)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Mint a presigned PUT URL so the browser uploads a per-scene clip straight to the bucket (story 03g; bypasses the 1MB proxy cap)."
+    },
+    {
+      "pathPattern": "/api/uploads/scene-clip/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 42,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio_scene_clip upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/scene-clip",
+              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 2147483648,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "video/*"
+              ]
+            },
+            "isEnabled": true,
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "isEnabled": true,
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Finalize a per-scene clip direct-to-bucket upload (story 03g)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Verify the bucket object and write the upload record for a per-scene clip (story 03g; finalize step of the direct-to-bucket flow)."
+    },
+    {
+      "pathPattern": "/api/uploads/scene-clip/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 43,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio_scene_clip",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "scene-clip"
+            },
+            "isEnabled": true,
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from studio scene-clip subdir (story 03g)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve per-scene clip files from the scene-clip bucket subdir (story 03g)."
+    },
+    {
+      "pathPattern": "/api/uploads/sign",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 44,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Sign upload download URL",
+        "steps": [
+          {
+            "id": "resolvePath",
+            "name": "resolvePath",
+            "config": {
+              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var url = typeof body.url === 'string' ? body.url : ''\n\n  // Only serve paths under /api/uploads/ may be signed, and never with\n  // traversal segments — everything else resolves to an empty storagePath,\n  // which makes the sign step fail closed.\n  var key = url.replace(/^\\/+/, '')\n  var ok = key.indexOf('api/uploads/') === 0 && key.indexOf('..') === -1\n  key = ok ? key.replace(/^api\\/uploads\\//, '') : ''\n\n  // Split off any query string; the storage key is the bare path. Project\n  // prefix comes from the deployment context so an import into any project\n  // signs <owner>/<repo>/uploads/... (no hard-coded project name).\n  key = key.split('?')[0]\n  var storagePath = key ? deployment.owner + '/' + deployment.repo + '/uploads/' + key : ''\n\n  return {\n    url: url,\n    storagePath: storagePath,\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sign",
+            "name": "sign",
+            "config": {
+              "path": "steps.resolvePath.storagePath",
+              "expiresIn": 3600
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\"url\":\"{{{steps.sign.url}}}\",\"expiresIn\":3600}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Resolve an /api/uploads/... serve path to its bucket storage key and mint a presigned download URL"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Mint a presigned GCS download URL for an uploaded studio object so the browser reads large files (source video) straight from the bucket instead of streaming them through file_serve (504/OOM on big files)."
+    },
+    {
+      "pathPattern": "/api/projects/save",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 45,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Save studio project",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "filters": {
+                "projectId": {
+                  "op": "eq",
+                  "value": "request.body.id"
+                }
+              },
+              "pageSize": 1,
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  if (!q) throw new Error('project not found')\n  var rid = q.recordId || q.id || q._id\n  if (!rid) throw new Error('no recordId on row')\n  return { recordId: String(rid) }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "config": {
+              "fields": {
+                "data": "request.body.data",
+                "name": "request.body.name",
+                "phase": "request.body.phase",
+                "updatedMs": "request.body.updatedAt",
+                "thumbnailUrl": "request.body.thumbnailUrl"
+              },
+              "recordId": "steps.pick.recordId",
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var up = (steps && steps.update) || {}\n  var arr = up.updated || []\n  var u = (arr && arr.length) ? arr[0] : {}\n  if (u == null) u = {}\n  function asObj(v) {\n    if (v == null) return null\n    if (typeof v === 'string') { try { return JSON.parse(v) } catch (e) { return null } }\n    return v\n  }\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  return {\n    id: (typeof u.projectId === 'string') ? u.projectId : null,\n    name: (typeof u.name === 'string') ? u.name : '',\n    createdAt: num(u.createdMs),\n    updatedAt: num(u.updatedMs),\n    phase: (typeof u.phase === 'string') ? u.phase : '',\n    thumbnailUrl: (typeof u.thumbnailUrl === 'string' && u.thumbnailUrl) ? u.thumbnailUrl : null,\n    data: asObj(u.data),\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Update a studio_projects record (story 11d Task 2). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick extracts the row's real primary recordId (data_update needs a recordId, not a filter) -> data_update writes name, updatedMs, phase, thumbnailUrl, data by recordId -> shape returns the updated meta+data mapping createdMs/updatedMs back to createdAt/updatedAt. No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/search-transcript",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 45,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Transcript search (sync Gemini)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request }) {\n  var body = (request && request.body) || {}\n  var query = typeof body.query === 'string' ? body.query : ''\n  var transcript = typeof body.transcript === 'string' ? body.transcript : ''\n  var duration = typeof body.duration === 'number' ? body.duration : 0\n\n  var sys = ''\n  sys += 'You are a simple transcript search. You are given a timestamped transcript of one screen recording (each line starts with its [m:ss] time) and a search query.\\n'\n  sys += 'No fancy search: just read the transcript and find the spans that match the query - by literal words OR by meaning/mood (e.g. \\\"where I sound excited\\\").\\n'\n  sys += 'Return STRICT JSON only - no markdown fences, no commentary - exactly this shape:\\n'\n  sys += '{\\\"results\\\": [{\\\"start\\\": number, \\\"end\\\": number, \\\"snippet\\\": string, \\\"reason\\\": string}]}\\n'\n  sys += 'Rules: times are SECONDS from the start of the recording, within [0, duration]; start < end; each span should cover the matching words (use the line timestamps to estimate; spans are typically 4-20 seconds); snippet is the matching words quoted from the transcript; reason is one short line on why it matches; order results by start; at most 20 results; return {\\\"results\\\": []} when nothing matches. Return nothing but the JSON object.'\n\n  var prompt = ''\n  prompt += 'TIMESTAMPED TRANSCRIPT (each line starts with its [m:ss] time):\\n\\n' + transcript + '\\n\\n'\n  prompt += 'The full recording is ' + Math.round(duration) + ' seconds long.\\n\\n'\n  prompt += 'SEARCH QUERY: ' + query + '\\n\\n'\n  prompt += 'Find the matching spans and return STRICT JSON exactly as specified.'\n\n  return { query: query, duration: duration, system: sys, prompt: prompt }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "search",
+            "name": "search",
+            "config": {
+              "input": {
+                "prompt": "steps.prep.prompt",
+                "temperature": 0.2,
+                "thinking_level": "'low'",
+                "max_output_tokens": 8000,
+                "system_instruction": "steps.prep.system"
+              },
+              "model": "google/gemini-3.1-pro",
+              "timeout": 110000
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ steps }) {\n  function num(v) {\n    return (typeof v === 'number' && isFinite(v)) ? v : 0\n  }\n  function str(v) {\n    return typeof v === 'string' ? v : ''\n  }\n\n  var d = (steps && steps.search) || {}\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') {\n    text = raw\n  } else if (raw && typeof raw.length === 'number') {\n    for (var a = 0; a < raw.length; a++) {\n      text += String(raw[a])\n    }\n  } else if (raw && typeof raw.text === 'string') {\n    text = raw.text\n  }\n\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  if (sIdx >= 0 && eIdx > sIdx) {\n    text = text.slice(sIdx, eIdx + 1)\n  }\n\n  var parsed = null\n  try {\n    parsed = JSON.parse(text)\n  } catch (err) {\n    parsed = null\n  }\n\n  var list = parsed && parsed.results\n  if (!list || typeof list.length !== 'number') list = []\n\n  var prep = (steps && steps.prep) || {}\n  var duration = (typeof prep.duration === 'number' && prep.duration > 0) ? prep.duration : 1000000000\n\n  var hits = []\n  for (var i = 0; i < list.length; i++) {\n    var r = list[i]\n    if (!r || typeof r !== 'object') continue\n    var start = Math.min(Math.max(num(r.start), 0), duration)\n    var end = Math.min(Math.max(num(r.end), 0), duration)\n    if (end - start < 0.3) continue\n    hits.push({ start: start, end: end, snippet: str(r.snippet), reason: str(r.reason) })\n  }\n  hits.sort(function (x, y) { return x.start - y.start })\n  if (hits.length > 20) hits = hits.slice(0, 20)\n\n  return { resultsJson: JSON.stringify(hits), count: hits.length }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{ \"results\": {{{steps.parse.resultsJson}}} }",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Story 08: query + timedTranscript lines -> Gemini 3.1 Pro -> strict-JSON {results:[{start,end,snippet,reason}]} with server-side clamping mirroring the client's toSearchHits."
+      },
+      "isEnabled": true,
+      "debugEnabled": true,
+      "description": "Transcript search (story 08): find-by-meaning over the timestamped transcript. SYNC (text-only Gemini, no images — returns in seconds, no jobs flow): prep builds the system+prompt from {query, transcript, duration}, search runs google/gemini-3.1-pro, parse clamps every span into [0,duration] / drops slivers / sorts / caps 20, respond returns { results } in the exact MSW-mock shape. No validators yet (auth_required + rate_limit deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/describe",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 46,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Export description (sync Gemini)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request }) {\n  var body = (request && request.body) || {}\n  var script = typeof body.script === 'string' ? body.script : ''\n  var synopsis = typeof body.synopsis === 'string' ? body.synopsis : ''\n  var sys = ''\n  sys += 'You title and describe a SHORT finished video for its creator. You are given the full spoken narration of the FINAL edited video (what actually plays, after cuts) and the director one-line take for context.\\n'\n  sys += 'Write from the SCRIPT - describe what the video actually covers, not what was cut. No hype, no clickbait, no emojis, no surrounding quotes.\\n'\n  sys += 'Return STRICT JSON only - no markdown fences, no commentary - exactly this shape:\\n'\n  sys += '{\"title\": string, \"summary\": string}\\n'\n  sys += 'Rules: title is concise, specific and descriptive (max 70 characters); summary is 2 to 4 plain sentences, third person, describing what the video covers. Return nothing but the JSON object.'\n  var prompt = ''\n  prompt += 'DIRECTOR TAKE (context): ' + synopsis + '\\n\\n'\n  prompt += 'FINAL VIDEO SCRIPT (spoken narration, in order):\\n\\n' + script + '\\n\\n'\n  prompt += 'Write the title and summary and return STRICT JSON exactly as specified.'\n  return { system: sys, prompt: prompt }\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "describe",
+            "name": "describe",
+            "config": {
+              "input": {
+                "prompt": "steps.prep.prompt",
+                "temperature": 0.3,
+                "thinking_level": "'low'",
+                "max_output_tokens": 2000,
+                "system_instruction": "steps.prep.system"
+              },
+              "model": "google/gemini-3.1-pro",
+              "timeout": 110000
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ steps }) {\n  function str(v) { return typeof v === 'string' ? v : '' }\n  var d = (steps && steps.describe) || {}\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') { text = raw }\n  else if (raw && typeof raw.length === 'number') { for (var a = 0; a < raw.length; a++) { text += String(raw[a]) } }\n  else if (raw && typeof raw.text === 'string') { text = raw.text }\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  if (sIdx >= 0 && eIdx > sIdx) { text = text.slice(sIdx, eIdx + 1) }\n  var parsed = null\n  try { parsed = JSON.parse(text) } catch (err) { parsed = null }\n  var title = parsed ? str(parsed.title) : ''\n  var summary = parsed ? str(parsed.summary) : ''\n  if (title.length > 120) { title = title.slice(0, 120) }\n  return { descriptionJson: JSON.stringify({ title: title, summary: summary }) }\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.parse.descriptionJson}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": true,
+      "description": "Export description (sync Gemini): final kept script + director synopsis -> { title, summary }. Mirrors search-transcript."
+    },
+    {
+      "pathPattern": "/api/projects",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 46,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "List studio projects",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "pageSize": 500,
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var q = rows[i] || {}\n    out.push({\n      id: (typeof q.projectId === 'string') ? q.projectId : null,\n      name: (typeof q.name === 'string') ? q.name : '',\n      createdAt: num(q.createdMs),\n      updatedAt: num(q.updatedMs),\n      phase: (typeof q.phase === 'string') ? q.phase : '',\n      thumbnailUrl: (typeof q.thumbnailUrl === 'string' && q.thumbnailUrl) ? q.thumbnailUrl : null,\n    })\n  }\n  return { projects: out }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape.projects}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "List all studio_projects records (story 11d Task 1). GET /api/projects -> data_query lists all rows (no filter) -> shape builds an ARRAY of metas { id(=projectId), name, createdAt(=createdMs), updatedAt(=updatedMs), phase, thumbnailUrl }, dropping the heavy data field -> response. No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/projects/delete",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 47,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Delete project (bucket prefix + record)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request }) {\n  var id = String((request.body && request.body.projectId) || '').trim()\n  if (!id) throw new Error('projectId required')\n  return { prefix: 'projects/' + id + '/', projectId: id }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "delete",
+            "name": "delete",
+            "config": {
+              "prefix": "{{steps.prep.prefix}}"
+            },
+            "handlerType": "file_delete"
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "filters": {
+                "projectId": {
+                  "op": "eq",
+                  "value": "steps.prep.projectId"
+                }
+              },
+              "pageSize": 1,
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return { recordId: rid ? String(rid) : '', found: rid ? true : false }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "deleteRecord",
+            "name": "deleteRecord",
+            "config": {
+              "recordId": "steps.pick.recordId",
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e",
+              "condition": "steps.pick.found"
+            },
+            "handlerType": "data_delete"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{ \"ok\": true, \"deleted\": {{steps.delete.deleted}}, \"prefix\": \"{{steps.prep.prefix}}\", \"recordDeleted\": {{steps.pick.found}} }",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Delete a project: bucket prefix + studio_projects record (story 11c Part B + 11d Task 3). POST { projectId } -> prep builds prefix 'projects/<id>/' -> file_delete wipes every bucket object under it -> data_query (filter by projectId) -> pick extracts the row's recordId (data_delete needs a recordId, not a filter; tolerant if no record exists) -> data_delete by recordId (conditional on found) -> response { ok, deleted, prefix, recordDeleted }. No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/projects",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 48,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Create studio project",
+        "steps": [
+          {
+            "id": "create",
+            "name": "create",
+            "config": {
+              "fields": {
+                "data": "request.body.data",
+                "name": "request.body.name",
+                "phase": "request.body.phase",
+                "createdMs": "request.body.createdAt",
+                "projectId": "request.body.id",
+                "updatedMs": "request.body.updatedAt",
+                "thumbnailUrl": "request.body.thumbnailUrl"
+              },
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var c = (steps && steps.create) || {}\n  function asObj(v) {\n    if (v == null) return null\n    if (typeof v === 'string') { try { return JSON.parse(v) } catch (e) { return null } }\n    return v\n  }\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  return {\n    id: (typeof c.projectId === 'string') ? c.projectId : null,\n    name: (typeof c.name === 'string') ? c.name : '',\n    createdAt: num(c.createdMs),\n    updatedAt: num(c.updatedMs),\n    phase: (typeof c.phase === 'string') ? c.phase : '',\n    thumbnailUrl: (typeof c.thumbnailUrl === 'string' && c.thumbnailUrl) ? c.thumbnailUrl : null,\n    data: asObj(c.data),\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Create a studio_projects record (story 11d). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_create writes client id into projectId, and client createdAt/updatedAt into createdMs/updatedMs (renamed to avoid collision with the DB row's own created_at/updated_at columns that data_query flattens to top level) -> shape echoes the record mapping createdMs/updatedMs back to createdAt/updatedAt -> response. No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/projects/get",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 49,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Get studio project",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "filters": {
+                "projectId": {
+                  "op": "eq",
+                  "value": "request.query.id"
+                }
+              },
+              "pageSize": 1,
+              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : {}\n  if (q == null) q = {}\n  function asObj(v) {\n    if (v == null) return null\n    if (typeof v === 'string') { try { return JSON.parse(v) } catch (e) { return null } }\n    return v\n  }\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  return {\n    id: (typeof q.projectId === 'string') ? q.projectId : null,\n    name: (typeof q.name === 'string') ? q.name : '',\n    createdAt: num(q.createdMs),\n    updatedAt: num(q.updatedMs),\n    phase: (typeof q.phase === 'string') ? q.phase : '',\n    thumbnailUrl: (typeof q.thumbnailUrl === 'string' && q.thumbnailUrl) ? q.thumbnailUrl : null,\n    data: asObj(q.data),\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Get one studio_projects record by our project id (story 11d). GET /api/projects/get?id=<projectId> -> data_query FILTERED by projectId -> shape picks the first match, JSON-parses data, and maps createdMs/updatedMs back to createdAt/updatedAt (renamed fields avoid the DB row created_at/updated_at collision) -> response { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } (null/empty when not found). No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/thumbnail/draft",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 50,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "thumbnail-draft",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {};\n  function s(v){ return typeof v === 'string' ? v : ''; }\n  var msg = '';\n  msg += 'TITLE:\\n' + s(b.title) + '\\n\\n';\n  msg += 'DESCRIPTION:\\n' + s(b.description) + '\\n\\n';\n  msg += 'SCRIPT (final spoken narration, in order):\\n' + s(b.script) + '\\n\\n';\n  msg += 'NOTES (creator wishes, optional):\\n' + s(b.notes);\n  return { message: msg };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "draft",
+            "name": "draft",
+            "config": {
+              "model": "claude-sonnet-4-6",
+              "skills": {
+                "mode": "selected",
+                "enabled": [
+                  "image-prompts"
+                ]
+              },
+              "timeout": 110000,
+              "provider": "anthropic",
+              "messageField": "{{steps.prep.message}}",
+              "systemPrompt": "You write a single image-generation prompt for `google/nano-banana` that becomes a YouTube video's final thumbnail.\n\nYou have the `image-prompts` skill — load it with the load_skill tool before writing. It defines the prompt anatomy, the named house styles (retro-blueprint / modern-dev-tool / editorial-print), how to route a style from the video's content type, the text/color/negatives rules, and examples. Follow it exactly; don't invent your own format.\n\nThe user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is about and which house style fits), and NOTES (the creator's optional free-text wishes). When NOTES are present they override style routing and defaults — honor them.\n\nRoute the house style from the content type per the skill. Write the exact headline text yourself (5 words max) — never a placeholder. Apply the skill's color caps and always include the negatives list.\n\nReturn JSON only: {\"prompt\": \"<full multi-section prompt, ready to paste>\"} — no commentary, no markdown fences."
+            },
+            "handlerType": "ai_handler"
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ steps }) {\n  function s(v){ return typeof v === 'string' ? v : ''; }\n  var d = (steps && steps.draft) || {};\n  var c = d.content != null ? d.content : (d.output != null ? d.output : d);\n  var prompt = '';\n  if (c && typeof c === 'object' && typeof c.prompt === 'string') {\n    prompt = c.prompt;\n  } else {\n    var text = '';\n    if (typeof c === 'string') { text = c; }\n    else if (c && typeof c.length === 'number') { for (var i = 0; i < c.length; i++) { text += String(c[i]); } }\n    else if (c && typeof c.text === 'string') { text = c.text; }\n    var t = text.trim();\n    var a = t.indexOf('{'); var z = t.lastIndexOf('}');\n    var slice = (a >= 0 && z > a) ? t.slice(a, z + 1) : t;\n    var parsed = null;\n    try { parsed = JSON.parse(slice); } catch (e) { parsed = null; }\n    prompt = parsed && typeof parsed.prompt === 'string' ? parsed.prompt : t;\n  }\n  return { promptJson: JSON.stringify({ prompt: s(prompt) }) };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.parse.promptJson}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Draft a YouTube-thumbnail nano-banana prompt from title/description/script + notes. The ai_handler loads the image-prompts skill (Skills + JSON response-format are set in the console UI). Returns { prompt }."
+      },
+      "isEnabled": true,
+      "debugEnabled": true,
+      "description": "Studio thumbnail: draft a nano-banana image prompt via ai_handler (loads the image-prompts skill — enable Skills + JSON response format in the console UI). Returns { prompt }. Story 06."
+    },
+    {
+      "pathPattern": "/api/thumbnail/render",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 51,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "thumbnail-render",
+        "steps": [
+          {
+            "id": "generate",
+            "name": "generate",
+            "config": {
+              "input": {
+                "prompt": "request.body.prompt",
+                "aspect_ratio": "'16:9'"
+              },
+              "model": "google/nano-banana-2",
+              "timeout": 110000
+            },
+            "handlerType": "replicate"
+          },
+          {
+            "id": "pickUrl",
+            "name": "pickUrl",
+            "config": {
+              "code": "function handler({ steps }) {\n  var g = (steps && steps.generate) || {};\n  var out = g.output != null ? g.output : g;\n  var url = '';\n  if (typeof out === 'string') {\n    url = out;\n  } else if (out && typeof out.length === 'number' && out.length) {\n    url = String(out[0]);\n  } else if (out && typeof out.image === 'string') {\n    url = out.image;\n  } else if (out && typeof out.url === 'string') {\n    url = out.url;\n  }\n  return { url: url };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "store",
+            "name": "store",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/youtube-thumbnail",
+              "schemaId": "504045c5-bc4d-4d67-a095-7f3e333911ab",
+              "sourceUrl": "steps.pickUrl.url",
+              "allowedMimeTypes": [
+                "image/*"
+              ]
+            },
+            "handlerType": "file_upload_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{\"imageUrl\": \"{{steps.store.url}}\"}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Render a YouTube thumbnail with google/nano-banana from the edited prompt; store to projects/<id>/youtube-thumbnail; return { imageUrl } serve path (re-signed client-side via /api/uploads/sign)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Studio thumbnail: render the (edited) prompt with google/nano-banana, store to the bucket under the project, return { imageUrl } serve path. Needs the project Replicate token. Story 06."
+    }
+  ],
+  "schemas": [
+    {
+      "id": "504045c5-bc4d-4d67-a095-7f3e333911ab",
+      "name": "youtube_thumbnail",
+      "fields": [
+        {
+          "name": "filename",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "storage_path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "content_type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "sub_dir",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "original_name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+      "name": "studio_source",
+      "fields": [
+        {
+          "name": "filename",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "storage_path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "content_type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "sub_dir",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "original_name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "acdca97c-f9cc-4469-90a3-676a242924cb",
+      "name": "studio_jobs",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "request",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "result",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "system",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "d183deed-dcaa-4b5b-9f18-6c68b058389e",
+      "name": "studio_projects",
+      "fields": [
+        {
+          "name": "projectId",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "createdMs",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "updatedMs",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "phase",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "thumbnailUrl",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "data",
+          "type": "text",
+          "required": false
+        }
+      ]
+    }
+  ]
+}

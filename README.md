@@ -31,3 +31,10 @@ touches the app's path, or manually via **Run workflow** (`workflow_dispatch`).
 
 To deploy from your own fork, set repo-level `BFFLESS_URL` (variable) and `BFFLESS_API_KEY`
 (secret), then run the app's workflow.
+
+### App backends (BFFless proxy rule sets)
+
+Apps have no server — their `/api/*` lives in a BFFless proxy rule set, exported as JSON in the app
+(e.g. [`apps/studio/bffless/`](apps/studio/bffless)). Import it into your BFFless project and attach
+it to the app's alias before the deployed app will work. See that folder's README for steps and
+prerequisites (storage, AI tokens, secrets).
