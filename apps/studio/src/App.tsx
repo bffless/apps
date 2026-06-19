@@ -20,7 +20,7 @@ function Shell() {
   return (
     <div className="flex min-h-svh flex-col">
       <ScrollToTop />
-      <header className="border-b border-paper-line">
+      <header className="sticky top-0 z-40 border-b rule bg-paper/85 backdrop-blur">
         <div className="container-page flex h-14 items-center">
           <Link to="/" className="font-serif text-lg font-semibold text-ink">
             Studio
