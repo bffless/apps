@@ -37,13 +37,33 @@ const DEBOUNCE_MS = 1500
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
-export function useProjectAutosave(projectId: string): { status: SaveStatus; savedAt: number | null } {
+/** Pull a readable message out of an RTK Query / fetch error so a failed save
+ *  shows WHY instead of being silently swallowed. */
+function saveErrorMessage(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>
+    const data = o.data as { error?: unknown; message?: unknown } | undefined
+    if (data && typeof data.error === 'string') return data.error
+    if (data && typeof data.message === 'string') return data.message
+    if (typeof o.error === 'string') return o.error // FETCH_ERROR
+    if ('status' in o) return `Save request failed (${String(o.status)})`
+  }
+  if (e instanceof Error) return e.message
+  return 'Save failed'
+}
+
+export function useProjectAutosave(projectId: string): {
+  status: SaveStatus
+  savedAt: number | null
+  error: string | null
+} {
   const dispatch = useAppDispatch()
   const working = useAppSelector(selectActive)
   const meta = useAppSelector((s) => s.studio.index[projectId])
 
   const [status, setStatus] = useState<SaveStatus>('idle')
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   // Always read the freshest working/meta from a ref so the debounce/unmount/
   // beforeunload saves persist current state without re-subscribing effects.
@@ -74,10 +94,17 @@ export function useProjectAutosave(projectId: string): { status: SaveStatus; sav
             if (updateStatus && mounted.current) {
               setStatus('saved')
               setSavedAt(Date.now())
+              setError(null)
             }
           },
-          () => {
-            if (updateStatus && mounted.current) setStatus('error')
+          (e) => {
+            // Don't swallow the failure: surface why so the indicator can show it.
+            const msg = saveErrorMessage(e)
+            console.warn('[studio] project save failed:', msg, e)
+            if (updateStatus && mounted.current) {
+              setStatus('error')
+              setError(msg)
+            }
           },
         )
     },
@@ -132,5 +159,5 @@ export function useProjectAutosave(projectId: string): { status: SaveStatus; sav
     }
   }, [projectId, save])
 
-  return { status, savedAt }
+  return { status, savedAt, error }
 }

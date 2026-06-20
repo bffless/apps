@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "exportedAt": "2026-06-19T12:52:29.461Z",
+  "exportedAt": "2026-06-20T11:30:57.919Z",
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "studio",
@@ -30,7 +30,7 @@
             "name": "upload",
             "config": {
               "subDir": "youtube-thumbnail",
-              "schemaId": "504045c5-bc4d-4d67-a095-7f3e333911ab",
+              "schemaId": "4e859125-7eba-4e2a-b282-a9dbd9e47098",
               "dateBucket": false,
               "maxFileSize": 10485760,
               "allowedMimeTypes": [
@@ -67,9 +67,9 @@
       "description": "Upload files to youtube_thumbnail"
     },
     {
-      "pathPattern": "/api/uploads/source/*",
+      "pathPattern": "/api/uploads/youtube-thumbnail/*",
       "method": "GET",
-      "targetUrl": "",
+      "targetUrl": "http://internal/pipeline",
       "stripPrefix": true,
       "order": 1,
       "timeout": 30000,
@@ -81,24 +81,24 @@
       "proxyType": "pipeline",
       "emailHandlerConfig": null,
       "pipelineConfig": {
-        "name": "Serve studio_source",
+        "name": "Serve youtube_thumbnail",
         "steps": [
           {
             "id": "serve",
             "name": "serve",
             "config": {
-              "subDir": "source"
+              "subDir": "youtube-thumbnail"
             },
             "isEnabled": true,
             "handlerType": "file_serve_handler"
           }
         ],
         "validators": [],
-        "description": "Serve files from studio_source"
+        "description": "Serve files from youtube_thumbnail"
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Serve files from studio_source"
+      "description": "Serve files from youtube_thumbnail"
     },
     {
       "pathPattern": "/api/uploads/projects/*",
@@ -135,9 +135,9 @@
       "description": "Serve files from per-project nested subDirs (projects/&lt;id&gt;/...)"
     },
     {
-      "pathPattern": "/api/uploads/youtube-thumbnail/*",
+      "pathPattern": "/api/uploads/source/*",
       "method": "GET",
-      "targetUrl": "http://internal/pipeline",
+      "targetUrl": "",
       "stripPrefix": true,
       "order": 1,
       "timeout": 30000,
@@ -149,24 +149,24 @@
       "proxyType": "pipeline",
       "emailHandlerConfig": null,
       "pipelineConfig": {
-        "name": "Serve youtube_thumbnail",
+        "name": "Serve studio_source",
         "steps": [
           {
             "id": "serve",
             "name": "serve",
             "config": {
-              "subDir": "youtube-thumbnail"
+              "subDir": "source"
             },
             "isEnabled": true,
             "handlerType": "file_serve_handler"
           }
         ],
         "validators": [],
-        "description": "Serve files from youtube_thumbnail"
+        "description": "Serve files from studio_source"
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Serve files from youtube_thumbnail"
+      "description": "Serve files from studio_source"
     },
     {
       "pathPattern": "/api/uploads/source/prepare",
@@ -242,7 +242,7 @@
             "name": "register",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/source",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "storageKey": "request.body.storageKey",
               "maxFileSize": 2147483648,
               "originalName": "request.body.originalName",
@@ -344,7 +344,7 @@
             "name": "register",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/audio",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "storageKey": "request.body.storageKey",
               "maxFileSize": 2147483648,
               "originalName": "request.body.originalName",
@@ -439,7 +439,7 @@
                 "status": "'pending'",
                 "request": "request.body"
               },
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_create"
           },
@@ -463,7 +463,7 @@
                 "status": "'running'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_update"
           },
@@ -520,7 +520,7 @@
                 "status": "'done'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
               "condition": "steps.check.ok"
             },
             "handlerType": "data_update"
@@ -534,7 +534,7 @@
                 "status": "'error'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
               "condition": "steps.check.notOk"
             },
             "handlerType": "data_update"
@@ -544,7 +544,7 @@
         "description": "audioUrl (already in bucket) -> ENQUEUE a job (kind 'transcribe') and return its id; the WhisperX call (+ optional pyannote diarization when request.body.diarize) runs in postSteps so it can't hit the 30s edge timeout. Flattened { words, text } (each word carries a speaker when diarized) lands in the job row's result, polled via /api/studio/job. Story 10e."
       },
       "isEnabled": true,
-      "debugEnabled": false,
+      "debugEnabled": true,
       "description": "Transcribe an already-uploaded WAV with word-level timestamps. Mints a presigned GCS download URL for the audio (already in the bucket) and hands it to Replicate WhisperX (align_output:true), then flattens segments to { words: [{text,start,end}], text }. No validators yet — auth_required + rate_limit deferred to story 07 (mirrors the upload rules), so local unauthenticated dev works."
     },
     {
@@ -619,7 +619,7 @@
             "name": "register",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/thumbnails",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "storageKey": "request.body.storageKey",
               "maxFileSize": 10485760,
               "originalName": "request.body.originalName",
@@ -716,7 +716,7 @@
                 "system": "steps.prep.system",
                 "request": "request.body"
               },
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_create"
           },
@@ -740,7 +740,7 @@
                 "status": "'running'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_update"
           },
@@ -886,7 +886,7 @@
                 "status": "'done'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
               "condition": "steps.parse.ok"
             },
             "handlerType": "data_update"
@@ -900,7 +900,7 @@
                 "status": "'error'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
               "condition": "steps.parse.notOk"
             },
             "handlerType": "data_update"
@@ -985,7 +985,7 @@
             "name": "register",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/voice",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "storageKey": "request.body.storageKey",
               "maxFileSize": 2147483648,
               "originalName": "request.body.originalName",
@@ -1215,7 +1215,7 @@
                 "system": "steps.prep.system",
                 "request": "request.body"
               },
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_create"
           },
@@ -1239,7 +1239,7 @@
                 "status": "'running'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_update"
           },
@@ -1382,7 +1382,7 @@
             "id": "parse",
             "name": "parse",
             "config": {
-              "code": "function handler({ steps }) {\n  function num(v) {\n    return (typeof v === 'number' && isFinite(v)) ? v : 0\n  }\n\n  var d = (steps && steps.refiner) || {}\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') {\n    text = raw\n  } else if (raw && typeof raw.length === 'number') {\n    for (var a = 0; a < raw.length; a++) {\n      text += String(raw[a])\n    }\n  } else if (raw && typeof raw.text === 'string') {\n    text = raw.text\n  }\n\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  if (sIdx >= 0 && eIdx > sIdx) {\n    text = text.slice(sIdx, eIdx + 1)\n  }\n\n  var parsed = null\n  try {\n    parsed = JSON.parse(text)\n  } catch (err) {\n    parsed = null\n  }\n  if (!parsed || typeof parsed !== 'object') {\n    return { ok: false, notOk: true, error: 'Could not parse refiner output', data: { segments: [], cuts: [] } }\n  }\n\n  var prep = (steps && steps.prep) || {}\n  var lo = num(prep.start)\n  var hi = num(prep.end)\n  if (hi <= lo) {\n    hi = lo + 0.05\n  }\n\n  var rawSegs = parsed.segments\n  if (!rawSegs || typeof rawSegs.length !== 'number') rawSegs = []\n  var segArr = []\n  for (var j = 0; j < rawSegs.length; j++) {\n    segArr.push(rawSegs[j])\n  }\n  segArr.sort(function (x, y) {\n    return num(x && x.start) - num(y && y.start)\n  })\n\n  var segments = []\n  var cursor = lo\n  for (var k = 0; k < segArr.length; k++) {\n    var sg = segArr[k] || {}\n    var t = (typeof sg.text === 'string') ? sg.text.trim() : ''\n    if (!t) {\n      continue\n    }\n    var s = Math.min(Math.max(num(sg.start), cursor), hi)\n    var e = Math.min(Math.max(num(sg.end), lo), hi)\n    if (e - s <= 0.05) {\n      continue\n    }\n    var segOut = { text: t, start: s, end: e }\n    if (sg.source === 'original' || sg.source === 'revoice') {\n      segOut.source = sg.source\n    }\n    segments.push(segOut)\n    cursor = e\n  }\n\n  var cutsIn = parsed.cuts\n  if (!cutsIn || typeof cutsIn.length !== 'number') cutsIn = []\n  var cuts = []\n  for (var c = 0; c < cutsIn.length; c++) {\n    var cc = cutsIn[c] || {}\n    var cs = Math.min(Math.max(num(cc.start), lo), hi)\n    var ce = Math.min(Math.max(num(cc.end), lo), hi)\n    if (ce - cs > 0.05) {\n      cuts.push({ start: cs, end: ce })\n    }\n  }\n\n  return { ok: true, notOk: false, error: '', data: { segments: segments, cuts: cuts } }\n}\n"
+              "code": "function handler({ steps }) {\n  function num(v) {\n    return (typeof v === 'number' && isFinite(v)) ? v : 0\n  }\n\n  var d = (steps && steps.refiner) || {}\n\n  // Replicate/Gemini call failed (model overloaded, timeout, API error): the\n  // executor drops a failed post-step's output, so steps.refiner is empty here.\n  // Surface an actionable message instead of the generic parse error below.\n  if (!d || (d.status == null && d.output == null)) {\n    return { ok: false, notOk: true, error: 'The AI model did not return a result for this scene — it may be temporarily overloaded, or the scene may be too long. Please try refining again.', data: { segments: [], cuts: [] } }\n  }\n\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') {\n    text = raw\n  } else if (raw && typeof raw.length === 'number') {\n    for (var a = 0; a < raw.length; a++) {\n      text += String(raw[a])\n    }\n  } else if (raw && typeof raw.text === 'string') {\n    text = raw.text\n  }\n\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  if (sIdx >= 0 && eIdx > sIdx) {\n    text = text.slice(sIdx, eIdx + 1)\n  }\n\n  var parsed = null\n  try {\n    parsed = JSON.parse(text)\n  } catch (err) {\n    parsed = null\n  }\n  if (!parsed || typeof parsed !== 'object') {\n    var snippet = (typeof text === 'string') ? text.slice(0, 280).trim() : ''\n    var emsg = snippet\n      ? 'The AI model\\'s response could not be read as a scene cut. Please try refining again. Model said: ' + snippet\n      : 'The AI model returned an empty response for this scene — it may be temporarily overloaded. Please try refining again.'\n    return { ok: false, notOk: true, error: emsg, data: { segments: [], cuts: [] } }\n  }\n\n  var prep = (steps && steps.prep) || {}\n  var lo = num(prep.start)\n  var hi = num(prep.end)\n  if (hi <= lo) {\n    hi = lo + 0.05\n  }\n\n  var rawSegs = parsed.segments\n  if (!rawSegs || typeof rawSegs.length !== 'number') rawSegs = []\n  var segArr = []\n  for (var j = 0; j < rawSegs.length; j++) {\n    segArr.push(rawSegs[j])\n  }\n  segArr.sort(function (x, y) {\n    return num(x && x.start) - num(y && y.start)\n  })\n\n  var segments = []\n  var cursor = lo\n  for (var k = 0; k < segArr.length; k++) {\n    var sg = segArr[k] || {}\n    var t = (typeof sg.text === 'string') ? sg.text.trim() : ''\n    if (!t) {\n      continue\n    }\n    var s = Math.min(Math.max(num(sg.start), cursor), hi)\n    var e = Math.min(Math.max(num(sg.end), lo), hi)\n    if (e - s <= 0.05) {\n      continue\n    }\n    var segOut = { text: t, start: s, end: e }\n    if (sg.source === 'original' || sg.source === 'revoice') {\n      segOut.source = sg.source\n    }\n    segments.push(segOut)\n    cursor = e\n  }\n\n  var cutsIn = parsed.cuts\n  if (!cutsIn || typeof cutsIn.length !== 'number') cutsIn = []\n  var cuts = []\n  for (var c = 0; c < cutsIn.length; c++) {\n    var cc = cutsIn[c] || {}\n    var cs = Math.min(Math.max(num(cc.start), lo), hi)\n    var ce = Math.min(Math.max(num(cc.end), lo), hi)\n    if (ce - cs > 0.05) {\n      cuts.push({ start: cs, end: ce })\n    }\n  }\n\n  return { ok: true, notOk: false, error: '', data: { segments: segments, cuts: cuts } }\n}\n"
             },
             "handlerType": "function_handler"
           },
@@ -1395,7 +1395,7 @@
                 "status": "'done'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
               "condition": "steps.parse.ok"
             },
             "handlerType": "data_update"
@@ -1409,7 +1409,7 @@
                 "status": "'error'"
               },
               "recordId": "steps.createJob.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb",
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
               "condition": "steps.parse.notOk"
             },
             "handlerType": "data_update"
@@ -1464,7 +1464,7 @@
             "name": "store",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/narration",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "sourceUrl": "steps.pickUrl.url",
               "allowedMimeTypes": [
                 "audio/*"
@@ -1595,7 +1595,7 @@
             "name": "register",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/export",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "storageKey": "request.body.storageKey",
               "maxFileSize": 2147483648,
               "originalName": "request.body.originalName",
@@ -1678,7 +1678,7 @@
             "name": "query",
             "config": {
               "recordId": "request.query.id",
-              "schemaId": "acdca97c-f9cc-4469-90a3-676a242924cb"
+              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
             },
             "handlerType": "data_query"
           },
@@ -1784,7 +1784,7 @@
             "name": "register",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/scene-clip",
-              "schemaId": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
               "storageKey": "request.body.storageKey",
               "maxFileSize": 2147483648,
               "originalName": "request.body.originalName",
@@ -1901,90 +1901,6 @@
       "description": "Mint a presigned GCS download URL for an uploaded studio object so the browser reads large files (source video) straight from the bucket instead of streaming them through file_serve (504/OOM on big files)."
     },
     {
-      "pathPattern": "/api/projects/save",
-      "method": "POST",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 45,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "Save studio project",
-        "steps": [
-          {
-            "id": "query",
-            "name": "query",
-            "config": {
-              "filters": {
-                "projectId": {
-                  "op": "eq",
-                  "value": "request.body.id"
-                }
-              },
-              "pageSize": 1,
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
-            },
-            "handlerType": "data_query"
-          },
-          {
-            "id": "pick",
-            "name": "pick",
-            "config": {
-              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  if (!q) throw new Error('project not found')\n  var rid = q.recordId || q.id || q._id\n  if (!rid) throw new Error('no recordId on row')\n  return { recordId: String(rid) }\n}\n"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "update",
-            "name": "update",
-            "config": {
-              "fields": {
-                "data": "request.body.data",
-                "name": "request.body.name",
-                "phase": "request.body.phase",
-                "updatedMs": "request.body.updatedAt",
-                "thumbnailUrl": "request.body.thumbnailUrl"
-              },
-              "recordId": "steps.pick.recordId",
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
-            },
-            "handlerType": "data_update"
-          },
-          {
-            "id": "shape",
-            "name": "shape",
-            "config": {
-              "code": "function handler({ steps }) {\n  var up = (steps && steps.update) || {}\n  var arr = up.updated || []\n  var u = (arr && arr.length) ? arr[0] : {}\n  if (u == null) u = {}\n  function asObj(v) {\n    if (v == null) return null\n    if (typeof v === 'string') { try { return JSON.parse(v) } catch (e) { return null } }\n    return v\n  }\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  return {\n    id: (typeof u.projectId === 'string') ? u.projectId : null,\n    name: (typeof u.name === 'string') ? u.name : '',\n    createdAt: num(u.createdMs),\n    updatedAt: num(u.updatedMs),\n    phase: (typeof u.phase === 'string') ? u.phase : '',\n    thumbnailUrl: (typeof u.thumbnailUrl === 'string' && u.thumbnailUrl) ? u.thumbnailUrl : null,\n    data: asObj(u.data),\n  }\n}\n"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "respond",
-            "name": "respond",
-            "config": {
-              "body": "{{{steps.shape}}}",
-              "status": 200,
-              "headers": {
-                "Cache-Control": "no-store"
-              },
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "validators": []
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "Update a studio_projects record (story 11d Task 2). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick extracts the row's real primary recordId (data_update needs a recordId, not a filter) -> data_update writes name, updatedMs, phase, thumbnailUrl, data by recordId -> shape returns the updated meta+data mapping createdMs/updatedMs back to createdAt/updatedAt. No validators yet (deferred to story 07)."
-    },
-    {
       "pathPattern": "/api/search-transcript",
       "method": "POST",
       "targetUrl": "pipeline",
@@ -2050,6 +1966,179 @@
       "isEnabled": true,
       "debugEnabled": true,
       "description": "Transcript search (story 08): find-by-meaning over the timestamped transcript. SYNC (text-only Gemini, no images — returns in seconds, no jobs flow): prep builds the system+prompt from {query, transcript, duration}, search runs google/gemini-3.1-pro, parse clamps every span into [0,duration] / drops slivers / sorts / caps 20, respond returns { results } in the exact MSW-mock shape. No validators yet (auth_required + rate_limit deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/projects/save",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 45,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Save studio project",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "filters": {
+                "projectId": {
+                  "op": "eq",
+                  "value": "request.body.id"
+                }
+              },
+              "pageSize": 1,
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "config": {
+              "code": "function handler({ request, steps }) {\n  var id = (request && request.body && request.body.id != null) ? String(request.body.id) : ''\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    hasId: !!id,\n    noId: !id,\n    exists: !!(id && rid),\n    missing: !!(id && !rid),\n    recordId: rid ? String(rid) : ''\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "config": {
+              "fields": {
+                "data": "request.body.data",
+                "name": "request.body.name",
+                "phase": "request.body.phase",
+                "updatedMs": "request.body.updatedAt",
+                "thumbnailUrl": "request.body.thumbnailUrl"
+              },
+              "recordId": "steps.pick.recordId",
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674",
+              "condition": "steps.pick.exists"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "insert",
+            "name": "insert",
+            "config": {
+              "fields": {
+                "data": "request.body.data",
+                "name": "request.body.name",
+                "phase": "request.body.phase",
+                "createdMs": "request.body.createdAt",
+                "projectId": "request.body.id",
+                "updatedMs": "request.body.updatedAt",
+                "thumbnailUrl": "request.body.thumbnailUrl"
+              },
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674",
+              "condition": "steps.pick.missing"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var up = (steps && steps.update) || {}\n  var arr = up.updated || []\n  var u = (arr && arr.length) ? arr[0] : null\n  if (!u) {\n    var ins = (steps && steps.insert) || null\n    if (ins && typeof ins === 'object') u = ins\n  }\n  if (!u) u = {}\n  function asObj(v) {\n    if (v == null) return null\n    if (typeof v === 'string') { try { return JSON.parse(v) } catch (e) { return null } }\n    return v\n  }\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  return {\n    id: (typeof u.projectId === 'string') ? u.projectId : null,\n    name: (typeof u.name === 'string') ? u.name : '',\n    createdAt: num(u.createdMs),\n    updatedAt: num(u.updatedMs),\n    phase: (typeof u.phase === 'string') ? u.phase : '',\n    thumbnailUrl: (typeof u.thumbnailUrl === 'string' && u.thumbnailUrl) ? u.thumbnailUrl : null,\n    data: asObj(u.data),\n  }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "condition": "steps.pick.hasId",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "respondNoId",
+            "name": "respondNoId",
+            "config": {
+              "body": "{\"error\":\"id is required to save a project\"}",
+              "status": 400,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "condition": "steps.pick.noId",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Upsert a studio_projects record (story 11d Task 2; upsert as of error-handling fix). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick computes flags WITHOUT throwing (hasId/noId/exists/missing + recordId) so a missing row no longer 500s -> update (condition steps.pick.exists) writes by recordId, OR insert (condition steps.pick.missing) data_creates the row from the same payload (self-heals projects whose server row was never created) -> shape returns the meta+data from whichever ran -> respond (condition hasId) 200, or respondNoId (condition noId) 400. No validators yet."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Update a studio_projects record (story 11d Task 2). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick extracts the row's real primary recordId (data_update needs a recordId, not a filter) -> data_update writes name, updatedMs, phase, thumbnailUrl, data by recordId -> shape returns the updated meta+data mapping createdMs/updatedMs back to createdAt/updatedAt. No validators yet (deferred to story 07)."
+    },
+    {
+      "pathPattern": "/api/projects",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 46,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "List studio projects",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "pageSize": 500,
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var q = rows[i] || {}\n    out.push({\n      id: (typeof q.projectId === 'string') ? q.projectId : null,\n      name: (typeof q.name === 'string') ? q.name : '',\n      createdAt: num(q.createdMs),\n      updatedAt: num(q.updatedMs),\n      phase: (typeof q.phase === 'string') ? q.phase : '',\n      thumbnailUrl: (typeof q.thumbnailUrl === 'string' && q.thumbnailUrl) ? q.thumbnailUrl : null,\n    })\n  }\n  return { projects: out }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape.projects}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "List all studio_projects records (story 11d Task 1). GET /api/projects -> data_query lists all rows (no filter) -> shape builds an ARRAY of metas { id(=projectId), name, createdAt(=createdMs), updatedAt(=updatedMs), phase, thumbnailUrl }, dropping the heavy data field -> response. No validators yet (deferred to story 07)."
     },
     {
       "pathPattern": "/api/describe",
@@ -2118,60 +2207,6 @@
       "description": "Export description (sync Gemini): final kept script + director synopsis -> { title, summary }. Mirrors search-transcript."
     },
     {
-      "pathPattern": "/api/projects",
-      "method": "GET",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 46,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "List studio projects",
-        "steps": [
-          {
-            "id": "query",
-            "name": "query",
-            "config": {
-              "pageSize": 500,
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
-            },
-            "handlerType": "data_query"
-          },
-          {
-            "id": "shape",
-            "name": "shape",
-            "config": {
-              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var q = rows[i] || {}\n    out.push({\n      id: (typeof q.projectId === 'string') ? q.projectId : null,\n      name: (typeof q.name === 'string') ? q.name : '',\n      createdAt: num(q.createdMs),\n      updatedAt: num(q.updatedMs),\n      phase: (typeof q.phase === 'string') ? q.phase : '',\n      thumbnailUrl: (typeof q.thumbnailUrl === 'string' && q.thumbnailUrl) ? q.thumbnailUrl : null,\n    })\n  }\n  return { projects: out }\n}\n"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "respond",
-            "name": "respond",
-            "config": {
-              "body": "{{{steps.shape.projects}}}",
-              "status": 200,
-              "headers": {
-                "Cache-Control": "no-store"
-              },
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "validators": []
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "List all studio_projects records (story 11d Task 1). GET /api/projects -> data_query lists all rows (no filter) -> shape builds an ARRAY of metas { id(=projectId), name, createdAt(=createdMs), updatedAt(=updatedMs), phase, thumbnailUrl }, dropping the heavy data field -> response. No validators yet (deferred to story 07)."
-    },
-    {
       "pathPattern": "/api/projects/delete",
       "method": "POST",
       "targetUrl": "pipeline",
@@ -2215,7 +2250,7 @@
                 }
               },
               "pageSize": 1,
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
             },
             "handlerType": "data_query"
           },
@@ -2232,7 +2267,7 @@
             "name": "deleteRecord",
             "config": {
               "recordId": "steps.pick.recordId",
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e",
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674",
               "condition": "steps.pick.found"
             },
             "handlerType": "data_delete"
@@ -2287,7 +2322,7 @@
                 "updatedMs": "request.body.updatedAt",
                 "thumbnailUrl": "request.body.thumbnailUrl"
               },
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
             },
             "handlerType": "data_create"
           },
@@ -2347,7 +2382,7 @@
                 }
               },
               "pageSize": 1,
-              "schemaId": "d183deed-dcaa-4b5b-9f18-6c68b058389e"
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
             },
             "handlerType": "data_query"
           },
@@ -2491,7 +2526,7 @@
             "name": "store",
             "config": {
               "subDir": "projects/{{request.body.projectId}}/youtube-thumbnail",
-              "schemaId": "504045c5-bc4d-4d67-a095-7f3e333911ab",
+              "schemaId": "4e859125-7eba-4e2a-b282-a9dbd9e47098",
               "sourceUrl": "steps.pickUrl.url",
               "allowedMimeTypes": [
                 "image/*"
@@ -2520,7 +2555,7 @@
   ],
   "schemas": [
     {
-      "id": "504045c5-bc4d-4d67-a095-7f3e333911ab",
+      "id": "4e859125-7eba-4e2a-b282-a9dbd9e47098",
       "name": "youtube_thumbnail",
       "fields": [
         {
@@ -2561,7 +2596,7 @@
       ]
     },
     {
-      "id": "8afd205a-204d-4dcd-9e2f-7cd613ec961f",
+      "id": "862a1fd2-e373-469e-8a3f-32330473abd4",
       "name": "studio_source",
       "fields": [
         {
@@ -2602,7 +2637,7 @@
       ]
     },
     {
-      "id": "acdca97c-f9cc-4469-90a3-676a242924cb",
+      "id": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
       "name": "studio_jobs",
       "fields": [
         {
@@ -2643,7 +2678,7 @@
       ]
     },
     {
-      "id": "d183deed-dcaa-4b5b-9f18-6c68b058389e",
+      "id": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674",
       "name": "studio_projects",
       "fields": [
         {
