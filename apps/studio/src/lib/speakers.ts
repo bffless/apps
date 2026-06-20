@@ -36,6 +36,23 @@ export function resolvePerson(
   return null
 }
 
+/**
+ * Like `resolvePerson` but WITHOUT the single-person implicit fallback: only an
+ * explicit assignment resolves to a person. The prep transcript preview uses
+ * this so an un-mapped speaker reads as its RAW label (`SPEAKER_01`) instead of
+ * collapsing onto the lone default person ("Me") before the producer has
+ * actually mapped speakers to people (story 10b/10c).
+ */
+export function resolveAssignedPerson(
+  videoId: string,
+  label: string,
+  cast: Person[],
+  assignments: SpeakerAssignments,
+): Person | null {
+  const id = assignments[videoId]?.[label]
+  return id ? (cast.find((p) => p.id === id) ?? null) : null
+}
+
 /** Voice for a `(videoId, label)`, via `resolvePerson`. Null if unresolved/unvoiced. */
 export function resolveSpeakerVoice(
   videoId: string,
