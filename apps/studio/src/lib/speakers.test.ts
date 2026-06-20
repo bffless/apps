@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest'
 import {
-  uniqueSpeakers, resolvePerson, resolveSpeakerVoice, seedAssignmentsByLabel, dominantSpeaker,
-  speakerSampleSpans,
+  uniqueSpeakers, resolvePerson, resolveAssignedPerson, resolveSpeakerVoice, seedAssignmentsByLabel,
+  dominantSpeaker, speakerSampleSpans,
 } from './speakers'
 import type { Person } from '../store/studioSlice'
 import type { TWord } from './transcriptGrid'
@@ -23,6 +23,16 @@ test('resolvePerson: explicit assignment wins; single-person cast is the fallbac
   expect(resolvePerson('v1', 'SPEAKER_00', two, {})).toBeNull()
   const asg = { v1: { SPEAKER_00: 'p2' } }
   expect(resolvePerson('v1', 'SPEAKER_00', two, asg)?.id).toBe('p2')
+})
+
+test('resolveAssignedPerson: only an explicit assignment resolves (no single-person fallback)', () => {
+  const cast: Person[] = [{ id: 'p1', name: 'Me', voice: null }]
+  // Single-person cast does NOT collapse an un-mapped speaker onto "Me" — stays raw.
+  expect(resolveAssignedPerson('v1', 'SPEAKER_00', cast, {})).toBeNull()
+  const two: Person[] = [...cast, { id: 'p2', name: 'Guest', voice: null }]
+  expect(resolveAssignedPerson('v1', 'SPEAKER_00', two, {})).toBeNull()
+  const asg = { v1: { SPEAKER_00: 'p2' } }
+  expect(resolveAssignedPerson('v1', 'SPEAKER_00', two, asg)?.id).toBe('p2')
 })
 
 test('resolveSpeakerVoice returns the resolved person voice or null', () => {

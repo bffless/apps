@@ -22,7 +22,7 @@ import { JobPromptDisclosure } from '../components/Studio/PromptDisclosure'
 import { DirectorPanel } from '../components/Studio/DirectorPanel'
 import type { SegmentControl } from '../components/Studio/SegmentVoiceControl'
 import { CastStudio } from '../components/Studio/CastStudio'
-import { uniqueSpeakers, seedAssignmentsByLabel, dominantSpeaker, resolveSpeakerVoice, resolvePerson } from '../lib/speakers'
+import { uniqueSpeakers, seedAssignmentsByLabel, dominantSpeaker, resolveSpeakerVoice, resolvePerson, resolveAssignedPerson } from '../lib/speakers'
 import { presetLabel, PRESET_VOICES } from '../lib/voices'
 import { StudioStepper } from '../components/Studio/StudioStepper'
 import { TranscriptDiff } from '../components/Studio/TranscriptDiff'
@@ -624,7 +624,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     onProcessAll={() => void pipe.processAll(files)}
                     onAdd={onImport}
                     resolveSpeakerName={(sourceId, label) =>
-                      resolvePerson(sourceId, label, pipe.cast, pipe.speakerAssignments)?.name ?? label
+                      resolveAssignedPerson(sourceId, label, pipe.cast, pipe.speakerAssignments)?.name ?? label
                     }
                     diarize={pipe.diarize}
                     onDiarizeChange={(v) => dispatch(setDiarize(v))}
