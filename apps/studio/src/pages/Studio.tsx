@@ -532,14 +532,9 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
             Cut a long talk into scenes, build each in your voice<Dot />
           </>
         }
-        lead="Upload one clip. The app preps it — extract audio, transcribe, shorten the whole transcript, then group it into logical 2–5 minute scenes (your chapters) with timestamps — and clones your voice. From there you build scenes one at a time: review the shortened script, re-voice it, and line it up with the footage."
       />
 
-      <Section
-        eyebrow="— Producer"
-        title={hasSource ? <>Prep, then build scene by scene<Dot /></> : <>Load one clip to begin<Dot /></>}
-        divider={false}
-      >
+      <Section divider={false}>
         {pipe.sources.length === 0 && !hasPersisted && !file ? (
           <div className="flex flex-col gap-8">
             <StudioStepper phase={stepperPhase} />
