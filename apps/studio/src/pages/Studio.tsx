@@ -84,7 +84,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   const videoRef = useRef<HTMLVideoElement>(null)
   const pipe = useScenePipeline()
   const auto = useAutoBuild(pipe)
-  const { status: saveStatus, savedAt } = useProjectAutosave(projectId)
+  const { status: saveStatus, savedAt, error: saveError } = useProjectAutosave(projectId)
   const [autoMode, setAutoMode] = useState(() => auto.run.status !== 'idle')
 
   // The Build scene tabs are sticky under the global header (`h-14` = 3.5rem).
@@ -574,7 +574,11 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
               </p>
               <div className="flex items-center gap-2">
                 {saveStatus !== 'idle' && (
-                  <span className="text-[12px] text-ink-soft" aria-live="polite">
+                  <span
+                    className={`text-[12px] ${saveStatus === 'error' ? 'text-terracotta-ink' : 'text-ink-soft'}`}
+                    aria-live="polite"
+                    title={saveStatus === 'error' && saveError ? saveError : undefined}
+                  >
                     {saveLabel(saveStatus, savedAt)}
                   </span>
                 )}
