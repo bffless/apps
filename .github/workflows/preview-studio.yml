@@ -1,0 +1,76 @@
+name: Preview Studio on BFFless
+
+# PR previews for Studio. Any PR that touches apps/studio (or this file) builds
+# the app and deploys it to a single shared `studio-preview` alias, then comments
+# the URL on the PR. The alias is reused — the newest PR build wins — so this is
+# best for one preview at a time. The studio proxy rule set is attached so /api/*
+# works; the project-wide cross-origin-isolation header rule is inherited so the
+# Export step's multithreaded ffmpeg.wasm runs.
+on:
+  pull_request:
+    paths:
+      - 'apps/studio/**'
+      - '.github/workflows/preview-studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-studio-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter studio build
+
+      - name: Deploy preview to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/studio/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: studio-preview
+          # Attach the studio backend (/api/*) to the preview alias. Uses the
+          # singular (legacy) input on purpose: the plural proxy-rule-set-names is
+          # serialized as a CSV string by upload-artifact@v1, which the API rejects
+          # ("proxyRuleSetNames must be an array"). The singular goes through as a
+          # plain string and resolves the same rule set.
+          proxy-rule-set-name: studio
+          description: 'Studio preview for PR #${{ github.event.pull_request.number }}'
+          summary-title: Studio Preview
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # AI skills (e.g. image-prompts, loaded by the /api/thumbnail/draft ai_handler).
+      # Runtime resolves the skill against the serving deployment, so the preview
+      # build needs its own skills upload — mirrors the production deploy. base-path
+      # pins the served prefix to .bffless (source lives under apps/studio/.bffless).
+      - name: Upload AI skills to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/studio/.bffless
+          base-path: .bffless
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: studio-preview
+          description: 'Studio AI skills (preview)'
+          summary: false

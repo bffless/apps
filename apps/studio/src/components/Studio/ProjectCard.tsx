@@ -28,9 +28,9 @@ export function ProjectCard({
 
   return (
     <div className="flex flex-col border rule bg-paper-deep/30 overflow-hidden">
-      <Link to={href} className="block aspect-video bg-ink/5">
+      <Link to={href} className="relative block aspect-video overflow-hidden bg-ink/5">
         {meta.thumbnailUrl
-          ? <img src={meta.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+          ? <img src={meta.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
           : <span className="meta-label flex h-full items-center justify-center text-ink-soft">No preview</span>}
       </Link>
       <div className="flex flex-col gap-2 p-4">

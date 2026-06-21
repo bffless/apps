@@ -56,6 +56,16 @@
 }
 
 @layer base {
+  /* We don't pull in Tailwind's preflight, so its global box-sizing reset is
+     missing. Without it any `w-full` element with padding/border overflows its
+     container by that padding+border (the rename input, the director textarea).
+     border-box is what every Tailwind utility already assumes. */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
   :root {
     color-scheme: light;
   }

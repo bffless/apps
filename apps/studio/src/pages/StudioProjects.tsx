@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from 'react-redux'
-import { PageHero } from '../components/PageHero'
 import { Section, Dot } from '../components/Section'
 import { ProjectList } from '../components/Studio/ProjectList'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
@@ -47,11 +46,6 @@ export function StudioProjects() {
 
   return (
     <>
-      <PageHero
-        eyebrow="EP 09 — Studio · scene producer"
-        title={<>Your projects<Dot /></>}
-        lead="Each recording you turn into a short video is its own project. Pick up where you left off, or start a new one."
-      />
       <Section eyebrow="— Producer" title={<>Projects<Dot /></>} divider={false}>
         {isFetching && projects.length === 0 && (
           <p className="text-ink-soft text-[14px]">Loading projects…</p>
