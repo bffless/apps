@@ -49,8 +49,12 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: studio-preview
-          # Attach the studio backend (/api/*) to the preview alias — idempotent.
-          proxy-rule-set-names: studio
+          # Attach the studio backend (/api/*) to the preview alias. Uses the
+          # singular (legacy) input on purpose: the plural proxy-rule-set-names is
+          # serialized as a CSV string by upload-artifact@v1, which the API rejects
+          # ("proxyRuleSetNames must be an array"). The singular goes through as a
+          # plain string and resolves the same rule set.
+          proxy-rule-set-name: studio
           description: 'Studio preview for PR #${{ github.event.pull_request.number }}'
           summary-title: Studio Preview
           pr-comment: true
