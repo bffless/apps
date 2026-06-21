@@ -30,11 +30,9 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
           <span
             className={[
               'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors',
-              done
+              done || current
                 ? 'bg-terracotta text-paper'
-                : current
-                  ? 'border-2 border-terracotta text-terracotta-ink'
-                  : 'border border-paper-line text-ink-faint',
+                : 'border border-paper-line text-ink-faint',
             ].join(' ')}
           >
             {done ? '✓' : i + 1}
@@ -44,12 +42,18 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
           <span
             className={[
               'font-serif text-[15px] leading-none whitespace-nowrap',
-              current ? 'text-ink' : done ? 'text-ink-soft' : 'text-ink-faint',
+              current ? 'font-semibold text-ink' : done ? 'text-ink-soft' : 'text-ink-faint',
             ].join(' ')}
           >
             {p.label}
           </span>
         )
+
+        // The current step gets a highlighted pill so "you are here" reads at a
+        // glance; done/upcoming sit flush. Both branches reset the default button
+        // chrome (we don't load Tailwind's preflight).
+        const inner = 'flex items-center gap-2.5 rounded-full px-2 py-1'
+        const highlight = current ? 'bg-terracotta/12 ring-1 ring-terracotta/30' : ''
 
         return (
           <li key={p.id} className="flex flex-1 items-center gap-2 last:flex-none">
@@ -57,14 +61,14 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
               <button
                 type="button"
                 onClick={() => onNavigate(p.id)}
-                className="flex items-center gap-2.5 rounded-full transition-opacity hover:opacity-70"
+                className={`${inner} ${highlight} appearance-none border-0 bg-transparent transition-opacity hover:opacity-70`}
                 title={`Go to ${p.label}`}
               >
                 {glyph}
                 {label}
               </button>
             ) : (
-              <div className="flex items-center gap-2.5">
+              <div className={`${inner} ${highlight}`}>
                 {glyph}
                 {label}
               </div>

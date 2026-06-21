@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { addSource, reorderSources, removeSource, selectActive, setDiarize, setDirection, setDuration, setFileName, setPlanRevealed } from '../store/studioSlice'
 import type { UrlPhase } from '../lib/studioRoute'
-import { PageHero } from '../components/PageHero'
-import { Section, Dot } from '../components/Section'
+import { Section } from '../components/Section'
 import { MediaImport } from '../components/Studio/MediaImport'
 import { SourceQueue } from '../components/Studio/SourceQueue'
 import { PreviewPlayer } from '../components/Studio/PreviewPlayer'
@@ -525,15 +524,6 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
 
   return (
     <>
-      <PageHero
-        eyebrow="EP 09 — Studio · scene producer"
-        title={
-          <>
-            Cut a long talk into scenes, build each in your voice<Dot />
-          </>
-        }
-      />
-
       <Section divider={false}>
         {pipe.sources.length === 0 && !hasPersisted && !file ? (
           <div className="flex flex-col gap-8">
