@@ -21,3 +21,13 @@ straight from the bucket.
 minting an upload URL, and on the view path (see ADR for ACL enforcement). BFFless's built-in
 visibility is project/alias-wide only, so the per-folder [[Grant]] check is the app's own logic, not
 BFFless deployment visibility.
+
+**Security note — the Site iframe is intentionally same-origin and unsandboxed.** Because a [[Site]]
+is served same-origin (so its relative asset paths and runtime `fetch()` resolve without rewriting),
+the `<iframe>` rendering it is **not** given a `sandbox` attribute — an uploaded Site's JavaScript runs
+with access to the app origin (cookies/session). This is **accepted for v1**: Handoff is an *internal,
+permissioned* file server whose uploaders are trusted members of the same organization, and a Site is
+only reachable by principals who already pass the folder ACL. `sandbox="allow-scripts"` would
+re-introduce the relative-asset/`fetch()` breakage this ADR exists to avoid, so it is a real tradeoff,
+not a free hardening. Revisit if Handoff ever hosts untrusted or cross-tenant uploads (e.g. serve Sites
+from a separate origin/subdomain).
