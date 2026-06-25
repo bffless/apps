@@ -6,6 +6,10 @@
  * level and the swap-don't-rewrite contract is maintained.
  */
 
+import type { Grant } from './acl'
+
+export type { Grant }
+
 export type NodeType = 'file' | 'folder' | 'site'
 
 export interface HandoffNode {
@@ -18,6 +22,12 @@ export interface HandoffNode {
   storageKey: string | null
   parentId: string            // 'root' for top-level files
   createdAt: number           // ms epoch
+  /** Null for files/sites; the owner user id for folders. */
+  ownerId: string | null
+  /** Active grants for this node. Empty array for files/sites. */
+  grants: Grant[]
+  /** Whether this folder inherits grants from ancestors or starts a new ACL boundary. */
+  mode: 'inheriting' | 'restricted'
 }
 
 /** Body sent to POST /api/nodes to register a freshly-uploaded file. */
@@ -92,7 +102,27 @@ export function toNode(raw: unknown): HandoffNode {
   const createdAtNum = rawCreated == null ? NaN : Number(rawCreated)
   const createdAt = Number.isFinite(createdAtNum) ? createdAtNum : 0
 
-  return { id, type, name, mime, size, url, storageKey, parentId, createdAt }
+  // ownerId: string or null
+  const rawOwnerId = obj['ownerId']
+  const ownerId = typeof rawOwnerId === 'string' ? rawOwnerId : null
+
+  // grants: array of Grant, or empty array
+  const rawGrants = obj['grants']
+  const grants: Grant[] = Array.isArray(rawGrants)
+    ? rawGrants
+        .filter((g): g is Record<string, unknown> => g !== null && typeof g === 'object')
+        .map((g) => ({
+          principalId: typeof g['principalId'] === 'string' ? g['principalId'] : '',
+          principalEmail: typeof g['principalEmail'] === 'string' ? g['principalEmail'] : undefined,
+          level: g['level'] === 'edit' ? 'edit' : 'view',
+        }))
+    : []
+
+  // mode: 'inheriting' | 'restricted'; default 'inheriting' for files/sites
+  const rawMode = obj['mode']
+  const mode: 'inheriting' | 'restricted' = rawMode === 'restricted' ? 'restricted' : 'inheriting'
+
+  return { id, type, name, mime, size, url, storageKey, parentId, createdAt, ownerId, grants, mode }
 }
 
 /**

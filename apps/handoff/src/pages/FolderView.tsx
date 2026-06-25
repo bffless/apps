@@ -22,6 +22,10 @@ import { buildBreadcrumb } from '../lib/tree'
 import { formatBytes } from '../lib/format'
 import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
 import { planSiteUpload } from '../lib/site'
+import { useSession, adminLoginUrl } from '../lib/session'
+import { evaluateAccess } from '../lib/acl'
+import type { FolderLink } from '../lib/acl'
+import { ManageAccessPanel } from '../components/ManageAccessPanel'
 import type { HandoffNode } from '../lib/nodes'
 import type { Crumb } from '../lib/tree'
 
@@ -568,11 +572,31 @@ export function FolderView({ folderId }: FolderViewProps) {
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
   const [uploadDone, setUploadDone] = useState(false)
   const [siteDone, setSiteDone] = useState(false)
+  const [manageOpen, setManageOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Fold-in fix #2: Show folder name in h1 for sub-folders
   const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
+
+  // Session + ACL
+  const { session } = useSession()
+  const folderLink: FolderLink = {
+    ownerId: currentFolder?.ownerId ?? null,
+    grants: currentFolder?.grants ?? [],
+    mode: currentFolder?.mode ?? 'inheriting',
+  }
+  const effectiveLevel = evaluateAccess({
+    folderChain: [folderLink],
+    viewer: {
+      userId: session?.authenticated ? session.user.id : undefined,
+      isAdmin: session?.authenticated && session.user.role === 'admin',
+    },
+  })
+
+  const canWrite = effectiveLevel === 'owner' || effectiveLevel === 'edit'
+  const canManage = effectiveLevel === 'owner'
+  const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
   useEffect(() => {
     return () => {
@@ -616,6 +640,9 @@ export function FolderView({ folderId }: FolderViewProps) {
     ? 'My Files'
     : (currentFolder?.name ?? 'Folder')
 
+  // Determine error status for 401/403 handling
+  const errorStatus = error ? (error as { status?: number }).status : undefined
+
   return (
     <div className="container-page py-10">
       {/* Breadcrumb */}
@@ -623,19 +650,51 @@ export function FolderView({ folderId }: FolderViewProps) {
 
       {/* Toolbar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-gray-900">
-          {pageTitle}
-        </h1>
         <div className="flex items-center gap-2">
-          <NewFolderControl folderId={folderId} />
-          <UploadButton onFile={handleFile} uploading={uploading} />
+          <h1 className="text-xl font-semibold text-gray-900">
+            {pageTitle}
+          </h1>
+          {isPrivate && (
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+              Private
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setManageOpen((v) => !v)}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+              </svg>
+              Manage access
+            </button>
+          )}
+          {canWrite && (
+            <>
+              <NewFolderControl folderId={folderId} />
+              <UploadButton onFile={handleFile} uploading={uploading} />
+            </>
+          )}
         </div>
       </div>
 
-      {/* Upload Site control */}
-      <div className="mb-4">
-        <UploadSiteControl folderId={folderId} onDone={handleSiteDone} />
-      </div>
+      {/* Manage Access Panel */}
+      {manageOpen && canManage && (
+        <div className="mb-6">
+          <ManageAccessPanel folderId={folderId} onClose={() => setManageOpen(false)} />
+        </div>
+      )}
+
+      {/* Upload Site control (only for writers) */}
+      {canWrite && (
+        <div className="mb-4">
+          <UploadSiteControl folderId={folderId} onDone={handleSiteDone} />
+        </div>
+      )}
 
       {/* Upload feedback */}
       {uploadErrorMsg && (
@@ -659,8 +718,25 @@ export function FolderView({ folderId }: FolderViewProps) {
         <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
       )}
 
-      {/* Error */}
-      {isError && !isLoading && (
+      {/* Error — 401 / 403 / generic */}
+      {isError && !isLoading && errorStatus === 401 && (
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-8 text-center">
+          <p className="mb-3 text-sm text-yellow-800">Sign in to view this folder</p>
+          <button
+            type="button"
+            onClick={() => { window.location.href = adminLoginUrl(window.location.href) }}
+            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
+          >
+            Sign in
+          </button>
+        </div>
+      )}
+      {isError && !isLoading && errorStatus === 403 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-600">
+          You don&apos;t have access to this folder.
+        </div>
+      )}
+      {isError && !isLoading && errorStatus !== 401 && errorStatus !== 403 && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-600">
           {error && 'error' in (error as object)
             ? (error as { error: string }).error

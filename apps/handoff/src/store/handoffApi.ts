@@ -15,13 +15,14 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
 import { toNode, toNodeList, buildRegisterBody } from '../lib/nodes'
 import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
+import type { Grant } from '../lib/acl'
 
-export type { HandoffNode, PreparedUpload, RegisterBody }
+export type { HandoffNode, PreparedUpload, RegisterBody, Grant }
 
 export const handoffApi = createApi({
   reducerPath: 'handoffApi',
   baseQuery: fetchBaseQuery({ baseUrl: '/', credentials: 'include' }),
-  tagTypes: ['Node'],
+  tagTypes: ['Node', 'Grant'],
   endpoints: (builder) => ({
     /**
      * GET /api/nodes?parentId=… → { nodes: HandoffNode[] }
@@ -175,6 +176,57 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * GET /api/grants?folderId=<id> → { grants: Grant[] }
+     */
+    getGrants: builder.query<{ grants: Grant[] }, { folderId: string }>({
+      query: ({ folderId }) => `api/grants?folderId=${encodeURIComponent(folderId)}`,
+      providesTags: ['Grant'],
+    }),
+
+    /**
+     * POST /api/grants { folderId, principalId, principalEmail?, level } → { grants: Grant[] }
+     */
+    addGrant: builder.mutation<
+      { grants: Grant[] },
+      { folderId: string; principalId: string; principalEmail?: string; level: 'view' | 'edit' }
+    >({
+      query: (body) => ({
+        url: 'api/grants',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_result, _err, { folderId }) => [
+        'Grant',
+        { type: 'Node' as const, id: folderId },
+      ],
+    }),
+
+    /**
+     * POST /api/grants/revoke { folderId, principalId } → { grants: Grant[] }
+     */
+    revokeGrant: builder.mutation<
+      { grants: Grant[] },
+      { folderId: string; principalId: string }
+    >({
+      query: (body) => ({
+        url: 'api/grants/revoke',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_result, _err, { folderId }) => [
+        'Grant',
+        { type: 'Node' as const, id: folderId },
+      ],
+    }),
+
+    /**
+     * GET /api/directory?search=<q> → { users: { id: string; email: string }[] }
+     */
+    searchDirectory: builder.query<{ users: { id: string; email: string }[] }, { search: string }>({
+      query: ({ search }) => `api/directory?search=${encodeURIComponent(search)}`,
+    }),
+
+    /**
      * Full presigned-upload flow: prepare → PUT bytes → register metadata.
      * Modelled on Studio's `upload` mutation — a custom `queryFn` that runs
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
@@ -241,4 +293,8 @@ export const {
   useUploadFileMutation,
   useUploadSiteMutation,
   useCreateFolderMutation,
+  useGetGrantsQuery,
+  useAddGrantMutation,
+  useRevokeGrantMutation,
+  useSearchDirectoryQuery,
 } = handoffApi

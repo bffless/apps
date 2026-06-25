@@ -16,6 +16,7 @@
 import { http, HttpResponse } from 'msw'
 import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
+import type { Grant } from '../lib/acl'
 
 // ---------------------------------------------------------------------------
 // In-memory state
@@ -33,6 +34,19 @@ export const objects = new Map<string, { body: ArrayBuffer; type: string }>()
  */
 export const sites = new Map<string, { entry: string; manifest: Record<string, string> }>()
 
+/** ACL data keyed by node id. */
+export const nodeAcl = new Map<string, { ownerId: string | null; grants: Grant[]; mode: 'inheriting' | 'restricted' }>()
+
+/** Grants keyed by folderId. */
+export const grants = new Map<string, Grant[]>()
+
+/** The currently logged-in mock user (null = unauthenticated). */
+export let mockCurrentUser: { id: string; email: string; role?: string } | null = {
+  id: 'user-owner',
+  email: 'owner@example.com',
+  role: 'admin',
+}
+
 /** Monotonically-incrementing node id counter for determinism. */
 let nodeCounter = 0
 
@@ -41,7 +55,58 @@ export function resetMockState(): void {
   nodes.clear()
   objects.clear()
   sites.clear()
+  nodeAcl.clear()
+  grants.clear()
   nodeCounter = 0
+  mockCurrentUser = { id: 'user-owner', email: 'owner@example.com', role: 'admin' }
+}
+
+/** Set the current mock user (or null for unauthenticated). */
+export function setMockUser(user: { id: string; email: string; role?: string } | null): void {
+  mockCurrentUser = user
+}
+
+/** Set grants for a specific folder. */
+export function setMockGrants(folderId: string, g: Grant[]): void {
+  grants.set(folderId, g)
+  const acl = nodeAcl.get(folderId)
+  if (acl) acl.grants = g
+}
+
+// ---------------------------------------------------------------------------
+// ACL helpers
+// ---------------------------------------------------------------------------
+
+/** A small fake directory of users for autocomplete. */
+const FAKE_DIRECTORY = [
+  { id: 'user-alice', email: 'alice@example.com' },
+  { id: 'user-bob', email: 'bob@example.com' },
+  { id: 'user-carol', email: 'carol@example.com' },
+  { id: 'user-dave', email: 'dave@example.com' },
+]
+
+/**
+ * Check whether `mockCurrentUser` can access the given node.
+ * Returns: 'ok' | '401' | '403'
+ */
+function checkAccess(nodeId: string): 'ok' | '401' | '403' {
+  if (!mockCurrentUser) return '401'
+
+  const acl = nodeAcl.get(nodeId)
+  if (!acl) return 'ok' // no ACL record = open (root or file)
+
+  // Admin always allowed
+  if (mockCurrentUser.role === 'admin') return 'ok'
+
+  // Owner always allowed
+  if (acl.ownerId === mockCurrentUser.id) return 'ok'
+
+  // Check grants
+  const nodeGrants = acl.grants
+  const grant = nodeGrants.find((g) => g.principalId === mockCurrentUser!.id)
+  if (grant) return 'ok'
+
+  return '403'
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +128,113 @@ function mockServePath(storageKey: string): string {
 // ---------------------------------------------------------------------------
 
 export const handlers = [
+  /**
+   * GET /_bffless/auth/session
+   * Returns current mock user as authenticated or unauthenticated.
+   */
+  http.get('/_bffless/auth/session', () => {
+    if (!mockCurrentUser) {
+      return HttpResponse.json({ authenticated: false, user: null })
+    }
+    return HttpResponse.json({
+      authenticated: true,
+      user: {
+        id: mockCurrentUser.id,
+        email: mockCurrentUser.email,
+        role: mockCurrentUser.role,
+      },
+    })
+  }),
+
+  /**
+   * GET /api/grants?folderId=<id>
+   * Response: { grants: Grant[] }
+   */
+  http.get('/api/grants', ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const folderId = new URL(request.url).searchParams.get('folderId') ?? ''
+    const acl = nodeAcl.get(folderId)
+    // Only owner or admin can manage grants
+    if (acl) {
+      const isAdmin = mockCurrentUser.role === 'admin'
+      const isOwner = acl.ownerId === mockCurrentUser.id
+      if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
+    }
+    return HttpResponse.json({ grants: grants.get(folderId) ?? [] })
+  }),
+
+  /**
+   * POST /api/grants
+   * Body: { folderId, principalId, principalEmail?, level }
+   * Response: { grants: Grant[] }
+   */
+  http.post('/api/grants', async ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const body = (await request.json().catch(() => ({}))) as {
+      folderId?: string
+      principalId?: string
+      principalEmail?: string
+      level?: 'view' | 'edit'
+    }
+    const folderId = body.folderId ?? ''
+    const acl = nodeAcl.get(folderId)
+    if (acl) {
+      const isAdmin = mockCurrentUser.role === 'admin'
+      const isOwner = acl.ownerId === mockCurrentUser.id
+      if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
+    }
+    const existing = grants.get(folderId) ?? []
+    const newGrant: Grant = {
+      principalId: body.principalId ?? '',
+      principalEmail: body.principalEmail,
+      level: body.level ?? 'view',
+    }
+    // Replace if already exists, otherwise append
+    const updated = [
+      ...existing.filter((g) => g.principalId !== newGrant.principalId),
+      newGrant,
+    ]
+    grants.set(folderId, updated)
+    if (acl) acl.grants = updated
+    return HttpResponse.json({ grants: updated })
+  }),
+
+  /**
+   * POST /api/grants/revoke
+   * Body: { folderId, principalId }
+   * Response: { grants: Grant[] }
+   */
+  http.post('/api/grants/revoke', async ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const body = (await request.json().catch(() => ({}))) as {
+      folderId?: string
+      principalId?: string
+    }
+    const folderId = body.folderId ?? ''
+    const acl = nodeAcl.get(folderId)
+    if (acl) {
+      const isAdmin = mockCurrentUser.role === 'admin'
+      const isOwner = acl.ownerId === mockCurrentUser.id
+      if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
+    }
+    const existing = grants.get(folderId) ?? []
+    const updated = existing.filter((g) => g.principalId !== (body.principalId ?? ''))
+    grants.set(folderId, updated)
+    if (acl) acl.grants = updated
+    return HttpResponse.json({ grants: updated })
+  }),
+
+  /**
+   * GET /api/directory?search=<q>
+   * Response: { users: { id, email }[] }
+   */
+  http.get('/api/directory', ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const q = (new URL(request.url).searchParams.get('search') ?? '').toLowerCase()
+    const users = FAKE_DIRECTORY.filter((u) => u.email.includes(q))
+    return HttpResponse.json({ users })
+  }),
+
   /**
    * POST /api/uploads/prepare
    * Body: { filename, contentType? }
@@ -116,6 +288,7 @@ export const handlers = [
       createdMs?: number
     }
     const id = String(++nodeCounter)
+    const ownerId = mockCurrentUser?.id ?? null
     const raw = {
       id,
       type: 'file',
@@ -126,9 +299,13 @@ export const handlers = [
       storageKey: body.storageKey ?? null,
       parentId: body.parentId ?? 'root',
       createdAt: typeof body.createdMs === 'number' ? body.createdMs : Date.now(),
+      ownerId,
+      grants: [],
+      mode: 'inheriting' as const,
     }
     const node = toNode(raw)
     nodes.set(id, node)
+    nodeAcl.set(id, { ownerId, grants: [], mode: 'inheriting' })
     return HttpResponse.json({ node })
   }),
 
@@ -144,6 +321,8 @@ export const handlers = [
       createdMs?: number
     }
     const id = String(++nodeCounter)
+    const ownerId = mockCurrentUser?.id ?? null
+    const folderGrants: Grant[] = []
     const raw = {
       id,
       type: 'folder',
@@ -154,30 +333,67 @@ export const handlers = [
       storageKey: null,
       parentId: body.parentId ?? 'root',
       createdAt: typeof body.createdMs === 'number' ? body.createdMs : Date.now(),
+      ownerId,
+      grants: folderGrants,
+      mode: 'inheriting' as const,
     }
     const node = toNode(raw)
     nodes.set(id, node)
+    nodeAcl.set(id, { ownerId, grants: folderGrants, mode: 'inheriting' })
+    grants.set(id, folderGrants)
     return HttpResponse.json({ node })
   }),
 
   /**
    * GET /api/nodes?parentId=…
    * Response: { nodes: HandoffNode[] }
+   * Enforces ACL: checks mockCurrentUser against the parentId's ACL.
    */
   http.get('/api/nodes', ({ request }) => {
     const parentId = new URL(request.url).searchParams.get('parentId') ?? 'root'
+
+    // ACL check on the parentId folder (skip for root)
+    if (parentId !== 'root') {
+      const access = checkAccess(parentId)
+      if (access === '401') return new HttpResponse(null, { status: 401 })
+      if (access === '403') return new HttpResponse(null, { status: 403 })
+    } else {
+      // root requires auth
+      if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    }
+
     const filtered = [...nodes.values()].filter((n) => n.parentId === parentId)
-    return HttpResponse.json({ nodes: filtered })
+    // Attach ACL fields to each node in response
+    const withAcl = filtered.map((n) => {
+      const acl = nodeAcl.get(n.id)
+      return {
+        ...n,
+        ownerId: acl?.ownerId ?? n.ownerId,
+        grants: acl?.grants ?? n.grants,
+        mode: acl?.mode ?? n.mode,
+      }
+    })
+    return HttpResponse.json({ nodes: withAcl })
   }),
 
   /**
    * GET /api/node?id=…
    * Response: { node: HandoffNode | null }
+   * Enforces ACL.
    */
   http.get('/api/node', ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
     const id = new URL(request.url).searchParams.get('id') ?? ''
+    const access = checkAccess(id)
+    if (access === '401') return new HttpResponse(null, { status: 401 })
+    if (access === '403') return new HttpResponse(null, { status: 403 })
+
     const node = nodes.get(id) ?? null
-    return HttpResponse.json({ node })
+    if (!node) return HttpResponse.json({ node: null })
+
+    const acl = nodeAcl.get(id)
+    const nodeWithAcl = acl ? { ...node, ...acl } : node
+    return HttpResponse.json({ node: nodeWithAcl })
   }),
 
   /**
@@ -228,6 +444,7 @@ export const handlers = [
     const entry = body.entry ?? 'index.html'
     const manifest = body.manifest ?? {}
     const siteUrl = `/api/sites/${id}/${entry}`
+    const ownerId = mockCurrentUser?.id ?? null
 
     const raw = {
       id,
@@ -239,10 +456,14 @@ export const handlers = [
       storageKey: null,
       parentId: body.parentId ?? 'root',
       createdAt: typeof body.createdMs === 'number' ? body.createdMs : Date.now(),
+      ownerId,
+      grants: [],
+      mode: 'inheriting' as const,
     }
     const node = toNode(raw)
     nodes.set(id, node)
     sites.set(id, { entry, manifest })
+    nodeAcl.set(id, { ownerId, grants: [], mode: 'inheriting' })
     return HttpResponse.json({ node })
   }),
 

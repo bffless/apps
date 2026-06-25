@@ -24,6 +24,9 @@ function makeFolder(id: string, name: string, parentId: string): HandoffNode {
     storageKey: null,
     parentId,
     createdAt: 0,
+    ownerId: null,
+    grants: [],
+    mode: 'inheriting',
   }
 }
 
