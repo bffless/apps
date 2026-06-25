@@ -107,6 +107,74 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * Multi-file presigned-upload flow for a site bundle:
+     *   1. For each item: POST /api/uploads/prepare, PUT bytes, collect publicPath
+     *   2. POST /api/sites with { parentId, name, entry, manifest, createdMs }
+     *   3. Return the registered site node; invalidate the parent's node list.
+     *
+     * `manifest` maps relPath → publicPath (served URL for each file).
+     */
+    uploadSite: builder.mutation<
+      HandoffNode,
+      { items: { relPath: string; file: File }[]; entry: string; name: string; parentId: string }
+    >({
+      async queryFn({ items, entry, name, parentId }, _queryApi, _extraOptions, baseQuery) {
+        try {
+          const manifest: Record<string, string> = {}
+
+          for (const { relPath, file } of items) {
+            // 1a. Prepare presigned PUT URL
+            const prepRes = await baseQuery({
+              url: 'api/uploads/prepare',
+              method: 'POST',
+              body: {
+                filename: relPath.split('/').pop() ?? file.name,
+                contentType: file.type || 'application/octet-stream',
+              },
+            })
+            if (prepRes.error) return { error: prepRes.error }
+            const prepared = prepRes.data as PreparedUpload
+
+            // 1b. PUT bytes directly to bucket
+            const putRes = await fetch(prepared.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': file.type || 'application/octet-stream' },
+              body: file,
+            })
+            if (!putRes.ok) {
+              return {
+                error: {
+                  status: 'CUSTOM_ERROR' as const,
+                  error: `Bucket upload failed for ${relPath} (${putRes.status})`,
+                },
+              }
+            }
+
+            manifest[relPath] = prepared.publicPath
+          }
+
+          // 2. Register site node
+          const siteRes = await baseQuery({
+            url: 'api/sites',
+            method: 'POST',
+            body: { parentId, name, entry, manifest, createdMs: Date.now() },
+          })
+          if (siteRes.error) return { error: siteRes.error }
+          const node = toNode((siteRes.data as { node?: unknown }).node)
+          return { data: node }
+        } catch (e) {
+          return {
+            error: {
+              status: 'CUSTOM_ERROR' as const,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          }
+        }
+      },
+      invalidatesTags: (_result, _err, { parentId }) => [{ type: 'Node', id: `LIST:${parentId}` }],
+    }),
+
+    /**
      * Full presigned-upload flow: prepare → PUT bytes → register metadata.
      * Modelled on Studio's `upload` mutation — a custom `queryFn` that runs
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
@@ -171,5 +239,6 @@ export const {
   usePrepareUploadMutation,
   useRegisterNodeMutation,
   useUploadFileMutation,
+  useUploadSiteMutation,
   useCreateFolderMutation,
 } = handoffApi

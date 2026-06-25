@@ -27,6 +27,12 @@ export const nodes = new Map<string, HandoffNode>()
 /** Raw bytes uploaded via the mock bucket PUT. */
 export const objects = new Map<string, { body: ArrayBuffer; type: string }>()
 
+/**
+ * Site metadata for mock site nodes.
+ * Key: site node id; Value: { entry, manifest }
+ */
+export const sites = new Map<string, { entry: string; manifest: Record<string, string> }>()
+
 /** Monotonically-incrementing node id counter for determinism. */
 let nodeCounter = 0
 
@@ -34,6 +40,7 @@ let nodeCounter = 0
 export function resetMockState(): void {
   nodes.clear()
   objects.clear()
+  sites.clear()
   nodeCounter = 0
 }
 
@@ -202,5 +209,69 @@ export const handlers = [
     const storageKey = body.path ?? ''
     const url = mockServePath(storageKey)
     return HttpResponse.json({ signed: { url } })
+  }),
+
+  /**
+   * POST /api/sites
+   * Body: { parentId, name, entry, manifest, createdMs }
+   * Response: { node: HandoffNode } — type:'site', url = /api/sites/<id>/<entry>
+   */
+  http.post('/api/sites', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      parentId?: string
+      name?: string
+      entry?: string
+      manifest?: Record<string, string>
+      createdMs?: number
+    }
+    const id = String(++nodeCounter)
+    const entry = body.entry ?? 'index.html'
+    const manifest = body.manifest ?? {}
+    const siteUrl = `/api/sites/${id}/${entry}`
+
+    const raw = {
+      id,
+      type: 'site',
+      name: body.name ?? 'Untitled Site',
+      mime: 'text/html',
+      size: null,
+      url: siteUrl,
+      storageKey: null,
+      parentId: body.parentId ?? 'root',
+      createdAt: typeof body.createdMs === 'number' ? body.createdMs : Date.now(),
+    }
+    const node = toNode(raw)
+    nodes.set(id, node)
+    sites.set(id, { entry, manifest })
+    return HttpResponse.json({ node })
+  }),
+
+  /**
+   * GET /api/sites/<siteId>/<relPath...>
+   * Resolves the relPath via the site's manifest to a storageKey / publicPath,
+   * then serves the bytes from the objects store.
+   */
+  http.get('/api/sites/:siteId/*', ({ request, params }) => {
+    const siteId = String(params.siteId)
+    // The wildcard part after /api/sites/<siteId>/
+    const url = new URL(request.url)
+    const relPath = url.pathname.replace(`/api/sites/${siteId}/`, '')
+
+    const site = sites.get(siteId)
+    if (!site) return new HttpResponse(null, { status: 404 })
+
+    // Look up the publicPath for this relPath in the manifest
+    const publicPath = site.manifest[relPath]
+    if (!publicPath) return new HttpResponse(null, { status: 404 })
+
+    // Derive the storageKey from the publicPath (reverse of mockServePath)
+    const storageKey = publicPath.replace('/api/uploads/content/', '')
+    const obj = objects.get(storageKey)
+    if (!obj) return new HttpResponse(null, { status: 404 })
+
+    return new HttpResponse(obj.body, {
+      status: 200,
+      headers: { 'Content-Type': obj.type },
+    })
   }),
 ] as const

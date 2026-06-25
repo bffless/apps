@@ -78,8 +78,8 @@ function ControlBar({ node, contentRef }: ControlBarProps) {
         <span className="hidden sm:inline">Fullscreen</span>
       </button>
 
-      {/* Download */}
-      {node.url && (
+      {/* Download — not shown for sites (use Open-in-new-tab instead) */}
+      {node.url && node.type !== 'site' && (
         <a
           href={node.url}
           download={node.name}
@@ -259,7 +259,18 @@ export function HandoffViewer() {
         {kind === 'audio' && (
           <MediaPreview node={node} kind="audio" />
         )}
-        {(kind === 'site' || kind === 'download') && (
+        {kind === 'site' && node.url && (
+          <iframe
+            src={node.url}
+            title={node.name}
+            className="h-full w-full flex-1"
+            style={{ minHeight: 'calc(100vh - 7.5rem)' }}
+          />
+        )}
+        {kind === 'site' && !node.url && (
+          <PreviewUnavailable node={node} />
+        )}
+        {kind === 'download' && (
           <PreviewUnavailable node={node} />
         )}
       </div>

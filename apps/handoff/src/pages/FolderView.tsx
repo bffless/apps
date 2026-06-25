@@ -6,18 +6,22 @@
  * - Breadcrumb at the top (root→current).
  * - New-folder control (inline input → createFolder).
  * - Upload control (uploadFile with current folderId as parentId).
+ * - Upload Site control (folder-drop or .zip → site bundle upload).
  */
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import {
   useListNodesQuery,
   useGetNodeQuery,
   useUploadFileMutation,
+  useUploadSiteMutation,
   useCreateFolderMutation,
 } from '../store/handoffApi'
 import { buildBreadcrumb } from '../lib/tree'
 import { formatBytes } from '../lib/format'
+import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
+import { planSiteUpload } from '../lib/site'
 import type { HandoffNode } from '../lib/nodes'
 import type { Crumb } from '../lib/tree'
 
@@ -49,6 +53,9 @@ interface BreadcrumbProps {
  * Inner breadcrumb component that accumulates resolved nodes.
  * Keyed by folderId externally so React remounts it on folder change,
  * which avoids calling setState inside a useEffect.
+ *
+ * Fold-in fix #1: handleResolved is wrapped in useCallback and guarded with a
+ * `visited` ref to prevent cycle-driven infinite state growth.
  */
 function BreadcrumbInner({ folderId }: BreadcrumbProps) {
   const [nodesById, setNodesById] = useState<Record<string, HandoffNode>>({})
@@ -56,18 +63,21 @@ function BreadcrumbInner({ folderId }: BreadcrumbProps) {
   const [toResolve, setToResolve] = useState<string[]>(
     folderId !== 'root' ? [folderId] : []
   )
+  // Visited set — prevents cycles from triggering unbounded state growth
+  const visitedRef = useRef<Set<string>>(new Set(folderId !== 'root' ? [folderId] : []))
 
-  function handleResolved(node: HandoffNode) {
+  const handleResolved = useCallback((node: HandoffNode) => {
     setNodesById((prev) => {
       if (prev[node.id]) return prev // already known
       const next = { ...prev, [node.id]: node }
-      // If parent is not root and not yet known, add to resolve queue
-      if (node.parentId !== 'root' && !next[node.parentId]) {
-        setToResolve((q) => (q.includes(node.parentId) ? q : [...q, node.parentId]))
+      // If parent is not root and not yet visited, enqueue it
+      if (node.parentId !== 'root' && !visitedRef.current.has(node.parentId)) {
+        visitedRef.current.add(node.parentId)
+        setToResolve((q) => [...q, node.parentId])
       }
       return next
     })
-  }
+  }, [])
 
   const crumbs = buildBreadcrumb(nodesById, folderId)
 
@@ -213,6 +223,268 @@ function UploadButton({ onFile, uploading }: UploadButtonProps) {
 }
 
 // ---------------------------------------------------------------------------
+// UploadSiteControl
+// ---------------------------------------------------------------------------
+
+interface UploadSiteControlProps {
+  folderId: string
+  onDone: () => void
+}
+
+/**
+ * Renders two hidden file inputs (folder-drop and .zip) plus a "Upload site"
+ * button that triggers a dropdown/inline UI:
+ *   - Ingest files from folder or zip
+ *   - Run planSiteUpload
+ *   - If entry is auto-detected, proceed. If multiple candidates, show picker.
+ *   - If no HTML found, show error.
+ *   - Editable site name input (defaults to folder/zip base name).
+ *   - Upload progress + errors.
+ */
+function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
+  const folderRef = useRef<HTMLInputElement>(null)
+  const zipRef = useRef<HTMLInputElement>(null)
+
+  type Phase = 'idle' | 'picking-entry' | 'uploading' | 'done'
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [items, setItems] = useState<{ relPath: string; file: File }[]>([])
+  const [entry, setEntry] = useState<string | null>(null)
+  const [candidates, setCandidates] = useState<string[]>([])
+  const [siteName, setSiteName] = useState('')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+
+  const [uploadSite] = useUploadSiteMutation()
+
+  function handleIngest(newItems: { relPath: string; file: File }[], baseName: string) {
+    const plan = planSiteUpload(newItems.map(({ relPath }) => ({ relPath })))
+
+    if (plan.files.length === 0) {
+      setUploadError('No files found in the selected folder/zip.')
+      return
+    }
+
+    // Re-map items to normalised relPaths from plan
+    const normalisedItems = plan.files.map(({ relPath }) => {
+      const matched = newItems.find((it) => {
+        // match by normalised relPath
+        const norm = it.relPath.replace(/\\/g, '/').replace(/^\.\//, '').trim()
+        return norm === relPath
+      }) ?? newItems.find((it) => it.relPath.endsWith(relPath))
+      return { relPath, file: matched!.file }
+    })
+
+    setItems(normalisedItems)
+    setSiteName(baseName)
+    setUploadError(null)
+
+    if (plan.candidates.length === 0 && plan.entry === null) {
+      setUploadError('No HTML file found. A site requires at least one .html or .htm file.')
+      return
+    }
+
+    setEntry(plan.entry)
+    setCandidates(plan.candidates)
+
+    if (plan.entry !== null) {
+      // Auto-detected — go straight to name confirmation / upload
+      setPhase('picking-entry')
+    } else {
+      // Multiple candidates — ask user to pick
+      setPhase('picking-entry')
+    }
+  }
+
+  async function handleUpload() {
+    if (!entry) return
+    const trimmedName = siteName.trim() || 'Untitled Site'
+    setPhase('uploading')
+    setUploadProgress(`Uploading ${items.length} file${items.length !== 1 ? 's' : ''}…`)
+    setUploadError(null)
+
+    const result = await uploadSite({ items, entry, name: trimmedName, parentId: folderId })
+
+    if ('error' in result) {
+      const err = result.error
+      const msg = 'error' in (err as object)
+        ? (err as { error: string }).error
+        : `Upload failed (${(err as { status: string | number }).status})`
+      setUploadError(msg)
+      setPhase('picking-entry')
+      setUploadProgress(null)
+    } else {
+      setPhase('idle')
+      setUploadProgress(null)
+      setItems([])
+      setEntry(null)
+      setCandidates([])
+      setSiteName('')
+      onDone()
+    }
+  }
+
+  function handleReset() {
+    setPhase('idle')
+    setItems([])
+    setEntry(null)
+    setCandidates([])
+    setSiteName('')
+    setUploadError(null)
+    setUploadProgress(null)
+    if (folderRef.current) folderRef.current.value = ''
+    if (zipRef.current) zipRef.current.value = ''
+  }
+
+  const isUploading = phase === 'uploading'
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Hidden file inputs */}
+      <input
+        ref={folderRef}
+        type="file"
+        className="hidden"
+        aria-label="Folder input"
+        multiple
+        {...{ webkitdirectory: '' }}
+        onChange={async (e) => {
+          const fl = e.target.files
+          if (!fl || fl.length === 0) return
+          const ingestedItems = filesFromDirectoryInput(fl)
+          // Derive base name from the shared top-level folder
+          const firstPath = fl[0]?.webkitRelativePath ?? fl[0]?.name ?? ''
+          const baseName = firstPath.split('/')[0] ?? 'site'
+          handleIngest(ingestedItems, baseName)
+        }}
+      />
+      <input
+        ref={zipRef}
+        type="file"
+        className="hidden"
+        aria-label="Zip input"
+        accept=".zip"
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          try {
+            const ingestedItems = await filesFromZip(file)
+            const baseName = file.name.replace(/\.zip$/i, '')
+            handleIngest(ingestedItems, baseName)
+          } catch {
+            setUploadError('Failed to read zip file.')
+          }
+        }}
+      />
+
+      {/* Trigger buttons */}
+      {phase === 'idle' && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={isUploading}
+            onClick={() => folderRef.current?.click()}
+            className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 shadow-sm transition-colors hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
+            </svg>
+            Upload site (folder)
+          </button>
+          <button
+            type="button"
+            disabled={isUploading}
+            onClick={() => zipRef.current?.click()}
+            className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 shadow-sm transition-colors hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+            </svg>
+            Upload site (.zip)
+          </button>
+        </div>
+      )}
+
+      {/* Entry picking / confirmation panel */}
+      {phase === 'picking-entry' && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+          <div className="mb-3 flex flex-col gap-2">
+            {/* Site name */}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-700">Site name</span>
+              <input
+                type="text"
+                value={siteName}
+                onChange={(e) => setSiteName(e.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none"
+                placeholder="My Site"
+              />
+            </label>
+
+            {/* Entry picker (only when multiple candidates) */}
+            {candidates.length > 0 && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-700">Entry HTML file</span>
+                <select
+                  value={entry ?? ''}
+                  onChange={(e) => setEntry(e.target.value || null)}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="">— pick an entry —</option>
+                  {candidates.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {/* Auto-detected entry summary */}
+            {entry !== null && candidates.length === 0 && (
+              <p className="text-xs text-gray-600">
+                Entry: <span className="font-medium text-purple-700">{entry}</span>
+                {' '}({items.length} file{items.length !== 1 ? 's' : ''})
+              </p>
+            )}
+          </div>
+
+          {uploadError && (
+            <p className="mb-3 text-xs text-red-600">{uploadError}</p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!entry || !siteName.trim()}
+              onClick={handleUpload}
+              className="rounded-lg bg-purple-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Upload site
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Uploading state */}
+      {phase === 'uploading' && uploadProgress && (
+        <div className="flex items-center gap-2 text-sm text-purple-700">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          {uploadProgress}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // NewFolderControl
 // ---------------------------------------------------------------------------
 
@@ -310,11 +582,17 @@ export function FolderView({ folderId }: FolderViewProps) {
   const { data: rawNodes, isLoading, isError, error } = useListNodesQuery({ parentId: folderId })
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
   const [uploadDone, setUploadDone] = useState(false)
+  const [siteDone, setSiteDone] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Fold-in fix #2: Show folder name in h1 for sub-folders
+  const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
 
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) clearTimeout(timerRef.current)
+      if (siteTimerRef.current !== null) clearTimeout(siteTimerRef.current)
     }
   }, [])
 
@@ -326,6 +604,12 @@ export function FolderView({ folderId }: FolderViewProps) {
       if (timerRef.current !== null) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => setUploadDone(false), 3000)
     }
+  }
+
+  function handleSiteDone() {
+    setSiteDone(true)
+    if (siteTimerRef.current !== null) clearTimeout(siteTimerRef.current)
+    siteTimerRef.current = setTimeout(() => setSiteDone(false), 3000)
   }
 
   const uploadErrorMsg = uploadError
@@ -343,6 +627,10 @@ export function FolderView({ folderId }: FolderViewProps) {
       })
     : []
 
+  const pageTitle = folderId === 'root'
+    ? 'My Files'
+    : (currentFolder?.name ?? 'Folder')
+
   return (
     <div className="container-page py-10">
       {/* Breadcrumb */}
@@ -351,12 +639,17 @@ export function FolderView({ folderId }: FolderViewProps) {
       {/* Toolbar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-gray-900">
-          {folderId === 'root' ? 'My Files' : 'Folder'}
+          {pageTitle}
         </h1>
         <div className="flex items-center gap-2">
           <NewFolderControl folderId={folderId} />
           <UploadButton onFile={handleFile} uploading={uploading} />
         </div>
+      </div>
+
+      {/* Upload Site control */}
+      <div className="mb-4">
+        <UploadSiteControl folderId={folderId} onDone={handleSiteDone} />
       </div>
 
       {/* Upload feedback */}
@@ -368,6 +661,11 @@ export function FolderView({ folderId }: FolderViewProps) {
       {uploadDone && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
           File uploaded successfully.
+        </div>
+      )}
+      {siteDone && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          Site uploaded successfully.
         </div>
       )}
 
