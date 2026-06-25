@@ -158,4 +158,21 @@ export const handlers = [
       headers: { 'Content-Type': obj.type },
     })
   }),
+
+  /**
+   * POST /api/sign
+   * Body: { path: storageKey }
+   * Response: { signed: { url } }
+   *
+   * In dev mocks, we return the serve path (/api/uploads/content/<storageKey>)
+   * as the "signed" URL so the <video>/<audio> element can actually load the
+   * bytes stored by the mock bucket PUT — same response shape as the real
+   * contract (`{ signed: { url } }`).
+   */
+  http.post('/api/sign', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { path?: string }
+    const storageKey = body.path ?? ''
+    const url = mockServePath(storageKey)
+    return HttpResponse.json({ signed: { url } })
+  }),
 ] as const

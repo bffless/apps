@@ -14,6 +14,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
 import { toNode, toNodeList, buildRegisterBody } from '../lib/nodes'
 import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
+import { toSignedUrl } from '../lib/sign'
 
 export type { HandoffNode, PreparedUpload, RegisterBody }
 
@@ -71,6 +72,24 @@ export const handoffApi = createApi({
         body,
       }),
       transformResponse: (r) => toNode((r as { node?: unknown }).node),
+    }),
+
+    /**
+     * POST /api/sign → { signed: { url, ... } }
+     * Mints a short-lived presigned GET URL for a bucket object so the browser
+     * can stream video/audio directly without proxying through BFFless.
+     * keepUnusedDataFor is short (60 s) — signed URLs are minted per view and
+     * must NOT be persisted to redux-persist (the handoffApi cache is already
+     * excluded from the persist config).
+     */
+    getSignedUrl: builder.query<string | null, string /* storageKey */>({
+      query: (storageKey) => ({
+        url: 'api/sign',
+        method: 'POST',
+        body: { path: storageKey },
+      }),
+      transformResponse: toSignedUrl,
+      keepUnusedDataFor: 60,
     }),
 
     /**
@@ -134,6 +153,7 @@ export const handoffApi = createApi({
 export const {
   useListNodesQuery,
   useGetNodeQuery,
+  useGetSignedUrlQuery,
   usePrepareUploadMutation,
   useRegisterNodeMutation,
   useUploadFileMutation,

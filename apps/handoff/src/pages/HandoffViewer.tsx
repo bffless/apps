@@ -8,7 +8,7 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useGetNodeQuery } from '../store/handoffApi'
+import { useGetNodeQuery, useGetSignedUrlQuery } from '../store/handoffApi'
 import { previewFor } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
@@ -162,6 +162,55 @@ function PreviewUnavailable({ node }: { node: HandoffNode }) {
 }
 
 // ---------------------------------------------------------------------------
+// MediaPreview — video and audio via signed URL (ADR-0001 large-media exception)
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders a <video> or <audio> element sourced from a freshly-minted presigned
+ * GET URL. The URL is fetched via POST /api/sign on each view and is never
+ * stored in redux-persist (the RTK Query cache is already excluded).
+ */
+function MediaPreview({ node, kind }: { node: HandoffNode; kind: 'video' | 'audio' }) {
+  const storageKey = node.storageKey ?? ''
+  const { data: signedUrl, isLoading, isError } = useGetSignedUrlQuery(storageKey, {
+    // Skip the query if we have no key; the guard below will show the error card.
+    skip: storageKey === '',
+  })
+
+  if (isLoading || (storageKey !== '' && signedUrl === undefined && !isError)) {
+    return (
+      <div className="flex flex-1 items-center justify-center py-24">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+      </div>
+    )
+  }
+
+  if (isError || !signedUrl) {
+    return <PreviewUnavailable node={node} />
+  }
+
+  if (kind === 'video') {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-black p-4">
+        <video
+          src={signedUrl}
+          controls
+          className="max-h-full max-w-full"
+          style={{ maxHeight: 'calc(100vh - 10rem)' }}
+        />
+      </div>
+    )
+  }
+
+  // kind === 'audio'
+  return (
+    <div className="flex flex-1 items-center justify-center p-8">
+      <audio src={signedUrl} controls className="w-full max-w-xl" />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // HandoffViewer
 // ---------------------------------------------------------------------------
 
@@ -204,7 +253,13 @@ export function HandoffViewer() {
         {kind === 'markdown' && node.url && (
           <MarkdownPreview url={node.url} />
         )}
-        {(kind === 'site' || kind === 'video' || kind === 'audio' || kind === 'download') && (
+        {kind === 'video' && (
+          <MediaPreview node={node} kind="video" />
+        )}
+        {kind === 'audio' && (
+          <MediaPreview node={node} kind="audio" />
+        )}
+        {(kind === 'site' || kind === 'download') && (
           <PreviewUnavailable node={node} />
         )}
       </div>
