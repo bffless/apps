@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { HandoffHome } from './pages/HandoffHome'
 import { HandoffViewer } from './pages/HandoffViewer'
+import { HandoffFolder } from './pages/HandoffFolder'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -39,6 +40,7 @@ function App() {
       <Route element={<Shell />}>
         <Route index element={<HandoffHome />} />
         <Route path="view/:id" element={<HandoffViewer />} />
+        <Route path="folder/:id" element={<HandoffFolder />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

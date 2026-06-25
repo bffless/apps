@@ -126,6 +126,34 @@ export const handlers = [
   }),
 
   /**
+   * POST /api/folders
+   * Body: { parentId, name, createdMs? }
+   * Response: { node: HandoffNode } — type:'folder', file fields null
+   */
+  http.post('/api/folders', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      parentId?: string
+      name?: string
+      createdMs?: number
+    }
+    const id = String(++nodeCounter)
+    const raw = {
+      id,
+      type: 'folder',
+      name: body.name ?? 'Untitled Folder',
+      mime: null,
+      size: null,
+      url: null,
+      storageKey: null,
+      parentId: body.parentId ?? 'root',
+      createdAt: typeof body.createdMs === 'number' ? body.createdMs : Date.now(),
+    }
+    const node = toNode(raw)
+    nodes.set(id, node)
+    return HttpResponse.json({ node })
+  }),
+
+  /**
    * GET /api/nodes?parentId=…
    * Response: { nodes: HandoffNode[] }
    */

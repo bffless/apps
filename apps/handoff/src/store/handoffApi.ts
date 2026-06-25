@@ -93,6 +93,20 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * POST /api/folders → { node: HandoffNode }
+     * Creates a new folder node under parentId.
+     */
+    createFolder: builder.mutation<HandoffNode, { parentId: string; name: string }>({
+      query: ({ parentId, name }) => ({
+        url: 'api/folders',
+        method: 'POST',
+        body: { parentId, name, createdMs: Date.now() },
+      }),
+      transformResponse: (r) => toNode((r as { node?: unknown }).node),
+      invalidatesTags: (_result, _err, { parentId }) => [{ type: 'Node', id: `LIST:${parentId}` }],
+    }),
+
+    /**
      * Full presigned-upload flow: prepare → PUT bytes → register metadata.
      * Modelled on Studio's `upload` mutation — a custom `queryFn` that runs
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
@@ -157,4 +171,5 @@ export const {
   usePrepareUploadMutation,
   useRegisterNodeMutation,
   useUploadFileMutation,
+  useCreateFolderMutation,
 } = handoffApi

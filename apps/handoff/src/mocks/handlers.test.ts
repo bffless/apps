@@ -36,6 +36,49 @@ describe('MSW boundary: node listing', () => {
   })
 })
 
+describe('MSW boundary: folder creation', () => {
+  it('POST /api/folders creates a folder node with type folder', async () => {
+    const res = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentId: 'root', name: 'My Folder', createdMs: 1700000000000 }),
+    })
+    expect(res.ok).toBe(true)
+    const json = await res.json()
+    expect(json).toHaveProperty('node')
+    expect(json.node.type).toBe('folder')
+    expect(json.node.name).toBe('My Folder')
+    expect(json.node.parentId).toBe('root')
+    expect(json.node.mime).toBeNull()
+    expect(json.node.url).toBeNull()
+  })
+
+  it('nested folder appears in parent listing', async () => {
+    // Create parent folder
+    const parentRes = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentId: 'root', name: 'Parent' }),
+    })
+    const { node: parent } = await parentRes.json()
+
+    // Create child folder
+    const childRes = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentId: parent.id, name: 'Child' }),
+    })
+    const { node: child } = await childRes.json()
+    expect(child.parentId).toBe(parent.id)
+
+    // List parent — should see child
+    const listRes = await fetch(`/api/nodes?parentId=${parent.id}`)
+    const { nodes: listed } = await listRes.json()
+    expect(listed).toHaveLength(1)
+    expect(listed[0].id).toBe(child.id)
+  })
+})
+
 describe('MSW boundary: upload flow', () => {
   it('upload → register → list produces a node with correct name, type, and size', async () => {
     const content = 'hello world'
