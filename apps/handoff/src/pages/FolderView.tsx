@@ -17,12 +17,14 @@ import {
   useGetNodeQuery,
   useUploadFileMutation,
   useUploadSiteMutation,
+  useImportFolderMutation,
   useCreateFolderMutation,
 } from '../store/handoffApi'
 import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
 import { formatBytes } from '../lib/format'
 import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
 import { planSiteUpload } from '../lib/site'
+import { planFolderImport } from '../lib/folderImport'
 import { useSession, adminLoginUrl } from '../lib/session'
 import { evaluateAccess } from '../lib/acl'
 import { ManageAccessPanel } from '../components/ManageAccessPanel'
@@ -288,74 +290,96 @@ function UploadButton({ onFile, uploading }: UploadButtonProps) {
 }
 
 // ---------------------------------------------------------------------------
-// UploadSiteControl
+// UploadFolderControl
 // ---------------------------------------------------------------------------
 
-interface UploadSiteControlProps {
+interface UploadFolderControlProps {
   folderId: string
-  onDone: () => void
+  onDone: (message: string) => void
 }
 
 /**
- * Renders two hidden file inputs (folder-drop and .zip) plus a "Upload site"
- * button that triggers a dropdown/inline UI:
- *   - Ingest files from folder or zip
- *   - Run planSiteUpload
- *   - If entry is auto-detected, proceed. If multiple candidates, show picker.
- *   - If no HTML found, show error.
- *   - Editable site name input (defaults to folder/zip base name).
- *   - Upload progress + errors.
+ * "Upload folder" — a single entry (folder-drop or .zip) that branches on the
+ * ingested content:
+ *   - HTML detected → offer a choice: **Import as Site** (iframe-rendered Entry,
+ *     the original behaviour) or **Import as folder of files** (browsable tree).
+ *     Site is recommended when a root `index.html` is present.
+ *   - No HTML → import straight as a browsable Folder tree of Files (no Site
+ *     option) — the case a folder of `.md`/PDFs/images wants.
+ *
+ * Phases:
+ *   idle → choosing (HTML) | confirm-folder (no HTML)
+ *   choosing → picking-entry (Site) | confirm-folder (folder of files)
+ *   picking-entry → uploading (uploadSite)
+ *   confirm-folder → importing (importFolder)
+ *
+ * Errors are visible in every phase, so an ingest failure is never a silent
+ * no-op. The Site branch reuses `planSiteUpload`; the tree branch reuses
+ * `planFolderImport` — both share the same path normalisation.
  */
-function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
+function UploadFolderControl({ folderId, onDone }: UploadFolderControlProps) {
   const folderRef = useRef<HTMLInputElement>(null)
   const zipRef = useRef<HTMLInputElement>(null)
 
-  type Phase = 'idle' | 'picking-entry' | 'uploading' | 'done'
+  type Phase = 'idle' | 'choosing' | 'picking-entry' | 'confirm-folder' | 'uploading' | 'importing'
   const [phase, setPhase] = useState<Phase>('idle')
-  const [items, setItems] = useState<{ relPath: string; file: File }[]>([])
+
+  // Original ingested items (raw relPaths) — passed to importFolder, which
+  // normalises once internally. Re-normalising already-stripped paths could
+  // strip a second shared top dir, so the tree branch must get the originals.
+  const [rawItems, setRawItems] = useState<{ relPath: string; file: File }[]>([])
+  // Normalised site items (carry File + normalised relPath) for the Site branch.
+  const [siteItems, setSiteItems] = useState<{ relPath: string; file: File }[]>([])
   const [entry, setEntry] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<string[]>([])
   const [siteName, setSiteName] = useState('')
+  const [hasHtml, setHasHtml] = useState(false)
+  const [rootIndexHtml, setRootIndexHtml] = useState(false)
+  const [folderCount, setFolderCount] = useState(0)
+  const [fileCount, setFileCount] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
 
   const [uploadSite] = useUploadSiteMutation()
+  const [importFolder] = useImportFolderMutation()
+
+  function plural(n: number, word: string) {
+    return `${n} ${word}${n !== 1 ? 's' : ''}`
+  }
 
   function handleIngest(newItems: { relPath: string; file: File }[], baseName: string) {
-    const plan = planSiteUpload(newItems)
+    const folderPlan = planFolderImport(newItems)
 
-    if (plan.files.length === 0) {
+    if (folderPlan.files.length === 0) {
       setUploadError('No files found in the selected folder/zip.')
       return
     }
 
-    // plan.files carries the original File objects with normalised relPaths —
-    // no string-based re-pairing needed.
-    setItems(plan.files)
+    const sitePlan = planSiteUpload(newItems)
+    setRawItems(newItems)
+    setSiteItems(sitePlan.files)
+    setEntry(sitePlan.entry)
+    setCandidates(sitePlan.candidates)
+    setHasHtml(folderPlan.hasHtml)
+    setRootIndexHtml(folderPlan.rootIndexHtml)
+    setFolderCount(folderPlan.dirs.length)
+    setFileCount(folderPlan.files.length)
     setSiteName(baseName)
     setUploadError(null)
 
-    if (plan.candidates.length === 0 && plan.entry === null) {
-      setUploadError(
-        'No HTML file found — a Site is an HTML bundle (needs a .html/.htm file). ' +
-          'To share non-HTML files like docs or PDFs, upload them individually with the Upload button.',
-      )
-      return
-    }
-
-    setEntry(plan.entry)
-    setCandidates(plan.candidates)
-    setPhase('picking-entry')
+    // HTML present → let the user choose Site vs folder of files.
+    // No HTML → there is nothing to render as a Site; go straight to import.
+    setPhase(folderPlan.hasHtml ? 'choosing' : 'confirm-folder')
   }
 
-  async function handleUpload() {
+  async function handleUploadSite() {
     if (!entry) return
     const trimmedName = siteName.trim() || 'Untitled Site'
     setPhase('uploading')
-    setUploadProgress(`Uploading ${items.length} file${items.length !== 1 ? 's' : ''}…`)
+    setUploadProgress(`Uploading ${plural(siteItems.length, 'file')}…`)
     setUploadError(null)
 
-    const result = await uploadSite({ items, entry, name: trimmedName, parentId: folderId })
+    const result = await uploadSite({ items: siteItems, entry, name: trimmedName, parentId: folderId })
 
     if ('error' in result) {
       const err = result.error
@@ -366,29 +390,69 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
       setPhase('picking-entry')
       setUploadProgress(null)
     } else {
-      setPhase('idle')
-      setUploadProgress(null)
-      setItems([])
-      setEntry(null)
-      setCandidates([])
-      setSiteName('')
-      onDone()
+      handleReset()
+      onDone('Site uploaded successfully.')
     }
   }
 
-  function handleReset() {
+  async function handleImportFolder() {
+    setPhase('importing')
+    setUploadProgress(
+      `Importing ${plural(folderCount, 'folder')} and ${plural(fileCount, 'file')}…`,
+    )
+    setUploadError(null)
+
+    const result = await importFolder({ items: rawItems, parentId: folderId })
+
+    if ('error' in result) {
+      const err = result.error
+      const msg = 'error' in (err as object)
+        ? (err as { error: string }).error
+        : `Import failed (${(err as { status: string | number }).status})`
+      setUploadError(msg)
+      setPhase(hasHtml ? 'choosing' : 'confirm-folder')
+      setUploadProgress(null)
+      return
+    }
+
+    const data = result.data
+    const summary = `Imported ${plural(data.foldersCreated, 'folder')} and ${plural(data.filesUploaded, 'file')}.`
+    if (data.failures.length > 0) {
+      // Partial import: the listing still refreshes with what landed, but make
+      // the failures visible rather than swallowing them.
+      resetFields()
+      setUploadError(
+        `${summary} ${plural(data.failures.length, 'file')} failed: ` +
+          data.failures.map((f) => f.relPath).join(', '),
+      )
+    } else {
+      handleReset()
+      onDone(summary)
+    }
+  }
+
+  function resetFields() {
     setPhase('idle')
-    setItems([])
+    setRawItems([])
+    setSiteItems([])
     setEntry(null)
     setCandidates([])
     setSiteName('')
-    setUploadError(null)
+    setHasHtml(false)
+    setRootIndexHtml(false)
+    setFolderCount(0)
+    setFileCount(0)
     setUploadProgress(null)
     if (folderRef.current) folderRef.current.value = ''
     if (zipRef.current) zipRef.current.value = ''
   }
 
-  const isUploading = phase === 'uploading'
+  function handleReset() {
+    resetFields()
+    setUploadError(null)
+  }
+
+  const isBusy = phase === 'uploading' || phase === 'importing'
 
   return (
     <div className="flex flex-col gap-2">
@@ -410,7 +474,7 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
             const ingestedItems = filesFromDirectoryInput(fl)
             // Derive base name from the shared top-level folder
             const firstPath = fl[0]?.webkitRelativePath ?? fl[0]?.name ?? ''
-            const baseName = firstPath.split('/')[0] || 'site'
+            const baseName = firstPath.split('/')[0] || 'folder'
             handleIngest(ingestedItems, baseName)
           } catch (err) {
             setUploadError(
@@ -439,7 +503,7 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
       />
 
       {/* Error message — visible in every phase (incl. idle), so an ingest
-          failure like "no HTML file" isn't a silent no-op. */}
+          failure isn't a silent no-op. */}
       {uploadError && (
         <p className="text-xs text-red-600">{uploadError}</p>
       )}
@@ -449,30 +513,92 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled={isUploading}
+            disabled={isBusy}
+            title="Drop a folder. If it contains an index.html we'll offer to render it as a Site; otherwise it imports as browsable folders + files."
             onClick={() => folderRef.current?.click()}
             className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 shadow-sm transition-colors hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
               <path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
             </svg>
-            Upload site (folder)
+            Upload folder
           </button>
           <button
             type="button"
-            disabled={isUploading}
+            disabled={isBusy}
+            title="Upload a .zip — same flow as a folder drop."
             onClick={() => zipRef.current?.click()}
             className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 shadow-sm transition-colors hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
               <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
             </svg>
-            Upload site (.zip)
+            Upload .zip
           </button>
         </div>
       )}
 
-      {/* Entry picking / confirmation panel */}
+      {/* Choice panel — HTML detected: Site or folder of files */}
+      {phase === 'choosing' && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+          <p className="mb-3 text-xs text-gray-600">
+            This folder contains HTML
+            {rootIndexHtml && <> (including a root <span className="font-medium">index.html</span>)</>}.
+            How should it be imported?
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPhase('picking-entry')}
+              className="rounded-lg bg-purple-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-purple-800"
+            >
+              Import as Site{rootIndexHtml && <span className="ml-1 opacity-80">(recommended)</span>}
+            </button>
+            <button
+              type="button"
+              onClick={handleImportFolder}
+              className="rounded-lg border border-purple-300 bg-white px-4 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-100"
+            >
+              Import as folder of files
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Folder-of-files confirm (no HTML, or chose folder from the HTML branch) */}
+      {phase === 'confirm-folder' && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+          <p className="mb-3 text-xs text-gray-600">
+            Import as a browsable folder: {plural(folderCount, 'sub-folder')} and{' '}
+            {plural(fileCount, 'file')} into this folder.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleImportFolder}
+              className="rounded-lg bg-purple-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-purple-800"
+            >
+              Import folder
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Entry picking / confirmation panel (Site branch) */}
       {phase === 'picking-entry' && (
         <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
           <div className="mb-3 flex flex-col gap-2">
@@ -509,7 +635,7 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
             {entry !== null && candidates.length === 0 && (
               <p className="text-xs text-gray-600">
                 Entry: <span className="font-medium text-purple-700">{entry}</span>
-                {' '}({items.length} file{items.length !== 1 ? 's' : ''})
+                {' '}({plural(siteItems.length, 'file')})
               </p>
             )}
           </div>
@@ -518,7 +644,7 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
             <button
               type="button"
               disabled={!entry || !siteName.trim()}
-              onClick={handleUpload}
+              onClick={handleUploadSite}
               className="rounded-lg bg-purple-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Upload site
@@ -534,8 +660,8 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
         </div>
       )}
 
-      {/* Uploading state */}
-      {phase === 'uploading' && uploadProgress && (
+      {/* Busy state (site upload or folder import) */}
+      {isBusy && uploadProgress && (
         <div className="flex items-center gap-2 text-sm text-purple-700">
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -646,7 +772,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   const { data: rawNodes, isLoading, isError, error } = useListNodesQuery({ parentId: folderId })
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
   const [uploadDone, setUploadDone] = useState(false)
-  const [siteDone, setSiteDone] = useState(false)
+  const [importDoneMsg, setImportDoneMsg] = useState<string | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -714,10 +840,10 @@ export function FolderView({ folderId }: FolderViewProps) {
     }
   }
 
-  function handleSiteDone() {
-    setSiteDone(true)
+  function handleImportDone(message: string) {
+    setImportDoneMsg(message)
     if (siteTimerRef.current !== null) clearTimeout(siteTimerRef.current)
-    siteTimerRef.current = setTimeout(() => setSiteDone(false), 3000)
+    siteTimerRef.current = setTimeout(() => setImportDoneMsg(null), 4000)
   }
 
   const uploadErrorMsg = uploadError
@@ -788,10 +914,10 @@ export function FolderView({ folderId }: FolderViewProps) {
         </div>
       )}
 
-      {/* Upload Site control (only for writers) */}
+      {/* Upload Folder control (only for writers) */}
       {canWrite && (
         <div className="mb-4">
-          <UploadSiteControl folderId={folderId} onDone={handleSiteDone} />
+          <UploadFolderControl folderId={folderId} onDone={handleImportDone} />
         </div>
       )}
 
@@ -806,9 +932,9 @@ export function FolderView({ folderId }: FolderViewProps) {
           File uploaded successfully.
         </div>
       )}
-      {siteDone && (
+      {importDoneMsg && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Site uploaded successfully.
+          {importDoneMsg}
         </div>
       )}
 

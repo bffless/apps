@@ -15,6 +15,8 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
 import { toNode, toNodeList, buildRegisterBody } from '../lib/nodes'
 import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
+import { planSiteUpload } from '../lib/site'
+import { planFolderImport } from '../lib/folderImport'
 import type { Grant } from '../lib/acl'
 
 export type { HandoffNode, PreparedUpload, RegisterBody, Grant }
@@ -48,6 +50,40 @@ function toShareLinkList(raw: unknown): ShareLink[] {
   const r = raw as { links?: unknown[] }
   if (!Array.isArray(r?.links)) return []
   return r.links.map(toShareLink)
+}
+
+// ---------------------------------------------------------------------------
+// Folder-import result
+// ---------------------------------------------------------------------------
+
+export interface ImportFolderResult {
+  /** Number of sub-folders created. */
+  foldersCreated: number
+  /** Number of files successfully uploaded + registered. */
+  filesUploaded: number
+  /** Per-file failures (folder creation failures abort and surface as an error). */
+  failures: { relPath: string; error: string }[]
+  /** Ids of every created sub-folder, used to invalidate their listings. */
+  createdFolderIds: string[]
+}
+
+/**
+ * Run `tasks` with a bounded number in flight at once, preserving result order.
+ * Keeps the per-file fan-out from hammering the backend for large folders while
+ * staying simple enough to collect a partial-failure summary.
+ */
+async function runPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const idx = next++
+      results[idx] = await fn(items[idx]!)
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker)
+  await Promise.all(workers)
+  return results
 }
 
 export const handoffApi = createApi({
@@ -204,6 +240,112 @@ export const handoffApi = createApi({
         }
       },
       invalidatesTags: (_result, _err, { parentId }) => [{ type: 'Node', id: `LIST:${parentId}` }],
+    }),
+
+    /**
+     * Folder-tree import: recreate a dropped folder as browsable Folders + Files.
+     * Pure client orchestration over endpoints that already exist:
+     *   1. planFolderImport(items) → dirs (parent-before-child) + files.
+     *   2. Create each sub-folder via POST /api/folders, building a
+     *      `relDir -> folderId` map (root dir '' = the starting parentId).
+     *   3. Upload each file (prepare → bucket PUT → POST /api/nodes register)
+     *      into its owning folder, with a bounded concurrency pool.
+     *
+     * A folder-creation failure aborts (children would be orphaned). File
+     * failures are collected into `failures` so a partial import still reports
+     * what landed and what didn't — never a silent no-op.
+     */
+    importFolder: builder.mutation<
+      ImportFolderResult,
+      { items: { relPath: string; file: File }[]; parentId: string }
+    >({
+      async queryFn({ items, parentId }, _queryApi, _extraOptions, baseQuery) {
+        try {
+          // Normalise once (carries the File through) so file lookup uses the
+          // same paths planFolderImport derives its dirs/files from.
+          const fileByPath = new Map(planSiteUpload(items).files.map((it) => [it.relPath, it.file]))
+          const plan = planFolderImport(items)
+
+          // relDir -> folderId; '' is the starting folder we import into.
+          const dirToId: Record<string, string> = { '': parentId }
+          const createdFolderIds: string[] = []
+
+          // 1. Create folders, parents first.
+          for (const dir of plan.dirs) {
+            const slash = dir.lastIndexOf('/')
+            const parentDir = slash === -1 ? '' : dir.slice(0, slash)
+            const name = slash === -1 ? dir : dir.slice(slash + 1)
+            const parentFolderId = dirToId[parentDir] ?? parentId
+
+            const res = await baseQuery({
+              url: 'api/folders',
+              method: 'POST',
+              body: { parentId: parentFolderId, name, createdMs: Date.now() },
+            })
+            if (res.error) return { error: res.error }
+            const node = toNode((res.data as { node?: unknown }).node)
+            dirToId[dir] = node.id
+            createdFolderIds.push(node.id)
+          }
+
+          // 2. Upload files into their owning folder (bounded concurrency).
+          const failures: { relPath: string; error: string }[] = []
+          let filesUploaded = 0
+
+          await runPool(plan.files, 4, async (f) => {
+            const file = fileByPath.get(f.relPath)
+            if (!file) {
+              failures.push({ relPath: f.relPath, error: 'File data missing for path.' })
+              return
+            }
+            const targetId = dirToId[f.dir] ?? parentId
+            try {
+              const prepRes = await baseQuery({
+                url: 'api/uploads/prepare',
+                method: 'POST',
+                body: { filename: f.name, contentType: file.type || 'application/octet-stream' },
+              })
+              if (prepRes.error) throw new Error(`prepare failed (${JSON.stringify(prepRes.error)})`)
+              const prepared = prepRes.data as PreparedUpload
+
+              const putRes = await fetch(prepared.uploadUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                body: file,
+              })
+              if (!putRes.ok) throw new Error(`bucket upload failed (${putRes.status})`)
+
+              const regBody = buildRegisterBody(prepared, file, targetId, Date.now())
+              const regRes = await baseQuery({ url: 'api/nodes', method: 'POST', body: regBody })
+              if (regRes.error) throw new Error(`register failed (${JSON.stringify(regRes.error)})`)
+
+              filesUploaded++
+            } catch (e) {
+              failures.push({ relPath: f.relPath, error: e instanceof Error ? e.message : String(e) })
+            }
+          })
+
+          return {
+            data: {
+              foldersCreated: createdFolderIds.length,
+              filesUploaded,
+              failures,
+              createdFolderIds,
+            },
+          }
+        } catch (e) {
+          return {
+            error: {
+              status: 'CUSTOM_ERROR' as const,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          }
+        }
+      },
+      invalidatesTags: (result, _err, { parentId }) => [
+        { type: 'Node', id: `LIST:${parentId}` },
+        ...(result?.createdFolderIds ?? []).map((id) => ({ type: 'Node' as const, id: `LIST:${id}` })),
+      ],
     }),
 
     /**
@@ -389,6 +531,7 @@ export const {
   useRegisterNodeMutation,
   useUploadFileMutation,
   useUploadSiteMutation,
+  useImportFolderMutation,
   useCreateFolderMutation,
   useGetGrantsQuery,
   useAddGrantMutation,
