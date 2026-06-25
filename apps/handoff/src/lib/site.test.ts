@@ -149,3 +149,29 @@ describe('planSiteUpload — empty/dot paths are dropped', () => {
     expect(plan.entry).toBe('index.html')
   })
 })
+
+describe('planSiteUpload — generic passthrough (extra fields carried through)', () => {
+  it('carries extra fields (e.g. file) through normalisation with the normalised relPath', () => {
+    // Simulate { relPath, file } items — the File sentinel is just an object here
+    const fakeFile = { name: 'index.html' } as unknown as File
+    const fakeStyle = { name: 'style.css' } as unknown as File
+    const inputs = [
+      { relPath: 'bundle/index.html', file: fakeFile },
+      { relPath: 'bundle/style.css', file: fakeStyle },
+    ]
+    const plan = planSiteUpload(inputs)
+
+    // Paths are normalised (common top dir 'bundle/' stripped)
+    expect(plan.files.map((f) => f.relPath)).toContain('index.html')
+    expect(plan.files.map((f) => f.relPath)).toContain('style.css')
+    expect(plan.files.map((f) => f.relPath)).not.toContain('bundle/index.html')
+
+    // Original file references are preserved on the normalised items
+    const indexItem = plan.files.find((f) => f.relPath === 'index.html')
+    expect(indexItem?.file).toBe(fakeFile)
+    const styleItem = plan.files.find((f) => f.relPath === 'style.css')
+    expect(styleItem?.file).toBe(fakeStyle)
+
+    expect(plan.entry).toBe('index.html')
+  })
+})

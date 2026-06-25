@@ -257,24 +257,16 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
   const [uploadSite] = useUploadSiteMutation()
 
   function handleIngest(newItems: { relPath: string; file: File }[], baseName: string) {
-    const plan = planSiteUpload(newItems.map(({ relPath }) => ({ relPath })))
+    const plan = planSiteUpload(newItems)
 
     if (plan.files.length === 0) {
       setUploadError('No files found in the selected folder/zip.')
       return
     }
 
-    // Re-map items to normalised relPaths from plan
-    const normalisedItems = plan.files.map(({ relPath }) => {
-      const matched = newItems.find((it) => {
-        // match by normalised relPath
-        const norm = it.relPath.replace(/\\/g, '/').replace(/^\.\//, '').trim()
-        return norm === relPath
-      }) ?? newItems.find((it) => it.relPath.endsWith(relPath))
-      return { relPath, file: matched!.file }
-    })
-
-    setItems(normalisedItems)
+    // plan.files carries the original File objects with normalised relPaths —
+    // no string-based re-pairing needed.
+    setItems(plan.files)
     setSiteName(baseName)
     setUploadError(null)
 
@@ -285,14 +277,7 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
 
     setEntry(plan.entry)
     setCandidates(plan.candidates)
-
-    if (plan.entry !== null) {
-      // Auto-detected — go straight to name confirmation / upload
-      setPhase('picking-entry')
-    } else {
-      // Multiple candidates — ask user to pick
-      setPhase('picking-entry')
-    }
+    setPhase('picking-entry')
   }
 
   async function handleUpload() {

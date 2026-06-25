@@ -233,7 +233,7 @@ export const handlers = [
       id,
       type: 'site',
       name: body.name ?? 'Untitled Site',
-      mime: 'text/html',
+      mime: null,
       size: null,
       url: siteUrl,
       storageKey: null,

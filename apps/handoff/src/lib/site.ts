@@ -13,9 +13,12 @@
  *      - Else → entry = null, candidates = [all html/htm files].
  */
 
-export interface SitePlan {
-  /** Normalised file list (same order, post-normalisation). */
-  files: { relPath: string }[]
+export interface SitePlan<T extends { relPath: string } = { relPath: string }> {
+  /**
+   * Normalised file list (same order, post-normalisation). Each item is the
+   * original input object with its `relPath` replaced by the normalised path.
+   */
+  files: T[]
   /** The chosen entry-point HTML file, or null if ambiguous / absent. */
   entry: string | null
   /** When entry is null and HTMLs exist, the list of candidates to pick from. */
@@ -53,50 +56,56 @@ function topDir(p: string): string {
 }
 
 /**
- * Given a list of file-path inputs, produce a SitePlan:
- *   - files: normalised (dir-stripped if applicable)
+ * Given a list of inputs (each with at least a `relPath`), produce a SitePlan:
+ *   - files: original items with `relPath` replaced by the normalised path,
+ *            junk entries dropped — no string re-pairing needed at the call site
  *   - entry: resolved or null
  *   - candidates: all html files when entry is null
+ *
+ * The generic `T extends { relPath: string }` means callers can pass richer
+ * objects (e.g. `{ relPath, file }`) and receive them back with normalised paths.
  */
-export function planSiteUpload(inputs: { relPath: string }[]): SitePlan {
-  // 1. Normalise and drop junk
-  const normalised = inputs
-    .map((f) => normalisePath(f.relPath))
-    .filter((p) => !isJunkPath(p))
+export function planSiteUpload<T extends { relPath: string }>(inputs: T[]): SitePlan<T> {
+  // 1. Normalise and drop junk — keep the original item associated with its path
+  const normalised: Array<{ item: T; path: string }> = inputs
+    .map((item) => ({ item, path: normalisePath(item.relPath) }))
+    .filter(({ path }) => !isJunkPath(path))
 
   if (normalised.length === 0) {
     return { files: [], entry: null, candidates: [] }
   }
 
   // 2. Folder-drop: strip single common top-level directory
-  const tops = normalised.map(topDir)
+  const tops = normalised.map(({ path }) => topDir(path))
   const firstTop = tops[0]
   const allShareOneDir =
     firstTop !== '' && tops.every((t) => t === firstTop)
 
-  const stripped = allShareOneDir
-    ? normalised.map((p) => p.slice(firstTop.length + 1)) // +1 for the '/'
-    : normalised
+  const stripped = normalised.map(({ item, path }) => ({
+    item,
+    path: allShareOneDir ? path.slice(firstTop!.length + 1) : path,
+  }))
 
-  const files = stripped.map((relPath) => ({ relPath }))
+  // Return each original item with its relPath replaced by the normalised value
+  const files = stripped.map(({ item, path }) => ({ ...item, relPath: path }))
 
   // 3. Entry detection
-  const htmlFiles = stripped.filter(
-    (p) => p.toLowerCase().endsWith('.html') || p.toLowerCase().endsWith('.htm'),
-  )
+  const htmlPaths = stripped
+    .map(({ path }) => path)
+    .filter((p) => p.toLowerCase().endsWith('.html') || p.toLowerCase().endsWith('.htm'))
 
   let entry: string | null
   let candidates: string[]
 
-  if (htmlFiles.includes('index.html')) {
+  if (htmlPaths.includes('index.html')) {
     entry = 'index.html'
     candidates = []
-  } else if (htmlFiles.length === 1) {
-    entry = htmlFiles[0]!
+  } else if (htmlPaths.length === 1) {
+    entry = htmlPaths[0]!
     candidates = []
-  } else if (htmlFiles.length > 1) {
+  } else if (htmlPaths.length > 1) {
     entry = null
-    candidates = htmlFiles
+    candidates = htmlPaths
   } else {
     entry = null
     candidates = []
