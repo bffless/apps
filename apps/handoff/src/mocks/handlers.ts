@@ -16,7 +16,8 @@
 import { http, HttpResponse } from 'msw'
 import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
-import type { Grant } from '../lib/acl'
+import { evaluateAccess } from '../lib/acl'
+import type { Grant, FolderLink } from '../lib/acl'
 
 // ---------------------------------------------------------------------------
 // In-memory state
@@ -87,6 +88,15 @@ const FAKE_DIRECTORY = [
 
 /**
  * Check whether `mockCurrentUser` can access the given node.
+ *
+ * Delegates to the canonical `evaluateAccess` from `src/lib/acl.ts` so the
+ * mock enforces exactly the same rules as production (incl. inheritance and
+ * restricted-mode semantics).
+ *
+ * Builds the ancestor FolderLink chain by walking `parentId` through the
+ * in-memory `nodes` / `nodeAcl` maps (root → target). Capped at 64 hops to
+ * avoid hanging on a cycle.
+ *
  * Returns: 'ok' | '401' | '403'
  */
 function checkAccess(nodeId: string): 'ok' | '401' | '403' {
@@ -95,18 +105,47 @@ function checkAccess(nodeId: string): 'ok' | '401' | '403' {
   const acl = nodeAcl.get(nodeId)
   if (!acl) return 'ok' // no ACL record = open (root or file)
 
-  // Admin always allowed
-  if (mockCurrentUser.role === 'admin') return 'ok'
+  // Build ancestor chain: walk parentId links from root down to nodeId.
+  const MAX_HOPS = 64
+  const ancestorIds: string[] = []
+  let cursor: string | undefined = nodeId
+  let hops = 0
+  while (cursor && cursor !== 'root' && hops < MAX_HOPS) {
+    ancestorIds.unshift(cursor)
+    const n = nodes.get(cursor)
+    cursor = n?.parentId ?? undefined
+    hops++
+  }
 
-  // Owner always allowed
-  if (acl.ownerId === mockCurrentUser.id) return 'ok'
+  // Build the FolderLink chain (root → target).
+  const folderChain: FolderLink[] = ancestorIds.map((id) => {
+    const a = nodeAcl.get(id)
+    return {
+      id,
+      ownerId: a?.ownerId ?? null,
+      grants: a?.grants ?? [],
+      mode: a?.mode ?? 'inheriting',
+    }
+  })
 
-  // Check grants
-  const nodeGrants = acl.grants
-  const grant = nodeGrants.find((g) => g.principalId === mockCurrentUser!.id)
-  if (grant) return 'ok'
+  // If the chain is somehow empty (e.g. nodeId not in nodes map), fall back to
+  // the direct ACL entry so we still enforce something.
+  if (folderChain.length === 0) {
+    folderChain.push({
+      id: nodeId,
+      ownerId: acl.ownerId,
+      grants: acl.grants,
+      mode: acl.mode,
+    })
+  }
 
-  return '403'
+  const viewer = {
+    userId: mockCurrentUser.id,
+    isAdmin: mockCurrentUser.role === 'admin',
+  }
+
+  const level = evaluateAccess({ folderChain, viewer })
+  return level === 'none' ? '403' : 'ok'
 }
 
 // ---------------------------------------------------------------------------

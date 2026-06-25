@@ -165,15 +165,14 @@ describe('evaluateAccess', () => {
     expect(result).toBe('view')
   })
 
-  // 10. share-link within scope → 'view'
-  it('share-link viewer within scoped folder gets view', () => {
+  // 10. share-link scope matching
+  it('share-link viewer with no matching scoped id in chain gets none', () => {
+    // The chain has no folder with id 'folder-1', so the share link is out-of-scope.
     const result = evaluateAccess({
       folderChain: [link('user-a'), link(null)],
       viewer: viewer({ shareLinkFolderId: 'folder-1' }),
     })
-    // The scoped folderId must appear in the chain — we use the node's id
-    // For this test, build folderChain with identifiable folders
-    expect(result).toBe('none') // no chain contains 'folder-1' by id
+    expect(result).toBe('none')
   })
 
   it('share-link viewer whose scoped id appears in chain gets view', () => {
