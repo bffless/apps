@@ -16,6 +16,7 @@ screenshots
 *.local
 .studio-test.mp4
 .bffless-backups/
+.superpowers/
 
 # editor / OS
 .DS_Store
