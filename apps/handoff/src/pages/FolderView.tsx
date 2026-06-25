@@ -336,7 +336,10 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
     setUploadError(null)
 
     if (plan.candidates.length === 0 && plan.entry === null) {
-      setUploadError('No HTML file found. A site requires at least one .html or .htm file.')
+      setUploadError(
+        'No HTML file found — a Site is an HTML bundle (needs a .html/.htm file). ' +
+          'To share non-HTML files like docs or PDFs, upload them individually with the Upload button.',
+      )
       return
     }
 
@@ -399,12 +402,21 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
         {...{ webkitdirectory: '' }}
         onChange={async (e) => {
           const fl = e.target.files
-          if (!fl || fl.length === 0) return
-          const ingestedItems = filesFromDirectoryInput(fl)
-          // Derive base name from the shared top-level folder
-          const firstPath = fl[0]?.webkitRelativePath ?? fl[0]?.name ?? ''
-          const baseName = firstPath.split('/')[0] ?? 'site'
-          handleIngest(ingestedItems, baseName)
+          if (!fl || fl.length === 0) {
+            setUploadError('No files were selected from that folder.')
+            return
+          }
+          try {
+            const ingestedItems = filesFromDirectoryInput(fl)
+            // Derive base name from the shared top-level folder
+            const firstPath = fl[0]?.webkitRelativePath ?? fl[0]?.name ?? ''
+            const baseName = firstPath.split('/')[0] || 'site'
+            handleIngest(ingestedItems, baseName)
+          } catch (err) {
+            setUploadError(
+              err instanceof Error ? err.message : 'Failed to read the selected folder.',
+            )
+          }
         }}
       />
       <input
@@ -425,6 +437,12 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
           }
         }}
       />
+
+      {/* Error message — visible in every phase (incl. idle), so an ingest
+          failure like "no HTML file" isn't a silent no-op. */}
+      {uploadError && (
+        <p className="text-xs text-red-600">{uploadError}</p>
+      )}
 
       {/* Trigger buttons */}
       {phase === 'idle' && (
@@ -495,10 +513,6 @@ function UploadSiteControl({ folderId, onDone }: UploadSiteControlProps) {
               </p>
             )}
           </div>
-
-          {uploadError && (
-            <p className="mb-3 text-xs text-red-600">{uploadError}</p>
-          )}
 
           <div className="flex items-center gap-2">
             <button
