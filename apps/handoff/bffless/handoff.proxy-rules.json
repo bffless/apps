@@ -1,0 +1,907 @@
+{
+  "version": 2,
+  "exportedAt": "2026-06-25T10:24:12.865Z",
+  "kind": "bffless-proxy-rule-set",
+  "ruleSet": {
+    "name": "handoff",
+    "description": "Handoff app backend — uploads (presigned), node tree, ACL-gated serving, grants, share links.",
+    "environment": null
+  },
+  "rules": [
+    {
+      "pathPattern": "/api/uploads/content/*",
+      "method": "GET",
+      "targetUrl": "http://internal/pipeline",
+      "stripPrefix": true,
+      "order": 1,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Serve handoff_nodes",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "content"
+            },
+            "isEnabled": true,
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from handoff_nodes"
+      },
+      "isEnabled": true,
+      "description": "Serve files from handoff_nodes"
+    },
+    {
+      "pathPattern": "/api/uploads/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 2,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff presigned prepare",
+        "steps": [
+          {
+            "id": "presigned",
+            "name": "presigned",
+            "config": {
+              "subDir": "content",
+              "filename": "request.body.filename",
+              "expiresIn": "3600",
+              "maxFileSize": "524288000"
+            },
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{{{steps.presigned}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Mint a presigned PUT for direct-to-bucket upload"
+      },
+      "isEnabled": true,
+      "description": "Mint a presigned PUT URL for a direct-to-bucket content upload"
+    },
+    {
+      "pathPattern": "/api/nodes",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 3,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff register node",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "content",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "storageKey": "request.body.storageKey",
+              "extraFields": {
+                "ownerId": "user.id",
+                "nodeType": "'file'",
+                "parentId": "request.body.parentId",
+                "createdMs": "request.body.createdMs",
+                "displayName": "request.body.displayName"
+              },
+              "maxFileSize": "524288000",
+              "originalName": "request.body.originalName"
+            },
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.register) || {};\n  var body = (request && request.body) || {};\n  var rawSize = (r.size != null) ? r.size : null;\n  var size = (rawSize != null) ? Number(rawSize) : null;\n  var rawCreated = (r.createdMs != null) ? r.createdMs : body.createdMs;\n  var created = (rawCreated != null) ? Number(rawCreated) : 0;\n  return {\n    node: {\n      id: r.id || r.recordId || r.record_id || null,\n      type: r.nodeType || 'file',\n      name: r.displayName || body.displayName || r.original_name || r.filename || 'Untitled',\n      mime: r.content_type || r.mime_type || null,\n      size: (size != null && !isNaN(size)) ? size : null,\n      url: r.url || null,\n      storageKey: r.storage_path || body.storageKey || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: 'inheriting', grants: [],\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"node\": {{{steps.shape.node}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Register an uploaded file as a node and return the shaped Node"
+      },
+      "isEnabled": true,
+      "description": "Finalize a direct-to-bucket upload into a handoff_nodes file record"
+    },
+    {
+      "pathPattern": "/api/nodes",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 4,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff list nodes",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.query.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || [];\n  var out = [];\n  for (var i = 0; i < rows.length; i++) {\n    var r = rows[i] || {};\n    var id = r.id || r.recordId || r.record_id || null;\n    var t = r.nodeType || 'file';\n    var entry = r.siteEntry || 'index.html';\n    var size = (typeof r.size === 'number') ? r.size : (r.size != null ? Number(r.size) : null);\n    var created = (typeof r.createdMs === 'number') ? r.createdMs : (r.createdMs != null ? Number(r.createdMs) : 0);\n    var url = (t === 'site' && id) ? ('/api/sites/' + id + '/' + entry) : (r.url || null);\n    var grants = r.grantsJson;\n    if (typeof grants === 'string') { try { grants = JSON.parse(grants); } catch (e) { grants = []; } }\n    if (!grants || Object.prototype.toString.call(grants) !== '[object Array]') { grants = []; }\n    out.push({\n      id: id, type: t,\n      name: r.displayName || r.original_name || r.filename || 'Untitled',\n      mime: r.content_type || r.mime_type || null,\n      size: (size != null && !isNaN(size)) ? size : null,\n      url: url, storageKey: r.storage_path || null,\n      parentId: r.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting',\n      grants: grants,\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    });\n  }\n  return { nodes: out };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"nodes\": {{{steps.shape.nodes}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "List nodes whose parentId matches the query (default root)"
+      },
+      "isEnabled": true,
+      "description": "List child nodes of a folder (default root)"
+    },
+    {
+      "pathPattern": "/api/node",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 5,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff get node",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "recordId": "request.query.id",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var r = (steps && steps.query) || {};\n  if (r == null || typeof r !== 'object') r = {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var t = r.nodeType || 'file';\n  var entry = r.siteEntry || 'index.html';\n  var size = (typeof r.size === 'number') ? r.size : (r.size != null ? Number(r.size) : null);\n  var created = (typeof r.createdMs === 'number') ? r.createdMs : (r.createdMs != null ? Number(r.createdMs) : 0);\n  var url = (t === 'site' && id) ? ('/api/sites/' + id + '/' + entry) : (r.url || null);\n  var grants = r.grantsJson;\n  if (typeof grants === 'string') { try { grants = JSON.parse(grants); } catch (e) { grants = []; } }\n  if (!grants || Object.prototype.toString.call(grants) !== '[object Array]') { grants = []; }\n  var node = id ? {\n    id: id, type: t,\n    name: r.displayName || r.original_name || r.filename || 'Untitled',\n    mime: r.content_type || r.mime_type || null,\n    size: (size != null && !isNaN(size)) ? size : null,\n    url: url, storageKey: r.storage_path || null,\n    parentId: r.parentId || 'root',\n    ownerId: r.ownerId || null,\n    mode: r.mode || 'inheriting',\n    grants: grants,\n    createdAt: (created != null && !isNaN(created)) ? created : 0\n  } : null;\n  return { node: node };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"node\": {{{steps.shape.node}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Return one node by id, shaped"
+      },
+      "isEnabled": true,
+      "description": "Fetch a single node by id (?id=)"
+    },
+    {
+      "pathPattern": "/api/sign",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 6,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff sign GET",
+        "steps": [
+          {
+            "id": "sign",
+            "name": "sign",
+            "config": {
+              "path": "request.body.path",
+              "expiresIn": "3600"
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"signed\": {{{steps.sign}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Presigned GET for direct bucket playback (video/audio)"
+      },
+      "isEnabled": true,
+      "description": "Mint a short-lived presigned GET URL for a content object (video/audio direct play)"
+    },
+    {
+      "pathPattern": "/api/folders",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 7,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff create folder",
+        "steps": [
+          {
+            "id": "create",
+            "name": "create",
+            "config": {
+              "fields": {
+                "mode": "'inheriting'",
+                "ownerId": "user.id",
+                "nodeType": "'folder'",
+                "parentId": "request.body.parentId",
+                "createdMs": "request.body.createdMs",
+                "displayName": "request.body.name"
+              },
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var created = (r.createdMs != null) ? Number(r.createdMs) : (body.createdMs != null ? Number(body.createdMs) : 0);\n  return {\n    node: {\n      id: r.id || r.recordId || r.record_id || null,\n      type: r.nodeType || 'folder',\n      name: r.displayName || body.name || 'Untitled folder',\n      mime: null, size: null, url: null, storageKey: null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting',\n      grants: [],\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"node\": {{{steps.shape.node}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Create a folder node and return the shaped Node"
+      },
+      "isEnabled": true,
+      "description": "Create a folder node under a parent"
+    },
+    {
+      "pathPattern": "/api/sites",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 9,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff register site",
+        "steps": [
+          {
+            "id": "create",
+            "name": "create",
+            "config": {
+              "fields": {
+                "mode": "'inheriting'",
+                "ownerId": "user.id",
+                "manifest": "request.body.manifest",
+                "nodeType": "'site'",
+                "parentId": "request.body.parentId",
+                "createdMs": "request.body.createdMs",
+                "siteEntry": "request.body.entry",
+                "displayName": "request.body.name"
+              },
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var entry = r.siteEntry || body.entry || 'index.html';\n  var created = (r.createdMs != null) ? Number(r.createdMs) : (body.createdMs != null ? Number(body.createdMs) : 0);\n  var url = id ? ('/api/sites/' + id + '/' + entry) : null;\n  return {\n    node: {\n      id: id, type: r.nodeType || 'site',\n      name: r.displayName || body.name || 'Untitled site',\n      mime: null, size: null, url: url, storageKey: null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting', grants: [],\n      siteEntry: entry,\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"node\": {{{steps.shape.node}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Create a site node with manifest and return the shaped Node (url = iframe view path)"
+      },
+      "isEnabled": true,
+      "description": "Register a Site node (multi-file HTML bundle) with its manifest"
+    },
+    {
+      "pathPattern": "/api/sites/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 10,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff serve site",
+        "steps": [
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ request }) { var p = (request && request.path) || ''; var marker = '/api/sites/'; var i = p.indexOf(marker); var rest = (i >= 0) ? p.slice(i + marker.length) : ''; var slash = rest.indexOf('/'); var siteId = (slash >= 0) ? rest.slice(0, slash) : rest; var relPath = (slash >= 0) ? rest.slice(slash + 1) : ''; var isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(siteId); return { siteId: siteId, relPath: relPath, hasSite: isUuid }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "recordId": "steps.parse.siteId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.parse.hasSite"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "resolve",
+            "name": "resolve",
+            "config": {
+              "code": "function handler({ steps }) { var node = (steps && steps.query) || {}; if (!node || typeof node !== 'object') node = {}; var man = node.manifest; if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } } if (!man || typeof man !== 'object') man = {}; var entry = node.siteEntry || 'index.html'; var rel = (steps.parse && steps.parse.relPath) || ''; if (!rel || rel.charAt(rel.length - 1) === '/') rel = entry; var target = (man[rel] != null) ? man[rel] : null; return { target: target, missing: !target, rel: rel }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "redirect",
+            "name": "redirect",
+            "config": {
+              "body": "",
+              "status": 302,
+              "headers": {
+                "Location": "{{steps.resolve.target}}",
+                "Cache-Control": "no-store"
+              },
+              "condition": "steps.resolve.target"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "notfound",
+            "name": "notfound",
+            "config": {
+              "body": "{\"error\":\"asset not found\"}",
+              "status": 404,
+              "condition": "steps.resolve.missing",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Map /api/sites/<id>/<relPath> to the stored object via manifest, 302 redirect"
+      },
+      "isEnabled": true,
+      "description": "Serve a Site asset by relative path via manifest redirect (same-origin)"
+    },
+    {
+      "pathPattern": "/api/grants",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 11,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff add grant",
+        "steps": [
+          {
+            "id": "folder",
+            "name": "folder",
+            "config": {
+              "recordId": "request.body.folderId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "merge",
+            "name": "merge",
+            "config": {
+              "code": "function handler({ user, request, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var body = (request && request.body) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  if (!isAdmin && !isOwner) {\n    return { allowed: false, denied: true, grants: [] };\n  }\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var pid = String(body.principalId || '').trim();\n  var level = (body.level === 'edit') ? 'edit' : 'view';\n  var email = body.principalEmail ? String(body.principalEmail) : null;\n  var out = [];\n  var replaced = false;\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId === pid && pid) {\n      out.push({ principalId: pid, principalEmail: email || g.principalEmail || null, level: level });\n      replaced = true;\n    } else if (g.principalId) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  if (pid && !replaced) {\n    out.push({ principalId: pid, principalEmail: email, level: level });\n  }\n  return { allowed: true, denied: false, grants: out };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "save",
+            "name": "save",
+            "config": {
+              "fields": {
+                "grantsJson": "steps.merge.grants"
+              },
+              "recordId": "request.body.folderId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.merge.allowed"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "config": {
+              "body": "{\"grants\": {{{steps.merge.grants}}}}",
+              "status": 200,
+              "condition": "steps.merge.allowed",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.merge.denied",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "Add/update a grant on a folder (owner/admin only)"
+    },
+    {
+      "pathPattern": "/api/grants/revoke",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 12,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff revoke grant",
+        "steps": [
+          {
+            "id": "folder",
+            "name": "folder",
+            "config": {
+              "recordId": "request.body.folderId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "merge",
+            "name": "merge",
+            "config": {
+              "code": "function handler({ user, request, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var body = (request && request.body) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  if (!isAdmin && !isOwner) {\n    return { allowed: false, denied: true, grants: [] };\n  }\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var pid = String(body.principalId || '').trim();\n  var out = [];\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId && g.principalId !== pid) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  return { allowed: true, denied: false, grants: out };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "save",
+            "name": "save",
+            "config": {
+              "fields": {
+                "grantsJson": "steps.merge.grants"
+              },
+              "recordId": "request.body.folderId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.merge.allowed"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "config": {
+              "body": "{\"grants\": {{{steps.merge.grants}}}}",
+              "status": 200,
+              "condition": "steps.merge.allowed",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.merge.denied",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "Revoke a grant from a folder (owner/admin only)"
+    },
+    {
+      "pathPattern": "/api/grants",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 13,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff list grants",
+        "steps": [
+          {
+            "id": "folder",
+            "name": "folder",
+            "config": {
+              "recordId": "request.query.folderId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var folder = (steps && steps.folder) || {};\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var out = [];\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  return { grants: out };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"grants\": {{{steps.shape.grants}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "List a folder's grants"
+    },
+    {
+      "pathPattern": "/api/share-links",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 14,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff mint share link",
+        "steps": [
+          {
+            "id": "folder",
+            "name": "folder",
+            "config": {
+              "recordId": "request.body.folderId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "config": {
+              "code": "function handler({ user, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  var allowed = isAdmin || isOwner;\n  return { allowed: allowed, denied: !allowed };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "create",
+            "name": "create",
+            "config": {
+              "fields": {
+                "folderId": "request.body.folderId",
+                "createdBy": "user.id",
+                "createdMs": "request.body.createdMs",
+                "expiresMs": "request.body.expiresMs"
+              },
+              "schemaId": "ace1febf-4b3d-4a11-a5f8-22a056dd9afa",
+              "condition": "steps.check.allowed"
+            },
+            "handlerType": "data_create"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ request, steps }) {\n  var c = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var token = c.id || c.recordId || c.record_id || null;\n  var exp = (body.expiresMs != null) ? Number(body.expiresMs) : null;\n  return {\n    link: {\n      token: token,\n      folderId: body.folderId || null,\n      expiresAt: (exp != null && !isNaN(exp)) ? exp : null,\n      revoked: false,\n      url: token ? ('/s/' + token) : null\n    }\n  };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "config": {
+              "body": "{{{steps.shape.link}}}",
+              "status": 200,
+              "condition": "steps.check.allowed",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.check.denied",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "Mint a folder-scoped View-only share link (owner/admin)"
+    },
+    {
+      "pathPattern": "/api/share-links/validate",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 15,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff validate share link",
+        "steps": [
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ request }) {\n  var q = (request && request.query) || {};\n  var token = String(q.token || '');\n  var isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(token);\n  return { token: token, hasToken: isUuid };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "link",
+            "name": "link",
+            "config": {
+              "recordId": "steps.parse.token",
+              "schemaId": "ace1febf-4b3d-4a11-a5f8-22a056dd9afa",
+              "condition": "steps.parse.hasToken"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var l = (steps && steps.link) || {};\n  if (l == null || typeof l !== 'object') l = {};\n  var folderId = l.folderId || null;\n  var revoked = l.revoked === true || l.revoked === 'true';\n  var exp = (l.expiresMs != null) ? Number(l.expiresMs) : null;\n  var expired = (exp != null && !isNaN(exp)) ? (Date.now() > exp) : false;\n  var valid = !!folderId && !revoked && !expired;\n  return { result: { valid: valid, folderId: valid ? folderId : null } };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "resp",
+            "name": "resp",
+            "config": {
+              "body": "{{{steps.shape.result}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "Validate a share-link token (public)"
+    },
+    {
+      "pathPattern": "/api/share-links/revoke",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 16,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff revoke share link",
+        "steps": [
+          {
+            "id": "link",
+            "name": "link",
+            "config": {
+              "recordId": "request.body.token",
+              "schemaId": "ace1febf-4b3d-4a11-a5f8-22a056dd9afa"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "config": {
+              "code": "function handler({ user, steps }) {\n  var l = (steps && steps.link) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isCreator = !!uid && l.createdBy === uid;\n  var allowed = !!l.folderId && (isAdmin || isCreator);\n  return { allowed: allowed, denied: !allowed };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "save",
+            "name": "save",
+            "config": {
+              "fields": {
+                "revoked": "true"
+              },
+              "recordId": "request.body.token",
+              "schemaId": "ace1febf-4b3d-4a11-a5f8-22a056dd9afa",
+              "condition": "steps.check.allowed"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "config": {
+              "body": "{\"token\":\"{{request.body.token}}\",\"revoked\":true}",
+              "status": 200,
+              "condition": "steps.check.allowed",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.check.denied",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "Revoke a share link (creator/admin)"
+    },
+    {
+      "pathPattern": "/api/share-links",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 17,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff list share links",
+        "steps": [
+          {
+            "id": "rows",
+            "name": "rows",
+            "config": {
+              "filters": {
+                "folderId": {
+                  "op": "eq",
+                  "value": "request.query.folderId"
+                }
+              },
+              "pageSize": 200,
+              "schemaId": "ace1febf-4b3d-4a11-a5f8-22a056dd9afa"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.rows) || [];\n  var out = [];\n  for (var i = 0; i < rows.length; i++) {\n    var l = rows[i] || {};\n    var token = l.id || l.recordId || l.record_id || null;\n    if (!token) continue;\n    var revoked = l.revoked === true || l.revoked === 'true';\n    var exp = (l.expiresMs != null) ? Number(l.expiresMs) : null;\n    out.push({\n      token: token,\n      folderId: l.folderId || null,\n      expiresAt: (exp != null && !isNaN(exp)) ? exp : null,\n      revoked: revoked,\n      url: '/s/' + token,\n      createdAt: (l.createdMs != null) ? Number(l.createdMs) : 0\n    });\n  }\n  return { links: out };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "resp",
+            "name": "resp",
+            "config": {
+              "body": "{\"links\": {{{steps.shape.links}}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "List a folder's active share links"
+    }
+  ]
+}
