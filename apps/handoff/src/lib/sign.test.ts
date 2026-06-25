@@ -91,4 +91,16 @@ describe('toSignedUrl', () => {
   it('returns null when both signed and url are missing', () => {
     expect(toSignedUrl({ other: 'stuff' })).toBeNull()
   })
+
+  it('falls back to top-level url when signed.url is empty', () => {
+    expect(
+      toSignedUrl({ signed: { url: '   ' }, url: 'https://fallback.example.com/x' }),
+    ).toBe('https://fallback.example.com/x')
+  })
+
+  it('falls back to top-level url when signed.url is missing', () => {
+    expect(
+      toSignedUrl({ signed: { foo: 'bar' }, url: 'https://fallback.example.com/y' }),
+    ).toBe('https://fallback.example.com/y')
+  })
 })

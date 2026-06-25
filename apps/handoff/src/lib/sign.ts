@@ -19,14 +19,13 @@ export function toSignedUrl(raw: unknown): string | null {
 
   const obj = raw as Record<string, unknown>
 
-  // 1. Prefer signed.url
+  // 1. Prefer signed.url; if it is missing/empty, fall through to the flat fallback.
   const signed = obj['signed']
   if (signed !== null && typeof signed === 'object') {
     const inner = (signed as Record<string, unknown>)['url']
     if (typeof inner === 'string') {
       const trimmed = inner.trim()
       if (trimmed.length > 0) return trimmed
-      return null
     }
   }
 
@@ -35,7 +34,6 @@ export function toSignedUrl(raw: unknown): string | null {
   if (typeof url === 'string') {
     const trimmed = url.trim()
     if (trimmed.length > 0) return trimmed
-    return null
   }
 
   return null
