@@ -51,5 +51,7 @@ jobs:
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: handoff
           # Attach the Handoff backend (presigned uploads, node tree, serving,
-          # ACL, grants, share links). Append-only + idempotent.
-          proxy-rule-set-names: handoff
+          # ACL, grants, share links). Use the SINGULAR input: the action sends
+          # `proxy-rule-set-names` (plural) as a comma-joined string, which the
+          # deployments API rejects (`proxyRuleSetNames must be an array`).
+          proxy-rule-set-name: handoff
