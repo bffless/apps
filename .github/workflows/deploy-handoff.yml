@@ -46,3 +46,6 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: handoff
+          # Attach the Handoff backend (presigned uploads, node tree, serving,
+          # ACL, grants, share links). Append-only + idempotent.
+          proxy-rule-set-names: handoff
