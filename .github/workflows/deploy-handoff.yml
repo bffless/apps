@@ -1,0 +1,48 @@
+name: Deploy Handoff to BFFless
+
+# One workflow per app: pushes that touch apps/handoff (or this file) deploy Handoff,
+# and it can always be run by hand. Clone the monorepo, set BFFLESS_URL +
+# BFFLESS_API_KEY on your fork, and deploy just this app.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/handoff/**'
+      - '.github/workflows/deploy-handoff.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-handoff
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter handoff build
+
+      - name: Run unit tests
+        run: pnpm --filter handoff test:run
+
+      - name: Deploy to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/handoff/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: handoff

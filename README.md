@@ -9,6 +9,7 @@ project.
 | App | Path | What it is |
 | --- | --- | --- |
 | **Studio** | [`apps/studio`](apps/studio) | Turns one long screen recording into a short video re-voiced in your own cloned voice — an AI director shortens the transcript into scenes, you build each one, then export. |
+| **Handoff** | [`apps/handoff`](apps/handoff) | Internal, permissioned file server on BFFless — upload docs/prototypes/HTML, organize into folders, control who sees each, served back live. |
 
 ## Develop
 

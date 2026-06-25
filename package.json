@@ -10,7 +10,11 @@
     "studio:dev": "pnpm --filter studio dev",
     "studio:build": "pnpm --filter studio build",
     "studio:lint": "pnpm --filter studio lint",
-    "studio:test": "pnpm --filter studio test:run"
+    "studio:test": "pnpm --filter studio test:run",
+    "handoff:dev": "pnpm --filter handoff dev",
+    "handoff:build": "pnpm --filter handoff build",
+    "handoff:lint": "pnpm --filter handoff lint",
+    "handoff:test": "pnpm --filter handoff test:run"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
