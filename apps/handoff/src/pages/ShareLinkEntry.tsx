@@ -14,7 +14,7 @@
 import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useDispatch } from 'react-redux'
-import { useValidateShareLinkQuery } from '../store/handoffApi'
+import { useClaimShareLinkMutation } from '../store/handoffApi'
 import { setShareLinkFolderId } from '../store/handoffSlice'
 import type { AppDispatch } from '../store'
 
@@ -66,9 +66,14 @@ export function ShareLinkEntry() {
   const navigate = useNavigate()
   const dispatch = useDispatch<AppDispatch>()
 
-  const { data, isLoading, isError } = useValidateShareLinkQuery(token, {
-    skip: !token,
-  })
+  // Claim validates the token AND sets the signed hf_s view cookie the
+  // server-side ACL gate requires (ADR-0002) — so a logged-out visitor can
+  // actually load the shared folder's gated content, not just navigate to it.
+  const [claim, { data, isLoading, isError }] = useClaimShareLinkMutation()
+
+  useEffect(() => {
+    if (token) claim(token)
+  }, [token, claim])
 
   useEffect(() => {
     if (!data) return

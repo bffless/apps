@@ -702,4 +702,25 @@ export const handlers = [
     }
     return HttpResponse.json({ valid: true, folderId: link.folderId })
   }),
+
+  /**
+   * POST /api/share-links/claim
+   * Body: { token }
+   * Response: { valid: boolean, folderId: string | null }
+   * PUBLIC — validates the token and (in production) sets a signed, folder-scoped
+   * hf_s view cookie the ACL gate accepts. The mock returns the same shape so the
+   * share-link entry flow works offline; cookie-setting is a no-op under MSW.
+   */
+  http.post('/api/share-links/claim', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { token?: string }
+    const token = body.token ?? ''
+    const link = shareLinks.get(token)
+    if (!link || link.revoked) {
+      return HttpResponse.json({ valid: false, folderId: null })
+    }
+    if (link.expiresAt !== null && link.expiresAt < Date.now()) {
+      return HttpResponse.json({ valid: false, folderId: null })
+    }
+    return HttpResponse.json({ valid: true, folderId: link.folderId })
+  }),
 ] as const

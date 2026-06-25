@@ -5,9 +5,11 @@ presigned uploads, node tree, content serving, signed URLs, per-folder grants, s
 Handoff against your own BFFless project you import that rule set and attach it to the alias serving
 the app.
 
-[`handoff.proxy-rules.json`](handoff.proxy-rules.json) is the exported rule set (16 rules, format
+[`handoff.proxy-rules.json`](handoff.proxy-rules.json) is the exported rule set (17 rules, format
 `bffless-proxy-rule-set` v2). It contains **no secrets** — credentials are referenced by name or use
-the project's configured auth relay.
+the project's configured auth relay. The view pipelines carry the live per-folder ACL gate (see
+**ACL enforcement** below); the signed-cookie HMAC uses CE's server-side `utils.sign` key, which the
+sandbox never sees.
 
 ## Import
 
@@ -101,24 +103,53 @@ tables. You have two options:
 After updating `schemaId` values, re-export and commit the updated JSON so future forks of your
 project get the correct ids.
 
-## ACL enforcement activation note
+## ACL enforcement (LIVE)
 
 The per-folder access control model is fully built into the data layer (the `mode`, `grantsJson`,
 `ownerId` columns on `handoff_nodes`), and the grant-management pipelines (`/api/grants`,
 `/api/grants/revoke`, `/api/grants` GET) are live and enforced. Owner/admin baseline access is
 active: only the node's `ownerId` or a project admin can add, revoke, or list grants.
 
-**Share links** (`/api/share-links/*`) are also live — owners/admins can mint folder-scoped view
+**Share links** (`/api/share-links/*`) are live — owners/admins can mint folder-scoped view
 tokens that self-expire and can be revoked.
 
-**Full view-path enforcement** — the gate that checks a visitor's session against the ancestor
-folder's `grantsJson` before serving content, sets a bounded short-lived signed folder-scoped cookie
-(using the CE `utils` crypto HMAC `sign`/`verify` helpers), and rejects unauthorised requests with
-a 403 — is the one remaining activation step. The complete design (auth flow, ancestor-walk
-algorithm, cookie scoping) is documented in
-[`stories/00-architecture-and-design.md`](../stories/00-architecture-and-design.md) under ADR-0002.
-Enable it by adding the view-path pipeline rule and wiring the cookie check to the serve handler.
-Until then, content URLs are accessible to anyone who holds the URL.
+**Full view-path enforcement is now LIVE** (ADR-0002). All five view pipelines —
+`GET /api/uploads/content/*` (serve-content), `GET /api/sites/*` (serve-site), `POST /api/sign`,
+`GET /api/nodes` (list), and `GET /api/node` (getNode) — run a per-request ACL gate before serving:
+
+1. **Authenticate** the BFFless session (optional auth — a session yields `user`; anonymous and
+   share-link visitors pass through to the in-pipeline check).
+2. **Resolve the target's owning folder chain.** A single `data_query` loads every folder node
+   (`nodeType = folder`, capped at 500) and the gate walks `parentId` up to `root` in-process. The
+   target node itself contributes its `ownerId` (so a root-level file's owner is recognised even with
+   no parent folder).
+3. **Evaluate** with a `function_handler` that ports `src/lib/acl.ts` `evaluateAccess` verbatim
+   (admin/owner short-circuit, inherited grants, highest-wins, restricted boundary, share-link cap).
+4. **Allow → serve; deny → 403** (authenticated) or **401** (no session and no valid cookie).
+5. **Signed folder cookie** (the ADR-0002 optimisation): on the first allowed **site** entry,
+   serve-site sets a short-lived `hf_f` cookie — `base64url(payload).hmacSig` where the HMAC is CE's
+   `utils.sign` (server-key HMAC-SHA256, hex) — scoped to the site's folder. Site asset sub-requests
+   (which have no node record) are authorised by that cookie without re-walking. TTL is short
+   (~5 min), so revocation lags by at most the TTL.
+
+**Share-link visitors:** `POST /api/share-links/claim` (public) validates a token and sets a signed,
+folder-scoped `hf_s` view cookie (View-only, ~30 min TTL). The frontend `ShareLinkEntry` (`/s/:token`)
+calls it so a logged-out visitor holds the cookie the gate accepts. `evaluateAccess` caps a share-link
+viewer at `view`, scoped to the link's folder and its descendants.
+
+**`list` is filtered, not just gated:** a non-root parent you can't view returns 403; otherwise the
+returned children are filtered to those you can access — so root listing is private by default and
+restricted siblings stay hidden.
+
+### CDN caching note for forkers
+
+`file_serve_handler` emits `Cache-Control: public, max-age=3600` on served content by default. On a
+single-origin deploy (or a CDN that treats `/api/*` as dynamic, like the reference `j5s.dev` Cloudflare
+zone) this is harmless — the gate runs on every request. **If you front Handoff with a CDN configured
+to "cache everything" by file extension, add a cache rule** for `*/uploads/content/*` and `*/api/sites/*`
+that sets a `private` / `max-age=0, must-revalidate` policy (BFFless → Cache Rules), so a CDN never
+serves one viewer's authorised content to another. Without it, an aggressive shared cache could bypass
+the per-folder ACL.
 
 ## Portability: storage paths are deployment-relative
 
