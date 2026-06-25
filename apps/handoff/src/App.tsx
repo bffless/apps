@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router
 import { HandoffHome } from './pages/HandoffHome'
 import { HandoffViewer } from './pages/HandoffViewer'
 import { HandoffFolder } from './pages/HandoffFolder'
+import { ShareLinkEntry } from './pages/ShareLinkEntry'
 import { useSession, adminLoginUrl } from './lib/session'
 
 function ScrollToTop() {
@@ -64,6 +65,8 @@ function Shell() {
 function App() {
   return (
     <Routes>
+      {/* /s/:token — public share-link entry, no auth required, no Shell chrome */}
+      <Route path="s/:token" element={<ShareLinkEntry />} />
       <Route element={<Shell />}>
         <Route index element={<HandoffHome />} />
         <Route path="view/:id" element={<HandoffViewer />} />

@@ -19,10 +19,41 @@ import type { Grant } from '../lib/acl'
 
 export type { HandoffNode, PreparedUpload, RegisterBody, Grant }
 
+// ---------------------------------------------------------------------------
+// Share-link types
+// ---------------------------------------------------------------------------
+
+export interface ShareLink {
+  token: string
+  folderId: string
+  expiresAt: number | null
+  revoked: boolean
+  url: string
+  createdAt?: number
+}
+
+function toShareLink(raw: unknown): ShareLink {
+  const r = raw as Record<string, unknown>
+  return {
+    token: String(r.token ?? ''),
+    folderId: String(r.folderId ?? ''),
+    expiresAt: r.expiresAt != null ? Number(r.expiresAt) : null,
+    revoked: Boolean(r.revoked),
+    url: String(r.url ?? ''),
+    createdAt: r.createdAt != null ? Number(r.createdAt) : undefined,
+  }
+}
+
+function toShareLinkList(raw: unknown): ShareLink[] {
+  const r = raw as { links?: unknown[] }
+  if (!Array.isArray(r?.links)) return []
+  return r.links.map(toShareLink)
+}
+
 export const handoffApi = createApi({
   reducerPath: 'handoffApi',
   baseQuery: fetchBaseQuery({ baseUrl: '/', credentials: 'include' }),
-  tagTypes: ['Node', 'Grant'],
+  tagTypes: ['Node', 'Grant', 'ShareLink'],
   endpoints: (builder) => ({
     /**
      * GET /api/nodes?parentId=… → { nodes: HandoffNode[] }
@@ -226,6 +257,55 @@ export const handoffApi = createApi({
       query: ({ search }) => `api/directory?search=${encodeURIComponent(search)}`,
     }),
 
+    // -----------------------------------------------------------------------
+    // Share-link endpoints
+    // -----------------------------------------------------------------------
+
+    /**
+     * POST /api/share-links { folderId, expiresMs? }
+     * → ShareLink  (auth; owner/admin of the folder)
+     */
+    mintShareLink: builder.mutation<ShareLink, { folderId: string; expiresMs?: number }>({
+      query: (body) => ({
+        url: 'api/share-links',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: toShareLink,
+      invalidatesTags: (_result, _err, { folderId }) => [{ type: 'ShareLink' as const, id: `LIST:${folderId}` }],
+    }),
+
+    /**
+     * GET /api/share-links?folderId=<id>
+     * → { links: ShareLink[] }  (auth)
+     */
+    listShareLinks: builder.query<ShareLink[], { folderId: string }>({
+      query: ({ folderId }) => `api/share-links?folderId=${encodeURIComponent(folderId)}`,
+      transformResponse: toShareLinkList,
+      providesTags: (_result, _err, { folderId }) => [{ type: 'ShareLink' as const, id: `LIST:${folderId}` }],
+    }),
+
+    /**
+     * POST /api/share-links/revoke { token }
+     * → { token, revoked: true }  (auth; creator/admin)
+     */
+    revokeShareLink: builder.mutation<{ token: string; revoked: true }, { token: string; folderId: string }>({
+      query: ({ token }) => ({
+        url: 'api/share-links/revoke',
+        method: 'POST',
+        body: { token },
+      }),
+      invalidatesTags: (_result, _err, { folderId }) => [{ type: 'ShareLink' as const, id: `LIST:${folderId}` }],
+    }),
+
+    /**
+     * GET /api/share-links/validate?token=<t>
+     * → { valid: boolean, folderId: string | null }  (public — no auth)
+     */
+    validateShareLink: builder.query<{ valid: boolean; folderId: string | null }, string /* token */>({
+      query: (token) => `api/share-links/validate?token=${encodeURIComponent(token)}`,
+    }),
+
     /**
      * Full presigned-upload flow: prepare → PUT bytes → register metadata.
      * Modelled on Studio's `upload` mutation — a custom `queryFn` that runs
@@ -297,4 +377,8 @@ export const {
   useAddGrantMutation,
   useRevokeGrantMutation,
   useSearchDirectoryQuery,
+  useMintShareLinkMutation,
+  useListShareLinksQuery,
+  useRevokeShareLinkMutation,
+  useValidateShareLinkQuery,
 } = handoffApi

@@ -11,6 +11,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import { useSelector } from 'react-redux'
 import {
   useListNodesQuery,
   useGetNodeQuery,
@@ -28,6 +29,7 @@ import type { FolderLink } from '../lib/acl'
 import { ManageAccessPanel } from '../components/ManageAccessPanel'
 import type { HandoffNode } from '../lib/nodes'
 import type { Crumb } from '../lib/tree'
+import type { RootState } from '../store'
 
 // ---------------------------------------------------------------------------
 // useBreadcrumb — resolves ancestors via repeated getNode calls
@@ -579,19 +581,28 @@ export function FolderView({ folderId }: FolderViewProps) {
   // Fold-in fix #2: Show folder name in h1 for sub-folders
   const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
 
+  // Share-link session — set by ShareLinkEntry when a visitor opens /s/:token.
+  const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
+  const isShareMode = !!shareLinkFolderId
+
   // Session + ACL
   const { session } = useSession()
+
+  // Build FolderLink with id so evaluateAccess scope-match works for share visitors.
   const folderLink: FolderLink = {
+    id: folderId === 'root' ? undefined : folderId,
     ownerId: currentFolder?.ownerId ?? null,
     grants: currentFolder?.grants ?? [],
     mode: currentFolder?.mode ?? 'inheriting',
   }
   const effectiveLevel = evaluateAccess({
     folderChain: [folderLink],
-    viewer: {
-      userId: session?.authenticated ? session.user.id : undefined,
-      isAdmin: session?.authenticated && session.user.role === 'admin',
-    },
+    viewer: isShareMode
+      ? { shareLinkFolderId }
+      : {
+          userId: session?.authenticated ? session.user.id : undefined,
+          isAdmin: session?.authenticated && session.user.role === 'admin',
+        },
   })
 
   const canWrite = effectiveLevel === 'owner' || effectiveLevel === 'edit'
@@ -719,7 +730,7 @@ export function FolderView({ folderId }: FolderViewProps) {
       )}
 
       {/* Error — 401 / 403 / generic */}
-      {isError && !isLoading && errorStatus === 401 && (
+      {isError && !isLoading && errorStatus === 401 && !isShareMode && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-8 text-center">
           <p className="mb-3 text-sm text-yellow-800">Sign in to view this folder</p>
           <button
@@ -729,6 +740,11 @@ export function FolderView({ folderId }: FolderViewProps) {
           >
             Sign in
           </button>
+        </div>
+      )}
+      {isError && !isLoading && errorStatus === 401 && isShareMode && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center text-sm text-red-600">
+          This folder is outside your share link&apos;s scope.
         </div>
       )}
       {isError && !isLoading && errorStatus === 403 && (

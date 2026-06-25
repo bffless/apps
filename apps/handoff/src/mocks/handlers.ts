@@ -48,8 +48,39 @@ export let mockCurrentUser: { id: string; email: string; role?: string } | null 
   role: 'admin',
 }
 
+// ---------------------------------------------------------------------------
+// Share-link in-memory store
+// ---------------------------------------------------------------------------
+
+export interface MockShareLink {
+  token: string
+  folderId: string
+  expiresAt: number | null
+  revoked: boolean
+  url: string
+  createdAt: number
+  creatorId: string
+}
+
+/** All minted share links, keyed by token. */
+export const shareLinks = new Map<string, MockShareLink>()
+
+/**
+ * The active share-link viewer for the current request context in tests.
+ * When set to a folderId string, GET /api/nodes and /api/node will allow
+ * access for a share-link viewer (no user) scoped to that folder.
+ * Set to null to use the normal mockCurrentUser path.
+ */
+export let mockShareLinkFolderId: string | null = null
+
+/** Set the share-link viewer context (null = use normal user auth). */
+export function setMockShareLinkFolderId(folderId: string | null): void {
+  mockShareLinkFolderId = folderId
+}
+
 /** Monotonically-incrementing node id counter for determinism. */
 let nodeCounter = 0
+let tokenCounter = 0
 
 /** Reset all mock state — exported for use in tests. */
 export function resetMockState(): void {
@@ -58,8 +89,11 @@ export function resetMockState(): void {
   sites.clear()
   nodeAcl.clear()
   grants.clear()
+  shareLinks.clear()
   nodeCounter = 0
+  tokenCounter = 0
   mockCurrentUser = { id: 'user-owner', email: 'owner@example.com', role: 'admin' }
+  mockShareLinkFolderId = null
 }
 
 /** Set the current mock user (or null for unauthenticated). */
@@ -87,11 +121,12 @@ const FAKE_DIRECTORY = [
 ]
 
 /**
- * Check whether `mockCurrentUser` can access the given node.
+ * Check whether `mockCurrentUser` (or the active share-link viewer) can access
+ * the given node.
  *
  * Delegates to the canonical `evaluateAccess` from `src/lib/acl.ts` so the
  * mock enforces exactly the same rules as production (incl. inheritance and
- * restricted-mode semantics).
+ * restricted-mode semantics, and share-link scope matching).
  *
  * Builds the ancestor FolderLink chain by walking `parentId` through the
  * in-memory `nodes` / `nodeAcl` maps (root → target). Capped at 64 hops to
@@ -100,6 +135,41 @@ const FAKE_DIRECTORY = [
  * Returns: 'ok' | '401' | '403'
  */
 function checkAccess(nodeId: string): 'ok' | '401' | '403' {
+  // Share-link viewer path: no user, just a scoped folderId.
+  if (mockShareLinkFolderId !== null) {
+    const acl = nodeAcl.get(nodeId)
+    if (!acl) return 'ok' // no ACL = open
+
+    const MAX_HOPS = 64
+    const ancestorIds: string[] = []
+    let cursor: string | undefined = nodeId
+    let hops = 0
+    while (cursor && cursor !== 'root' && hops < MAX_HOPS) {
+      ancestorIds.unshift(cursor)
+      const n = nodes.get(cursor)
+      cursor = n?.parentId ?? undefined
+      hops++
+    }
+
+    const folderChain: FolderLink[] = ancestorIds.map((id) => {
+      const a = nodeAcl.get(id)
+      return {
+        id,
+        ownerId: a?.ownerId ?? null,
+        grants: a?.grants ?? [],
+        mode: a?.mode ?? 'inheriting',
+      }
+    })
+
+    if (folderChain.length === 0) {
+      folderChain.push({ id: nodeId, ownerId: acl.ownerId, grants: acl.grants, mode: acl.mode })
+    }
+
+    const level = evaluateAccess({ folderChain, viewer: { shareLinkFolderId: mockShareLinkFolderId } })
+    return level === 'none' ? '403' : 'ok'
+  }
+
+  // Normal user path.
   if (!mockCurrentUser) return '401'
 
   const acl = nodeAcl.get(nodeId)
@@ -386,7 +456,7 @@ export const handlers = [
   /**
    * GET /api/nodes?parentId=…
    * Response: { nodes: HandoffNode[] }
-   * Enforces ACL: checks mockCurrentUser against the parentId's ACL.
+   * Enforces ACL: checks mockCurrentUser (or share-link viewer) against the parentId's ACL.
    */
   http.get('/api/nodes', ({ request }) => {
     const parentId = new URL(request.url).searchParams.get('parentId') ?? 'root'
@@ -397,8 +467,10 @@ export const handlers = [
       if (access === '401') return new HttpResponse(null, { status: 401 })
       if (access === '403') return new HttpResponse(null, { status: 403 })
     } else {
-      // root requires auth
-      if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+      // root requires auth (share-link viewers are never at root)
+      if (!mockCurrentUser && mockShareLinkFolderId === null) return new HttpResponse(null, { status: 401 })
+      // Share-link viewers trying to list root → 403 (out of scope)
+      if (mockShareLinkFolderId !== null) return new HttpResponse(null, { status: 403 })
     }
 
     const filtered = [...nodes.values()].filter((n) => n.parentId === parentId)
@@ -418,10 +490,11 @@ export const handlers = [
   /**
    * GET /api/node?id=…
    * Response: { node: HandoffNode | null }
-   * Enforces ACL.
+   * Enforces ACL (supports share-link viewer context).
    */
   http.get('/api/node', ({ request }) => {
-    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    // Allow share-link viewers (no user required)
+    if (!mockCurrentUser && mockShareLinkFolderId === null) return new HttpResponse(null, { status: 401 })
     const id = new URL(request.url).searchParams.get('id') ?? ''
     const access = checkAccess(id)
     if (access === '401') return new HttpResponse(null, { status: 401 })
@@ -533,5 +606,100 @@ export const handlers = [
       status: 200,
       headers: { 'Content-Type': obj.type },
     })
+  }),
+
+  // ---------------------------------------------------------------------------
+  // Share-link handlers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * POST /api/share-links
+   * Body: { folderId, expiresMs? }
+   * Response: { token, folderId, expiresAt, revoked, url, createdAt }
+   * Auth required; must be owner/admin of the folder.
+   */
+  http.post('/api/share-links', async ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const body = (await request.json().catch(() => ({}))) as {
+      folderId?: string
+      expiresMs?: number
+    }
+    const folderId = body.folderId ?? ''
+    const acl = nodeAcl.get(folderId)
+    if (acl) {
+      const isAdmin = mockCurrentUser.role === 'admin'
+      const isOwner = acl.ownerId === mockCurrentUser.id
+      if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
+    }
+    const token = `mock-token-${++tokenCounter}`
+    const now = Date.now()
+    const expiresAt = body.expiresMs != null ? now + body.expiresMs : null
+    const link: MockShareLink = {
+      token,
+      folderId,
+      expiresAt,
+      revoked: false,
+      url: `/s/${token}`,
+      createdAt: now,
+      creatorId: mockCurrentUser.id,
+    }
+    shareLinks.set(token, link)
+    return HttpResponse.json({ token, folderId, expiresAt, revoked: false, url: link.url, createdAt: now })
+  }),
+
+  /**
+   * GET /api/share-links?folderId=<id>
+   * Response: { links: ShareLink[] }  (auth)
+   */
+  http.get('/api/share-links', ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const folderId = new URL(request.url).searchParams.get('folderId') ?? ''
+    const acl = nodeAcl.get(folderId)
+    if (acl) {
+      const isAdmin = mockCurrentUser.role === 'admin'
+      const isOwner = acl.ownerId === mockCurrentUser.id
+      if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
+    }
+    const links = [...shareLinks.values()]
+      .filter((l) => l.folderId === folderId)
+      .map(({ token, folderId: fid, expiresAt, revoked, url, createdAt }) => ({
+        token, folderId: fid, expiresAt, revoked, url, createdAt,
+      }))
+    return HttpResponse.json({ links })
+  }),
+
+  /**
+   * POST /api/share-links/revoke
+   * Body: { token }
+   * Response: { token, revoked: true }  (auth; creator/admin)
+   */
+  http.post('/api/share-links/revoke', async ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const body = (await request.json().catch(() => ({}))) as { token?: string }
+    const token = body.token ?? ''
+    const link = shareLinks.get(token)
+    if (!link) return new HttpResponse(null, { status: 404 })
+    const isAdmin = mockCurrentUser.role === 'admin'
+    const isCreator = link.creatorId === mockCurrentUser.id
+    if (!isAdmin && !isCreator) return new HttpResponse(null, { status: 403 })
+    link.revoked = true
+    return HttpResponse.json({ token, revoked: true })
+  }),
+
+  /**
+   * GET /api/share-links/validate?token=<t>
+   * Response: { valid: boolean, folderId: string | null }
+   * PUBLIC — no auth. Handles revoked/expired/bogus tokens → valid:false.
+   */
+  http.get('/api/share-links/validate', ({ request }) => {
+    const token = new URL(request.url).searchParams.get('token') ?? ''
+    const link = shareLinks.get(token)
+    if (!link || link.revoked) {
+      return HttpResponse.json({ valid: false, folderId: null })
+    }
+    if (link.expiresAt !== null && link.expiresAt < Date.now()) {
+      return HttpResponse.json({ valid: false, folderId: null })
+    }
+    return HttpResponse.json({ valid: true, folderId: link.folderId })
   }),
 ] as const
