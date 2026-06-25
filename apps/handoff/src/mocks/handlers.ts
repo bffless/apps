@@ -113,7 +113,7 @@ export const handlers = [
       id,
       type: 'file',
       name: body.displayName ?? body.originalName ?? 'Untitled',
-      mime: null,
+      mime: body.storageKey ? (objects.get(body.storageKey)?.type ?? null) : null,
       size: body.storageKey ? (objects.get(body.storageKey)?.body.byteLength ?? null) : null,
       url: body.storageKey ? mockServePath(body.storageKey) : null,
       storageKey: body.storageKey ?? null,
@@ -133,6 +133,16 @@ export const handlers = [
     const parentId = new URL(request.url).searchParams.get('parentId') ?? 'root'
     const filtered = [...nodes.values()].filter((n) => n.parentId === parentId)
     return HttpResponse.json({ nodes: filtered })
+  }),
+
+  /**
+   * GET /api/node?id=…
+   * Response: { node: HandoffNode | null }
+   */
+  http.get('/api/node', ({ request }) => {
+    const id = new URL(request.url).searchParams.get('id') ?? ''
+    const node = nodes.get(id) ?? null
+    return HttpResponse.json({ node })
   }),
 
   /**

@@ -6,7 +6,8 @@
  * tag invalidation causes the listing to refetch automatically on success.
  */
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useListNodesQuery, useUploadFileMutation } from '../store/handoffApi'
 import { formatBytes } from '../lib/format'
 import type { HandoffNode } from '../lib/nodes'
@@ -18,7 +19,10 @@ import type { HandoffNode } from '../lib/nodes'
 function NodeRow({ node }: { node: HandoffNode }) {
   const hint = node.mime ?? node.type
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm">
+    <Link
+      to={`/view/${node.id}`}
+      className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-gray-50"
+    >
       {/* Icon / type indicator */}
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50 text-gray-400">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -34,7 +38,7 @@ function NodeRow({ node }: { node: HandoffNode }) {
       {node.size !== null && (
         <span className="shrink-0 text-xs text-gray-400">{formatBytes(node.size)}</span>
       )}
-    </div>
+    </Link>
   )
 }
 
@@ -100,13 +104,21 @@ export function HandoffHome() {
   const { data: nodes, isLoading, isError, error } = useListNodesQuery({ parentId: 'root' })
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
   const [uploadDone, setUploadDone] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+    }
+  }, [])
 
   async function handleFile(file: File) {
     setUploadDone(false)
     const result = await uploadFile({ file, parentId: 'root' })
     if (!('error' in result)) {
       setUploadDone(true)
-      setTimeout(() => setUploadDone(false), 3000)
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setUploadDone(false), 3000)
     }
   }
 

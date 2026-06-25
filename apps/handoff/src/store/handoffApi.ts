@@ -36,6 +36,19 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * GET /api/node?id=<id> → { node: HandoffNode | null }
+     * Resolves a single node by id.
+     */
+    getNode: builder.query<HandoffNode | null, string>({
+      query: (id) => `api/node?id=${encodeURIComponent(id)}`,
+      transformResponse: (r) => {
+        const n = (r as { node?: unknown }).node
+        return n ? toNode(n) : null
+      },
+      providesTags: (_result, _err, id) => [{ type: 'Node' as const, id }],
+    }),
+
+    /**
      * POST /api/uploads/prepare → PreparedUpload
      * Mints a presigned PUT URL; the caller PUTs bytes directly to the bucket.
      */
@@ -120,6 +133,7 @@ export const handoffApi = createApi({
 
 export const {
   useListNodesQuery,
+  useGetNodeQuery,
   usePrepareUploadMutation,
   useRegisterNodeMutation,
   useUploadFileMutation,
