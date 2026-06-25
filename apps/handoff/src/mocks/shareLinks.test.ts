@@ -65,6 +65,16 @@ async function validate(token: string): Promise<{ valid: boolean; folderId: stri
   return res.json() as Promise<{ valid: boolean; folderId: string | null }>
 }
 
+async function claim(token: string): Promise<{ valid: boolean; folderId: string | null }> {
+  const res = await fetch('/api/share-links/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+  expect(res.status).toBe(200)
+  return res.json() as Promise<{ valid: boolean; folderId: string | null }>
+}
+
 async function revokeLink(token: string): Promise<void> {
   const res = await fetch('/api/share-links/revoke', {
     method: 'POST',
@@ -256,6 +266,36 @@ describe('share-link validate edge cases', () => {
     const v = await validate(token)
     expect(v.valid).toBe(true)
     expect(v.folderId).toBe(folderId)
+  })
+})
+
+describe('share-link claim: validates and (in prod) sets the hf_s cookie', () => {
+  it('valid token → claim returns valid+folderId (public, no auth)', async () => {
+    setMockUser(OWNER)
+    const folderId = await createFolder('root', 'Claim Folder')
+    const token = await mintLink(folderId)
+
+    setMockUser(null)
+    const c = await claim(token)
+    expect(c.valid).toBe(true)
+    expect(c.folderId).toBe(folderId)
+  })
+
+  it('revoked token → claim returns valid:false', async () => {
+    setMockUser(OWNER)
+    const folderId = await createFolder('root', 'Claim Revoked Folder')
+    const token = await mintLink(folderId)
+    await revokeLink(token)
+
+    const c = await claim(token)
+    expect(c.valid).toBe(false)
+    expect(c.folderId).toBeNull()
+  })
+
+  it('bogus token → claim returns valid:false', async () => {
+    const c = await claim('nonexistent-token-xyz')
+    expect(c.valid).toBe(false)
+    expect(c.folderId).toBeNull()
   })
 })
 

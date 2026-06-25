@@ -307,6 +307,23 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * POST /api/share-links/claim { token }
+     * → { valid: boolean, folderId: string | null }  (public — no auth)
+     *
+     * Validates the token AND, on success, sets a signed folder-scoped `hf_s`
+     * view cookie the server-side ACL gate accepts (ADR-0002). A logged-out
+     * visitor must claim before the gated content/list endpoints will serve.
+     * `credentials: 'include'` (baseQuery default) lets the Set-Cookie stick.
+     */
+    claimShareLink: builder.mutation<{ valid: boolean; folderId: string | null }, string /* token */>({
+      query: (token) => ({
+        url: 'api/share-links/claim',
+        method: 'POST',
+        body: { token },
+      }),
+    }),
+
+    /**
      * Full presigned-upload flow: prepare → PUT bytes → register metadata.
      * Modelled on Studio's `upload` mutation — a custom `queryFn` that runs
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
@@ -381,4 +398,5 @@ export const {
   useListShareLinksQuery,
   useRevokeShareLinkMutation,
   useValidateShareLinkQuery,
+  useClaimShareLinkMutation,
 } = handoffApi
