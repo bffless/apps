@@ -19,31 +19,39 @@ import {
   useUploadSiteMutation,
   useCreateFolderMutation,
 } from '../store/handoffApi'
-import { buildBreadcrumb } from '../lib/tree'
+import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
 import { formatBytes } from '../lib/format'
 import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
 import { planSiteUpload } from '../lib/site'
 import { useSession, adminLoginUrl } from '../lib/session'
 import { evaluateAccess } from '../lib/acl'
-import type { FolderLink } from '../lib/acl'
 import { ManageAccessPanel } from '../components/ManageAccessPanel'
 import type { HandoffNode } from '../lib/nodes'
 import type { Crumb } from '../lib/tree'
 import type { RootState } from '../store'
 
 // ---------------------------------------------------------------------------
-// useBreadcrumb — resolves ancestors via repeated getNode calls
+// useAncestorNodes — resolves ancestor chain via repeated getNode calls
 // ---------------------------------------------------------------------------
 
 /**
- * Walk the parentId chain from folderId up to 'root', accumulating folder
- * nodes into a map, then build the breadcrumb array.
+ * Walk the parentId chain from folderId up to 'root', accumulating resolved
+ * folder nodes into a map. Returns the map and whether the full chain has been
+ * resolved (complete=true).
  *
- * Implemented as a component using a state-driven approach: starts with the
- * current folder, resolves its parent, and so on. Each resolved node is merged
- * into a shared map.
+ * Used for BOTH breadcrumb rendering and the ACL evaluation in FolderView, so
+ * there is a single source of truth for the ancestor chain.
+ *
+ * Keyed externally (BreadcrumbInner is remounted on folderId change) so we
+ * never call setState inside a useEffect render cycle.
  */
-function BreadcrumbItem({ folderId, onResolved }: { folderId: string; onResolved: (node: HandoffNode) => void }) {
+function AncestorNodeResolver({
+  folderId,
+  onResolved,
+}: {
+  folderId: string
+  onResolved: (node: HandoffNode) => void
+}) {
   const { data: node } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
   useEffect(() => {
     if (node) onResolved(node)
@@ -51,32 +59,27 @@ function BreadcrumbItem({ folderId, onResolved }: { folderId: string; onResolved
   return null
 }
 
-interface BreadcrumbProps {
-  folderId: string
-}
-
 /**
- * Inner breadcrumb component that accumulates resolved nodes.
- * Keyed by folderId externally so React remounts it on folder change,
- * which avoids calling setState inside a useEffect.
- *
- * Fold-in fix #1: handleResolved is wrapped in useCallback and guarded with a
- * `visited` ref to prevent cycle-driven infinite state growth.
+ * Inner hook-component pair. This is the inner component; the outer wrapper
+ * (useAncestorNodesWrapper) remounts it when folderId changes.
  */
-function BreadcrumbInner({ folderId }: BreadcrumbProps) {
+function AncestorNodesInner({
+  folderId,
+  onUpdate,
+}: {
+  folderId: string
+  onUpdate: (nodesById: Record<string, HandoffNode>, complete: boolean) => void
+}) {
   const [nodesById, setNodesById] = useState<Record<string, HandoffNode>>({})
-  // Track which ids we need to resolve (start with folderId, expand as we learn parentIds)
   const [toResolve, setToResolve] = useState<string[]>(
     folderId !== 'root' ? [folderId] : []
   )
-  // Visited set — prevents cycles from triggering unbounded state growth
   const visitedRef = useRef<Set<string>>(new Set(folderId !== 'root' ? [folderId] : []))
 
   const handleResolved = useCallback((node: HandoffNode) => {
     setNodesById((prev) => {
-      if (prev[node.id]) return prev // already known
+      if (prev[node.id]) return prev
       const next = { ...prev, [node.id]: node }
-      // If parent is not root and not yet visited, enqueue it
       if (node.parentId !== 'root' && !visitedRef.current.has(node.parentId)) {
         visitedRef.current.add(node.parentId)
         setToResolve((q) => [...q, node.parentId])
@@ -85,14 +88,70 @@ function BreadcrumbInner({ folderId }: BreadcrumbProps) {
     })
   }, [])
 
+  // Determine completeness: all nodes resolved and the topmost node's parentId is 'root'.
+  const complete = folderId === 'root' || (() => {
+    // Walk the resolved map from folderId upward
+    let cur = folderId
+    let hops = 0
+    while (cur !== 'root' && hops < 64) {
+      const n = nodesById[cur]
+      if (!n) return false
+      cur = n.parentId
+      hops++
+    }
+    return cur === 'root'
+  })()
+
+  // Notify parent of updated state
+  useEffect(() => {
+    onUpdate(nodesById, complete)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodesById, complete])
+
+  return (
+    <>
+      {toResolve.map((id) => (
+        <AncestorNodeResolver key={id} folderId={id} onResolved={handleResolved} />
+      ))}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// useBreadcrumb — resolves ancestors via repeated getNode calls
+// ---------------------------------------------------------------------------
+
+interface BreadcrumbProps {
+  folderId: string
+  /** Called whenever the resolved node map or completeness changes. */
+  onChainUpdate: (nodesById: Record<string, HandoffNode>, complete: boolean) => void
+}
+
+/**
+ * Renders breadcrumb nav AND drives ancestor resolution.
+ * Remounts AncestorNodesInner when folderId changes.
+ */
+function BreadcrumbInner({ folderId, onChainUpdate }: BreadcrumbProps) {
+  const [nodesById, setNodesById] = useState<Record<string, HandoffNode>>({})
+
+  const handleUpdate = useCallback(
+    (updated: Record<string, HandoffNode>, complete: boolean) => {
+      setNodesById(updated)
+      onChainUpdate(updated, complete)
+    },
+    [onChainUpdate],
+  )
+
   const crumbs = buildBreadcrumb(nodesById, folderId)
 
   return (
     <>
       {/* Invisible resolver components — fire getNode queries */}
-      {toResolve.map((id) => (
-        <BreadcrumbItem key={id} folderId={id} onResolved={handleResolved} />
-      ))}
+      <AncestorNodesInner
+        key={folderId}
+        folderId={folderId}
+        onUpdate={handleUpdate}
+      />
       {/* Rendered breadcrumb */}
       <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-1 text-sm text-gray-500">
         {crumbs.map((crumb: Crumb, i: number) => {
@@ -123,8 +182,8 @@ function BreadcrumbInner({ folderId }: BreadcrumbProps) {
  * Outer wrapper that forces a remount of BreadcrumbInner when folderId changes,
  * avoiding cascading setState calls inside useEffect.
  */
-function Breadcrumb({ folderId }: BreadcrumbProps) {
-  return <BreadcrumbInner key={folderId} folderId={folderId} />
+function Breadcrumb({ folderId, onChainUpdate }: BreadcrumbProps) {
+  return <BreadcrumbInner key={folderId} folderId={folderId} onChainUpdate={onChainUpdate} />
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +637,18 @@ export function FolderView({ folderId }: FolderViewProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Ancestor chain state — updated by the Breadcrumb component as nodes resolve.
+  const [ancestorNodesById, setAncestorNodesById] = useState<Record<string, HandoffNode>>({})
+  const [ancestorChainComplete, setAncestorChainComplete] = useState(folderId === 'root')
+
+  const handleChainUpdate = useCallback(
+    (nodesById: Record<string, HandoffNode>, complete: boolean) => {
+      setAncestorNodesById(nodesById)
+      setAncestorChainComplete(complete)
+    },
+    [],
+  )
+
   // Fold-in fix #2: Show folder name in h1 for sub-folders
   const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
 
@@ -588,15 +659,16 @@ export function FolderView({ folderId }: FolderViewProps) {
   // Session + ACL
   const { session } = useSession()
 
-  // Build FolderLink with id so evaluateAccess scope-match works for share visitors.
-  const folderLink: FolderLink = {
-    id: folderId === 'root' ? undefined : folderId,
-    ownerId: currentFolder?.ownerId ?? null,
-    grants: currentFolder?.grants ?? [],
-    mode: currentFolder?.mode ?? 'inheriting',
-  }
+  // Build the full root→target FolderLink[] chain from the resolved ancestor map.
+  // While the chain is still resolving, fall back to a single-entry chain (partial)
+  // which may under-grant but never throws. Controls are shown once complete.
+  const { chain: folderChain } = buildAncestorFolderChain(ancestorNodesById, folderId)
+
+  // For the root folder the chain is always complete (single synthetic root link).
+  const chainReady = folderId === 'root' || ancestorChainComplete
+
   const effectiveLevel = evaluateAccess({
-    folderChain: [folderLink],
+    folderChain,
     viewer: isShareMode
       ? { shareLinkFolderId }
       : {
@@ -605,8 +677,10 @@ export function FolderView({ folderId }: FolderViewProps) {
         },
   })
 
-  const canWrite = effectiveLevel === 'owner' || effectiveLevel === 'edit'
-  const canManage = effectiveLevel === 'owner'
+  // Only show write/manage controls once the full chain has resolved to avoid
+  // flashing disabled controls while ancestors are still loading.
+  const canWrite = chainReady && (effectiveLevel === 'owner' || effectiveLevel === 'edit')
+  const canManage = chainReady && effectiveLevel === 'owner'
   const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
   useEffect(() => {
@@ -656,8 +730,8 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   return (
     <div className="container-page py-10">
-      {/* Breadcrumb */}
-      <Breadcrumb folderId={folderId} />
+      {/* Breadcrumb — also drives ancestor resolution for ACL evaluation */}
+      <Breadcrumb folderId={folderId} onChainUpdate={handleChainUpdate} />
 
       {/* Toolbar */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

@@ -1,19 +1,24 @@
 /**
- * Tests for buildBreadcrumb — pure function that walks parentId chains.
- *
- * RED phase: written before the implementation exists.
+ * Tests for buildBreadcrumb and buildAncestorFolderChain — pure tree utilities.
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildBreadcrumb } from './tree'
+import { buildBreadcrumb, buildAncestorFolderChain } from './tree'
+import { evaluateAccess } from './acl'
 import type { Crumb } from './tree'
+import type { FolderLink } from './acl'
 import type { HandoffNode } from './nodes'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeFolder(id: string, name: string, parentId: string): HandoffNode {
+function makeFolder(
+  id: string,
+  name: string,
+  parentId: string,
+  overrides: Partial<Pick<HandoffNode, 'ownerId' | 'grants' | 'mode'>> = {},
+): HandoffNode {
   return {
     id,
     type: 'folder',
@@ -27,6 +32,7 @@ function makeFolder(id: string, name: string, parentId: string): HandoffNode {
     ownerId: null,
     grants: [],
     mode: 'inheriting',
+    ...overrides,
   }
 }
 
@@ -112,5 +118,110 @@ describe('buildBreadcrumb', () => {
   it('unknown folderId (not in map) → still returns [{ id:"root", name:"Home" }]', () => {
     const result = buildBreadcrumb({}, 'unknown-id')
     expect(result).toEqual<Crumb[]>([{ id: 'root', name: 'Home' }])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildAncestorFolderChain tests
+// ---------------------------------------------------------------------------
+
+describe('buildAncestorFolderChain', () => {
+  it('root folder → single synthetic root link, complete=true', () => {
+    const { chain, complete } = buildAncestorFolderChain({}, 'root')
+    expect(complete).toBe(true)
+    expect(chain).toHaveLength(1)
+    expect(chain[0].id).toBe('root')
+    expect(chain[0].ownerId).toBeNull()
+    expect(chain[0].grants).toEqual([])
+    expect(chain[0].mode).toBe('inheriting')
+  })
+
+  it('one-level deep (parentId=root) → [rootLink, folderLink], complete=true', () => {
+    const nodesById = {
+      a: makeFolder('a', 'Docs', 'root', { ownerId: 'user-1' }),
+    }
+    const { chain, complete } = buildAncestorFolderChain(nodesById, 'a')
+    expect(complete).toBe(true)
+    expect(chain).toHaveLength(2)
+    expect(chain[0].id).toBe('root')
+    expect(chain[1].id).toBe('a')
+    expect(chain[1].ownerId).toBe('user-1')
+  })
+
+  it('root→A→B→C chain: ordered correctly, complete=true, ids mapped', () => {
+    const nodesById = {
+      a: makeFolder('a', 'A', 'root', { ownerId: 'user-1' }),
+      b: makeFolder('b', 'B', 'a', { grants: [{ principalId: 'user-2', level: 'view' }] }),
+      c: makeFolder('c', 'C', 'b', { mode: 'restricted' }),
+    }
+    const { chain, complete } = buildAncestorFolderChain(nodesById, 'c')
+    expect(complete).toBe(true)
+    expect(chain.map((l: FolderLink) => l.id)).toEqual(['root', 'a', 'b', 'c'])
+    expect(chain[3].mode).toBe('restricted')
+    expect(chain[2].grants).toHaveLength(1)
+  })
+
+  it('partial chain (ancestor missing) → complete=false, partial chain returned', () => {
+    // b→missing (not in map); only b and c are known
+    const nodesById = {
+      b: makeFolder('b', 'B', 'missing-parent'),
+      c: makeFolder('c', 'C', 'b'),
+    }
+    const { chain, complete } = buildAncestorFolderChain(nodesById, 'c')
+    expect(complete).toBe(false)
+    // root + b + c (walk stops when 'missing-parent' not found after resolving b)
+    const ids = chain.map((l: FolderLink) => l.id)
+    expect(ids).toContain('root')
+    expect(ids).toContain('b')
+    expect(ids).toContain('c')
+    expect(ids).not.toContain('missing-parent')
+  })
+
+  it('share-link sub-folder: scoped folder A appears in chain → evaluateAccess returns view', () => {
+    // A visitor with a share link scoped to 'folder-a' navigates into child 'folder-b'.
+    // The full chain [root, folder-a, folder-b] contains folder-a so evaluateAccess
+    // must return 'view', NOT 'none'.
+    const nodesById = {
+      'folder-a': makeFolder('folder-a', 'A', 'root'),
+      'folder-b': makeFolder('folder-b', 'B', 'folder-a'),
+    }
+    const { chain } = buildAncestorFolderChain(nodesById, 'folder-b')
+    const level = evaluateAccess({
+      folderChain: chain,
+      viewer: { shareLinkFolderId: 'folder-a' },
+    })
+    expect(level).toBe('view')
+  })
+
+  it('share-link sibling denial: scoped folder A not in chain for sibling → evaluateAccess returns none', () => {
+    // A visitor scoped to 'folder-a' tries to access sibling 'folder-sibling' (parentId=root).
+    // The chain [root, folder-sibling] does NOT contain folder-a → must return 'none'.
+    const nodesById = {
+      'folder-sibling': makeFolder('folder-sibling', 'Sibling', 'root'),
+    }
+    const { chain } = buildAncestorFolderChain(nodesById, 'folder-sibling')
+    const level = evaluateAccess({
+      folderChain: chain,
+      viewer: { shareLinkFolderId: 'folder-a' },
+    })
+    expect(level).toBe('none')
+  })
+
+  it('inherited grant: user with edit grant on ancestor sees edit on sub-folder', () => {
+    // user-b has an edit grant on 'folder-a'; navigating into child 'folder-b' (inheriting)
+    // should still yield 'edit' when the full chain is passed.
+    const nodesById = {
+      'folder-a': makeFolder('folder-a', 'A', 'root', {
+        ownerId: 'user-owner',
+        grants: [{ principalId: 'user-b', level: 'edit' }],
+      }),
+      'folder-b': makeFolder('folder-b', 'B', 'folder-a'),
+    }
+    const { chain } = buildAncestorFolderChain(nodesById, 'folder-b')
+    const level = evaluateAccess({
+      folderChain: chain,
+      viewer: { userId: 'user-b' },
+    })
+    expect(level).toBe('edit')
   })
 })
