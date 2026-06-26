@@ -659,7 +659,7 @@
             "id": "resolve",
             "name": "resolve",
             "config": {
-              "code": "function handler({ steps }) { var node = (steps && steps.query) || {}; if (!node || typeof node !== 'object') node = {}; var man = node.manifest; if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } } if (!man || typeof man !== 'object') man = {}; var entry = node.siteEntry || 'index.html'; var rel = (steps.parse && steps.parse.relPath) || ''; if (!rel || rel.charAt(rel.length - 1) === '/') rel = entry; var target = (man[rel] != null) ? man[rel] : null; var allow = !!(steps.gate && steps.gate.allow); return { target: target, missing: !target, rel: rel, doRedirect: allow && !!target, notFound: allow && !target }; }"
+              "code": "function handler({ steps }) { var node = (steps && steps.query) || {}; if (!node || typeof node !== 'object') node = {}; var man = node.manifest; if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } } if (!man || typeof man !== 'object') man = {}; var entry = node.siteEntry || 'index.html'; var rel = (steps.parse && steps.parse.relPath) || ''; try { rel = decodeURIComponent(rel); } catch (e) {} if (!rel || rel.charAt(rel.length - 1) === '/') rel = entry; var target = (man[rel] != null) ? man[rel] : null; var allow = !!(steps.gate && steps.gate.allow); return { target: target, missing: !target, rel: rel, doRedirect: allow && !!target, notFound: allow && !target }; }"
             },
             "handlerType": "function_handler"
           },
