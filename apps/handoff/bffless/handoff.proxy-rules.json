@@ -651,7 +651,7 @@
             "id": "gate",
             "name": "gate",
             "config": {
-              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var uid=(user&&user.id)||null; var isAdmin=!!user&&user.role==='admin'; var stok=vtok(readCookie('hf_s')); var shareFolderId=(stok&&stok.s)?String(stok.s):''; var ftok=vtok(readCookie('hf_f')); var viewer; if(uid)viewer={userId:uid,isAdmin:isAdmin}; else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId}; else viewer={}; var folders=(steps&&steps.allFolders)||[]; var node=(steps&&steps.query)||null; if(node&&typeof node==='object'){ if(!(node.id||node.recordId||node.record_id))node=null; } else { node=null; } var allow=false; var level='none'; var setCookie=''; if(node){ var nid=node.id||node.recordId||node.record_id; var ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); level=evalAccess(ch,viewer); allow=level!=='none'; if(allow){ var fscope=String(node.parentId||'root'); var payload=utils.base64urlEncode(JSON.stringify({f:fscope,v:uid||('s:'+shareFolderId),exp:Date.now()+300000})); setCookie='hf_f='+payload+'.'+utils.sign(payload)+'; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300'; } } var hasCred=!!uid||!!shareFolderId||!!ftok; var deny401=!allow&&!hasCred; var deny403=!allow&&hasCred; return {allow:allow,deny401:deny401,deny403:deny403,level:level,setCookie:setCookie}; }"
+              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var uid=(user&&user.id)||null; var isAdmin=!!user&&user.role==='admin'; var stok=vtok(readCookie('hf_s')); var shareFolderId=(stok&&stok.s)?String(stok.s):''; var ftok=vtok(readCookie('hf_f')); var viewer; if(uid)viewer={userId:uid,isAdmin:isAdmin}; else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId}; else viewer={}; var folders=(steps&&steps.allFolders)||[]; var node=(steps&&steps.query)||null; if(node&&typeof node==='object'){ if(!(node.id||node.recordId||node.record_id))node=null; } else { node=null; } var allow=false; var level='none'; if(node){ var nid=node.id||node.recordId||node.record_id; var ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); level=evalAccess(ch,viewer); allow=level!=='none'; } var hasCred=!!uid||!!shareFolderId||!!ftok; var deny401=!allow&&!hasCred; var deny403=!allow&&hasCred; return {allow:allow,deny401:deny401,deny403:deny403,level:level}; }"
             },
             "handlerType": "function_handler"
           },
@@ -659,24 +659,18 @@
             "id": "resolve",
             "name": "resolve",
             "config": {
-              "code": "function handler({ steps }) { var node = (steps && steps.query) || {}; if (!node || typeof node !== 'object') node = {}; var man = node.manifest; if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } } if (!man || typeof man !== 'object') man = {}; var entry = node.siteEntry || 'index.html'; var rel = (steps.parse && steps.parse.relPath) || ''; if (!rel || rel.charAt(rel.length - 1) === '/') rel = entry; var target = (man[rel] != null) ? man[rel] : null; var allow = !!(steps.gate && steps.gate.allow); return { target: target, missing: !target, rel: rel, doRedirect: allow && !!target, notFound: allow && !target }; }"
+              "code": "function handler({ steps }) { var node = (steps && steps.query) || {}; if (!node || typeof node !== 'object') node = {}; var man = node.manifest; if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } } if (!man || typeof man !== 'object') man = {}; var entry = node.siteEntry || 'index.html'; var rel = (steps.parse && steps.parse.relPath) || ''; if (!rel || rel.charAt(rel.length - 1) === '/') rel = entry; var target = (man[rel] != null) ? man[rel] : null; var marker = '/api/uploads/'; var serveKey = ''; if (target && typeof target === 'string' && target.indexOf(marker) === 0 && target.indexOf('..') < 0) serveKey = target.slice(marker.length); var allow = !!(steps.gate && steps.gate.allow); var hasKey = !!serveKey; return { target: target, serveKey: serveKey, rel: rel, doServe: allow && hasKey, notFound: allow && !hasKey }; }"
             },
             "handlerType": "function_handler"
           },
           {
-            "id": "redirect",
-            "name": "redirect",
+            "id": "serve",
+            "name": "serve",
             "config": {
-              "body": "",
-              "status": 302,
-              "headers": {
-                "Location": "{{steps.resolve.target}}",
-                "Set-Cookie": "{{steps.gate.setCookie}}",
-                "Cache-Control": "no-store"
-              },
-              "condition": "steps.resolve.doRedirect"
+              "key": "{{steps.resolve.serveKey}}",
+              "condition": "steps.resolve.doServe"
             },
-            "handlerType": "response_handler"
+            "handlerType": "file_serve_handler"
           },
           {
             "id": "notfound",
@@ -712,10 +706,10 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Map /api/sites/<id>/<relPath> to the stored object via manifest, 302 redirect — gated by per-folder ACL (ADR-0002). On first allowed entry, sets a short-lived signed hf_f folder cookie reused by site asset sub-requests."
+        "description": "Map /api/sites/<id>/<relPath> to the stored object via manifest, then serve the bytes IN-PLACE (file_serve_handler, 200) — gated by per-folder ACL (ADR-0002). Serving in-place (no 302) keeps the iframe document URL under /api/sites/<id>/, so a Site's relative sub-resources re-enter this rule and re-resolve the manifest, and every asset request resolves the site node for its own ACL check (no hf_f cookie dependency)."
       },
       "isEnabled": true,
-      "description": "Serve a Site asset by relative path via manifest redirect (same-origin)"
+      "description": "Serve a Site asset by relative path via manifest (in-place, same-origin)"
     },
     {
       "pathPattern": "/api/grants",
