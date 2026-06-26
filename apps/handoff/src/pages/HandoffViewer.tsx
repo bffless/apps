@@ -27,7 +27,7 @@ interface ControlBarProps {
 
 function ShareIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
       <path d="M13 4.5a2.5 2.5 0 1 1 .702 1.737L6.97 9.604a2.518 2.518 0 0 1 0 .792l6.733 3.367a2.5 2.5 0 1 1-.671 1.341L6.3 11.737a2.5 2.5 0 1 1 0-3.474l6.733-3.367A2.515 2.515 0 0 1 13 4.5Z" />
     </svg>
   )
@@ -39,7 +39,8 @@ function ControlBar({ node, contentRef }: ControlBarProps) {
 
   const isRoot = node.parentId === 'root'
   // Look up the parent folder to read its ownerId for the share gate.
-  const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot })
+  // Skip for guests (unauthenticated) to avoid a discarded 401 on the parent fetch.
+  const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !(session?.authenticated) })
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
 
   const [shareOpen, setShareOpen] = useState(false)
@@ -114,8 +115,8 @@ function ControlBar({ node, contentRef }: ControlBarProps) {
             <span className="hidden sm:inline">Share</span>
           </button>
           {shareOpen && (
-            <div className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
-              <ShareLinksSection folderId={node.parentId} />
+            <div role="dialog" aria-label="Share links" className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+              <ShareLinksSection folderId={node.parentId} topDivider={false} />
             </div>
           )}
         </div>

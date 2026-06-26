@@ -24,9 +24,16 @@ const EXPIRY_OPTIONS: { label: string; ms: number | undefined }[] = [
 
 export interface ShareLinksSectionProps {
   folderId: string
+  /**
+   * When true (default) renders a top margin, border, and padding above the
+   * section — appropriate when used inside ManageAccessPanel below other UI.
+   * Pass false when the component is the sole child of a popover (e.g. the
+   * viewer Share popover) to avoid an orphan top border.
+   */
+  topDivider?: boolean
 }
 
-export function ShareLinksSection({ folderId }: ShareLinksSectionProps) {
+export function ShareLinksSection({ folderId, topDivider = true }: ShareLinksSectionProps) {
   const { data: links, isLoading: loadingLinks } = useListShareLinksQuery({ folderId })
   const [mintShareLink, { isLoading: minting }] = useMintShareLinkMutation()
   const [revokeShareLink, { isLoading: revoking }] = useRevokeShareLinkMutation()
@@ -86,7 +93,7 @@ export function ShareLinksSection({ folderId }: ShareLinksSectionProps) {
   const revokedLinks = (links ?? []).filter((l) => l.revoked)
 
   return (
-    <div className="mt-5 border-t border-gray-100 pt-5">
+    <div className={topDivider ? 'mt-5 border-t border-gray-100 pt-5' : ''}>
       <p className="mb-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Share links</p>
       <p className="mb-3 text-xs text-gray-400">Anyone with the link can view this folder and everything in it.</p>
 
