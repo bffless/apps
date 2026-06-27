@@ -100,3 +100,35 @@ export function useSession(): { session: Session | null; loading: boolean; refet
 export function adminLoginUrl(returnUrl: string): string {
   return `https://admin.j5s.dev/login?redirect=${encodeURIComponent(returnUrl)}`
 }
+
+/**
+ * Build the admin logout relay URL. Mirror of `adminLoginUrl` — bounces through
+ * the admin host so SuperTokens revokes the session shared on `.j5s.dev`, then
+ * redirects back to `returnUrl`.
+ */
+export function adminLogoutUrl(returnUrl: string): string {
+  return `https://admin.j5s.dev/logout?redirect=${encodeURIComponent(returnUrl)}`
+}
+
+/**
+ * Full sign-out. Symmetric to the sign-in flow:
+ *
+ * 1. POST `/_bffless/auth/logout` to clear the per-domain relay cookies
+ *    (`bffless_access` / `bffless_refresh`). This is a no-op on `j5s.dev`
+ *    subdomains, where those cookies are never set, but is harmless and keeps
+ *    the flow correct for any future cross-origin custom domain.
+ * 2. Bounce through `admin.j5s.dev/logout` so SuperTokens revokes the real
+ *    session and clears `sAccessToken` on `.j5s.dev`, then returns here.
+ *
+ * Navigating straight to `/_bffless/auth/logout` (a POST-only endpoint) with a
+ * GET is what produced the 404 — and it could never clear the SuperTokens
+ * session anyway.
+ */
+export async function logout(returnUrl: string = window.location.href): Promise<void> {
+  try {
+    await fetch('/_bffless/auth/logout', { method: 'POST', credentials: 'include' })
+  } catch {
+    // ignore — the admin bounce below is the source of truth
+  }
+  window.location.href = adminLogoutUrl(returnUrl)
+}
