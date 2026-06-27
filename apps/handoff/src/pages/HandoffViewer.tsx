@@ -8,15 +8,18 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { useGetNodeQuery, useGetSignedUrlQuery } from '../store/handoffApi'
+import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
 import { useSession } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
+import { canDeleteNode } from '../lib/deleteGate'
 import { ShareDialog } from '../components/ShareDialog'
+import { TrashIcon } from '../components/icons'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { InvalidLink } from '../components/InvalidLink'
+import { toast } from '../lib/toast'
 import { shouldClaimToken } from '../lib/share'
 
 // ---------------------------------------------------------------------------
@@ -58,8 +61,24 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   // Skip for guests (unauthenticated) to avoid a discarded 401 on the parent fetch.
   const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !(session?.authenticated) })
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
+  const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
 
   const [shareOpen, setShareOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteNode] = useDeleteNodeMutation()
+
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await deleteNode({ id: node.id, parentId: node.parentId }).unwrap()
+      toast(`Deleted “${node.name}”.`)
+      navigate(node.parentId && node.parentId !== 'root' ? `/folder/${node.parentId}` : '/')
+    } catch {
+      setDeleting(false)
+      toast(`Couldn’t delete “${node.name}”. Please try again.`, 'error')
+    }
+  }
 
   function handleFullscreen() {
     if (contentRef.current) {
@@ -182,6 +201,75 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           </svg>
           <span className="hidden sm:inline">Download</span>
         </a>
+      )}
+
+      {/* Delete — writers only */}
+      {canDelete && (
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted transition-colors hover:bg-danger-bg hover:text-danger"
+          title="Delete"
+        >
+          <TrashIcon className="h-4 w-4" />
+          <span className="hidden sm:inline">Delete</span>
+        </button>
+      )}
+
+      {confirmOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Delete ${node.name}`}
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ zIndex: 'var(--z-modal)' }}
+          onClick={() => {
+            if (!deleting) setConfirmOpen(false)
+          }}
+        >
+          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+          <div
+            className="share-dialog relative w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger-bg text-danger">
+                <TrashIcon className="h-4 w-4" />
+              </span>
+              <h2 className="text-sm font-semibold text-ink">
+                Delete {node.type === 'site' ? 'site' : 'file'}?
+              </h2>
+            </div>
+            <p className="mt-1.5 text-sm text-muted">
+              <span className="font-medium text-ink">{node.name}</span> will be permanently deleted.
+              This can’t be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmOpen(false)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDelete}
+                className="inline-flex items-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting && (
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                )}
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -20,8 +20,9 @@ import {
   useImperativeHandle,
 } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useSelector } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
 import {
+  handoffApi,
   useListNodesQuery,
   useGetNodeQuery,
   useUploadFileMutation,
@@ -29,6 +30,8 @@ import {
   useImportFolderMutation,
   useCreateFolderMutation,
   useListShareLinksQuery,
+  useDeleteNodeMutation,
+  useDeleteSubtreeMutation,
 } from '../store/handoffApi'
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
@@ -61,11 +64,12 @@ import {
   ExternalIcon,
   ShareIcon,
   SearchIcon,
+  TrashIcon,
   XIcon,
 } from '../components/icons'
 import type { HandoffNode } from '../lib/nodes'
 import type { Crumb } from '../lib/tree'
-import type { RootState } from '../store'
+import type { RootState, AppDispatch } from '../store'
 
 // ---------------------------------------------------------------------------
 // Ancestor resolution (unchanged logic) — drives breadcrumb AND ACL eval.
@@ -664,12 +668,15 @@ function RowKebab({
   copyState,
   onCopyLink,
   onShare,
+  onDelete,
 }: {
   node: HandoffNode
   canManage: boolean
   copyState: 'idle' | 'busy' | 'copied' | 'error'
   onCopyLink: () => void
   onShare: () => void
+  /** Provided only when the viewer can write (delete) here. */
+  onDelete?: () => void
 }) {
   const navigate = useNavigate()
   const to = node.type === 'folder' ? `/folder/${node.id}` : `/view/${node.id}`
@@ -687,6 +694,10 @@ function RowKebab({
     const label =
       copyState === 'copied' ? 'Copied!' : copyState === 'error' ? 'Copy failed' : 'Copy link'
     items.push({ label, icon: <LinkIcon className="h-4 w-4" />, onSelect: onCopyLink })
+  }
+  if (onDelete) {
+    items.push('separator')
+    items.push({ label: 'Delete', icon: <TrashIcon className="h-4 w-4" />, danger: true, onSelect: onDelete })
   }
   return (
     <Menu
@@ -719,12 +730,14 @@ function ListingRow({
   copyState,
   onCopyLink,
   onShare,
+  onDelete,
 }: {
   node: HandoffNode
   canManage: boolean
   copyState: 'idle' | 'busy' | 'copied' | 'error'
   onCopyLink: () => void
   onShare: () => void
+  onDelete?: () => void
 }) {
   const to = node.type === 'folder' ? `/folder/${node.id}` : `/view/${node.id}`
   const iconColor =
@@ -764,6 +777,7 @@ function ListingRow({
           copyState={copyState}
           onCopyLink={onCopyLink}
           onShare={onShare}
+          onDelete={onDelete}
         />
       </td>
     </tr>
@@ -854,6 +868,54 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const { data: folderLinks } = useListShareLinksQuery({ folderId }, { skip: !canManage })
   const copy = useCopyFileShareLink(folderId, folderLinks)
+
+  // Delete — writers (edit/owner) only. Folder → recursive subtree; leaf → single.
+  const dispatch = useDispatch<AppDispatch>()
+  const [deleteNode] = useDeleteNodeMutation()
+  const [deleteSubtree] = useDeleteSubtreeMutation()
+  const [pendingDelete, setPendingDelete] = useState<{ node: HandoffNode; childCount: number } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  async function requestDelete(node: HandoffNode) {
+    if (node.type === 'folder') {
+      let childCount = 0
+      try {
+        const children = await dispatch(
+          handoffApi.endpoints.listNodes.initiate({ parentId: node.id }),
+        ).unwrap()
+        childCount = children.length
+      } catch {
+        // Fall back to a generic warning if the count can't be loaded.
+      }
+      setPendingDelete({ node, childCount })
+    } else {
+      setPendingDelete({ node, childCount: 0 })
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    const { node } = pendingDelete
+    setDeleting(true)
+    try {
+      if (node.type === 'folder') {
+        const res = await deleteSubtree({ rootId: node.id, parentId: folderId }).unwrap()
+        if (res.failures.length > 0) {
+          toast(`Deleted ${res.deleted} item(s); ${res.failures.length} could not be removed.`, 'error')
+        } else {
+          toast(`Deleted “${node.name}” and its contents.`)
+        }
+      } else {
+        await deleteNode({ id: node.id, parentId: folderId }).unwrap()
+        toast(`Deleted “${node.name}”.`)
+      }
+    } catch {
+      toast(`Couldn’t delete “${node.name}”. Please try again.`, 'error')
+    } finally {
+      setDeleting(false)
+      setPendingDelete(null)
+    }
+  }
 
   function fileCopyStatus(nodeId: string): 'idle' | 'busy' | 'copied' | 'error' {
     if (copy.busyId === nodeId) return 'busy'
@@ -1039,6 +1101,19 @@ export function FolderView({ folderId }: FolderViewProps) {
           nodeId={shareTarget.nodeId}
           isFile={shareTarget.isFile}
           onClose={() => setShareTarget(null)}
+        />
+      )}
+
+      {/* Delete confirmation (row kebab) */}
+      {pendingDelete && (
+        <DeleteConfirmDialog
+          node={pendingDelete.node}
+          childCount={pendingDelete.childCount}
+          deleting={deleting}
+          onCancel={() => {
+            if (!deleting) setPendingDelete(null)
+          }}
+          onConfirm={confirmDelete}
         />
       )}
 
@@ -1238,6 +1313,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                         : { folderId, title: node.name, nodeId: node.id, isFile: true },
                     )
                   }
+                  onDelete={canWrite ? () => void requestDelete(node) : undefined}
                 />
               ))}
             </tbody>
@@ -1284,6 +1360,80 @@ function EmptyState({
           Upload files
         </button>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DeleteConfirmDialog — destructive confirmation (folder → recursive subtree).
+// ---------------------------------------------------------------------------
+
+function DeleteConfirmDialog({
+  node,
+  childCount,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  node: HandoffNode
+  childCount: number
+  deleting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const isFolder = node.type === 'folder'
+  const kind = isFolder ? 'folder' : node.type === 'site' ? 'site' : 'file'
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Delete ${node.name}`}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 'var(--z-modal)' }}
+      onClick={onCancel}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div
+        className="share-dialog relative w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger-bg text-danger">
+            <TrashIcon className="h-4 w-4" />
+          </span>
+          <h2 className="text-sm font-semibold text-ink">Delete {kind}?</h2>
+        </div>
+        <p className="mt-1.5 text-sm text-muted">
+          <span className="font-medium text-ink">{node.name}</span>{' '}
+          {isFolder && childCount > 0
+            ? `and its ${childCount} item${childCount === 1 ? '' : 's'} will be permanently deleted. This can’t be undone.`
+            : 'will be permanently deleted. This can’t be undone.'}
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onCancel}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onConfirm}
+            className="inline-flex items-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {deleting && (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+            )}
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

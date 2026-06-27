@@ -402,6 +402,161 @@
       "description": "Fetch a single node by id (?id=)"
     },
     {
+      "pathPattern": "/api/node",
+      "method": "DELETE",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 8,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff delete node",
+        "steps": [
+          {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var id = String((request && request.query && request.query.id) || ''); var ok = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id); return { id: id, idOk: ok }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "recordId": "request.query.id",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.idOk"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "allFolders",
+            "name": "allFolders",
+            "config": {
+              "filters": {
+                "nodeType": {
+                  "op": "eq",
+                  "value": "folder"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "children",
+            "name": "children",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.query.id"
+                }
+              },
+              "pageSize": 1,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.idOk"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "gate",
+            "name": "gate",
+            "config": {
+              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } \n  var uid=(user&&user.id)||null;\n  var isAdmin=!!user&&user.role==='admin';\n  var stok=vtok(readCookie('hf_s'));\n  var shareFolderId=(stok&&stok.s)?String(stok.s):'';\n  var ftok=vtok(readCookie('hf_f'));\n  var viewer;\n  if(uid)viewer={userId:uid,isAdmin:isAdmin};\n  else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId};\n  else viewer={};\n  var folders=(steps&&steps.allFolders)||[];\n  var node=(steps&&steps.query)||null;\n  if(node&&typeof node==='object'){ var hasId=node.id||node.recordId||node.record_id; if(!hasId)node=null; } else { node=null; }\n  var allow=false; var level='none';\n  var nodeType=''; var isFile=false; var isFolder=false; var isSite=false; var storageKey='';\n  if(node){\n    var nid=node.id||node.recordId||node.record_id;\n    nodeType=node.nodeType||'file';\n    isFile=nodeType==='file'; isFolder=nodeType==='folder'; isSite=nodeType==='site';\n    var ch;\n    if(isFolder){ ch=folderChain(folders,nid); }\n    else { ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); }\n    level=evalAccess(ch,viewer);\n    allow=rank(level)>=2;\n    var sp=String(node.storage_path||'');\n    var um=sp.indexOf('/uploads/');\n    storageKey=(um>=0)?sp.slice(um+9):'';\n  }\n  var kids=(steps&&steps.children)||[];\n  var childCount=(Object.prototype.toString.call(kids)==='[object Array]')?kids.length:0;\n  var hasChildren=childCount>0;\n  var guardBlocked=isFolder&&hasChildren;\n  var hasCred=!!uid||!!shareFolderId||!!ftok;\n  var deny401=!allow&&!hasCred;\n  var deny403=!allow&&hasCred;\n  var doPurge=allow&&isFile&&!!storageKey;\n  var doPurgeSite=allow&&isSite;\n  var doDelete=allow&&!guardBlocked;\n  return {\n    allow:allow, deny401:deny401, deny403:deny403, level:level,\n    isFile:isFile, isFolder:isFolder, isSite:isSite, storageKey:storageKey,\n    childCount:childCount, hasChildren:hasChildren, guardBlocked:guardBlocked,\n    doPurge:doPurge, doPurgeSite:doPurgeSite, doDelete:doDelete\n  };\n}"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "guardNonEmpty",
+            "name": "guardNonEmpty",
+            "config": {
+              "body": "{\"error\":\"folder_not_empty\"}",
+              "status": 409,
+              "condition": "steps.gate.guardBlocked",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "siteKeys",
+            "name": "siteKeys",
+            "config": {
+              "code": "function handler({ steps }) {\n  var node = (steps && steps.query) || {};\n  if (!node || typeof node !== 'object') node = {};\n  var man = node.manifest;\n  if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } }\n  if (!man || typeof man !== 'object') man = {};\n  var marker = '/api/uploads/';\n  var list = [];\n  var seen = {};\n  for (var rel in man) {\n    if (!Object.prototype.hasOwnProperty.call(man, rel)) continue;\n    var target = man[rel];\n    if (typeof target !== 'string') continue;\n    if (target.indexOf(marker) !== 0) continue;\n    if (target.indexOf('..') >= 0) continue;\n    var key = target.slice(marker.length);\n    if (!key || seen[key]) continue;\n    seen[key] = true;\n    list.push(key);\n  }\n  return { list: list, count: list.length };\n}",
+              "condition": "steps.gate.isSite"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "purgeObject",
+            "name": "purgeObject",
+            "config": {
+              "key": "{{steps.gate.storageKey}}",
+              "condition": "steps.gate.doPurge"
+            },
+            "handlerType": "file_delete"
+          },
+          {
+            "id": "purgeSiteAssets",
+            "name": "purgeSiteAssets",
+            "config": {
+              "keys": "steps.siteKeys.list",
+              "condition": "steps.gate.doPurgeSite"
+            },
+            "handlerType": "file_delete"
+          },
+          {
+            "id": "del",
+            "name": "del",
+            "config": {
+              "recordId": "request.query.id",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.gate.doDelete"
+            },
+            "handlerType": "data_delete"
+          },
+          {
+            "id": "response",
+            "name": "response",
+            "config": {
+              "body": "{\"deleted\":true,\"id\":\"{{request.query.id}}\"}",
+              "status": 200,
+              "condition": "steps.gate.doDelete",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "deny401",
+            "name": "deny401",
+            "config": {
+              "body": "{\"error\":\"unauthorized\"}",
+              "status": 401,
+              "condition": "steps.gate.deny401",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "deny403",
+            "name": "deny403",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.gate.deny403",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Hard-delete one node by id — write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files; refuses a non-empty folder with 409. Client recurses for subtree delete."
+      },
+      "isEnabled": true,
+      "description": "Delete a single node by id (?id=) — write-gated, hard delete"
+    },
+    {
       "pathPattern": "/api/sign",
       "method": "POST",
       "targetUrl": "pipeline",
