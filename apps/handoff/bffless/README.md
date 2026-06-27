@@ -5,7 +5,7 @@ presigned uploads, node tree, content serving, signed URLs, per-folder grants, s
 Handoff against your own BFFless project you import that rule set and attach it to the alias serving
 the app.
 
-[`handoff.proxy-rules.json`](handoff.proxy-rules.json) is the exported rule set (17 rules, format
+[`handoff.proxy-rules.json`](handoff.proxy-rules.json) is the exported rule set (21 rules, format
 `bffless-proxy-rule-set` v2). It contains **no secrets** — credentials are referenced by name or use
 the project's configured auth relay. The view pipelines carry the live per-folder ACL gate (see
 **ACL enforcement** below); the signed-cookie HMAC uses CE's server-side `utils.sign` key, which the
@@ -17,7 +17,7 @@ sandbox never sees.
 
 **Claude / MCP:** ask Claude (with the BFFless MCP connected) to import
 `apps/handoff/bffless/handoff.proxy-rules.json` into your project. It creates the `handoff` rule set
-and all 16 rules (IDs are remapped on import).
+and all 21 rules (IDs are remapped on import).
 
 After import, **attach the `handoff` rule set to the alias** your deploy uploads to (e.g. the
 `handoff` alias / `handoff.<your-domain>`). `/api/*` only serves on aliases the rule set is attached
@@ -73,7 +73,20 @@ Create a new table with these columns:
 | `createdBy` | text | BFFless user id of the creator |
 | `createdMs` | integer | creation timestamp (ms) |
 
-### 3. Auth relay
+### 3. People-picker directory (CE version requirement)
+
+The "Manage access" people-picker autocompletes against your BFFless users via
+`GET /api/directory`, a plain proxy rule that forwards (with the requester's session cookie) to the
+CE backend's **member-accessible** `GET /api/users/directory` — it returns only `{ users: [{id,email}] }`,
+requires a non-empty `search`, caps the result count, and excludes disabled users. No admin API key
+is borrowed; the requester is authenticated as themselves.
+
+This endpoint requires **CE ≥ the release that adds `/api/users/directory`** (the non-admin user
+directory). On older CE builds, `/api/users/directory` does not exist and the picker will return no
+results — grant management still works once you know a user id, but the autocomplete needs the
+updated backend.
+
+### 4. Auth relay
 
 Handoff uses BFFless cookie-based sessions for access control. The app reads
 `/_bffless/auth/session` to detect the current user and redirects unauthenticated visitors to the

@@ -21,6 +21,19 @@
       "description": "Reverse-proxy SuperTokens auth endpoints (session refresh, signout, oauth) to the CE backend so subdomain apps can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie."
     },
     {
+      "pathPattern": "/api/directory",
+      "method": "GET",
+      "targetUrl": "http://localhost:3000/api/users/directory",
+      "stripPrefix": true,
+      "order": 20,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": true,
+      "proxyType": "external_proxy",
+      "isEnabled": true,
+      "description": "People-picker autocomplete. Forwards GET /api/directory?search=&limit= to the CE backend's member-accessible GET /api/users/directory (returns { users: [{id,email}] }; search required, results capped, disabled users excluded). forwardCookies carries the SuperTokens session so the requester is authenticated as themselves — no admin API key is borrowed. Requires CE >= the release that adds /api/users/directory (member-accessible, non-admin)."
+    },
+    {
       "pathPattern": "/api/uploads/content/*",
       "method": "GET",
       "targetUrl": "http://internal/pipeline",
