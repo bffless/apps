@@ -1344,14 +1344,15 @@
             "id": "bad",
             "name": "bad",
             "config": {
-              "body": "Not found",
+              "body": "",
               "status": 404,
               "condition": "steps.check.deny",
               "contentType": "text/plain"
             },
             "handlerType": "response_handler"
           }
-        ]
+        ],
+        "description": "Validate a folder-scoped share token and 302-redirect to a presigned raw file URL."
       },
       "isEnabled": true,
       "description": "Validate a folder-scoped share token and 302-redirect to a presigned raw file URL (one-request access)."
