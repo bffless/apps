@@ -19,7 +19,10 @@ import {
   useUploadSiteMutation,
   useImportFolderMutation,
   useCreateFolderMutation,
+  useListShareLinksQuery,
 } from '../store/handoffApi'
+import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
+import { CopyLinkButton, type CopyStatus } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
 import { formatBytes } from '../lib/format'
 import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
@@ -214,26 +217,34 @@ function FolderRow({ node }: { node: HandoffNode }) {
   )
 }
 
-function FileRow({ node }: { node: HandoffNode }) {
+function FileRow({
+  node,
+  copyStatus,
+  onCopyLink,
+}: {
+  node: HandoffNode
+  copyStatus?: CopyStatus
+  onCopyLink?: () => void
+}) {
   const hint = node.mime ?? node.type
   return (
-    <Link
-      to={`/view/${node.id}`}
-      className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-gray-50"
-    >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50 text-gray-400">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-          <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-        </svg>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">{node.name}</p>
-        <p className="truncate text-xs text-gray-400">{hint}</p>
-      </div>
+    <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-gray-50">
+      <Link to={`/view/${node.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50 text-gray-400">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-gray-900">{node.name}</p>
+          <p className="truncate text-xs text-gray-400">{hint}</p>
+        </div>
+      </Link>
       {node.size !== null && (
         <span className="shrink-0 text-xs text-gray-400">{formatBytes(node.size)}</span>
       )}
-    </Link>
+      {onCopyLink && <CopyLinkButton status={copyStatus ?? 'idle'} onClick={onCopyLink} />}
+    </div>
   )
 }
 
@@ -772,8 +783,10 @@ export function FolderView({ folderId }: FolderViewProps) {
   const { data: rawNodes, isLoading, isError, error } = useListNodesQuery({ parentId: folderId })
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
   const [uploadDone, setUploadDone] = useState(false)
+  const [uploadedNodes, setUploadedNodes] = useState<HandoffNode[]>([])
   const [importDoneMsg, setImportDoneMsg] = useState<string | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -821,6 +834,18 @@ export function FolderView({ folderId }: FolderViewProps) {
   // flashing disabled controls while ancestors are still loading.
   const canWrite = chainReady && (effectiveLevel === 'owner' || effectiveLevel === 'edit')
   const canManage = chainReady && effectiveLevel === 'owner'
+
+  // Manager-only: load folder links so "Copy link" can reuse one token per folder.
+  const { data: folderLinks } = useListShareLinksQuery({ folderId }, { skip: !canManage })
+  const copy = useCopyFileShareLink(folderId, folderLinks)
+
+  function fileCopyStatus(nodeId: string): CopyStatus {
+    if (copy.busyId === nodeId) return 'busy'
+    if (copy.copiedId === nodeId) return 'copied'
+    if (copy.errorId === nodeId) return 'error'
+    return 'idle'
+  }
+
   const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
   useEffect(() => {
@@ -830,13 +855,40 @@ export function FolderView({ folderId }: FolderViewProps) {
     }
   }, [])
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUploadedNodes([])
+  }, [folderId])
+
   async function handleFile(file: File) {
     setUploadDone(false)
     const result = await uploadFile({ file, parentId: folderId })
     if (!('error' in result)) {
       setUploadDone(true)
+      setUploadedNodes((prev) => [...prev, result.data])
       if (timerRef.current !== null) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => setUploadDone(false), 3000)
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!canWrite) return
+    e.preventDefault()
+    setDragActive(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    // Only clear when leaving the container itself, not its children.
+    if (e.currentTarget === e.target) setDragActive(false)
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    if (!canWrite) return
+    e.preventDefault()
+    setDragActive(false)
+    const files = Array.from(e.dataTransfer.files)
+    for (const f of files) {
+      await handleFile(f)
     }
   }
 
@@ -869,7 +921,17 @@ export function FolderView({ folderId }: FolderViewProps) {
   const errorStatus = error ? (error as { status?: number }).status : undefined
 
   return (
-    <div className="container-page py-10">
+    <div
+      className={`container-page py-10 ${dragActive ? 'rounded-xl outline-dashed outline-2 outline-offset-4 outline-gray-400' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragActive && canWrite && (
+        <div className="mb-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          Drop files to upload to this folder
+        </div>
+      )}
       {/* Breadcrumb — also drives ancestor resolution for ACL evaluation */}
       <Breadcrumb folderId={folderId} onChainUpdate={handleChainUpdate} />
 
@@ -927,9 +989,38 @@ export function FolderView({ folderId }: FolderViewProps) {
           {uploadErrorMsg}
         </div>
       )}
-      {uploadDone && (
+      {uploadDone && (!canManage || uploadedNodes.length === 0) && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
           File uploaded successfully.
+        </div>
+      )}
+      {canManage && uploadedNodes.length > 0 && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-green-800">Uploaded — copy a share link</p>
+            <button
+              type="button"
+              onClick={() => setUploadedNodes([])}
+              className="rounded p-1 text-green-700 hover:bg-green-100"
+              aria-label="Dismiss"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+              </svg>
+            </button>
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            {uploadedNodes.map((n) => (
+              <li key={n.id} className="flex items-center gap-2 rounded-lg border border-green-200 bg-white px-3 py-2">
+                <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{n.name}</span>
+                <CopyLinkButton
+                  status={fileCopyStatus(n.id)}
+                  onClick={() => void copy.copyLink(n.id)}
+                  className="shrink-0 rounded-lg border border-green-300 bg-white px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                />
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {importDoneMsg && (
@@ -988,7 +1079,12 @@ export function FolderView({ folderId }: FolderViewProps) {
             node.type === 'folder' ? (
               <FolderRow key={node.id} node={node} />
             ) : (
-              <FileRow key={node.id} node={node} />
+              <FileRow
+                key={node.id}
+                node={node}
+                copyStatus={fileCopyStatus(node.id)}
+                onCopyLink={canManage ? () => void copy.copyLink(node.id) : undefined}
+              />
             )
           )}
         </div>

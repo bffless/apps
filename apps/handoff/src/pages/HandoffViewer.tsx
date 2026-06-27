@@ -7,7 +7,7 @@
  */
 
 import { useRef, useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useGetNodeQuery, useGetSignedUrlQuery } from '../store/handoffApi'
 import { previewFor } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
@@ -15,6 +15,9 @@ import type { HandoffNode } from '../lib/nodes'
 import { useSession } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { ShareLinksSection } from '../components/ShareLinksSection'
+import { useClaimShareToken } from '../store/useClaimShareToken'
+import { InvalidLink } from '../components/InvalidLink'
+import { shouldClaimToken } from '../lib/share'
 
 // ---------------------------------------------------------------------------
 // Control bar
@@ -116,7 +119,7 @@ function ControlBar({ node, contentRef }: ControlBarProps) {
           </button>
           {shareOpen && (
             <div role="dialog" aria-label="Share links" className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
-              <ShareLinksSection folderId={node.parentId} topDivider={false} />
+              <ShareLinksSection folderId={node.parentId} topDivider={false} nodeId={node.id} />
             </div>
           )}
         </div>
@@ -290,8 +293,33 @@ function MediaPreview({ node, kind }: { node: HandoffNode; kind: 'video' | 'audi
 
 export function HandoffViewer() {
   const { id } = useParams<{ id: string }>()
-  const { data: node, isLoading, isError } = useGetNodeQuery(id ?? '')
+  const [searchParams] = useSearchParams()
+  const token = searchParams.get('token')
+  const { session, loading: sessionLoading } = useSession()
+  const authed = session?.authenticated === true
+
+  // Claim the share token first (guest only) so the gated node fetch succeeds.
+  const needClaim = !sessionLoading && shouldClaimToken({ token, authenticated: authed })
+  const { run: claimToken, data: claimData, isError: claimError } = useClaimShareToken()
+  const claimSettled = claimData !== undefined || claimError
+  const claimPending = needClaim && !claimSettled
+
+  useEffect(() => {
+    if (needClaim && token) void claimToken(token)
+  }, [needClaim, token, claimToken])
+
+  const { data: node, isLoading, isError } = useGetNodeQuery(id ?? '', {
+    skip: !id || sessionLoading || claimPending || (needClaim && claimData?.valid === false),
+  })
   const contentRef = useRef<HTMLDivElement>(null)
+
+  if (sessionLoading || claimPending) {
+    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+  }
+  if (needClaim && (claimError || claimData?.valid === false)) {
+    return <InvalidLink />
+  }
+  if (needClaim && claimData?.valid && !isLoading && (isError || !node)) return <InvalidLink />
 
   if (isLoading) {
     return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
