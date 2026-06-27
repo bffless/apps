@@ -14,7 +14,7 @@ import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
 import { useSession } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
-import { ShareLinksSection } from '../components/ShareLinksSection'
+import { ShareDialog } from '../components/ShareDialog'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { InvalidLink } from '../components/InvalidLink'
 import { shouldClaimToken } from '../lib/share'
@@ -60,26 +60,6 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
 
   const [shareOpen, setShareOpen] = useState(false)
-  const shareRef = useRef<HTMLDivElement>(null)
-
-  // Close the Share popover on outside click or Escape (mirrors DirectorySearch).
-  useEffect(() => {
-    if (!shareOpen) return
-    function handleClickOutside(e: MouseEvent) {
-      if (shareRef.current && !shareRef.current.contains(e.target as Node)) {
-        setShareOpen(false)
-      }
-    }
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShareOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [shareOpen])
 
   function handleFullscreen() {
     if (contentRef.current) {
@@ -88,12 +68,15 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   }
 
   return (
-    <div className="sticky top-14 z-30 flex items-center gap-2 border-b border-gray-200 bg-white/90 px-4 py-2 backdrop-blur">
+    <div
+      className="sticky top-14 flex items-center gap-2 border-b border-border bg-surface/90 px-4 py-2 backdrop-blur"
+      style={{ zIndex: 'var(--z-sticky)' }}
+    >
       {/* Back */}
       <button
         type="button"
         onClick={() => navigate('/')}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
           <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -102,7 +85,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       </button>
 
       {/* Title */}
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{node.name}</span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{node.name}</span>
 
       {/* Share — owners/admins of the parent folder. Root items: disabled + explanation. */}
       {isRoot ? (
@@ -111,31 +94,34 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
             type="button"
             disabled
             title="Move this into a folder to share it"
-            className="inline-flex cursor-not-allowed items-center gap-1 rounded px-2 py-1 text-sm text-gray-300"
+            className="inline-flex cursor-not-allowed items-center gap-1 rounded px-2 py-1 text-sm text-muted/50"
           >
             <ShareIcon />
             <span className="hidden sm:inline">Share</span>
           </button>
         ) : null
       ) : canShare ? (
-        <div ref={shareRef} className="relative">
+        <>
           <button
             type="button"
-            onClick={() => setShareOpen((v) => !v)}
-            className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+            onClick={() => setShareOpen(true)}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
             title="Share"
             aria-haspopup="dialog"
-            aria-expanded={shareOpen}
           >
             <ShareIcon />
             <span className="hidden sm:inline">Share</span>
           </button>
           {shareOpen && (
-            <div role="dialog" aria-label="Share links" className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
-              <ShareLinksSection folderId={node.parentId} topDivider={false} nodeId={node.id} />
-            </div>
+            <ShareDialog
+              folderId={node.parentId}
+              title={node.name}
+              nodeId={node.id}
+              isFile
+              onClose={() => setShareOpen(false)}
+            />
           )}
-        </div>
+        </>
       ) : null}
 
       {/* View source ⇄ View rendered — only for source-capable kinds */}
@@ -143,7 +129,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <button
           type="button"
           onClick={onToggleSource}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
           title={showSource ? 'View rendered' : 'View source'}
           aria-pressed={showSource}
         >
@@ -158,7 +144,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           href={node.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
           title="Open in new tab"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -173,7 +159,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       <button
         type="button"
         onClick={handleFullscreen}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
         title="Fullscreen"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -187,7 +173,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <a
           href={node.url}
           download={node.name}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
           title="Download"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -224,12 +210,12 @@ function MarkdownPreview({ url }: { url: string }) {
   }, [url])
 
   if (!result || result.url !== url) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
 
   return (
     <div
-      className="prose prose-gray mx-auto max-w-3xl px-4 py-8"
+      className="markdown-body mx-auto max-w-3xl px-4 py-8 leading-relaxed text-ink"
       dangerouslySetInnerHTML={{ __html: result.html }}
     />
   )
@@ -269,11 +255,11 @@ function SourceView({ url }: { url: string }) {
 
   // Loading while no result yet, or a result from a previous url.
   if (!state || state.url !== url) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading source…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading source…</div>
   }
 
   if ('error' in state) {
-    return <div className="py-16 text-center text-sm text-gray-500">Failed to load source.</div>
+    return <div className="py-16 text-center text-sm text-muted">Failed to load source.</div>
   }
 
   const text = state.text
@@ -293,12 +279,12 @@ function SourceView({ url }: { url: string }) {
       <button
         type="button"
         onClick={handleCopy}
-        className="absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded border border-gray-200 bg-white/90 px-2 py-1 text-xs text-gray-600 shadow-sm backdrop-blur hover:bg-gray-100"
+        className="absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded border border-border bg-surface/90 px-2 py-1 text-xs text-muted shadow-sm backdrop-blur transition-colors hover:bg-surface-2 hover:text-ink"
         title="Copy source"
       >
         {copied ? 'Copied' : 'Copy'}
       </button>
-      <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-gray-800">
+      <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-ink">
         <code>{text}</code>
       </pre>
     </div>
@@ -308,21 +294,21 @@ function SourceView({ url }: { url: string }) {
 function PreviewUnavailable({ node }: { node: HandoffNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-24">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-2 text-muted">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-8 w-8">
           <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd" />
           <path d="M10.748 13.93l2.523 2.523a10.003 10.003 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z" />
         </svg>
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-gray-700">Preview unavailable</p>
-        <p className="mt-1 text-xs text-gray-400">{node.name}</p>
+        <p className="text-sm font-medium text-ink">Preview unavailable</p>
+        <p className="mt-1 text-xs text-muted">{node.name}</p>
       </div>
       {node.url && (
         <a
           href={node.url}
           download={node.name}
-          className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-700"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
@@ -354,7 +340,7 @@ function MediaPreview({ node, kind }: { node: HandoffNode; kind: 'video' | 'audi
   if (isLoading || (storageKey !== '' && signedUrl === undefined && !isError)) {
     return (
       <div className="flex flex-1 items-center justify-center py-24">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent-600" />
       </div>
     )
   }
@@ -421,7 +407,7 @@ export function HandoffViewer() {
   }
 
   if (sessionLoading || claimPending) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
   if (needClaim && (claimError || claimData?.valid === false)) {
     return <InvalidLink />
@@ -429,13 +415,13 @@ export function HandoffViewer() {
   if (needClaim && claimData?.valid && !isLoading && (isError || !node)) return <InvalidLink />
 
   if (isLoading) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
 
   if (isError || !node) {
     return (
       <div className="py-16 text-center">
-        <p className="text-sm text-gray-500">File not found.</p>
+        <p className="text-sm text-muted">File not found.</p>
       </div>
     )
   }

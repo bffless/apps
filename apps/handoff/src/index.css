@@ -2,6 +2,167 @@
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
+/* Dark mode is class-driven (a header toggle adds `.dark` to <html>); the boot
+   script in index.html seeds the class from localStorage or the system pref, so
+   the default still follows `prefers-color-scheme`. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Semantic tokens — raw values live here and FLIP between light/dark; the
+   @theme inline block below maps them to Tailwind color utilities via var(),
+   so `bg-surface` / `text-ink` etc. re-resolve when `.dark` toggles.
+   Strategy (DESIGN.md): Restrained+ — tuned cool-tinted neutrals (hue 285) +
+   one signature violet/indigo accent + one secondary hue reserved for Sites.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* Accent — violet/indigo (hue 285). Static across themes (a fixed hue). */
+  --accent-50: oklch(0.97 0.014 285);
+  --accent-100: oklch(0.94 0.03 285);
+  --accent-200: oklch(0.88 0.06 285);
+  --accent-300: oklch(0.8 0.1 285);
+  --accent-400: oklch(0.68 0.16 285);
+  --accent-500: oklch(0.58 0.19 285);
+  --accent-600: oklch(0.51 0.2 285);
+  --accent-700: oklch(0.45 0.18 285);
+  --accent-800: oklch(0.39 0.15 285);
+  --accent-900: oklch(0.33 0.11 285);
+
+  /* Neutrals — light */
+  --bg: oklch(0.99 0.003 285);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.975 0.005 285);
+  --border: oklch(0.92 0.006 285);
+  --border-strong: oklch(0.86 0.008 285);
+  --ink: oklch(0.24 0.012 285);
+  --muted: oklch(0.47 0.012 285);
+
+  /* Semantic roles — color is the secondary cue; glyph + text lead. */
+  --folder: var(--accent-500);
+  --site: oklch(0.6 0.12 200); /* teal — the one extra hue, Sites only */
+  --file: var(--muted);
+  --edit: oklch(0.62 0.11 70); /* amber */
+  --danger: oklch(0.55 0.2 25);
+  --success: oklch(0.56 0.13 150);
+  --info: var(--accent-600);
+
+  /* Tint backgrounds for role chips (light) */
+  --site-bg: oklch(0.96 0.03 200);
+  --edit-bg: oklch(0.95 0.04 70);
+  --success-bg: oklch(0.96 0.04 150);
+  --danger-bg: oklch(0.96 0.04 25);
+  --accent-bg: var(--accent-50);
+
+  /* Depth — tinted, very low chroma at the accent hue */
+  --shadow-sm: 0 1px 2px oklch(0.4 0.03 285 / 0.06), 0 1px 3px oklch(0.4 0.03 285 / 0.08);
+  --shadow-md: 0 4px 12px oklch(0.4 0.03 285 / 0.1), 0 2px 4px oklch(0.4 0.03 285 / 0.06);
+  --shadow-lg: 0 16px 40px oklch(0.35 0.04 285 / 0.18), 0 4px 12px oklch(0.35 0.04 285 / 0.1);
+
+  /* Motion */
+  --dur-fast: 150ms;
+  --dur: 200ms;
+  --dur-slow: 300ms;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* Z-index scale — semantic, no magic numbers */
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-backdrop: 1200;
+  --z-modal: 1300;
+  --z-toast: 1400;
+  --z-tooltip: 1500;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg: oklch(0.18 0.012 285);
+  --surface: oklch(0.215 0.014 285);
+  --surface-2: oklch(0.16 0.012 285);
+  --border: oklch(0.3 0.012 285);
+  --border-strong: oklch(0.38 0.014 285);
+  --ink: oklch(0.96 0.005 285);
+  --muted: oklch(0.72 0.012 285);
+
+  /* Roles: lift lightness for contrast on dark surfaces */
+  --folder: var(--accent-400);
+  --site: oklch(0.72 0.11 200);
+  --file: var(--muted);
+  --edit: oklch(0.78 0.11 70);
+  --danger: oklch(0.7 0.16 25);
+  --success: oklch(0.72 0.12 150);
+  --info: var(--accent-400);
+
+  /* Role chip backgrounds — dark, low-L tints of the role hue */
+  --site-bg: oklch(0.28 0.04 200);
+  --edit-bg: oklch(0.3 0.05 70);
+  --success-bg: oklch(0.3 0.05 150);
+  --danger-bg: oklch(0.3 0.06 25);
+  --accent-bg: oklch(0.28 0.05 285);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 4px 14px oklch(0 0 0 / 0.5);
+  --shadow-lg: 0 18px 44px oklch(0 0 0 / 0.6), 0 4px 12px oklch(0 0 0 / 0.4);
+}
+
+/* Map semantic vars → Tailwind color/radius/shadow utilities. `inline` keeps
+   the var() reference so utilities re-resolve under `.dark`. */
+@theme inline {
+  --color-accent-50: var(--accent-50);
+  --color-accent-100: var(--accent-100);
+  --color-accent-200: var(--accent-200);
+  --color-accent-300: var(--accent-300);
+  --color-accent-400: var(--accent-400);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+  --color-accent-700: var(--accent-700);
+  --color-accent-800: var(--accent-800);
+  --color-accent-900: var(--accent-900);
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+
+  --color-folder: var(--folder);
+  --color-site: var(--site);
+  --color-file: var(--file);
+  --color-edit: var(--edit);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-info: var(--info);
+
+  --color-site-bg: var(--site-bg);
+  --color-edit-bg: var(--edit-bg);
+  --color-success-bg: var(--success-bg);
+  --color-danger-bg: var(--danger-bg);
+  --color-accent-bg: var(--accent-bg);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --ease-out-quart: var(--ease-out-quart);
+
+  /* Fixed rem type scale (product), ratio ~1.2 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+}
+
 @layer base {
   /* Tailwind's preflight is not included; add box-sizing reset manually so
      `w-full` elements with padding/border don't overflow their containers. */
@@ -11,27 +172,64 @@
     box-sizing: border-box;
   }
 
-  :root {
-    color-scheme: light;
-  }
-
   html {
     scroll-behavior: smooth;
   }
 
   body {
     margin: 0;
-    background-color: #ffffff;
-    color: #111827;
+    background-color: var(--bg);
+    color: var(--ink);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 16px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition:
+      background-color var(--dur) var(--ease-out-quart),
+      color var(--dur) var(--ease-out-quart);
   }
 
   a {
     color: inherit;
+  }
+
+  /* Preflight is intentionally not imported; restore the button reset it would
+     provide so bare <button>s don't pick up the UA border/background (which
+     showed as boxes around unstyled controls like sortable table headers). */
+  button {
+    appearance: none;
+    background-color: transparent;
+    background-image: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+
+  /* Visible, on-brand focus for keyboard users. */
+  :focus-visible {
+    outline: 2px solid var(--accent-500);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
@@ -41,5 +239,161 @@
     max-width: 1280px;
     margin-inline: auto;
     padding-inline: 1.5rem;
+  }
+
+  /* Folder tree — strip default list markers (preflight isn't imported). */
+  .tree-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Wordmark — personality without a display font. */
+  .wordmark {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--accent-600);
+  }
+  .dark .wordmark {
+    color: var(--accent-400);
+  }
+
+  /* Dropdown/menu entrance — fade + scale from the top edge. */
+  .menu-pop {
+    transform-origin: top;
+    animation: menu-in var(--dur-fast) var(--ease-out-quart);
+  }
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+  }
+
+  /* Modal dialog entrance (native <dialog> via showModal). */
+  .share-dialog[open] {
+    animation: dialog-in var(--dur) var(--ease-out-quart);
+  }
+  .share-dialog[open]::backdrop {
+    animation: backdrop-in var(--dur) var(--ease-out-quart);
+  }
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+  @keyframes backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* Toast entrance — slide in from the right + fade. */
+  .toast-in {
+    animation: toast-in var(--dur) var(--ease-out-quart);
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateX(12px);
+    }
+  }
+
+  /* Rendered markdown (the viewer injects sanitized HTML; no typography plugin,
+     so style the common elements here against tokens for light + dark). */
+  .markdown-body {
+    color: var(--ink);
+  }
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 1.4em 0 0.5em;
+    text-wrap: balance;
+  }
+  .markdown-body h1 {
+    font-size: 1.6rem;
+  }
+  .markdown-body h2 {
+    font-size: 1.3rem;
+  }
+  .markdown-body h3 {
+    font-size: 1.1rem;
+  }
+  .markdown-body p,
+  .markdown-body ul,
+  .markdown-body ol {
+    margin: 0.75em 0;
+  }
+  .markdown-body ul,
+  .markdown-body ol {
+    padding-left: 1.5em;
+  }
+  .markdown-body ul {
+    list-style: disc;
+  }
+  .markdown-body ol {
+    list-style: decimal;
+  }
+  .markdown-body a {
+    color: var(--accent-600);
+    text-decoration: underline;
+  }
+  .dark .markdown-body a {
+    color: var(--accent-400);
+  }
+  .markdown-body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.875em;
+    background: var(--surface-2);
+    padding: 0.15em 0.35em;
+    border-radius: var(--radius-sm);
+  }
+  .markdown-body pre {
+    background: var(--surface-2);
+    padding: 1em;
+    border-radius: var(--radius-md);
+    overflow: auto;
+  }
+  .markdown-body pre code {
+    background: none;
+    padding: 0;
+  }
+  .markdown-body blockquote {
+    border-left: 3px solid var(--border-strong);
+    padding-left: 1em;
+    color: var(--muted);
+    margin: 0.75em 0;
+  }
+  .markdown-body img {
+    max-width: 100%;
+    border-radius: var(--radius-md);
+  }
+
+  /* Skeleton shimmer (loading states). */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, oklch(0.6 0.02 285 / 0.12), transparent);
+    animation: skeleton-shimmer 1.4s var(--ease-out-quart) infinite;
+  }
+  @keyframes skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after {
+      animation: none;
+    }
   }
 }

@@ -26,7 +26,7 @@ export function CopyLinkButton({ status, onClick, label = 'Copy link', className
       }}
       className={
         className ??
-        'shrink-0 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50'
+        'shrink-0 rounded-lg border border-border px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-50'
       }
     >
       {text}
