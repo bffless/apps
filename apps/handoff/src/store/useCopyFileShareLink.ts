@@ -1,6 +1,6 @@
 /**
  * One-click "copy a file-direct share link". Reuses the first active folder
- * token (mints one only if none exists) and writes /view/{nodeId}?token= to the
+ * token (mints one only if none exists) and writes /r/{nodeId}?token= to the
  * clipboard. State is keyed by nodeId so multiple rows track independently.
  */
 import { useCallback, useState } from 'react'

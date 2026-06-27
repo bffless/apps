@@ -11,7 +11,7 @@ function link(over: Partial<ShareLink> = {}): ShareLink {
 
 describe('shareLinkCopyUrl', () => {
   it('builds a file-direct URL when nodeId is provided', () => {
-    expect(shareLinkCopyUrl('https://h.dev', link({ token: 'abc' }), 'n9')).toBe('https://h.dev/view/n9?token=abc')
+    expect(shareLinkCopyUrl('https://h.dev', link({ token: 'abc' }), 'n9')).toBe('https://h.dev/r/n9?token=abc')
   })
   it('builds the folder /s URL when nodeId is absent', () => {
     expect(shareLinkCopyUrl('https://h.dev', link({ url: '/s/abc' }))).toBe('https://h.dev/s/abc')

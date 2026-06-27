@@ -4,16 +4,16 @@
 import type { ShareLink } from '../store/handoffApi'
 
 /**
- * Copy URL for a share link. With `nodeId` → a file-direct URL that lands the
- * recipient on the file (`/view/{id}?token=`); without → the folder `/s/{token}`
- * URL (`link.url`). The token is always the existing folder-scoped token.
+ * Copy URL for a share link. With `nodeId` → a raw one-request file-direct URL
+ * that lands the recipient on the file (`/r/{id}?token=`); without → the folder
+ * `/s/{token}` URL (`link.url`). The token is always the existing folder-scoped token.
  */
 export function shareLinkCopyUrl(
   origin: string,
   link: { token: string; url: string },
   nodeId?: string,
 ): string {
-  return nodeId ? `${origin}/view/${nodeId}?token=${link.token}` : `${origin}${link.url}`
+  return nodeId ? `${origin}/r/${nodeId}?token=${link.token}` : `${origin}${link.url}`
 }
 
 /**
