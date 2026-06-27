@@ -1,6 +1,6 @@
 ---
 name: handoff-api
-description: Upload, organize, and share content in this project's Handoff app by calling its BFFless pipeline API directly, reusing the j5s-dev MCP X-API-Key
+description: Upload, organize, and share content in this project's Handoff app by calling its BFFless pipeline API directly, reusing the BFFless MCP X-API-Key
 ---
 
 # Handoff API
@@ -10,9 +10,11 @@ BFFless proxy rule set. This skill drives them directly as an agent.
 
 ## Auth (reuse the MCP key — nothing new to store)
 
-Read the key the j5s-dev MCP already uses, from `~/.claude.json`:
+Read the key your BFFless MCP already uses, from `~/.claude.json`. The MCP's config entry
+*name* is arbitrary, so match it by its `url` (this project's admin endpoint
+`https://admin.j5s.dev/mcp`), not by name:
 
-    KEY=$(python3 -c "import json;d=json.load(open('/home/rico/.claude.json'));print([s['headers']['X-API-Key'] for p in d['projects'].values() for n,s in (p.get('mcpServers') or {}).items() if n=='j5s-dev'][0])")
+    KEY=$(python3 -c "import os,json;d=json.load(open(os.path.expanduser('~/.claude.json')));print(next(s['headers']['X-API-Key'] for p in d.get('projects',{}).values() for s in (p.get('mcpServers') or {}).values() if s.get('url','').rstrip('/').endswith('admin.j5s.dev/mcp')))")
 
 Send it as `X-API-Key` to every `/api/*` call. It authenticates as the project owner, so
 content you create is owned by you (the same as uploading in the browser). The PUT-to-bucket
@@ -21,7 +23,7 @@ step (below) is the one exception — it is presigned and takes no key.
 ## Discovery
 
 Endpoint source of truth: the committed `bffless/handoff.proxy-rules.json`. For live state,
-`get_proxy_rule_set` via the j5s-dev MCP.
+`get_proxy_rule_set` via the BFFless MCP.
 
 ## Upload a file (prepare → PUT → register)
 
