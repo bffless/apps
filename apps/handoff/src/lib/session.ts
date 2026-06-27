@@ -21,19 +21,58 @@ export type Session =
 /** Module-level singleton — dedupes concurrent calls within a session. */
 let inFlight: Promise<Session> | null = null
 
-async function fetchSessionOnce(): Promise<Session> {
-  const tryGet = async (): Promise<Response> =>
-    fetch('/_bffless/auth/session', { credentials: 'include' })
+const SESSION_URL = '/_bffless/auth/session'
 
-  let res = await tryGet()
-  if (res.status === 401) {
-    const refresh = await fetch('/_bffless/auth/refresh', {
+/**
+ * Attempt to refresh an expired session, returning true if a refresh succeeded.
+ *
+ * handoff.j5s.dev is a *subdomain of the primary domain* j5s.dev, so the session
+ * lives in the SuperTokens `sAccessToken` / `sRefreshToken` cookies shared on
+ * `.j5s.dev` — there is no `bffless_access` / `bffless_refresh` cookie here (those
+ * only exist on cross-origin custom domains). The built-in `/_bffless/auth/refresh`
+ * only knows how to refresh the latter, so on this subdomain an expired token has
+ * no refresh path and the user gets bounced to login — unlike the admin portal,
+ * whose SuperTokens SDK transparently calls `/api/auth/session/refresh`.
+ *
+ * We do the same thing the SDK does: POST the SuperTokens refresh endpoint. The
+ * `/api/auth/*` proxy rule (forwardCookies: ON) forwards the path-scoped
+ * `sRefreshToken` cookie to the backend and relays the rotated Set-Cookie headers
+ * back, minting a fresh `sAccessToken`. The legacy relay refresh is kept as a
+ * fallback so the flow stays correct if handoff is ever served from a true
+ * cross-origin custom domain.
+ */
+async function attemptRefresh(): Promise<boolean> {
+  // Primary: SuperTokens session refresh (primary domain + its subdomains).
+  try {
+    const st = await fetch('/api/auth/session/refresh', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { rid: 'session' },
+    })
+    if (st.ok) return true
+  } catch {
+    // ignore — fall through to the relay refresh
+  }
+
+  // Fallback: per-domain relay refresh (cross-origin custom domains only).
+  try {
+    const relay = await fetch('/_bffless/auth/refresh', {
       method: 'POST',
       credentials: 'include',
     })
-    if (refresh.ok) res = await tryGet()
+    if (relay.ok) return true
+  } catch {
+    // ignore
   }
 
+  return false
+}
+
+type Evaluated = Session | 'needs-refresh'
+
+async function evaluate(res: Response): Promise<Evaluated> {
+  // 401 is the explicit "try refresh token" signal.
+  if (res.status === 401) return 'needs-refresh'
   if (!res.ok) return { authenticated: false }
 
   const body = (await res.json()) as {
@@ -41,8 +80,12 @@ async function fetchSessionOnce(): Promise<Session> {
     user?: SessionUser | null
   } & Partial<SessionUser>
 
+  // On the primary subdomain an *expired* SuperTokens session is reported as a
+  // 200 `{ authenticated: false }` (the backend swallows TRY_REFRESH_TOKEN), so
+  // it is indistinguishable from a genuine guest. Treat both as refresh-worthy:
+  // a real guest's refresh simply 401s and we settle on `authenticated: false`.
   if (body?.authenticated === false || body?.user === null) {
-    return { authenticated: false }
+    return 'needs-refresh'
   }
 
   const user = (body.user ?? (body as SessionUser)) as SessionUser
@@ -51,6 +94,22 @@ async function fetchSessionOnce(): Promise<Session> {
   }
 
   return { authenticated: true, user }
+}
+
+export async function fetchSessionOnce(): Promise<Session> {
+  const tryGet = async (): Promise<Response> =>
+    fetch(SESSION_URL, { credentials: 'include' })
+
+  let result = await evaluate(await tryGet())
+
+  if (result === 'needs-refresh') {
+    const refreshed = await attemptRefresh()
+    result = refreshed ? await evaluate(await tryGet()) : { authenticated: false }
+  }
+
+  // A second 'needs-refresh' (refresh succeeded but session still not authed)
+  // collapses to guest — don't loop.
+  return result === 'needs-refresh' ? { authenticated: false } : result
 }
 
 function getSession(): Promise<Session> {
