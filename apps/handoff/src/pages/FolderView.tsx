@@ -19,7 +19,10 @@ import {
   useUploadSiteMutation,
   useImportFolderMutation,
   useCreateFolderMutation,
+  useListShareLinksQuery,
 } from '../store/handoffApi'
+import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
+import { CopyLinkButton, type CopyStatus } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
 import { formatBytes } from '../lib/format'
 import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
@@ -214,26 +217,34 @@ function FolderRow({ node }: { node: HandoffNode }) {
   )
 }
 
-function FileRow({ node }: { node: HandoffNode }) {
+function FileRow({
+  node,
+  copyStatus,
+  onCopyLink,
+}: {
+  node: HandoffNode
+  copyStatus?: CopyStatus
+  onCopyLink?: () => void
+}) {
   const hint = node.mime ?? node.type
   return (
-    <Link
-      to={`/view/${node.id}`}
-      className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-gray-50"
-    >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50 text-gray-400">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-          <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-        </svg>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">{node.name}</p>
-        <p className="truncate text-xs text-gray-400">{hint}</p>
-      </div>
+    <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm transition-colors hover:bg-gray-50">
+      <Link to={`/view/${node.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50 text-gray-400">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-gray-900">{node.name}</p>
+          <p className="truncate text-xs text-gray-400">{hint}</p>
+        </div>
+      </Link>
       {node.size !== null && (
         <span className="shrink-0 text-xs text-gray-400">{formatBytes(node.size)}</span>
       )}
-    </Link>
+      {onCopyLink && <CopyLinkButton status={copyStatus ?? 'idle'} onClick={onCopyLink} />}
+    </div>
   )
 }
 
@@ -821,6 +832,18 @@ export function FolderView({ folderId }: FolderViewProps) {
   // flashing disabled controls while ancestors are still loading.
   const canWrite = chainReady && (effectiveLevel === 'owner' || effectiveLevel === 'edit')
   const canManage = chainReady && effectiveLevel === 'owner'
+
+  // Manager-only: load folder links so "Copy link" can reuse one token per folder.
+  const { data: folderLinks } = useListShareLinksQuery({ folderId }, { skip: !canManage })
+  const copy = useCopyFileShareLink(folderId, folderLinks)
+
+  function fileCopyStatus(nodeId: string): CopyStatus {
+    if (copy.busyId === nodeId) return 'busy'
+    if (copy.copiedId === nodeId) return 'copied'
+    if (copy.errorId === nodeId) return 'error'
+    return 'idle'
+  }
+
   const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
   useEffect(() => {
@@ -988,7 +1011,12 @@ export function FolderView({ folderId }: FolderViewProps) {
             node.type === 'folder' ? (
               <FolderRow key={node.id} node={node} />
             ) : (
-              <FileRow key={node.id} node={node} />
+              <FileRow
+                key={node.id}
+                node={node}
+                copyStatus={fileCopyStatus(node.id)}
+                onCopyLink={canManage ? () => void copy.copyLink(node.id) : undefined}
+              />
             )
           )}
         </div>

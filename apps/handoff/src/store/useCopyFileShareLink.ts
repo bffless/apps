@@ -1,0 +1,44 @@
+/**
+ * One-click "copy a file-direct share link". Reuses the first active folder
+ * token (mints one only if none exists) and writes /view/{nodeId}?token= to the
+ * clipboard. State is keyed by nodeId so multiple rows track independently.
+ */
+import { useCallback, useState } from 'react'
+import { useMintShareLinkMutation } from './handoffApi'
+import type { ShareLink } from './handoffApi'
+import { pickReusableToken, shareLinkCopyUrl } from '../lib/share'
+
+export function useCopyFileShareLink(folderId: string, links: ShareLink[] | undefined) {
+  const [mint] = useMintShareLinkMutation()
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [errorId, setErrorId] = useState<string | null>(null)
+
+  const copyLink = useCallback(
+    async (nodeId: string) => {
+      setErrorId(null)
+      setCopiedId(null)
+      setBusyId(nodeId)
+      try {
+        let token = pickReusableToken(links, Date.now())?.token
+        if (!token) {
+          const res = await mint({ folderId })
+          if ('error' in res) throw new Error('mint failed')
+          token = res.data.token
+        }
+        const url = shareLinkCopyUrl(window.location.origin, { token, url: `/s/${token}` }, nodeId)
+        await navigator.clipboard.writeText(url)
+        setBusyId(null)
+        setCopiedId(nodeId)
+        setTimeout(() => setCopiedId((c) => (c === nodeId ? null : c)), 2000)
+      } catch {
+        setBusyId(null)
+        setErrorId(nodeId)
+        setTimeout(() => setErrorId((e) => (e === nodeId ? null : e)), 3000)
+      }
+    },
+    [folderId, links, mint],
+  )
+
+  return { copyLink, copiedId, busyId, errorId }
+}
