@@ -12,13 +12,17 @@ const proxy = JSON.parse(
   readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
 ) as { rules: Array<Record<string, any>> }
 
-const rule = proxy.rules.find((r) => r.pathPattern === '/r/*' && r.method === 'GET')
+const rule = proxy.rules.find((r) => r.pathPattern === '/r/*')
 
 describe('handoff /r raw-file proxy rule', () => {
   it('exists as an enabled pipeline rule', () => {
     expect(rule).toBeTruthy()
     expect(rule!.proxyType).toBe('pipeline')
     expect(rule!.isEnabled).toBe(true)
+  })
+
+  it('matches GET and HEAD (so HEAD probes get the redirect, not the SPA)', () => {
+    expect(rule!.methods).toEqual(['GET', 'HEAD'])
   })
 
   it('has the expected pipeline steps in order', () => {

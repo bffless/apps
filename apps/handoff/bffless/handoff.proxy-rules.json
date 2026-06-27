@@ -1410,7 +1410,10 @@
     },
     {
       "pathPattern": "/r/*",
-      "method": "GET",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
       "targetUrl": "pipeline",
       "stripPrefix": false,
       "order": 19,
