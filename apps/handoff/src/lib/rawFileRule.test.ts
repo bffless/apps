@@ -1,4 +1,5 @@
 // @vitest-environment node
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Structural guard for the /r raw-file proxy rule. The embedded-JS logic runs
  * only in CE's pipeline runner (validated live in Task 3); this asserts the
