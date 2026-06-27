@@ -9,7 +9,7 @@
 import { useRef, useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useGetNodeQuery, useGetSignedUrlQuery } from '../store/handoffApi'
-import { previewFor } from '../lib/preview'
+import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
 import { useSession } from '../lib/session'
@@ -26,6 +26,19 @@ import { shouldClaimToken } from '../lib/share'
 interface ControlBarProps {
   node: HandoffNode
   contentRef: React.RefObject<HTMLDivElement | null>
+  /** Whether the current preview kind supports a raw-source view. */
+  canViewSource: boolean
+  /** True when the content region is currently showing raw source. */
+  showSource: boolean
+  onToggleSource: () => void
+}
+
+function CodeIcon() {
+  return (
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+      <path fillRule="evenodd" d="M6.28 5.22a.75.75 0 0 1 0 1.06L2.56 10l3.72 3.72a.75.75 0 0 1-1.06 1.06L1.22 10.53a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 0Zm7.44 0a.75.75 0 0 1 1.06 0l4 4a.75.75 0 0 1 0 1.06l-4 4a.75.75 0 1 1-1.06-1.06L17.44 10l-3.72-3.72a.75.75 0 0 1 0-1.06ZM11.377 2.011a.75.75 0 0 1 .612.867l-2 11.5a.75.75 0 0 1-1.478-.257l2-11.5a.75.75 0 0 1 .866-.61Z" clipRule="evenodd" />
+    </svg>
+  )
 }
 
 function ShareIcon() {
@@ -36,7 +49,7 @@ function ShareIcon() {
   )
 }
 
-function ControlBar({ node, contentRef }: ControlBarProps) {
+function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSource }: ControlBarProps) {
   const navigate = useNavigate()
   const { session } = useSession()
 
@@ -125,6 +138,20 @@ function ControlBar({ node, contentRef }: ControlBarProps) {
         </div>
       ) : null}
 
+      {/* View source ⇄ View rendered — only for source-capable kinds */}
+      {canViewSource && (
+        <button
+          type="button"
+          onClick={onToggleSource}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          title={showSource ? 'View rendered' : 'View source'}
+          aria-pressed={showSource}
+        >
+          <CodeIcon />
+          <span className="hidden sm:inline">{showSource ? 'View rendered' : 'View source'}</span>
+        </button>
+      )}
+
       {/* Open in new tab */}
       {node.url && (
         <a
@@ -205,6 +232,76 @@ function MarkdownPreview({ url }: { url: string }) {
       className="prose prose-gray mx-auto max-w-3xl px-4 py-8"
       dangerouslySetInnerHTML={{ __html: result.html }}
     />
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SourceView — raw text of the underlying source, shown as escaped <pre> text
+// ---------------------------------------------------------------------------
+
+type SourceState = { url: string; text: string } | { url: string; error: true } | null
+
+/**
+ * Fetches `url` as text and renders it as escaped, monospaced, scrollable
+ * source. Rendered via React text children (never `dangerouslySetInnerHTML`),
+ * so hostile uploads cannot execute — even a served Site entry, which includes
+ * BFFless's injected client `<script>` (ADR-0001), is shown inertly as text.
+ */
+function SourceView({ url }: { url: string }) {
+  const [state, setState] = useState<SourceState>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.text()
+      })
+      .then((text) => {
+        if (!cancelled) setState({ url, text })
+      })
+      .catch(() => {
+        if (!cancelled) setState({ url, error: true })
+      })
+    return () => { cancelled = true }
+  }, [url])
+
+  // Loading while no result yet, or a result from a previous url.
+  if (!state || state.url !== url) {
+    return <div className="py-16 text-center text-sm text-gray-400">Loading source…</div>
+  }
+
+  if ('error' in state) {
+    return <div className="py-16 text-center text-sm text-gray-500">Failed to load source.</div>
+  }
+
+  const text = state.text
+
+  function handleCopy() {
+    navigator.clipboard?.writeText(text).then(
+      () => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      },
+      () => { /* clipboard unavailable — ignore */ },
+    )
+  }
+
+  return (
+    <div className="relative flex flex-1 flex-col">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded border border-gray-200 bg-white/90 px-2 py-1 text-xs text-gray-600 shadow-sm backdrop-blur hover:bg-gray-100"
+        title="Copy source"
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-gray-800">
+        <code>{text}</code>
+      </pre>
+    </div>
   )
 }
 
@@ -313,6 +410,16 @@ export function HandoffViewer() {
   })
   const contentRef = useRef<HTMLDivElement>(null)
 
+  // Raw-source toggle. Reset to rendered whenever the viewed item changes
+  // (adjust-state-during-render pattern, so opening a new item starts rendered).
+  // Declared before the early returns below to keep hook order stable.
+  const [showSource, setShowSource] = useState(false)
+  const [prevId, setPrevId] = useState(id)
+  if (id !== prevId) {
+    setPrevId(id)
+    setShowSource(false)
+  }
+
   if (sessionLoading || claimPending) {
     return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
   }
@@ -334,11 +441,22 @@ export function HandoffViewer() {
   }
 
   const kind = previewFor(node)
+  const canViewSource = hasViewSource(kind) && !!node.url
+  const sourceShown = canViewSource && showSource
 
   return (
     <div className="flex flex-col" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
-      <ControlBar node={node} contentRef={contentRef} />
+      <ControlBar
+        node={node}
+        contentRef={contentRef}
+        canViewSource={canViewSource}
+        showSource={showSource}
+        onToggleSource={() => setShowSource((v) => !v)}
+      />
       <div ref={contentRef} className="flex flex-1 flex-col overflow-auto">
+        {sourceShown && node.url && (
+          <SourceView url={node.url} />
+        )}
         {kind === 'pdf' && node.url && (
           <iframe
             src={node.url}
@@ -352,7 +470,7 @@ export function HandoffViewer() {
             <img src={node.url} alt={node.name} className="max-h-full max-w-full object-contain" />
           </div>
         )}
-        {kind === 'markdown' && node.url && (
+        {!sourceShown && kind === 'markdown' && node.url && (
           <MarkdownPreview url={node.url} />
         )}
         {kind === 'video' && (
@@ -361,7 +479,7 @@ export function HandoffViewer() {
         {kind === 'audio' && (
           <MediaPreview node={node} kind="audio" />
         )}
-        {kind === 'site' && node.url && (
+        {!sourceShown && kind === 'site' && node.url && (
           <iframe
             src={node.url}
             title={node.name}

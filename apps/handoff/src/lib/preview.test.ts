@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { previewFor } from './preview'
+import { previewFor, hasViewSource } from './preview'
 
 describe('previewFor', () => {
   // site wins regardless of mime
@@ -90,5 +90,29 @@ describe('previewFor', () => {
   })
   it('returns download for folder type', () => {
     expect(previewFor({ type: 'folder', mime: null })).toBe('download')
+  })
+})
+
+describe('hasViewSource', () => {
+  it('is true for site', () => {
+    expect(hasViewSource('site')).toBe(true)
+  })
+  it('is true for markdown', () => {
+    expect(hasViewSource('markdown')).toBe(true)
+  })
+  it('is false for image', () => {
+    expect(hasViewSource('image')).toBe(false)
+  })
+  it('is false for pdf', () => {
+    expect(hasViewSource('pdf')).toBe(false)
+  })
+  it('is false for video', () => {
+    expect(hasViewSource('video')).toBe(false)
+  })
+  it('is false for audio', () => {
+    expect(hasViewSource('audio')).toBe(false)
+  })
+  it('is false for download', () => {
+    expect(hasViewSource('download')).toBe(false)
   })
 })
