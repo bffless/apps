@@ -141,6 +141,22 @@ viewer at `view`, scoped to the link's folder and its descendants.
 returned children are filtered to those you can access — so root listing is private by default and
 restricted siblings stay hidden.
 
+**Delete is WRITE-gated** (`DELETE /api/node?id=<uuid>`): the same ACL gate, but the allow test
+requires **write** (`rank(level) >= 2` — `edit`/`owner`, admin bypass; view-only and share-link
+viewers get `403`). It hard-deletes a single node — purging a file's stored object via `file_delete`
+key-mode and the record via `data_delete` — and refuses a non-empty folder with `409`. Recursion lives
+in the client (`deleteSubtree` in `src/store/handoffApi.ts`): `data_delete` has no bulk `in` and
+`file_delete` key-mode is one object, so a static pipeline can't fan out over a subtree. The client
+deletes depth-first (children before parents), and the `409` guard is the server-side backstop against
+an out-of-order direct call orphaning a subtree.
+
+**Sites purge their assets too** (bffless/apps#35): deleting a **Site** node also removes every object
+its `manifest` references — many `content/<hash>` objects with no shared prefix and a variable count.
+The `siteKeys` step parses the manifest into uploads-root-relative keys and hands them to `file_delete`
+via its **keys-as-expression** mode (`keys: "steps.siteKeys.list"`, ce#364) — the dynamic, runtime list
+a static `keys[]` array can't express. An empty manifest resolves to `[]` (a no-op), so nothing is
+orphaned.
+
 ### CDN caching note for forkers
 
 `file_serve_handler` emits `Cache-Control: public, max-age=3600` on served content by default. On a

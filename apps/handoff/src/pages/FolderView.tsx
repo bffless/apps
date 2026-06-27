@@ -11,7 +11,7 @@
 
 import { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Link } from 'react-router-dom'
-import { useSelector } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
 import {
   useListNodesQuery,
   useGetNodeQuery,
@@ -19,8 +19,12 @@ import {
   useUploadSiteMutation,
   useImportFolderMutation,
   useCreateFolderMutation,
+  useDeleteNodeMutation,
+  useDeleteSubtreeMutation,
   useListShareLinksQuery,
+  handoffApi,
 } from '../store/handoffApi'
+import type { AppDispatch } from '../store'
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton, type CopyStatus } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
@@ -200,25 +204,54 @@ function Breadcrumb({ folderId, onChainUpdate }: BreadcrumbProps) {
 // FolderRow / FileRow
 // ---------------------------------------------------------------------------
 
-function FolderRow({ node }: { node: HandoffNode }) {
+/** Trash affordance shown on a node row for writers. */
+function TrashButton({ onClick, disabled, label }: { onClick: () => void; disabled?: boolean; label: string }) {
   return (
-    <Link
-      to={`/folder/${node.id}`}
-      className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 shadow-sm transition-colors hover:bg-blue-100"
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-500">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-          <path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
-        </svg>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">{node.name}</p>
-        <p className="truncate text-xs text-gray-400">Folder</p>
-      </div>
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-300">
-        <path fillRule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
       </svg>
-    </Link>
+    </button>
+  )
+}
+
+function FolderRow({
+  node,
+  onDelete,
+  deleting,
+}: {
+  node: HandoffNode
+  onDelete?: (node: HandoffNode) => void
+  deleting?: boolean
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 shadow-sm transition-colors hover:bg-blue-100">
+      <Link to={`/folder/${node.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-500">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-gray-900">{node.name}</p>
+          <p className="truncate text-xs text-gray-400">Folder</p>
+        </div>
+      </Link>
+      {onDelete ? (
+        <TrashButton onClick={() => onDelete(node)} disabled={deleting} label={`Delete folder ${node.name}`} />
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-300">
+          <path fillRule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+        </svg>
+      )}
+    </div>
   )
 }
 
@@ -226,10 +259,14 @@ function FileRow({
   node,
   copyStatus,
   onCopyLink,
+  onDelete,
+  deleting,
 }: {
   node: HandoffNode
   copyStatus?: CopyStatus
   onCopyLink?: () => void
+  onDelete?: (node: HandoffNode) => void
+  deleting?: boolean
 }) {
   const hint = node.mime ?? node.type
   return (
@@ -249,6 +286,9 @@ function FileRow({
         <span className="shrink-0 text-xs text-gray-400">{formatBytes(node.size)}</span>
       )}
       {onCopyLink && <CopyLinkButton status={copyStatus ?? 'idle'} onClick={onCopyLink} />}
+      {onDelete && (
+        <TrashButton onClick={() => onDelete(node)} disabled={deleting} label={`Delete ${node.name}`} />
+      )}
     </div>
   )
 }
@@ -800,6 +840,14 @@ export interface FolderViewProps {
 export function FolderView({ folderId }: FolderViewProps) {
   const { data: rawNodes, isLoading, isError, error } = useListNodesQuery({ parentId: folderId })
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
+  const [deleteNode] = useDeleteNodeMutation()
+  const [deleteSubtree] = useDeleteSubtreeMutation()
+  const dispatch = useDispatch<AppDispatch>()
+  // The node awaiting delete-confirmation (+ its direct child count, for folders).
+  const [pendingDelete, setPendingDelete] = useState<{ node: HandoffNode; childCount: number } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteMsg, setDeleteMsg] = useState<{ text: string; error: boolean } | null>(null)
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [uploadDone, setUploadDone] = useState(false)
   const [uploadedNodes, setUploadedNodes] = useState<HandoffNode[]>([])
   const [importDoneMsg, setImportDoneMsg] = useState<string | null>(null)
@@ -868,10 +916,63 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
+  // Open the confirm dialog. For a folder, fetch its direct child count first so
+  // the warning can state how much is about to be permanently removed.
+  async function requestDelete(node: HandoffNode) {
+    if (node.type === 'folder') {
+      let childCount = 0
+      try {
+        const children = await dispatch(
+          handoffApi.endpoints.listNodes.initiate({ parentId: node.id }),
+        ).unwrap()
+        childCount = children.length
+      } catch {
+        // Fall back to a generic warning if the count can't be loaded.
+      }
+      setPendingDelete({ node, childCount })
+    } else {
+      setPendingDelete({ node, childCount: 0 })
+    }
+  }
+
+  function flashDeleteMsg(text: string, error: boolean) {
+    setDeleteMsg({ text, error })
+    if (deleteTimerRef.current !== null) clearTimeout(deleteTimerRef.current)
+    deleteTimerRef.current = setTimeout(() => setDeleteMsg(null), 5000)
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    const { node } = pendingDelete
+    setDeleting(true)
+    try {
+      if (node.type === 'folder') {
+        const res = await deleteSubtree({ rootId: node.id, parentId: folderId }).unwrap()
+        if (res.failures.length > 0) {
+          flashDeleteMsg(
+            `Deleted ${res.deleted} item(s), but ${res.failures.length} could not be removed.`,
+            true,
+          )
+        } else {
+          flashDeleteMsg(`Deleted “${node.name}” and its contents.`, false)
+        }
+      } else {
+        await deleteNode({ id: node.id, parentId: folderId }).unwrap()
+        flashDeleteMsg(`Deleted “${node.name}”.`, false)
+      }
+    } catch {
+      flashDeleteMsg(`Couldn’t delete “${node.name}”. Please try again.`, true)
+    } finally {
+      setDeleting(false)
+      setPendingDelete(null)
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) clearTimeout(timerRef.current)
       if (siteTimerRef.current !== null) clearTimeout(siteTimerRef.current)
+      if (deleteTimerRef.current !== null) clearTimeout(deleteTimerRef.current)
     }
   }, [])
 
@@ -1062,6 +1163,17 @@ export function FolderView({ folderId }: FolderViewProps) {
           {importDoneMsg}
         </div>
       )}
+      {deleteMsg && (
+        <div
+          className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+            deleteMsg.error
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-green-200 bg-green-50 text-green-700'
+          }`}
+        >
+          {deleteMsg.text}
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && (
@@ -1111,18 +1223,105 @@ export function FolderView({ folderId }: FolderViewProps) {
         <div className="flex flex-col gap-2">
           {sorted.map((node) =>
             node.type === 'folder' ? (
-              <FolderRow key={node.id} node={node} />
+              <FolderRow
+                key={node.id}
+                node={node}
+                onDelete={canWrite ? requestDelete : undefined}
+                deleting={deleting}
+              />
             ) : (
               <FileRow
                 key={node.id}
                 node={node}
                 copyStatus={fileCopyStatus(node.id)}
                 onCopyLink={canManage ? () => void copy.copyLink(node.id) : undefined}
+                onDelete={canWrite ? requestDelete : undefined}
+                deleting={deleting}
               />
             )
           )}
         </div>
       )}
+
+      {/* Delete confirmation */}
+      {pendingDelete && (
+        <DeleteConfirmDialog
+          node={pendingDelete.node}
+          childCount={pendingDelete.childCount}
+          deleting={deleting}
+          onCancel={() => { if (!deleting) setPendingDelete(null) }}
+          onConfirm={confirmDelete}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DeleteConfirmDialog
+// ---------------------------------------------------------------------------
+
+function DeleteConfirmDialog({
+  node,
+  childCount,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  node: HandoffNode
+  childCount: number
+  deleting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const isFolder = node.type === 'folder'
+  const kind = isFolder ? 'folder' : node.type === 'site' ? 'site' : 'file'
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Delete ${node.name}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-base font-semibold text-gray-900">Delete {kind}?</h2>
+        <p className="mt-2 text-sm text-gray-600">
+          <span className="font-medium text-gray-900">{node.name}</span>{' '}
+          {isFolder
+            ? childCount > 0
+              ? `and its ${childCount} item${childCount === 1 ? '' : 's'} will be permanently deleted. This can’t be undone.`
+              : 'will be permanently deleted. This can’t be undone.'
+            : 'will be permanently deleted. This can’t be undone.'}
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onCancel}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onConfirm}
+            className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {deleting && (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+            )}
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
