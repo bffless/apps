@@ -1252,6 +1252,109 @@
       },
       "isEnabled": true,
       "description": "Claim a share-link token (public) — validates the token and sets a signed folder-scoped hf_s view cookie the ACL gate accepts (ADR-0002)."
+    },
+    {
+      "pathPattern": "/r/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": false,
+      "order": 19,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff raw file redirect",
+        "steps": [
+          {
+            "id": "parse",
+            "name": "parse",
+            "config": {
+              "code": "function handler({ request }) { var p = (request && request.path) || ''; var marker = '/r/'; var i = p.indexOf(marker); var rest = (i >= 0) ? p.slice(i + marker.length) : ''; var qm = rest.indexOf('?'); if (qm >= 0) rest = rest.slice(0, qm); var slash = rest.indexOf('/'); var fileId = (slash >= 0) ? rest.slice(0, slash) : rest; try { fileId = decodeURIComponent(fileId); } catch (e) {} var query = (request && request.query) || {}; var token = String(query.token || ''); var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; var hasBoth = UUID.test(fileId) && UUID.test(token); return { fileId: fileId, token: token, hasBoth: hasBoth }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "link",
+            "name": "link",
+            "config": {
+              "recordId": "steps.parse.token",
+              "schemaId": "ace1febf-4b3d-4a11-a5f8-22a056dd9afa",
+              "condition": "steps.parse.hasBoth"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "node",
+            "name": "node",
+            "config": {
+              "recordId": "steps.parse.fileId",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.parse.hasBoth"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "folders",
+            "name": "folders",
+            "config": {
+              "filters": {
+                "nodeType": {
+                  "op": "eq",
+                  "value": "folder"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.parse.hasBoth"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "config": {
+              "code": "function handler({ steps }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var link=(steps&&steps.link)||{}; if(link==null||typeof link!=='object')link={}; var folderId=link.folderId||null; var revoked=link.revoked===true||link.revoked==='true'; var exp=(link.expiresMs!=null)?Number(link.expiresMs):null; var expired=(exp!=null&&!isNaN(exp))?(Date.now()>exp):false; var tokenOk=!!folderId&&!revoked&&!expired; var node=(steps&&steps.node)||{}; if(node==null||typeof node!=='object')node={}; var storagePath=node.storage_path||''; var isFile=node.nodeType==='file'; var nodeOk=isFile&&!!storagePath; var inFolder=false; if(tokenOk&&nodeOk){var folders=(steps&&steps.folders)||[];if(Object.prototype.toString.call(folders)!=='[object Array]')folders=[];var ch=folderChain(folders,node.parentId);for(var i=0;i<ch.length;i++){if(ch[i].id===folderId){inFolder=true;break;}}} var allow=tokenOk&&nodeOk&&inFolder; return { allow: allow, deny: !allow, storagePath: allow?storagePath:'' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sign",
+            "name": "sign",
+            "config": {
+              "path": "steps.check.storagePath",
+              "condition": "steps.check.allow",
+              "expiresIn": "300"
+            },
+            "handlerType": "signed_url"
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "config": {
+              "body": "",
+              "status": 302,
+              "headers": {
+                "Location": "{{steps.sign.url}}"
+              },
+              "condition": "steps.check.allow",
+              "contentType": "text/plain"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "bad",
+            "name": "bad",
+            "config": {
+              "body": "Not found",
+              "status": 404,
+              "condition": "steps.check.deny",
+              "contentType": "text/plain"
+            },
+            "handlerType": "response_handler"
+          }
+        ]
+      },
+      "isEnabled": true,
+      "description": "Validate a folder-scoped share token and 302-redirect to a presigned raw file URL (one-request access)."
     }
   ]
 }
