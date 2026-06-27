@@ -12,6 +12,9 @@ import { useGetNodeQuery, useGetSignedUrlQuery } from '../store/handoffApi'
 import { previewFor } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
+import { useSession } from '../lib/session'
+import { canShareParentFolder } from '../lib/shareGate'
+import { ShareLinksSection } from '../components/ShareLinksSection'
 
 // ---------------------------------------------------------------------------
 // Control bar
@@ -22,8 +25,45 @@ interface ControlBarProps {
   contentRef: React.RefObject<HTMLDivElement | null>
 }
 
+function ShareIcon() {
+  return (
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+      <path d="M13 4.5a2.5 2.5 0 1 1 .702 1.737L6.97 9.604a2.518 2.518 0 0 1 0 .792l6.733 3.367a2.5 2.5 0 1 1-.671 1.341L6.3 11.737a2.5 2.5 0 1 1 0-3.474l6.733-3.367A2.515 2.515 0 0 1 13 4.5Z" />
+    </svg>
+  )
+}
+
 function ControlBar({ node, contentRef }: ControlBarProps) {
   const navigate = useNavigate()
+  const { session } = useSession()
+
+  const isRoot = node.parentId === 'root'
+  // Look up the parent folder to read its ownerId for the share gate.
+  // Skip for guests (unauthenticated) to avoid a discarded 401 on the parent fetch.
+  const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !(session?.authenticated) })
+  const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
+
+  const [shareOpen, setShareOpen] = useState(false)
+  const shareRef = useRef<HTMLDivElement>(null)
+
+  // Close the Share popover on outside click or Escape (mirrors DirectorySearch).
+  useEffect(() => {
+    if (!shareOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (shareRef.current && !shareRef.current.contains(e.target as Node)) {
+        setShareOpen(false)
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShareOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [shareOpen])
 
   function handleFullscreen() {
     if (contentRef.current) {
@@ -47,6 +87,40 @@ function ControlBar({ node, contentRef }: ControlBarProps) {
 
       {/* Title */}
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{node.name}</span>
+
+      {/* Share — owners/admins of the parent folder. Root items: disabled + explanation. */}
+      {isRoot ? (
+        session?.authenticated ? (
+          <button
+            type="button"
+            disabled
+            title="Move this into a folder to share it"
+            className="inline-flex cursor-not-allowed items-center gap-1 rounded px-2 py-1 text-sm text-gray-300"
+          >
+            <ShareIcon />
+            <span className="hidden sm:inline">Share</span>
+          </button>
+        ) : null
+      ) : canShare ? (
+        <div ref={shareRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setShareOpen((v) => !v)}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+            title="Share"
+            aria-haspopup="dialog"
+            aria-expanded={shareOpen}
+          >
+            <ShareIcon />
+            <span className="hidden sm:inline">Share</span>
+          </button>
+          {shareOpen && (
+            <div role="dialog" aria-label="Share links" className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+              <ShareLinksSection folderId={node.parentId} topDivider={false} />
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {/* Open in new tab */}
       {node.url && (
