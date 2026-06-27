@@ -4,10 +4,22 @@
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "handoff",
-    "description": "Handoff app backend — uploads (presigned), node tree, ACL-gated serving, grants, share links.",
+    "description": "Handoff app backend \u2014 uploads (presigned), node tree, ACL-gated serving, grants, share links.",
     "environment": null
   },
   "rules": [
+    {
+      "pathPattern": "/api/auth/*",
+      "targetUrl": "http://localhost:3000/api/auth",
+      "stripPrefix": true,
+      "order": 0,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": true,
+      "proxyType": "external_proxy",
+      "isEnabled": true,
+      "description": "Reverse-proxy SuperTokens auth endpoints (session refresh, signout, oauth) to the CE backend so subdomain apps can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie."
+    },
     {
       "pathPattern": "/api/uploads/content/*",
       "method": "GET",
@@ -296,7 +308,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "List nodes whose parentId matches the query — gated by per-folder ACL (ADR-0002). Requires view+ on a non-root parent; children are filtered to those the viewer can access (private by default at root)."
+        "description": "List nodes whose parentId matches the query \u2014 gated by per-folder ACL (ADR-0002). Requires view+ on a non-root parent; children are filtered to those the viewer can access (private by default at root)."
       },
       "isEnabled": true,
       "description": "List child nodes of a folder (default root)"
@@ -396,7 +408,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Return one node by id, shaped — gated by per-folder ACL (ADR-0002)."
+        "description": "Return one node by id, shaped \u2014 gated by per-folder ACL (ADR-0002)."
       },
       "isEnabled": true,
       "description": "Fetch a single node by id (?id=)"
@@ -551,10 +563,10 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Hard-delete one node by id — write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files; refuses a non-empty folder with 409. Client recurses for subtree delete."
+        "description": "Hard-delete one node by id \u2014 write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files; refuses a non-empty folder with 409. Client recurses for subtree delete."
       },
       "isEnabled": true,
-      "description": "Delete a single node by id (?id=) — write-gated, hard delete"
+      "description": "Delete a single node by id (?id=) \u2014 write-gated, hard delete"
     },
     {
       "pathPattern": "/api/sign",
@@ -649,7 +661,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Presigned GET for direct bucket playback (video/audio) — gated by per-folder ACL (ADR-0002). Resolves the file node by storage_path and requires view+ access (or admin); no cookie fallback since this mints a bucket URL."
+        "description": "Presigned GET for direct bucket playback (video/audio) \u2014 gated by per-folder ACL (ADR-0002). Resolves the file node by storage_path and requires view+ access (or admin); no cookie fallback since this mints a bucket URL."
       },
       "isEnabled": true,
       "description": "Mint a short-lived presigned GET URL for a content object (video/audio direct play)"
@@ -861,7 +873,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Map /api/sites/<id>/<relPath> to the stored object via manifest, then serve the bytes IN-PLACE (file_serve_handler, 200) — gated by per-folder ACL (ADR-0002). Serving in-place (no 302) keeps the iframe document URL under /api/sites/<id>/, so a Site's relative sub-resources re-enter this rule and re-resolve the manifest, and every asset request resolves the site node for its own ACL check (no hf_f cookie dependency)."
+        "description": "Map /api/sites/<id>/<relPath> to the stored object via manifest, then serve the bytes IN-PLACE (file_serve_handler, 200) \u2014 gated by per-folder ACL (ADR-0002). Serving in-place (no 302) keeps the iframe document URL under /api/sites/<id>/, so a Site's relative sub-resources re-enter this rule and re-resolve the manifest, and every asset request resolves the site node for its own ACL check (no hf_f cookie dependency)."
       },
       "isEnabled": true,
       "description": "Serve a Site asset by relative path via manifest (in-place, same-origin)"
@@ -1406,7 +1418,7 @@
         "description": "Validate a share-link token and issue a signed hf_s share cookie (View-only, folder-scoped)."
       },
       "isEnabled": true,
-      "description": "Claim a share-link token (public) — validates the token and sets a signed folder-scoped hf_s view cookie the ACL gate accepts (ADR-0002)."
+      "description": "Claim a share-link token (public) \u2014 validates the token and sets a signed folder-scoped hf_s view cookie the ACL gate accepts (ADR-0002)."
     },
     {
       "pathPattern": "/r/*",
