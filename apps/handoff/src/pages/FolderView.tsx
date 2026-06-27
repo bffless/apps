@@ -786,6 +786,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   const [uploadedNodes, setUploadedNodes] = useState<HandoffNode[]>([])
   const [importDoneMsg, setImportDoneMsg] = useState<string | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -870,6 +871,27 @@ export function FolderView({ folderId }: FolderViewProps) {
     }
   }
 
+  function handleDragOver(e: React.DragEvent) {
+    if (!canWrite) return
+    e.preventDefault()
+    setDragActive(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    // Only clear when leaving the container itself, not its children.
+    if (e.currentTarget === e.target) setDragActive(false)
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    if (!canWrite) return
+    e.preventDefault()
+    setDragActive(false)
+    const files = Array.from(e.dataTransfer.files)
+    for (const f of files) {
+      await handleFile(f)
+    }
+  }
+
   function handleImportDone(message: string) {
     setImportDoneMsg(message)
     if (siteTimerRef.current !== null) clearTimeout(siteTimerRef.current)
@@ -899,7 +921,17 @@ export function FolderView({ folderId }: FolderViewProps) {
   const errorStatus = error ? (error as { status?: number }).status : undefined
 
   return (
-    <div className="container-page py-10">
+    <div
+      className={`container-page py-10 ${dragActive ? 'rounded-xl outline-dashed outline-2 outline-offset-4 outline-gray-400' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragActive && canWrite && (
+        <div className="mb-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          Drop files to upload to this folder
+        </div>
+      )}
       {/* Breadcrumb — also drives ancestor resolution for ACL evaluation */}
       <Breadcrumb folderId={folderId} onChainUpdate={handleChainUpdate} />
 
