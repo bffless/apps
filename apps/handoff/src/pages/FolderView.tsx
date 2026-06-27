@@ -9,7 +9,7 @@
  * - Upload Site control (folder-drop or .zip → site bundle upload).
  */
 
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Link } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import {
@@ -25,7 +25,12 @@ import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton, type CopyStatus } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
 import { formatBytes } from '../lib/format'
-import { filesFromDirectoryInput, filesFromZip } from '../lib/ingest'
+import {
+  filesFromDirectoryInput,
+  filesFromZip,
+  filesFromDataTransfer,
+  dataTransferHasDirectory,
+} from '../lib/ingest'
 import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { useSession, adminLoginUrl } from '../lib/session'
@@ -310,6 +315,15 @@ interface UploadFolderControlProps {
 }
 
 /**
+ * Imperative handle so external callers (e.g. the drag-and-drop dropzone in
+ * FolderView) can route an already-ingested `{ relPath, file }[]` into the same
+ * Site-or-tree flow the pickers use, without duplicating the branching logic.
+ */
+export interface UploadFolderControlHandle {
+  ingest: (items: { relPath: string; file: File }[], baseName: string) => void
+}
+
+/**
  * "Upload folder" — a single entry (folder-drop or .zip) that branches on the
  * ingested content:
  *   - HTML detected → offer a choice: **Import as Site** (iframe-rendered Entry,
@@ -328,7 +342,8 @@ interface UploadFolderControlProps {
  * no-op. The Site branch reuses `planSiteUpload`; the tree branch reuses
  * `planFolderImport` — both share the same path normalisation.
  */
-function UploadFolderControl({ folderId, onDone }: UploadFolderControlProps) {
+const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderControlProps>(
+  function UploadFolderControl({ folderId, onDone }, ref) {
   const folderRef = useRef<HTMLInputElement>(null)
   const zipRef = useRef<HTMLInputElement>(null)
 
@@ -382,6 +397,9 @@ function UploadFolderControl({ folderId, onDone }: UploadFolderControlProps) {
     // No HTML → there is nothing to render as a Site; go straight to import.
     setPhase(folderPlan.hasHtml ? 'choosing' : 'confirm-folder')
   }
+
+  // Let the dropzone funnel a dropped folder into this same Site-or-tree flow.
+  useImperativeHandle(ref, () => ({ ingest: handleIngest }), [])
 
   async function handleUploadSite() {
     if (!entry) return
@@ -683,7 +701,7 @@ function UploadFolderControl({ folderId, onDone }: UploadFolderControlProps) {
       )}
     </div>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // NewFolderControl
@@ -789,6 +807,8 @@ export function FolderView({ folderId }: FolderViewProps) {
   const [dragActive, setDragActive] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const siteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Lets a dropped folder reuse UploadFolderControl's Site-or-tree import flow.
+  const uploadFolderRef = useRef<UploadFolderControlHandle>(null)
 
   // Ancestor chain state — updated by the Breadcrumb component as nodes resolve.
   const [ancestorNodesById, setAncestorNodesById] = useState<Record<string, HandoffNode>>({})
@@ -886,10 +906,24 @@ export function FolderView({ folderId }: FolderViewProps) {
     if (!canWrite) return
     e.preventDefault()
     setDragActive(false)
-    const files = Array.from(e.dataTransfer.files)
-    for (const f of files) {
-      await handleFile(f)
+
+    // Decide the route synchronously — dataTransfer.items is invalidated after the tick.
+    const hasDir = dataTransferHasDirectory(e.dataTransfer)
+
+    if (!hasDir) {
+      // Loose files only → upload each as a File (existing flow).
+      for (const f of Array.from(e.dataTransfer.files)) {
+        await handleFile(f)
+      }
+      return
     }
+
+    // A folder was dropped → recurse it and hand off to the unified
+    // Site-or-tree import flow (no duplicated branching logic).
+    const items = await filesFromDataTransfer(e.dataTransfer)
+    if (items.length === 0) return
+    const baseName = items[0].relPath.split('/')[0] || 'folder'
+    uploadFolderRef.current?.ingest(items, baseName)
   }
 
   function handleImportDone(message: string) {
@@ -929,7 +963,7 @@ export function FolderView({ folderId }: FolderViewProps) {
     >
       {dragActive && canWrite && (
         <div className="mb-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
-          Drop files to upload to this folder
+          Drop files or a folder to upload here
         </div>
       )}
       {/* Breadcrumb — also drives ancestor resolution for ACL evaluation */}
@@ -979,7 +1013,7 @@ export function FolderView({ folderId }: FolderViewProps) {
       {/* Upload Folder control (only for writers) */}
       {canWrite && (
         <div className="mb-4">
-          <UploadFolderControl folderId={folderId} onDone={handleImportDone} />
+          <UploadFolderControl ref={uploadFolderRef} folderId={folderId} onDone={handleImportDone} />
         </div>
       )}
 
