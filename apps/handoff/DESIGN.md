@@ -1,7 +1,7 @@
 # Design
 
 > Visual system for Handoff. Implemented as Tailwind v4 `@theme` tokens in `src/index.css`
-> (ADR-0003). Color strategy: **Restrained+** — tuned neutrals + one signature accent (violet/indigo)
+> (ADR-0003). Color strategy: **Restrained+** — tuned neutrals + one signature accent (BFFless terracotta)
 > + one secondary hue reserved for [[Site]]s + standard state colors. Bold *identity*, calm *surface*.
 
 ## Theme
@@ -12,20 +12,23 @@ toward the accent hue (285) — cool, not warm-by-default. No cream/sand body bg
 
 ## Color (OKLCH)
 
-### Accent — violet/indigo (hue 285), the signature
+### Accent — BFFless terracotta/coral (≈ #D85A3D, hue 40), the signature
+
+Sampled from bffless.app's primary CTA (re-anchored from the original violet — see
+the ADR-0003 amendment). Backgrounds/neutrals are unchanged.
 
 | token | light | role |
 |---|---|---|
-| `--color-accent-50` | `oklch(0.97 0.014 285)` | tint backgrounds |
-| `--color-accent-100` | `oklch(0.94 0.03 285)` | selected row, hover tint |
-| `--color-accent-200` | `oklch(0.88 0.06 285)` | borders on accent surfaces |
-| `--color-accent-300` | `oklch(0.80 0.10 285)` | |
-| `--color-accent-400` | `oklch(0.68 0.16 285)` | |
-| `--color-accent-500` | `oklch(0.58 0.19 285)` | icons, accents |
-| `--color-accent-600` | `oklch(0.51 0.20 285)` | **primary action** (white text ≥4.5:1) |
-| `--color-accent-700` | `oklch(0.45 0.18 285)` | primary hover/active |
-| `--color-accent-800` | `oklch(0.39 0.15 285)` | |
-| `--color-accent-900` | `oklch(0.33 0.11 285)` | |
+| `--color-accent-50` | `oklch(0.96 0.018 40)` | tint backgrounds |
+| `--color-accent-100` | `oklch(0.92 0.038 40)` | selected row, hover tint |
+| `--color-accent-200` | `oklch(0.86 0.07 40)` | borders on accent surfaces |
+| `--color-accent-300` | `oklch(0.78 0.105 40)` | |
+| `--color-accent-400` | `oklch(0.71 0.135 40)` | dark-mode links/accent text |
+| `--color-accent-500` | `oklch(0.64 0.155 40)` | icons, accents (≈ brand #D85A3D) |
+| `--color-accent-600` | `oklch(0.55 0.16 40)` | **primary action** (white text) |
+| `--color-accent-700` | `oklch(0.48 0.145 40)` | primary hover/active |
+| `--color-accent-800` | `oklch(0.42 0.115 40)` | |
+| `--color-accent-900` | `oklch(0.36 0.09 40)` | |
 
 In **dark**, links/accent-text use `accent-400` for contrast; primary buttons keep `accent-600` +
 white text.

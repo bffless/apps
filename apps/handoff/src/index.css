@@ -17,17 +17,18 @@
 :root {
   color-scheme: light;
 
-  /* Accent — violet/indigo (hue 285). Static across themes (a fixed hue). */
-  --accent-50: oklch(0.97 0.014 285);
-  --accent-100: oklch(0.94 0.03 285);
-  --accent-200: oklch(0.88 0.06 285);
-  --accent-300: oklch(0.8 0.1 285);
-  --accent-400: oklch(0.68 0.16 285);
-  --accent-500: oklch(0.58 0.19 285);
-  --accent-600: oklch(0.51 0.2 285);
-  --accent-700: oklch(0.45 0.18 285);
-  --accent-800: oklch(0.39 0.15 285);
-  --accent-900: oklch(0.33 0.11 285);
+  /* Accent — BFFless brand terracotta/coral (≈ #D85A3D, hue 40). Static across
+     themes (a fixed hue). Sampled from bffless.app's primary CTA. */
+  --accent-50: oklch(0.96 0.018 40);
+  --accent-100: oklch(0.92 0.038 40);
+  --accent-200: oklch(0.86 0.07 40);
+  --accent-300: oklch(0.78 0.105 40);
+  --accent-400: oklch(0.71 0.135 40);
+  --accent-500: oklch(0.64 0.155 40);
+  --accent-600: oklch(0.55 0.16 40);
+  --accent-700: oklch(0.48 0.145 40);
+  --accent-800: oklch(0.42 0.115 40);
+  --accent-900: oklch(0.36 0.09 40);
 
   /* Neutrals — light */
   --bg: oklch(0.99 0.003 285);
@@ -239,6 +240,28 @@
     max-width: 1280px;
     margin-inline: auto;
     padding-inline: 1.5rem;
+  }
+
+  /* Resizable sidebar divider (react-resizable-panels). A 1px line that widens
+     its hit area and lights up on hover/drag. */
+  .resize-handle {
+    position: relative;
+    width: 1px;
+    background: var(--border);
+    outline: none;
+    transition: background var(--dur-fast) var(--ease-out-quart);
+  }
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    inset: 0 -4px; /* generous grab target around the visible line */
+    cursor: col-resize;
+  }
+  .resize-handle:hover,
+  .resize-handle[data-resize-handle-state='hover'],
+  .resize-handle[data-resize-handle-state='drag'] {
+    background: var(--accent-500);
+    box-shadow: 0 0 0 0.5px var(--accent-500);
   }
 
   /* Folder tree — strip default list markers (preflight isn't imported). */

@@ -1,12 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom'
+import { Group, Panel, Separator } from 'react-resizable-panels'
+import type { Layout } from 'react-resizable-panels'
 import { HandoffHome } from './pages/HandoffHome'
 import { HandoffViewer } from './pages/HandoffViewer'
 import { HandoffFolder } from './pages/HandoffFolder'
 import { ShareLinkEntry } from './pages/ShareLinkEntry'
-import { useState } from 'react'
 import { useSession, adminLoginUrl } from './lib/session'
 import { useTheme } from './lib/theme'
+import { useMediaQuery } from './lib/useMediaQuery'
 import { Menu } from './components/Menu'
 import { FolderTree } from './components/FolderTree'
 import { Toaster } from './components/Toaster'
@@ -97,6 +99,23 @@ function Shell() {
   const { session, loading } = useSession()
   const { pathname } = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  // Persisted sidebar/main split (react-resizable-panels Layout: { panelId: % }).
+  const [savedLayout] = useState<Layout | undefined>(() => {
+    try {
+      const v = localStorage.getItem('handoff-shell-layout')
+      return v ? (JSON.parse(v) as Layout) : undefined
+    } catch {
+      return undefined
+    }
+  })
+  function persistLayout(layout: Layout) {
+    try {
+      localStorage.setItem('handoff-shell-layout', JSON.stringify(layout))
+    } catch {
+      /* storage unavailable — keep the in-session layout only */
+    }
+  }
   // Folder tree only makes sense on listing routes (not the viewer).
   const showTree = pathname === '/' || pathname.startsWith('/folder/')
 
@@ -148,18 +167,41 @@ function Shell() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        {showTree && (
-          <aside className="hidden w-64 shrink-0 border-r border-border bg-surface-2/40 lg:block">
+      {showTree && isDesktop ? (
+        // Desktop: resizable sidebar + main. Layout persists to localStorage; the
+        // sidebar is collapsible (drag it to the edge to hide).
+        <Group
+          orientation="horizontal"
+          id="handoff-shell"
+          defaultLayout={savedLayout}
+          onLayoutChanged={persistLayout}
+          className="flex-1"
+        >
+          <Panel
+            id="sidebar"
+            defaultSize="20%"
+            minSize="14%"
+            maxSize="34%"
+            collapsible
+            collapsedSize={0}
+            className="border-r border-border bg-surface-2/40"
+          >
             <div className="sticky top-14 max-h-[calc(100svh-3.5rem)] overflow-y-auto p-3">
               <FolderTree />
             </div>
-          </aside>
-        )}
+          </Panel>
+          <Separator className="resize-handle" />
+          <Panel id="main" minSize={40}>
+            <main className="min-w-0">
+              <Outlet />
+            </main>
+          </Panel>
+        </Group>
+      ) : (
         <main className="min-w-0 flex-1">
           <Outlet />
         </main>
-      </div>
+      )}
 
       {/* Mobile folder drawer */}
       {showTree && drawerOpen && (

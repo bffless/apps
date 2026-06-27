@@ -1,5 +1,12 @@
 # Bold visual identity on a design-token system
 
+> **Amendment (post-merge):** the signature accent was re-anchored from the
+> original violet/indigo to the **BFFless brand terracotta/coral (≈ #D85A3D)**
+> sampled from bffless.app, at the user's request. Only the `--accent-*` scale
+> (and the favicon) changed; neutrals/backgrounds, the teal Site hue, and the
+> amber/red/green semantics are unchanged. The token architecture below stands —
+> just with a warm accent hue (~40) instead of ~285.
+
 **Decision.** Handoff gets a **distinct, bolder visual identity** built on a CSS-first **design-token
 system** (Tailwind v4 `@theme`), anchored to a single **signature accent (violet/indigo)** that is
 Handoff's own — not borrowed from the BFFless brand. All previously ad-hoc colors (blue folders,
