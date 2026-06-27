@@ -783,6 +783,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   const { data: rawNodes, isLoading, isError, error } = useListNodesQuery({ parentId: folderId })
   const [uploadFile, { isLoading: uploading, error: uploadError }] = useUploadFileMutation()
   const [uploadDone, setUploadDone] = useState(false)
+  const [uploadedNodes, setUploadedNodes] = useState<HandoffNode[]>([])
   const [importDoneMsg, setImportDoneMsg] = useState<string | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -853,11 +854,17 @@ export function FolderView({ folderId }: FolderViewProps) {
     }
   }, [])
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUploadedNodes([])
+  }, [folderId])
+
   async function handleFile(file: File) {
     setUploadDone(false)
     const result = await uploadFile({ file, parentId: folderId })
     if (!('error' in result)) {
       setUploadDone(true)
+      setUploadedNodes((prev) => [...prev, result.data])
       if (timerRef.current !== null) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => setUploadDone(false), 3000)
     }
@@ -950,9 +957,38 @@ export function FolderView({ folderId }: FolderViewProps) {
           {uploadErrorMsg}
         </div>
       )}
-      {uploadDone && (
+      {uploadDone && uploadedNodes.length === 0 && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
           File uploaded successfully.
+        </div>
+      )}
+      {uploadedNodes.length > 0 && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-green-800">Uploaded — copy a share link</p>
+            <button
+              type="button"
+              onClick={() => setUploadedNodes([])}
+              className="rounded p-1 text-green-700 hover:bg-green-100"
+              aria-label="Dismiss"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+              </svg>
+            </button>
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            {uploadedNodes.map((n) => (
+              <li key={n.id} className="flex items-center gap-2 rounded-lg border border-green-200 bg-white px-3 py-2">
+                <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{n.name}</span>
+                <CopyLinkButton
+                  status={fileCopyStatus(n.id)}
+                  onClick={() => void copy.copyLink(n.id)}
+                  className="shrink-0 rounded-lg border border-green-300 bg-white px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                />
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {importDoneMsg && (
