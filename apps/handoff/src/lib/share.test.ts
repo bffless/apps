@@ -2,7 +2,7 @@
  * TDD tests for pure share helpers — written BEFORE the implementation.
  */
 import { describe, it, expect } from 'vitest'
-import { shareLinkCopyUrl, pickReusableToken, shouldClaimToken } from './share'
+import { shareLinkCopyUrl, slugifyFilename, pickReusableToken, shouldClaimToken } from './share'
 import type { ShareLink } from '../store/handoffApi'
 
 function link(over: Partial<ShareLink> = {}): ShareLink {
@@ -15,6 +15,35 @@ describe('shareLinkCopyUrl', () => {
   })
   it('builds the folder /s URL when nodeId is absent', () => {
     expect(shareLinkCopyUrl('https://h.dev', link({ url: '/s/abc' }))).toBe('https://h.dev/s/abc')
+  })
+  it('inserts a vanity filename segment when fileName is provided', () => {
+    expect(shareLinkCopyUrl('https://h.dev', link({ token: 'abc' }), 'n9', 'My Report.rar')).toBe(
+      'https://h.dev/r/n9/my-report.rar?token=abc',
+    )
+  })
+  it('omits the segment when fileName is absent (backward compatible)', () => {
+    expect(shareLinkCopyUrl('https://h.dev', link({ token: 'abc' }), 'n9')).toBe('https://h.dev/r/n9?token=abc')
+  })
+})
+
+describe('slugifyFilename', () => {
+  it('slugifies the base and lowercases the extension', () => {
+    expect(slugifyFilename('My Report (Final).rar')).toBe('my-report-final.rar')
+  })
+  it('keeps a name with no extension', () => {
+    expect(slugifyFilename('README')).toBe('readme')
+  })
+  it('falls back to "file" when the base slugifies to empty', () => {
+    expect(slugifyFilename('报告.pdf')).toBe('file.pdf')
+  })
+  it('keeps only the last extension for double extensions', () => {
+    expect(slugifyFilename('archive.tar.gz')).toBe('archive-tar.gz')
+  })
+  it('lowercases an uppercase extension', () => {
+    expect(slugifyFilename('photo.JPEG')).toBe('photo.jpeg')
+  })
+  it('treats a dotfile as all-base', () => {
+    expect(slugifyFilename('.env')).toBe('env')
   })
 })
 
