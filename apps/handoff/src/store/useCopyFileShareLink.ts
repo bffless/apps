@@ -16,7 +16,7 @@ export function useCopyFileShareLink(folderId: string, links: ShareLink[] | unde
   const [errorId, setErrorId] = useState<string | null>(null)
 
   const copyLink = useCallback(
-    async (nodeId: string) => {
+    async (nodeId: string, fileName?: string) => {
       setErrorId(null)
       setCopiedId(null)
       setBusyId(nodeId)
@@ -27,7 +27,7 @@ export function useCopyFileShareLink(folderId: string, links: ShareLink[] | unde
           if ('error' in res) throw new Error('mint failed')
           token = res.data.token
         }
-        const url = shareLinkCopyUrl(window.location.origin, { token, url: `/s/${token}` }, nodeId)
+        const url = shareLinkCopyUrl(window.location.origin, { token, url: `/s/${token}` }, nodeId, fileName)
         await navigator.clipboard.writeText(url)
         setBusyId(null)
         setCopiedId(nodeId)

@@ -69,7 +69,7 @@ export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareD
 
       <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
         <PeopleAccess folderId={folderId} />
-        <ShareLinksSection folderId={folderId} nodeId={nodeId} />
+        <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} />
       </div>
     </dialog>
   )

@@ -1173,7 +1173,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                 <span className="min-w-0 flex-1 truncate text-sm text-ink">{n.name}</span>
                 <CopyLinkButton
                   status={fileCopyStatus(n.id)}
-                  onClick={() => void copy.copyLink(n.id)}
+                  onClick={() => void copy.copyLink(n.id, n.name)}
                   className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
                 />
               </li>
@@ -1305,7 +1305,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                   node={node}
                   canManage={canManage}
                   copyState={fileCopyStatus(node.id)}
-                  onCopyLink={() => void copy.copyLink(node.id)}
+                  onCopyLink={() => void copy.copyLink(node.id, node.name)}
                   onShare={() =>
                     setShareTarget(
                       node.type === 'folder'
