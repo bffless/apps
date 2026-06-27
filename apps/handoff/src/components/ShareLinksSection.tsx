@@ -32,7 +32,7 @@ export interface ShareLinksSectionProps {
    * viewer Share popover) to avoid an orphan top border.
    */
   topDivider?: boolean
-  /** When set, copy/display URLs are file-direct (/view/{nodeId}?token=) for this file. */
+  /** When set, copy/display URLs are file-direct (/r/{nodeId}?token=) for this file. */
   nodeId?: string
 }
 
