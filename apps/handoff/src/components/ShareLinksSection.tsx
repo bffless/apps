@@ -28,9 +28,11 @@ export interface ShareLinksSectionProps {
   topDivider?: boolean
   /** When set, copy/display URLs are file-direct (/r/{nodeId}?token=) for this file. */
   nodeId?: string
+  /** Optional file name; when set, appends a vanity slug segment to file-direct URLs. */
+  fileName?: string
 }
 
-export function ShareLinksSection({ folderId, topDivider = true, nodeId }: ShareLinksSectionProps) {
+export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileName }: ShareLinksSectionProps) {
   const { data: links, isLoading: loadingLinks } = useListShareLinksQuery({ folderId })
   const [mintShareLink, { isLoading: minting }] = useMintShareLinkMutation()
   const [revokeShareLink, { isLoading: revoking }] = useRevokeShareLinkMutation()
@@ -69,7 +71,7 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId }: Share
   }
 
   function handleCopy(link: ShareLink) {
-    const fullUrl = shareLinkCopyUrl(window.location.origin, link, nodeId)
+    const fullUrl = shareLinkCopyUrl(window.location.origin, link, nodeId, fileName)
     void navigator.clipboard.writeText(fullUrl).then(() => {
       setCopiedToken(link.token)
       setTimeout(() => setCopiedToken((t) => (t === link.token ? null : t)), 2000)
@@ -138,7 +140,7 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId }: Share
           <p className="mb-1.5 text-xs font-medium text-success">Share link created</p>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded border border-success/20 bg-surface px-2 py-1 text-xs text-ink">
-              {shareLinkCopyUrl(window.location.origin, newLink, nodeId)}
+              {shareLinkCopyUrl(window.location.origin, newLink, nodeId, fileName)}
             </code>
             <button
               type="button"
@@ -159,7 +161,7 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId }: Share
           {activeLinks.map((link) => (
             <li key={link.token} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
-                {shareLinkCopyUrl(window.location.origin, link, nodeId)}
+                {shareLinkCopyUrl(window.location.origin, link, nodeId, fileName)}
               </span>
               <span className="shrink-0 text-xs text-muted">{formatExpiry(link)}</span>
               <button
