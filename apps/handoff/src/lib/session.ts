@@ -121,10 +121,22 @@ export function adminLogoutUrl(returnUrl: string): string {
  *    session and clears `sAccessToken` on `.j5s.dev`, then returns here.
  *
  * Navigating straight to `/_bffless/auth/logout` (a POST-only endpoint) with a
- * GET is what produced the 404 — and it could never clear the SuperTokens
- * session anyway.
+ * GET is what produced the original 404 — and it could never clear the
+ * SuperTokens session anyway.
+ *
+ * Return target is always the handoff **homepage**, never the current page:
+ *
+ * - After sign-out the user is a guest, so returning to a private sub-path
+ *   (e.g. a `/r/<id>` share view) would just re-gate them to login.
+ * - The admin `/logout` page invalidates its session, and its always-mounted
+ *   Header refetches it — briefly racing a redirect-to-login against
+ *   `LogoutPage`'s own redirect. The homepage resolves in a single fast `200`,
+ *   so its navigation commits and unloads the admin page before that refetch
+ *   can hijack to `/login`. A sub-path that `302`s to stored content commits
+ *   slower and loses that race, stranding the user on
+ *   `admin.j5s.dev/login?redirect=/logout`. Homepage avoids both.
  */
-export async function logout(returnUrl: string = window.location.href): Promise<void> {
+export async function logout(returnUrl: string = window.location.origin + '/'): Promise<void> {
   try {
     await fetch('/_bffless/auth/logout', { method: 'POST', credentials: 'include' })
   } catch {
