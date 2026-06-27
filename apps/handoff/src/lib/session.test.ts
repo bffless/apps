@@ -9,7 +9,7 @@
  * (vs genuinely-absent) session — so users were silently logged out.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchSessionOnce } from './session'
+import { fetchSessionOnce, attemptRefresh, fetchWithReauth } from './session'
 
 type Route = (init?: RequestInit) => Response
 
@@ -116,5 +116,82 @@ describe('fetchSessionOnce', () => {
 
     await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: true, user: USER })
     expect(calls).toEqual([SESSION, ST_REFRESH, RELAY_REFRESH, SESSION])
+  })
+})
+
+describe('attemptRefresh (single-flight)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('dedupes concurrent callers into one refresh request', async () => {
+    const { calls } = mockFetch({
+      [ST_REFRESH]: () => new Response(null, { status: 200 }),
+    })
+
+    // Three callers race (the session check + two data-layer 401s on load).
+    const results = await Promise.all([attemptRefresh(), attemptRefresh(), attemptRefresh()])
+
+    expect(results).toEqual([true, true, true])
+    // SuperTokens rotates the refresh token — only ONE refresh may go out.
+    expect(calls.filter((c) => c === ST_REFRESH)).toHaveLength(1)
+  })
+
+  it('resets so a later expiry can refresh again', async () => {
+    const { calls } = mockFetch({
+      [ST_REFRESH]: () => new Response(null, { status: 200 }),
+    })
+
+    await attemptRefresh()
+    await attemptRefresh()
+
+    // Sequential (not concurrent) calls each refresh — the singleton cleared.
+    expect(calls.filter((c) => c === ST_REFRESH)).toHaveLength(2)
+  })
+})
+
+describe('fetchWithReauth', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  const GATED = '/api/uploads/content/abc'
+
+  it('refreshes once and retries on a 401, returning the retried response', async () => {
+    let authed = false
+    const { calls } = mockFetch({
+      [GATED]: () => (authed ? new Response('payload', { status: 200 }) : new Response(null, { status: 401 })),
+      [ST_REFRESH]: () => {
+        authed = true
+        return new Response(null, { status: 200 })
+      },
+    })
+
+    const res = await fetchWithReauth(GATED)
+
+    expect(res.status).toBe(200)
+    await expect(res.text()).resolves.toBe('payload')
+    expect(calls).toEqual([GATED, ST_REFRESH, GATED])
+  })
+
+  it('passes through a successful response without refreshing', async () => {
+    const { calls } = mockFetch({
+      [GATED]: () => new Response('payload', { status: 200 }),
+    })
+
+    const res = await fetchWithReauth(GATED)
+
+    expect(res.status).toBe(200)
+    expect(calls).toEqual([GATED])
+  })
+
+  it('returns the 401 when the refresh itself fails (no infinite retry)', async () => {
+    const { calls } = mockFetch({
+      [GATED]: () => new Response(null, { status: 401 }),
+      [ST_REFRESH]: () => new Response(null, { status: 401 }),
+      [RELAY_REFRESH]: () => new Response(null, { status: 401 }),
+    })
+
+    const res = await fetchWithReauth(GATED)
+
+    expect(res.status).toBe(401)
+    // one initial try, both refresh paths attempted, then NO retry
+    expect(calls).toEqual([GATED, ST_REFRESH, RELAY_REFRESH])
   })
 })

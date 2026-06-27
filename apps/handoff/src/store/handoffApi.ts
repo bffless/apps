@@ -12,6 +12,8 @@
  */
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
+import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
+import { attemptRefresh } from '../lib/session'
 import { toNode, toNodeList, buildRegisterBody } from '../lib/nodes'
 import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
@@ -107,9 +109,35 @@ interface SubtreeNode {
   depth: number
 }
 
+const rawBaseQuery = fetchBaseQuery({ baseUrl: '/', credentials: 'include' })
+
+/**
+ * On a 401 (expired SuperTokens access token) run the shared single-flight
+ * refresh and retry the request once. The refresh is shared with the session
+ * hook and `fetchWithReauth` so the whole app issues exactly one
+ * `/api/auth/session/refresh` per expiry (the refresh token rotates, so
+ * concurrent refreshes would race — see `attemptRefresh`).
+ *
+ * Without this, queries that 401 during the brief expired-token window on load
+ * (e.g. `getNode` + `listNodes` firing before the session check refreshes)
+ * never recover: the session hook re-authes but the data stays errored, so the
+ * folder renders empty until a manual reload.
+ */
+const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
+  args,
+  api,
+  extraOptions,
+) => {
+  let result = await rawBaseQuery(args, api, extraOptions)
+  if (result.error?.status === 401 && (await attemptRefresh())) {
+    result = await rawBaseQuery(args, api, extraOptions)
+  }
+  return result
+}
+
 export const handoffApi = createApi({
   reducerPath: 'handoffApi',
-  baseQuery: fetchBaseQuery({ baseUrl: '/', credentials: 'include' }),
+  baseQuery: baseQueryWithReauth,
   tagTypes: ['Node', 'Grant', 'ShareLink'],
   endpoints: (builder) => ({
     /**

@@ -21,10 +21,21 @@ export type Session =
 /** Module-level singleton — dedupes concurrent calls within a session. */
 let inFlight: Promise<Session> | null = null
 
+/**
+ * Module-level singleton — dedupes concurrent token refreshes. SuperTokens
+ * *rotates* the refresh token on every refresh, so two concurrent
+ * `/api/auth/session/refresh` calls race on the same `sRefreshToken`: the first
+ * rotation invalidates the token the others are using, failing them and risking
+ * a token-theft trip. Every 401 path — the session check, the RTK data layer,
+ * and `fetchWithReauth` — awaits this one promise so only a single refresh is
+ * ever in flight. This is a 1-permit async mutex.
+ */
+let refreshInFlight: Promise<boolean> | null = null
+
 const SESSION_URL = '/_bffless/auth/session'
 
 /**
- * Attempt to refresh an expired session, returning true if a refresh succeeded.
+ * The actual refresh, run at most once at a time via {@link attemptRefresh}.
  *
  * handoff.j5s.dev is a *subdomain of the primary domain* j5s.dev, so the session
  * lives in the SuperTokens `sAccessToken` / `sRefreshToken` cookies shared on
@@ -41,7 +52,7 @@ const SESSION_URL = '/_bffless/auth/session'
  * fallback so the flow stays correct if handoff is ever served from a true
  * cross-origin custom domain.
  */
-async function attemptRefresh(): Promise<boolean> {
+async function doRefresh(): Promise<boolean> {
   // Primary: SuperTokens session refresh (primary domain + its subdomains).
   try {
     const st = await fetch('/api/auth/session/refresh', {
@@ -66,6 +77,43 @@ async function attemptRefresh(): Promise<boolean> {
   }
 
   return false
+}
+
+/**
+ * Attempt to refresh an expired session, returning true if a refresh succeeded.
+ * Single-flight: concurrent callers share one in-flight refresh (see
+ * {@link refreshInFlight}). Shared by the session hook and the data layers so
+ * the whole app issues exactly one refresh per expiry.
+ */
+export function attemptRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+/**
+ * `fetch` for auth-gated `/api/*` paths that don't go through RTK Query (e.g.
+ * the viewer's Markdown/source content previews, which hit the ACL-gated
+ * `/api/uploads/content/*` path). Mirrors the RTK `baseQueryWithReauth`: on a
+ * 401 it runs the shared single-flight refresh and retries once, so an expired
+ * access token recovers in place instead of surfacing as a failed load. If a
+ * refresh is already running, it waits that out first to avoid a doomed call.
+ * Always sends credentials.
+ */
+export async function fetchWithReauth(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  if (refreshInFlight) await refreshInFlight
+  const opts: RequestInit = { credentials: 'include', ...init }
+  const res = await fetch(input, opts)
+  if (res.status === 401 && (await attemptRefresh())) {
+    return fetch(input, opts)
+  }
+  return res
 }
 
 type Evaluated = Session | 'needs-refresh'
