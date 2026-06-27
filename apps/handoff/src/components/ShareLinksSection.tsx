@@ -14,6 +14,7 @@ import {
   useRevokeShareLinkMutation,
 } from '../store/handoffApi'
 import type { ShareLink } from '../store/handoffApi'
+import { shareLinkCopyUrl } from '../lib/share'
 
 const EXPIRY_OPTIONS: { label: string; ms: number | undefined }[] = [
   { label: 'No expiry', ms: undefined },
@@ -31,9 +32,11 @@ export interface ShareLinksSectionProps {
    * viewer Share popover) to avoid an orphan top border.
    */
   topDivider?: boolean
+  /** When set, copy/display URLs are file-direct (/view/{nodeId}?token=) for this file. */
+  nodeId?: string
 }
 
-export function ShareLinksSection({ folderId, topDivider = true }: ShareLinksSectionProps) {
+export function ShareLinksSection({ folderId, topDivider = true, nodeId }: ShareLinksSectionProps) {
   const { data: links, isLoading: loadingLinks } = useListShareLinksQuery({ folderId })
   const [mintShareLink, { isLoading: minting }] = useMintShareLinkMutation()
   const [revokeShareLink, { isLoading: revoking }] = useRevokeShareLinkMutation()
@@ -41,7 +44,7 @@ export function ShareLinksSection({ folderId, topDivider = true }: ShareLinksSec
   const [expiryIdx, setExpiryIdx] = useState(0)
   const [mintError, setMintError] = useState<string | null>(null)
   const [newLink, setNewLink] = useState<ShareLink | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [revokingToken, setRevokingToken] = useState<string | null>(null)
 
   async function handleCreate() {
@@ -71,11 +74,11 @@ export function ShareLinksSection({ folderId, topDivider = true }: ShareLinksSec
     }
   }
 
-  function handleCopy(url: string) {
-    const fullUrl = `${window.location.origin}${url}`
+  function handleCopy(link: ShareLink) {
+    const fullUrl = shareLinkCopyUrl(window.location.origin, link, nodeId)
     void navigator.clipboard.writeText(fullUrl).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopiedToken(link.token)
+      setTimeout(() => setCopiedToken((t) => (t === link.token ? null : t)), 2000)
     })
   }
 
@@ -139,14 +142,14 @@ export function ShareLinksSection({ folderId, topDivider = true }: ShareLinksSec
           <p className="mb-1.5 text-xs font-medium text-green-800">Share link created</p>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1 text-xs text-gray-700 border border-green-200">
-              {window.location.origin}{newLink.url}
+              {shareLinkCopyUrl(window.location.origin, newLink, nodeId)}
             </code>
             <button
               type="button"
-              onClick={() => handleCopy(newLink.url)}
+              onClick={() => handleCopy(newLink)}
               className="shrink-0 rounded-lg border border-green-300 bg-white px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copiedToken === newLink.token ? 'Copied!' : 'Copy'}
             </button>
           </div>
           {newLink.expiresAt && (
@@ -171,6 +174,13 @@ export function ShareLinksSection({ folderId, topDivider = true }: ShareLinksSec
                 {link.url}
               </span>
               <span className="shrink-0 text-xs text-gray-400">{formatExpiry(link)}</span>
+              <button
+                type="button"
+                onClick={() => handleCopy(link)}
+                className="shrink-0 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+              >
+                {copiedToken === link.token ? 'Copied!' : 'Copy'}
+              </button>
               <button
                 type="button"
                 disabled={revoking || revokingToken === link.token}
