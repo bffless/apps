@@ -1,0 +1,9 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [
+      "apps/handoff/src/index.css"
+    ],
+    "ignoreValues": []
+  }
+}

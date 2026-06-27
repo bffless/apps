@@ -1,0 +1,60 @@
+name: Preview Handoff on BFFless
+
+# PR previews for Handoff. Any PR that touches apps/handoff (or this file) builds
+# the app and deploys it to a single shared `handoff-preview` alias, then comments
+# the URL on the PR. The alias is reused — the newest PR build wins — so this is
+# best for one preview at a time. The handoff proxy rule set is attached so /api/*
+# (presigned uploads, node tree, serving, ACL, grants, share links) works.
+on:
+  pull_request:
+    paths:
+      - 'apps/handoff/**'
+      - '.github/workflows/preview-handoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-handoff-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter handoff build
+
+      - name: Deploy preview to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/handoff/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: handoff-preview
+          # Attach the Handoff backend (/api/*) to the preview alias. Uses the
+          # singular (legacy) input on purpose: the plural proxy-rule-set-names is
+          # serialized as a CSV string by upload-artifact@v1, which the API rejects
+          # ("proxyRuleSetNames must be an array"). The singular goes through as a
+          # plain string and resolves the same rule set.
+          proxy-rule-set-name: handoff
+          description: 'Handoff preview for PR #${{ github.event.pull_request.number }}'
+          summary-title: Handoff Preview
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}

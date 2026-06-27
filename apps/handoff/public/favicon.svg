@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Handoff">
+  <rect width="32" height="32" rx="8" fill="#d85a3d" />
+  <!-- A leaf (file/site) being handed off to the right -->
+  <path d="M9 8.5A1.5 1.5 0 0 1 10.5 7h6.2a1.5 1.5 0 0 1 1.06.44l2.3 2.3A1.5 1.5 0 0 1 20.5 11v1.2"
+        fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
+  <!-- Handoff arrow -->
+  <path d="M11 20h9.2" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" />
+  <path d="M17.4 16.2 21.8 20l-4.4 3.8" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

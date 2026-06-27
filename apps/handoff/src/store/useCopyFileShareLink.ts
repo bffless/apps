@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react'
 import { useMintShareLinkMutation } from './handoffApi'
 import type { ShareLink } from './handoffApi'
 import { pickReusableToken, shareLinkCopyUrl } from '../lib/share'
+import { toast } from '../lib/toast'
 
 export function useCopyFileShareLink(folderId: string, links: ShareLink[] | undefined) {
   const [mint] = useMintShareLinkMutation()
@@ -30,10 +31,12 @@ export function useCopyFileShareLink(folderId: string, links: ShareLink[] | unde
         await navigator.clipboard.writeText(url)
         setBusyId(null)
         setCopiedId(nodeId)
+        toast('Link copied to clipboard')
         setTimeout(() => setCopiedId((c) => (c === nodeId ? null : c)), 2000)
       } catch {
         setBusyId(null)
         setErrorId(nodeId)
+        toast('Couldn’t copy link', 'error')
         setTimeout(() => setErrorId((e) => (e === nodeId ? null : e)), 3000)
       }
     },

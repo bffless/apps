@@ -15,9 +15,11 @@ import type { HandoffNode } from '../lib/nodes'
 import { useSession } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
-import { ShareLinksSection } from '../components/ShareLinksSection'
+import { ShareDialog } from '../components/ShareDialog'
+import { TrashIcon } from '../components/icons'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { InvalidLink } from '../components/InvalidLink'
+import { toast } from '../lib/toast'
 import { shouldClaimToken } from '../lib/share'
 
 // ---------------------------------------------------------------------------
@@ -59,28 +61,24 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   // Skip for guests (unauthenticated) to avoid a discarded 401 on the parent fetch.
   const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !(session?.authenticated) })
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
+  const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
 
   const [shareOpen, setShareOpen] = useState(false)
-  const shareRef = useRef<HTMLDivElement>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteNode] = useDeleteNodeMutation()
 
-  // Close the Share popover on outside click or Escape (mirrors DirectorySearch).
-  useEffect(() => {
-    if (!shareOpen) return
-    function handleClickOutside(e: MouseEvent) {
-      if (shareRef.current && !shareRef.current.contains(e.target as Node)) {
-        setShareOpen(false)
-      }
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      await deleteNode({ id: node.id, parentId: node.parentId }).unwrap()
+      toast(`Deleted “${node.name}”.`)
+      navigate(node.parentId && node.parentId !== 'root' ? `/folder/${node.parentId}` : '/')
+    } catch {
+      setDeleting(false)
+      toast(`Couldn’t delete “${node.name}”. Please try again.`, 'error')
     }
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShareOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [shareOpen])
+  }
 
   function handleFullscreen() {
     if (contentRef.current) {
@@ -88,35 +86,16 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
     }
   }
 
-  // Delete — write access (edit/owner) on the node's folder. Hidden otherwise;
-  // the backend enforces regardless.
-  const [deleteNode] = useDeleteNodeMutation()
-  const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState(false)
-
-  async function handleDelete() {
-    setDeleting(true)
-    setDeleteError(false)
-    try {
-      await deleteNode({ id: node.id, parentId: node.parentId }).unwrap()
-      // Content is gone — return to the folder it lived in (or home for root items).
-      navigate(node.parentId && node.parentId !== 'root' ? `/folder/${node.parentId}` : '/')
-    } catch {
-      setDeleting(false)
-      setDeleteError(true)
-    }
-  }
-
   return (
-    <>
-    <div className="sticky top-14 z-30 flex items-center gap-2 border-b border-gray-200 bg-white/90 px-4 py-2 backdrop-blur">
+    <div
+      className="sticky top-14 flex items-center gap-2 border-b border-border bg-surface/90 px-4 py-2 backdrop-blur"
+      style={{ zIndex: 'var(--z-sticky)' }}
+    >
       {/* Back */}
       <button
         type="button"
         onClick={() => navigate('/')}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
           <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -125,7 +104,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       </button>
 
       {/* Title */}
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{node.name}</span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{node.name}</span>
 
       {/* Share — owners/admins of the parent folder. Root items: disabled + explanation. */}
       {isRoot ? (
@@ -134,31 +113,34 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
             type="button"
             disabled
             title="Move this into a folder to share it"
-            className="inline-flex cursor-not-allowed items-center gap-1 rounded px-2 py-1 text-sm text-gray-300"
+            className="inline-flex cursor-not-allowed items-center gap-1 rounded px-2 py-1 text-sm text-muted/50"
           >
             <ShareIcon />
             <span className="hidden sm:inline">Share</span>
           </button>
         ) : null
       ) : canShare ? (
-        <div ref={shareRef} className="relative">
+        <>
           <button
             type="button"
-            onClick={() => setShareOpen((v) => !v)}
-            className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+            onClick={() => setShareOpen(true)}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
             title="Share"
             aria-haspopup="dialog"
-            aria-expanded={shareOpen}
           >
             <ShareIcon />
             <span className="hidden sm:inline">Share</span>
           </button>
           {shareOpen && (
-            <div role="dialog" aria-label="Share links" className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
-              <ShareLinksSection folderId={node.parentId} topDivider={false} nodeId={node.id} />
-            </div>
+            <ShareDialog
+              folderId={node.parentId}
+              title={node.name}
+              nodeId={node.id}
+              isFile
+              onClose={() => setShareOpen(false)}
+            />
           )}
-        </div>
+        </>
       ) : null}
 
       {/* View source ⇄ View rendered — only for source-capable kinds */}
@@ -166,7 +148,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <button
           type="button"
           onClick={onToggleSource}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
           title={showSource ? 'View rendered' : 'View source'}
           aria-pressed={showSource}
         >
@@ -181,7 +163,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           href={node.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
           title="Open in new tab"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -196,7 +178,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       <button
         type="button"
         onClick={handleFullscreen}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
         title="Fullscreen"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -210,7 +192,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <a
           href={node.url}
           download={node.name}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
           title="Download"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -226,70 +208,70 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
-          disabled={deleting}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted transition-colors hover:bg-danger-bg hover:text-danger"
           title="Delete"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
-          </svg>
+          <TrashIcon className="h-4 w-4" />
           <span className="hidden sm:inline">Delete</span>
         </button>
       )}
-    </div>
 
-    {confirmOpen && (
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Delete ${node.name}`}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4"
-        onClick={() => { if (!deleting) setConfirmOpen(false) }}
-      >
+      {confirmOpen && (
         <div
-          className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl"
-          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Delete ${node.name}`}
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ zIndex: 'var(--z-modal)' }}
+          onClick={() => {
+            if (!deleting) setConfirmOpen(false)
+          }}
         >
-          <h2 className="text-base font-semibold text-gray-900">
-            Delete {node.type === 'site' ? 'site' : 'file'}?
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            <span className="font-medium text-gray-900">{node.name}</span> will be permanently
-            deleted. This can’t be undone.
-          </p>
-          {deleteError && (
-            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              Couldn’t delete this {node.type === 'site' ? 'site' : 'file'}. Please try again.
+          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+          <div
+            className="share-dialog relative w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger-bg text-danger">
+                <TrashIcon className="h-4 w-4" />
+              </span>
+              <h2 className="text-sm font-semibold text-ink">
+                Delete {node.type === 'site' ? 'site' : 'file'}?
+              </h2>
+            </div>
+            <p className="mt-1.5 text-sm text-muted">
+              <span className="font-medium text-ink">{node.name}</span> will be permanently deleted.
+              This can’t be undone.
             </p>
-          )}
-          <div className="mt-6 flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={deleting}
-              onClick={() => setConfirmOpen(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={deleting}
-              onClick={handleDelete}
-              className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {deleting && (
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              )}
-              {deleting ? 'Deleting…' : 'Delete'}
-            </button>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmOpen(false)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDelete}
+                className="inline-flex items-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting && (
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                )}
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
-    </>
+      )}
+    </div>
   )
 }
 
@@ -316,12 +298,12 @@ function MarkdownPreview({ url }: { url: string }) {
   }, [url])
 
   if (!result || result.url !== url) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
 
   return (
     <div
-      className="prose prose-gray mx-auto max-w-3xl px-4 py-8"
+      className="markdown-body mx-auto max-w-3xl px-4 py-8 leading-relaxed text-ink"
       dangerouslySetInnerHTML={{ __html: result.html }}
     />
   )
@@ -361,11 +343,11 @@ function SourceView({ url }: { url: string }) {
 
   // Loading while no result yet, or a result from a previous url.
   if (!state || state.url !== url) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading source…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading source…</div>
   }
 
   if ('error' in state) {
-    return <div className="py-16 text-center text-sm text-gray-500">Failed to load source.</div>
+    return <div className="py-16 text-center text-sm text-muted">Failed to load source.</div>
   }
 
   const text = state.text
@@ -385,12 +367,12 @@ function SourceView({ url }: { url: string }) {
       <button
         type="button"
         onClick={handleCopy}
-        className="absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded border border-gray-200 bg-white/90 px-2 py-1 text-xs text-gray-600 shadow-sm backdrop-blur hover:bg-gray-100"
+        className="absolute right-4 top-4 z-10 inline-flex items-center gap-1 rounded border border-border bg-surface/90 px-2 py-1 text-xs text-muted shadow-sm backdrop-blur transition-colors hover:bg-surface-2 hover:text-ink"
         title="Copy source"
       >
         {copied ? 'Copied' : 'Copy'}
       </button>
-      <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-gray-800">
+      <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-ink">
         <code>{text}</code>
       </pre>
     </div>
@@ -400,21 +382,21 @@ function SourceView({ url }: { url: string }) {
 function PreviewUnavailable({ node }: { node: HandoffNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-24">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-2 text-muted">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-8 w-8">
           <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd" />
           <path d="M10.748 13.93l2.523 2.523a10.003 10.003 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z" />
         </svg>
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-gray-700">Preview unavailable</p>
-        <p className="mt-1 text-xs text-gray-400">{node.name}</p>
+        <p className="text-sm font-medium text-ink">Preview unavailable</p>
+        <p className="mt-1 text-xs text-muted">{node.name}</p>
       </div>
       {node.url && (
         <a
           href={node.url}
           download={node.name}
-          className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-700"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
@@ -446,7 +428,7 @@ function MediaPreview({ node, kind }: { node: HandoffNode; kind: 'video' | 'audi
   if (isLoading || (storageKey !== '' && signedUrl === undefined && !isError)) {
     return (
       <div className="flex flex-1 items-center justify-center py-24">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent-600" />
       </div>
     )
   }
@@ -513,7 +495,7 @@ export function HandoffViewer() {
   }
 
   if (sessionLoading || claimPending) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
   if (needClaim && (claimError || claimData?.valid === false)) {
     return <InvalidLink />
@@ -521,13 +503,13 @@ export function HandoffViewer() {
   if (needClaim && claimData?.valid && !isLoading && (isError || !node)) return <InvalidLink />
 
   if (isLoading) {
-    return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
+    return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
 
   if (isError || !node) {
     return (
       <div className="py-16 text-center">
-        <p className="text-sm text-gray-500">File not found.</p>
+        <p className="text-sm text-muted">File not found.</p>
       </div>
     )
   }
