@@ -6,7 +6,7 @@ import { HandoffHome } from './pages/HandoffHome'
 import { HandoffViewer } from './pages/HandoffViewer'
 import { HandoffFolder } from './pages/HandoffFolder'
 import { ShareLinkEntry } from './pages/ShareLinkEntry'
-import { useSession, adminLoginUrl } from './lib/session'
+import { useSession, adminLoginUrl, logout } from './lib/session'
 import { useTheme } from './lib/theme'
 import { useMediaQuery } from './lib/useMediaQuery'
 import { Menu } from './components/Menu'
@@ -69,7 +69,7 @@ function AccountMenu({ email }: { email?: string }) {
       items={[
         { heading: label },
         'separator',
-        { label: 'Sign out', onSelect: () => { window.location.href = '/_bffless/auth/logout' } },
+        { label: 'Sign out', onSelect: () => { void logout() } },
       ]}
       trigger={({ ref, onClick, onKeyDown, ...aria }) => (
         <button
