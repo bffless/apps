@@ -319,7 +319,7 @@ export function HandoffViewer() {
   if (needClaim && (claimError || claimData?.valid === false)) {
     return <InvalidLink />
   }
-  if (needClaim && claimData?.valid && (isError || !node)) return <InvalidLink />
+  if (needClaim && claimData?.valid && !isLoading && (isError || !node)) return <InvalidLink />
 
   if (isLoading) {
     return <div className="py-16 text-center text-sm text-gray-400">Loading…</div>
