@@ -86,6 +86,27 @@ async function runPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise
   return results
 }
 
+// ---------------------------------------------------------------------------
+// Subtree-delete result
+// ---------------------------------------------------------------------------
+
+export interface DeleteSubtreeResult {
+  /** Number of nodes successfully deleted (root + descendants). */
+  deleted: number
+  /** Per-node failures so a partial delete still reports what survived. */
+  failures: { id: string; name: string; error: string }[]
+  /** Folder listings to refetch (parent + root + every descendant folder). */
+  affectedFolderIds: string[]
+}
+
+/** A node discovered while walking a subtree, tagged with its depth from the root. */
+interface SubtreeNode {
+  id: string
+  name: string
+  type: HandoffNode['type']
+  depth: number
+}
+
 export const handoffApi = createApi({
   reducerPath: 'handoffApi',
   baseQuery: fetchBaseQuery({ baseUrl: '/', credentials: 'include' }),
@@ -520,6 +541,108 @@ export const handoffApi = createApi({
       },
       invalidatesTags: (_result, _err, { parentId }) => [{ type: 'Node', id: `LIST:${parentId}` }],
     }),
+
+    /**
+     * DELETE /api/node?id=<id> → { deleted: true, id }
+     * Single-node hard delete (the backend purges a file's stored object too).
+     * Recursion lives in `deleteSubtree`; this is the leaf primitive it calls.
+     */
+    deleteNode: builder.mutation<{ id: string }, { id: string; parentId: string }>({
+      query: ({ id }) => ({
+        url: `api/node?id=${encodeURIComponent(id)}`,
+        method: 'DELETE',
+      }),
+      transformResponse: (r) => ({ id: String((r as { id?: unknown }).id ?? '') }),
+      invalidatesTags: (_result, _err, { parentId }) => [{ type: 'Node', id: `LIST:${parentId}` }],
+    }),
+
+    /**
+     * Recursive subtree delete — pure client orchestration, mirroring
+     * `importFolder` in reverse. The server owns a single-node delete (it can't
+     * fan out: `data_delete` has no bulk `in`, `file_delete` key-mode is one
+     * object), so the client discovers the tree and deletes it bottom-up:
+     *   1. BFS the subtree by listing `api/nodes?parentId=` per level (files
+     *      simply return no children), tagging each node with its depth.
+     *   2. Delete deepest-first, one depth-level at a time (bounded concurrency
+     *      within a level) so a folder is only removed after its children — the
+     *      server's non-empty-folder `409` guard then never trips in the happy path.
+     *   3. Collect `{ id, name, error }` failures so a partial delete still
+     *      reports what survived, and invalidate every touched folder listing.
+     */
+    deleteSubtree: builder.mutation<DeleteSubtreeResult, { rootId: string; parentId: string }>({
+      async queryFn({ rootId, parentId }, queryApi, _extraOptions, baseQuery) {
+        try {
+          // Seed with the root. Pull its name/type from the parent's cached
+          // listing when available (for nicer failure messages); fall back to id.
+          const parentSel = handoffApi.endpoints.listNodes.select({ parentId })(
+            queryApi.getState() as never,
+          )
+          const rootMeta = parentSel?.data?.find((n) => n.id === rootId)
+          const subtree: SubtreeNode[] = [
+            {
+              id: rootId,
+              name: rootMeta?.name ?? rootId,
+              type: rootMeta?.type ?? 'folder',
+              depth: 0,
+            },
+          ]
+
+          // 1. Discover descendants level by level. Listing the children of a
+          //    file/site returns [], so we can probe every node uniformly.
+          let frontier: { id: string; depth: number }[] = [{ id: rootId, depth: 0 }]
+          let guard = 0
+          while (frontier.length && guard++ < 64) {
+            const next: { id: string; depth: number }[] = []
+            await runPool(frontier, 4, async ({ id, depth }) => {
+              const res = await baseQuery(`api/nodes?parentId=${encodeURIComponent(id)}`)
+              if (res.error) return
+              const children = toNodeList(res.data)
+              for (const c of children) {
+                subtree.push({ id: c.id, name: c.name, type: c.type, depth: depth + 1 })
+                next.push({ id: c.id, depth: depth + 1 })
+              }
+            })
+            frontier = next
+          }
+
+          // 2. Delete deepest-first, a whole depth-level at a time.
+          const failures: DeleteSubtreeResult['failures'] = []
+          let deleted = 0
+          const depths = [...new Set(subtree.map((n) => n.depth))].sort((a, b) => b - a)
+          for (const d of depths) {
+            const level = subtree.filter((n) => n.depth === d)
+            await runPool(level, 4, async (n) => {
+              const res = await baseQuery({ url: `api/node?id=${encodeURIComponent(n.id)}`, method: 'DELETE' })
+              if (res.error) {
+                failures.push({ id: n.id, name: n.name, error: JSON.stringify(res.error) })
+                return
+              }
+              deleted++
+            })
+          }
+
+          // 3. Folder listings that changed: the parent (root removed) plus every
+          //    folder in the subtree. Over-listing non-folders is a harmless no-op.
+          const affectedFolderIds = [
+            parentId,
+            ...subtree.filter((n) => n.type === 'folder').map((n) => n.id),
+          ]
+
+          return { data: { deleted, failures, affectedFolderIds } }
+        } catch (e) {
+          return {
+            error: {
+              status: 'CUSTOM_ERROR' as const,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          }
+        }
+      },
+      invalidatesTags: (result, _err, { parentId }) => [
+        { type: 'Node', id: `LIST:${parentId}` },
+        ...(result?.affectedFolderIds ?? []).map((id) => ({ type: 'Node' as const, id: `LIST:${id}` })),
+      ],
+    }),
   }),
 })
 
@@ -533,6 +656,8 @@ export const {
   useUploadSiteMutation,
   useImportFolderMutation,
   useCreateFolderMutation,
+  useDeleteNodeMutation,
+  useDeleteSubtreeMutation,
   useGetGrantsQuery,
   useAddGrantMutation,
   useRevokeGrantMutation,

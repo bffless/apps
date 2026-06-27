@@ -8,12 +8,13 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { useGetNodeQuery, useGetSignedUrlQuery } from '../store/handoffApi'
+import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
 import { useSession } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
+import { canDeleteNode } from '../lib/deleteGate'
 import { ShareLinksSection } from '../components/ShareLinksSection'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { InvalidLink } from '../components/InvalidLink'
@@ -87,7 +88,29 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
     }
   }
 
+  // Delete — write access (edit/owner) on the node's folder. Hidden otherwise;
+  // the backend enforces regardless.
+  const [deleteNode] = useDeleteNodeMutation()
+  const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(false)
+
+  async function handleDelete() {
+    setDeleting(true)
+    setDeleteError(false)
+    try {
+      await deleteNode({ id: node.id, parentId: node.parentId }).unwrap()
+      // Content is gone — return to the folder it lived in (or home for root items).
+      navigate(node.parentId && node.parentId !== 'root' ? `/folder/${node.parentId}` : '/')
+    } catch {
+      setDeleting(false)
+      setDeleteError(true)
+    }
+  }
+
   return (
+    <>
     <div className="sticky top-14 z-30 flex items-center gap-2 border-b border-gray-200 bg-white/90 px-4 py-2 backdrop-blur">
       {/* Back */}
       <button
@@ -197,7 +220,76 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           <span className="hidden sm:inline">Download</span>
         </a>
       )}
+
+      {/* Delete — writers only */}
+      {canDelete && (
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          disabled={deleting}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+          title="Delete"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+          </svg>
+          <span className="hidden sm:inline">Delete</span>
+        </button>
+      )}
     </div>
+
+    {confirmOpen && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Delete ${node.name}`}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4"
+        onClick={() => { if (!deleting) setConfirmOpen(false) }}
+      >
+        <div
+          className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="text-base font-semibold text-gray-900">
+            Delete {node.type === 'site' ? 'site' : 'file'}?
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            <span className="font-medium text-gray-900">{node.name}</span> will be permanently
+            deleted. This can’t be undone.
+          </p>
+          {deleteError && (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              Couldn’t delete this {node.type === 'site' ? 'site' : 'file'}. Please try again.
+            </p>
+          )}
+          <div className="mt-6 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setConfirmOpen(false)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={handleDelete}
+              className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deleting && (
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 

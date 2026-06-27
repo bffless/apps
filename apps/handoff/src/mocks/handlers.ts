@@ -17,7 +17,7 @@ import { http, HttpResponse } from 'msw'
 import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
 import { evaluateAccess } from '../lib/acl'
-import type { Grant, FolderLink } from '../lib/acl'
+import type { AccessLevel, Grant, FolderLink } from '../lib/acl'
 
 // ---------------------------------------------------------------------------
 // In-memory state
@@ -132,11 +132,23 @@ const FAKE_DIRECTORY = [
  * in-memory `nodes` / `nodeAcl` maps (root → target). Capped at 64 hops to
  * avoid hanging on a cycle.
  *
+ * `minLevel` is the access level the action requires — `'view'` for reads
+ * (default) and `'edit'` for writes such as delete. The 401/403 split is
+ * unchanged: no credential at all → 401; a credential that's simply
+ * insufficient (e.g. a view-only grant or a share-link viewer trying to write)
+ * → 403. This mirrors the live ACL gate exactly (`rank(level) >= rank(minLevel)`).
+ *
  * Returns: 'ok' | '401' | '403'
  */
-function checkAccess(nodeId: string): 'ok' | '401' | '403' {
+function levelRank(l: AccessLevel): number {
+  return l === 'owner' ? 3 : l === 'edit' ? 2 : l === 'view' ? 1 : 0
+}
+
+function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '401' | '403' {
   // Share-link viewer path: no user, just a scoped folderId.
   if (mockShareLinkFolderId !== null) {
+    // Share-link viewers are capped at 'view' — they can never satisfy a write.
+    if (levelRank(minLevel) > levelRank('view')) return '403'
     const acl = nodeAcl.get(nodeId)
     if (!acl) return 'ok' // no ACL = open
 
@@ -166,7 +178,7 @@ function checkAccess(nodeId: string): 'ok' | '401' | '403' {
     }
 
     const level = evaluateAccess({ folderChain, viewer: { shareLinkFolderId: mockShareLinkFolderId } })
-    return level === 'none' ? '403' : 'ok'
+    return levelRank(level) >= levelRank(minLevel) ? 'ok' : '403'
   }
 
   // Normal user path.
@@ -215,7 +227,7 @@ function checkAccess(nodeId: string): 'ok' | '401' | '403' {
   }
 
   const level = evaluateAccess({ folderChain, viewer })
-  return level === 'none' ? '403' : 'ok'
+  return levelRank(level) >= levelRank(minLevel) ? 'ok' : '403'
 }
 
 // ---------------------------------------------------------------------------
@@ -506,6 +518,62 @@ export const handlers = [
     const acl = nodeAcl.get(id)
     const nodeWithAcl = acl ? { ...node, ...acl } : node
     return HttpResponse.json({ node: nodeWithAcl })
+  }),
+
+  /**
+   * DELETE /api/node?id=…
+   * Hard-delete a single node — write-gated (edit/owner). Mirrors the live
+   * `Handoff delete node` pipeline at the `toNode` seam:
+   *   - no credential → 401; insufficient (view-only / share-link) → 403.
+   *   - a folder that still has children → 409 (the client deletes bottom-up, so
+   *     this only guards direct/out-of-order calls from orphaning a subtree).
+   *   - a file → its stored object is purged too.
+   *   - a site → every object its manifest references is purged (the live
+   *     pipeline does this via `file_delete` keys-as-expression — ce#364 / #35).
+   * Response: { deleted: true, id }.
+   */
+  http.delete('/api/node', ({ request }) => {
+    const hasCredential = !!mockCurrentUser || mockShareLinkFolderId !== null
+    if (!hasCredential) return new HttpResponse(null, { status: 401 })
+
+    const id = new URL(request.url).searchParams.get('id') ?? ''
+    const node = nodes.get(id)
+    // A node the gate can't load can't be authorised — matches the live gate,
+    // which leaves `allow` false (→ 403) when the record query returns nothing.
+    if (!node) {
+      return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+
+    const access = checkAccess(id, 'edit')
+    if (access === '401') return new HttpResponse(null, { status: 401 })
+    if (access === '403') return new HttpResponse(null, { status: 403 })
+
+    // Refuse to orphan a non-empty subtree on a direct delete.
+    if (node.type === 'folder') {
+      const hasChildren = [...nodes.values()].some((n) => n.parentId === id)
+      if (hasChildren) {
+        return HttpResponse.json({ error: 'folder_not_empty' }, { status: 409 })
+      }
+    }
+
+    // Hard delete: purge the stored object(s), then drop the record + ACL.
+    if (node.type === 'file' && node.storageKey) {
+      objects.delete(node.storageKey)
+    } else if (node.type === 'site') {
+      // Purge every object the site's manifest references (mirrors the live
+      // siteKeys → file_delete keys[] step). Manifest values are serve paths
+      // (/api/uploads/content/<storageKey>); strip back to the objects key.
+      const manifest = sites.get(id)?.manifest ?? {}
+      for (const target of Object.values(manifest)) {
+        const key = target.replace(/^\/api\/uploads\/content\//, '')
+        if (key) objects.delete(key)
+      }
+    }
+    nodes.delete(id)
+    nodeAcl.delete(id)
+    grants.delete(id)
+    sites.delete(id)
+    return HttpResponse.json({ deleted: true, id })
   }),
 
   /**
