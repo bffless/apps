@@ -12,7 +12,7 @@ import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '..
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
 import type { HandoffNode } from '../lib/nodes'
-import { useSession } from '../lib/session'
+import { useSession, fetchWithReauth } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
 import { ShareDialog } from '../components/ShareDialog'
@@ -286,7 +286,7 @@ function MarkdownPreview({ url }: { url: string }) {
 
   useEffect(() => {
     let cancelled = false
-    fetch(url)
+    fetchWithReauth(url)
       .then((r) => r.text())
       .then((text) => {
         if (!cancelled) setResult({ url, html: renderMarkdown(text) })
@@ -327,7 +327,7 @@ function SourceView({ url }: { url: string }) {
 
   useEffect(() => {
     let cancelled = false
-    fetch(url)
+    fetchWithReauth(url)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.text()
