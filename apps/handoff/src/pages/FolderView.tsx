@@ -989,12 +989,12 @@ export function FolderView({ folderId }: FolderViewProps) {
           {uploadErrorMsg}
         </div>
       )}
-      {uploadDone && uploadedNodes.length === 0 && (
+      {uploadDone && (!canManage || uploadedNodes.length === 0) && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
           File uploaded successfully.
         </div>
       )}
-      {uploadedNodes.length > 0 && (
+      {canManage && uploadedNodes.length > 0 && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-medium text-green-800">Uploaded — copy a share link</p>

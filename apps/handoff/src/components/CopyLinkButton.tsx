@@ -17,6 +17,7 @@ export function CopyLinkButton({ status, onClick, label = 'Copy link', className
   return (
     <button
       type="button"
+      aria-live="polite"
       disabled={status === 'busy'}
       onClick={(e) => {
         e.preventDefault()
