@@ -24,6 +24,15 @@ export interface Crumb { id: string; name: string }
 const ROOT_CRUMB: Crumb = { id: 'root', name: 'Home' }
 const MAX_HOPS = 64
 
+/**
+ * Route a node's location resolves to: the parent Folder when the node lives in
+ * one, else Home ('/'). Used by the viewer's Back button and breadcrumb so they
+ * return to the parent Folder rather than the root (PRD stories 26–27).
+ */
+export function parentFolderPath(parentId: string): string {
+  return parentId && parentId !== 'root' ? `/folder/${parentId}` : '/'
+}
+
 export function buildBreadcrumb(nodesById: Record<string, HandoffNode>, folderId: string): Crumb[] {
   if (folderId === 'root') return [ROOT_CRUMB]
 
