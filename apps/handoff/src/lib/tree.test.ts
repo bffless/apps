@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildBreadcrumb, buildAncestorFolderChain } from './tree'
+import { buildBreadcrumb, buildAncestorFolderChain, parentFolderPath } from './tree'
 import { evaluateAccess } from './acl'
 import type { Crumb } from './tree'
 import type { FolderLink } from './acl'
@@ -118,6 +118,24 @@ describe('buildBreadcrumb', () => {
   it('unknown folderId (not in map) → still returns [{ id:"root", name:"Home" }]', () => {
     const result = buildBreadcrumb({}, 'unknown-id')
     expect(result).toEqual<Crumb[]>([{ id: 'root', name: 'Home' }])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parentFolderPath tests — drives the viewer's Back button (PRD story 27).
+// ---------------------------------------------------------------------------
+
+describe('parentFolderPath', () => {
+  it('returns the parent folder route when the node lives in a folder', () => {
+    expect(parentFolderPath('abc')).toBe('/folder/abc')
+  })
+
+  it('returns Home for a top-level item (parentId === "root")', () => {
+    expect(parentFolderPath('root')).toBe('/')
+  })
+
+  it('returns Home when parentId is empty/missing', () => {
+    expect(parentFolderPath('')).toBe('/')
   })
 })
 

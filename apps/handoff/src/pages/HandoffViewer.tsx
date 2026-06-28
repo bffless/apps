@@ -7,7 +7,7 @@
  */
 
 import { useRef, useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown } from '../lib/markdown'
@@ -16,7 +16,8 @@ import { useSession, fetchWithReauth } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
 import { ShareDialog } from '../components/ShareDialog'
-import { TrashIcon } from '../components/icons'
+import { TrashIcon, ChevronRightIcon } from '../components/icons'
+import { parentFolderPath } from '../lib/tree'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { InvalidLink } from '../components/InvalidLink'
 import { toast } from '../lib/toast'
@@ -73,7 +74,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
     try {
       await deleteNode({ id: node.id, parentId: node.parentId }).unwrap()
       toast(`Deleted “${node.name}”.`)
-      navigate(node.parentId && node.parentId !== 'root' ? `/folder/${node.parentId}` : '/')
+      navigate(parentFolderPath(node.parentId))
     } catch {
       setDeleting(false)
       toast(`Couldn’t delete “${node.name}”. Please try again.`, 'error')
@@ -91,11 +92,11 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       className="sticky top-14 flex items-center gap-2 border-b border-border bg-surface/90 px-4 py-2 backdrop-blur"
       style={{ zIndex: 'var(--z-sticky)' }}
     >
-      {/* Back */}
+      {/* Back — returns to the parent Folder (PRD story 27), not always Home. */}
       <button
         type="button"
-        onClick={() => navigate('/')}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+        onClick={() => navigate(parentFolderPath(node.parentId))}
+        className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
           <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -103,8 +104,30 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         Back
       </button>
 
-      {/* Title */}
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{node.name}</span>
+      {/* Location breadcrumb (PRD story 26): Home › [parent folder] › file.
+          The parent folder crumb only renders once its node has resolved (it is
+          skipped for guests / root items), so the chain degrades gracefully. */}
+      <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted">
+        <Link
+          to="/"
+          className="shrink-0 rounded px-1 no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+        >
+          Home
+        </Link>
+        {!isRoot && parentNode && (
+          <span className="flex min-w-0 items-center gap-1">
+            <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted/60" />
+            <Link
+              to={`/folder/${node.parentId}`}
+              className="truncate rounded px-1 no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              {parentNode.name}
+            </Link>
+          </span>
+        )}
+        <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted/60" />
+        <span className="min-w-0 flex-1 truncate font-medium text-ink">{node.name}</span>
+      </nav>
 
       {/* Share — owners/admins of the parent folder. Root items: disabled + explanation. */}
       {isRoot ? (
