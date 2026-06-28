@@ -32,22 +32,25 @@ await run({
   // never merges to HEAD, so your local `main` is untouched (honours the
   // workspace CLAUDE.md "ask before committing / no merge to main" rule). The
   // agent itself creates a per-issue branch, pushes it, and opens the PR from
-  // inside the sandbox (see prompt.md). "branch" is valid with copyToWorktree;
-  // only "head" mode is incompatible.
+  // inside the sandbox (see prompt.md).
   branchStrategy: { type: "branch", branch: "sandcastle/work" },
 
-  // Copy node_modules from the host into the worktree before the sandbox starts,
-  // so the pnpm install below is a fast reconcile rather than a cold install.
-  copyToWorktree: ["node_modules"],
+  // NOTE: we deliberately do NOT copyToWorktree node_modules. The host's
+  // node_modules is created with the host pnpm store path (/home/rico/...), which
+  // doesn't exist in the container — so pnpm treats it as incompatible and tries
+  // to purge+reinstall, which aborts non-interactively
+  // (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY). A clean install in the container
+  // is correct; the cold-install cost can be optimised later (e.g. a warm pnpm
+  // store baked into the image or a persistent store volume).
 
   // Lifecycle hooks — commands grouped by where they run (host or sandbox).
   hooks: {
     sandbox: {
       // onSandboxReady runs once after the sandbox is initialised and the repo is
-      // synced in, before the agent starts. This is a pnpm workspace, so reconcile
-      // deps with pnpm (the image has pnpm@10.33.0 via corepack). --frozen-lockfile
-      // is fast when the copied node_modules already matches the lockfile.
-      onSandboxReady: [{ command: "pnpm install --frozen-lockfile" }],
+      // synced in, before the agent starts. Clean pnpm install from the lockfile
+      // (image has pnpm@10.33.0 via corepack). CI=true keeps pnpm fully
+      // non-interactive (no purge/confirm prompts, which abort without a TTY).
+      onSandboxReady: [{ command: "CI=true pnpm install --frozen-lockfile" }],
     },
   },
 });
