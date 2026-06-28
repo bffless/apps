@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "j5s-dev": {
+      "type": "http",
+      "url": "https://admin.j5s.dev/mcp",
+      "headers": {
+        "X-API-Key": "${BFFLESS_MCP_API_KEY}"
+      }
+    }
+  }
+}
