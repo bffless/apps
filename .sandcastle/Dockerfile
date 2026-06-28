@@ -16,9 +16,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
   && rm -rf /var/lib/apt/lists/*
 
 # Enable pnpm via corepack (this is a pnpm workspace — `bffless-apps`).
-# Done as root, before the USER switch, so the shims land in /usr/local/bin.
-# Pin to the repo's packageManager version to match the lockfile.
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+# `corepack enable` runs as root so the shims land in /usr/local/bin. The actual
+# pnpm download (`corepack prepare`) happens later AS THE agent USER, so it's
+# cached in /home/agent — otherwise the runtime user can't see a root-owned cache
+# and would try to re-download on first `pnpm` call (which fails non-interactively).
+RUN corepack enable
+# Never block on corepack's "about to download" prompt in non-interactive runs.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 # Build-args for UID/GID alignment: sandcastle docker build-image
 # defaults these to the host user's UID/GID so image-built files
@@ -29,6 +33,11 @@ ARG AGENT_GID=1000
 # Rename the base image's "node" user to "agent" and align UID/GID.
 RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d /home/agent -m -l agent node
 USER ${AGENT_UID}:${AGENT_GID}
+
+# Bake pnpm 10.33.0 into the agent user's corepack cache (matches the repo's
+# packageManager field). Runs as `agent` so the cache lives in /home/agent and is
+# used at runtime with no download — fixes the onSandboxReady `pnpm install` step.
+RUN corepack prepare pnpm@10.33.0 --activate
 
 # Install Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash
