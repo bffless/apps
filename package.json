@@ -14,12 +14,16 @@
     "handoff:dev": "pnpm --filter handoff dev",
     "handoff:build": "pnpm --filter handoff build",
     "handoff:lint": "pnpm --filter handoff lint",
-    "handoff:test": "pnpm --filter handoff test:run"
+    "handoff:test": "pnpm --filter handoff test:run",
+    "sandcastle": "npx tsx .sandcastle/main.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
       "@tailwindcss/oxide"
     ]
+  },
+  "devDependencies": {
+    "@ai-hero/sandcastle": "^0.10.0"
   }
 }
