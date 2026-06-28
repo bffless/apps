@@ -27,15 +27,22 @@ This repo ships project skills under `.claude/skills/` — including the **bffle
 5. **Verify** — run the relevant app's checks and fix any failures before continuing. This is a pnpm workspace:
    - Handoff: `pnpm handoff:lint && pnpm handoff:test && pnpm handoff:build`
    - Studio: `pnpm studio:lint && pnpm studio:test && pnpm studio:build`
-6. **Branch + commit** — create a dedicated branch and make a single commit:
+6. **Screenshot (visual/UI changes only — skip entirely for backend-only changes)** — verify the change in a real headless browser and capture screenshots for the PR:
+   - Start the app's dev server in the background and wait for it to be ready: `pnpm --filter <app> dev` (Vite on `http://localhost:5173`; it proxies `/api` + `/_bffless` to live j5s.dev).
+   - Screenshot the affected page(s): `node scripts/shot.mjs http://localhost:5173/<path> --out .sandcastle/screenshots/<name>.png --full`. It exits non-zero if the page had console errors or failed requests — treat that as a failure and fix it, then re-shoot.
+   - **Public pages only.** A cold headless session has no login session, so gated `/api`/authed routes won't render. If the change is behind auth, say so in the PR and skip the screenshot — do not fake a session.
+   - **Upload to Handoff** using the `handoff-api` skill (`BFFLESS_API_KEY` is set in the env): create a folder `sandcastle-issue-<N>`, upload each PNG into it, then create a folder share link (`POST /api/share-links`). `.sandcastle/screenshots/` is gitignored, so the PNGs are never committed.
+   - Stop the dev server when done.
+7. **Branch + commit** — create a dedicated branch and make a single commit:
    - `git switch -c sandcastle/issue-<N>-<short-slug>`
    - Commit message MUST start with `SANDCASTLE:` and include the issue number (e.g. `SANDCASTLE: fix upload retry (#42)`), the key decisions made, and the files changed.
-7. **Push** — the `origin` remote is SSH, but the sandbox only has `GH_TOKEN` (HTTPS). Push over HTTPS with the token; do not reconfigure the host remote:
+8. **Push** — the `origin` remote is SSH, but the sandbox only has `GH_TOKEN` (HTTPS). Push over HTTPS with the token; do not reconfigure the host remote:
    - `git push "https://x-access-token:${GH_TOKEN}@github.com/bffless/apps.git" HEAD:sandcastle/issue-<N>-<short-slug>`
-8. **Open a PR** — target `main`:
+9. **Open a PR** — target `main`:
    - `gh pr create --base main --head sandcastle/issue-<N>-<short-slug> --title "SANDCASTLE: <summary> (#<N>)" --body "<what changed, why, and how it was verified>. Closes #<N>"`
+   - If you captured screenshots, include the Handoff share link in the body: `📸 Screenshots (Handoff): <share-link>` (a link, not an inline image — Handoff content is private).
    - The PR triggers the repo's `preview-handoff.yml` / `preview-studio.yml` workflows, which deploy to the shared `handoff-preview` / `studio-preview` alias and comment a live preview URL.
-9. **Link the issue** — leave a comment on the issue with the PR link: `gh issue comment <N> --body "Opened PR for review: <pr-url>"`.
+10. **Link the issue** — leave a comment on the issue with the PR link: `gh issue comment <N> --body "Opened PR for review: <pr-url>"`.
 
 ## Rules
 
