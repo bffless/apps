@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://admin.j5s.dev/mcp",
       "headers": {
-        "X-API-Key": "${BFFLESS_MCP_API_KEY}"
+        "X-API-Key": "${BFFLESS_API_KEY}"
       }
     }
   }
