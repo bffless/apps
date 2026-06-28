@@ -1,5 +1,8 @@
 # dependencies
 node_modules
+# pnpm's project-local store — created inside the Sandcastle sandbox (the worktree
+# sits on a different filesystem than the agent's home, so pnpm puts its store here).
+.pnpm-store/
 
 # builds
 dist
