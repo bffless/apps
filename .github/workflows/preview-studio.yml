@@ -1,11 +1,14 @@
 name: Preview Studio on BFFless
 
 # PR previews for Studio. Any PR that touches apps/studio (or this file) builds
-# the app and deploys it to a single shared `studio-preview` alias, then comments
-# the URL on the PR. The alias is reused — the newest PR build wins — so this is
-# best for one preview at a time. The studio proxy rule set is attached so /api/*
-# works; the project-wide cross-origin-isolation header rule is inherited so the
-# Export step's multithreaded ffmpeg.wasm runs.
+# the app and deploys it to the shared `studio-preview` alias, then comments the
+# URL on the PR. The alias is reused — the newest PR build wins — so this is best
+# for one preview at a time. We deliberately reuse one stable alias rather than
+# minting a per-PR alias: each new alias is a new origin that would need its own
+# GCS bucket CORS entry AND its own proxy-rule-set wiring. studio-preview is
+# already CORS-allowlisted and carries the studio proxy rule set, so /api/* works;
+# the project-wide cross-origin-isolation header rule is inherited so the Export
+# step's multithreaded ffmpeg.wasm runs.
 on:
   pull_request:
     paths:

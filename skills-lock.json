@@ -1,6 +1,36 @@
 {
   "version": 1,
   "skills": {
+    "bffless-authentication": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/authentication/SKILL.md",
+      "computedHash": "69bf4207a1676216d07fd2c20332e0eca79902ca2cc85cdbd7c035fd98c8f09e"
+    },
+    "bffless-authorization": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/authorization/SKILL.md",
+      "computedHash": "7fc5493312978430daa056dca6f319cc33354eef78cbe00263672ccdd807dcaf"
+    },
+    "bffless": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/bffless/SKILL.md",
+      "computedHash": "9fcce6a5de9d4075d456a58adcd20e8d1d02d4c3a5bc746efd2464cdfc0359ee"
+    },
+    "bffless-cache-and-storage": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/cache-and-storage/SKILL.md",
+      "computedHash": "6adecc896bae8644ee7e9df47d75f9a9d319c6cdddd7d2128f03128fe6d43b87"
+    },
+    "bffless-chat": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/chat/SKILL.md",
+      "computedHash": "9a6fd969e5322cab23e4b9f4213a9808ee168a8e6fb932c058ae1efee04f43f1"
+    },
     "grill-with-docs": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -13,11 +43,41 @@
       "skillPath": "skills/productivity/grilling/SKILL.md",
       "computedHash": "ef685a6fa0bbe73b05bbd8dc1ec97258191587f07c6aa7dbc9006675ceb8f90f"
     },
+    "bffless-pipeline-to-skill": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/pipeline-to-skill/SKILL.md",
+      "computedHash": "ac4aae57ec89b3ffa3a99aa92704a4d4f559bfff7cb8515f96b9626acbcf39e5"
+    },
+    "bffless-pipelines": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/pipelines/SKILL.md",
+      "computedHash": "81f523957500dfb4fa409f9e24fac7e49d1e03d021cdfdfb30b8d90f57fc03b4"
+    },
+    "bffless-proxy-rules": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/proxy-rules/SKILL.md",
+      "computedHash": "37db49a9e768780f9c56ba77e2afcc3c8ae3591544bbe540f5b2c4be5aaede35"
+    },
+    "bffless-repository": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/repository/SKILL.md",
+      "computedHash": "071967f5748a3266f680ded9d37f2531fa1fbba417442f0e61ecd096f1b98cc9"
+    },
     "setup-matt-pocock-skills": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
       "computedHash": "400da4521ed701c99e8824ae7b71c7859632ee91481b3715890036cf8aec6857"
+    },
+    "bffless-share-links": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/share-links/SKILL.md",
+      "computedHash": "a85c3b5fdc001867c6cebcb4b17a70d90e2c621bf7daf017183bdf0e73350a1f"
     },
     "to-issues": {
       "source": "mattpocock/skills",
@@ -30,6 +90,36 @@
       "sourceType": "github",
       "skillPath": "skills/engineering/to-prd/SKILL.md",
       "computedHash": "5a733e19d825f22e83de52e68b8840c9fd2fa7501282277a122c1aa28a922059"
+    },
+    "bffless-traffic-splitting": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/traffic-splitting/SKILL.md",
+      "computedHash": "dea18a82d8aed14e2afd3aa35198ae8021c53e9e0a7458f1dc8ec2c173f72431"
+    },
+    "bffless-upload-artifact": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/upload-artifact/SKILL.md",
+      "computedHash": "e71fec56277c7e511703bfd690bf32bd7db06467c50f2c9e14505062c17eed8c"
+    },
+    "bffless-use-bff-state": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/use-bff-state/SKILL.md",
+      "computedHash": "42a6d1159bf8a17af0fb5ac3e6f5045359724e4c14013fa5400f6262963338b5"
+    },
+    "bffless-visual-plans": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/visual-plans/SKILL.md",
+      "computedHash": "012de285a05f146369902f741661ba65f32a5eae0fbfef7fc4f233e8451481af"
+    },
+    "bffless-visual-recaps": {
+      "source": "bffless/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bffless/skills/visual-recaps/SKILL.md",
+      "computedHash": "e7d9d1e7a6bebd316441a8a325d888930ec4c9703567bf9d3d4b4ab064272539"
     }
   }
 }

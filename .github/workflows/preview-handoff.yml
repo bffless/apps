@@ -1,10 +1,14 @@
 name: Preview Handoff on BFFless
 
 # PR previews for Handoff. Any PR that touches apps/handoff (or this file) builds
-# the app and deploys it to a single shared `handoff-preview` alias, then comments
-# the URL on the PR. The alias is reused — the newest PR build wins — so this is
-# best for one preview at a time. The handoff proxy rule set is attached so /api/*
-# (presigned uploads, node tree, serving, ACL, grants, share links) works.
+# the app and deploys it to the shared `handoff-preview` alias, then comments the
+# URL on the PR. The alias is reused — the newest PR build wins — so this is best
+# for one preview at a time. We deliberately reuse one stable alias rather than
+# minting a per-PR alias: each new alias is a new origin that would need its own
+# GCS bucket CORS entry (Handoff's presigned uploads go browser→bucket directly)
+# AND its own proxy-rule-set wiring. handoff-preview is already CORS-allowlisted
+# and carries the handoff proxy rule set, so /api/* (presigned uploads, node tree,
+# serving, ACL, grants, share links) just works.
 on:
   pull_request:
     paths:
