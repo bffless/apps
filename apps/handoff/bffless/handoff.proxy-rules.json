@@ -1539,6 +1539,171 @@
       },
       "isEnabled": true,
       "description": "Validate a folder-scoped share token and 302-redirect to a presigned raw file URL (one-request access)."
+    },
+    {
+      "pathPattern": "/api/public/content/*",
+      "method": "GET",
+      "targetUrl": "http://internal/pipeline",
+      "stripPrefix": true,
+      "order": 21,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff serve public content",
+        "steps": [
+          {
+            "id": "parsePath",
+            "name": "parsePath",
+            "config": {
+              "code": "function handler({ request, deployment }) {\n  var p = (request && request.path) || '';\n  var marker = '/api/public/content/';\n  var i = p.indexOf(marker);\n  var rest = (i >= 0) ? p.slice(i + marker.length) : '';\n  var q = rest.indexOf('?');\n  if (q >= 0) rest = rest.slice(0, q);\n  var owner = (deployment && deployment.owner) || '';\n  var repo = (deployment && deployment.repo) || '';\n  var fullKey = (rest && owner && repo) ? (owner + '/' + repo + '/uploads/content/' + rest) : '';\n  return { rest: rest, fullKey: fullKey, hasKey: !!fullKey };\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "nodeByKey",
+            "name": "nodeByKey",
+            "config": {
+              "filters": {
+                "storage_path": {
+                  "op": "eq",
+                  "value": "steps.parsePath.fullKey"
+                }
+              },
+              "pageSize": 1,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.parsePath.hasKey"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "publicGate",
+            "name": "publicGate",
+            "config": {
+              "code": "function handler({ steps }) {\n  var MAX = 10485760;\n  var rows = (steps && steps.nodeByKey) || [];\n  if (Object.prototype.toString.call(rows) !== '[object Array]') rows = [];\n  var node = rows.length ? rows[0] : null;\n  var allow = false;\n  if (node && typeof node === 'object') {\n    var isFile = node.nodeType === 'file' || node.nodeType == null;\n    var isPublic = node.public === true || node.public === 'true';\n    var sizeNum = (node.size == null) ? NaN : Number(node.size);\n    var withinLimit = (!isNaN(sizeNum) && isFinite(sizeNum)) ? (sizeNum <= MAX) : false;\n    allow = isFile && isPublic && withinLimit;\n  }\n  return { allow: allow, deny: !allow };\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "content",
+              "cacheMaxAge": 300,
+              "condition": "steps.publicGate.allow"
+            },
+            "handlerType": "file_serve_handler"
+          },
+          {
+            "id": "notPublic",
+            "name": "notPublic",
+            "config": {
+              "body": "",
+              "status": 404,
+              "condition": "steps.publicGate.deny",
+              "contentType": "text/plain"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "description": "Public (no-auth) reverse-proxy serve. Resolves the file node by storage_path and streams its bytes THROUGH the file server (file_serve_handler) only when the node is explicitly flagged public and within the 10 MB ceiling; the bucket stays private (no presigned/public bucket URL). 404 otherwise. Cache-Control is public (max-age 300) since the content is genuinely public; the short TTL bounds revocation lag when a node is flipped back to private."
+      },
+      "isEnabled": true,
+      "description": "Serve an explicitly-public small file's bytes at a stable, anonymous URL (reverse-proxied through the file server; bucket never exposed)."
+    },
+    {
+      "pathPattern": "/api/public",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 22,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "pipelineConfig": {
+        "name": "Handoff toggle node public",
+        "steps": [
+          {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) {\n  var body = (request && request.body) || {};\n  var id = String(body.id || '');\n  var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;\n  var idOk = UUID.test(id);\n  var makePublic = body.public === true || body.public === 'true';\n  return { id: id, idOk: idOk, makePublic: makePublic };\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "node",
+            "name": "node",
+            "config": {
+              "recordId": "steps.pre.id",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.idOk"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "config": {
+              "code": "function handler({ user, steps }) {\n  var node = (steps && steps.node) || {};\n  if (node == null || typeof node !== 'object') node = {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var nodeId = node.id || node.recordId || node.record_id || null;\n  var isFile = (node.nodeType || 'file') === 'file';\n  var isOwner = !!uid && !!node.ownerId && node.ownerId === uid;\n  var allowed = !!nodeId && isFile && (isAdmin || isOwner);\n  return { allowed: allowed, denied: !allowed };\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "config": {
+              "recordId": "steps.pre.id",
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "fields": {
+                "public": "steps.pre.makePublic"
+              },
+              "condition": "steps.check.allowed"
+            },
+            "handlerType": "data_update"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var node = (steps && steps.node) || {};\n  if (node == null || typeof node !== 'object') node = {};\n  var makePublic = !!(steps && steps.pre && steps.pre.makePublic);\n  var sp = node.storage_path || '';\n  var marker = '/uploads/content/';\n  var i = sp.indexOf(marker);\n  var rest = (i >= 0) ? sp.slice(i + marker.length) : '';\n  var url = (makePublic && rest) ? ('/api/public/content/' + rest) : null;\n  return { result: { public: makePublic, url: url } };\n}\n",
+              "condition": "steps.check.allowed"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "config": {
+              "body": "{{{steps.shape.result}}}",
+              "status": 200,
+              "condition": "steps.check.allowed",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.check.denied",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [
+          {
+            "type": "auth_required",
+            "config": {
+              "allowApiKey": true
+            }
+          }
+        ],
+        "description": "Mark a file node public (or private). Owner/admin only. Sets handoff_nodes.public and returns { public, url } where url is the stable /api/public/content/<key> reverse-proxy path. Opt-in: default stays private."
+      },
+      "isEnabled": true,
+      "description": "Toggle a file node's public flag (owner/admin); returns the stable anonymous reverse-proxy URL."
     }
   ]
 }
