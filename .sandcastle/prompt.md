@@ -16,7 +16,7 @@ You are an autonomous coding agent working in the `bffless-apps` monorepo (apps:
 
 ## Domain knowledge
 
-This repo ships project skills under `.claude/skills/` — including the **bffless** skills (`proxy-rules`, `pipelines`, `chat`, `authentication`, `repository`, `use-bff-state`, `upload-artifact`, …). The apps have **no server**: each app's `/api/*` is a BFFless proxy rule set. Before changing anything that touches data, uploads, auth, or `/api/*`, read the relevant bffless skill so you use the platform correctly.
+This repo ships project skills under `.claude/skills/` — including the **bffless** skills, named `bffless` (overview) plus `bffless-<topic>`: `bffless-proxy-rules`, `bffless-pipelines`, `bffless-chat`, `bffless-authentication`, `bffless-repository`, `bffless-use-bff-state`, `bffless-upload-artifact`, …. The apps have **no server**: each app's `/api/*` is a BFFless proxy rule set. Before changing anything that touches data, uploads, auth, or `/api/*`, read the relevant `bffless-*` skill so you use the platform correctly.
 
 ## Workflow
 
