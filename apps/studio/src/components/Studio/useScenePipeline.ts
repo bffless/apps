@@ -3,6 +3,7 @@ import { STAGE_DEFS, PER_VIDEO_STAGES, GLOBAL_STAGES, type Stage, type StageId }
 import { narrationSeconds, type Cut, type NarrationSegment, type Scene } from '../../lib/scenes'
 import { combinedTimedTranscript, toScenes, type DirectorScene } from '../../lib/director'
 import { buildDescribeRequest, toDescription } from '../../lib/describe'
+import { buildBlogRequest, toBlog } from '../../lib/blog'
 import { buildThumbnailDraftRequest, toThumbnailPrompt, toThumbnailImage } from '../../lib/thumbnail'
 import {
   toRefinement,
@@ -44,6 +45,7 @@ import {
   useRefineSceneMutation,
   useNarrateMutation,
   useDescribeMutation,
+  useBlogStartMutation,
   useThumbnailDraftMutation,
   useThumbnailRenderMutation,
   useUploadMutation,
@@ -72,6 +74,9 @@ import {
   setFinalCutUrl,
   setDescription,
   setDescriptionTitle,
+  setBlogRunning,
+  setBlogResult,
+  setBlogError,
   setYoutubeThumbnail,
   setDuration,
   setFileName,
@@ -214,6 +219,7 @@ export function useScenePipeline() {
   const synopsis = useAppSelector((s) => selectActive(s).synopsis)
   const description = useAppSelector((s) => selectActive(s).description)
   const youtubeThumbnail = useAppSelector((s) => selectActive(s).youtubeThumbnail)
+  const blog = useAppSelector((s) => selectActive(s).blog)
   const direction = useAppSelector((s) => selectActive(s).direction)
   const directorPromptJobId = useAppSelector((s) => selectActive(s).directorPromptJobId)
   const scenesJobId = useAppSelector((s) => selectActive(s).scenesJobId)
@@ -237,6 +243,7 @@ export function useScenePipeline() {
   const [refineSceneReq] = useRefineSceneMutation()
   const [narrateReqRaw] = useNarrateMutation()
   const [describeReq] = useDescribeMutation()
+  const [blogStartReq] = useBlogStartMutation()
   const [thumbnailDraftReq] = useThumbnailDraftMutation()
   const [thumbnailRenderReq] = useThumbnailRenderMutation()
   const [uploadReqRaw] = useUploadMutation()
@@ -364,7 +371,7 @@ export function useScenePipeline() {
    * the network (never a stale cached `pending`) and leaves no cache subscription.
    */
   const pollJob = useCallback(
-    async (jobId: string): Promise<{ kind: 'scenes' | 'refine' | 'transcribe'; result: unknown }> => {
+    async (jobId: string): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog'; result: unknown }> => {
       const deadline = Date.now() + POLL_TIMEOUT_MS
       for (;;) {
         const job = await dispatch(
@@ -577,6 +584,29 @@ export function useScenePipeline() {
     [pollJob, dispatch, patch, sources],
   )
 
+  /**
+   * Drive a blog-post job to completion and commit the Markdown (issue #68).
+   * Shared by the live `generateBlog` action and resume-on-reload; `pollsInFlight`
+   * keeps the two from double-polling one job. Clears the post's in-flight job id
+   * on any terminal status (success commits the markdown, failure flags `error`).
+   */
+  const completeBlogJob = useCallback(
+    async (jobId: string) => {
+      if (pollsInFlight.has(jobId)) return
+      pollsInFlight.add(jobId)
+      try {
+        const { result } = await pollJob(jobId)
+        const { markdown } = toBlog(result)
+        dispatch(setBlogResult({ markdown }))
+      } catch {
+        dispatch(setBlogError())
+      } finally {
+        pollsInFlight.delete(jobId)
+      }
+    },
+    [pollJob, dispatch],
+  )
+
   // Resume any in-flight job after a hard reload (redux-persist brings back the
   // persisted job ids). The `pollsInFlight` guard inside the `complete*` helpers
   // makes this safe to re-run and safe to race with a live action — only one poll
@@ -594,8 +624,9 @@ export function useScenePipeline() {
       for (const s of sources) {
         if (s.transcribeJobId) void completeTranscribeJob(s.id, s.transcribeJobId)
       }
+      if (blog?.status === 'running' && blog.jobId) void completeBlogJob(blog.jobId)
     })
-  }, [scenesJobId, sourceUrl, scenes, sources, completeDirectorJob, completeRefineJob, completeTranscribeJob])
+  }, [scenesJobId, sourceUrl, scenes, sources, blog, completeDirectorJob, completeRefineJob, completeTranscribeJob, completeBlogJob])
 
   // Cast seeding (story 10b): ensure at least one person exists when the voice
   // step is reached, so the single-narrator common case is one decision with no
@@ -1586,6 +1617,32 @@ export function useScenePipeline() {
     }
   }, [scenes, synopsis, describeReq, dispatch])
 
+  // ---- Export: generate the blog post (issue #68) ---------------------------
+
+  // Generate a Markdown blog post from the FINAL kept script (+ the creator's
+  // direction) via the async `/api/blog` job, mirroring the master director:
+  // enqueue, persist the job id + inputs (so a reload resumes polling), then
+  // drive it to completion (which commits the markdown). On-demand only — the
+  // Export step never auto-runs this. Errors surface on the post's `error` status.
+  const generateBlog = useCallback(
+    async (directionInput: string) => {
+      const req = buildBlogRequest(scenes, directionInput)
+      if (!req.script) {
+        setSceneError('Build at least one scene before generating a blog post.')
+        return
+      }
+      try {
+        const { jobId } = await blogStartReq(req).unwrap()
+        dispatch(setBlogRunning({ direction: req.direction, script: req.script, jobId }))
+        await completeBlogJob(jobId)
+      } catch (e) {
+        setSceneError(stageError(e))
+        dispatch(setBlogError())
+      }
+    },
+    [scenes, blogStartReq, dispatch, completeBlogJob],
+  )
+
   // Producer edit of the recommended title (persisted on the description layer).
   const editDescriptionTitle = useCallback(
     (title: string) => dispatch(setDescriptionTitle(title)),
@@ -1734,6 +1791,8 @@ export function useScenePipeline() {
     description,
     describing,
     generateDescription,
+    blog,
+    generateBlog,
     editDescriptionTitle,
     signFor,
     youtubeThumbnail,

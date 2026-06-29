@@ -22,6 +22,22 @@ import type { AutoBuildRun } from '../lib/autoBuild'
 import type { VideoDescription } from '../lib/describe'
 import type { ContactSheet } from '../lib/frames'
 
+/**
+ * The Export step's generated blog post (story for issue #68). The Markdown
+ * document plus the inputs it was written from: the creator's `direction` and
+ * the final `script` it was generated from — the staleness key, so a later
+ * story can mark the post stale when the script changes. `status` drives the
+ * card's visible state; `jobId` is the in-flight `/api/blog` job so a hard
+ * reload resumes polling (mirrors `scenesJobId`). Null until first generated.
+ */
+export type BlogPost = {
+  markdown: string
+  direction: string
+  script: string
+  status: 'idle' | 'running' | 'done' | 'error'
+  jobId?: string | null
+}
+
 /** A word with its time markers, as transcription returns them. `speaker` is the
  *  diarization label (story 10a), e.g. `SPEAKER_00`; absent on old transcripts. */
 export type TranscriptWord = { text: string; start: number; end: number; speaker?: string }
@@ -203,6 +219,14 @@ export type ProjectWorkingState = {
    */
   youtubeThumbnail: { notes: string; prompt: string; url: string } | null
   /**
+   * The Export page's generated blog post (issue #68): the Markdown document,
+   * the creator's direction, the final script it was written from (staleness
+   * key), the card status, and the in-flight `/api/blog` job id (so a reload
+   * resumes polling). Persisted + synced as part of the working state, so it
+   * restores for the same user on another device. Null until first generated.
+   */
+  blog: BlogPost | null
+  /**
    * All source videos in the project (story 09a). Each holds its own per-video
    * prep state (sourceUrl, audioUrl, words, stageProgress, etc.). The single
    * top-level fields (sourceUrl, audioUrl, etc.) remain for backward compat
@@ -245,6 +269,7 @@ export function freshWorkingState(): ProjectWorkingState {
     finalCutUrl: null,
     description: null,
     youtubeThumbnail: null,
+    blog: null,
     sources: [],
     cast: [],
     speakerAssignments: {},
@@ -471,6 +496,33 @@ const studioSlice = createSlice({
       const w = active(state); if (!w) return
       if (w.description) w.description.title = action.payload
     },
+    /** Mark the blog post running for a fresh `/api/blog` job (issue #68): records
+     *  the direction + final script it's being generated from and the job id to
+     *  poll, while keeping any prior markdown on screen until the new one lands. */
+    setBlogRunning(state, action: PayloadAction<{ direction: string; script: string; jobId: string }>) {
+      const w = active(state); if (!w) return
+      w.blog = {
+        markdown: w.blog?.markdown ?? '',
+        direction: action.payload.direction,
+        script: action.payload.script,
+        status: 'running',
+        jobId: action.payload.jobId,
+      }
+    },
+    /** Commit the generated Markdown — replaces the post and clears the in-flight
+     *  job id (no-op if the blog state was reset out from under the job). */
+    setBlogResult(state, action: PayloadAction<{ markdown: string }>) {
+      const w = active(state); if (!w?.blog) return
+      w.blog.markdown = action.payload.markdown
+      w.blog.status = 'done'
+      w.blog.jobId = null
+    },
+    /** Terminal failure for the blog job: surface the error state, drop the job id. */
+    setBlogError(state) {
+      const w = active(state); if (!w?.blog) return
+      w.blog.status = 'error'
+      w.blog.jobId = null
+    },
     /** Append a new source video with fresh per-video prep progress (story 09a). */
     addSource(state, action: PayloadAction<{ id: string; fileName: string; duration: number }>) {
       const w = active(state); if (!w) return
@@ -643,6 +695,9 @@ export const {
   setDescription,
   setYoutubeThumbnail,
   setDescriptionTitle,
+  setBlogRunning,
+  setBlogResult,
+  setBlogError,
   addSource,
   patchSource,
   patchSourceStage,
