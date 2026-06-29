@@ -27,11 +27,15 @@ export type BlogScene = { title: string; transcript: string }
  * the staleness key for the stored post; the rest is the faithful-prose context
  * the live multimodal rule builds its prompt from (story 69): the recommended
  * `title` + `summary`, the director `synopsis`, the per-scene `{ title, transcript }`
- * outline, the creator's `direction`, the signed Contact-sheet `sheetUrls` (the
- * model's visual context, signed step-by-step server-side), and the `duration`.
+ * outline, the `timedTranscript` (the original recording bucketed into `[m:ss]`
+ * lines — the SAME timestamped transcript the director gets, so the model can
+ * align what's said to WHEN and pick accurate `frame:<t>` image timestamps), the
+ * creator's `direction`, the signed Contact-sheet `sheetUrls` (the model's visual
+ * context, signed step-by-step server-side), and the `duration`.
  */
 export type BlogRequest = {
   script: string
+  timedTranscript: string
   direction: string
   title: string
   summary: string
@@ -50,6 +54,9 @@ export type BlogContext = {
   description?: VideoDescription | null
   sheetUrls?: (string | null | undefined)[]
   duration?: number
+  /** The original recording as `[m:ss] words` lines (see `combinedTimedTranscript`)
+   *  — the model's text↔time bridge for choosing image `frame:<t>` timestamps. */
+  timedTranscript?: string | null
 }
 
 /** The model's output: one Markdown document (front-matter + prose). */
@@ -76,6 +83,7 @@ export function buildBlogRequest(
 ): BlogRequest {
   return {
     script: videoScript(scenes),
+    timedTranscript: trim(ctx.timedTranscript),
     direction: trim(direction),
     title: trim(ctx.description?.title),
     summary: trim(ctx.description?.summary),

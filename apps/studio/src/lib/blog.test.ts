@@ -39,6 +39,7 @@ describe('buildBlogRequest', () => {
     ]
     expect(buildBlogRequest(scenes, '  keep it punchy  ')).toEqual({
       script: 'Hello there.\n\nSecond scene.',
+      timedTranscript: '',
       direction: 'keep it punchy',
       title: '',
       summary: '',
@@ -60,9 +61,11 @@ describe('buildBlogRequest', () => {
         description: { title: '  The Title  ', summary: '  The summary.  ' },
         sheetUrls: ['/api/uploads/projects/p/thumbnails/a.jpg', null, '', undefined],
         duration: 123.4,
+        timedTranscript: '  [0:00] hi there  ',
       }),
     ).toEqual({
       script: 'Hi.',
+      timedTranscript: '[0:00] hi there',
       direction: 'friendly',
       title: 'The Title',
       summary: 'The summary.',
@@ -76,6 +79,7 @@ describe('buildBlogRequest', () => {
   it('tolerates an empty direction and no scenes', () => {
     expect(buildBlogRequest([], '')).toEqual({
       script: '',
+      timedTranscript: '',
       direction: '',
       title: '',
       summary: '',
