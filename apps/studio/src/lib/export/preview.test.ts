@@ -13,7 +13,7 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments = [seg(4, 8)]
     const plan = planScene({ segments, cuts: [], start: 0, end: 10 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-4-8.wav', offset: 4, duration: 4 },
+      { segmentIndex: 0, audioUrl: 'clip-4-8.wav', offset: 4, duration: 4, clipOffset: 0 },
     ])
   })
 
@@ -22,8 +22,21 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments = [seg(4, 8)]
     const plan = planScene({ segments, cuts: [{ start: 0, end: 3 }], start: 0, end: 10 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-4-8.wav', offset: 1, duration: 4 },
+      { segmentIndex: 0, audioUrl: 'clip-4-8.wav', offset: 1, duration: 4, clipOffset: 0 },
     ])
+  })
+
+  it('a cut INSIDE the front of a segment seeks the clip (clipOffset > 0)', () => {
+    // seg 2.37–8.73 (6.36s clip), cut 2–5.5 → dead 0–2, then the clip plays from
+    // 3.13s in (the kept tail), not from 0 (which would replay the cut-away open).
+    const segments = [seg(2.37, 8.73, 6.36)]
+    const plan = planScene({ segments, cuts: [{ start: 2, end: 5.5 }], start: 0, end: 8.73 })
+    const evs = audioEvents(plan, segments)
+    expect(evs).toHaveLength(1)
+    expect(evs[0].segmentIndex).toBe(0)
+    expect(evs[0].offset).toBeCloseTo(2, 6)
+    expect(evs[0].clipOffset).toBeCloseTo(3.13, 6)
+    expect(evs[0].duration).toBeCloseTo(3.23, 6)
   })
 
   it('clip duration is the plan audioSeconds (already clamped to the slot)', () => {
@@ -31,7 +44,7 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments = [seg(0, 6, 2.5)]
     const plan = planScene({ segments, cuts: [], start: 0, end: 6 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-0-6.wav', offset: 0, duration: 2.5 },
+      { segmentIndex: 0, audioUrl: 'clip-0-6.wav', offset: 0, duration: 2.5, clipOffset: 0 },
     ])
   })
 
@@ -39,7 +52,7 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments: AssembleSegment[] = [{ start: 0, end: 4 }, seg(6, 10)]
     const plan = planScene({ segments, cuts: [], start: 0, end: 10 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 1, audioUrl: 'clip-6-10.wav', offset: 6, duration: 4 },
+      { segmentIndex: 1, audioUrl: 'clip-6-10.wav', offset: 6, duration: 4, clipOffset: 0 },
     ])
   })
 
@@ -49,14 +62,14 @@ describe('audioEvents — clip offsets on the output timeline', () => {
       slices: [],
       video: [{ start: 0, end: 10 }],
       audio: [
-        { kind: 'clip', segmentIndex: 0, length: 4, audioSeconds: 4 },
-        { kind: 'clip', segmentIndex: 1, length: 6, audioSeconds: 6 },
+        { kind: 'clip', segmentIndex: 0, offset: 0, length: 4, audioSeconds: 4 },
+        { kind: 'clip', segmentIndex: 1, offset: 0, length: 6, audioSeconds: 6 },
       ],
       duration: 10,
     }
     const segments: AssembleSegment[] = [{ start: 0, end: 4 }, seg(4, 10)]
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 1, audioUrl: 'clip-4-10.wav', offset: 4, duration: 6 },
+      { segmentIndex: 1, audioUrl: 'clip-4-10.wav', offset: 4, duration: 6, clipOffset: 0 },
     ])
   })
 
@@ -65,7 +78,7 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments = [seg(102, 106)]
     const plan = planScene({ segments, cuts: [], start: 100, end: 110 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-102-106.wav', offset: 2, duration: 4 },
+      { segmentIndex: 0, audioUrl: 'clip-102-106.wav', offset: 2, duration: 4, clipOffset: 0 },
     ])
   })
 
@@ -74,8 +87,8 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments = [seg(0, 3), seg(5, 8)]
     const plan = planScene({ segments, cuts: [], start: 0, end: 10 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-0-3.wav', offset: 0, duration: 3 },
-      { segmentIndex: 1, audioUrl: 'clip-5-8.wav', offset: 5, duration: 3 },
+      { segmentIndex: 0, audioUrl: 'clip-0-3.wav', offset: 0, duration: 3, clipOffset: 0 },
+      { segmentIndex: 1, audioUrl: 'clip-5-8.wav', offset: 5, duration: 3, clipOffset: 0 },
     ])
   })
 
@@ -85,7 +98,7 @@ describe('audioEvents — clip offsets on the output timeline', () => {
     const segments = [seg(0, 10, 8)]
     const plan = planScene({ segments, cuts: [{ start: 4, end: 6 }], start: 0, end: 10 })
     expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-0-10.wav', offset: 0, duration: 8 },
+      { segmentIndex: 0, audioUrl: 'clip-0-10.wav', offset: 0, duration: 8, clipOffset: 0 },
     ])
   })
 })
@@ -151,5 +164,20 @@ describe('scheduleFrom — which clips play (and from where) when starting at an
 
   it('an offset past everything schedules nothing', () => {
     expect(scheduleFrom(events, 12)).toEqual([])
+  })
+
+  it('a clip with a buffer offset (front cut) starts partway into its buffer', () => {
+    const seeked: AudioEvent[] = [
+      { segmentIndex: 0, audioUrl: 'a.wav', offset: 2, duration: 3.23, clipOffset: 3.13 }, // plays [2,5.23]
+    ]
+    // From the top: scheduled in the future, buffer begins at the clip offset.
+    expect(scheduleFrom(seeked, 0)).toEqual([
+      { event: seeked[0], when: 2, bufferOffset: 3.13, duration: 3.23 },
+    ])
+    // Mid-flight 1s in: starts now, buffer at clipOffset + 1, 1s shorter.
+    const [s] = scheduleFrom(seeked, 3)
+    expect(s.when).toBe(0)
+    expect(s.bufferOffset).toBeCloseTo(4.13, 6)
+    expect(s.duration).toBeCloseTo(2.23, 6)
   })
 })

@@ -70,10 +70,17 @@ export type AudioPiece =
   | {
       kind: 'clip'
       segmentIndex: number
+      /** Seconds into the clip to start playing. Non-zero when footage was cut from
+       *  the FRONT of the segment: the kept video begins partway through the
+       *  segment, so the clip (a footage-aligned slice for `original` runs) must be
+       *  seeked to match — otherwise the cut-away opening replays over later video.
+       *  0 when nothing before the kept region was cut. */
+      offset: number
       /** Output length of this piece (the kept-video length it covers). */
       length: number
-      /** The real clip duration, so the graph can fade out at the audio's own end
-       *  (before the trailing silence padding) — not at the padded `length`. */
+      /** The real clip duration that will sound in this slot (from `offset`), so the
+       *  graph can fade out at the audio's own end (before the trailing silence
+       *  padding) — not at the padded `length`. */
       audioSeconds: number
     }
   | { kind: 'silence'; length: number }
@@ -176,6 +183,7 @@ export function planAssembly(input: AssembleInput): AssemblePlan {
     }
     // s.kind === 'segment' — gather consecutive kept slices of this same segment.
     const idx = s.segmentIndex
+    const runStart = s.start // where the kept region of this segment begins
     let length = 0
     while (i < kept.length) {
       const k = kept[i]
@@ -186,10 +194,17 @@ export function planAssembly(input: AssembleInput): AssemblePlan {
     const seg = input.segments[idx]
     const voiced = !!seg?.audioUrl
     if (voiced) {
-      // Fade-out anchors on the clip's own end; if its real length is unknown or
-      // longer than the slot, clamp to the slot so we never fade into nothing.
-      const audioSeconds = Math.min(seg.audioSeconds && seg.audioSeconds > 0 ? seg.audioSeconds : length, length)
-      audio.push({ kind: 'clip', segmentIndex: idx, length, audioSeconds })
+      // How far into the segment the kept video starts (front footage cut away).
+      // The clip is the segment's audio, so seek it by the same amount to stay in
+      // sync — an `original` run's clip is a footage-aligned slice, so this lands
+      // exactly; for AI runs it's the best-effort linear mapping.
+      const segStart = clamp(seg.start, 0, input.duration)
+      const clipLen = seg.audioSeconds && seg.audioSeconds > 0 ? seg.audioSeconds : length
+      const offset = clamp(runStart - segStart, 0, clipLen)
+      // Fade-out anchors on the audio actually heard in this slot — what's left of
+      // the clip after `offset`, clamped to the slot so we never fade into nothing.
+      const audioSeconds = Math.min(Math.max(0, clipLen - offset), length)
+      audio.push({ kind: 'clip', segmentIndex: idx, offset, length, audioSeconds })
     } else {
       audio.push({ kind: 'silence', length })
     }
@@ -358,9 +373,17 @@ export function buildFfmpegCommand(
       const fadeOut = Math.max(0, a.audioSeconds - FADE)
       const norm = polish && LOUDNORM_ENABLED ? `${loudnormFor(opts.loudness?.[j - 1])},` : ''
       const fade = polish ? `afade=t=in:st=0:d=${secs(FADE)},afade=t=out:st=${secs(fadeOut)}:d=${secs(FADE)},` : ''
+      // Seek into the clip when the segment's front footage was cut, so the kept
+      // tail audio plays (not the cut-away opening). `asetpts` rebases the seeked
+      // stream to 0 so the fades/pad below measure from the slot's start. Omitted
+      // when offset is 0 to keep the common (no-front-cut) graph unchanged.
+      const seek =
+        a.offset > 0
+          ? `atrim=${secs(a.offset)}:${secs(a.offset + a.length)},asetpts=PTS-STARTPTS,`
+          : ''
       parts.push(
         `[${j}:a]${norm}aresample=${SAMPLE_RATE},aformat=sample_fmts=s16:channel_layouts=mono,` +
-          `${fade}apad,atrim=0:${secs(a.length)},asetpts=PTS-STARTPTS[a${i}]`,
+          `${seek}${fade}apad,atrim=0:${secs(a.length)},asetpts=PTS-STARTPTS[a${i}]`,
       )
     }
   })

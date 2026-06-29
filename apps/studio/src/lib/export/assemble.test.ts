@@ -81,16 +81,47 @@ describe('planAssembly — video + audio pieces', () => {
     ])
     // One clip for segment 0, length = kept video = 5 + 2 = 7. audioSeconds is
     // clamped to the slot (the 10s clip can't exceed its 7s of kept video).
-    expect(plan.audio).toEqual([{ kind: 'clip', segmentIndex: 0, length: 7, audioSeconds: 7 }])
+    expect(plan.audio).toEqual([{ kind: 'clip', segmentIndex: 0, offset: 0, length: 7, audioSeconds: 7 }])
     expect(plan.duration).toBe(7)
+  })
+
+  it('a cut at the FRONT of a voiced segment offsets the clip to the kept tail', () => {
+    // seg 2.37–8.73 voiced from its own original audio (6.36s); cut 2–5.5 drops the
+    // front. Kept video is 5.5–8.73, so the clip must play from (5.5−2.37)=3.13s in
+    // — NOT from 0, which would replay the cut-away opening over the later footage.
+    const plan = planAssembly({
+      segments: [seg(2.37, 8.73, 6.36)],
+      cuts: [{ start: 2, end: 5.5 }],
+      duration: 8.73,
+    })
+    // 0–2 is dead lead-in (before the cut and before speech), kept as silent video;
+    // 5.5–8.73 is the kept segment footage.
+    expect(plan.video).toEqual([
+      { start: 0, end: 2 },
+      { start: 5.5, end: 8.73 },
+    ])
+    expect(plan.audio).toHaveLength(2)
+    expect(plan.audio[0]).toEqual({ kind: 'silence', length: 2 })
+    const clip = plan.audio[1]
+    expect(clip.kind).toBe('clip')
+    if (clip.kind !== 'clip') throw new Error('expected a clip piece')
+    expect(clip.segmentIndex).toBe(0)
+    expect(clip.offset).toBeCloseTo(3.13, 6)
+    expect(clip.length).toBeCloseTo(3.23, 6)
+    expect(clip.audioSeconds).toBeCloseTo(3.23, 6)
+  })
+
+  it('a fully-kept segment has a zero clip offset', () => {
+    const plan = planAssembly({ segments: [seg(0, 10)], cuts: [], duration: 10 })
+    expect(plan.audio).toEqual([{ kind: 'clip', segmentIndex: 0, offset: 0, length: 10, audioSeconds: 10 }])
   })
 
   it('dead space → a silence piece of its own length', () => {
     const plan = planAssembly({ segments: [seg(0, 4), seg(6, 10)], cuts: [], duration: 10 })
     expect(plan.audio).toEqual([
-      { kind: 'clip', segmentIndex: 0, length: 4, audioSeconds: 4 },
+      { kind: 'clip', segmentIndex: 0, offset: 0, length: 4, audioSeconds: 4 },
       { kind: 'silence', length: 2 },
-      { kind: 'clip', segmentIndex: 1, length: 4, audioSeconds: 4 },
+      { kind: 'clip', segmentIndex: 1, offset: 0, length: 4, audioSeconds: 4 },
     ])
     // Video keeps everything (nothing cut), so duration == source duration.
     expect(plan.duration).toBe(10)
@@ -99,7 +130,7 @@ describe('planAssembly — video + audio pieces', () => {
   it('trailing dead space becomes trailing silence (kept video, no audio)', () => {
     const plan = planAssembly({ segments: [seg(0, 8)], cuts: [], duration: 10 })
     expect(plan.audio).toEqual([
-      { kind: 'clip', segmentIndex: 0, length: 8, audioSeconds: 8 },
+      { kind: 'clip', segmentIndex: 0, offset: 0, length: 8, audioSeconds: 8 },
       { kind: 'silence', length: 2 },
     ])
   })
@@ -189,6 +220,25 @@ describe('buildFfmpegCommand', () => {
     expect(cmd.filterComplex).toContain('concat=n=3:v=1:a=0[vout]')
     expect(cmd.filterComplex).toContain('concat=n=3:v=0:a=1[aout]')
     expect(cmd.args).toEqual(expect.arrayContaining(['-map', '[vout]', '-map', '[aout]']))
+  })
+
+  it('seeks a front-cut clip to its offset so the kept tail audio plays', () => {
+    const plan = planAssembly({
+      segments: [seg(2.37, 8.73, 6.36)],
+      cuts: [{ start: 2, end: 5.5 }],
+      duration: 8.73,
+    })
+    const cmd = buildFfmpegCommand(plan)
+    // The single clip (input 1) is trimmed from 3.13s into the clip, not from 0.
+    expect(cmd.filterComplex).toMatch(/\[1:a\]aresample=48000[^[]*atrim=3\.13:6\.36/)
+  })
+
+  it('a fully-kept clip is not seeked (no leading atrim on the clip)', () => {
+    const plan = planAssembly({ segments: [seg(0, 4)], cuts: [], duration: 4 })
+    const cmd = buildFfmpegCommand(plan)
+    // No offset → the clip graph goes straight from aformat into the fades, with
+    // only the trailing slot atrim=0:4 (no leading atrim=<offset>:…).
+    expect(cmd.filterComplex).toContain('aformat=sample_fmts=s16:channel_layouts=mono,afade=t=in')
   })
 
   it('audioPolish:false drops loudnorm + fades (raw concat)', () => {
