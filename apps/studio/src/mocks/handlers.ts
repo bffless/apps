@@ -48,7 +48,7 @@ const projectStore = new Map<string, Record<string, unknown>>()
  * actually iterates before resolving (exactly like the real pipeline's postSteps).
  */
 type MockJob = {
-  kind: 'scenes' | 'refine' | 'transcribe'
+  kind: 'scenes' | 'refine' | 'transcribe' | 'blog'
   result: unknown
   polls: number
   // What the "pipeline" sent the model (story 03m) — fabricated here, but the
@@ -262,6 +262,23 @@ const studioHandlers = [
       ? `${synopsis ? synopsis + ' ' : ''}In short: ${firstSentence || 'the key points'}.`.trim()
       : 'No script to summarize yet.'
     return HttpResponse.json({ title, summary })
+  }),
+
+  // Blog post (issue #68): a sibling of the master director — enqueue a
+  // `kind: 'blog'` job and return its id (story 03f fire-and-poll shape). The
+  // deterministic Markdown (front-matter + an outline seeded from the script,
+  // with a sparse inline `frame:<t>` token as raw text in this slice) is stashed
+  // as the job's `result` for the poll endpoint. Mirrors the eventual live rule:
+  // { jobId, status } on enqueue, { markdown } in the result blob.
+  http.post('/api/blog', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { script?: string; direction?: string }
+    const jobId = enqueueJob(
+      'blog',
+      mockBlog(body.script ?? '', body.direction ?? ''),
+      `[mock] blog prompt — your direction: ${body.direction || '(none)'}`,
+      '[mock] blog system instruction — the standing rules the real pipeline sends Gemini.',
+    )
+    return HttpResponse.json({ jobId, status: 'pending' })
   }),
 
   // Thumbnail — step 1: draft the nano-banana prompt (Export phase). The real
@@ -523,6 +540,45 @@ function toneWavDataUrl(seconds: number): string {
   let bin = ''
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
   return `data:audio/wav;base64,${btoa(bin)}`
+}
+
+/**
+ * A deterministic canned blog post (issue #68): YAML front-matter (title +
+ * description) followed by a short prose outline seeded from the final script,
+ * plus one sparse inline `frame:<t>` image token (raw text in this slice). The
+ * title is the script's first few words; the body folds in the creator's
+ * direction so the mock is exercisable offline and visibly reflects its inputs.
+ * Same `{ markdown }` shape the live rule returns, coerced through `toBlog`.
+ */
+function mockBlog(script: string, direction: string): { markdown: string } {
+  const clean = script.trim()
+  if (!clean) return { markdown: '' }
+  const firstSentence = (clean.split(/(?<=[.!?])\s/)[0] ?? clean).replace(/[.!?]+$/, '').trim()
+  const titleWords = firstSentence.split(/\s+/).filter(Boolean).slice(0, 8).join(' ')
+  const title = titleWords ? titleWords.charAt(0).toUpperCase() + titleWords.slice(1) : 'Untitled post'
+  const description = `A written companion to the video${direction ? ` — ${direction}` : ''}.`
+  const paragraphs = clean.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+  const lead = paragraphs[0] ?? clean
+  const rest = paragraphs.slice(1)
+  const body = [
+    '---',
+    `title: ${title}`,
+    `description: ${description}`,
+    '---',
+    '',
+    `# ${title}`,
+    '',
+    lead,
+    '',
+    'frame:1.5',
+    '',
+    ...(rest.length ? ['## In depth', '', ...rest.flatMap((p) => [p, ''])] : []),
+    direction ? `> Written with your direction: ${direction}` : '',
+  ]
+    .filter((line, i, arr) => !(line === '' && arr[i - 1] === '')) // collapse doubled blanks
+    .join('\n')
+    .trim()
+  return { markdown: body }
 }
 
 /** A deterministic canned director response sized to the clip's duration. */

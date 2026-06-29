@@ -29,6 +29,7 @@ import { SceneAssembleBar } from '../components/Studio/SceneAssembleBar'
 import { ScenePreviewDialog } from '../components/Studio/ScenePreviewDialog'
 import { FinalCutBar } from '../components/Studio/FinalCutBar'
 import { ExportSummary } from '../components/Studio/ExportSummary'
+import { BlogCard } from '../components/Studio/BlogCard'
 import { ThumbnailStudio } from '../components/Studio/ThumbnailStudio'
 import { useScenePipeline } from '../components/Studio/useScenePipeline'
 import { useProjectAutosave } from '../components/Studio/useProjectAutosave'
@@ -736,6 +737,11 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                   onDraft={pipe.draftThumbnailPrompt}
                   onRender={pipe.renderThumbnail}
                   signFor={pipe.signFor}
+                />
+                <BlogCard
+                  post={pipe.blog}
+                  generating={pipe.blog?.status === 'running'}
+                  onGenerate={pipe.generateBlog}
                 />
               </div>
             ) : (

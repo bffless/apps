@@ -18,6 +18,7 @@ import type { DirectorRequest, DirectorScene } from '../lib/director'
 import type { RefineSceneRequest, RefineSceneRaw } from '../lib/refiner'
 import type { SearchRequest } from '../lib/search'
 import type { DescribeRequest } from '../lib/describe'
+import type { BlogRequest, BlogResult } from '../lib/blog'
 import type { ThumbnailDraftRequest } from '../lib/thumbnail'
 import type { ProjectMeta } from '../lib/projects'
 import type { ProjectRecord, ProjectRecordIn } from '../lib/projectSync'
@@ -46,8 +47,8 @@ export type StartJobResponse = { jobId: string; status: string }
  */
 export type StudioJob = {
   status: 'pending' | 'running' | 'done' | 'error'
-  kind: 'scenes' | 'refine' | 'transcribe'
-  result?: ScenesResult | RefineSceneResult | TranscribeResponse | null
+  kind: 'scenes' | 'refine' | 'transcribe' | 'blog'
+  result?: ScenesResult | RefineSceneResult | TranscribeResponse | BlogResult | null
   error?: string | null
   /** The stitched per-run Gemini prompt, stored on the job row at enqueue
    *  (story 03m). Null/absent on jobs older than 03m. */
@@ -145,6 +146,19 @@ export const studioApi = createApi({
     describe: builder.mutation<unknown, DescribeRequest>({
       query: (body) => ({
         url: 'api/describe',
+        method: 'POST',
+        body,
+      }),
+    }),
+
+    // Blog post (issue #68): a sibling of the master director — async
+    // fire-and-poll. The start endpoint ENQUEUEs a `kind: 'blog'` job and returns
+    // its id; the (eventual) multimodal Gemini call runs in the pipeline's
+    // postSteps, and the FE polls `getStudioJob` until the row carries the
+    // `{ markdown }` result (coerced through `toBlog` at the call site).
+    blogStart: builder.mutation<StartJobResponse, BlogRequest>({
+      query: (body) => ({
+        url: 'api/blog',
         method: 'POST',
         body,
       }),
@@ -276,6 +290,7 @@ export const {
   useNarrateMutation,
   useSearchTranscriptMutation,
   useDescribeMutation,
+  useBlogStartMutation,
   useDeleteProjectAssetsMutation,
   useUploadMutation,
   useVoiceCloneMutation,
