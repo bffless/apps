@@ -1701,7 +1701,21 @@ export function useScenePipeline() {
       const ordered = [...sources].sort((a, b) => a.order - b.order)
       const sheetUrls = persistedSheets.map((s) => s.url).filter((u): u is string => !!u)
       const duration = totalDuration(ordered.map((s) => ({ id: s.id, duration: s.duration })))
-      const req = buildBlogRequest(scenes, directionInput, { synopsis, description, sheetUrls, duration })
+      // Same `[m:ss]` timestamped transcript the director gets, so the writer can
+      // align what's said to WHEN and pick accurate `frame:<t>` image timestamps.
+      const namer = (videoId: string, label: string) =>
+        resolvePerson(videoId, label, cast, speakerAssignments)?.name ?? label
+      const timedTranscript = combinedTimedTranscript(
+        ordered.map((s) => ({ id: s.id, fileName: s.fileName, duration: s.duration, words: s.words })),
+        namer,
+      )
+      const req = buildBlogRequest(scenes, directionInput, {
+        synopsis,
+        description,
+        sheetUrls,
+        duration,
+        timedTranscript,
+      })
       if (!req.script) {
         setSceneError('Build at least one scene before generating a blog post.')
         return
@@ -1715,7 +1729,7 @@ export function useScenePipeline() {
         dispatch(setBlogError())
       }
     },
-    [scenes, sources, persistedSheets, synopsis, description, blogStartReq, dispatch, completeBlogJob],
+    [scenes, sources, persistedSheets, synopsis, description, blogStartReq, dispatch, completeBlogJob, cast, speakerAssignments],
   )
 
   // Producer edit of the recommended title (persisted on the description layer).
