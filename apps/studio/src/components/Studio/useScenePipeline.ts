@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { STAGE_DEFS, PER_VIDEO_STAGES, GLOBAL_STAGES, type Stage, type StageId } from '../../lib/pipeline'
 import { narrationSeconds, type Cut, type NarrationSegment, type Scene } from '../../lib/scenes'
 import { combinedTimedTranscript, toScenes, type DirectorScene } from '../../lib/director'
-import { buildDescribeRequest, toDescription } from '../../lib/describe'
-import { buildBlogRequest, toBlog } from '../../lib/blog'
+import { buildDescribeRequest, toDescription, videoScript } from '../../lib/describe'
+import { buildBlogRequest, toBlog, isBlogStale } from '../../lib/blog'
 import { buildThumbnailDraftRequest, toThumbnailPrompt, toThumbnailImage } from '../../lib/thumbnail'
 import {
   toRefinement,
@@ -1619,6 +1619,11 @@ export function useScenePipeline() {
 
   // ---- Export: generate the blog post (issue #68) ---------------------------
 
+  // The post is stale when the final kept script has drifted from the one it was
+  // generated against (issue #72) — e.g. a scene was re-cut. Surfaced in the card
+  // so the producer can regenerate; never auto-regenerated.
+  const blogStale = useMemo(() => isBlogStale(blog, videoScript(scenes)), [blog, scenes])
+
   // Generate a Markdown blog post from the FINAL kept script (+ the creator's
   // direction) via the async `/api/blog` job, mirroring the master director:
   // enqueue, persist the job id + inputs (so a reload resumes polling), then
@@ -1795,6 +1800,7 @@ export function useScenePipeline() {
     describing,
     generateDescription,
     blog,
+    blogStale,
     generateBlog,
     editDescriptionTitle,
     signFor,

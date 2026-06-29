@@ -8,6 +8,9 @@ type Props = {
   post: BlogPost | null
   /** True while a `/api/blog` job is in flight. */
   generating: boolean
+  /** True when the final script has drifted from the script the post was written
+   *  against — the post is shown stale, but never auto-regenerated. */
+  stale?: boolean
   /** Generate (or regenerate) the post from the current final script + direction. */
   onGenerate: (direction: string) => void
 }
@@ -21,8 +24,12 @@ type Props = {
  *
  * In this slice the post is text-only; inline `frame:<t>` image tokens render as
  * raw text until a later story captures the real frames.
+ *
+ * When the final script changes after a post was generated (e.g. a scene is
+ * re-cut), the card flags the post stale (issue #72) so the producer can choose
+ * to Regenerate — staleness is surfaced only, never acted on automatically.
  */
-export function BlogCard({ post, generating, onGenerate }: Props) {
+export function BlogCard({ post, generating, stale = false, onGenerate }: Props) {
   const [direction, setDirection] = useState(post?.direction ?? '')
 
   return (
@@ -35,7 +42,7 @@ export function BlogCard({ post, generating, onGenerate }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <StatusPill post={post} generating={generating} />
+          <StatusPill post={post} generating={generating} stale={stale} />
           <button
             type="button"
             className="pill-ghost"
@@ -75,12 +82,27 @@ export function BlogCard({ post, generating, onGenerate }: Props) {
   )
 }
 
-/** The card's visible status indicator (idle / running / done / error). */
-function StatusPill({ post, generating }: { post: BlogPost | null; generating: boolean }) {
+/** The card's visible status indicator (idle / running / done / stale / error). */
+function StatusPill({
+  post,
+  generating,
+  stale,
+}: {
+  post: BlogPost | null
+  generating: boolean
+  stale: boolean
+}) {
   if (generating) return <span className="text-[12px] text-ink-soft">Writing your post…</span>
   if (post?.status === 'error')
     return <span className="text-[12px] text-rose-600">Generation failed — try again.</span>
-  if (post?.status === 'done' && post.markdown)
+  if (post?.status === 'done' && post.markdown) {
+    if (stale)
+      return (
+        <span className="text-[12px] text-amber-600">
+          Script changed — regenerate to update.
+        </span>
+      )
     return <span className="text-[12px] text-ink-soft">Post ready ✓</span>
+  }
   return null
 }

@@ -50,4 +50,17 @@ describe('server record round-trip', () => {
     const back = fromServerRecord({ id: 'a', name: 'A', createdAt: 1, updatedAt: 5, phase: 'prep', thumbnailUrl: null, data: 'not json' })
     expect(Array.isArray(back.working.scenes)).toBe(true)
   })
+
+  it('round-trips a generated blog post (cross-device restore, issue #72)', () => {
+    const w = freshWorkingState()
+    w.blog = {
+      markdown: '---\ntitle: My Post\n---\n\n# My Post\n\nHello.',
+      direction: 'keep it punchy',
+      script: 'Hello.',
+      status: 'done',
+      jobId: null,
+    }
+    const back = fromServerRecord(toServerRecord(meta('a', 5), w))
+    expect(back.working.blog).toEqual(w.blog)
+  })
 })

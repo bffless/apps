@@ -44,6 +44,32 @@ describe('BlogCard', () => {
     expect(screen.getByRole('button', { name: /Regenerate/i })).toBeInTheDocument()
   })
 
+  it('flags a stale post (final script changed) without auto-regenerating', () => {
+    const onGenerate = vi.fn()
+    render(
+      <BlogCard
+        post={post({ status: 'done', markdown: '# My Post' })}
+        generating={false}
+        stale
+        onGenerate={onGenerate}
+      />,
+    )
+    expect(screen.getByText(/script changed/i)).toBeInTheDocument()
+    // Staleness is surfaced only — it never kicks off a regeneration on its own.
+    expect(onGenerate).not.toHaveBeenCalled()
+  })
+
+  it('does not flag a fresh post as stale', () => {
+    render(
+      <BlogCard
+        post={post({ status: 'done', markdown: '# My Post' })}
+        generating={false}
+        onGenerate={vi.fn()}
+      />,
+    )
+    expect(screen.queryByText(/script changed/i)).not.toBeInTheDocument()
+  })
+
   it('surfaces an error status', () => {
     render(<BlogCard post={post({ status: 'error' })} generating={false} onGenerate={vi.fn()} />)
     expect(screen.getByText(/Generation failed/i)).toBeInTheDocument()
