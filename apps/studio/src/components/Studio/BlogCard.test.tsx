@@ -74,4 +74,20 @@ describe('BlogCard', () => {
     render(<BlogCard post={post({ status: 'error' })} generating={false} onGenerate={vi.fn()} />)
     expect(screen.getByText(/Generation failed/i)).toBeInTheDocument()
   })
+
+  it('offers a Download bundle action only once a post is ready', () => {
+    const { rerender } = render(
+      <BlogCard post={post({ status: 'idle' })} generating={false} onGenerate={vi.fn()} />,
+    )
+    expect(screen.queryByRole('button', { name: /Download bundle/i })).not.toBeInTheDocument()
+
+    rerender(
+      <BlogCard
+        post={post({ status: 'done', markdown: '# My Post' })}
+        generating={false}
+        onGenerate={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Download bundle/i })).toBeInTheDocument()
+  })
 })

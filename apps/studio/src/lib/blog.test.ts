@@ -9,6 +9,7 @@ import {
   rewriteFrameTokens,
   frameFileName,
   blogSlug,
+  planBlogBundle,
 } from './blog'
 
 function scene(over: Partial<Scene> = {}): Scene {
@@ -204,6 +205,59 @@ describe('frameFileName / blogSlug', () => {
     expect(blogSlug('  Onboarding: Rules & More!  ')).toBe('onboarding-rules-more')
     expect(blogSlug('!!!')).toBe('post')
     expect(blogSlug('')).toBe('post')
+  })
+})
+
+describe('planBlogBundle', () => {
+  const FM = '---\ntitle: My Post\ndescription: A short one.\n---\n\n'
+
+  it('rewrites every image URL to a relative images/ path and lists the files in order', () => {
+    const md = `${FM}# My Post\n\n![Diff](/api/uploads/blog/a/frame-01.jpg)\n\nWords.\n\n![Result](/api/uploads/blog/a/frame-02.jpg)\n`
+    const plan = planBlogBundle(md, 'My Post')
+
+    expect(plan.markdown).toContain('![Diff](images/frame-01.jpg)')
+    expect(plan.markdown).toContain('![Result](images/frame-02.jpg)')
+    expect(plan.markdown).not.toContain('/api/uploads')
+    expect(plan.images).toEqual([
+      { path: 'images/frame-01.jpg', url: '/api/uploads/blog/a/frame-01.jpg' },
+      { path: 'images/frame-02.jpg', url: '/api/uploads/blog/a/frame-02.jpg' },
+    ])
+  })
+
+  it('preserves the YAML front-matter verbatim', () => {
+    const md = `${FM}Body ![x](/u/frame-01.jpg)`
+    expect(planBlogBundle(md, 'My Post').markdown.startsWith(FM)).toBe(true)
+  })
+
+  it('names the archive and the markdown file', () => {
+    const plan = planBlogBundle('# X', 'Onboarding: Rules & More!')
+    expect(plan.archiveName).toBe('onboarding-rules-more.zip')
+    expect(plan.markdownPath).toBe('post.md')
+  })
+
+  it('falls back to post.zip when the title is empty', () => {
+    expect(planBlogBundle('# X', '').archiveName).toBe('post.zip')
+  })
+
+  it('bundles a repeated image once and points both references at it', () => {
+    const md = '![a](/u/hero.jpg) then ![b](/u/hero.jpg)'
+    const plan = planBlogBundle(md, 't')
+    expect(plan.images).toEqual([{ path: 'images/frame-01.jpg', url: '/u/hero.jpg' }])
+    expect(plan.markdown).toBe('![a](images/frame-01.jpg) then ![b](images/frame-01.jpg)')
+  })
+
+  it('returns an empty file list (markdown untouched) when there are no images', () => {
+    const md = `${FM}# My Post\n\nProse only, no images.`
+    const plan = planBlogBundle(md, 'My Post')
+    expect(plan.images).toEqual([])
+    expect(plan.markdown).toBe(md)
+  })
+
+  it('leaves an unresolved frame: token untouched and never bundles it', () => {
+    const md = 'Before ![oops](frame:12.5) after'
+    const plan = planBlogBundle(md, 't')
+    expect(plan.images).toEqual([])
+    expect(plan.markdown).toBe(md)
   })
 })
 

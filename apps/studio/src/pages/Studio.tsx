@@ -740,6 +740,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                 />
                 <BlogCard
                   post={pipe.blog}
+                  title={pipe.description?.title ?? ''}
                   generating={pipe.blog?.status === 'running'}
                   stale={pipe.blogStale}
                   onGenerate={pipe.generateBlog}
