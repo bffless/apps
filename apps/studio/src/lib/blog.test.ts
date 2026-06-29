@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Scene } from './scenes'
-import { buildBlogRequest, toBlog } from './blog'
+import { buildBlogRequest, toBlog, isBlogStale } from './blog'
 
 function scene(over: Partial<Scene> = {}): Scene {
   return {
@@ -74,6 +74,38 @@ describe('buildBlogRequest', () => {
       sheetUrls: [],
       duration: 0,
     })
+  })
+})
+
+describe('isBlogStale', () => {
+  const post = (over: Partial<{ markdown: string; script: string; status: string }> = {}) => ({
+    markdown: '# Post',
+    script: 'Hello there.',
+    status: 'done',
+    ...over,
+  })
+
+  it('is stale when a generated post no longer matches the current final script', () => {
+    expect(isBlogStale(post({ script: 'Old script.' }), 'New script.')).toBe(true)
+  })
+
+  it('is not stale when the current final script still matches', () => {
+    expect(isBlogStale(post({ script: 'Hello there.' }), 'Hello there.')).toBe(false)
+  })
+
+  it('ignores surrounding whitespace on both sides', () => {
+    expect(isBlogStale(post({ script: 'Hello there.' }), '  Hello there.  ')).toBe(false)
+  })
+
+  it('is never stale for a post that has not finished generating', () => {
+    expect(isBlogStale(post({ status: 'running', script: 'a' }), 'b')).toBe(false)
+    expect(isBlogStale(post({ status: 'idle', script: 'a' }), 'b')).toBe(false)
+    expect(isBlogStale(post({ status: 'error', script: 'a' }), 'b')).toBe(false)
+  })
+
+  it('is never stale when there is no post or no markdown yet', () => {
+    expect(isBlogStale(null, 'anything')).toBe(false)
+    expect(isBlogStale(post({ markdown: '', script: 'a' }), 'b')).toBe(false)
   })
 })
 

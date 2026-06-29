@@ -54,6 +54,10 @@ export type BlogContext = {
 /** The model's output: one Markdown document (front-matter + prose). */
 export type BlogResult = { markdown: string }
 
+/** The stored-post fields staleness depends on — a structural subset of the
+ *  slice's `BlogPost`, so this pure module stays free of a store import. */
+export type StoredBlogPost = { markdown: string; script: string; status: string }
+
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const trim = (v: unknown): string => str(v).trim()
 
@@ -91,4 +95,18 @@ export function toBlog(raw: unknown): BlogResult {
   if (typeof raw === 'string') return { markdown: raw.trim() }
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   return { markdown: str(o.markdown).trim() }
+}
+
+/**
+ * Has the final script drifted from what a generated post was written against?
+ * The post stores the `script` it came from (its staleness key); when the
+ * producer re-cuts a scene the final script changes, and the card flags the post
+ * stale so they can regenerate on demand — it is NEVER auto-regenerated. Only a
+ * finished post (`status: 'done'` with markdown) can be stale; a still-running,
+ * idle, errored, or never-generated post is not. Whitespace-insensitive, so a
+ * cosmetic trim of the script doesn't read as a real change.
+ */
+export function isBlogStale(post: StoredBlogPost | null | undefined, currentScript: string): boolean {
+  if (!post || post.status !== 'done' || !post.markdown.trim()) return false
+  return currentScript.trim() !== post.script.trim()
 }
