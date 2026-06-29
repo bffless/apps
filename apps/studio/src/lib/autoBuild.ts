@@ -11,6 +11,24 @@
 
 import type { Scene } from './scenes'
 
+/**
+ * The patch to stamp onto any edit that changes a scene's **assemble inputs** —
+ * its cuts, its narration segments' audio, or its cut clip. Such an edit makes a
+ * previously saved render (`assembledUrl`) stale, but the final stitch
+ * (`assembleFinalCutBlob`) is a blind stream-copy concat of saved scene clips, so
+ * the stale clip would otherwise be re-emitted (e.g. the full 19-min cut after
+ * you trimmed it to 10). Clearing `assembledUrl` and returning the scene to
+ * `pending` drops the stale bytes, so the assemble step (`nextStep` → `assemble`)
+ * and the manual export gate both re-render it before the stitch. Only the
+ * rendered output is cleared — `scene.cuts` (the director's immutable baseline)
+ * and `scene.refined` (the editable script) are untouched, so reverting or
+ * re-refining from the original still works. `useScenePipeline`'s `patchSceneEdit`
+ * applies this to every such edit. */
+export const STALE_RENDER_PATCH = {
+  assembledUrl: undefined,
+  status: 'pending',
+} as const satisfies Partial<Scene>
+
 /** The per-scene build steps, in the order auto mode runs them. `assemble` covers
  *  both rendering the scene MP4 and saving it (one action). */
 export type AutoStepId = 'cut' | 'sheets' | 'refine' | 'voice' | 'assemble'

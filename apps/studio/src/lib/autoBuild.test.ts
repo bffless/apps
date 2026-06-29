@@ -3,6 +3,7 @@ import type { Scene } from './scenes'
 import type { ContactSheet } from './frames'
 import {
   AUTO_STEPS,
+  STALE_RENDER_PATCH,
   nextStep,
   nextAction,
   isSceneComplete,
@@ -90,6 +91,48 @@ describe('nextStep', () => {
       refined: { segments: [], cuts: [], source: 'ai' },
     })
     expect(nextStep(s)).toBe('assemble')
+  })
+})
+
+describe('STALE_RENDER_PATCH', () => {
+  // A scene that's been fully built and saved — `nextStep` is null, the export
+  // stitch would concat its `assembledUrl`.
+  const built = () =>
+    scene({
+      status: 'built',
+      clipUrl: 'u',
+      clipAudioUrl: 'a',
+      sheets: [{} as ContactSheet],
+      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [], source: 'ai' },
+      assembledUrl: 'scene-0.mp4',
+    })
+
+  it('drops the stale render and returns the scene to pending', () => {
+    const edited: Scene = {
+      ...built(),
+      // mimic editSceneCut: a hand-edit writes a new cut onto `refined`…
+      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [{ start: 2, end: 6 }], source: 'manual' },
+      // …and is patched through patchSceneEdit, which stamps this on top.
+      ...STALE_RENDER_PATCH,
+    }
+    expect(edited.assembledUrl).toBeUndefined()
+    expect(edited.status).toBe('pending')
+  })
+
+  it('makes the orchestrator re-assemble the edited scene', () => {
+    const edited: Scene = { ...built(), ...STALE_RENDER_PATCH }
+    // The earlier steps (cut/sheets/refine/voice) are still done, so the only
+    // step the edit reopens is the render itself — not a full rebuild.
+    expect(nextStep(edited)).toBe('assemble')
+    expect(isSceneComplete(edited)).toBe(false)
+    expect(nextAction([edited])).toEqual({ scene: edited, step: 'assemble' })
+  })
+
+  it('leaves the editable script intact so revert / re-refine still work', () => {
+    const edited: Scene = { ...built(), ...STALE_RENDER_PATCH }
+    // Only the rendered bytes + status are touched; the refined script (and the
+    // director baseline it falls back to) survive untouched.
+    expect(edited.refined).toEqual(built().refined)
   })
 })
 
