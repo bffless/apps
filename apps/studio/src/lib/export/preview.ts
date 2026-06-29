@@ -22,6 +22,10 @@ export type AudioEvent = {
   offset: number
   /** Seconds of the clip that play (planAssembly already clamped ≤ its slot). */
   duration: number
+  /** Seconds into the clip buffer to start from — non-zero when the segment's
+   *  front footage was cut, so playback skips the cut-away opening (mirrors the
+   *  render's clip seek). Omitted/0 when nothing before the kept region was cut. */
+  clipOffset?: number
 }
 
 /**
@@ -38,7 +42,13 @@ export function audioEvents(plan: AssemblePlan, segments: PreviewSegment[]): Aud
     if (piece.kind === 'clip') {
       const audioUrl = segments[piece.segmentIndex]?.audioUrl
       if (audioUrl) {
-        events.push({ segmentIndex: piece.segmentIndex, audioUrl, offset: t, duration: piece.audioSeconds })
+        events.push({
+          segmentIndex: piece.segmentIndex,
+          audioUrl,
+          offset: t,
+          duration: piece.audioSeconds,
+          clipOffset: piece.offset,
+        })
       }
     }
     t += piece.length
@@ -85,12 +95,14 @@ export type ScheduledEvent = {
 export function scheduleFrom(events: AudioEvent[], offset: number): ScheduledEvent[] {
   const out: ScheduledEvent[] = []
   for (const event of events) {
+    // Where in the clip buffer this event normally begins (front-cut seek).
+    const base = event.clipOffset ?? 0
     if (event.offset >= offset) {
-      out.push({ event, when: event.offset - offset, bufferOffset: 0, duration: event.duration })
+      out.push({ event, when: event.offset - offset, bufferOffset: base, duration: event.duration })
     } else {
       const into = offset - event.offset
       if (into < event.duration) {
-        out.push({ event, when: 0, bufferOffset: into, duration: event.duration - into })
+        out.push({ event, when: 0, bufferOffset: base + into, duration: event.duration - into })
       }
     }
   }
