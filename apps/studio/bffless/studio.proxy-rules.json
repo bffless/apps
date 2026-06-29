@@ -2784,6 +2784,139 @@
       "isEnabled": true,
       "debugEnabled": false,
       "description": "Blog writer (story 69; async fire-and-poll, modeled on /api/scenes). ENQUEUE-ONLY response path: prep builds the prompt/system + signed contact-sheet paths, createJob inserts a studio_jobs row (kind 'blog'), respond returns { jobId, status:'pending' }. The multimodal Gemini 3.1 Pro call + parse run in postSteps (replicate timeout 280s, off the response path) and write the row to { status:'done', result:{ markdown } } or { status:'error', error }. Output is a faithful, prose-first Markdown post: YAML front-matter (title, description), an elastic scene-seeded outline, and sparse inline frame:<t> image tokens. FE polls GET /api/studio/job."
+    },
+    {
+      "pathPattern": "/api/uploads/blog/prepare",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 53,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Prepare studio blog upload",
+        "steps": [
+          {
+            "id": "prepare",
+            "name": "prepare",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/blog",
+              "filename": "request.body.filename",
+              "expiresIn": 3600,
+              "dateBucket": true,
+              "maxFileSize": 10485760,
+              "allowedMimeTypes": [
+                "image/*"
+              ]
+            },
+            "handlerType": "presigned_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Prepare Result",
+            "config": {
+              "body": "{{{steps.prepare}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Mint a presigned PUT URL so the browser uploads each re-captured blog frame straight to the bucket (image/*) under the blog/ subDir (issue #70)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio blog image (re-captured frame) upload"
+    },
+    {
+      "pathPattern": "/api/uploads/blog/register",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 54,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Register studio blog upload",
+        "steps": [
+          {
+            "id": "register",
+            "name": "register",
+            "config": {
+              "subDir": "projects/{{request.body.projectId}}/blog",
+              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
+              "storageKey": "request.body.storageKey",
+              "maxFileSize": 10485760,
+              "originalName": "request.body.originalName",
+              "allowedMimeTypes": [
+                "image/*"
+              ]
+            },
+            "handlerType": "register_upload"
+          },
+          {
+            "id": "response",
+            "name": "Return Register Result",
+            "config": {
+              "body": "{{{steps.register}}}",
+              "status": 200,
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket blog frame flow). Reuses the studio_source schema; the blog/ subDir distinguishes records (issue #70)."
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Register: finalize a direct-to-bucket studio blog image upload into studio_source"
+    },
+    {
+      "pathPattern": "/api/uploads/blog/*",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 55,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "Serve studio blog images",
+        "steps": [
+          {
+            "id": "serve",
+            "name": "serve",
+            "config": {
+              "subDir": "blog"
+            },
+            "handlerType": "file_serve_handler"
+          }
+        ],
+        "validators": [],
+        "description": "Serve files from the blog subDir"
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "Serve files from studio blog (Range-aware) so the read-only preview can fetch the inline frames"
     }
   ],
   "schemas": [

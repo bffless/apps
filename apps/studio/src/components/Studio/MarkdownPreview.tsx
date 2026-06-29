@@ -6,9 +6,13 @@ import { Fragment, type ReactNode } from 'react'
  * edit — so a focused block renderer is enough: YAML front-matter (shown as a
  * title/description header), ATX headings, unordered lists, blockquotes, and
  * paragraphs, with inline `**bold**`, `*italic*`, and `` `code` ``. Anything it
- * doesn't recognize (e.g. the inline `frame:<t>` image tokens this slice leaves
- * un-captured) falls through as plain text, so a post always renders SOMETHING
- * rather than breaking. Not an editor — there is no editing affordance.
+ * doesn't recognize falls through as plain text, so a post always renders
+ * SOMETHING rather than breaking. Not an editor — there is no editing affordance.
+ *
+ * Standalone Markdown image lines (`![caption](url)`) — the inline frames the blog
+ * pipeline captures and uploads (issue #70) — render as a figure with the caption
+ * shown visibly in italics beneath the image (alt text + a caption line). Same-
+ * origin `/api/uploads/...` frames carry the auth cookie, so they load in-app.
  */
 export function MarkdownPreview({ markdown }: { markdown: string }) {
   const { front, body } = splitFrontMatter(markdown)
@@ -43,11 +47,33 @@ function splitFrontMatter(md: string): {
   return { front, body: md.slice(m[0].length) }
 }
 
+/** A line that is exactly a Markdown image: `![alt](url)`. */
+const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)]+)\)$/
+
 /** Render the body as a sequence of blocks split on blank lines. */
 function renderBlocks(body: string): ReactNode[] {
   const blocks = body.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean)
   return blocks.map((block, i) => {
     const lines = block.split('\n')
+
+    // A block of standalone image lines → one figure each, caption shown in italics.
+    if (lines.every((l) => IMAGE_LINE.test(l.trim()))) {
+      return (
+        <div key={i} className="flex flex-col gap-3">
+          {lines.map((l, j) => {
+            const m = IMAGE_LINE.exec(l.trim())
+            const alt = m?.[1].trim() ?? ''
+            const src = m?.[2] ?? ''
+            return (
+              <figure key={j} className="flex flex-col gap-1">
+                <img src={src} alt={alt} className="rounded-md border border-paper-line" />
+                {alt && <figcaption className="text-[12.5px] text-ink-soft italic">{alt}</figcaption>}
+              </figure>
+            )
+          })}
+        </div>
+      )
+    }
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(lines[0])
     if (heading && lines.length === 1) {

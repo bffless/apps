@@ -4,7 +4,7 @@ Studio has no app server. Its `/api/*` endpoints are a **BFFless proxy rule set*
 presigned uploads, file serving, Replicate calls, data tables, signed URLs). To run Studio against
 your own BFFless project you import that rule set and attach it to the alias serving the app.
 
-[`studio.proxy-rules.json`](studio.proxy-rules.json) is the exported rule set (39 rules, format
+[`studio.proxy-rules.json`](studio.proxy-rules.json) is the exported rule set (43 rules, format
 `bffless-proxy-rule-set` v1). It contains **no secrets** — credentials are referenced by name
 (`secrets.HF_TOKEN`) or use the project's configured provider tokens.
 
@@ -14,7 +14,7 @@ your own BFFless project you import that rule set and attach it to the alias ser
 
 **Claude / MCP:** ask Claude (with the BFFless MCP connected) to import
 `apps/studio/bffless/studio.proxy-rules.json` into your project. It creates the `studio` rule set and
-all 39 rules (IDs are remapped on import).
+all 43 rules (IDs are remapped on import).
 
 After import, **attach the `studio` rule set to the alias** your deploy uploads to (e.g. the `studio`
 alias / `studio.<your-domain>`). `/api/*` only serves on aliases the rule set is attached to.

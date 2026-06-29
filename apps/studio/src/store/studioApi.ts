@@ -23,7 +23,7 @@ import type { ThumbnailDraftRequest } from '../lib/thumbnail'
 import type { ProjectMeta } from '../lib/projects'
 import type { ProjectRecord, ProjectRecordIn } from '../lib/projectSync'
 
-export type UploadKind = 'source' | 'audio' | 'thumbnails' | 'voice' | 'export' | 'scene-clip' | 'youtube-thumbnail'
+export type UploadKind = 'source' | 'audio' | 'thumbnails' | 'voice' | 'export' | 'scene-clip' | 'youtube-thumbnail' | 'blog'
 type TranscribeResponse = { words?: TranscriptWord[]; text?: string }
 /** The master director's result blob: a logline + the raw scene breakdown. */
 type ScenesResult = { synopsis?: string; scenes?: DirectorScene[] }

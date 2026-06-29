@@ -3,7 +3,7 @@ import { STAGE_DEFS, PER_VIDEO_STAGES, GLOBAL_STAGES, type Stage, type StageId }
 import { narrationSeconds, type Cut, type NarrationSegment, type Scene } from '../../lib/scenes'
 import { combinedTimedTranscript, toScenes, type DirectorScene } from '../../lib/director'
 import { buildDescribeRequest, toDescription, videoScript } from '../../lib/describe'
-import { buildBlogRequest, toBlog, isBlogStale } from '../../lib/blog'
+import { buildBlogRequest, toBlog, isBlogStale, planBlogCaptures, rewriteFrameTokens } from '../../lib/blog'
 import { buildThumbnailDraftRequest, toThumbnailPrompt, toThumbnailImage } from '../../lib/thumbnail'
 import {
   toRefinement,
@@ -585,10 +585,76 @@ export function useScenePipeline() {
   )
 
   /**
+   * Turn the post's inline `frame:<t>` tokens into real, uploaded images (issue
+   * #70). The model emits timestamps it read off the Contact sheets; per ADR-0002
+   * we re-capture a clean, full-resolution, label-free frame from the SOURCE video
+   * (never crop the contact sheet) and upload it as a `blog` asset. Pure planning
+   * (`planBlogCaptures`) dedups the timestamps and routes each global time to its
+   * owning `(sourceId, localTime)` — multi-source projects capture from the right
+   * video. Captures are grouped per source so each clip is signed + fetched once
+   * (a `<video crossOrigin>` read of the signed GCS URL fails CORS, so we go via a
+   * same-origin blob URL — the same path the director/refiner use). Returns the
+   * Markdown with every resolvable token rewritten to its bucket serve URL; a
+   * frame that fails to capture or upload is left out, never a broken image.
+   */
+  const materializeBlogImages = useCallback(
+    async (markdown: string): Promise<string> => {
+      const captures = planBlogCaptures(
+        markdown,
+        sources.map((s) => ({ id: s.id, duration: s.duration })),
+      )
+      if (captures.length === 0) return markdown
+
+      const bySource = new Map<string, typeof captures>()
+      for (const c of captures) {
+        const arr = bySource.get(c.sourceId) ?? []
+        arr.push(c)
+        bySource.set(c.sourceId, arr)
+      }
+
+      const urlByTime = new Map<number, string>()
+      for (const [sourceId, caps] of bySource) {
+        const src = sources.find((s) => s.id === sourceId)
+        if (!src?.sourceUrl) continue
+        const objectUrl = URL.createObjectURL(await (await fetch(await signFor(src.sourceUrl))).blob())
+        try {
+          // A high cap height: `captureFramesAt` never upscales past the source, so
+          // this yields a clean full-resolution frame. JPEG q0.9 — a hero image, not
+          // a thumbnail.
+          const frames = await captureFramesAt(
+            objectUrl,
+            caps.map((c) => c.localTime),
+            4320,
+            { type: 'image/jpeg', quality: 0.9 },
+          )
+          for (let i = 0; i < caps.length; i++) {
+            const dataUrl = frames[i]
+            if (!dataUrl) continue // capture failed for this frame — skip it
+            try {
+              const blob = await (await fetch(dataUrl)).blob()
+              const file = new File([blob], caps[i].fileName, { type: blob.type })
+              const { url } = await uploadReq({ file, kind: 'blog' }).unwrap()
+              urlByTime.set(caps[i].time, url)
+            } catch {
+              // upload failed — leave this token unresolved (it gets dropped below)
+            }
+          }
+        } finally {
+          URL.revokeObjectURL(objectUrl)
+        }
+      }
+      return rewriteFrameTokens(markdown, urlByTime)
+    },
+    [sources, signFor, uploadReq],
+  )
+
+  /**
    * Drive a blog-post job to completion and commit the Markdown (issue #68).
    * Shared by the live `generateBlog` action and resume-on-reload; `pollsInFlight`
-   * keeps the two from double-polling one job. Clears the post's in-flight job id
-   * on any terminal status (success commits the markdown, failure flags `error`).
+   * keeps the two from double-polling one job. Once the prose is in, materialise
+   * its inline frame images (issue #70) before committing, so the stored Markdown
+   * already points at uploaded frames. Clears the post's in-flight job id on any
+   * terminal status (success commits the markdown, failure flags `error`).
    */
   const completeBlogJob = useCallback(
     async (jobId: string) => {
@@ -597,14 +663,15 @@ export function useScenePipeline() {
       try {
         const { result } = await pollJob(jobId)
         const { markdown } = toBlog(result)
-        dispatch(setBlogResult({ markdown }))
+        const resolved = await materializeBlogImages(markdown)
+        dispatch(setBlogResult({ markdown: resolved }))
       } catch {
         dispatch(setBlogError())
       } finally {
         pollsInFlight.delete(jobId)
       }
     },
-    [pollJob, dispatch],
+    [pollJob, dispatch, materializeBlogImages],
   )
 
   // Resume any in-flight job after a hard reload (redux-persist brings back the

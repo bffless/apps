@@ -267,8 +267,9 @@ const studioHandlers = [
   // Blog post (issue #68): a sibling of the master director — enqueue a
   // `kind: 'blog'` job and return its id (story 03f fire-and-poll shape). The
   // deterministic Markdown (front-matter + an outline seeded from the script,
-  // with a sparse inline `frame:<t>` token as raw text in this slice) is stashed
-  // as the job's `result` for the poll endpoint. Mirrors the eventual live rule:
+  // with a sparse inline `frame:<t>` token the FE then captures + uploads as a
+  // blog image, issue #70) is stashed as the job's `result` for the poll
+  // endpoint. Mirrors the eventual live rule:
   // { jobId, status } on enqueue, { markdown } in the result blob.
   http.post('/api/blog', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { script?: string; direction?: string }
@@ -545,7 +546,8 @@ function toneWavDataUrl(seconds: number): string {
 /**
  * A deterministic canned blog post (issue #68): YAML front-matter (title +
  * description) followed by a short prose outline seeded from the final script,
- * plus one sparse inline `frame:<t>` image token (raw text in this slice). The
+ * plus one sparse inline `frame:<t>` image token (the FE captures + uploads it,
+ * issue #70). The
  * title is the script's first few words; the body folds in the creator's
  * direction so the mock is exercisable offline and visibly reflects its inputs.
  * Same `{ markdown }` shape the live rule returns, coerced through `toBlog`.
