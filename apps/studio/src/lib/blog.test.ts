@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import type { Scene } from './scenes'
-import { buildBlogRequest, toBlog, isBlogStale } from './blog'
+import {
+  buildBlogRequest,
+  toBlog,
+  isBlogStale,
+  parseFrameTokens,
+  planBlogCaptures,
+  rewriteFrameTokens,
+  frameFileName,
+  blogSlug,
+} from './blog'
 
 function scene(over: Partial<Scene> = {}): Scene {
   return {
@@ -106,6 +115,95 @@ describe('isBlogStale', () => {
   it('is never stale when there is no post or no markdown yet', () => {
     expect(isBlogStale(null, 'anything')).toBe(false)
     expect(isBlogStale(post({ markdown: '', script: 'a' }), 'b')).toBe(false)
+  })
+})
+
+describe('parseFrameTokens', () => {
+  it('reads caption + global timestamp from each token in document order', () => {
+    const md = 'Intro.\n\n![The diff](frame:142.5)\n\nMiddle.\n\n![Result](frame:7)'
+    expect(parseFrameTokens(md)).toEqual([
+      { time: 142.5, caption: 'The diff', raw: '![The diff](frame:142.5)' },
+      { time: 7, caption: 'Result', raw: '![Result](frame:7)' },
+    ])
+  })
+
+  it('tolerates whitespace inside the token and an empty caption', () => {
+    expect(parseFrameTokens('![]( frame: 12.0 )')).toEqual([
+      { time: 12, caption: '', raw: '![]( frame: 12.0 )' },
+    ])
+  })
+
+  it('skips malformed tokens (non-numeric or negative timestamps)', () => {
+    expect(parseFrameTokens('![a](frame:abc) ![b](frame:) ![c](frame:-3)')).toEqual([])
+  })
+
+  it('ignores ordinary Markdown image links that are not frame tokens', () => {
+    expect(parseFrameTokens('![logo](https://x/y.png) text')).toEqual([])
+  })
+})
+
+describe('planBlogCaptures', () => {
+  const sources = [
+    { id: 'a', duration: 100 },
+    { id: 'b', duration: 50 },
+  ]
+
+  it('dedups by timestamp and numbers the captures frame-01, frame-02, …', () => {
+    const md = '![one](frame:10)\n![dup](frame:10)\n![two](frame:20)'
+    expect(planBlogCaptures(md, sources)).toEqual([
+      { time: 10, sourceId: 'a', localTime: 10, fileName: 'frame-01.jpg' },
+      { time: 20, sourceId: 'a', localTime: 20, fileName: 'frame-02.jpg' },
+    ])
+  })
+
+  it('maps a global timestamp in the second source to its correct (sourceId, localTime)', () => {
+    // 120s is 20s into source b (which starts at 100s on the global timeline).
+    expect(planBlogCaptures('![x](frame:120)', sources)).toEqual([
+      { time: 120, sourceId: 'b', localTime: 20, fileName: 'frame-01.jpg' },
+    ])
+  })
+
+  it('drops timestamps that cannot be routed to a source', () => {
+    expect(planBlogCaptures('![x](frame:5)', [])).toEqual([])
+  })
+})
+
+describe('rewriteFrameTokens', () => {
+  it('rewrites each token to its uploaded serve URL, preserving the caption', () => {
+    const md = 'A.\n\n![The diff](frame:142.5)\n\nB.'
+    const urls = new Map([[142.5, '/api/uploads/blog/projects/p/blog/frame-01.jpg']])
+    expect(rewriteFrameTokens(md, urls)).toBe(
+      'A.\n\n![The diff](/api/uploads/blog/projects/p/blog/frame-01.jpg)\n\nB.',
+    )
+  })
+
+  it('points every duplicate of a timestamp at the one uploaded frame', () => {
+    const md = '![one](frame:10) ![again](frame:10)'
+    const urls = new Map([[10, '/u/frame-01.jpg']])
+    expect(rewriteFrameTokens(md, urls)).toBe('![one](/u/frame-01.jpg) ![again](/u/frame-01.jpg)')
+  })
+
+  it('drops a token whose frame never uploaded, never leaving a broken image', () => {
+    const md = 'Before ![missing](frame:99) after'
+    expect(rewriteFrameTokens(md, new Map())).toBe('Before  after')
+    expect(rewriteFrameTokens(md, new Map())).not.toContain('frame:')
+  })
+
+  it('strips a malformed token outright', () => {
+    expect(rewriteFrameTokens('x ![bad](frame:nope) y', new Map())).toBe('x  y')
+  })
+})
+
+describe('frameFileName / blogSlug', () => {
+  it('zero-pads the frame index', () => {
+    expect(frameFileName(1)).toBe('frame-01.jpg')
+    expect(frameFileName(12)).toBe('frame-12.jpg')
+  })
+
+  it('slugs a title and falls back to "post"', () => {
+    expect(blogSlug('  Onboarding: Rules & More!  ')).toBe('onboarding-rules-more')
+    expect(blogSlug('!!!')).toBe('post')
+    expect(blogSlug('')).toBe('post')
   })
 })
 
