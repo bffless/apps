@@ -1626,7 +1626,10 @@ export function useScenePipeline() {
   // Export step never auto-runs this. Errors surface on the post's `error` status.
   const generateBlog = useCallback(
     async (directionInput: string) => {
-      const req = buildBlogRequest(scenes, directionInput)
+      const ordered = [...sources].sort((a, b) => a.order - b.order)
+      const sheetUrls = persistedSheets.map((s) => s.url).filter((u): u is string => !!u)
+      const duration = totalDuration(ordered.map((s) => ({ id: s.id, duration: s.duration })))
+      const req = buildBlogRequest(scenes, directionInput, { synopsis, description, sheetUrls, duration })
       if (!req.script) {
         setSceneError('Build at least one scene before generating a blog post.')
         return
@@ -1640,7 +1643,7 @@ export function useScenePipeline() {
         dispatch(setBlogError())
       }
     },
-    [scenes, blogStartReq, dispatch, completeBlogJob],
+    [scenes, sources, persistedSheets, synopsis, description, blogStartReq, dispatch, completeBlogJob],
   )
 
   // Producer edit of the recommended title (persisted on the description layer).

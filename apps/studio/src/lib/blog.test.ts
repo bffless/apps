@@ -22,19 +22,58 @@ const refined = (segments: { text: string; start: number; end: number }[]) => ({
 })
 
 describe('buildBlogRequest', () => {
-  it('shapes the final kept script + trimmed direction', () => {
+  it('shapes the final kept script + trimmed direction with empty context', () => {
     const scenes = [
-      scene({ id: 'a', ...refined([{ text: 'Hello there.', start: 0, end: 2 }]) }),
-      scene({ id: 'b', ...refined([{ text: 'Second scene.', start: 0, end: 2 }]) }),
+      scene({ id: 'a', title: 'Intro', transcript: 'raw intro', ...refined([{ text: 'Hello there.', start: 0, end: 2 }]) }),
+      scene({ id: 'b', title: 'Body', transcript: 'raw body', ...refined([{ text: 'Second scene.', start: 0, end: 2 }]) }),
     ]
     expect(buildBlogRequest(scenes, '  keep it punchy  ')).toEqual({
       script: 'Hello there.\n\nSecond scene.',
       direction: 'keep it punchy',
+      title: '',
+      summary: '',
+      synopsis: '',
+      scenes: [
+        { title: 'Intro', transcript: 'raw intro' },
+        { title: 'Body', transcript: 'raw body' },
+      ],
+      sheetUrls: [],
+      duration: 0,
     })
   })
 
-  it('tolerates an empty direction', () => {
-    expect(buildBlogRequest([], '')).toEqual({ script: '', direction: '' })
+  it('folds in title, summary, synopsis, signed sheet URLs and duration', () => {
+    const scenes = [scene({ id: 'a', title: 'Intro', transcript: 'raw intro', ...refined([{ text: 'Hi.', start: 0, end: 1 }]) })]
+    expect(
+      buildBlogRequest(scenes, 'friendly', {
+        synopsis: '  a punchy logline  ',
+        description: { title: '  The Title  ', summary: '  The summary.  ' },
+        sheetUrls: ['/api/uploads/projects/p/thumbnails/a.jpg', null, '', undefined],
+        duration: 123.4,
+      }),
+    ).toEqual({
+      script: 'Hi.',
+      direction: 'friendly',
+      title: 'The Title',
+      summary: 'The summary.',
+      synopsis: 'a punchy logline',
+      scenes: [{ title: 'Intro', transcript: 'raw intro' }],
+      sheetUrls: ['/api/uploads/projects/p/thumbnails/a.jpg'],
+      duration: 123.4,
+    })
+  })
+
+  it('tolerates an empty direction and no scenes', () => {
+    expect(buildBlogRequest([], '')).toEqual({
+      script: '',
+      direction: '',
+      title: '',
+      summary: '',
+      synopsis: '',
+      scenes: [],
+      sheetUrls: [],
+      duration: 0,
+    })
   })
 })
 

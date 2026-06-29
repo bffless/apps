@@ -570,7 +570,7 @@ function mockBlog(script: string, direction: string): { markdown: string } {
     '',
     lead,
     '',
-    'frame:1.5',
+    '![A quick look at the project](frame:1.5)',
     '',
     ...(rest.length ? ['## In depth', '', ...rest.flatMap((p) => [p, ''])] : []),
     direction ? `> Written with your direction: ${direction}` : '',
