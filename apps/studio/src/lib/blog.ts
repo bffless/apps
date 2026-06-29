@@ -205,6 +205,60 @@ export function blogSlug(title: string): string {
   return slug || 'post'
 }
 
+// ---- Download bundle (issue #71) ------------------------------------------
+//
+// The Blog bundle is the portable deliverable: a single zip containing `post.md`
+// plus an `images/` folder, self-contained so it renders wherever the creator
+// unzips it (Studio never hosts it). The persisted Markdown points its images at
+// the bucket serve URLs the frames were uploaded to (`rewriteFrameTokens`); the
+// bundle re-homes them to relative `images/frame-NN.jpg` paths. This pure half
+// plans the bundle — the rewritten Markdown plus the ordered list of frames to
+// fetch — and the imperative half (fetch each frame, zip, download) lives in the
+// card; everything string-shaped is here, tested.
+
+/** One file the bundle's `images/` folder holds: the relative `path` written into
+ *  both the zip and the rewritten Markdown, and the `url` to fetch its bytes from. */
+export type BlogBundleImage = { path: string; url: string }
+
+/** The plan for assembling a Blog bundle: the zip's name (`<slug>.zip`), the
+ *  Markdown file (`post.md`) with image URLs rewritten to relative paths and
+ *  front-matter preserved, and the ordered, deduped images to fetch into it. */
+export type BlogBundlePlan = {
+  archiveName: string
+  markdownPath: string
+  markdown: string
+  images: BlogBundleImage[]
+}
+
+/** Matches a Markdown image `![alt](url)` whose URL has no whitespace (the bucket
+ *  serve paths the frames upload to). */
+const MD_IMAGE = /!\[([^\]]*)\]\(\s*([^)\s]+)\s*\)/g
+
+/**
+ * Plan the Blog bundle from the resolved post Markdown and its title. Every image
+ * URL is rewritten to a relative `images/frame-NN.jpg` path (numbered by first
+ * appearance, **deduped by URL** so a frame reused twice is bundled once) and the
+ * front-matter is left untouched; the returned `images` list pairs each relative
+ * path with the URL to fetch its bytes from. A stray unresolved `frame:` token —
+ * one that never became a real image — is left as-is and never bundled, so a bad
+ * token can't pull a missing file into the archive.
+ */
+export function planBlogBundle(markdown: string, title: string): BlogBundlePlan {
+  const pathByUrl = new Map<string, string>()
+  const images: BlogBundleImage[] = []
+  const rewritten = str(markdown).replace(MD_IMAGE, (raw, caption: string, url: string) => {
+    if (url.startsWith('frame:')) return raw // unresolved token — not a real image
+    let path = pathByUrl.get(url)
+    if (!path) {
+      path = `images/${frameFileName(images.length + 1)}`
+      pathByUrl.set(url, path)
+      images.push({ path, url })
+    }
+    return `![${caption}](${path})`
+  })
+  return { archiveName: `${blogSlug(title)}.zip`, markdownPath: 'post.md', markdown: rewritten, images }
+}
+
 /**
  * Has the final script drifted from what a generated post was written against?
  * The post stores the `script` it came from (its staleness key); when the
