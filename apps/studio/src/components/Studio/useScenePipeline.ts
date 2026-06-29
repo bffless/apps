@@ -23,6 +23,7 @@ import {
 import { totalDuration, sourceForScene } from '../../lib/sources'
 import { resolvePerson, dominantSpeaker, resolveSpeakerVoice } from '../../lib/speakers'
 import { extractAudio, extractAudioWav, sliceAudioWav, sliceManyAudioWav } from '../../lib/audio'
+import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
 import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice } from '../../lib/export/ffmpeg'
 import {
@@ -316,6 +317,17 @@ export function useScenePipeline() {
     [dispatch],
   )
 
+  // Patch a scene through here for any edit that changes its **assemble inputs** —
+  // the cuts, the narration segments' audio, or the cut clip itself. Stamping
+  // `STALE_RENDER_PATCH` drops the now-stale saved render so the export gate and
+  // auto-build re-render it before the final stitch (which is a blind concat of
+  // saved clips); see that constant for the full rationale. Clears ONLY the
+  // rendered bytes — the director baseline and `refined` script are untouched.
+  const patchSceneEdit = useCallback(
+    (id: string, p: Partial<Scene>) => patchScene(id, { ...p, ...STALE_RENDER_PATCH }),
+    [patchScene],
+  )
+
   const reset = useCallback(() => {
     setPendingSheets([])
     dispatch(resetProject())
@@ -505,7 +517,7 @@ export function useScenePipeline() {
           ;({ segments, failed } = applyOriginalClips(segments, idx, clips))
         }
         const total = segments.reduce((n, s) => n + (s.audioSeconds ?? 0), 0)
-        patchScene(sceneId, {
+        patchSceneEdit(sceneId, {
           refined: { ...refinement, segments },
           refineJobId: null,
           promptJobId: jobId,
@@ -525,7 +537,7 @@ export function useScenePipeline() {
         setRefiningId(null)
       }
     },
-    [pollJob, scenes, patchScene, sliceAndUploadSpans, sources],
+    [pollJob, scenes, patchScene, patchSceneEdit, sliceAndUploadSpans, sources],
   )
 
   /**
@@ -1143,9 +1155,9 @@ export function useScenePipeline() {
       const base =
         scene.refined ?? { segments: effectiveSegments(scene), cuts: scene.cuts ?? [], source: 'ai' as const }
       const cuts = op === 'add' ? addCut(base.cuts, span, scene) : removeCut(base.cuts, span)
-      patchScene(sceneId, { refined: { ...base, cuts, source: 'manual' } })
+      patchSceneEdit(sceneId, { refined: { ...base, cuts, source: 'manual' } })
     },
-    [scenes, patchScene],
+    [scenes, patchSceneEdit],
   )
 
   // Adopt a span of the source clip's ORIGINAL audio as a New-pane run (story
@@ -1193,7 +1205,7 @@ export function useScenePipeline() {
         // un-cut it, otherwise the run would render red (cut wins over voiced).
         const cuts = removeCut(base.cuts, { start: seg.start, end: seg.end })
         const total = segments.reduce((n, s) => n + (s.audioSeconds ?? 0), 0)
-        patchScene(sceneId, {
+        patchSceneEdit(sceneId, {
           refined: { ...base, segments, cuts, source: 'manual' },
           narrationSeconds: total,
         })
@@ -1203,7 +1215,7 @@ export function useScenePipeline() {
         setAdoptingId(null)
       }
     },
-    [adoptingId, scenes, sources, uploadReq, patchScene],
+    [adoptingId, scenes, sources, uploadReq, patchSceneEdit],
   )
 
   // Cut this scene into its own video clip + soundtrack (story 03g + 03k, build
@@ -1240,14 +1252,14 @@ export function useScenePipeline() {
         const wav = await sliceAudioWav(src.audioUrl, scene.start, scene.end)
         const audioFile = new File([wav], `scene-${scene.index}-audio.wav`, { type: 'audio/wav' })
         const { url: clipAudioUrl } = await uploadReq({ file: audioFile, kind: 'audio' }).unwrap()
-        patchScene(sceneId, { clipUrl: url, clipAudioUrl })
+        patchSceneEdit(sceneId, { clipUrl: url, clipAudioUrl })
       } catch (e) {
         setSceneError(stageError(e))
       } finally {
         setSlicingId(null)
       }
     },
-    [slicingId, scenes, sources, signFor, uploadReq, patchScene],
+    [slicingId, scenes, sources, signFor, uploadReq, patchSceneEdit],
   )
 
   // Delete one New-pane run, reopening its gap (story 03d) — e.g. to clear room
@@ -1261,9 +1273,9 @@ export function useScenePipeline() {
         scene.refined ?? { segments: effectiveSegments(scene), cuts: scene.cuts ?? [], source: 'ai' as const }
       const segments = removeSegment(base.segments, segIndex)
       const total = segments.reduce((n, s) => n + (s.audioSeconds ?? 0), 0)
-      patchScene(sceneId, { refined: { ...base, segments, source: 'manual' }, narrationSeconds: total })
+      patchSceneEdit(sceneId, { refined: { ...base, segments, source: 'manual' }, narrationSeconds: total })
     },
-    [scenes, patchScene],
+    [scenes, patchSceneEdit],
   )
 
   // Re-time one New-pane run (story 03h): drag its voice-control row to a new
@@ -1288,18 +1300,18 @@ export function useScenePipeline() {
       const start = clampDropStart(scene, newStart, duration)
       const cuts = removeCut(base.cuts, { start, end: start + duration })
       const total = segments.reduce((n, s) => n + (s.audioSeconds ?? 0), 0)
-      patchScene(sceneId, { refined: { ...base, segments, cuts, source: 'manual' }, narrationSeconds: total })
+      patchSceneEdit(sceneId, { refined: { ...base, segments, cuts, source: 'manual' }, narrationSeconds: total })
     },
-    [scenes, patchScene],
+    [scenes, patchSceneEdit],
   )
 
   // Throw out the refinement and revert to the director's first pass.
   const clearRefinement = useCallback(
     (id: string) => {
       setSceneError(null)
-      patchScene(id, { refined: null, narrationSeconds: null, promptJobId: undefined })
+      patchSceneEdit(id, { refined: null, narrationSeconds: null, promptJobId: undefined })
     },
-    [patchScene],
+    [patchSceneEdit],
   )
 
   // Write one segment's audio back into `scene.refined` (creating a refinement
@@ -1325,9 +1337,9 @@ export function useScenePipeline() {
           : seg,
       )
       const total = segments.reduce((n, s) => n + (s.audioSeconds ?? 0), 0)
-      patchScene(sceneId, { refined: { ...base, segments }, narrationSeconds: total })
+      patchSceneEdit(sceneId, { refined: { ...base, segments }, narrationSeconds: total })
     },
-    [scenes, patchScene],
+    [scenes, patchSceneEdit],
   )
 
   // Set a per-segment voice override (story 10d): persisted on the non-destructive
@@ -1505,14 +1517,14 @@ export function useScenePipeline() {
           }
         }
         const total = segments.reduce((n, s) => n + (s.audioSeconds ?? 0), 0)
-        patchScene(sceneId, { refined: { ...base, segments }, narrationSeconds: total > 0 ? total : null })
+        patchSceneEdit(sceneId, { refined: { ...base, segments }, narrationSeconds: total > 0 ? total : null })
       } catch (e) {
         setSceneError(stageError(e))
       } finally {
         setVoicingSceneId(null)
       }
     },
-    [voicingSceneId, scenes, sources, cast, speakerAssignments, voice, narrateReq, sliceAndUploadSpans, patchScene],
+    [voicingSceneId, scenes, sources, cast, speakerAssignments, voice, narrateReq, sliceAndUploadSpans, patchSceneEdit],
   )
 
   // ---- Scene build loop -----------------------------------------------------
