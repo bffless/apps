@@ -58,6 +58,19 @@ Add this once per project (BFFless dashboard → Settings → Response Headers, 
 
 After adding it, hard-reload the deployment; the console should report the multithreaded core.
 
+## First-success checkpoint
+
+Once the rule set is imported and attached, the provider tokens are set, and Studio is deployed
+(see the repo-root [`GETTING-STARTED.md`](../../../GETTING-STARTED.md)), confirm the install with one
+end-to-end action:
+
+**Upload a short screen recording → see the transcript come back.**
+
+That round-trip exercises the presigned upload, bucket storage, and the WhisperX transcribe pipeline
+(`/api/transcribe`). If the transcript renders, Studio's backend is live. A 404 on `/api/*` means the
+rule set isn't attached to the `studio` alias; a transcribe failure usually means a missing Replicate
+token or `HF_TOKEN`.
+
 ## Portability: storage paths are deployment-relative
 
 The custom functions that rebuild a bucket storage path (transcribe, `/api/uploads/sign`, thumbnail,
