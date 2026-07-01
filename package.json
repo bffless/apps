@@ -15,6 +15,9 @@
     "handoff:build": "pnpm --filter handoff build",
     "handoff:lint": "pnpm --filter handoff lint",
     "handoff:test": "pnpm --filter handoff test:run",
+    "skills:sync": "node scripts/sync-skills.mjs",
+    "skills:check": "node scripts/sync-skills.mjs --check",
+    "apps:check": "node scripts/check-app-conventions.mjs",
     "sandcastle": "npx tsx .sandcastle/main.ts"
   },
   "pnpm": {

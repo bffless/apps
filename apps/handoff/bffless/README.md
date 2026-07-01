@@ -23,13 +23,35 @@ After import, **attach the `handoff` rule set to the alias** your deploy uploads
 `handoff` alias / `handoff.<your-domain>`). `/api/*` only serves on aliases the rule set is attached
 to.
 
-## Prerequisites (provision these in the target project first)
+## Manual setup (admin panel)
 
-### 1. Storage backend (bucket)
+Everything the human must configure in the BFFless admin panel that the `install-app` skill
+**cannot** do. The repo-root [`GETTING-STARTED.md`](../../../GETTING-STARTED.md) spine points here for
+Handoff's app-specifics; do them once in the target project.
+
+- **External connections / AI provider tokens — none.** Handoff has no AI handlers, so it needs **no**
+  Replicate / Anthropic / other provider tokens. (Unlike Studio, there is nothing to enter under
+  Settings → AI → AI Services.)
+- **Secrets — none app-specific.** Handoff's pipelines reference no named `secrets.*`. The signed
+  view-cookie HMAC uses CE's built-in server-side `utils.sign` key, which is managed by the platform,
+  not entered by you.
+- **Storage backend — a real bucket is REQUIRED (see §1 below).** ⚠️ **Handoff will not work on local
+  file storage.** This is Handoff's key manual prerequisite.
+- **Response-header rules — none.** Handoff needs no extra response headers (nothing like Studio's
+  COOP/COEP), so the `install-app` skill has no header rule to add for Handoff.
+- **Data tables + auth relay + people-picker directory** — the platform-level pieces the pipelines
+  depend on; see §2–§4 below.
+
+### 1. Storage backend (bucket) — REQUIRED, not local file storage
+
+> ⚠️ **Handoff requires a real bucket storage backend (S3, GCS, Spaces/MinIO, or Azure Blob). It will
+> not work on the local file-storage adapter.** This is the one manual prerequisite that will silently
+> break Handoff if skipped.
 
 Handoff uses the **presigned upload** flow — the browser PUTs files directly to the bucket, bypassing
-the 1 MB proxy cap. This requires a **bucket storage backend** (S3, GCS, MinIO, or Azure Blob) — the
-local-storage adapter does not support presigned URLs and will return `PRESIGNED_NOT_SUPPORTED`.
+the 1 MB proxy cap. The **local-storage adapter does not support presigned URLs** and will return
+`PRESIGNED_NOT_SUPPORTED`, so uploads fail on local FS. Point the project's default storage at a
+bucket backend before installing Handoff.
 
 Bucket **CORS** must allow `PUT` from the site origin. Add a rule that permits:
 
@@ -93,6 +115,23 @@ Handoff uses BFFless cookie-based sessions for access control. The app reads
 `/_bffless/auth/session` to detect the current user and redirects unauthenticated visitors to the
 admin login relay. Configure the built-in `/_bffless/auth/*` relay in the BFFless dashboard
 (Settings → Auth) so that the session cookie is issued correctly for your alias domain.
+
+## First-success checkpoint
+
+Once the rule set is imported and attached to the `handoff` alias, the **bucket** storage backend is
+configured, the two data tables exist, and Handoff is deployed (see the repo-root
+[`GETTING-STARTED.md`](../../../GETTING-STARTED.md)), confirm the install with one end-to-end action:
+
+**Upload a file → see it served back.**
+
+Open your deployed Handoff (`handoff.<your-domain>`), sign in, and **upload a file**; then open it and
+confirm it **downloads / renders**. That round-trip exercises the presigned direct-to-bucket upload,
+the `handoff_nodes` registration, and the ACL-gated serve path (`GET /api/uploads/content/*`) end to
+end. If the file serves back, Handoff's backend is live.
+
+- A **404 on `/api/*`** means the `handoff` rule set isn't attached to the `handoff` alias.
+- A **`PRESIGNED_NOT_SUPPORTED`** on upload means the project is still on local file storage — switch
+  to a real bucket backend (see [Manual setup → §1](#1-storage-backend-bucket--required-not-local-file-storage)).
 
 ## schemaId portability caveat
 

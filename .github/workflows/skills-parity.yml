@@ -1,0 +1,33 @@
+name: Skills parity
+
+# Repo-local *authored* skills (e.g. install-app, handoff-api) are committed to
+# both .claude/skills/ and .agents/skills/ as real, byte-identical files, so a
+# fork gets them in whichever harness layout it uses. This check fails a PR if
+# the two copies drift — run `pnpm skills:sync` (or `node scripts/sync-skills.mjs`)
+# and commit the result to fix.
+on:
+  pull_request:
+    paths:
+      - '.claude/skills/**'
+      - '.agents/skills/**'
+      - 'scripts/sync-skills.mjs'
+      - 'skills-lock.json'
+      - '.github/workflows/skills-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check authored-skill copies are in sync
+        run: node scripts/sync-skills.mjs --check
