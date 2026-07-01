@@ -19,6 +19,30 @@ all 43 rules (IDs are remapped on import).
 After import, **attach the `studio` rule set to the alias** your deploy uploads to (e.g. the `studio`
 alias / `studio.<your-domain>`). `/api/*` only serves on aliases the rule set is attached to.
 
+## Manual setup (admin panel)
+
+Everything the human must configure in the BFFless admin panel that the `install-app` skill
+**cannot** do. The repo-root [`GETTING-STARTED.md`](../../../GETTING-STARTED.md) spine points here for
+Studio's app-specifics; do them once in the target project (all monorepo apps share one project, so
+provider tokens/secrets are set per project, not per app).
+
+- **External connections / AI provider tokens — Replicate + Anthropic (admin-panel only, no MCP).**
+  Studio's AI pipelines need a **Replicate** token (powers `victor-upmeet/whisperx` transcribe,
+  `google/gemini-3.1-pro` director/refiner, `minimax/*` voice, `google/nano-banana-2` thumbnail) and
+  an **Anthropic** key (`claude-sonnet-4-6` for `/api/thumbnail/draft`). See
+  [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) §1 and §3 for where to
+  obtain and enter each.
+- **Secrets — `HF_TOKEN` from Hugging Face.** Add `HF_TOKEN` under **Settings → Secrets** set to a
+  [Hugging Face](https://huggingface.co/settings/tokens) **read** token; `/api/transcribe` references
+  it as `secrets.HF_TOKEN` for WhisperX alignment/diarization. See Prerequisites §2.
+- **Storage backend — a default bucket is required.** Studio uploads/serves write under
+  `<owner>/<repo>/uploads/<kind>/…`, so the project needs a storage backend with a default bucket for
+  uploads; also provision the `studio_jobs` + projects data tables. See the
+  [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) table.
+- **Response-header rules — COOP/COEP for `ffmpeg.wasm` threading.** Studio's Export step needs the
+  page **cross-origin isolated**, which is a response-header rule *not* in the proxy-rules JSON. See
+  [Cross-origin isolation](#cross-origin-isolation-required-for-ffmpeg-threading) below.
+
 ## Prerequisites (provision these in the target project first)
 
 In the BFFless dashboard → **Settings → AI**:

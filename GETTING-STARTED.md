@@ -31,6 +31,13 @@ external connections/AI tokens, secrets, **storage backend requirements**, respo
 a **"First-success checkpoint"** section. The spine points at those two sections instead of baking any
 one app's specifics into itself.
 
+> **This is a hard convention, enforced in CI.** Every app ships
+> `apps/<app>/bffless/<app>.proxy-rules.json` (its exported backend) and
+> `apps/<app>/bffless/README.md` with those two sections — that's what lets this one guide install any
+> app, including any future one, without a rewrite. The rule and its CI check are documented in
+> [`docs/app-pipelines-convention.md`](docs/app-pipelines-convention.md) (run `pnpm apps:check`
+> locally).
+
 > **Studio needs AI provider tokens (Replicate, Anthropic) + `HF_TOKEN`; Handoff needs none — but
 > Handoff requires a real bucket storage backend (not local file storage).** These differences live in
 > each app's README, not the spine.
