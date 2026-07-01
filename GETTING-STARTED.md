@@ -1,6 +1,6 @@
 # Getting started: deploy an app end-to-end
 
-This is the thinnest complete path from **"I forked the repo"** to **"my app is live and I just
+This is the thinnest complete path from **"I made my own copy of the repo"** to **"my app is live and I just
 watched it do the thing"** — Studio transcribing a screen recording, or Handoff serving back a file I
 uploaded. It assumes you already have a running self-hosted BFFless (Community Edition) instance and
 admin access to it. Installing BFFless itself is out of scope.
@@ -46,7 +46,7 @@ one app's specifics into itself.
 
 ## The spine
 
-1. [Fork the repo](#1-fork-the-repo)
+1. [Get your own copy: fork or template](#1-get-your-own-copy-fork-recommended-or-use-the-template)
 2. [Set the deploy variables on your fork](#2-set-the-deploy-variables-on-your-fork)
 3. [Register the BFFless MCP against your own instance](#3-register-the-bffless-mcp-against-your-own-instance)
 4. [Provision the project in the admin panel (human-only, once)](#4-provision-the-project-in-the-admin-panel-human-only-once)
@@ -74,10 +74,29 @@ setup (admin panel)"** section, so it stays correct as the app changes.
 
 ---
 
-## 1. Fork the repo
+## 1. Get your own copy: fork (recommended) or use the template
 
-Fork [`bffless/apps`](https://github.com/bffless/apps) to your own account/org. You deploy from your
-fork, so CI runs under your GitHub settings and pushes to **your** BFFless instance.
+You need your own copy of the whole monorepo — **the install unit is one repo**, and you then deploy
+whichever app(s) you want via the per-app workflows. There are two ways to make that copy; **fork is
+recommended.** Either way you end up with one repo you own, and the rest of this guide is identical.
+
+### Fork (recommended)
+
+Fork [`bffless/apps`](https://github.com/bffless/apps) to your own account/org. A fork keeps the
+**upstream link** to `bffless/apps`, so you can pull future app fixes and newly added apps with GitHub's
+**Sync fork** button. That makes it the best choice for these give-away apps, which keep improving — you
+stay on the receiving end of upstream updates. You deploy from your fork, so CI runs under your GitHub
+settings and pushes to **your** BFFless instance.
+
+### Use this template
+
+`bffless/apps` is a GitHub **template repository**, so its **"Use this template"** button gives you a
+clean, **unlinked** repo you own outright. Pick this when you want your own product and *won't* track
+upstream. The trade-off: there's **no upstream link**, so there's **no easy Sync fork** — you'd have to
+merge any upstream changes by hand.
+
+> Later steps say "your fork" (e.g. step 2's deploy variables). If you used the template, read that as
+> "your copy" — the deploy variables and workflows work the same on a template-created repo.
 
 ## 2. Set the deploy variables on your fork
 
