@@ -21,7 +21,7 @@ The line above (if any) is the **master PR** and its **epic branch**. This run's
 
 # Task
 
-You are an autonomous coding agent working in the `bffless-apps` monorepo (apps: `apps/handoff`, `apps/studio`). You implement **one** ready issue per run and land it on the **epic branch** (or open a review PR in legacy mode). The single **master PR** (epic → `main`) is the only thing a human reviews; you never merge it and never touch `main` or production.
+You are an autonomous coding agent working in the `bffless-apps` monorepo (apps: `apps/handoff`, `apps/studio`). You implement **one** ready issue per **iteration** and land it on the **epic branch** (or open a review PR in legacy mode). Sandcastle re-invokes you for up to `maxIterations` iterations, each in a fresh sandbox that re-reads the Context block above — so the issue list shrinks as you close work and you pick up the next story each time (see "Done"). The single **master PR** (epic → `main`) is the only thing a human reviews; you never merge it and never touch `main` or production.
 
 ## Domain knowledge
 
@@ -70,7 +70,7 @@ This repo ships project skills under `.claude/skills/` — including the **bffle
 
 ## Rules
 
-- **One issue per run.**
+- **One issue per iteration.** Land one story, then end your turn and let Sandcastle start the next iteration for the next story (see "Done"). Do not try to implement multiple issues in a single turn.
 - **Never merge the master PR**, never push to `main`, never `git push` to the epic branch directly (go through your story PR), and **never attach rules to a production alias**. Those are the human's gate.
 - In **epic mode** you MAY squash-merge **your own story PR into the epic branch** once CI is green, and you MUST then close the issue. In **legacy mode** you may do neither.
 - **Never force-push.**
@@ -95,6 +95,14 @@ When the epic's stories are all landed and validated on the preview URL:
 
 # Done
 
-When you have landed the story (epic mode) or opened the review PR (legacy mode) — or determined there is no actionable issue, or you are blocked — output the completion signal:
+**Critical:** the completion signal ends the **ENTIRE run**, not just this iteration — Sandcastle stops looping the moment you print it. So emit it **only when there is genuinely nothing left to do**. If you emit it after a single story while more stories remain, the run stops early and the rest of the queue never gets worked (the bug this wording exists to prevent).
+
+- **Epic mode — landed a story and more actionable `ready-for-agent` issues remain:** do **NOT** print the signal. Just finish your turn after closing the issue. Sandcastle starts the next iteration in a fresh sandbox, the Context block re-queries the (now smaller) queue, and you pick the next story. Do not print the string `<promise>COMPLETE</promise>` anywhere in this case — not even in prose or a PR body.
+- **Print the completion signal only when one of these is true:**
+  - there is **no actionable issue left** — the `ready-for-agent` list is empty, or every remaining issue is blocked by an issue that is still open;
+  - you are **blocked** and cannot make progress (comment the blocker on the issue first);
+  - you are in **legacy mode** (no epic branch): land the single review PR, comment its link on the issue, then complete — legacy mode must **not** loop, because it doesn't close issues and would re-pick the same one.
+
+When (and only when) one of those holds, output the completion signal on its own line:
 
 <promise>COMPLETE</promise>
