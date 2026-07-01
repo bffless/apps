@@ -1,16 +1,39 @@
-# Getting started: deploy Studio end-to-end
+# Getting started: deploy an app end-to-end
 
-This is the thinnest complete path from **"I forked the repo"** to **"Studio is live and I just
-watched it transcribe a screen recording."** It assumes you already have a running self-hosted
-BFFless (Community Edition) instance and admin access to it. Installing BFFless itself is out of
-scope.
+This is the thinnest complete path from **"I forked the repo"** to **"my app is live and I just
+watched it do the thing"** — Studio transcribing a screen recording, or Handoff serving back a file I
+uploaded. It assumes you already have a running self-hosted BFFless (Community Edition) instance and
+admin access to it. Installing BFFless itself is out of scope.
 
-You follow it once, linearly. No prior `bffless-apps` knowledge required.
+You follow it once, linearly. No prior `bffless-apps` knowledge required. **The spine is the same for
+every app** — pick your app once, and each step resolves its app-specifics from that app's own
+`apps/<app>/bffless/README.md`, so the guide never has to be rewritten per app.
 
-> **How this repo is organized.** All monorepo apps share **one** BFFless project. Third-party
-> tokens (Replicate, Anthropic, `HF_TOKEN`, …) are configured **per project**, not per app — set
-> them once and every app reuses them. The install unit is the whole monorepo (one fork); you then
-> deploy whichever app(s) you want via each app's own workflow.
+> **How this repo is organized.** All monorepo apps share **one** BFFless project. Third-party tokens
+> (Replicate, Anthropic, `HF_TOKEN`, …) are configured **per project**, not per app — set them once
+> and every app reuses them. The install unit is the whole monorepo (one fork); you then deploy
+> whichever app(s) you want via each app's own workflow.
+
+---
+
+## Pick your app
+
+The spine below is written with a placeholder **`<app>`**. Choose the app you're installing and read
+`<app>` as that value everywhere. Every per-app fact resolves from that app's README:
+
+| `<app>` | Per-app README (app-specifics live here) | Alias | Deploy workflow | First-success |
+| --- | --- | --- | --- | --- |
+| `studio` | [`apps/studio/bffless/README.md`](apps/studio/bffless/README.md) | `studio` | **Deploy Studio to BFFless** | upload a recording → see the transcript |
+| `handoff` | [`apps/handoff/bffless/README.md`](apps/handoff/bffless/README.md) | `handoff` | **Deploy Handoff to BFFless** | upload a file → see it served back |
+
+Each app's README has a **"Manual setup (admin panel)"** section (the human-only, admin-panel steps —
+external connections/AI tokens, secrets, **storage backend requirements**, response-header rules) and
+a **"First-success checkpoint"** section. The spine points at those two sections instead of baking any
+one app's specifics into itself.
+
+> **Studio needs AI provider tokens (Replicate, Anthropic) + `HF_TOKEN`; Handoff needs none — but
+> Handoff requires a real bucket storage backend (not local file storage).** These differences live in
+> each app's README, not the spine.
 
 ---
 
@@ -20,8 +43,8 @@ You follow it once, linearly. No prior `bffless-apps` knowledge required.
 2. [Set the deploy variables on your fork](#2-set-the-deploy-variables-on-your-fork)
 3. [Register the BFFless MCP against your own instance](#3-register-the-bffless-mcp-against-your-own-instance)
 4. [Provision the project in the admin panel (human-only, once)](#4-provision-the-project-in-the-admin-panel-human-only-once)
-5. [Import Studio's backend and attach it to the alias](#5-import-studios-backend-and-attach-it-to-the-alias)
-6. [Deploy Studio](#6-deploy-studio)
+5. [Import the app's backend and attach it to the alias](#5-import-the-apps-backend-and-attach-it-to-the-alias)
+6. [Deploy the app](#6-deploy-the-app)
 7. [First-success checkpoint](#7-first-success-checkpoint)
 
 ---
@@ -29,7 +52,9 @@ You follow it once, linearly. No prior `bffless-apps` knowledge required.
 ## Variables checklist
 
 Set these up front — later steps assume they exist. The last column says **who** sets each and
-whether tooling can do it (some can only be entered by a human in the admin UI).
+whether tooling can do it (some can only be entered by a human in the admin UI). The AI-token /
+storage rows are **per-app** — the concrete list for your `<app>` lives in its README's **"Manual
+setup (admin panel)"** section, so it stays correct as the app changes.
 
 | Where | Name | Value | Purpose | Who sets it |
 | --- | --- | --- | --- | --- |
@@ -37,9 +62,8 @@ whether tooling can do it (some can only be entered by a human in the admin UI).
 | GitHub repo secret | `BFFLESS_API_KEY` | API key from their instance | CI deploy auth | human (GitHub settings) |
 | Local `.mcp.json` | `url` | `https://admin.<their-domain>/mcp` | point installer at their instance | human |
 | Local `.mcp.json` | `X-API-Key` | their API key | MCP auth | human |
-| Deploy workflow | `alias:` | `studio` (fixed default — leave it) | must match the alias the rule set is attached to | — |
-| Admin panel → AI Services | Replicate token, Anthropic key | tokens from replicate.com / anthropic | AI handlers the pipelines call | **human, admin panel only (no MCP)** |
-| Admin panel → Secrets | `HF_TOKEN` (+ any others per app) | token from huggingface | referenced as `secrets.HF_TOKEN` | human (admin panel; MCP `set_secret` can set if value supplied) |
+| Deploy workflow | `alias:` | `<app>` (fixed default — leave it) | must match the alias the rule set is attached to | — |
+| Admin panel (per app) | AI-provider tokens / secrets / storage backend | see `apps/<app>/bffless/README.md` → **Manual setup (admin panel)** | what each app's pipelines need | **human, admin panel (some MCP-settable, provider tokens are admin-only)** |
 
 ---
 
@@ -55,8 +79,8 @@ In your fork's **Settings → Secrets and variables → Actions**:
 - **Variable** `BFFLESS_URL` — your self-hosted instance URL.
 - **Secret** `BFFLESS_API_KEY` — an API key from your instance.
 
-These are what the `deploy-studio.yml` workflow uses to authenticate and pick its deploy target. See
-the top three rows of the [variables checklist](#variables-checklist).
+These are what each app's `deploy-<app>.yml` workflow uses to authenticate and pick its deploy target.
+See the top three rows of the [variables checklist](#variables-checklist).
 
 ## 3. Register the BFFless MCP against your own instance
 
@@ -74,92 +98,92 @@ Point your local `.mcp.json` at **your** admin endpoint — **not** the maintain
 }
 ```
 
-Use `https://admin.<your-domain>/mcp` and your own API key. This is what lets Claude (or the future
+Use `https://admin.<your-domain>/mcp` and your own API key. This is what lets Claude (via the
 `install-app` skill) import proxy rules into **your** project.
 
 ## 4. Provision the project in the admin panel (human-only, once)
 
-This step is **human-only**. Studio's pipelines call third-party AI services, and **the AI Services
-provider tokens (Replicate, Anthropic) have no API or MCP** — they can *only* be entered in the
-admin UI at **Settings → AI → AI Services**. Tooling (including the MCP and any install skill)
-**cannot** set them. Generic secrets like `HF_TOKEN` go under **Settings → Secrets** (the MCP
-`set_secret` can set those *if you supply the value*, but the guide assumes you enter them by hand).
+This step is **human-only** and **per app**. Some things an app needs — most notably **AI Services
+provider tokens (Replicate, Anthropic)** — have **no API or MCP** and can *only* be entered in the
+admin UI at **Settings → AI → AI Services**. Tooling (including the MCP and the `install-app` skill)
+**cannot** set them. Generic secrets go under **Settings → Secrets** (the MCP `set_secret` can set
+those *if you supply the value*, but the guide assumes you enter them by hand). Storage/data-table
+provisioning also happens here.
 
-Because all monorepo apps share one project, you configure these **per project, once** — not per
-app.
+Because all monorepo apps share one project, you configure these **per project, once** — not per app.
 
-**The exact per-app list — which tokens Studio needs and where to create each — lives in the app's
-own README, so it stays correct as the app changes:**
+**The exact per-app list — which tokens/secrets/storage your `<app>` needs and where to create each —
+lives in the app's own README, so it stays correct as the app changes:**
 
-➡️ **[`apps/studio/bffless/README.md`](apps/studio/bffless/README.md) → "Prerequisites (provision
-these in the target project first)".**
+➡️ **`apps/<app>/bffless/README.md` → "Manual setup (admin panel)"** (open your app's README from the
+[Pick your app](#pick-your-app) table).
 
-For Studio, that section tells you to obtain and enter, in the admin panel:
+That section enumerates, for your app: external connections / AI-provider tokens, secrets, **storage
+backend requirements**, and any response-header rules. Two examples of how apps differ (don't hard-code
+either here — follow the README so you always get the current one):
 
-- a **Replicate** token (from [replicate.com](https://replicate.com/account/api-tokens)),
-- an **Anthropic** key,
-- the **`HF_TOKEN`** secret (from [Hugging Face](https://huggingface.co/settings/tokens)),
+- **Studio** → obtain and enter a **Replicate** token, an **Anthropic** key, and the **`HF_TOKEN`**
+  secret, plus a default storage bucket and the `studio_jobs`/projects data tables.
+- **Handoff** → **no AI tokens or secrets**, but it **requires a real bucket storage backend (S3/GCS/
+  Spaces/MinIO) — it will not work on local file storage** — plus the `handoff_nodes` /
+  `handoff_share_links` data tables and the auth relay.
 
-plus the storage-backend and data-table requirements. Don't hard-code the list here — follow the
-README so you always get the current one.
+## 5. Import the app's backend and attach it to the alias
 
-## 5. Import Studio's backend and attach it to the alias
-
-Studio has no app server: its `/api/*` is a **BFFless proxy rule set** exported to
-[`apps/studio/bffless/studio.proxy-rules.json`](apps/studio/bffless/studio.proxy-rules.json). Editing
-that file does nothing on its own — the rules only serve once they're imported into your project and
-attached to the alias.
+The app has no app server: its `/api/*` is a **BFFless proxy rule set** exported to
+`apps/<app>/bffless/<app>.proxy-rules.json`. Editing that file does nothing on its own — the rules only
+serve once they're imported into your project and attached to the `<app>` alias.
 
 ### Recommended: run the `install-app` skill
 
-With the MCP registered against **your** instance (step 3), run the repo-local **`install-app`**
-skill for Studio. It automates everything reachable by MCP:
+With the MCP registered against **your** instance (step 3), run the repo-local **`install-app`** skill
+for your `<app>` (`studio` or `handoff`). It automates everything reachable by MCP:
 
-1. imports `apps/studio/bffless/studio.proxy-rules.json` (creates the `studio` rule set + rules),
-2. attaches it to the **`studio` alias** alongside any existing sets,
-3. creates the COOP/COEP response-header rule,
-4. **verifies** the external connections Studio declares (Replicate, Anthropic, `HF_TOKEN`) and
-   reports what's still missing **with links** — it does *not* set the provider tokens (no MCP path).
+1. imports `apps/<app>/bffless/<app>.proxy-rules.json` (creates the `<app>` rule set + rules),
+2. attaches it to the **`<app>` alias** alongside any existing sets,
+3. creates any required response-header rule (e.g. Studio's COOP/COEP; **Handoff needs none**),
+4. **verifies** the external connections the app declares and reports what's still missing **with
+   links** — it does *not* set the provider tokens (no MCP path).
 
-It ends with an explicit "set these manually in the admin panel: …" list when connections are
-missing — those are step 4's admin-panel tokens, which no tooling can set. The skill ships in the
-repo (`.claude/skills/install-app/` and `.agents/skills/install-app/`), so it's already on your fork.
+It ends with an explicit "set these manually in the admin panel: …" list when connections are missing
+— those are step 4's admin-panel tokens, which no tooling can set. The skill ships in the repo
+(`.claude/skills/install-app/`), so it's already on your fork.
 
 ### Fallback: do it by hand
 
-If you'd rather not use the skill, do these three things manually (full detail in
-[`apps/studio/bffless/README.md`](apps/studio/bffless/README.md)):
+If you'd rather not use the skill, do it manually — the full, app-specific detail (import steps,
+alias, `schemaId` remapping, any response-header rule) is in your app's
+`apps/<app>/bffless/README.md` (from the [Pick your app](#pick-your-app) table):
 
-1. **Import** `apps/studio/bffless/studio.proxy-rules.json` — via the dashboard
-   (**Proxy Rules → Import**) or by asking Claude with the MCP connected. This creates the `studio`
-   rule set and its rules (IDs are remapped on import).
-2. **Attach** the `studio` rule set to the **`studio` alias** (the alias your deploy uploads to).
+1. **Import** `apps/<app>/bffless/<app>.proxy-rules.json` — via the dashboard
+   (**Proxy Rules → Import**) or by asking Claude with the MCP connected. This creates the `<app>` rule
+   set and its rules (IDs are remapped on import).
+2. **Attach** the `<app>` rule set to the **`<app>` alias** (the alias your deploy uploads to).
    `/api/*` only serves on aliases the rule set is attached to.
-3. **Add the COOP/COEP response-header rule.** Studio's **Export** step assembles video with
-   multithreaded `ffmpeg.wasm`, which needs `SharedArrayBuffer` — so the page must be cross-origin
-   isolated. This comes from a **response-header rule** that is deliberately **not** in
-   `studio.proxy-rules.json`. Add it once (Settings → Response Headers, or MCP
-   `create_response_header_rule`):
-   - **Path pattern:** `**`
-   - **Headers:** `Cross-Origin-Opener-Policy: same-origin` and
-     `Cross-Origin-Embedder-Policy: credentialless`
+3. **Apply any app-specific extras** the README calls out — e.g. Studio's COOP/COEP response-header
+   rule (needed for `ffmpeg.wasm` threading), or Handoff's `schemaId` remap to your own data tables.
+   **Handoff needs no response-header rule.**
 
-## 6. Deploy Studio
+## 6. Deploy the app
 
-Run Studio's deploy workflow from your fork: **Actions → "Deploy Studio to BFFless" → Run workflow**
-(or push a change under `apps/studio/**`). It builds Studio and uploads the artifact to the `studio`
-alias using your `BFFLESS_URL` / `BFFLESS_API_KEY`. Leave the workflow's `alias: studio` as-is — it
-must match the alias you attached the rule set to in step 5.
+Run the app's deploy workflow from your fork: **Actions → "Deploy <App> to BFFless" → Run workflow**
+(or push a change under `apps/<app>/**`). It builds the app and uploads the artifact to the `<app>`
+alias using your `BFFLESS_URL` / `BFFLESS_API_KEY`. Leave the workflow's `alias: <app>` as-is — it must
+match the alias you attached the rule set to in step 5.
 
 ## 7. First-success checkpoint
 
-Open your deployed Studio (`studio.<your-domain>`) and **upload a short screen recording**. Within a
-few moments you should **see the transcript come back** — that round-trip exercises the upload,
-storage, and the WhisperX transcribe pipeline end-to-end.
+Open your deployed app (`<app>.<your-domain>`) and perform its first-success action — the concrete
+end-to-end round-trip in that app's README **"First-success checkpoint"** section:
 
-**If you see the transcript, Studio is live.** 🎉
+- **Studio** → **upload a short screen recording** and **see the transcript come back** (exercises
+  upload, storage, and the WhisperX transcribe pipeline).
+- **Handoff** → **upload a file** and **see it served back** (exercises the presigned direct-to-bucket
+  upload, `handoff_nodes` registration, and the ACL-gated serve path).
 
-If it doesn't come back, re-check step 4 (Replicate token + `HF_TOKEN`) and step 5 (rule set attached
-to the `studio` alias) — a 404 on `/api/*` means the rule set isn't attached; a transcribe failure
-usually means a missing provider token. See `apps/studio/bffless/README.md` for the full
-troubleshooting notes.
+**If your app does the thing, it's live.** 🎉
+
+If it doesn't, re-check step 4 (the app's admin-panel tokens/storage) and step 5 (rule set attached to
+the `<app>` alias) — a 404 on `/api/*` means the rule set isn't attached. For Handoff, a
+`PRESIGNED_NOT_SUPPORTED` on upload means the project is still on local file storage rather than a
+bucket. See `apps/<app>/bffless/README.md` for the full, app-specific troubleshooting notes.
