@@ -145,8 +145,8 @@
             "config": {
               "subDir": "content",
               "filename": "request.body.filename",
-              "expiresIn": "3600",
-              "maxFileSize": "524288000"
+              "expiresIn": 3600,
+              "maxFileSize": 524288000
             },
             "handlerType": "presigned_upload"
           },
@@ -191,7 +191,7 @@
                 "createdMs": "request.body.createdMs",
                 "displayName": "request.body.displayName"
               },
-              "maxFileSize": "524288000",
+              "maxFileSize": 524288000,
               "originalName": "request.body.originalName"
             },
             "handlerType": "register_upload"
@@ -636,7 +636,7 @@
             "config": {
               "path": "request.body.path",
               "condition": "steps.gate.allow",
-              "expiresIn": "3600"
+              "expiresIn": 3600
             },
             "handlerType": "signed_url"
           },
@@ -1505,7 +1505,7 @@
             "config": {
               "path": "steps.check.storagePath",
               "condition": "steps.check.allow",
-              "expiresIn": "300"
+              "expiresIn": 300
             },
             "handlerType": "signed_url"
           },

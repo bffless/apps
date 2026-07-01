@@ -61,6 +61,13 @@ Bucket **CORS** must allow `PUT` from the site origin. Add a rule that permits:
 
 Uploaded files are written under `<owner>/<repo>/uploads/content/…`, created on demand.
 
+The storage backend is set via server env (`STORAGE_TYPE` + backend vars), not the admin panel or
+MCP — see the BFFless storage docs for exact variables, IAM/permissions, and CORS per backend:
+[overview](https://docs.bffless.app/category/storage/) ·
+[AWS S3](https://docs.bffless.app/storage/aws-s3/) ·
+[Google Cloud Storage](https://docs.bffless.app/storage/google-cloud-storage/) ·
+[Azure Blob](https://docs.bffless.app/storage/azure-blob-storage/).
+
 ### 2. Data tables
 
 Two data tables are required. Create them in the BFFless dashboard → Data → New Table:
@@ -113,8 +120,30 @@ updated backend.
 
 Handoff uses BFFless cookie-based sessions for access control. The app reads
 `/_bffless/auth/session` to detect the current user and redirects unauthenticated visitors to the
-admin login relay. Configure the built-in `/_bffless/auth/*` relay in the BFFless dashboard
-(Settings → Auth) so that the session cookie is issued correctly for your alias domain.
+admin login relay. The `/_bffless/auth/*` endpoints are **built into BFFless nginx** — when Handoff
+is served at `handoff.<your-primary-domain>` (a subdomain of the primary domain), the SuperTokens
+session cookie is shared on `.<your-primary-domain>` and this works with **no extra configuration**.
+
+The app derives the admin host it redirects to from its own hostname (`handoff.<primary>` →
+`admin.<primary>`), so **no code edit is needed on a fork**. If you serve Handoff somewhere that
+isn't `<app>.<primary-domain>` (or for local dev), set **`VITE_ADMIN_URL`** (e.g.
+`https://admin.example.com`) at build time to point at your admin host explicitly.
+
+### 5. Serve URL — domain mapping (public + SPA) + reachability
+
+The `handoff` alias must be served at a URL, and three settings on that domain mapping matter:
+
+- **Route the subdomain to the BFFless origin.** `handoff.<your-domain>` must reach BFFless — not a
+  wildcard catch-all or a different app. If you front the instance with Cloudflare (tunnel/Pages),
+  add the same route/public-hostname the `admin` host uses, or the request never reaches BFFless
+  (symptom: `/api/*` 404s and the wrong app loads).
+- **`isPublic: true`.** Handoff serves its **static bundle to everyone** and gates access in-app and
+  at `/api/*` — logged-out share-link visitors (`/s/:token`, `/r/*`) must be able to load the SPA.
+  A private deployment would 404 them before the app runs.
+- **`isSpa: true`.** Handoff is a `BrowserRouter` SPA (`/view/:id`, `/folder/:id`, `/s/:token`), so
+  deep links and hard refreshes need index.html fallback.
+- **Build path.** The deploy uploads `apps/handoff/dist`, so set the mapping's `path` to
+  `/apps/handoff/dist` (or rely on the auto-alias base-path) so index.html resolves at the root.
 
 ## First-success checkpoint
 
@@ -268,3 +297,10 @@ Variables*; if a presigned upload 404s on a bucket path, confirm the function re
   updated JSON here so the giveaway stays current.
 - The `POST /api/uploads/content` rule (direct `file_upload_handler`) is intentionally **excluded**
   from this export — Handoff uses the presigned prepare+register flow for all file uploads.
+- **Numeric config values must be JSON numbers, not strings.** The `presigned_upload` / `signed_url`
+  / `register_upload` steps carry `expiresIn` and `maxFileSize`. On the **AWS S3** backend these are
+  passed straight to the SDK signer, which rejects a string with
+  `expires should be of type "number"` (`PRESIGNED_URL_FAILED`). MinIO happens to tolerate strings,
+  so an export from a MinIO project can look fine yet break on S3. This file uses numbers
+  (`"expiresIn": 3600`, not `"3600"`); keep it that way after any re-export so the rule set works on
+  every bucket backend.
