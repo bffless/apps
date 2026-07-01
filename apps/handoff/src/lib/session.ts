@@ -202,19 +202,39 @@ export function useSession(): { session: Session | null; loading: boolean; refet
 }
 
 /**
+ * Origin of the BFFless **admin host** that owns the SuperTokens session.
+ *
+ * Handoff is served at `<app>.<primary-domain>` (e.g. `handoff.example.com`) and the
+ * admin always lives at `admin.<primary-domain>`. We derive that by swapping the first
+ * hostname label for `admin`, so a fork works on **any** instance with no code edit —
+ * a self-hoster does not have to hunt down a hardcoded domain. Set `VITE_ADMIN_URL`
+ * (e.g. `https://admin.example.com`) to override for non-standard topologies or local
+ * dev where the host isn't `<app>.<primary-domain>`.
+ */
+export function adminOrigin(): string {
+  const override = import.meta.env.VITE_ADMIN_URL as string | undefined
+  if (override) return override.replace(/\/+$/, '')
+  const { protocol, hostname, host } = window.location
+  const labels = hostname.split('.')
+  // <app>.<primary…> → admin.<primary…>; single-label hosts (localhost) are left as-is.
+  const adminHost = labels.length > 1 ? ['admin', ...labels.slice(1)].join('.') : host
+  return `${protocol}//${adminHost}`
+}
+
+/**
  * Build the admin login relay URL that redirects back to `returnUrl` after sign-in.
  */
 export function adminLoginUrl(returnUrl: string): string {
-  return `https://admin.j5s.dev/login?redirect=${encodeURIComponent(returnUrl)}`
+  return `${adminOrigin()}/login?redirect=${encodeURIComponent(returnUrl)}`
 }
 
 /**
  * Build the admin logout relay URL. Mirror of `adminLoginUrl` — bounces through
- * the admin host so SuperTokens revokes the session shared on `.j5s.dev`, then
- * redirects back to `returnUrl`.
+ * the admin host so SuperTokens revokes the session shared on the primary domain,
+ * then redirects back to `returnUrl`.
  */
 export function adminLogoutUrl(returnUrl: string): string {
-  return `https://admin.j5s.dev/logout?redirect=${encodeURIComponent(returnUrl)}`
+  return `${adminOrigin()}/logout?redirect=${encodeURIComponent(returnUrl)}`
 }
 
 /**

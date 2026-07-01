@@ -44,7 +44,7 @@ describe('handoff /r raw-file proxy rule', () => {
     expect(sign.handlerType).toBe('signed_url')
     expect(sign.config.condition).toBe('steps.check.allow')
     expect(sign.config.path).toBe('steps.check.storagePath')
-    expect(sign.config.expiresIn).toBe('300')
+    expect(sign.config.expiresIn).toBe(300)
   })
 
   it('302s to the presigned Location on allow, 404 on deny', () => {
