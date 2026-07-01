@@ -1,0 +1,35 @@
+name: App conventions
+
+# Enforces the per-app pipelines convention (bffless/apps#85): every apps/<app>/
+# must ship its exported backend (apps/<app>/bffless/<app>.proxy-rules.json) and a
+# README (apps/<app>/bffless/README.md) with a "Manual setup (admin panel)" and a
+# "First-success checkpoint" section. This is what keeps the single GETTING-STARTED.md
+# guide installing any app — including any future app — without a rewrite, and keeps
+# each app's manual admin-panel steps surfaced to the reader.
+#
+# Fix a failure with: node scripts/check-app-conventions.mjs (pnpm apps:check) and
+# see docs/app-pipelines-convention.md.
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'scripts/check-app-conventions.mjs'
+      - '.github/workflows/app-conventions.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check per-app pipelines convention
+        run: node scripts/check-app-conventions.mjs
