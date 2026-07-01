@@ -5,7 +5,8 @@ platform; each app here is a self-contained frontend you can clone and deploy on
 project.
 
 > **New here?** [**GETTING-STARTED.md**](GETTING-STARTED.md) walks you from forking this repo to a
-> live Studio deployment that transcribes a screen recording — the thinnest complete end-to-end path.
+> live deployment of the app of your choice — Studio transcribing a screen recording, or Handoff
+> serving back a file — via one app-agnostic spine. The thinnest complete end-to-end path.
 
 ## Apps
 
