@@ -23,10 +23,13 @@ await run({
   // sandbox at the start of each iteration, so the agent always sees fresh data.
   promptFile: "./.sandcastle/prompt.md",
 
-  // One issue per run: single issue → single branch → single PR. Keeps the
-  // PR-per-issue mapping clean. Raise once the flow is proven if you want the
-  // agent to chew through several ready issues back-to-back.
-  maxIterations: 1,
+  // Issues per run. Each iteration = one issue → one branch → one PR. Set >1 to
+  // chew through several ready issues back-to-back UNATTENDED — but this only
+  // makes sense in EPIC MODE (an open PR labelled `epic` exists), because epic
+  // mode closes each issue on land, which unblocks the next story in the chain.
+  // In legacy mode (no epic) issues are never closed, so a value >1 would just
+  // re-pick the same top issue every iteration. See prompt.md "Starting an epic".
+  maxIterations: 10,
 
   // Branch strategy — "branch" lands the agent's commits on a named branch and
   // never merges to HEAD, so your local `main` is untouched (honours the
