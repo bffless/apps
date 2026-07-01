@@ -110,7 +110,24 @@ Studio has no app server: its `/api/*` is a **BFFless proxy rule set** exported 
 that file does nothing on its own — the rules only serve once they're imported into your project and
 attached to the alias.
 
-Do these three things (full detail in
+### Recommended: run the `install-app` skill
+
+With the MCP registered against **your** instance (step 3), run the repo-local **`install-app`**
+skill for Studio. It automates everything reachable by MCP:
+
+1. imports `apps/studio/bffless/studio.proxy-rules.json` (creates the `studio` rule set + rules),
+2. attaches it to the **`studio` alias** alongside any existing sets,
+3. creates the COOP/COEP response-header rule,
+4. **verifies** the external connections Studio declares (Replicate, Anthropic, `HF_TOKEN`) and
+   reports what's still missing **with links** — it does *not* set the provider tokens (no MCP path).
+
+It ends with an explicit "set these manually in the admin panel: …" list when connections are
+missing — those are step 4's admin-panel tokens, which no tooling can set. The skill ships in the
+repo (`.claude/skills/install-app/` and `.agents/skills/install-app/`), so it's already on your fork.
+
+### Fallback: do it by hand
+
+If you'd rather not use the skill, do these three things manually (full detail in
 [`apps/studio/bffless/README.md`](apps/studio/bffless/README.md)):
 
 1. **Import** `apps/studio/bffless/studio.proxy-rules.json` — via the dashboard
