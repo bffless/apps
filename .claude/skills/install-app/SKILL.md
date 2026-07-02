@@ -14,24 +14,16 @@ rule) and then **verifies and reports** the manual admin-panel steps it cannot d
 
 ## Prerequisite: the MCP must point at YOUR instance
 
-This skill talks to whatever BFFless the MCP named in your runtime config is
-registered against. **Register it against your own admin endpoint**, not the
-maintainers' `admin.j5s.dev`:
+This skill talks to whatever BFFless the registered MCP server is pointed at.
+**Register it against your own admin endpoint**, not the maintainers' `admin.j5s.dev`
+(see the [BFFless MCP server docs](https://docs.bffless.app/features/mcp-server/)):
 
-```json
-{
-  "mcpServers": {
-    "j5s-dev": {
-      "type": "http",
-      "url": "https://admin.<your-domain>/mcp",
-      "headers": { "X-API-Key": "<your-api-key>" }
-    }
-  }
-}
+```bash
+claude mcp add --transport http bffless https://admin.<your-domain>/mcp --header "X-API-Key: <your-api-key>"
 ```
 
 If the MCP still points at `admin.j5s.dev`, **stop** — you would be importing into the
-maintainers' project. Fix `url` first. (See `GETTING-STARTED.md` step 3.)
+maintainers' project. Re-register it against your own domain first. (See `GETTING-STARTED.md` step 3.)
 
 ## Inputs
 
