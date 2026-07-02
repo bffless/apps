@@ -288,15 +288,24 @@ describe('blogImageRefs', () => {
 })
 
 describe('planBlogSiblings', () => {
-  it('offers a symmetric ±5s/1s window including the current time', () => {
-    expect(planBlogSiblings(20, 100)).toEqual([15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25])
+  it('offers a symmetric ±30s/2s window including the current time', () => {
+    const out = planBlogSiblings(50, 200)
+    expect(out[0]).toBe(20)
+    expect(out[out.length - 1]).toBe(80)
+    expect(out).toContain(50)
+    expect(out).toHaveLength(31)
+    for (let i = 1; i < out.length; i++) expect(out[i] - out[i - 1]).toBeCloseTo(2)
   })
 
   it('clamps to the timeline and dedups the clamped ends', () => {
-    // Near the start: no negative times, 0 appears once.
-    expect(planBlogSiblings(2, 100)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+    // Near the start: no negative times, 0 appears exactly once.
+    const near = planBlogSiblings(2, 100)
+    expect(near[0]).toBe(0)
+    expect(near.filter((t) => t === 0)).toHaveLength(1)
+    expect(near).toContain(2)
     // Near the end (max = 100 - 0.05 = 99.95): the tail collapses onto 99.95.
-    expect(planBlogSiblings(99, 100)).toEqual([94, 95, 96, 97, 98, 99, 99.95])
+    const end = planBlogSiblings(99, 100)
+    expect(end[end.length - 1]).toBeCloseTo(99.95)
   })
 
   it('always includes the (clamped) current time even with a zero-length timeline', () => {

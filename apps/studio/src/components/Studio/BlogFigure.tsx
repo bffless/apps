@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { clockLabel } from '../../lib/contactSheet'
 
 /** One thumbnail in the sibling filmstrip: a nearby global-timeline second and
@@ -12,9 +12,12 @@ type Props = {
   alt: string
   /** The global-timeline second this image was captured at — the strip centres here. */
   time: number
-  /** Capture the filmstrip of nearby frames (in-browser thumbnails, nothing uploads). */
+  /** Capture the filmstrip of nearby frames (small in-browser thumbnails, no upload). */
   capture: (time: number) => Promise<Sibling[]>
-  /** Re-capture at a picked second, upload, and swap it into the post. Resolves
+  /** Capture a large preview frame at a scrubbed second (no upload) — what the
+   *  producer sees at figure size before committing. Empty string on failure. */
+  preview: (time: number) => Promise<string>
+  /** Re-capture at the chosen second, upload, and swap it into the post. Resolves
    *  true on success (the post's `src`/`time` then update from the store). */
   reframe: (oldUrl: string, time: number) => Promise<boolean>
 }
@@ -22,22 +25,33 @@ type Props = {
 /**
  * A blog-post figure with a "Change frame" affordance (issue #91). The AI picks a
  * frame by timestamp and we render it faithfully — but it sometimes lands on a bad
- * instant (mid-blink, a weird face). Clicking Change frame captures a filmstrip of
- * nearby frames (±5s at 1s); picking one recaptures a clean full-res frame at that
- * second, uploads it, and swaps it into the post. Read-only until opened, so the
- * preview stays calm; the current frame is flagged in the strip.
+ * instant (mid-blink, a weird face). Clicking Change frame opens a filmstrip of
+ * nearby frames (±30s); clicking a thumbnail PREVIEWS it large in place of the
+ * image (nothing committed yet), so the producer can scrub through options — the
+ * strip thumbnails are too small to judge a face by. "Use this frame" then
+ * recaptures a clean full-res frame at that second, uploads it, and swaps it into
+ * the post. Read-only until opened, so the preview stays calm.
  */
-export function BlogFigure({ src, alt, time, capture, reframe }: Props) {
+export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [siblings, setSiblings] = useState<Sibling[]>([])
-  const [busyTime, setBusyTime] = useState<number | null>(null)
+  const [selected, setSelected] = useState(time)
+  const [previews, setPreviews] = useState<Map<number, string>>(new Map())
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The most recently requested preview second, so a slow capture that resolves
+  // after the producer has already clicked elsewhere doesn't clobber the view.
+  const wantRef = useRef(time)
 
   async function openStrip() {
     setOpen(true)
+    setSelected(time)
+    setPreviews(new Map())
     setError(null)
     setLoading(true)
+    wantRef.current = time
     try {
       const got = await capture(time)
       setSiblings(got)
@@ -52,29 +66,78 @@ export function BlogFigure({ src, alt, time, capture, reframe }: Props) {
   function close() {
     setOpen(false)
     setSiblings([])
-    setBusyTime(null)
+    setSelected(time)
+    setPreviews(new Map())
+    setPreviewLoading(false)
+    setSaving(false)
     setError(null)
   }
 
-  async function pick(t: number) {
-    if (busyTime !== null || t === time) return
-    setBusyTime(t)
+  // Preview a sibling: select it and (for anything but the current frame, which we
+  // already have full-size in `src`) lazily capture + cache its large preview.
+  async function selectSibling(t: number) {
+    if (saving) return
+    setSelected(t)
+    setError(null)
+    wantRef.current = t
+    if (t === time || previews.has(t)) {
+      setPreviewLoading(false)
+      return
+    }
+    setPreviewLoading(true)
+    try {
+      const dataUrl = await preview(t)
+      if (dataUrl) {
+        setPreviews((m) => new Map(m).set(t, dataUrl))
+      } else if (wantRef.current === t) {
+        setError('Couldn’t load that frame — try another.')
+      }
+    } catch {
+      if (wantRef.current === t) setError('Couldn’t load that frame — try another.')
+    } finally {
+      if (wantRef.current === t) setPreviewLoading(false)
+    }
+  }
+
+  // Commit the selected frame: recapture full-res, upload, swap into the post.
+  async function save() {
+    if (selected === time || saving) return
+    setSaving(true)
     setError(null)
     try {
-      const ok = await reframe(src, t)
+      const ok = await reframe(src, selected)
       if (ok) close() // the store swaps src/time; the figure re-renders on the new frame
       else setError('Couldn’t update the frame — try again.')
     } catch {
       setError('Couldn’t update the frame — try again.')
     } finally {
-      setBusyTime((cur) => (cur === t ? null : cur))
+      setSaving(false)
     }
   }
+
+  const atOriginal = selected === time
+  const previewSrc = atOriginal ? src : previews.get(selected) ?? src
 
   return (
     <figure className="flex flex-col gap-1">
       <div className="group relative">
-        <img src={src} alt={alt} className="w-full rounded-md border border-paper-line" />
+        <img
+          src={open ? previewSrc : src}
+          alt={alt}
+          className={`w-full rounded-md border border-paper-line transition-opacity ${
+            previewLoading ? 'opacity-50' : ''
+          }`}
+        />
+        {open && previewLoading && (
+          <span className="absolute inset-0 flex items-center justify-center text-[12px] text-ink-soft">
+            Loading preview…
+          </span>
+        )}
+        {open && !atOriginal && !previewLoading && (
+          <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white">
+            preview · {clockLabel(selected)}
+          </span>
+        )}
         {!open && (
           <button
             type="button"
@@ -89,9 +152,9 @@ export function BlogFigure({ src, alt, time, capture, reframe }: Props) {
       {open && (
         <div className="flex flex-col gap-2 rounded-md border border-paper-line bg-paper-deep/10 p-2">
           <div className="flex items-center justify-between">
-            <span className="meta-label">Pick a nearby frame</span>
-            <button type="button" className="pill-ghost" onClick={close} disabled={busyTime !== null}>
-              Close
+            <span className="meta-label">Click a frame to preview it above</span>
+            <button type="button" className="pill-ghost" onClick={close} disabled={saving}>
+              Cancel
             </button>
           </div>
 
@@ -100,25 +163,25 @@ export function BlogFigure({ src, alt, time, capture, reframe }: Props) {
           ) : (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {siblings.map((s) => {
-                const current = s.time === time
-                const busy = busyTime === s.time
+                const isSelected = s.time === selected
+                const isOriginal = s.time === time
                 return (
                   <button
                     key={s.time}
                     type="button"
-                    onClick={() => pick(s.time)}
-                    disabled={current || busyTime !== null}
-                    aria-current={current || undefined}
-                    title={current ? 'Current frame' : `Use frame at ${clockLabel(s.time)}`}
+                    onClick={() => selectSibling(s.time)}
+                    disabled={saving}
+                    aria-current={isSelected || undefined}
+                    title={`Preview frame at ${clockLabel(s.time)}${isOriginal ? ' (original)' : ''}`}
                     className={`relative shrink-0 overflow-hidden rounded border transition ${
-                      current
+                      isSelected
                         ? 'border-ink ring-2 ring-ink'
-                        : 'border-paper-line hover:border-ink/60 disabled:opacity-60'
+                        : 'border-paper-line hover:border-ink/60'
                     }`}
                   >
-                    <img src={s.thumb} alt="" className="block h-[72px] w-auto" />
-                    <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-center font-mono text-[10px] text-white">
-                      {current ? 'current' : busy ? '…' : clockLabel(s.time)}
+                    <img src={s.thumb} alt="" className="block h-16 w-auto" />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-center font-mono text-[9px] text-white">
+                      {isOriginal ? 'original' : clockLabel(s.time)}
                     </span>
                   </button>
                 )
@@ -127,6 +190,22 @@ export function BlogFigure({ src, alt, time, capture, reframe }: Props) {
           )}
 
           {error && <p className="px-1 text-[12px] text-rose-600">{error}</p>}
+
+          {!loading && siblings.length > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12px] text-ink-soft">
+                {atOriginal ? 'Showing the original frame' : `Previewing ${clockLabel(selected)}`}
+              </span>
+              <button
+                type="button"
+                className="pill-ghost"
+                onClick={save}
+                disabled={atOriginal || previewLoading || saving}
+              >
+                {saving ? 'Saving…' : 'Use this frame'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
