@@ -67,8 +67,8 @@ setup (admin panel)"** section, so it stays correct as the app changes.
 | --- | --- | --- | --- | --- |
 | GitHub repo variable | `BFFLESS_URL` | self-hosted instance URL | CI deploy target | human (GitHub settings) |
 | GitHub repo secret | `BFFLESS_API_KEY` | API key from their instance | CI deploy auth | human (GitHub settings) |
-| Local `.mcp.json` | `url` | `https://admin.<their-domain>/mcp` | point installer at their instance | human |
-| Local `.mcp.json` | `X-API-Key` | their API key | MCP auth | human |
+| `claude mcp add` | `url` | `https://admin.<their-domain>/mcp` | point installer at their instance | human |
+| `claude mcp add` | `X-API-Key` header | their API key | MCP auth | human |
 | Deploy workflow | `alias:` | `<app>` (fixed default — leave it) | must match the alias the rule set is attached to | — |
 | Admin panel (per app) | AI-provider tokens / secrets / storage backend | see `apps/<app>/bffless/README.md` → **Manual setup (admin panel)** | what each app's pipelines need | **human, admin panel (some MCP-settable, provider tokens are admin-only)** |
 
@@ -110,18 +110,12 @@ See the top three rows of the [variables checklist](#variables-checklist).
 
 ## 3. Register the BFFless MCP against your own instance
 
-Point your local `.mcp.json` at **your** admin endpoint — **not** the maintainers' instance:
+Register the BFFless MCP server with Claude Code, pointing it at **your** admin endpoint — **not** the
+maintainers' instance. Run this from the repo root (see the
+[BFFless MCP server docs](https://docs.bffless.app/features/mcp-server/) for details):
 
-```json
-{
-  "mcpServers": {
-    "j5s-dev": {
-      "type": "http",
-      "url": "https://admin.<their-domain>/mcp",
-      "headers": { "X-API-Key": "<your-api-key>" }
-    }
-  }
-}
+```bash
+claude mcp add --transport http bffless https://admin.<your-domain>/mcp --header "X-API-Key: <your-api-key>"
 ```
 
 Use `https://admin.<your-domain>/mcp` and your own API key. This is what lets Claude (via the
