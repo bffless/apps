@@ -1,6 +1,6 @@
 ---
 name: image-prompts
-description: Generate detailed, reliable prompts for image generation models (Midjourney, DALL-E, Gemini, Imagen, etc.). Use when the user asks for a thumbnail, blog hero, social ad creative, OG image, marketing illustration, or any "give me a prompt for an image" request. Covers the canonical prompt anatomy and named house styles routed by content type — retro-blueprint for tutorial / walkthrough videos, modern-dev-tool for watch-me-code / live-build videos, editorial-print for long-form blog heroes — plus how to extract and reuse a style from a reference image.
+description: Generate detailed, reliable prompts for image generation models (Midjourney, DALL-E, Gemini, Imagen, etc.). Use when the user asks for a thumbnail, blog hero, social ad creative, OG image, marketing illustration, or any "give me a prompt for an image" request. Covers the canonical prompt anatomy and named house styles routed by content type — retro-blueprint for tutorial / walkthrough videos, modern-dev-tool for watch-me-code / live-build videos, electric-poster for BFFless give-away app showcase videos, editorial-print for long-form blog heroes — plus how to extract and reuse a style from a reference image.
 ---
 
 # Image Prompts
@@ -41,9 +41,10 @@ If the user pastes a reference image, **read it first** (the Read tool works on 
 | ------------------------------------------------------------ | -------------------- | ------------------------------------------------------------------- |
 | **Tutorial / walkthrough / explainer** — teaches a concept, "how does X work", multi-handler/architectural diagrams, "let me show you" framing | **retro-blueprint**  | "vintage technical manual, parchment background, hand-drawn schematic" |
 | **Watch-me-code / live-build / "1 sitting" / ship-a-feature-now** — building something specific in one session, end deliverable shown, "I'm gonna build X right now" framing | **modern-dev-tool**  | "Vercel/Linear/Railway thumbnail energy, dark navy, code editor mock, cyan underline accent" |
+| **App showcase / give-away app** — showing off a finished BFFless app (Studio, etc.), "this app is free, clone it" framing, the app's UI is the star, not the process of building it | **electric-poster**  | "product-launch poster, flat electric violet field, app UI in a straight-on browser window, FREE APP pill" |
 | **Long-form blog hero / thought-leadership / research piece**| **editorial-print**  | "magazine cover, generous white space, single bold typographic statement" |
 
-**Disambiguation rule when both could fit:** does the video teach a concept (tutorial → retro-blueprint) or ship a deliverable in one sitting (watch-me-code → modern-dev-tool)? When in doubt, ask the user which content-type the video is — "tutorial walkthrough" vs "watch-me-code" — before picking the anchor.
+**Disambiguation rule when more than one could fit:** does the video teach a concept (tutorial → retro-blueprint), ship a deliverable in one sitting (watch-me-code → modern-dev-tool), or show off a finished give-away app (app showcase → electric-poster)? Watch-me-code shows the *building*; app showcase shows the *built thing* — if the thumbnail's hero is the app's own UI rather than a code editor, it's electric-poster. When in doubt, ask the user which content-type the video is before picking the anchor.
 
 Other valid choices (custom, hand-drawn, isometric, photographic, 3D render) — but always name the anchor explicitly. "Make it pop" is not a style; "Braun product brochure crossed with Linear" is.
 
@@ -113,7 +114,22 @@ For BFFless **watch-me-code / live-build / "1 sitting"** videos. Reference: the 
 - Accent: electric cyan `#22D3EE` for the underline, mark, and editor outline. Optional sparing magenta `#D946EF` for a single highlight (one tick mark, one icon). Maximum 2 accent uses on the canvas.
 - Decorative: a few small cyan dots or dashes in the empty corners for negative-space rhythm — sparing, not a particle field.
 - Vibe descriptor: "confident, restrained, live-build energy, every element load-bearing"
-- Always avoid: parchment textures, hand-drawn schematic diagrams (tutorial territory), `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs (tutorial territory), photorealistic humans, busy backgrounds, radial gradients, neon glow on the headline itself (only the underline + editor outline glow)
+- Always avoid: parchment textures, hand-drawn schematic diagrams (tutorial territory), `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs (tutorial territory), violet poster fields / `FREE APP` pills / app-UI-as-hero (app-showcase territory — watch-me-code shows the code, not the finished product), photorealistic humans, busy backgrounds, radial gradients, neon glow on the headline itself (only the underline + editor outline glow)
+
+## House style: electric-poster (app showcase / give-away)
+
+For **BFFless apps** videos — showing off a finished give-away app (Studio, and each new app in the monorepo). The video's pitch is "here's a polished app, it's free, clone it onto your own BFFless" — so the thumbnail sells a *finished product*, not a process. The app's own UI is the hero.
+
+- Background: flat electric violet `#5B5BD6`, solid fill — NO gradient, NO texture. The saturated field is the style's instant tell at feed size.
+- Type: heavy white sans-serif (Inter Black / Söhne Breit), 2–3 line stacked headline. Line 1 is the APP NAME; the remaining line(s) say what it does in ≤5 words (e.g. `STUDIO` / `RE-VOICE YOUR` / `SCREEN RECORDING`).
+- **Content-type marker:** small `FREE APP` pill at top-left — solid amber `#FBBF24` fill, near-black ink text, crisp 4px corner radius (not a bubbly capsule). This is the unmistakable give-away signal.
+- **App-name underline:** the app name gets a hand-drawn WHITE underline — single confident stroke, same gesture as watch-me-code's cyan underline but white-on-violet. This keeps the family resemblance while staying unambiguous.
+- **Footer line** beneath the headline: tiny monospace at ~60% opacity, bullet-separated tokens like `clone it · bffless.app · open source`. The "clone it" framing is the give-away tell.
+- Illustration: the app's REAL UI in a clean browser window — straight-on, NOT tilted (tilt is watch-me-code territory), traffic-light dots, thin white hairline border, 4px corners, soft lift shadow for separation. Show recognizable product UI (panels, timeline, waveform, whatever the app actually looks like) — NOT a code editor, NOT syntax highlighting.
+- Accent: single warm amber `#FBBF24`, used at most twice — the pill, plus optionally one tiny mark (a small ✳ spark near a corner, or one highlighted element inside the app UI). Nothing else gets the accent.
+- Decorative: one or two small white ✳ spark/asterisk marks in the empty corners — sparing, hand-drawn feel, not confetti.
+- Vibe descriptor: "product-launch poster, confident give-away energy, a finished thing you can have"
+- Always avoid: dark navy backgrounds + code editor mocks (watch-me-code territory), parchment / hand-drawn schematics / `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs, gradients of any kind, glassmorphism, 3D device renders, phone mockups, tilted windows, big rounded corners (keep radii crisp at ~4px), more than one accent color, photorealistic humans
 
 ## House style: editorial-print
 
