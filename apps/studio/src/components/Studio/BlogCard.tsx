@@ -17,6 +17,11 @@ type Props = {
   stale?: boolean
   /** Generate (or regenerate) the post from the current final script + direction. */
   onGenerate: (direction: string) => void
+  /** Capture the filmstrip of nearby frames for a re-framable image (issue #91).
+   *  When omitted, images render read-only (no "Change frame" control). */
+  onCaptureSiblings?: (time: number) => Promise<{ time: number; thumb: string }[]>
+  /** Re-capture at a picked second, upload, and swap it into the post (issue #91). */
+  onReframe?: (oldUrl: string, time: number) => Promise<boolean>
 }
 
 /**
@@ -33,7 +38,15 @@ type Props = {
  * re-cut), the card flags the post stale (issue #72) so the producer can choose
  * to Regenerate — staleness is surfaced only, never acted on automatically.
  */
-export function BlogCard({ post, title = '', generating, stale = false, onGenerate }: Props) {
+export function BlogCard({
+  post,
+  title = '',
+  generating,
+  stale = false,
+  onGenerate,
+  onCaptureSiblings,
+  onReframe,
+}: Props) {
   const [direction, setDirection] = useState(post?.direction ?? '')
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState(false)
@@ -132,7 +145,12 @@ export function BlogCard({ post, title = '', generating, stale = false, onGenera
 
       {post?.markdown ? (
         <div className="rounded-md border border-paper-line bg-paper-deep/10 p-4">
-          <MarkdownPreview markdown={post.markdown} />
+          <MarkdownPreview
+            markdown={post.markdown}
+            frames={post.frames}
+            onCaptureSiblings={onCaptureSiblings}
+            onReframe={onReframe}
+          />
         </div>
       ) : (
         !generating && (

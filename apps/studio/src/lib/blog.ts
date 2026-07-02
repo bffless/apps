@@ -131,6 +131,16 @@ export type BlogFrameCapture = {
   fileName: string
 }
 
+/**
+ * A resolved inline frame image in the STORED post (issue #91): the bucket serve
+ * `url` its frame was uploaded to, paired with the global-timeline `time` it was
+ * captured at. `rewriteFrameTokens` bakes the URL into the Markdown and discards
+ * the timestamp, so this sidecar is what lets the producer later nudge an image
+ * to a nearby moment (a bad frame — mid-blink, a weird face). Persisted on the
+ * post; the URL is the key back from a rendered image to the second it came from.
+ */
+export type BlogImageRef = { url: string; time: number }
+
 /** Matches an inline image whose URL is a `frame:<t>` token. The timestamp group
  *  is captured raw (validated by the caller) so a malformed token still matches —
  *  the rewrite can then strip it rather than leave a broken image in the post. */
@@ -197,6 +207,86 @@ export function rewriteFrameTokens(markdown: string, urlByTime: Map<number, stri
     if (!url) return ''
     return `![${str(caption).trim()}](${url})`
   })
+}
+
+// ---- Re-framing an image to a nearby moment (issue #91) --------------------
+//
+// The model's frame timestamp is often *nearly* right but lands on a bad instant
+// (mid-blink, a weird face, a cursor mid-flight). These helpers back a filmstrip
+// of sibling frames the producer can swap in: the sidecar that remembers each
+// image's origin second (`blogImageRefs`), the nearby timestamps to offer
+// (`planBlogSiblings`), the in-place URL swap once a fresh frame is uploaded
+// (`replaceBlogImageUrl`), and the object name that upload uses. The capture +
+// upload themselves live in the orchestrator; everything pure lives here, tested.
+
+/** Half-width (seconds) of the sibling window offered when re-framing, and the
+ *  step between offered frames — ±5s at 1s, ~11 thumbnails (issue #91). */
+export const BLOG_SIBLING_WINDOW = 5
+export const BLOG_SIBLING_STEP = 1
+
+/**
+ * Build the post's frame sidecar from a capture plan and the URLs its frames
+ * resolved to — one `{ url, time }` entry per capture that actually uploaded,
+ * matching exactly what `rewriteFrameTokens` kept in the Markdown (a capture that
+ * failed to upload has no URL and is left out, so the sidecar never points at an
+ * image the post doesn't show).
+ */
+export function blogImageRefs(
+  captures: BlogFrameCapture[],
+  urlByTime: Map<number, string>,
+): BlogImageRef[] {
+  const refs: BlogImageRef[] = []
+  for (const c of captures) {
+    const url = urlByTime.get(c.time)
+    if (url) refs.push({ url, time: c.time })
+  }
+  return refs
+}
+
+/**
+ * The nearby global-timeline seconds to offer as sibling frames when re-framing
+ * an image: a symmetric ±`window` window around `time` at `step`, plus `time`
+ * itself (so the current frame appears in the strip), each clamped into
+ * `[0, totalDuration)` and deduped after clamping (so the ends don't repeat).
+ * Rounded to the millisecond and returned ascending. Empty timeline → `[time]`
+ * clamped to 0.
+ */
+export function planBlogSiblings(
+  time: number,
+  totalDuration: number,
+  window = BLOG_SIBLING_WINDOW,
+  step = BLOG_SIBLING_STEP,
+): number[] {
+  const max = Math.max(0, (Number.isFinite(totalDuration) ? totalDuration : 0) - 0.05)
+  const base = Number.isFinite(time) ? time : 0
+  const s = step > 0 ? step : 1
+  const seen = new Set<number>()
+  const at = (t: number) =>
+    seen.add(Math.round(Math.min(max, Math.max(0, t)) * 1000) / 1000)
+  for (let k = -window; k <= window; k += s) at(base + k)
+  at(base)
+  return [...seen].sort((a, b) => a - b)
+}
+
+/**
+ * Replace every occurrence of a baked image `url` in the post Markdown with a new
+ * one — used when a re-frame uploads a fresh frame and the stored post must point
+ * at it. Exact-string match on the URL inside `![alt](url)` so captions and prose
+ * are untouched; a URL that never appears is a no-op. (A timestamp reused by two
+ * images shares one URL, so both swap together — the intended behaviour.)
+ */
+export function replaceBlogImageUrl(markdown: string, oldUrl: string, newUrl: string): string {
+  if (!oldUrl || oldUrl === newUrl) return str(markdown)
+  return str(markdown).replace(MD_IMAGE, (raw, caption: string, url: string) =>
+    url === oldUrl ? `![${caption}](${newUrl})` : raw,
+  )
+}
+
+/** The bucket object name a re-framed frame uploads as: keyed by its global
+ *  millisecond so re-picking the same moment is idempotent and distinct moments
+ *  never collide (issue #91). */
+export function blogReframeFileName(time: number): string {
+  return `frame-t${Math.round(Math.max(0, Number.isFinite(time) ? time : 0) * 1000)}.jpg`
 }
 
 /**

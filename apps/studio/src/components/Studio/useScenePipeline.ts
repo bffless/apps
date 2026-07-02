@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { STAGE_DEFS, PER_VIDEO_STAGES, GLOBAL_STAGES, type Stage, type StageId } from '../../lib/pipeline'
 import { narrationSeconds, type Cut, type NarrationSegment, type Scene } from '../../lib/scenes'
 import { combinedTimedTranscript, toScenes, type DirectorScene } from '../../lib/director'
 import { buildDescribeRequest, toDescription, videoScript } from '../../lib/describe'
-import { buildBlogRequest, toBlog, isBlogStale, planBlogCaptures, rewriteFrameTokens } from '../../lib/blog'
+import {
+  buildBlogRequest,
+  toBlog,
+  isBlogStale,
+  planBlogCaptures,
+  rewriteFrameTokens,
+  blogImageRefs,
+  planBlogSiblings,
+  blogReframeFileName,
+  type BlogImageRef,
+} from '../../lib/blog'
 import { buildThumbnailDraftRequest, toThumbnailPrompt, toThumbnailImage } from '../../lib/thumbnail'
 import {
   toRefinement,
@@ -21,7 +31,7 @@ import {
   applyOriginalClips,
   type RefineSceneRaw,
 } from '../../lib/refiner'
-import { totalDuration, sourceForScene } from '../../lib/sources'
+import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
 import { resolvePerson, dominantSpeaker, resolveSpeakerVoice } from '../../lib/speakers'
 import { extractAudio, extractAudioWav, sliceAudioWav, sliceManyAudioWav } from '../../lib/audio'
 import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
@@ -76,6 +86,7 @@ import {
   setDescriptionTitle,
   setBlogRunning,
   setBlogResult,
+  reframeBlogImage as reframeBlogImageAction,
   setBlogError,
   setYoutubeThumbnail,
   setDuration,
@@ -598,12 +609,12 @@ export function useScenePipeline() {
    * frame that fails to capture or upload is left out, never a broken image.
    */
   const materializeBlogImages = useCallback(
-    async (markdown: string): Promise<string> => {
+    async (markdown: string): Promise<{ markdown: string; frames: BlogImageRef[] }> => {
       const captures = planBlogCaptures(
         markdown,
         sources.map((s) => ({ id: s.id, duration: s.duration })),
       )
-      if (captures.length === 0) return markdown
+      if (captures.length === 0) return { markdown, frames: [] }
 
       const bySource = new Map<string, typeof captures>()
       for (const c of captures) {
@@ -643,9 +654,118 @@ export function useScenePipeline() {
           URL.revokeObjectURL(objectUrl)
         }
       }
-      return rewriteFrameTokens(markdown, urlByTime)
+      // The sidecar mirrors exactly what survives into the Markdown (a token that
+      // failed to upload is dropped by both), so each stored image knows the second
+      // it came from and can be re-framed later (issue #91).
+      return { markdown: rewriteFrameTokens(markdown, urlByTime), frames: blogImageRefs(captures, urlByTime) }
     },
     [sources, signFor, uploadReq],
+  )
+
+  // ---- Re-framing a blog image to a nearby moment (issue #91) --------------
+  //
+  // The producer can nudge a bad AI-picked frame (mid-blink, a weird face) to a
+  // sibling timestamp: a filmstrip of nearby frames, then a one-click swap. The
+  // source clip is decoded to a same-origin blob (a `<video crossOrigin>` read of
+  // the signed GCS URL fails CORS) — the same path materialise/director use — and
+  // cached here so a run of edits on one clip re-downloads it once, not per frame.
+  const blogClipRef = useRef<{ sourceId: string; objectUrl: string } | null>(null)
+  const blogClipUrl = useCallback(
+    async (sourceId: string): Promise<string | null> => {
+      const cached = blogClipRef.current
+      if (cached?.sourceId === sourceId) return cached.objectUrl
+      const src = sources.find((s) => s.id === sourceId)
+      if (!src?.sourceUrl) return null
+      const objectUrl = URL.createObjectURL(await (await fetch(await signFor(src.sourceUrl))).blob())
+      if (cached) URL.revokeObjectURL(cached.objectUrl)
+      blogClipRef.current = { sourceId, objectUrl }
+      return objectUrl
+    },
+    [sources, signFor],
+  )
+  // Free the cached clip blob when the pipeline unmounts (project close / reload).
+  useEffect(
+    () => () => {
+      if (blogClipRef.current) URL.revokeObjectURL(blogClipRef.current.objectUrl)
+      blogClipRef.current = null
+    },
+    [],
+  )
+
+  /**
+   * Capture the filmstrip of nearby frames offered when re-framing a blog image:
+   * plan a ±window/step window around the image's global timestamp, route each
+   * sibling to its owning source + local time (multi-source aware), and capture a
+   * small in-browser JPEG thumbnail for each. Nothing uploads — thumbnails are
+   * throwaway previews until the producer picks one. Ordered ascending by time;
+   * a sibling whose frame fails to capture is dropped.
+   */
+  const captureBlogSiblings = useCallback(
+    async (time: number): Promise<{ time: number; thumb: string }[]> => {
+      const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
+      const times = planBlogSiblings(time, totalDuration(lite))
+      const bySource = new Map<string, number[]>()
+      const localByGlobal = new Map<number, number>()
+      for (const t of times) {
+        const loc = globalToLocal(lite, t)
+        if (!loc) continue
+        localByGlobal.set(t, loc.localTime)
+        const arr = bySource.get(loc.sourceId) ?? []
+        arr.push(t)
+        bySource.set(loc.sourceId, arr)
+      }
+      const thumbByTime = new Map<number, string>()
+      for (const [sourceId, ts] of bySource) {
+        const objectUrl = await blogClipUrl(sourceId)
+        if (!objectUrl) continue
+        const frames = await captureFramesAt(
+          objectUrl,
+          ts.map((t) => localByGlobal.get(t) ?? 0),
+          108, // a small filmstrip thumb, not the hero frame
+          { type: 'image/jpeg', quality: 0.7 },
+        )
+        ts.forEach((t, i) => {
+          if (frames[i]) thumbByTime.set(t, frames[i])
+        })
+      }
+      return times
+        .map((t) => ({ time: t, thumb: thumbByTime.get(t) ?? '' }))
+        .filter((s) => s.thumb)
+    },
+    [sources, blogClipUrl],
+  )
+
+  /**
+   * Re-capture a blog image at a producer-picked nearby timestamp and swap it into
+   * the post: route the global time to its source, capture ONE clean full-res
+   * frame (same path + encoding as the initial materialise — ADR-0002 re-captures
+   * from the source, never crops the sheet), upload it as a `blog` asset, and
+   * commit the new URL + timestamp to the stored post. Resolves true on success;
+   * a capture/upload failure leaves the post untouched and resolves false.
+   */
+  const reframeBlogImage = useCallback(
+    async (oldUrl: string, time: number): Promise<boolean> => {
+      const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
+      const loc = globalToLocal(lite, time)
+      if (!loc) return false
+      const objectUrl = await blogClipUrl(loc.sourceId)
+      if (!objectUrl) return false
+      const [dataUrl] = await captureFramesAt(objectUrl, [loc.localTime], 4320, {
+        type: 'image/jpeg',
+        quality: 0.9,
+      })
+      if (!dataUrl) return false
+      try {
+        const blob = await (await fetch(dataUrl)).blob()
+        const file = new File([blob], blogReframeFileName(time), { type: blob.type })
+        const { url } = await uploadReq({ file, kind: 'blog' }).unwrap()
+        dispatch(reframeBlogImageAction({ oldUrl, newUrl: url, time }))
+        return true
+      } catch {
+        return false
+      }
+    },
+    [sources, blogClipUrl, uploadReq, dispatch],
   )
 
   /**
@@ -663,8 +783,8 @@ export function useScenePipeline() {
       try {
         const { result } = await pollJob(jobId)
         const { markdown } = toBlog(result)
-        const resolved = await materializeBlogImages(markdown)
-        dispatch(setBlogResult({ markdown: resolved }))
+        const { markdown: resolved, frames } = await materializeBlogImages(markdown)
+        dispatch(setBlogResult({ markdown: resolved, frames }))
       } catch {
         dispatch(setBlogError())
       } finally {
@@ -1883,6 +2003,8 @@ export function useScenePipeline() {
     blog,
     blogStale,
     generateBlog,
+    captureBlogSiblings,
+    reframeBlogImage,
     editDescriptionTitle,
     signFor,
     youtubeThumbnail,

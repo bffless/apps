@@ -10,6 +10,10 @@ import {
   frameFileName,
   blogSlug,
   planBlogBundle,
+  blogImageRefs,
+  planBlogSiblings,
+  replaceBlogImageUrl,
+  blogReframeFileName,
 } from './blog'
 
 function scene(over: Partial<Scene> = {}): Scene {
@@ -262,6 +266,70 @@ describe('planBlogBundle', () => {
     const plan = planBlogBundle(md, 't')
     expect(plan.images).toEqual([])
     expect(plan.markdown).toBe(md)
+  })
+})
+
+describe('blogImageRefs', () => {
+  it('pairs each uploaded capture with its URL, skipping unresolved ones', () => {
+    const captures = [
+      { time: 5, sourceId: 'source-1', localTime: 5, fileName: 'frame-01.jpg' },
+      { time: 12, sourceId: 'source-1', localTime: 12, fileName: 'frame-02.jpg' },
+      { time: 30, sourceId: 'source-1', localTime: 30, fileName: 'frame-03.jpg' },
+    ]
+    const urls = new Map([
+      [5, '/u/frame-01.jpg'],
+      [30, '/u/frame-03.jpg'],
+    ])
+    expect(blogImageRefs(captures, urls)).toEqual([
+      { url: '/u/frame-01.jpg', time: 5 },
+      { url: '/u/frame-03.jpg', time: 30 },
+    ])
+  })
+})
+
+describe('planBlogSiblings', () => {
+  it('offers a symmetric ±5s/1s window including the current time', () => {
+    expect(planBlogSiblings(20, 100)).toEqual([15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25])
+  })
+
+  it('clamps to the timeline and dedups the clamped ends', () => {
+    // Near the start: no negative times, 0 appears once.
+    expect(planBlogSiblings(2, 100)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+    // Near the end (max = 100 - 0.05 = 99.95): the tail collapses onto 99.95.
+    expect(planBlogSiblings(99, 100)).toEqual([94, 95, 96, 97, 98, 99, 99.95])
+  })
+
+  it('always includes the (clamped) current time even with a zero-length timeline', () => {
+    expect(planBlogSiblings(5, 0)).toEqual([0])
+  })
+})
+
+describe('replaceBlogImageUrl', () => {
+  it('swaps every occurrence of the old URL, preserving captions', () => {
+    const md = 'a\n\n![keep me](/u/old.jpg)\n\nb\n\n![again](/u/old.jpg)'
+    expect(replaceBlogImageUrl(md, '/u/old.jpg', '/u/new.jpg')).toBe(
+      'a\n\n![keep me](/u/new.jpg)\n\nb\n\n![again](/u/new.jpg)',
+    )
+  })
+
+  it('leaves other images and prose untouched', () => {
+    const md = '![a](/u/a.jpg) ![b](/u/b.jpg)'
+    expect(replaceBlogImageUrl(md, '/u/a.jpg', '/u/z.jpg')).toBe('![a](/u/z.jpg) ![b](/u/b.jpg)')
+  })
+
+  it('is a no-op when the URL is absent or unchanged', () => {
+    const md = '![a](/u/a.jpg)'
+    expect(replaceBlogImageUrl(md, '/u/missing.jpg', '/u/z.jpg')).toBe(md)
+    expect(replaceBlogImageUrl(md, '/u/a.jpg', '/u/a.jpg')).toBe(md)
+  })
+})
+
+describe('blogReframeFileName', () => {
+  it('names by global millisecond so distinct moments never collide', () => {
+    expect(blogReframeFileName(12)).toBe('frame-t12000.jpg')
+    expect(blogReframeFileName(12.5)).toBe('frame-t12500.jpg')
+    expect(blogReframeFileName(12)).toBe(blogReframeFileName(12)) // idempotent
+    expect(blogReframeFileName(-3)).toBe('frame-t0.jpg')
   })
 })
 
