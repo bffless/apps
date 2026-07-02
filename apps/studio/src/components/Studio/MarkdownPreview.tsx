@@ -9,6 +9,7 @@ import { BlogFigure } from './BlogFigure'
 type Editing = {
   frames?: BlogImageRef[]
   onCaptureSiblings: (time: number) => Promise<{ time: number; thumb: string }[]>
+  onPreviewFrame: (time: number) => Promise<string>
   onReframe: (oldUrl: string, time: number) => Promise<boolean>
 }
 
@@ -34,16 +35,20 @@ export function MarkdownPreview({
   markdown,
   frames,
   onCaptureSiblings,
+  onPreviewFrame,
   onReframe,
 }: {
   markdown: string
   frames?: BlogImageRef[]
   onCaptureSiblings?: (time: number) => Promise<{ time: number; thumb: string }[]>
+  onPreviewFrame?: (time: number) => Promise<string>
   onReframe?: (oldUrl: string, time: number) => Promise<boolean>
 }) {
   const { front, body } = splitFrontMatter(markdown)
   const editing: Editing | null =
-    onCaptureSiblings && onReframe ? { frames, onCaptureSiblings, onReframe } : null
+    onCaptureSiblings && onPreviewFrame && onReframe
+      ? { frames, onCaptureSiblings, onPreviewFrame, onReframe }
+      : null
   return (
     <div className="prose-paper flex flex-col gap-3 text-[14px] leading-relaxed text-ink">
       {front && (front.title || front.description) && (
@@ -103,6 +108,7 @@ function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
                   alt={alt}
                   time={time}
                   capture={editing.onCaptureSiblings}
+                  preview={editing.onPreviewFrame}
                   reframe={editing.onReframe}
                 />
               )

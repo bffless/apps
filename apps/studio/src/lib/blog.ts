@@ -220,9 +220,11 @@ export function rewriteFrameTokens(markdown: string, urlByTime: Map<number, stri
 // upload themselves live in the orchestrator; everything pure lives here, tested.
 
 /** Half-width (seconds) of the sibling window offered when re-framing, and the
- *  step between offered frames — ±5s at 1s, ~11 thumbnails (issue #91). */
-export const BLOG_SIBLING_WINDOW = 5
-export const BLOG_SIBLING_STEP = 1
+ *  step between offered frames — ±30s at 2s, ~31 thumbnails (issue #91). Wide
+ *  enough to browse well past the AI's pick, fine enough to still step off a
+ *  blink; the producer previews each before committing. */
+export const BLOG_SIBLING_WINDOW = 30
+export const BLOG_SIBLING_STEP = 2
 
 /**
  * Build the post's frame sidecar from a capture plan and the URLs its frames

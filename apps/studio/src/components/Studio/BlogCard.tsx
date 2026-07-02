@@ -20,6 +20,8 @@ type Props = {
   /** Capture the filmstrip of nearby frames for a re-framable image (issue #91).
    *  When omitted, images render read-only (no "Change frame" control). */
   onCaptureSiblings?: (time: number) => Promise<{ time: number; thumb: string }[]>
+  /** Capture a large preview frame at a scrubbed timestamp (no upload, issue #91). */
+  onPreviewFrame?: (time: number) => Promise<string>
   /** Re-capture at a picked second, upload, and swap it into the post (issue #91). */
   onReframe?: (oldUrl: string, time: number) => Promise<boolean>
 }
@@ -45,6 +47,7 @@ export function BlogCard({
   stale = false,
   onGenerate,
   onCaptureSiblings,
+  onPreviewFrame,
   onReframe,
 }: Props) {
   const [direction, setDirection] = useState(post?.direction ?? '')
@@ -149,6 +152,7 @@ export function BlogCard({
             markdown={post.markdown}
             frames={post.frames}
             onCaptureSiblings={onCaptureSiblings}
+            onPreviewFrame={onPreviewFrame}
             onReframe={onReframe}
           />
         </div>

@@ -736,6 +736,30 @@ export function useScenePipeline() {
   )
 
   /**
+   * Capture a single medium-resolution preview frame at a global timestamp — the
+   * large in-place preview the producer scrubs through before committing (issue
+   * #91). Same cached-clip path as the filmstrip, one seek, NO upload: it's a
+   * throwaway "what would this look like" frame, big enough to read a face at
+   * figure size but not the full 4K hero the pick eventually recaptures. Empty
+   * string if the moment can't be routed or the frame fails to capture.
+   */
+  const captureBlogPreview = useCallback(
+    async (time: number): Promise<string> => {
+      const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
+      const loc = globalToLocal(lite, time)
+      if (!loc) return ''
+      const objectUrl = await blogClipUrl(loc.sourceId)
+      if (!objectUrl) return ''
+      const [dataUrl] = await captureFramesAt(objectUrl, [loc.localTime], 720, {
+        type: 'image/jpeg',
+        quality: 0.82,
+      })
+      return dataUrl ?? ''
+    },
+    [sources, blogClipUrl],
+  )
+
+  /**
    * Re-capture a blog image at a producer-picked nearby timestamp and swap it into
    * the post: route the global time to its source, capture ONE clean full-res
    * frame (same path + encoding as the initial materialise — ADR-0002 re-captures
@@ -2004,6 +2028,7 @@ export function useScenePipeline() {
     blogStale,
     generateBlog,
     captureBlogSiblings,
+    captureBlogPreview,
     reframeBlogImage,
     editDescriptionTitle,
     signFor,
