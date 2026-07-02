@@ -49,6 +49,30 @@ Color palette: dark navy #0B1226 background, off-white #F8FAFC text, electric cy
 Avoid: parchment textures, hand-drawn schematic diagrams, "TUTORIAL" or "S01 EP##" tags, body copy paragraphs (those are retro-blueprint tutorial territory), photorealistic humans, generic cloud icons, busy backgrounds, radial gradients, neon glow on the headline itself (only the underline + editor outline glow), more than 5 words per headline line, hexagonal Web3 motifs.
 ```
 
+## electric-poster — YouTube thumbnail (app showcase / give-away)
+
+For "here's a free BFFless app, clone it" videos. Distinguishing markers vs modern-dev-tool: flat electric violet background (not navy), the app's real UI in a straight-on browser window (not a tilted code editor), amber `FREE APP` pill, white hand-drawn underline on the app name, "clone it" footer.
+
+```
+A bold 16:9 YouTube thumbnail announcing a free give-away developer app. Flat electric violet background #5B5BD6 — one solid saturated color field, NO gradient, NO texture, NO vignette.
+
+Top-left: a small "FREE APP" pill — solid warm amber #FBBF24 fill, near-black ink text #14122B, crisp 4px corner radius (a sharp rectangle with barely-rounded corners, NOT a bubbly capsule). This is the give-away content-type marker.
+
+Composition: split roughly 45/55 left-to-right. Left holds the headline stack. Right holds the app's UI in a browser window.
+
+Left half — headline in heavy white sans-serif (Inter Black / Söhne Breit), stacked on 3 lines: "STUDIO" then "RE-VOICE YOUR" then "SCREEN RECORDING". The app name "STUDIO" gets a hand-drawn WHITE underline — a single confident stroke beneath it, slightly rough as if drawn by hand, not a perfect rectangle. Beneath the headline, a small footer line in monospace at ~60% opacity: "clone it · bffless.app · open source".
+
+Right half — a clean macOS-style browser window shown STRAIGHT-ON (no tilt), traffic-light dots top-left, thin white hairline border, crisp 4px corners, soft shadow beneath for lift off the violet field. Inside the window: the app's actual product UI — a video-editing workspace with a scene list panel on the left, a waveform strip, and a horizontal timeline with segment blocks along the bottom. Simplified flat-vector UI, recognizable as a real product — NOT a code editor, NOT syntax-highlighted text.
+
+Accent details: one tiny amber #FBBF24 highlight inside the app UI (a single selected segment block on the timeline). One or two small white ✳ spark marks in the empty corners of the violet field — hand-drawn feel, sparing, not confetti.
+
+Style: product-launch poster with confident give-away energy — a finished thing you can have. App Store feature-card clarity crossed with a screen-print poster. High contrast for mobile readability, every element load-bearing.
+
+Color palette: electric violet #5B5BD6 background, white #FFFFFF type and window chrome, warm amber #FBBF24 accent (pill + one UI highlight only), near-black ink #14122B for pill text and UI linework. 4 colors maximum.
+
+Avoid: gradients of any kind, dark navy backgrounds, code editor mocks or syntax highlighting (watch-me-code territory), parchment textures or hand-drawn schematics or "TUTORIAL" tags (tutorial territory), body copy paragraphs, tilted windows, 3D device renders, phone mockups, glassmorphism, big bubbly rounded corners, photorealistic humans, drop shadows on text, more than one accent color, busy backgrounds.
+```
+
 ## editorial-print — blog hero
 
 ```
