@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "exportedAt": "2026-06-20T11:30:57.919Z",
+  "exportedAt": "2026-07-02T11:30:03.782Z",
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "studio",
@@ -544,7 +544,7 @@
         "description": "audioUrl (already in bucket) -> ENQUEUE a job (kind 'transcribe') and return its id; the WhisperX call (+ optional pyannote diarization when request.body.diarize) runs in postSteps so it can't hit the 30s edge timeout. Flattened { words, text } (each word carries a speaker when diarized) lands in the job row's result, polled via /api/studio/job. Story 10e."
       },
       "isEnabled": true,
-      "debugEnabled": true,
+      "debugEnabled": false,
       "description": "Transcribe an already-uploaded WAV with word-level timestamps. Mints a presigned GCS download URL for the audio (already in the bucket) and hands it to Replicate WhisperX (align_output:true), then flattens segments to { words: [{text,start,end}], text }. No validators yet — auth_required + rate_limit deferred to story 07 (mirrors the upload rules), so local unauthenticated dev works."
     },
     {
@@ -1121,7 +1121,7 @@
         "description": "Resolve the uploaded WAV's storage path, sign it, run minimax/voice-cloning, and return { voiceId, previewUrl }. Costs $3 per call."
       },
       "isEnabled": true,
-      "debugEnabled": true,
+      "debugEnabled": false,
       "description": "Voice clone (story 04) — ENABLED. Resolves the uploaded WAV sample's storage path → signs it → minimax/voice-cloning (voice_file only, matches the model's canonical example) → extracts the voice_id → returns { voiceId }. ⚠️ COSTS $3 PER CALL. To disable again: set sign+clone isEnabled:false and point respond at {{steps.prep.voiceId}} (preset stub). auth_required + rate_limit deferred to story 07. Needs the project Replicate token."
     },
     {
@@ -1176,7 +1176,7 @@
         "description": "text + voiceId -> minimax/speech-2.8-turbo -> { audioUrl, durationSeconds }."
       },
       "isEnabled": true,
-      "debugEnabled": true,
+      "debugEnabled": false,
       "description": "Voice say (story 04) — LIVE TTS via minimax/speech-2.8-turbo. Speaks request.body.text in request.body.voiceId (preset or cloned id) and returns { audioUrl, durationSeconds }. Used for the short post-selection preview sample (cheap). Needs the project Replicate API token. auth_required + rate_limit deferred to story 07."
     },
     {
@@ -1369,11 +1369,11 @@
                 "images": "steps.collect.images",
                 "prompt": "steps.prep.prompt",
                 "temperature": 0.5,
-                "thinking_level": "'medium'",
+                "thinking_level": "'low'",
                 "max_output_tokens": 64000,
                 "system_instruction": "steps.prep.system"
               },
-              "model": "google/gemini-3.1-pro",
+              "model": "google/gemini-3.5-flash",
               "timeout": 280000
             },
             "handlerType": "replicate"
@@ -1419,7 +1419,7 @@
         "description": "Per-scene refiner (story 03c; async fire-and-poll 03f Part 0; hears the scene audio 03k; creator prompts 03l). 03p: prep builds the prompt from per-word WORD TIMINGS (request.body.wordTimings) and asks the model to build the tightened cut FROM SCRATCH - the 8s-bucketed transcript and the director's first-pass script/cuts (draftText/cuts) are no longer sent or used. 03p boundary tuning: the prompt biases toward INCLUDING more (pad kept-segment edges ~0.2s into adjacent silence, conservative cuts that stay clear of kept words) so word onsets/tails are not clipped - the creator can trim by hand but cannot recover removed audio. ENQUEUE-ONLY response path: prep builds prompt/system + signed-sheet paths + scene-audio path (request.audioUrl REQUIRED - prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. Gemini 3.1 Pro refine + parse run in postSteps (replicate timeout 280s): sign0-9 sign the sheets, signAudio signs the scene's cut soundtrack and feeds Gemini's audio input so cut/segment boundaries align to the natural flow (coughs/shouts/interruptions excluded). 03l: prep injects the creator's global director prompt (request.body.directorDirection) and per-scene prompt (request.body.direction), each labeled, only when non-empty. Writes the row to { status:'done', result:{segments,cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
       },
       "isEnabled": true,
-      "debugEnabled": false,
+      "debugEnabled": true,
       "description": "Per-scene refiner (story 03c; async fire-and-poll as of 03f Part 0; hears the scene audio as of 03k; creator prompts as of 03l). ENQUEUE-ONLY response path: prep builds the prompt/system + signed-sheet paths + the scene-audio path (request.audioUrl REQUIRED — prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. The Gemini 3.1 Pro refine + parse run in postSteps (replicate step timeout 280s): sign0-9 sign the sheets, signAudio signs the scene's cut soundtrack and feeds Gemini's audio input so cut/segment boundaries align to the natural flow (coughs/shouts/interruptions excluded). 03l: prep injects the creator's global director prompt (request.body.directorDirection) and per-scene prompt (request.body.direction) into the prompt, each labeled, only when non-empty. Writes the row to { status:'done', result:{segments,cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
     },
     {
@@ -1964,7 +1964,7 @@
         "description": "Story 08: query + timedTranscript lines -> Gemini 3.1 Pro -> strict-JSON {results:[{start,end,snippet,reason}]} with server-side clamping mirroring the client's toSearchHits."
       },
       "isEnabled": true,
-      "debugEnabled": true,
+      "debugEnabled": false,
       "description": "Transcript search (story 08): find-by-meaning over the timestamped transcript. SYNC (text-only Gemini, no images — returns in seconds, no jobs flow): prep builds the system+prompt from {query, transcript, duration}, search runs google/gemini-3.1-pro, parse clamps every span into [0,duration] / drops slivers / sorts / caps 20, respond returns { results } in the exact MSW-mock shape. No validators yet (auth_required + rate_limit deferred to story 07)."
     },
     {
@@ -2087,60 +2087,6 @@
       "description": "Update a studio_projects record (story 11d Task 2). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick extracts the row's real primary recordId (data_update needs a recordId, not a filter) -> data_update writes name, updatedMs, phase, thumbnailUrl, data by recordId -> shape returns the updated meta+data mapping createdMs/updatedMs back to createdAt/updatedAt. No validators yet (deferred to story 07)."
     },
     {
-      "pathPattern": "/api/projects",
-      "method": "GET",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 46,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "List studio projects",
-        "steps": [
-          {
-            "id": "query",
-            "name": "query",
-            "config": {
-              "pageSize": 500,
-              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
-            },
-            "handlerType": "data_query"
-          },
-          {
-            "id": "shape",
-            "name": "shape",
-            "config": {
-              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var q = rows[i] || {}\n    out.push({\n      id: (typeof q.projectId === 'string') ? q.projectId : null,\n      name: (typeof q.name === 'string') ? q.name : '',\n      createdAt: num(q.createdMs),\n      updatedAt: num(q.updatedMs),\n      phase: (typeof q.phase === 'string') ? q.phase : '',\n      thumbnailUrl: (typeof q.thumbnailUrl === 'string' && q.thumbnailUrl) ? q.thumbnailUrl : null,\n    })\n  }\n  return { projects: out }\n}\n"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "respond",
-            "name": "respond",
-            "config": {
-              "body": "{{{steps.shape.projects}}}",
-              "status": 200,
-              "headers": {
-                "Cache-Control": "no-store"
-              },
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "validators": []
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "List all studio_projects records (story 11d Task 1). GET /api/projects -> data_query lists all rows (no filter) -> shape builds an ARRAY of metas { id(=projectId), name, createdAt(=createdMs), updatedAt(=updatedMs), phase, thumbnailUrl }, dropping the heavy data field -> response. No validators yet (deferred to story 07)."
-    },
-    {
       "pathPattern": "/api/describe",
       "method": "POST",
       "targetUrl": "pipeline",
@@ -2203,8 +2149,62 @@
         "validators": []
       },
       "isEnabled": true,
-      "debugEnabled": true,
+      "debugEnabled": false,
       "description": "Export description (sync Gemini): final kept script + director synopsis -> { title, summary }. Mirrors search-transcript."
+    },
+    {
+      "pathPattern": "/api/projects",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 46,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "headerConfig": null,
+      "authTransform": null,
+      "internalRewrite": false,
+      "proxyType": "pipeline",
+      "emailHandlerConfig": null,
+      "pipelineConfig": {
+        "name": "List studio projects",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "config": {
+              "pageSize": 500,
+              "schemaId": "fce8c450-879d-4bab-8bd7-a4d1e8eb7674"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  function num(v) {\n    var n = Number(v)\n    return (typeof v !== 'undefined' && v !== null && !isNaN(n)) ? n : 0\n  }\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var q = rows[i] || {}\n    out.push({\n      id: (typeof q.projectId === 'string') ? q.projectId : null,\n      name: (typeof q.name === 'string') ? q.name : '',\n      createdAt: num(q.createdMs),\n      updatedAt: num(q.updatedMs),\n      phase: (typeof q.phase === 'string') ? q.phase : '',\n      thumbnailUrl: (typeof q.thumbnailUrl === 'string' && q.thumbnailUrl) ? q.thumbnailUrl : null,\n    })\n  }\n  return { projects: out }\n}\n"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "config": {
+              "body": "{{{steps.shape.projects}}}",
+              "status": 200,
+              "headers": {
+                "Cache-Control": "no-store"
+              },
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          }
+        ],
+        "validators": []
+      },
+      "isEnabled": true,
+      "debugEnabled": false,
+      "description": "List all studio_projects records (story 11d Task 1). GET /api/projects -> data_query lists all rows (no filter) -> shape builds an ARRAY of metas { id(=projectId), name, createdAt(=createdMs), updatedAt(=updatedMs), phase, thumbnailUrl }, dropping the heavy data field -> response. No validators yet (deferred to story 07)."
     },
     {
       "pathPattern": "/api/projects/delete",
@@ -2417,7 +2417,7 @@
     {
       "pathPattern": "/api/thumbnail/draft",
       "method": "POST",
-      "targetUrl": "pipeline",
+      "targetUrl": "",
       "stripPrefix": true,
       "order": 50,
       "timeout": 120000,
@@ -2443,6 +2443,7 @@
             "id": "draft",
             "name": "draft",
             "config": {
+              "mode": "completion",
               "model": "claude-sonnet-4-6",
               "skills": {
                 "mode": "selected",
@@ -2450,10 +2451,13 @@
                   "image-prompts"
                 ]
               },
-              "timeout": 110000,
               "provider": "anthropic",
+              "maxTokens": 4096,
+              "temperature": 0.7,
               "messageField": "{{steps.prep.message}}",
-              "systemPrompt": "You write a single image-generation prompt for `google/nano-banana` that becomes a YouTube video's final thumbnail.\n\nYou have the `image-prompts` skill — load it with the load_skill tool before writing. It defines the prompt anatomy, the named house styles (retro-blueprint / modern-dev-tool / editorial-print), how to route a style from the video's content type, the text/color/negatives rules, and examples. Follow it exactly; don't invent your own format.\n\nThe user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is about and which house style fits), and NOTES (the creator's optional free-text wishes). When NOTES are present they override style routing and defaults — honor them.\n\nRoute the house style from the content type per the skill. Write the exact headline text yourself (5 words max) — never a placeholder. Apply the skill's color caps and always include the negatives list.\n\nReturn JSON only: {\"prompt\": \"<full multi-section prompt, ready to paste>\"} — no commentary, no markdown fences."
+              "responseMode": "message",
+              "systemPrompt": "You write a single image-generation prompt for `google/nano-banana` that becomes a YouTube video's final thumbnail.\n\nYou have the `image-prompts` skill — load it with the load_skill tool before writing. It defines the prompt anatomy, the named house styles (retro-blueprint / modern-dev-tool / editorial-print), how to route a style from the video's content type, the text/color/negatives rules, and examples. Follow it exactly; don't invent your own format.\n\nThe user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is about and which house style fits), and NOTES (the creator's optional free-text wishes). When NOTES are present they override style routing and defaults — honor them.\n\nRoute the house style from the content type per the skill. Write the exact headline text yourself (5 words max) — never a placeholder. Apply the skill's color caps and always include the negatives list.\n\nReturn ONLY the finished prompt itself as plain text — the full multi-section prompt, ready to paste. Do NOT wrap it in JSON, do NOT surround it with quotes, do NOT use markdown code fences, and add no commentary before or after.",
+              "maxHistoryMessages": 50
             },
             "handlerType": "ai_handler"
           },
@@ -2461,7 +2465,7 @@
             "id": "parse",
             "name": "parse",
             "config": {
-              "code": "function handler({ steps }) {\n  function s(v){ return typeof v === 'string' ? v : ''; }\n  var d = (steps && steps.draft) || {};\n  var c = d.content != null ? d.content : (d.output != null ? d.output : d);\n  var prompt = '';\n  if (c && typeof c === 'object' && typeof c.prompt === 'string') {\n    prompt = c.prompt;\n  } else {\n    var text = '';\n    if (typeof c === 'string') { text = c; }\n    else if (c && typeof c.length === 'number') { for (var i = 0; i < c.length; i++) { text += String(c[i]); } }\n    else if (c && typeof c.text === 'string') { text = c.text; }\n    var t = text.trim();\n    var a = t.indexOf('{'); var z = t.lastIndexOf('}');\n    var slice = (a >= 0 && z > a) ? t.slice(a, z + 1) : t;\n    var parsed = null;\n    try { parsed = JSON.parse(slice); } catch (e) { parsed = null; }\n    prompt = parsed && typeof parsed.prompt === 'string' ? parsed.prompt : t;\n  }\n  return { promptJson: JSON.stringify({ prompt: s(prompt) }) };\n}"
+              "code": "function handler({ steps }) {\n  function s(v) { return typeof v === 'string' ? v : ''; }\n\n  var d = (steps && steps.draft) || {};\n  var c = d.content != null ? d.content : (d.output != null ? d.output : d);\n\n  // Normalize the model output to a single text string.\n  var text = '';\n  if (typeof c === 'string') {\n    text = c;\n  } else if (c && typeof c.prompt === 'string') {\n    text = c.prompt;\n  } else if (c && typeof c.text === 'string') {\n    text = c.text;\n  } else if (c && typeof c.length === 'number') {\n    for (var i = 0; i < c.length; i++) { text += String(c[i]); }\n  } else {\n    text = String(c == null ? '' : c);\n  }\n  text = text.trim();\n\n  // Strip a ```fenced``` block if the model wrapped the prompt in one.\n  var fence = text.match(/^```[a-zA-Z]*\\s*([\\s\\S]*?)\\s*```$/);\n  if (fence) { text = fence[1].trim(); }\n\n  // If the model still returned a JSON object, unwrap its prompt field.\n  // (Plain text is the expected path; this is only a safety net.)\n  if (text.charAt(0) === '{' && text.charAt(text.length - 1) === '}') {\n    try {\n      var parsed = JSON.parse(text);\n      if (parsed && typeof parsed.prompt === 'string') { text = parsed.prompt; }\n    } catch (e) {\n      // Not valid JSON (e.g. unescaped quotes) - keep the raw text as-is.\n    }\n  }\n\n  // JSON.stringify guarantees correct escaping regardless of the content.\n  return { promptJson: JSON.stringify({ prompt: s(text) }) };\n}"
             },
             "handlerType": "function_handler"
           },
@@ -2476,11 +2480,12 @@
             "handlerType": "response_handler"
           }
         ],
+        "postSteps": [],
         "validators": [],
         "description": "Draft a YouTube-thumbnail nano-banana prompt from title/description/script + notes. The ai_handler loads the image-prompts skill (Skills + JSON response-format are set in the console UI). Returns { prompt }."
       },
       "isEnabled": true,
-      "debugEnabled": true,
+      "debugEnabled": false,
       "description": "Studio thumbnail: draft a nano-banana image prompt via ai_handler (loads the image-prompts skill — enable Skills + JSON response format in the console UI). Returns { prompt }. Story 06."
     },
     {
@@ -2551,372 +2556,6 @@
       "isEnabled": true,
       "debugEnabled": false,
       "description": "Studio thumbnail: render the (edited) prompt with google/nano-banana, store to the bucket under the project, return { imageUrl } serve path. Needs the project Replicate token. Story 06."
-    },
-    {
-      "pathPattern": "/api/blog",
-      "method": "POST",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 52,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "Blog writer (async enqueue + poll)",
-        "steps": [
-          {
-            "id": "prep",
-            "name": "prep",
-            "config": {
-              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n\n  // Sign the existing Contact sheets step-by-step (like the master director):\n  // turn each serve path into a bucket key the postStep signed_url handlers read.\n  var urls = body.sheetUrls\n  if (!urls || typeof urls.length !== 'number') urls = []\n  var prefix = deployment.owner + '/' + deployment.repo + '/uploads/'\n  var out = {}\n  for (var i = 0; i < 10; i++) {\n    var p = ''\n    if (i < urls.length && urls[i]) {\n      var key = String(urls[i]).replace(/^\\/+/, '')\n      key = key.replace(/^api\\/uploads\\//, '')\n      p = prefix + key\n    }\n    out['path' + i] = p\n  }\n\n  var script = typeof body.script === 'string' ? body.script : ''\n  var direction = typeof body.direction === 'string' ? body.direction : ''\n  var title = typeof body.title === 'string' ? body.title : ''\n  var summary = typeof body.summary === 'string' ? body.summary : ''\n  var synopsis = typeof body.synopsis === 'string' ? body.synopsis : ''\n  var duration = typeof body.duration === 'number' ? body.duration : 0\n  var scenes = (body.scenes && typeof body.scenes.length === 'number') ? body.scenes : []\n  var timed = typeof body.timedTranscript === 'string' ? body.timedTranscript : ''\n\n  var outline = ''\n  for (var s = 0; s < scenes.length; s++) {\n    var sc = scenes[s] || {}\n    var st = (typeof sc.title === 'string') ? sc.title : ''\n    var tr = (typeof sc.transcript === 'string') ? sc.transcript : ''\n    outline += (s + 1) + '. ' + (st || ('Scene ' + (s + 1)))\n    if (tr) { outline += ' — ' + tr }\n    outline += '\\n'\n  }\n\n  var sys = ''\n  sys += 'You are a senior technical writer. You turn a finished short video into a faithful, well-structured written blog post that reads well on its own.\\n\\n'\n  sys += 'You are given: the finished video NARRATION SCRIPT (what was actually said, in order), a recommended TITLE and SUMMARY, the director one-line SYNOPSIS, a per-scene OUTLINE (each scene heading + the words spoken in it), a TIMESTAMPED TRANSCRIPT of the original recording (lines like `[m:ss] words`, ~8-second buckets) so you can align what is said to WHEN, the creator optional DIRECTION, the video DURATION, and CONTACT-SHEET images (grids of frames sampled across the recording, each with its wall-clock timestamp burned into a corner) as your visual context.\\n\\n'\n  sys += 'Your job:\\n'\n  sys += '1. Write the post as flowing PROSE first — paragraphs that explain and narrate, not a transcript dump and not a bare bullet skeleton. Expand the spoken script into readable writing while staying FAITHFUL: never invent facts, numbers, names, features, or claims that are not supported by the script, the outline, or what is clearly visible in the frames. If something is uncertain, leave it out.\\n'\n  sys += '2. Begin with YAML FRONT-MATTER delimited by --- lines, containing exactly `title` and `description` (a one-sentence summary). Prefer the recommended title/summary; you may tighten them for the page.\\n'\n  sys += '3. Use an ELASTIC outline seeded from the scenes: roughly one `##` section per meaningful scene, in order, but you MAY merge tiny adjacent scenes into one section and rename headings for flow. Do not pad — fewer, stronger sections beat one-per-scene.\\n'\n  sys += '4. Add inline IMAGES SPARINGLY and only where a frame genuinely helps (a key UI state, a result, a diagram). Write each as a Markdown image whose URL is a frame token: `![A short caption](frame:<t>)`, where <t> is the moment in the ORIGINAL video in SECONDS (to pick <t>, find where that content is discussed in the TIMESTAMPED TRANSCRIPT to get its [m:ss], set <t> to a second in that window, then confirm against the contact-sheet frame whose burned-in clock is nearest) and the caption is required (it is shown under the image). Use at most a handful across the whole post; the post must read well even if every image were removed — images are additive, never load-bearing.\\n\\n'\n  sys += 'Markdown rules: standard Markdown — `#`/`##` headings, paragraphs, `-` lists, `>` blockquotes, `**bold**`, `*italic*`, `` `code` ``. Do NOT wrap the whole document in a code fence.\\n\\n'\n  sys += 'Output STRICT JSON only — no markdown fences around the JSON, no commentary — exactly this shape:\\n'\n  sys += '{\"markdown\": string}\\n'\n  sys += 'where the string is the COMPLETE Markdown document (front-matter + body). Return nothing but the JSON object.'\n\n  var prompt = ''\n  prompt += 'NARRATION SCRIPT (the finished video, in order):\\n\\n' + script + '\\n\\n'\n  if (timed) { prompt += 'TIMESTAMPED TRANSCRIPT of the ORIGINAL recording (each line \"[m:ss] words\"; the re-voiced script above tracks the same content in the same order — use this only to locate WHEN something is discussed when choosing image timestamps):\\n\\n' + timed + '\\n\\n' }\n  if (title) { prompt += 'RECOMMENDED TITLE: ' + title + '\\n' }\n  if (summary) { prompt += 'SUMMARY: ' + summary + '\\n' }\n  if (synopsis) { prompt += 'DIRECTOR SYNOPSIS: ' + synopsis + '\\n' }\n  if (outline) { prompt += '\\nSCENE OUTLINE (title — transcript), in order:\\n' + outline }\n  prompt += '\\nThe finished video is ' + Math.round(duration) + ' seconds long. The attached images are the contact sheets described in your instructions.\\n'\n  if (direction) {\n    prompt += '\\nEXTRA DIRECTION FROM THE CREATOR (weight this heavily): ' + direction + '\\n'\n  }\n  prompt += '\\nNow write the blog post as STRICT JSON exactly as specified: {\"markdown\": \"...\"}. Return nothing but the JSON object.'\n\n  out.system = sys\n  out.prompt = prompt\n  return out\n}"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "createJob",
-            "name": "createJob",
-            "config": {
-              "fields": {
-                "kind": "'blog'",
-                "prompt": "steps.prep.prompt",
-                "status": "'pending'",
-                "system": "steps.prep.system",
-                "request": "request.body"
-              },
-              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
-            },
-            "handlerType": "data_create"
-          },
-          {
-            "id": "respond",
-            "name": "respond",
-            "config": {
-              "body": "{\n  \"jobId\": \"{{steps.createJob.id}}\",\n  \"status\": \"pending\"\n}",
-              "status": 200,
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "postSteps": [
-          {
-            "id": "setRunning",
-            "name": "setRunning",
-            "config": {
-              "fields": {
-                "status": "'running'"
-              },
-              "recordId": "steps.createJob.id",
-              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7"
-            },
-            "handlerType": "data_update"
-          },
-          {
-            "id": "sign0",
-            "name": "sign0",
-            "config": {
-              "path": "steps.prep.path0",
-              "condition": "steps.prep.path0",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign1",
-            "name": "sign1",
-            "config": {
-              "path": "steps.prep.path1",
-              "condition": "steps.prep.path1",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign2",
-            "name": "sign2",
-            "config": {
-              "path": "steps.prep.path2",
-              "condition": "steps.prep.path2",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign3",
-            "name": "sign3",
-            "config": {
-              "path": "steps.prep.path3",
-              "condition": "steps.prep.path3",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign4",
-            "name": "sign4",
-            "config": {
-              "path": "steps.prep.path4",
-              "condition": "steps.prep.path4",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign5",
-            "name": "sign5",
-            "config": {
-              "path": "steps.prep.path5",
-              "condition": "steps.prep.path5",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign6",
-            "name": "sign6",
-            "config": {
-              "path": "steps.prep.path6",
-              "condition": "steps.prep.path6",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign7",
-            "name": "sign7",
-            "config": {
-              "path": "steps.prep.path7",
-              "condition": "steps.prep.path7",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign8",
-            "name": "sign8",
-            "config": {
-              "path": "steps.prep.path8",
-              "condition": "steps.prep.path8",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "sign9",
-            "name": "sign9",
-            "config": {
-              "path": "steps.prep.path9",
-              "condition": "steps.prep.path9",
-              "expiresIn": 3600
-            },
-            "handlerType": "signed_url"
-          },
-          {
-            "id": "collect",
-            "name": "collect",
-            "config": {
-              "code": "function handler({ steps }) {\n  var images = []\n  for (var i = 0; i < 10; i++) {\n    var st = steps['sign' + i]\n    if (st && st.url) images.push(st.url)\n  }\n  return { images: images, count: images.length }\n}\n"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "blog",
-            "name": "blog",
-            "config": {
-              "input": {
-                "images": "steps.collect.images",
-                "prompt": "steps.prep.prompt",
-                "temperature": 0.6,
-                "thinking_level": "'medium'",
-                "max_output_tokens": 64000,
-                "system_instruction": "steps.prep.system"
-              },
-              "model": "google/gemini-3.1-pro",
-              "timeout": 280000
-            },
-            "handlerType": "replicate"
-          },
-          {
-            "id": "parse",
-            "name": "parse",
-            "config": {
-              "code": "function handler({ steps }) {\n  var d = (steps && steps.blog) || {}\n  if (!d || (d.status == null && d.output == null)) {\n    return { ok: false, notOk: true, error: 'The AI writer did not return a result — it may be temporarily overloaded, or the video may be too long. Please try again.', data: { markdown: '' } }\n  }\n\n  var raw = d.output != null ? d.output : d\n  var text = ''\n  if (typeof raw === 'string') {\n    text = raw\n  } else if (raw && typeof raw.length === 'number') {\n    for (var a = 0; a < raw.length; a++) {\n      text += String(raw[a])\n    }\n  } else if (raw && typeof raw.text === 'string') {\n    text = raw.text\n  }\n\n  // Tolerantly extract the \"markdown\" string even when the model truncated\n  // mid-document: read from the opening quote to the closing unescaped quote, or\n  // to the end of the text if it never closed (keep the completed portion).\n  function extractMarkdown(s) {\n    var ki = s.indexOf('\"markdown\"')\n    if (ki < 0) return ''\n    var ci = s.indexOf(':', ki)\n    if (ci < 0) return ''\n    var qi = s.indexOf('\"', ci + 1)\n    if (qi < 0) return ''\n    var body = ''\n    var esc = false\n    for (var i = qi + 1; i < s.length; i++) {\n      var ch = s.charAt(i)\n      if (esc) { body += '\\\\' + ch; esc = false; continue }\n      if (ch === '\\\\') { esc = true; continue }\n      if (ch === '\"') { break }\n      body += ch\n    }\n    // A trailing lone backslash (esc still open at truncation) was dropped above.\n    var attempts = [body, body.replace(/\\\\u[0-9a-fA-F]{0,3}$/, '')]\n    for (var t = 0; t < attempts.length; t++) {\n      try { return JSON.parse('\"' + attempts[t] + '\"') } catch (e) {}\n    }\n    // Last resort: unescape the common sequences by hand so literal newlines or a\n    // stray escape can't lose the whole post.\n    return body.replace(/\\\\n/g, '\\n').replace(/\\\\t/g, '\\t').replace(/\\\\r/g, '\\r').replace(/\\\\\"/g, '\"').replace(/\\\\\\\\/g, '\\\\')\n  }\n\n  var markdown = ''\n  var sIdx = text.indexOf('{')\n  var eIdx = text.lastIndexOf('}')\n  var parsed = null\n  if (sIdx >= 0 && eIdx > sIdx) {\n    try { parsed = JSON.parse(text.slice(sIdx, eIdx + 1)) } catch (e) { parsed = null }\n  }\n  if (parsed && typeof parsed.markdown === 'string') {\n    markdown = parsed.markdown\n  } else {\n    markdown = extractMarkdown(text)\n  }\n  // The model may have returned bare Markdown with no JSON envelope at all.\n  if (!markdown && text && text.indexOf('\"markdown\"') < 0) {\n    markdown = text\n  }\n\n  markdown = (typeof markdown === 'string') ? markdown.replace(/\\s+$/, '') : ''\n  if (!markdown) {\n    var snippet = (typeof text === 'string') ? text.slice(0, 280).trim() : ''\n    var emsg = snippet\n      ? 'The AI writer response could not be read. Please try again. Model said: ' + snippet\n      : 'The AI writer returned an empty response — it may be temporarily overloaded. Please try again.'\n    return { ok: false, notOk: true, error: emsg, data: { markdown: '' } }\n  }\n\n  return { ok: true, notOk: false, error: '', data: { markdown: markdown } }\n}\n"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "finishOk",
-            "name": "finishOk",
-            "config": {
-              "fields": {
-                "result": "steps.parse.data",
-                "status": "'done'"
-              },
-              "recordId": "steps.createJob.id",
-              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
-              "condition": "steps.parse.ok"
-            },
-            "handlerType": "data_update"
-          },
-          {
-            "id": "finishErr",
-            "name": "finishErr",
-            "config": {
-              "fields": {
-                "error": "steps.parse.error",
-                "status": "'error'"
-              },
-              "recordId": "steps.createJob.id",
-              "schemaId": "46f5eef6-cabe-48cf-95f8-05c9b94de2a7",
-              "condition": "steps.parse.notOk"
-            },
-            "handlerType": "data_update"
-          }
-        ],
-        "validators": [],
-        "description": "Story 69: live /api/blog, a sibling of the master director. Enqueue a studio_jobs row (kind 'blog') and return { jobId } immediately; the slow multimodal Gemini call + parse run in postSteps and write the row to done/error. prep builds a faithful-but-prose prompt from the final narration script, the recommended title + summary, the director synopsis, the per-scene { title, transcript } outline, the creator direction and duration, and signs the existing Contact sheets step-by-step as the model's visual context. parse coerces to { markdown } and salvages truncation by keeping the completed portion. The FE polls /api/studio/job."
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "Blog writer (story 69; async fire-and-poll, modeled on /api/scenes). ENQUEUE-ONLY response path: prep builds the prompt/system + signed contact-sheet paths, createJob inserts a studio_jobs row (kind 'blog'), respond returns { jobId, status:'pending' }. The multimodal Gemini 3.1 Pro call + parse run in postSteps (replicate timeout 280s, off the response path) and write the row to { status:'done', result:{ markdown } } or { status:'error', error }. Output is a faithful, prose-first Markdown post: YAML front-matter (title, description), an elastic scene-seeded outline, and sparse inline frame:<t> image tokens. FE polls GET /api/studio/job."
-    },
-    {
-      "pathPattern": "/api/uploads/blog/prepare",
-      "method": "POST",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 53,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "Prepare studio blog upload",
-        "steps": [
-          {
-            "id": "prepare",
-            "name": "prepare",
-            "config": {
-              "subDir": "projects/{{request.body.projectId}}/blog",
-              "filename": "request.body.filename",
-              "expiresIn": 3600,
-              "dateBucket": true,
-              "maxFileSize": 10485760,
-              "allowedMimeTypes": [
-                "image/*"
-              ]
-            },
-            "handlerType": "presigned_upload"
-          },
-          {
-            "id": "response",
-            "name": "Return Prepare Result",
-            "config": {
-              "body": "{{{steps.prepare}}}",
-              "status": 200,
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "validators": [],
-        "description": "Mint a presigned PUT URL so the browser uploads each re-captured blog frame straight to the bucket (image/*) under the blog/ subDir (issue #70)."
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "Prepare: mint presigned PUT URL for direct-to-bucket studio blog image (re-captured frame) upload"
-    },
-    {
-      "pathPattern": "/api/uploads/blog/register",
-      "method": "POST",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 54,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "Register studio blog upload",
-        "steps": [
-          {
-            "id": "register",
-            "name": "register",
-            "config": {
-              "subDir": "projects/{{request.body.projectId}}/blog",
-              "schemaId": "862a1fd2-e373-469e-8a3f-32330473abd4",
-              "storageKey": "request.body.storageKey",
-              "maxFileSize": 10485760,
-              "originalName": "request.body.originalName",
-              "allowedMimeTypes": [
-                "image/*"
-              ]
-            },
-            "handlerType": "register_upload"
-          },
-          {
-            "id": "response",
-            "name": "Return Register Result",
-            "config": {
-              "body": "{{{steps.register}}}",
-              "status": 200,
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "validators": [],
-        "description": "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket blog frame flow). Reuses the studio_source schema; the blog/ subDir distinguishes records (issue #70)."
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "Register: finalize a direct-to-bucket studio blog image upload into studio_source"
-    },
-    {
-      "pathPattern": "/api/uploads/blog/*",
-      "method": "GET",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 55,
-      "timeout": 30000,
-      "preserveHost": false,
-      "forwardCookies": false,
-      "headerConfig": null,
-      "authTransform": null,
-      "internalRewrite": false,
-      "proxyType": "pipeline",
-      "emailHandlerConfig": null,
-      "pipelineConfig": {
-        "name": "Serve studio blog images",
-        "steps": [
-          {
-            "id": "serve",
-            "name": "serve",
-            "config": {
-              "subDir": "blog"
-            },
-            "handlerType": "file_serve_handler"
-          }
-        ],
-        "validators": [],
-        "description": "Serve files from the blog subDir"
-      },
-      "isEnabled": true,
-      "debugEnabled": false,
-      "description": "Serve files from studio blog (Range-aware) so the read-only preview can fetch the inline frames"
     }
   ],
   "schemas": [

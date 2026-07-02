@@ -4,20 +4,28 @@ Studio has no app server. Its `/api/*` endpoints are a **BFFless proxy rule set*
 presigned uploads, file serving, Replicate calls, data tables, signed URLs). To run Studio against
 your own BFFless project you import that rule set and attach it to the alias serving the app.
 
-[`studio.proxy-rules.json`](studio.proxy-rules.json) is the exported rule set (43 rules, format
-`bffless-proxy-rule-set` v1). It contains **no secrets** — credentials are referenced by name
-(`secrets.HF_TOKEN`) or use the project's configured provider tokens.
+Studio's backend is **two sibling rule sets**, both exported here (format `bffless-proxy-rule-set`
+v1, **no secrets** — credentials are referenced by name (`secrets.HF_TOKEN`) or use the project's
+configured provider tokens):
+
+- [`studio.proxy-rules.json`](studio.proxy-rules.json) — the main `studio` set (39 rules): uploads,
+  transcribe, director, refiner, voice, thumbnail, projects/jobs.
+- [`studio-blog.proxy-rules.json`](studio-blog.proxy-rules.json) — the `studio-blog` set (4 rules):
+  the companion blog-post writer (`POST /api/blog`) + blog image uploads
+  (`/api/uploads/blog/{prepare,register,*}`).
 
 ## Import
 
-**Dashboard:** BFFless project → Proxy Rules → **Import** → upload `studio.proxy-rules.json`.
+**Dashboard:** BFFless project → Proxy Rules → **Import** → upload `studio.proxy-rules.json`, then
+repeat for `studio-blog.proxy-rules.json`.
 
 **Claude / MCP:** ask Claude (with the BFFless MCP connected) to import
-`apps/studio/bffless/studio.proxy-rules.json` into your project. It creates the `studio` rule set and
-all 43 rules (IDs are remapped on import).
+`apps/studio/bffless/studio.proxy-rules.json` and `studio-blog.proxy-rules.json` into your project.
+It creates the `studio` and `studio-blog` rule sets and all their rules (IDs are remapped on import).
 
-After import, **attach the `studio` rule set to the alias** your deploy uploads to (e.g. the `studio`
-alias / `studio.<your-domain>`). `/api/*` only serves on aliases the rule set is attached to.
+After import, **attach BOTH rule sets to the alias** your deploy uploads to (e.g. the `studio`
+alias / `studio.<your-domain>`) — aliases accept multiple rule sets and merge their rules. `/api/*`
+only serves on aliases the rule sets are attached to.
 
 ## Manual setup (admin panel)
 
@@ -28,7 +36,8 @@ provider tokens/secrets are set per project, not per app).
 
 - **External connections / AI provider tokens — Replicate + Anthropic (admin-panel only, no MCP).**
   Studio's AI pipelines need a **Replicate** token (powers `victor-upmeet/whisperx` transcribe,
-  `google/gemini-3.1-pro` director/refiner, `minimax/*` voice, `google/nano-banana-2` thumbnail) and
+  `google/gemini-3.1-pro` director, `google/gemini-3.5-flash` refiner, `minimax/*` voice,
+  `google/nano-banana-2` thumbnail) and
   an **Anthropic** key (`claude-sonnet-4-6` for `/api/thumbnail/draft`). See
   [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) §1 and §3 for where to
   obtain and enter each.
@@ -49,9 +58,9 @@ In the BFFless dashboard → **Settings → AI**:
 
 1. **Replicate token** — under **AI Services → Replicate**, create an API token at
    [replicate.com](https://replicate.com/account/api-tokens) and paste it. Powers
-   `victor-upmeet/whisperx` (transcribe), `google/gemini-3.1-pro` (director / refiner / describe /
-   search), `minimax/voice-cloning` + `minimax/speech-2.8-turbo` (voice), and `google/nano-banana-2`
-   (thumbnail render).
+   `victor-upmeet/whisperx` (transcribe), `google/gemini-3.1-pro` (director / describe / search),
+   `google/gemini-3.5-flash` (refiner), `minimax/voice-cloning` + `minimax/speech-2.8-turbo` (voice),
+   and `google/nano-banana-2` (thumbnail render).
 2. **`HF_TOKEN` secret** — under **Secrets** (just below AI Services), add `HF_TOKEN` set to a
    [Hugging Face](https://huggingface.co/settings/tokens) **read** token. Used by `/api/transcribe`
    for WhisperX alignment/diarization (when diarization is enabled). Referenced as `secrets.HF_TOKEN`.
@@ -119,5 +128,6 @@ confirm the function received `deployment` (not a template-only value).
   (deferred to story 07) so unauthenticated local dev works. Add them before exposing a paid/public
   deployment.
 - **Voice cloning costs ~$3/call** (`/api/voice/clone`). It's enabled in this export.
-- Re-export from the BFFless dashboard (Proxy Rules → Export) after changing rules, and commit the
-  updated JSON here so the giveaway stays current.
+- Re-export from the BFFless dashboard (Proxy Rules → Export) after changing rules — whichever set
+  changed (`studio` or `studio-blog`) — and commit the updated JSON here so the giveaway stays
+  current.

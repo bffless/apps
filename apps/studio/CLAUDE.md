@@ -27,8 +27,10 @@ Don't re-derive the design from chat history or git log.
 
 ## Backend (`/api/*`)
 
-There is no app server. The `/api/*` endpoints are a BFFless proxy rule set, exported to
-`bffless/studio.proxy-rules.json` (43 rules) so a forker can import it into their own project — see
+There is no app server. The `/api/*` endpoints are two sibling BFFless proxy rule sets, exported to
+`bffless/studio.proxy-rules.json` (39 rules, the main set) and `bffless/studio-blog.proxy-rules.json`
+(4 rules, the companion blog writer + blog image uploads) so a forker can import them into their own
+project (attach BOTH to the app's alias) — see
 `bffless/README.md` for import steps + prerequisites (storage, Replicate/Anthropic tokens,
 `HF_TOKEN`). Locally, unhandled `/api/*` falls through the Vite proxy to `j5s.dev`. After changing
 rules in the dashboard, re-export and commit the updated JSON.
