@@ -21,6 +21,7 @@ import type { Scene } from '../lib/scenes'
 import type { AutoBuildRun } from '../lib/autoBuild'
 import type { VideoDescription } from '../lib/describe'
 import type { ContactSheet } from '../lib/frames'
+import { replaceBlogImageUrl, type BlogImageRef } from '../lib/blog'
 
 /**
  * The Export step's generated blog post (story for issue #68). The Markdown
@@ -36,6 +37,10 @@ export type BlogPost = {
   script: string
   status: 'idle' | 'running' | 'done' | 'error'
   jobId?: string | null
+  /** The post's inline frame images keyed back to the global-timeline second each
+   *  was captured at (issue #91) — the memory that lets the producer nudge a bad
+   *  frame to a nearby moment. Absent on posts generated before this shipped. */
+  frames?: BlogImageRef[]
 }
 
 /** A word with its time markers, as transcription returns them. `speaker` is the
@@ -509,13 +514,37 @@ const studioSlice = createSlice({
         jobId: action.payload.jobId,
       }
     },
-    /** Commit the generated Markdown — replaces the post and clears the in-flight
-     *  job id (no-op if the blog state was reset out from under the job). */
-    setBlogResult(state, action: PayloadAction<{ markdown: string }>) {
+    /** Commit the generated Markdown + its resolved frame sidecar — replaces the
+     *  post and clears the in-flight job id (no-op if the blog state was reset out
+     *  from under the job). `frames` maps each baked image URL back to the second
+     *  it came from, so the producer can re-frame it later (issue #91). */
+    setBlogResult(state, action: PayloadAction<{ markdown: string; frames?: BlogImageRef[] }>) {
       const w = active(state); if (!w?.blog) return
       w.blog.markdown = action.payload.markdown
+      w.blog.frames = action.payload.frames ?? []
       w.blog.status = 'done'
       w.blog.jobId = null
+    },
+    /** Re-frame one blog image (issue #91): the producer picked a nearby timestamp
+     *  and a fresh frame was captured + uploaded. Point the post at the new URL and
+     *  update (or add) its sidecar entry's `time`/`url`, leaving captions + prose
+     *  untouched. No-op if there's no post. */
+    reframeBlogImage(
+      state,
+      action: PayloadAction<{ oldUrl: string; newUrl: string; time: number }>,
+    ) {
+      const w = active(state); if (!w?.blog) return
+      const { oldUrl, newUrl, time } = action.payload
+      w.blog.markdown = replaceBlogImageUrl(w.blog.markdown, oldUrl, newUrl)
+      const refs = w.blog.frames ?? []
+      const entry = refs.find((f) => f.url === oldUrl)
+      if (entry) {
+        entry.url = newUrl
+        entry.time = time
+      } else {
+        refs.push({ url: newUrl, time })
+      }
+      w.blog.frames = refs
     },
     /** Terminal failure for the blog job: surface the error state, drop the job id. */
     setBlogError(state) {
@@ -697,6 +726,7 @@ export const {
   setDescriptionTitle,
   setBlogRunning,
   setBlogResult,
+  reframeBlogImage,
   setBlogError,
   addSource,
   patchSource,

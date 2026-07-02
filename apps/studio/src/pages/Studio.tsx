@@ -744,6 +744,8 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                   generating={pipe.blog?.status === 'running'}
                   stale={pipe.blogStale}
                   onGenerate={pipe.generateBlog}
+                  onCaptureSiblings={pipe.captureBlogSiblings}
+                  onReframe={pipe.reframeBlogImage}
                 />
               </div>
             ) : (
