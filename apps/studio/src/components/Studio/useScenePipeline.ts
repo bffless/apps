@@ -25,7 +25,7 @@ import {
   type RefineSceneRaw,
 } from '../../lib/refiner'
 import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
-import { extractAudio, sliceAudioWav } from '../../lib/audio'
+import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
 import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
 import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice } from '../../lib/export/ffmpeg'
@@ -61,6 +61,7 @@ import {
   setSourceUrl,
   setAudioUrl,
   setAudioPeaks,
+  setDeadSpace,
   setContactSheets,
   setWords,
   setSynopsis,
@@ -101,6 +102,14 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000 // give up on a wedged job rather than pol
  * module-level guard ensures exactly one poll loop per job id.
  */
 const pollsInFlight = new Set<string>()
+
+/**
+ * Audio URLs currently being measured for dead space (story 13c backfill).
+ * Module-level for the same StrictMode reason as `pollsInFlight`: two hook
+ * instances briefly coexist in dev, and the backfill fetches the whole WAV —
+ * this keeps it to one fetch per URL.
+ */
+const deadSpaceBackfillsInFlight = new Set<string>()
 
 /** Measure a video clip's real length by loading just its metadata off an object
  *  URL — mirrors `measureAudioDuration` but for <video>. Resolves 0 on error. */
@@ -190,6 +199,9 @@ export function useScenePipeline() {
   const sourceUrl = useAppSelector((s) => selectActive(s).sourceUrl)
   const audioUrl = useAppSelector((s) => selectActive(s).audioUrl)
   const audioPeaks = useAppSelector((s) => selectActive(s).audioPeaks)
+  // `?? null` folds pre-13c persisted states (rehydrated without the key) into
+  // the explicit "not measured" value.
+  const deadSpace = useAppSelector((s) => selectActive(s).deadSpace ?? null)
   const persistedSheets = useAppSelector((s) => selectActive(s).contactSheets)
   const words = useAppSelector((s) => selectActive(s).words)
   const synopsis = useAppSelector((s) => selectActive(s).synopsis)
@@ -712,6 +724,24 @@ export function useScenePipeline() {
     })
   }, [scenesJobId, sourceUrl, scenes, sources, blog, completeDirectorJob, completeRefineJob, completeTranscribeJob, completeBlogJob])
 
+  // Backfill measured dead space for projects whose audio was extracted before
+  // 13c (extract never re-runs, so `deadSpace` would stay null forever): pull
+  // the persisted WAV back once, measure, persist the small spans. `null` is
+  // the trigger — a measured-but-silence-free project stores `[]` and is left
+  // alone. A failed fetch clears the guard so the next mount can retry.
+  useEffect(() => {
+    if (!audioUrl || deadSpace || deadSpaceBackfillsInFlight.has(audioUrl)) return
+    deadSpaceBackfillsInFlight.add(audioUrl)
+    deadSpaceFromUrl(audioUrl)
+      .then((spans) => {
+        dispatch(setDeadSpace(spans))
+        const primary = [...sources].sort((a, b) => a.order - b.order)[0]
+        if (primary) dispatch(patchSource({ id: primary.id, patch: { deadSpace: spans } }))
+      })
+      .catch(() => {})
+      .finally(() => deadSpaceBackfillsInFlight.delete(audioUrl))
+  }, [audioUrl, deadSpace, sources, dispatch])
+
   // ---- Individual steps -----------------------------------------------------
 
   // Stage ① — upload the source clip directly to the storage bucket via the
@@ -734,17 +764,18 @@ export function useScenePipeline() {
   const extractAndUploadAudio = useCallback(
     async ({ file }: StepContext) => {
       patch('extract', { status: 'active' })
-      // One decode yields both the uploadable WAV and a compact waveform summary
-      // — so the resource card can show a stenograph of the extracted audio
-      // without re-decoding the whole clip just to draw it.
-      const { wav, peaks } = await extractAudio(file) // real, browser-side
+      // One decode yields the uploadable WAV, a compact waveform summary (the
+      // resource card's stenograph), and the measured dead-space spans (story
+      // 13c) — no re-decoding the whole clip for any of them.
+      const { wav, peaks, deadSpace: dead } = await extractAudio(file) // real, browser-side
       const wavFile = new File([wav], `${file.name.replace(/\.[^.]+$/, '')}.wav`, {
         type: 'audio/wav',
       })
       const { url } = await uploadReq({ file: wavFile, kind: 'audio' }).unwrap()
       dispatch(setAudioUrl(url))                                       // legacy
       dispatch(setAudioPeaks(peaks))                                   // legacy
-      dispatch(patchSource({ id: currentSource?.id ?? 'source-1', patch: { audioUrl: url, audioPeaks: peaks } }))
+      dispatch(setDeadSpace(dead))                                     // legacy
+      dispatch(patchSource({ id: currentSource?.id ?? 'source-1', patch: { audioUrl: url, audioPeaks: peaks, deadSpace: dead } }))
       patch('extract', {
         status: 'done',
         detail: `16 kHz mono WAV · ${mb(wav.size)} → bucket`,
@@ -933,14 +964,15 @@ export function useScenePipeline() {
 
         stage = 'extract'
         dispatch(patchSourceStage({ id, stage, patch: { status: 'active' } }))
-        const { wav, peaks } = await extractAudio(file)
+        const { wav, peaks, deadSpace: dead } = await extractAudio(file)
         const wavFile = new File([wav], `${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' })
         const { url: aUrl } = await uploadReq({ file: wavFile, kind: 'audio' }).unwrap()
-        dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks } }))
+        dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
         dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` } }))
         if (isPrimary) {
           dispatch(setAudioUrl(aUrl))
           dispatch(setAudioPeaks(peaks))
+          dispatch(setDeadSpace(dead))
           patch('extract', { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` })
         }
 
@@ -1419,6 +1451,7 @@ export function useScenePipeline() {
     sourceUrl,
     audioUrl,
     audioPeaks,
+    deadSpace,
     contactSheets,
     words,
     synopsis,

@@ -687,6 +687,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     windowStart={selected.start}
                     windowEnd={selected.end}
                     originalAudioUrl={pipe.audioUrl ?? undefined}
+                    deadSpace={pipe.deadSpace ?? undefined}
                   />
                   ) : (
                     <DiffLockedHint />

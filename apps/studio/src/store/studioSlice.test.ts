@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import reducer, { setScenes, setDirection, freshWorkingState, type StudioState } from './studioSlice'
+import reducer, { setScenes, setDirection, setDeadSpace, freshWorkingState, type StudioState } from './studioSlice'
 import {
   createProject, openProject, closeProject, renameProject, deleteProject, resetProject,
 } from './studioSlice'
@@ -21,6 +21,18 @@ describe('project-scoped reducers route to the active project', () => {
     const empty: StudioState = { index: {}, working: {}, activeProjectId: null }
     const next = reducer(empty, setDirection('hi'))
     expect(next).toEqual(empty)
+  })
+})
+
+describe('measured dead space (story 13c)', () => {
+  it('starts unmeasured (null, not [])', () => {
+    expect(freshWorkingState().deadSpace).toBeNull()
+  })
+  it('setDeadSpace stores spans; an empty measurement stays distinct from null', () => {
+    let s = reducer(withOneProject(), setDeadSpace([{ start: 1.2, end: 2.5 }]))
+    expect(s.working.p1.deadSpace).toEqual([{ start: 1.2, end: 2.5 }])
+    s = reducer(s, setDeadSpace([]))
+    expect(s.working.p1.deadSpace).toEqual([])
   })
 })
 

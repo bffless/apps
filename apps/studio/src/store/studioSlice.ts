@@ -21,6 +21,7 @@ import type { Scene } from '../lib/scenes'
 import type { AutoBuildRun } from '../lib/autoBuild'
 import type { VideoDescription } from '../lib/describe'
 import type { ContactSheet } from '../lib/frames'
+import type { DeadSpan } from '../lib/deadSpace'
 import { replaceBlogImageUrl, type BlogImageRef } from '../lib/blog'
 
 /**
@@ -80,6 +81,9 @@ export type VideoSource = {
   sourceUrl: string | null
   audioUrl: string | null
   audioPeaks: number[]
+  /** Measured dead space of this source's extracted WAV (story 13c), in
+   *  source-local seconds. Null = never measured (audio extracted pre-13c). */
+  deadSpace?: DeadSpan[] | null
   words: TranscriptWord[]
   /** In-flight async transcribe job id (story 10e). Transcription runs as a
    *  fire-and-poll job (diarization can exceed the 30s edge timeout), so a hard
@@ -104,6 +108,7 @@ const makeSource = (p: { id: string; fileName: string; duration: number; order: 
   sourceUrl: null,
   audioUrl: null,
   audioPeaks: [],
+  deadSpace: null,
   words: [],
   transcribeJobId: null,
   stageProgress: freshSourceProgress(),
@@ -138,6 +143,16 @@ export type ProjectWorkingState = {
   audioUrl: string | null
   /** Compact waveform summary (normalized 0–1 peaks) of the extracted audio. */
   audioPeaks: number[]
+  /**
+   * Measured dead space of the extracted WAV (story 13c): spans of true silence
+   * (per-slice RMS below a threshold), NEVER inferred from gaps between word
+   * timestamps. Derived once at extract time (or backfilled from the WAV URL
+   * for older projects) and fed to the cut grid — and, later, the refiner
+   * (story 13f). A few hundred small numbers at most, so persisting it keeps
+   * the url-only rule intact. Null = not measured yet (pre-13c project);
+   * distinct from `[]` = measured, no silences found.
+   */
+  deadSpace: DeadSpan[] | null
   contactSheets: ContactSheet[]
   words: TranscriptWord[]
   /** One-line logline of the whole talk, from the master director (story 03). */
@@ -224,6 +239,7 @@ export function freshWorkingState(): ProjectWorkingState {
     sourceUrl: null,
     audioUrl: null,
     audioPeaks: [],
+    deadSpace: null,
     contactSheets: [],
     words: [],
     synopsis: null,
@@ -314,6 +330,12 @@ const studioSlice = createSlice({
     setAudioPeaks(state, action: PayloadAction<number[]>) {
       const w = active(state); if (!w) return
       w.audioPeaks = action.payload
+    },
+    /** Measured dead-space spans of the extracted WAV (story 13c). Null resets
+     *  to "not measured"; `[]` means measured with no silences found. */
+    setDeadSpace(state, action: PayloadAction<DeadSpan[] | null>) {
+      const w = active(state); if (!w) return
+      w.deadSpace = action.payload
     },
     setContactSheets(state, action: PayloadAction<ContactSheet[]>) {
       const w = active(state); if (!w) return
@@ -576,6 +598,7 @@ export const {
   setSourceUrl,
   setAudioUrl,
   setAudioPeaks,
+  setDeadSpace,
   setContactSheets,
   setWords,
   setSynopsis,

@@ -13,6 +13,7 @@ import {
   type GridLine,
 } from '../../lib/transcriptGrid'
 import { claimPlayback } from './clipPlayer'
+import { noiseSpans, type DeadSpan } from '../../lib/deadSpace'
 import { frameForRow, spriteStyle, type FilmFrame } from '../../lib/filmstrip'
 import type { SearchHit } from '../../lib/search'
 
@@ -56,6 +57,12 @@ type Props = {
    *  through the scene's `windowEnd`, with the playing row lit up and tracking
    *  the playhead. Omit (prep previews) to keep the gutter read-only. */
   originalAudioUrl?: string
+  /** Measured dead space (story 13c): spans of true silence in the extracted
+   *  WAV, in original-video seconds. When set, wordless cells split into two
+   *  states — **dead space** (inside a span — dimmed, prime cut territory) and
+   *  **noise** (energy but no words — a breath/click marker), with cuts red on
+   *  top of either. Omit (not yet measured) for the flat two-state grid. */
+  deadSpace?: DeadSpan[]
 }
 
 /** An in-progress cut drag: the cell it began on, the cell under the pointer
@@ -90,6 +97,7 @@ export function CutEditor({
   windowStart = 0,
   windowEnd = Infinity,
   originalAudioUrl,
+  deadSpace,
 }: Props) {
   const [secondsPerLine, setSecondsPerLine] = useState(DEFAULT_SECONDS_PER_LINE)
   const [segmentSeconds, setSegmentSeconds] = useState(DEFAULT_SEGMENT_SECONDS)
@@ -266,6 +274,15 @@ export function CutEditor({
   }, [frames])
   const rowHeight = tallRows ? fullRowHeight : FILMSTRIP_ROW
 
+  // The third cell state (story 13c): with dead space measured, whatever is
+  // neither spoken nor silent has sound but no words — a breath, a click. The
+  // complement is a handful of spans, so each row reuses the same span→columns
+  // mapping cuts use instead of re-scanning every word per cell.
+  const noise = useMemo(
+    () => (deadSpace ? noiseSpans(words, deadSpace, span) : []),
+    [deadSpace, words, span],
+  )
+
   return (
     <div className="border rule bg-paper">
       {originalAudioUrl && (
@@ -277,7 +294,8 @@ export function CutEditor({
           <p className="mt-0.5 text-[12.5px] text-ink-soft">
             Line numbers are timestamps · rows are {secondsPerLine}s, one cell per{' '}
             {segmentSeconds === 1 ? 'second' : `${segmentSeconds}s`} ·{' '}
-            <span className="text-terracotta-ink">red</span> = cut · blank = dead space
+            <span className="text-terracotta-ink">red</span> = cut ·{' '}
+            {deadSpace ? <>dimmed = dead space · “·” = noise</> : <>blank = dead space</>}
             {editable && ' · drag empty cells to cut, drag red cells to un-cut'}
           </p>
         </div>
@@ -475,6 +493,8 @@ export function CutEditor({
             secondsPerLine={secondsPerLine}
             segmentSeconds={segmentSeconds}
             cuts={cuts}
+            deadSpans={deadSpace ?? null}
+            noise={noise}
             minSeconds={span}
             windowStart={windowStart}
             windowEnd={windowEnd}
@@ -547,6 +567,12 @@ type PaneProps = {
   secondsPerLine: number
   segmentSeconds: number
   cuts: CutSpan[]
+  /** Measured dead-space spans (story 13c). Null = not measured — wordless
+   *  cells render flat instead of splitting into dead/noise. */
+  deadSpans?: DeadSpan[] | null
+  /** The energy-but-no-words complement (see `noiseSpans`), precomputed once by
+   *  the editor. Ignored while `deadSpans` is null. */
+  noise?: DeadSpan[]
   minSeconds: number
   /** Scene window on the absolute timeline — rows outside it are cropped so the
    *  pane shows only the selected scene (story 03c). 0 / Infinity ⇒ whole talk. */
@@ -695,6 +721,8 @@ function Pane({
   secondsPerLine,
   segmentSeconds,
   cuts,
+  deadSpans = null,
+  noise = [],
   minSeconds,
   windowStart,
   windowEnd,
@@ -750,6 +778,8 @@ function Pane({
               perSecond={perSecond}
               segmentSeconds={segmentSeconds}
               cuts={cuts}
+              deadSpans={deadSpans}
+              noise={noise}
               edit={edit}
               rowHeight={rowHeight}
               onPlay={onPlayFrom ? () => onPlayFrom(line.startSec) : undefined}
@@ -769,6 +799,8 @@ function Row({
   perSecond,
   segmentSeconds,
   cuts,
+  deadSpans = null,
+  noise = [],
   edit,
   rowHeight,
   onPlay,
@@ -780,6 +812,9 @@ function Row({
   perSecond: number
   segmentSeconds: number
   cuts: CutSpan[]
+  /** Measured dead space / noise spans (story 13c) — see PaneProps. */
+  deadSpans?: DeadSpan[] | null
+  noise?: DeadSpan[]
   edit: CellEdit | null
   rowHeight: number
   /** Play the original audio from this row's start second. */
@@ -793,6 +828,14 @@ function Row({
   const cutCols = cutColumns(line.startSec, line.cells.length, segmentSeconds, cuts)
   const previewCols =
     edit?.preview ? cutColumns(line.startSec, line.cells.length, segmentSeconds, [edit.preview]) : []
+  // Three-state cells (story 13c): dead space and noise reuse the same
+  // span→columns mapping as cuts. Null (unmeasured) keeps the flat grid.
+  const deadCols = deadSpans
+    ? cutColumns(line.startSec, line.cells.length, segmentSeconds, deadSpans)
+    : null
+  const noiseCols = deadSpans
+    ? cutColumns(line.startSec, line.cells.length, segmentSeconds, noise)
+    : null
 
   // The cut/un-cut paint previews are outline-only, keyed off `previewKind` so
   // each gesture reads distinctly.
@@ -858,8 +901,16 @@ function Row({
               edit ? 'cursor-pointer select-none' : '',
               // separators only on whole-second boundaries, so quarter-slices stay quiet
               col > 0 && col % perSecond === 0 ? 'border-l border-paper-line/50' : '',
-              // dropped footage red; the exact playhead cell tinted on top
-              cutCols[col] ? 'bg-terracotta/30' : playingCol === col ? 'bg-terracotta/30' : '',
+              // dropped footage red (on top of any measured state); the exact
+              // playhead cell tinted; then measured dead space dims WORDLESS
+              // cells — true silence, the prime territory for a cut.
+              cutCols[col]
+                ? 'bg-terracotta/30'
+                : playingCol === col
+                  ? 'bg-terracotta/30'
+                  : deadCols?.[col] && cell.length === 0
+                    ? 'bg-paper-deep/70'
+                    : '',
               // the exact cell under the playhead — outlined so it reads on top
               // of a cut's red fill as well
               playingCol === col ? 'ring-2 ring-inset ring-terracotta' : '',
@@ -870,9 +921,15 @@ function Row({
             {/* nowrap + visible overflow: a word sits at its slot and bleeds right
                 over the (usually empty) neighbouring slices instead of wrapping. */}
             <span className="whitespace-nowrap text-ink">
-              {cell.map((word, i) => (
-                <span key={i}>{i > 0 ? ' ' : ''}{word.text}</span>
-              ))}
+              {cell.length === 0 && noiseCols?.[col] ? (
+                // Noise (story 13c): sound with no words — a breath, a click. A
+                // quiet dot, because it may not cut as cleanly as true silence.
+                <span aria-hidden className="text-ink-faint">·</span>
+              ) : (
+                cell.map((word, i) => (
+                  <span key={i}>{i > 0 ? ' ' : ''}{word.text}</span>
+                ))
+              )}
             </span>
           </div>
         )
