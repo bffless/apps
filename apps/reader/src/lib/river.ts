@@ -18,6 +18,8 @@
  */
 
 import { sortItemsNewestFirst, type Item } from './items'
+import { feedUrlsInFolder } from './folders'
+import type { Feed } from './feeds'
 
 /** What the sidebar has selected. */
 export type Selection =
@@ -25,10 +27,13 @@ export type Selection =
   | { kind: 'all' } // every item across all feeds (read included)
   | { kind: 'starred' } // saved items across all feeds — the "keep it forever" view (#115)
   | { kind: 'feed'; url: string } // every item in one feed (its `feedId`)
+  | { kind: 'folder'; name: string } // every item across the feeds in one folder (#116)
 
 /** A stable string key for a selection — for React keys / equality. */
 export function selectionKey(sel: Selection): string {
-  return sel.kind === 'feed' ? `feed:${sel.url}` : sel.kind
+  if (sel.kind === 'feed') return `feed:${sel.url}`
+  if (sel.kind === 'folder') return `folder:${sel.name}`
+  return sel.kind
 }
 
 /** Whether two selections point at the same view. */
@@ -42,9 +47,13 @@ export function selectionEquals(a: Selection, b: Selection): boolean {
  * passes everything. Always newest-first (shared comparator with the per-feed
  * list). Non-mutating.
  */
-export function itemsForSelection(items: Item[], sel: Selection): Item[] {
+export function itemsForSelection(items: Item[], sel: Selection, feeds: Feed[] = []): Item[] {
   let scoped = items
   if (sel.kind === 'feed') scoped = items.filter((i) => i.feedId === sel.url)
+  if (sel.kind === 'folder') {
+    const urls = feedUrlsInFolder(feeds, sel.name)
+    scoped = items.filter((i) => urls.has(i.feedId))
+  }
   if (sel.kind === 'river') scoped = scoped.filter((i) => !i.read)
   if (sel.kind === 'starred') scoped = scoped.filter((i) => i.starred)
   return sortItemsNewestFirst(scoped)

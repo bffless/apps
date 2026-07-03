@@ -13,6 +13,7 @@ import {
   type Selection,
 } from './river'
 import { shapeItem, type Item } from './items'
+import { shapeFeed } from './feeds'
 
 /** A tiny item factory keyed off the shaper so defaults match production shaping. */
 function item(over: Partial<Item> & { guid: string }): Item {
@@ -49,6 +50,20 @@ describe('itemsForSelection', () => {
   it('starred = every starred item across feeds (read or unread), newest first', () => {
     const starred = itemsForSelection(sample, { kind: 'starred' })
     expect(starred.map((i) => i.guid)).toEqual(['b2', 'a2'])
+  })
+
+  it('folder = items across the feeds in that folder (case-insensitive), newest first', () => {
+    const feeds = [
+      shapeFeed({ url: 'https://a.test/rss', folder: 'News' }),
+      shapeFeed({ url: 'https://b.test/rss', folder: 'news' }),
+    ]
+    const folder = itemsForSelection(sample, { kind: 'folder', name: 'News' }, feeds)
+    expect(folder.map((i) => i.guid)).toEqual(['b2', 'a2', 'a1', 'b1'])
+  })
+
+  it('folder = empty when no feed is in the folder', () => {
+    const feeds = [shapeFeed({ url: 'https://a.test/rss', folder: 'News' })]
+    expect(itemsForSelection(sample, { kind: 'folder', name: 'Tech' }, feeds)).toEqual([])
   })
 
   it('does not mutate the input', () => {
