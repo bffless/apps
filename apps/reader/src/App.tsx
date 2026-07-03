@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSession, adminLoginUrl, logout } from './lib/session'
+import { ReaderApp } from './ReaderApp'
 
 /** The Rivulet wordmark glyph — three flowing streams, matching the favicon. */
 function RivuletMark() {
@@ -84,20 +85,15 @@ function Header({ email }: { email?: string }) {
   )
 }
 
-/** The (empty) app shell an authenticated user lands on. Feeds arrive in #112. */
+/** The app shell an authenticated user lands on: header + the reading surface. */
 function AppShell() {
   const { session } = useSession()
   const email = session?.authenticated ? session.user.email : undefined
   return (
     <div className="flex min-h-svh flex-col bg-slate-50">
       <Header email={email} />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-16 sm:px-6">
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-          <h1 className="text-lg font-medium text-slate-900">Your river is empty</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Add a feed to start reading. Feed management arrives in the next release.
-          </p>
-        </div>
+      <main className="flex flex-1 flex-col">
+        <ReaderApp />
       </main>
     </div>
   )
