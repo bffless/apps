@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   buildTranscriptGrid,
   cutColumns,
@@ -13,6 +13,8 @@ import {
   type GridLine,
 } from '../../lib/transcriptGrid'
 import { claimPlayback } from './clipPlayer'
+import { auditionSpan, finalCutSeconds, nextKeptTime } from '../../lib/playback'
+import { normalizeCuts } from '../../lib/refiner'
 import { noiseSpans, type DeadSpan } from '../../lib/deadSpace'
 import { frameForRow, spriteStyle, type FilmFrame } from '../../lib/filmstrip'
 import type { SearchHit } from '../../lib/search'
@@ -53,10 +55,24 @@ type Props = {
   windowStart?: number
   windowEnd?: number
   /** The whole-source extracted audio (16 kHz WAV). When set, each timestamp
-   *  becomes a play button: click it to play the original audio from that second
-   *  through the scene's `windowEnd`, with the playing row lit up and tracking
-   *  the playhead. Omit (prep previews) to keep the gutter read-only. */
+   *  becomes a play button: click it to play the FINAL CUT from that second —
+   *  the kept spans only, skipping every red cut span (story 13d) — through the
+   *  scene's `windowEnd`, with the lit row tracking the playhead across the
+   *  skips. Modifier-click plays the raw source straight through cuts. Omit
+   *  (prep previews) to keep the gutter read-only. */
   originalAudioUrl?: string
+  /** Every scene's effective cuts — the WHOLE project's, not just this scene's —
+   *  for the header's live duration readout (`final cut 4:32 · source 12:10`,
+   *  story 13d): pure arithmetic, `duration` minus the cut footage. Omit to
+   *  hide the readout. */
+  projectCuts?: CutSpan[]
+  /** The Build page's `<video>`, so stitched playback carries the picture too:
+   *  while the transport plays, the video is muted (the WAV stays the
+   *  soundtrack) and kept in sync — including across cut skips — then released
+   *  (paused, muted restored) when playback stops. `offset` maps absolute
+   *  source seconds onto the element's own timeline (a sliced scene clip
+   *  starts at `scene.start`; the full source is 0). */
+  video?: { ref: RefObject<HTMLVideoElement | null>; offset: number }
   /** Measured dead space (story 13c): spans of true silence in the extracted
    *  WAV, in original-video seconds. When set, wordless cells split into two
    *  states — **dead space** (inside a span — dimmed, prime cut territory) and
@@ -85,7 +101,9 @@ function lastSecond(words: TWord[]): number {
  * `secondsPerLine` seconds sliced into `segmentSeconds` cells. Dropped footage
  * (`cuts`) is filled red; empty cells are the dead space; drag to cut/un-cut.
  * A filmstrip gutter keeps the picture in view, and clicking a timestamp plays
- * the original audio from that second.
+ * the FINAL CUT from that second — kept spans only, cuts skipped in both audio
+ * and the synced video (story 13d); modifier-click plays the raw source. Each
+ * cut carries an audition button that replays its seam. Edits never auto-play.
  */
 export function CutEditor({
   words,
@@ -97,6 +115,8 @@ export function CutEditor({
   windowStart = 0,
   windowEnd = Infinity,
   originalAudioUrl,
+  projectCuts,
+  video,
   deadSpace,
 }: Props) {
   const [secondsPerLine, setSecondsPerLine] = useState(DEFAULT_SECONDS_PER_LINE)
@@ -158,32 +178,70 @@ export function CutEditor({
     (SearchHit & { sceneTitle?: string; words?: TWord[] })[] | null
   >(null)
 
-  // Play the ORIGINAL audio from a clicked timestamp. The gutter timestamps are
-  // play buttons; clicking one seeks the whole-source WAV to that absolute
-  // second and plays through the scene's `windowEnd`. `playheadSec` lights the
-  // row the playhead is in and tracks it as it advances; clicking the row
-  // that's currently playing pauses it.
+  // Playback from a clicked timestamp (story 13d): the transport plays the
+  // whole-source WAV, and by default it plays THE FINAL CUT — on every tick the
+  // playhead is bumped past any red span with `nextKeptTime`, so cuts are
+  // skipped and the lit row tracks the grid across the skips. 'raw' mode
+  // (modifier-click, search hits) plays the source straight through.
+  // `playheadSec` lights the row the playhead is in; clicking the row that's
+  // currently playing pauses it.
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playheadSec, setPlayheadSec] = useState<number | null>(null)
-  // Stop-bound override (story 08): search-hit playback ends at the HIT's end,
-  // not the scene window — search is whole-talk, a hit may live in another
-  // scene. Null = the default window bound.
+  const [playMode, setPlayMode] = useState<'stitched' | 'raw'>('stitched')
+  // Stop-bound override (story 08 + auditions): search-hit playback ends at the
+  // HIT's end, an audition at its padded span's end — not the scene window.
+  // Null = the default window bound.
   const [stopAt, setStopAt] = useState<number | null>(null)
 
-  const playFrom = useCallback(
-    (startSec: number, stopSec?: number) => {
+  // While the transport plays, the Build page's <video> mirrors it — muted (the
+  // WAV is the soundtrack), seeked alongside every skip, released on stop. The
+  // element's pre-drive muted state is remembered here so release restores it;
+  // null = not currently driving. The driving itself lives in the transport
+  // effect below, keyed off the audio element's own play/timeupdate/pause
+  // events.
+  const videoWasMuted = useRef<boolean | null>(null)
+
+  // Stop the transport when the synced video swaps or the editor unmounts — a
+  // detached <audio> keeps sounding otherwise, and the driven video would stay
+  // muted with no transport attached.
+  useEffect(() => {
+    const el = audioRef.current
+    const v = video?.ref.current
+    return () => {
+      el?.pause()
+      if (v && videoWasMuted.current != null) {
+        v.pause()
+        v.muted = videoWasMuted.current
+        videoWasMuted.current = null
+      }
+    }
+  }, [video])
+
+  /**
+   * The one way anything starts playing. `toggleEnd`: clicking while the
+   * playhead is inside `[startSec, toggleEnd)` pauses instead (rows pass their
+   * own span; auditions pass an empty window so re-triggering replays the
+   * seam). `stopSec` overrides the scene-window stop bound. In 'stitched' mode
+   * the start itself is resolved to the first kept moment — red spans never
+   * play.
+   */
+  const transportPlay = useCallback(
+    (startSec: number, toggleEnd: number, stopSec: number | null, mode: 'stitched' | 'raw') => {
       const el = audioRef.current
       if (!el) return
-      // toggle: clicking the row the playhead is already in pauses it
-      if (!el.paused && playheadSec != null && playheadSec >= startSec && playheadSec < startSec + secondsPerLine) {
+      if (!el.paused && playheadSec != null && playheadSec >= startSec && playheadSec < toggleEnd) {
         el.pause()
         return
       }
-      setStopAt(stopSec ?? null)
+      const begin = mode === 'stitched' ? nextKeptTime(cuts, startSec) : startSec
+      const limit = stopSec ?? windowEnd
+      if (begin >= limit) return // everything from here to the bound is cut
+      setPlayMode(mode)
+      setStopAt(stopSec)
       claimPlayback(el)
-      setPlayheadSec(startSec) // light the row immediately, before the first timeupdate
+      setPlayheadSec(begin) // light the row immediately, before the first timeupdate
       const start = () => {
-        el.currentTime = startSec
+        el.currentTime = begin
         void el.play().catch(() => {})
       }
       // `preload="metadata"` may not be ready on the first click — seek once the
@@ -192,59 +250,108 @@ export function CutEditor({
       if (el.readyState >= 1) start()
       else el.addEventListener('loadedmetadata', start, { once: true })
     },
-    [playheadSec, secondsPerLine],
+    [playheadSec, cuts, windowEnd],
   )
 
-  // Play exactly one hit's span (story 08) — same element + claim as playFrom,
-  // but with its own stop bound.
+  // A grid timestamp: play the final cut from that row — or the raw source
+  // when the click carried a modifier.
+  const playRow = useCallback(
+    (startSec: number, raw: boolean) =>
+      transportPlay(startSec, startSec + secondsPerLine, null, raw ? 'raw' : 'stitched'),
+    [transportPlay, secondsPerLine],
+  )
+
+  // Search hits (story 08) play the RAW source: a hit may live in another
+  // scene, whose cuts this editor doesn't hold.
   const playSpan = useCallback(
-    (startSec: number, endSec: number) => {
-      const el = audioRef.current
-      if (!el) return
-      if (!el.paused && playheadSec != null && playheadSec >= startSec && playheadSec < endSec) {
-        el.pause() // toggle: already playing this hit
-        return
-      }
-      claimPlayback(el)
-      setStopAt(endSec)
-      setPlayheadSec(startSec)
-      const start = () => {
-        el.currentTime = startSec
-        void el.play().catch(() => {})
-      }
-      if (el.readyState >= 1) start()
-      else el.addEventListener('loadedmetadata', start, { once: true })
+    (startSec: number, endSec: number) => transportPlay(startSec, endSec, endSec, 'raw'),
+    [transportPlay],
+  )
+
+  // Audition a cut (story 13d, the edit-listen loop): play ~1.5s of kept
+  // footage into the cut, skip it, and ~1.5s out the other side. No toggle —
+  // triggering it again replays the seam.
+  const audition = useCallback(
+    (cut: CutSpan) => {
+      const span = auditionSpan(cut, windowStart, windowEnd)
+      transportPlay(span.start, span.start, span.end, 'stitched')
     },
-    [playheadSec],
+    [transportPlay, windowStart, windowEnd],
   )
 
   const stop = useCallback(() => audioRef.current?.pause(), [])
 
-  // Track the playhead → lit row; stop at the scene's end so it doesn't bleed
-  // into the next scene's audio. Clearing the lit row is driven by the element's
-  // own pause/ended events (not setState-in-effect), so a scene switch that just
-  // pauses the audio also clears the highlight.
+  // Track the playhead → lit row; in stitched mode jump it past any cut it
+  // lands in (live — mid-play edits reroute the very next tick); stop at the
+  // scene's end so it doesn't bleed into the next scene's audio. Clearing the
+  // lit row is driven by the element's own pause/ended events (not
+  // setState-in-effect), so a scene switch that just pauses the audio also
+  // clears the highlight — and releases the synced video.
   useEffect(() => {
     const el = audioRef.current
     if (!el) return
+    const v = video?.ref.current ?? null
+
+    // Mirror the transport on the synced video: muted (the WAV is the
+    // soundtrack), reseeked only on real drift so routine ticks don't stutter
+    // the picture.
+    const drive = (t: number) => {
+      if (!v || !video) return
+      if (videoWasMuted.current == null) {
+        videoWasMuted.current = v.muted
+        v.muted = true
+      }
+      const target = t - video.offset
+      // A scene clip doesn't contain footage outside its window (e.g. a raw
+      // search hit from another scene) — leave the picture alone there.
+      if (target < 0 || (v.duration > 0 && target > v.duration)) return
+      if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target
+      if (v.paused) void v.play().catch(() => {})
+    }
+    const release = () => {
+      if (!v || videoWasMuted.current == null) return
+      v.pause()
+      v.muted = videoWasMuted.current
+      videoWasMuted.current = null
+    }
+
+    const onPlay = () => drive(el.currentTime)
     const onTime = () => {
       const limit = stopAt ?? windowEnd
-      if (Number.isFinite(limit) && el.currentTime >= limit) {
+      let t = el.currentTime
+      if (playMode === 'stitched') {
+        const kept = nextKeptTime(cuts, t)
+        if (kept > t) {
+          if (kept >= limit) {
+            el.pause() // the rest of the window is cut — the stitched result ends here
+            return
+          }
+          el.currentTime = kept
+          t = kept
+        }
+      }
+      if (Number.isFinite(limit) && t >= limit) {
         el.pause()
         return
       }
-      setPlayheadSec(el.currentTime)
+      setPlayheadSec(t)
+      drive(t)
     }
-    const clear = () => setPlayheadSec(null)
+    const clear = () => {
+      setPlayheadSec(null)
+      release()
+    }
+    el.addEventListener('play', onPlay)
     el.addEventListener('timeupdate', onTime)
     el.addEventListener('pause', clear)
     el.addEventListener('ended', clear)
     return () => {
+      el.removeEventListener('play', onPlay)
       el.removeEventListener('timeupdate', onTime)
       el.removeEventListener('pause', clear)
       el.removeEventListener('ended', clear)
     }
-  }, [windowEnd, stopAt])
+  }, [windowEnd, stopAt, playMode, cuts, video])
 
   // Switching scenes (or swapping the source) stops playback — the resulting
   // `pause` event clears the lit row — so audio never carries over from the
@@ -283,6 +390,21 @@ export function CutEditor({
     [deadSpace, words, span],
   )
 
+  // Live duration readout (story 13d): how long the final cut runs vs the
+  // source — pure arithmetic over the whole project's effective cuts, updated
+  // on every drag-edit as the cuts flow back down.
+  const finalCutSec = useMemo(
+    () => (projectCuts && duration > 0 ? finalCutSeconds(projectCuts, duration) : null),
+    [projectCuts, duration],
+  )
+
+  // Each cut gets one audition button, parked on its first cell — normalize so
+  // touching/overlapping spans read as the single edit they are.
+  const auditionCuts = useMemo(
+    () => (originalAudioUrl ? normalizeCuts(cuts) : []),
+    [originalAudioUrl, cuts],
+  )
+
   return (
     <div className="border rule bg-paper">
       {originalAudioUrl && (
@@ -297,9 +419,16 @@ export function CutEditor({
             <span className="text-terracotta-ink">red</span> = cut ·{' '}
             {deadSpace ? <>dimmed = dead space · “·” = noise</> : <>blank = dead space</>}
             {editable && ' · drag empty cells to cut, drag red cells to un-cut'}
+            {originalAudioUrl && ' · timestamps play the final cut — modifier-click for the raw source'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4 font-mono text-[12px] text-ink-mute">
+          {finalCutSec != null && (
+            <span className="whitespace-nowrap">
+              final cut <span className="font-semibold text-terracotta-ink">{formatClock(finalCutSec)}</span>
+              {' · '}source <span className="text-ink">{formatClock(duration)}</span>
+            </span>
+          )}
           {onSearch && !searchOpen && (
             <button
               type="button"
@@ -406,7 +535,7 @@ export function CutEditor({
                       edit={null}
                       rowHeight={FILMSTRIP_ROW}
                       onPlayFrom={
-                        originalAudioUrl ? (sec) => playFrom(sec, hit.end) : undefined
+                        originalAudioUrl ? (sec) => playSpan(sec, hit.end) : undefined
                       }
                       playheadSec={playheadSec}
                       headerExtra={
@@ -454,7 +583,7 @@ export function CutEditor({
         <div className="sticky top-[var(--diff-sticky-top,3.5rem)] z-20 flex items-center gap-3 border-b rule bg-terracotta/15 px-5 py-2 text-[12.5px] text-ink-soft backdrop-blur">
           <span className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-terracotta" />
-            Playing original audio ·{' '}
+            Playing {playMode === 'stitched' ? 'the final cut — skipping cuts' : 'the raw source'} ·{' '}
             <span className="font-mono text-terracotta-ink">{formatClock(playheadSec)}</span>
           </span>
           <button
@@ -500,7 +629,10 @@ export function CutEditor({
             windowEnd={windowEnd}
             edit={edit}
             rowHeight={rowHeight}
-            onPlayFrom={originalAudioUrl ? playFrom : undefined}
+            onPlayFrom={originalAudioUrl ? playRow : undefined}
+            stitched
+            auditionCuts={auditionCuts}
+            onAudition={originalAudioUrl ? audition : undefined}
             playheadSec={playheadSec}
           />
         </div>
@@ -582,8 +714,19 @@ type PaneProps = {
   /** Minimum height (px) for each grid row — the tall-rows toggle drives this so
    *  the rows grow in lockstep with the filmstrip's full-frame cells. */
   rowHeight: number
-  /** When set, each row's timestamp becomes a play button (start that second). */
-  onPlayFrom?: (startSec: number) => void
+  /** When set, each row's timestamp becomes a play button (start that second).
+   *  `raw` is true when the click carried a modifier — play the source straight
+   *  through cuts instead of the stitched result. */
+  onPlayFrom?: (startSec: number, raw: boolean) => void
+  /** Whether timestamp playback is the stitched final cut (the main grid) or
+   *  the raw source (search-hit sets) — drives the button's hover hint only. */
+  stitched?: boolean
+  /** Normalized cut spans, each of which gets a keyboard-reachable audition
+   *  button on its first cell (story 13d). Requires `onAudition`. */
+  auditionCuts?: CutSpan[]
+  /** Audition one cut: play ~1.5s before it through ~1.5s after, skipping the
+   *  cut itself — the edit-listen loop. */
+  onAudition?: (cut: CutSpan) => void
   /** The audio playhead, in absolute seconds — the row containing it lights up.
    *  null when nothing is playing. */
   playheadSec?: number | null
@@ -729,6 +872,9 @@ function Pane({
   edit,
   rowHeight,
   onPlayFrom,
+  stitched = false,
+  auditionCuts = [],
+  onAudition,
   playheadSec,
   headerExtra,
 }: PaneProps) {
@@ -782,7 +928,10 @@ function Pane({
               noise={noise}
               edit={edit}
               rowHeight={rowHeight}
-              onPlay={onPlayFrom ? () => onPlayFrom(line.startSec) : undefined}
+              onPlay={onPlayFrom ? (raw) => onPlayFrom(line.startSec, raw) : undefined}
+              stitched={stitched}
+              auditionCuts={auditionCuts}
+              onAudition={onAudition}
               playing={playPos?.line === line.index}
               playingCol={playPos?.line === line.index ? playPos.col : null}
             />
@@ -804,6 +953,9 @@ function Row({
   edit,
   rowHeight,
   onPlay,
+  stitched = false,
+  auditionCuts = [],
+  onAudition,
   playing = false,
   playingCol = null,
 }: {
@@ -817,8 +969,12 @@ function Row({
   noise?: DeadSpan[]
   edit: CellEdit | null
   rowHeight: number
-  /** Play the original audio from this row's start second. */
-  onPlay?: () => void
+  /** Play from this row's start second; `raw` = the click carried a modifier. */
+  onPlay?: (raw: boolean) => void
+  /** See PaneProps — stitched-vs-raw hover hint, audition buttons. */
+  stitched?: boolean
+  auditionCuts?: CutSpan[]
+  onAudition?: (cut: CutSpan) => void
   /** This row holds the audio playhead — lit up + the timestamp shown active. */
   playing?: boolean
   /** The column the playhead is in (this row only) — that exact cell gets a
@@ -862,9 +1018,13 @@ function Row({
       {onPlay ? (
         <button
           type="button"
-          onClick={onPlay}
-          title={`Play original from ${formatClock(line.startSec)}`}
-          aria-label={`Play original audio from ${formatClock(line.startSec)}`}
+          onClick={(e) => onPlay(e.altKey || e.metaKey || e.ctrlKey || e.shiftKey)}
+          title={
+            stitched
+              ? `Play the final cut from ${formatClock(line.startSec)} — modifier-click for the raw source`
+              : `Play original from ${formatClock(line.startSec)}`
+          }
+          aria-label={`Play from ${formatClock(line.startSec)}`}
           className={[
             // appearance-none strips the native button chrome, but then WebKit
             // falls back to a black UA border on every side — border-0 kills it,
@@ -884,6 +1044,11 @@ function Row({
 
       {line.cells.map((cell, col) => {
         const time = line.startSec + col * segmentSeconds
+        // A cut that BEGINS in this cell's slot carries the audition button —
+        // one per cut, on its first cell (the seam being judged).
+        const auditionHere = onAudition
+          ? auditionCuts.find((c) => c.start >= time && c.start < time + segmentSeconds)
+          : undefined
         return (
           <div
             key={col}
@@ -897,7 +1062,7 @@ function Row({
             }
             onPointerEnter={edit ? () => edit.onCellEnter(time) : undefined}
             className={[
-              'flex min-h-[2rem] items-center px-1',
+              'relative flex min-h-[2rem] items-center px-1',
               edit ? 'cursor-pointer select-none' : '',
               // separators only on whole-second boundaries, so quarter-slices stay quiet
               col > 0 && col % perSecond === 0 ? 'border-l border-paper-line/50' : '',
@@ -918,6 +1083,21 @@ function Row({
               previewCols[col] && edit?.previewKind ? previewClass[edit.previewKind] : '',
             ].join(' ')}
           >
+            {auditionHere && (
+              // Audition the edit (story 13d): a real, tabbable button on the
+              // cut's first cell — Enter replays the seam. pointerdown must not
+              // bubble, or pressing it would start an un-cut drag.
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onAudition?.(auditionHere)}
+                title="Audition this edit — plays 1.5s before the cut through 1.5s after"
+                aria-label={`Audition the cut at ${formatClock(auditionHere.start)}`}
+                className="absolute -left-2 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-terracotta bg-paper text-[10px] leading-none text-terracotta-ink transition-colors hover:bg-terracotta hover:text-paper"
+              >
+                ⟲
+              </button>
+            )}
             {/* nowrap + visible overflow: a word sits at its slot and bleeds right
                 over the (usually empty) neighbouring slices instead of wrapping. */}
             <span className="whitespace-nowrap text-ink">
