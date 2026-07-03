@@ -3,7 +3,9 @@ import {
   itemsForSelection,
   unreadCountsByFeed,
   totalUnread,
+  totalStarred,
   setRead,
+  setStarred,
   markGuidsRead,
   unreadGuids,
   selectionKey,
@@ -23,9 +25,9 @@ function item(over: Partial<Item> & { guid: string }): Item {
 
 const sample: Item[] = [
   item({ guid: 'a1', feedId: 'https://a.test/rss', read: false, publishedAt: '2026-01-03T00:00:00Z' }),
-  item({ guid: 'a2', feedId: 'https://a.test/rss', read: true, publishedAt: '2026-01-04T00:00:00Z' }),
+  item({ guid: 'a2', feedId: 'https://a.test/rss', read: true, starred: true, publishedAt: '2026-01-04T00:00:00Z' }),
   item({ guid: 'b1', feedId: 'https://b.test/rss', read: false, publishedAt: '2026-01-02T00:00:00Z' }),
-  item({ guid: 'b2', feedId: 'https://b.test/rss', read: false, publishedAt: '2026-01-05T00:00:00Z' }),
+  item({ guid: 'b2', feedId: 'https://b.test/rss', read: false, starred: true, publishedAt: '2026-01-05T00:00:00Z' }),
 ]
 
 describe('itemsForSelection', () => {
@@ -42,6 +44,11 @@ describe('itemsForSelection', () => {
   it('feed = only that feed, newest first, read included', () => {
     const feed = itemsForSelection(sample, { kind: 'feed', url: 'https://a.test/rss' })
     expect(feed.map((i) => i.guid)).toEqual(['a2', 'a1'])
+  })
+
+  it('starred = every starred item across feeds (read or unread), newest first', () => {
+    const starred = itemsForSelection(sample, { kind: 'starred' })
+    expect(starred.map((i) => i.guid)).toEqual(['b2', 'a2'])
   })
 
   it('does not mutate the input', () => {
@@ -68,6 +75,33 @@ describe('unreadCountsByFeed', () => {
 describe('totalUnread', () => {
   it('sums unread across feeds', () => {
     expect(totalUnread(sample)).toBe(3)
+  })
+})
+
+describe('totalStarred', () => {
+  it('counts starred across feeds regardless of read state', () => {
+    expect(totalStarred(sample)).toBe(2)
+  })
+
+  it('is zero when nothing is starred', () => {
+    expect(totalStarred(sample.map((i) => ({ ...i, starred: false })))).toBe(0)
+  })
+})
+
+describe('setStarred', () => {
+  it('stars an item, leaving the rest referentially stable', () => {
+    const next = setStarred(sample, 'a1', true)
+    expect(next.find((i) => i.guid === 'a1')?.starred).toBe(true)
+    expect(next.find((i) => i.guid === 'b1')).toBe(sample.find((i) => i.guid === 'b1'))
+  })
+
+  it('unstars an already-starred item', () => {
+    expect(setStarred(sample, 'a2', false).find((i) => i.guid === 'a2')?.starred).toBe(false)
+  })
+
+  it('is a no-op when the flag already matches (same references)', () => {
+    const next = setStarred(sample, 'a2', true)
+    expect(next.every((i, idx) => i === sample[idx])).toBe(true)
   })
 })
 

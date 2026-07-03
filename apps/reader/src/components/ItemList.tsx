@@ -17,12 +17,14 @@ export function ItemList({
   loading,
   selectedGuid,
   onSelect,
+  onToggleStar,
   onScrolledPast,
 }: {
   items: Item[]
   loading: boolean
   selectedGuid: string | null
   onSelect: (item: Item) => void
+  onToggleStar?: (item: Item) => void
   onScrolledPast?: (item: Item) => void
 }) {
   const seen = useRef<Set<string>>(new Set())
@@ -69,15 +71,32 @@ export function ItemList({
         <li
           key={item.guid}
           data-guid={item.guid}
+          className="group relative"
           ref={(el) => {
             if (el) rows.current.set(item.guid, el)
             else rows.current.delete(item.guid)
           }}
         >
+          {onToggleStar && (
+            <button
+              type="button"
+              onClick={() => onToggleStar(item)}
+              aria-pressed={item.starred}
+              aria-label={item.starred ? 'Unstar' : 'Star'}
+              title={item.starred ? 'Unstar' : 'Star'}
+              className={`absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded px-1 text-base leading-none transition-opacity ${
+                item.starred
+                  ? 'text-amber-500 opacity-100'
+                  : 'text-slate-300 opacity-0 hover:text-amber-500 focus:opacity-100 group-hover:opacity-100'
+              }`}
+            >
+              {item.starred ? '★' : '☆'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onSelect(item)}
-            className={`flex w-full items-start gap-2 px-3 py-3 text-left transition-colors hover:bg-slate-50 ${
+            className={`flex w-full items-start gap-2 py-3 pl-3 pr-8 text-left transition-colors hover:bg-slate-50 ${
               item.guid === selectedGuid ? 'bg-blue-50' : ''
             }`}
           >

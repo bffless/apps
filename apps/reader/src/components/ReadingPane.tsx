@@ -13,9 +13,11 @@ import { sanitizeHtml } from '../lib/sanitize'
 export function ReadingPane({
   item,
   onToggleRead,
+  onToggleStar,
 }: {
   item: Item | null
   onToggleRead?: (item: Item) => void
+  onToggleStar?: (item: Item) => void
 }) {
   if (!item) {
     return (
@@ -30,15 +32,30 @@ export function ReadingPane({
   return (
     <article className="mx-auto max-w-2xl px-2 py-4">
       <header className="mb-4 border-b border-slate-200 pb-4">
-        {onToggleRead && (
-          <div className="mb-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => onToggleRead(item)}
-              className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
-            >
-              {item.read ? 'Mark unread' : 'Mark read'}
-            </button>
+        {(onToggleRead || onToggleStar) && (
+          <div className="mb-2 flex justify-end gap-1">
+            {onToggleStar && (
+              <button
+                type="button"
+                onClick={() => onToggleStar(item)}
+                aria-pressed={item.starred}
+                aria-label={item.starred ? 'Unstar' : 'Star'}
+                className={`rounded px-2 py-1 text-xs font-medium transition-colors hover:bg-slate-100 ${
+                  item.starred ? 'text-amber-500' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {item.starred ? '★ Starred' : '☆ Star'}
+              </button>
+            )}
+            {onToggleRead && (
+              <button
+                type="button"
+                onClick={() => onToggleRead(item)}
+                className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              >
+                {item.read ? 'Mark unread' : 'Mark read'}
+              </button>
+            )}
           </div>
         )}
         <h1 className="text-xl font-semibold tracking-tight text-slate-900">

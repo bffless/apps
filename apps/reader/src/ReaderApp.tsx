@@ -9,6 +9,8 @@ import {
   itemsForSelection,
   markGuidsRead,
   setRead,
+  setStarred,
+  totalStarred,
   totalUnread,
   unreadCountsByFeed,
   unreadGuids,
@@ -76,6 +78,7 @@ export function ReaderApp() {
 
   const counts = useMemo(() => unreadCountsByFeed(items), [items])
   const riverTotal = useMemo(() => totalUnread(items), [items])
+  const starredTotal = useMemo(() => totalStarred(items), [items])
 
   // The visible list is a snapshot captured when the view changes or a fresh
   // load lands (`loadSeq`) — deliberately NOT on every read toggle, so an item
@@ -128,6 +131,27 @@ export function ReaderApp() {
       void persistRead(item.guid, !item.read)
     },
     [persistRead],
+  )
+
+  /** Reflect a star-flag change in both the source set and the visible snapshot. */
+  const applyStar = useCallback((guid: string, starred: boolean) => {
+    setItems((prev) => setStarred(prev, guid, starred))
+    setVisible((prev) => setStarred(prev, guid, starred))
+  }, [])
+
+  // Star writes mirror read: optimistic flip, persist, revert on failure. The
+  // item stays in the current snapshot when unstarred from the starred view (it
+  // leaves on the next view change), so the row doesn't vanish under the cursor.
+  const toggleStar = useCallback(
+    (item: Item) => {
+      const next = !item.starred
+      applyStar(item.guid, next)
+      void api.setItemStar(item.guid, next).catch((e) => {
+        applyStar(item.guid, !next)
+        setError(e instanceof Error ? e.message : 'Could not save starred state')
+      })
+    },
+    [applyStar],
   )
 
   const markAllRead = useCallback(() => {
@@ -193,6 +217,7 @@ export function ReaderApp() {
         selection={selection}
         unreadCounts={counts}
         riverUnread={riverTotal}
+        starredCount={starredTotal}
         onSelect={selectView}
         onAdd={handleAdd}
         onRemove={handleRemove}
@@ -222,6 +247,7 @@ export function ReaderApp() {
             loading={itemsLoading}
             selectedGuid={selectedGuid}
             onSelect={openItem}
+            onToggleStar={toggleStar}
             onScrolledPast={(item) => {
               if (!item.read) void persistRead(item.guid, true)
             }}
@@ -229,7 +255,7 @@ export function ReaderApp() {
         </section>
 
         <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white">
-          <ReadingPane item={selectedItem} onToggleRead={toggleRead} />
+          <ReadingPane item={selectedItem} onToggleRead={toggleRead} onToggleStar={toggleStar} />
         </section>
       </div>
     </div>

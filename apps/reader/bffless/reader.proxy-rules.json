@@ -4,7 +4,7 @@
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "reader",
-    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas.",
+    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114) + item star-state (POST /api/items/star, data_update — bffless/apps#115). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas.",
     "environment": null
   },
   "schemas": [
@@ -337,6 +337,87 @@
               "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
               "recordId": "steps.pick.recordId",
               "fields": { "read": "steps.prep.read" },
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"updated\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
+            "id": "respondNoGuid",
+            "name": "respondNoGuid",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"guid is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noGuid"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/items/star",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 7,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Set an item's starred flag: POST { guid, starred } -> prep coerces guid/starred -> query finds the reader_items row by guid -> pick extracts its recordId -> data_update writes { starred } (conditional) -> respond { ok, updated }. Starred items are prune-exempt (retention #119). The /api/items/read twin (bffless/apps#115). auth_required.",
+      "pipelineConfig": {
+        "name": "Set item star state",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var guid = (typeof b.guid === 'string') ? b.guid.trim() : ''\n  var starred = (b.starred === true || b.starred === 'true' || b.starred === 1 || b.starred === '1')\n  return {\n    guid: guid,\n    starred: starred,\n    hasGuid: !!guid,\n    noGuid: !guid\n  }\n}\n"
+            }
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filters": { "guid": { "op": "eq", "value": "steps.prep.guid" } },
+              "pageSize": 1,
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "recordId": "steps.pick.recordId",
+              "fields": { "starred": "steps.prep.starred" },
               "condition": "steps.pick.found"
             }
           },

@@ -104,6 +104,23 @@ export async function setItemRead(guid: string, read: boolean): Promise<void> {
   )
 }
 
+/**
+ * Persist an item's `starred` flag via `data_update` (looked up by `guid`) — the
+ * `/api/items/star` twin of {@link setItemRead}. The UI stars optimistically, so
+ * this resolves on success and throws on failure, letting the caller revert.
+ * A starred item is prune-exempt (#119) — the flag survives refresh + retention.
+ */
+export async function setItemStar(guid: string, starred: boolean): Promise<void> {
+  if (!guid) throw new Error('guid is required')
+  await readJson(
+    await fetchWithReauth('/api/items/star', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guid, starred }),
+    }),
+  )
+}
+
 export type RefreshResult = { inserted: number; skipped: number; errors: number }
 
 /**
