@@ -10,6 +10,11 @@
  * The **river** is the unread stream across every feed (D-river): read items
  * drop out of it but stay queryable in the "all"/per-feed views — nothing is
  * deleted here (retention is #119).
+ *
+ * Star state (#115) rides the same rails: {@link setStarred} is the immutable
+ * transition, the `starred` selection scopes the saved-items view, and
+ * {@link totalStarred} feeds its badge — persisted via `data_update` at the same
+ * seam as read.
  */
 
 import { sortItemsNewestFirst, type Item } from './items'
@@ -18,6 +23,7 @@ import { sortItemsNewestFirst, type Item } from './items'
 export type Selection =
   | { kind: 'river' } // unread items across all feeds — the default landing view
   | { kind: 'all' } // every item across all feeds (read included)
+  | { kind: 'starred' } // saved items across all feeds — the "keep it forever" view (#115)
   | { kind: 'feed'; url: string } // every item in one feed (its `feedId`)
 
 /** A stable string key for a selection — for React keys / equality. */
@@ -40,6 +46,7 @@ export function itemsForSelection(items: Item[], sel: Selection): Item[] {
   let scoped = items
   if (sel.kind === 'feed') scoped = items.filter((i) => i.feedId === sel.url)
   if (sel.kind === 'river') scoped = scoped.filter((i) => !i.read)
+  if (sel.kind === 'starred') scoped = scoped.filter((i) => i.starred)
   return sortItemsNewestFirst(scoped)
 }
 
@@ -58,6 +65,11 @@ export function totalUnread(items: Item[]): number {
   return items.reduce((n, item) => (item.read ? n : n + 1), 0)
 }
 
+/** Total starred across all feeds — the starred view's badge (#115). */
+export function totalStarred(items: Item[]): number {
+  return items.reduce((n, item) => (item.starred ? n + 1 : n), 0)
+}
+
 /**
  * Set the `read` flag on the item with `guid`, returning a new array (the item
  * identity changes only for the one that moved). A no-op guid leaves the array
@@ -65,6 +77,18 @@ export function totalUnread(items: Item[]): number {
  */
 export function setRead(items: Item[], guid: string, read: boolean): Item[] {
   return items.map((item) => (item.guid === guid && item.read !== read ? { ...item, read } : item))
+}
+
+/**
+ * Set the `starred` flag on the item with `guid`, returning a new array (only the
+ * one item's identity changes). Same optimistic, non-mutating shape as
+ * {@link setRead}; a no-op guid or matching flag leaves references untouched.
+ * Starred items are prune-exempt (#119) — the flag is the "keep it forever" mark.
+ */
+export function setStarred(items: Item[], guid: string, starred: boolean): Item[] {
+  return items.map((item) =>
+    item.guid === guid && item.starred !== starred ? { ...item, starred } : item,
+  )
 }
 
 /**

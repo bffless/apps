@@ -14,6 +14,7 @@ export function FeedSidebar({
   selection,
   unreadCounts,
   riverUnread,
+  starredCount,
   onSelect,
   onAdd,
   onRemove,
@@ -25,6 +26,7 @@ export function FeedSidebar({
   selection: Selection
   unreadCounts: Record<string, number>
   riverUnread: number
+  starredCount: number
   onSelect: (sel: Selection) => void
   onAdd: (url: string) => Promise<void>
   onRemove: (url: string) => void
@@ -58,6 +60,12 @@ export function FeedSidebar({
           label="All items"
           active={selectionEquals(selection, { kind: 'all' })}
           onClick={() => onSelect({ kind: 'all' })}
+        />
+        <FeedRow
+          label="★ Starred"
+          active={selectionEquals(selection, { kind: 'starred' })}
+          count={starredCount}
+          onClick={() => onSelect({ kind: 'starred' })}
         />
         <div className="my-1 border-t border-slate-100" />
         {sorted.map((feed) => (
