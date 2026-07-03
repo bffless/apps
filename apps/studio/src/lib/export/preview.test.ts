@@ -1,183 +1,69 @@
 import { describe, it, expect } from 'vitest'
-import { planScene, type AssemblePlan, type AssembleSegment } from './assemble'
-import { audioEvents, sourceTimeAt, scheduleFrom, type AudioEvent } from './preview'
+import { sourceTimeAt, outputTimeAt, nextKeptSource } from './preview'
+import type { AssemblePlan } from './assemble'
 
-/** A voiced segment (has an audio clip) over `[start, end]`, original-video seconds. */
-function seg(start: number, end: number, audioSeconds = end - start) {
-  return { start, end, audioUrl: `clip-${start}-${end}.wav`, audioSeconds }
+// Scene [100, 160] with a 120–130 cut → clip-local kept pieces 0–20 and 30–60.
+const plan: AssemblePlan = {
+  video: [
+    { start: 0, end: 20 },
+    { start: 30, end: 60 },
+  ],
+  duration: 50,
 }
+const SCENE_START = 100
 
-describe('audioEvents — clip offsets on the output timeline', () => {
-  it('a clip after leading dead space starts at the dead-space length', () => {
-    // Scene [0,10]: dead 0–4, segment 4–8 (4s clip), dead 8–10.
-    const segments = [seg(4, 8)]
-    const plan = planScene({ segments, cuts: [], start: 0, end: 10 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-4-8.wav', offset: 4, duration: 4, clipOffset: 0 },
-    ])
+describe('sourceTimeAt', () => {
+  it('maps output time inside the first piece 1:1 (plus the scene offset)', () => {
+    expect(sourceTimeAt(plan, 0, SCENE_START)).toBe(100)
+    expect(sourceTimeAt(plan, 12, SCENE_START)).toBe(112)
   })
 
-  it('a cut before a clip pulls its offset earlier (cut footage is dropped)', () => {
-    // Cut 0–3, segment 4–8 → output: dead 3–4 (1s), then the clip at offset 1.
-    const segments = [seg(4, 8)]
-    const plan = planScene({ segments, cuts: [{ start: 0, end: 3 }], start: 0, end: 10 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-4-8.wav', offset: 1, duration: 4, clipOffset: 0 },
-    ])
+  it('jumps the cut: output seconds after piece 1 land in piece 2', () => {
+    expect(sourceTimeAt(plan, 20, SCENE_START)).toBe(120) // boundary → piece 1 end
+    expect(sourceTimeAt(plan, 25, SCENE_START)).toBe(135) // 5s into piece 2 (30+5)
   })
 
-  it('a cut INSIDE the front of a segment seeks the clip (clipOffset > 0)', () => {
-    // seg 2.37–8.73 (6.36s clip), cut 2–5.5 → dead 0–2, then the clip plays from
-    // 3.13s in (the kept tail), not from 0 (which would replay the cut-away open).
-    const segments = [seg(2.37, 8.73, 6.36)]
-    const plan = planScene({ segments, cuts: [{ start: 2, end: 5.5 }], start: 0, end: 8.73 })
-    const evs = audioEvents(plan, segments)
-    expect(evs).toHaveLength(1)
-    expect(evs[0].segmentIndex).toBe(0)
-    expect(evs[0].offset).toBeCloseTo(2, 6)
-    expect(evs[0].clipOffset).toBeCloseTo(3.13, 6)
-    expect(evs[0].duration).toBeCloseTo(3.23, 6)
+  it('clamps to the plan bounds', () => {
+    expect(sourceTimeAt(plan, -3, SCENE_START)).toBe(100)
+    expect(sourceTimeAt(plan, 999, SCENE_START)).toBe(160)
   })
 
-  it('clip duration is the plan audioSeconds (already clamped to the slot)', () => {
-    // 6s slot but only a 2.5s clip → plays 2.5s, the rest of the slot is silent padding.
-    const segments = [seg(0, 6, 2.5)]
-    const plan = planScene({ segments, cuts: [], start: 0, end: 6 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-0-6.wav', offset: 0, duration: 2.5, clipOffset: 0 },
-    ])
-  })
-
-  it('unvoiced segments produce no event (planAssembly already made them silence)', () => {
-    const segments: AssembleSegment[] = [{ start: 0, end: 4 }, seg(6, 10)]
-    const plan = planScene({ segments, cuts: [], start: 0, end: 10 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 1, audioUrl: 'clip-6-10.wav', offset: 6, duration: 4, clipOffset: 0 },
-    ])
-  })
-
-  it('defensive: a clip piece whose segment lost its url is skipped, offsets intact', () => {
-    // Hand-built plan (not via planScene) — the url lookup must not throw.
-    const plan: AssemblePlan = {
-      slices: [],
-      video: [{ start: 0, end: 10 }],
-      audio: [
-        { kind: 'clip', segmentIndex: 0, offset: 0, length: 4, audioSeconds: 4 },
-        { kind: 'clip', segmentIndex: 1, offset: 0, length: 6, audioSeconds: 6 },
-      ],
-      duration: 10,
-    }
-    const segments: AssembleSegment[] = [{ start: 0, end: 4 }, seg(4, 10)]
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 1, audioUrl: 'clip-4-10.wav', offset: 4, duration: 6, clipOffset: 0 },
-    ])
-  })
-
-  it('scene-rebased plans keep working (planScene shifts to clip-local time)', () => {
-    // Scene [100,110], segment 102–106 → clip-local: dead 0–2, clip at offset 2.
-    const segments = [seg(102, 106)]
-    const plan = planScene({ segments, cuts: [], start: 100, end: 110 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-102-106.wav', offset: 2, duration: 4, clipOffset: 0 },
-    ])
-  })
-
-  it('two voiced segments accumulate offsets through the emitted clips', () => {
-    // Scene [0,10]: clip 0–3, dead 3–5, clip 5–8, dead 8–10.
-    const segments = [seg(0, 3), seg(5, 8)]
-    const plan = planScene({ segments, cuts: [], start: 0, end: 10 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-0-3.wav', offset: 0, duration: 3, clipOffset: 0 },
-      { segmentIndex: 1, audioUrl: 'clip-5-8.wav', offset: 5, duration: 3, clipOffset: 0 },
-    ])
-  })
-
-  it('a segment split by an internal cut stays ONE clip piece (narration continuous across the join)', () => {
-    // Segment 0–10 with cut 4–6: kept video is 0–4 + 6–10 (8s), coalesced into one
-    // 8s slot — the narration plays straight through the join, matching the render.
-    const segments = [seg(0, 10, 8)]
-    const plan = planScene({ segments, cuts: [{ start: 4, end: 6 }], start: 0, end: 10 })
-    expect(audioEvents(plan, segments)).toEqual([
-      { segmentIndex: 0, audioUrl: 'clip-0-10.wav', offset: 0, duration: 8, clipOffset: 0 },
-    ])
+  it('returns sceneStart for an all-cut plan', () => {
+    expect(sourceTimeAt({ video: [], duration: 0 }, 5, SCENE_START)).toBe(SCENE_START)
   })
 })
 
-describe('sourceTimeAt — output clock → original-video seconds for the flipbook', () => {
-  it('with no cuts the mapping is identity (plus the scene offset)', () => {
-    const plan = planScene({ segments: [seg(0, 10)], cuts: [], start: 0, end: 10 })
-    expect(sourceTimeAt(plan, 3, 0)).toBe(3)
-    expect(sourceTimeAt(plan, 3, 100)).toBe(103)
+describe('outputTimeAt', () => {
+  it('is the inverse of sourceTimeAt on kept footage', () => {
+    expect(outputTimeAt(plan, 112, SCENE_START)).toBe(12)
+    expect(outputTimeAt(plan, 135, SCENE_START)).toBe(25)
   })
 
-  it('jumps across a cut: output time past the first kept piece lands after the cut', () => {
-    // Kept 0–5, cut 5–8, kept 8–10 → output [0,7]; t=5 is the cut boundary → source 8.
-    const plan = planScene({ segments: [seg(0, 10)], cuts: [{ start: 5, end: 8 }], start: 0, end: 10 })
-    expect(sourceTimeAt(plan, 4, 0)).toBe(4)
-    expect(sourceTimeAt(plan, 5, 0)).toBe(5) // boundary belongs to the earlier piece's end
-    expect(sourceTimeAt(plan, 6, 0)).toBe(9) // 1s into the second kept piece (starts at 8)
+  it('maps a source second inside a cut to where the cut collapses', () => {
+    expect(outputTimeAt(plan, 125, SCENE_START)).toBe(20)
   })
 
-  it('clamps t to [0, duration]', () => {
-    const plan = planScene({ segments: [seg(0, 10)], cuts: [{ start: 5, end: 8 }], start: 0, end: 10 })
-    expect(sourceTimeAt(plan, -1, 0)).toBe(0)
-    expect(sourceTimeAt(plan, 99, 0)).toBe(10) // end of the last kept piece
-  })
-
-  it('an empty plan returns the scene start', () => {
-    const plan = planScene({ segments: [], cuts: [{ start: 0, end: 10 }], start: 0, end: 10 })
-    expect(sourceTimeAt(plan, 0, 100)).toBe(100)
+  it('clamps before the first piece and past the last', () => {
+    expect(outputTimeAt(plan, 90, SCENE_START)).toBe(0)
+    expect(outputTimeAt(plan, 200, SCENE_START)).toBe(50)
   })
 })
 
-describe('scheduleFrom — which clips play (and from where) when starting at an offset', () => {
-  const events: AudioEvent[] = [
-    { segmentIndex: 0, audioUrl: 'a.wav', offset: 2, duration: 4 }, // plays [2,6]
-    { segmentIndex: 1, audioUrl: 'b.wav', offset: 8, duration: 3 }, // plays [8,11]
-  ]
-
-  it('offset 0: everything is in the future, untouched', () => {
-    expect(scheduleFrom(events, 0)).toEqual([
-      { event: events[0], when: 2, bufferOffset: 0, duration: 4 },
-      { event: events[1], when: 8, bufferOffset: 0, duration: 3 },
-    ])
+describe('nextKeptSource', () => {
+  it('returns null while inside kept footage', () => {
+    expect(nextKeptSource(plan, 110, SCENE_START)).toBeNull()
+    expect(nextKeptSource(plan, 140, SCENE_START)).toBeNull()
   })
 
-  it('mid-flight: a clip already playing starts now, partway into its buffer', () => {
-    expect(scheduleFrom(events, 4)).toEqual([
-      { event: events[0], when: 0, bufferOffset: 2, duration: 2 },
-      { event: events[1], when: 4, bufferOffset: 0, duration: 3 },
-    ])
+  it('returns the next kept start when inside a cut', () => {
+    expect(nextKeptSource(plan, 125, SCENE_START)).toBe(130)
   })
 
-  it('finished clips are dropped (including exactly-at-end)', () => {
-    expect(scheduleFrom(events, 6)).toEqual([
-      { event: events[1], when: 2, bufferOffset: 0, duration: 3 },
-    ])
+  it('returns the first kept start before the scene begins', () => {
+    expect(nextKeptSource(plan, 95, SCENE_START)).toBe(100)
   })
 
-  it('a clip starting exactly at the offset plays immediately from its top', () => {
-    expect(scheduleFrom(events, 8)).toEqual([
-      { event: events[1], when: 0, bufferOffset: 0, duration: 3 },
-    ])
-  })
-
-  it('an offset past everything schedules nothing', () => {
-    expect(scheduleFrom(events, 12)).toEqual([])
-  })
-
-  it('a clip with a buffer offset (front cut) starts partway into its buffer', () => {
-    const seeked: AudioEvent[] = [
-      { segmentIndex: 0, audioUrl: 'a.wav', offset: 2, duration: 3.23, clipOffset: 3.13 }, // plays [2,5.23]
-    ]
-    // From the top: scheduled in the future, buffer begins at the clip offset.
-    expect(scheduleFrom(seeked, 0)).toEqual([
-      { event: seeked[0], when: 2, bufferOffset: 3.13, duration: 3.23 },
-    ])
-    // Mid-flight 1s in: starts now, buffer at clipOffset + 1, 1s shorter.
-    const [s] = scheduleFrom(seeked, 3)
-    expect(s.when).toBe(0)
-    expect(s.bufferOffset).toBeCloseTo(4.13, 6)
-    expect(s.duration).toBeCloseTo(2.23, 6)
+  it('returns Infinity past the last kept span (the stop signal)', () => {
+    expect(nextKeptSource(plan, 161, SCENE_START)).toBe(Infinity)
   })
 })

@@ -23,11 +23,11 @@ import type { ThumbnailDraftRequest } from '../lib/thumbnail'
 import type { ProjectMeta } from '../lib/projects'
 import type { ProjectRecord, ProjectRecordIn } from '../lib/projectSync'
 
-export type UploadKind = 'source' | 'audio' | 'thumbnails' | 'voice' | 'export' | 'scene-clip' | 'youtube-thumbnail' | 'blog'
+export type UploadKind = 'source' | 'audio' | 'thumbnails' | 'export' | 'scene-clip' | 'youtube-thumbnail' | 'blog'
 type TranscribeResponse = { words?: TranscriptWord[]; text?: string }
 /** The master director's result blob: a logline + the raw scene breakdown. */
 type ScenesResult = { synopsis?: string; scenes?: DirectorScene[] }
-/** The per-scene refiner's result blob (story 03c): anchored segments + refined cuts. */
+/** The per-scene refiner's result blob (story 03c): the refined cuts. */
 type RefineSceneResult = RefineSceneRaw
 
 /**
@@ -56,14 +56,6 @@ export type StudioJob = {
   /** The system instruction sent with it (story 03m). */
   system?: string | null
 }
-/** Voice clone (story 04): the recorded sample's URL → a reusable `voiceId`
- *  (+ a preview mp3 of the cloned voice from MiniMax). */
-type VoiceCloneResponse = { voiceId: string; previewUrl?: string }
-/** Voice say (TTS preview): a line spoken in the chosen voice → playable audio. */
-type VoiceSayResponse = { audioUrl: string; durationSeconds?: number }
-/** Scene narration (story 03c): a run of script → a PERSISTED mp3 serve path. */
-type VoiceNarrateResponse = { audioUrl: string }
-
 export const studioApi = createApi({
   reducerPath: 'studioApi',
   baseQuery: fetchBaseQuery({ baseUrl: '/', credentials: 'include' }),
@@ -93,10 +85,9 @@ export const studioApi = createApi({
       }),
     }),
 
-    // The per-scene refiner (story 03c): the scene's transcript + the director's
-    // first-pass script/cuts + the scene's dense contact sheets → anchored
-    // segments (where the new text lands) + refined cuts. Also enqueue-only now
-    // (story 03f Part 0) — returns a { jobId } to poll on.
+    // The per-scene refiner (story 03c): the scene's word timings + its cutting
+    // brief + the scene's dense contact sheets → refined cuts. Also enqueue-only
+    // now (story 03f Part 0) — returns a { jobId } to poll on.
     refineScene: builder.mutation<StartJobResponse, RefineSceneRequest>({
       query: (body) => ({
         url: 'api/refine-scene',
@@ -112,18 +103,6 @@ export const studioApi = createApi({
     getStudioJob: builder.query<StudioJob, string>({
       query: (id) => `api/studio/job?id=${encodeURIComponent(id)}`,
       keepUnusedDataFor: 0,
-    }),
-
-    // Scene narration (story 03c): speak a run of the refined script in the saved
-    // voice and PERSIST the mp3 to the bucket → a durable serve path. Distinct
-    // from voiceSay (ephemeral preview); these clips are kept for the diff-viewer
-    // players and the eventual ffmpeg assemble (story 05).
-    narrate: builder.mutation<VoiceNarrateResponse, { text: string; voiceId: string; projectId: string }>({
-      query: (body) => ({
-        url: 'api/voice/narrate',
-        method: 'POST',
-        body,
-      }),
     }),
 
     // Transcript search (story 08): one text-only LLM read of the timestamped
@@ -181,29 +160,6 @@ export const studioApi = createApi({
     thumbnailRender: builder.mutation<unknown, { prompt: string; projectId: string }>({
       query: (body) => ({
         url: 'api/thumbnail/render',
-        method: 'POST',
-        body,
-      }),
-    }),
-
-    // Voice clone (story 04): POST the uploaded recording's URL → a reusable
-    // voiceId. The real $3 Replicate clone is DISABLED server-side for now — the
-    // pipeline returns a real preset id as a stub, so the rest of the flow (and
-    // the TTS preview below) works end to end without the spend.
-    voiceClone: builder.mutation<VoiceCloneResponse, { sampleUrl: string }>({
-      query: (body) => ({
-        url: 'api/voice/clone',
-        method: 'POST',
-        body,
-      }),
-    }),
-
-    // Voice say (TTS preview): speak a short canned line in the chosen voice
-    // (minimax/speech-2.8-turbo, live + cheap) so the producer can hear it right
-    // after selecting. Per-scene narration is a later (Build) story.
-    voiceSay: builder.mutation<VoiceSayResponse, { text: string; voiceId: string }>({
-      query: (body) => ({
-        url: 'api/voice/say',
         method: 'POST',
         body,
       }),
@@ -287,14 +243,11 @@ export const {
   useLazyGetStudioJobQuery,
   useSignDownloadQuery,
   useLazySignDownloadQuery,
-  useNarrateMutation,
   useSearchTranscriptMutation,
   useDescribeMutation,
   useBlogStartMutation,
   useDeleteProjectAssetsMutation,
   useUploadMutation,
-  useVoiceCloneMutation,
-  useVoiceSayMutation,
   useListProjectsQuery,
   useGetProjectQuery,
   useLazyGetProjectQuery,

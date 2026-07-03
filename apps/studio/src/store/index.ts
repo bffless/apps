@@ -9,6 +9,7 @@ import { configureStore, combineReducers } from '@reduxjs/toolkit'
 import {
   persistStore,
   persistReducer,
+  createMigrate,
   FLUSH,
   REHYDRATE,
   PAUSE,
@@ -44,10 +45,47 @@ const storage: WebStorage =
       }
     : noopStorage
 
+/**
+ * v2 — the cut-first pivot (ADR-0003). Old projects carry the narration era:
+ * a project `voice`/`cast`/`speakerAssignments`, a root `savedVoices` library,
+ * and per-scene narration (`refined.segments`, `narrationSeconds`, `voicing`).
+ * Cuts and scene windows map 1:1 onto the new model, so the migration is pure
+ * deletion — every project opens in the cut editor with its cut work intact.
+ * Written against the raw persisted shape (not current types), hence the loose
+ * record casts.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const drop = (obj: Record<string, any>, keys: string[]) => {
+  const out = { ...obj }
+  for (const k of keys) delete out[k]
+  return out
+}
+
+const migrations = {
+  2: (state: any) => {
+    if (!state) return state
+    const rest = drop(state, ['savedVoices'])
+    const working = Object.fromEntries(
+      Object.entries(rest.working ?? {}).map(([id, w]: [string, any]) => {
+        const keep = drop(w ?? {}, ['voice', 'cast', 'speakerAssignments'])
+        keep.scenes = (keep.scenes ?? []).map((sc: any) => {
+          const scene = drop(sc ?? {}, ['narrationSeconds', 'voicing'])
+          if (scene.refined) scene.refined = { cuts: scene.refined.cuts ?? [], source: scene.refined.source ?? 'ai' }
+          return scene
+        })
+        return [id, keep]
+      }),
+    )
+    return { ...rest, working }
+  },
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 const persistConfig = {
   key: 'studio-projects', // new key → clean slate; old `studio` localStorage is ignored
-  version: 1,
+  version: 2,
   storage,
+  migrate: createMigrate(migrations, { debug: false }),
 }
 
 const rootReducer = combineReducers({

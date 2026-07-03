@@ -8,23 +8,16 @@
  */
 
 import type { Scene } from '../scenes'
-import { effectiveCuts, effectiveSegments, overlaps } from '../refiner'
-import {
-  planScene,
-  buildFfmpegCommand,
-  buildMeasureCommand,
-  buildConcatCommand,
-  parseLoudnorm,
-  LOUDNORM_ENABLED,
-  type LoudnormStats,
-} from './assemble'
-import { assemble, measureLoudness, concat } from './ffmpeg'
+import { effectiveCuts } from '../refiner'
+import { planScene, buildFfmpegCommand, buildConcatCommand } from './assemble'
+import { assemble, concat } from './ffmpeg'
 
 /** Reads a serve path's bytes (signing big objects straight to the bucket). */
 export type FetchBytes = (url: string) => Promise<Uint8Array>
 
-/** Render ONE scene off its own cut clip — cuts dropped, narration over kept
- *  video, dead space silent. Mirrors SceneAssembleBar.run(). */
+/** Render ONE scene off its own cut clip — the kept spans concatenated, the
+ *  clip's own audio intact (ADR-0003: nothing is re-voiced). Mirrors
+ *  SceneAssembleBar.run(). */
 export async function assembleSceneBlob({
   scene,
   fetchBytes,
@@ -37,41 +30,16 @@ export async function assembleSceneBlob({
   onProgress?: (fraction: number) => void
 }): Promise<Blob> {
   if (!scene.clipUrl) throw new Error("Cut this scene first — assemble works on the scene's own clip.")
-  const segments = effectiveSegments(scene)
-  if (overlaps(segments).length > 0)
-    throw new Error('Resolve overlapping narration runs before assembling this scene.')
-  const plan = planScene({ segments, cuts: effectiveCuts(scene), start: scene.start, end: scene.end })
+  const plan = planScene({ cuts: effectiveCuts(scene), start: scene.start, end: scene.end })
   if (plan.video.length === 0) throw new Error('Nothing to assemble — the whole scene is cut.')
 
-  const draft = buildFfmpegCommand(plan, { source: 'clip.mp4', output: 'scene.mp4' })
+  const command = buildFfmpegCommand(plan, { source: 'clip.mp4', output: 'scene.mp4' })
 
   onStage?.('Loading the scene clip…')
   const source = await fetchBytes(scene.clipUrl)
 
-  onStage?.(`Gathering ${draft.audioInputs.length} narration clip${draft.audioInputs.length === 1 ? '' : 's'}…`)
-  const clips = await Promise.all(
-    draft.audioInputs.map((segIndex) => {
-      const url = segments[segIndex]?.audioUrl
-      if (!url) throw new Error(`Segment ${segIndex} has no audio to assemble.`)
-      return fetchBytes(url)
-    }),
-  )
-
-  const loudness: (LoudnormStats | null)[] = []
-  if (LOUDNORM_ENABLED) {
-    for (let k = 0; k < clips.length; k++) {
-      onStage?.(`Measuring narration loudness (${k + 1}/${clips.length})…`)
-      loudness.push(
-        await measureLoudness({ clip: clips[k], command: buildMeasureCommand(`m${k}.wav`) })
-          .then(parseLoudnorm)
-          .catch(() => null),
-      )
-    }
-  }
-
-  const command = buildFfmpegCommand(plan, { source: 'clip.mp4', output: 'scene.mp4', loudness })
   onStage?.('Assembling this scene…')
-  return assemble({ source, clips, command, onProgress })
+  return assemble({ source, command, onProgress })
 }
 
 /** Stitch every scene's saved assembled cut into the whole video (stream-copy

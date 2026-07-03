@@ -9,7 +9,7 @@ import { SourceQueue } from '../components/Studio/SourceQueue'
 import { PreviewPlayer } from '../components/Studio/PreviewPlayer'
 import { PipelineBoard } from '../components/Studio/PipelineBoard'
 import { ContactSheetPreview } from '../components/Studio/ContactSheetPreview'
-import { effectiveCuts, effectiveSegments, segmentsToTimedWords, gaps, overlaps } from '../lib/refiner'
+import { effectiveCuts } from '../lib/refiner'
 import { sceneAtTime } from '../lib/scenes'
 import { buildFilmstrip } from '../lib/filmstrip'
 import type { CutSpan } from '../lib/transcriptGrid'
@@ -19,12 +19,8 @@ import { SceneMeta } from '../components/Studio/SceneMeta'
 import { SceneRefinePanel } from '../components/Studio/SceneRefinePanel'
 import { JobPromptDisclosure } from '../components/Studio/PromptDisclosure'
 import { DirectorPanel } from '../components/Studio/DirectorPanel'
-import type { SegmentControl } from '../components/Studio/SegmentVoiceControl'
-import { CastStudio } from '../components/Studio/CastStudio'
-import { uniqueSpeakers, seedAssignmentsByLabel, dominantSpeaker, resolveSpeakerVoice, resolvePerson, resolveAssignedPerson } from '../lib/speakers'
-import { presetLabel, PRESET_VOICES } from '../lib/voices'
 import { StudioStepper } from '../components/Studio/StudioStepper'
-import { TranscriptDiff } from '../components/Studio/TranscriptDiff'
+import { CutEditor } from '../components/Studio/CutEditor'
 import { SceneAssembleBar } from '../components/Studio/SceneAssembleBar'
 import { ScenePreviewDialog } from '../components/Studio/ScenePreviewDialog'
 import { FinalCutBar } from '../components/Studio/FinalCutBar'
@@ -58,9 +54,6 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   // at 12:30, make the intro punchy"). Persisted in the studio slice (story 03l)
   // so Build forwards it to per-scene refines long after prep, across reloads.
   const direction = useAppSelector((s) => selectActive(s).direction)
-  // The voice step's resource is revealed by clicking its board action (rather
-  // than running a pipeline inline) — and stays open once a voice exists.
-  const [showVoiceStudio, setShowVoiceStudio] = useState(false)
   const dispatch = useAppDispatch()
 
   // Drop the previous project's in-memory clip bytes whenever we switch projects.
@@ -245,14 +238,8 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
     }
   }
 
-  // The board's action button. Most steps run inline; the voice step instead
-  // reveals the VoiceStudio resource at the bottom of prep (recording + clone or
-  // preset happen there, not through the pipeline runner).
+  // The board's action button — every remaining step runs inline.
   function onBoardAction() {
-    if (pipe.currentStageId === 'clone') {
-      setShowVoiceStudio(true)
-      return
-    }
     void runStep()
   }
 
@@ -278,16 +265,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
     [pipe.words, selected],
   )
 
-  // The shortened script laid back on the timeline, for the diff's right pane.
-  // Uses the refiner's anchored segments when a scene has been refined (words
-  // flow at the speaking rate from each segment's start, leaving the kept pauses
-  // empty); falls back to a single transcript segment for un-refined scenes.
-  const editedWords = useMemo(
-    () => (selected ? segmentsToTimedWords(effectiveSegments(selected)) : []),
-    [selected],
-  )
-
-  // Time-aligned frames for the diff viewer's filmstrip gutter (story 03e),
+  // Time-aligned frames for the cut editor's filmstrip gutter (story 03e),
   // reusing the already-captured contact sheets as sprites. The per-scene refiner
   // sheets come first (denser, so they win on overlap), then the whole-clip prep
   // sheets fill everywhere else.
@@ -297,65 +275,13 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   )
 
   // Dropped footage spans for the selected scene (refiner's cuts, else
-  // director's), drawn as red cells in the diff viewer.
+  // director's), drawn as red cells in the cut editor.
   const cutSpans = useMemo(
     () => (selected ? effectiveCuts(selected) : []),
     [selected],
   )
 
-  // Per-segment voice controls for the selected scene — each narration run gets an
-  // inline record/AI/play control in the diff viewer's New pane.
-  const segmentControls = useMemo<SegmentControl[]>(
-    () => {
-      if (!selected) return []
-      const selSrc = pipe.sources.find((s) => s.id === selected.sourceId)
-      // Standard fallback when a segment has no detected speaker (diarization off,
-      // or single-speaker audio): default to the first declared voice so the picker
-      // shows something usable instead of "choose voice…". The producer can still
-      // pick any declared voice per segment.
-      const fallbackVoiceId = pipe.cast.find((p) => p.voice)?.voice?.voiceId ?? pipe.voice?.voiceId
-      return effectiveSegments(selected).map((seg, i) => {
-        const label = selSrc ? dominantSpeaker(selSrc.words ?? [], seg.start, seg.end) : null
-        const def =
-          label && selected
-            ? resolveSpeakerVoice(selected.sourceId, label, pipe.cast, pipe.speakerAssignments)
-            : null
-        return {
-          sceneId: selected.id,
-          index: i,
-          start: seg.start,
-          end: seg.end,
-          text: seg.text,
-          audioUrl: seg.audioUrl,
-          audioSeconds: seg.audioSeconds,
-          audioSource: seg.audioSource,
-          suggestedSource: seg.suggestedSource,
-          busy: pipe.voicingSegKey === `${selected.id}:${i}`,
-          speakerName:
-            label && selected
-              ? (resolvePerson(selected.sourceId, label, pipe.cast, pipe.speakerAssignments)?.name ?? label)
-              : undefined,
-          defaultVoiceId: def?.voiceId ?? fallbackVoiceId,
-          voiceId: seg.voiceId,
-        }
-      })
-    },
-    [selected, pipe.voicingSegKey, pipe.sources, pipe.cast, pipe.speakerAssignments, pipe.voice],
-  )
-
-  // Voice options for the per-segment picker (story 10d): all cast people with a
-  // voice, then all presets — so the producer can override the speaker default.
-  const voiceOptions = useMemo(
-    () => [
-      ...pipe.cast
-        .filter((p) => p.voice)
-        .map((p) => ({ voiceId: p.voice!.voiceId, label: `${p.name} (${p.voice!.label})` })),
-      ...PRESET_VOICES.map((v) => ({ voiceId: v.id, label: presetLabel(v.id) })),
-    ],
-    [pipe.cast],
-  )
-
-  // A cut hand-edit on the diff grid. The grid hands us a span on the whole-talk
+  // A cut hand-edit on the grid. The grid hands us a span on the whole-talk
   // timeline; route it to whichever scene owns its start, clamped to that scene
   // by `editSceneCut`. (A drag that crosses a scene boundary edits only the
   // start scene — fine, scenes are built one at a time.)
@@ -363,38 +289,6 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
     (span: CutSpan, op: 'add' | 'remove') => {
       const owner = sceneAtTime(pipe.scenes, span.start)
       if (owner) pipe.editSceneCut(owner.id, span, op)
-    },
-    [pipe],
-  )
-
-  // Empty gaps on the selected scene's New timeline — since 03h just the
-  // lands-clean hint for a drop (glow + preview tint), not a gate.
-  const gapSpans = useMemo(
-    () => (selected ? gaps(effectiveSegments(selected), selected) : []),
-    [selected],
-  )
-
-  // Where the selected scene's runs overlap (story 03h) — the amber conflict
-  // fill in the diff viewer; assemble stays blocked while any remain.
-  const overlapSpans = useMemo(
-    () => (selected ? overlaps(effectiveSegments(selected)) : []),
-    [selected],
-  )
-
-  // Drop a grabbed original-audio clip — route to the scene owning the drop time.
-  const onAdoptOriginal = useCallback(
-    (origStart: number, origEnd: number, dropStart: number) => {
-      const owner = sceneAtTime(pipe.scenes, dropStart)
-      if (owner) pipe.adoptOriginalAudio(owner.id, origStart, origEnd, dropStart)
-    },
-    [pipe],
-  )
-
-  // Drop a typed snippet — same owner routing as adopt-original.
-  const onAddSnippet = useCallback(
-    (text: string, dropStart: number) => {
-      const owner = sceneAtTime(pipe.scenes, dropStart)
-      if (owner) pipe.addSnippet(owner.id, text, dropStart)
     },
     [pipe],
   )
@@ -485,43 +379,6 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   function navigatePhase(p: StudioPhase) {
     navigate(`/project/${projectId}/${p}`)
   }
-
-  // Cast-scoped voice wrappers: just drive the pipe method. Phase is URL-driven
-  // now, so setting a voice no longer needs to pin the view to Prep.
-  function castCloneForPerson(personId: string, blob: Blob) {
-    void pipe.cloneForPerson(personId, blob)
-  }
-  function castPickPresetForPerson(personId: string, voiceId: string) {
-    pipe.pickPresetForPerson(personId, voiceId)
-  }
-  function castReuseForPerson(personId: string, voiceId: string) {
-    pipe.reuseForPerson(personId, voiceId)
-  }
-
-  // Seed speaker→person assignments when there are 2+ people: for each source
-  // with detected labels, fill in any unassigned labels by ordinal (label 0 →
-  // person 0, etc.). Guarded so it only dispatches newly-filled labels —
-  // won't loop even though assignSpeaker is now a stable useCallback dep.
-  // Destructure from `pipe` here so the deps array is exhaustive without
-  // listing `pipe` itself (which changes every render).
-  const { cast: pipeCast, sources: pipeSources, speakerAssignments: pipeAssignments, assignSpeaker: pipeAssignSpeaker } = pipe
-  useEffect(() => {
-    if (pipeCast.length < 2) return
-    for (const source of pipeSources) {
-      const labels = uniqueSpeakers(source.words ?? [])
-      if (labels.length === 0) continue
-      const seeded = seedAssignmentsByLabel(source.id, labels, pipeCast, pipeAssignments)
-      const existing = pipeAssignments[source.id] ?? {}
-      const changed = labels.some((l) => seeded[l] !== existing[l])
-      if (changed) {
-        for (const [label, personId] of Object.entries(seeded)) {
-          if (existing[label] !== personId) {
-            pipeAssignSpeaker(source.id, label, personId)
-          }
-        }
-      }
-    }
-  }, [pipeCast, pipeSources, pipeAssignments, pipeAssignSpeaker])
 
   return (
     <>
@@ -614,16 +471,15 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     onProcess={(id) => { const f = files.get(id); if (f) void pipe.processSource(id, f) }}
                     onProcessAll={() => void pipe.processAll(files)}
                     onAdd={onImport}
-                    resolveSpeakerName={(sourceId, label) =>
-                      resolveAssignedPerson(sourceId, label, pipe.cast, pipe.speakerAssignments)?.name ?? label
-                    }
+                    resolveSpeakerName={(_sourceId, label) => label}
                     diarize={pipe.diarize}
                     onDiarizeChange={(v) => dispatch(setDiarize(v))}
                   />
                 )}
 
                 {/* Clips are processed but the plan isn't open yet — offer it
-                    deliberately rather than getting ahead of the producer. */}
+                    deliberately rather than getting ahead of the producer.
+                    The plan is thumbnails → director (no voice step — ADR-0003). */}
                 {pipe.sourcesReady && !showPlan && (
                   <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-terracotta/5 px-5 py-4">
                     <p className="text-[14px] text-ink-soft">
@@ -653,39 +509,16 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                           <ContactSheetPreview sheets={pipe.contactSheets} />
                         ) : undefined,
                       director: directorArtifact,
-                      clone:
-                        showVoiceStudio || pipe.cast.some((p) => p.voice) ? (
-                          <CastStudio
-                            cast={pipe.cast}
-                            sources={pipe.sources}
-                            savedVoices={pipe.savedVoices}
-                            assignments={pipe.speakerAssignments}
-                            cloning={pipe.cloning}
-                            samplingVoice={pipe.samplingVoice}
-                            diarize={pipe.diarize}
-                            onPeopleCount={pipe.setPeopleCount}
-                            onRename={pipe.renamePerson}
-                            onRemove={pipe.removePerson}
-                            onAssign={pipe.assignSpeaker}
-                            onCloneForPerson={castCloneForPerson}
-                            onPickPresetForPerson={castPickPresetForPerson}
-                            onReuseForPerson={castReuseForPerson}
-                            onClearForPerson={pipe.clearForPerson}
-                            onForgetForPerson={pipe.forgetForPerson}
-                            onSampleForPerson={pipe.sampleForPerson}
-                          />
-                        ) : undefined,
                     }}
                   />
                 )}
-                {/* Once every prep step is done (incl. the voice), the producer
-                    moves to Build deliberately — completing prep no longer
-                    auto-advances. */}
+                {/* Once every prep step is done, the producer moves to Build
+                    deliberately — completing prep no longer auto-advances. */}
                 {pipe.ready && (
                   <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-terracotta/5 px-5 py-4">
                     <p className="text-[14px] text-ink-soft">
                       Prep complete — {pipe.scenes.length} scene
-                      {pipe.scenes.length === 1 ? '' : 's'} and your voice is ready.
+                      {pipe.scenes.length === 1 ? '' : 's'} ready to cut.
                     </p>
                     <button
                       type="button"
@@ -716,6 +549,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                 </div>
                 <ExportSummary
                   scenes={pipe.scenes}
+                  wordsFor={pipe.wordsFor}
                   synopsis={pipe.synopsis}
                   description={pipe.description}
                   generating={pipe.describing}
@@ -835,38 +669,24 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     onIncludeDirectionChange={(on) => pipe.setIncludeDirection(selected.id, on)}
                   />
                 )}
-                {/* The transcript time-grid editor only opens once the scene has
-                    been cut, sheeted, and refined — `refined` is the gate (refine
-                    can't run without the cut + audio + sheets). Until then the
-                    refine panel above is the whole story; show a quiet hint in
-                    the editor's place. Reverting a refinement re-locks it. */}
+                {/* The cut editor only opens once the scene has been cut,
+                    sheeted, and refined — `refined` is the gate (refine can't
+                    run without the cut + audio + sheets). Until then the refine
+                    panel above is the whole story; show a quiet hint in the
+                    editor's place. Reverting a refinement re-locks it. */}
                 {selected &&
                   pipe.words.length > 0 &&
                   (selected.refined ? (
-                  <TranscriptDiff
+                  <CutEditor
                     words={sceneWords}
-                    editedWords={editedWords}
                     cuts={cutSpans}
-                    segments={segmentControls}
-                    canGenerateAI={pipe.cast.some((p) => p.voice != null) || !!pipe.voice}
-                    onGenerateAI={pipe.generateSegmentNarration}
-                    onRecord={pipe.recordSegmentNarration}
-                    onUseOriginal={pipe.adoptSegmentOriginal}
                     onEditCut={onEditCut}
-                    dropTargets={gapSpans}
-                    onAdoptOriginal={onAdoptOriginal}
-                    onAddSnippet={onAddSnippet}
                     onSearch={onSearch}
-                    onDeleteSegment={pipe.deleteSegment}
-                    onMoveRun={pipe.moveRun}
-                    overlaps={overlapSpans}
                     frames={filmstrip}
                     duration={duration}
                     windowStart={selected.start}
                     windowEnd={selected.end}
                     originalAudioUrl={pipe.audioUrl ?? undefined}
-                    voiceOptions={voiceOptions}
-                    onPickVoice={pipe.setSegmentVoice}
                   />
                   ) : (
                     <DiffLockedHint />
@@ -890,6 +710,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     onClose={() => setPreviewOpen(false)}
                     scene={selected}
                     sheets={pipe.contactSheets}
+                    audioUrl={pipe.audioUrl ?? undefined}
                   />
                 )}
                 {/* The export step lives on its own now (the final stitch +

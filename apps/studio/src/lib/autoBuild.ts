@@ -5,15 +5,15 @@
  * this module says, from the durable scene state alone, which step a scene is on,
  * what the run should do next, and how to colour each row in the dashboard. It
  * holds NO state of its own — "done" is derived from the same scene fields the
- * manual UI already writes (clipUrl, sheets, refined, segment audio, assembledUrl,
- * status), so there is never a second source of truth to keep in sync.
+ * manual UI already writes (clipUrl, sheets, refined, assembledUrl, status), so
+ * there is never a second source of truth to keep in sync.
  */
 
 import type { Scene } from './scenes'
 
 /**
  * The patch to stamp onto any edit that changes a scene's **assemble inputs** —
- * its cuts, its narration segments' audio, or its cut clip. Such an edit makes a
+ * its cuts or its cut clip. Such an edit makes a
  * previously saved render (`assembledUrl`) stale, but the final stitch
  * (`assembleFinalCutBlob`) is a blind stream-copy concat of saved scene clips, so
  * the stale clip would otherwise be re-emitted (e.g. the full 19-min cut after
@@ -21,7 +21,7 @@ import type { Scene } from './scenes'
  * `pending` drops the stale bytes, so the assemble step (`nextStep` → `assemble`)
  * and the manual export gate both re-render it before the stitch. Only the
  * rendered output is cleared — `scene.cuts` (the director's immutable baseline)
- * and `scene.refined` (the editable script) are untouched, so reverting or
+ * and `scene.refined` (the editable cut layer) are untouched, so reverting or
  * re-refining from the original still works. `useScenePipeline`'s `patchSceneEdit`
  * applies this to every such edit. */
 export const STALE_RENDER_PATCH = {
@@ -31,7 +31,7 @@ export const STALE_RENDER_PATCH = {
 
 /** The per-scene build steps, in the order auto mode runs them. `assemble` covers
  *  both rendering the scene MP4 and saving it (one action). */
-export type AutoStepId = 'cut' | 'sheets' | 'refine' | 'voice' | 'assemble'
+export type AutoStepId = 'cut' | 'sheets' | 'refine' | 'assemble'
 
 /** Per-step display status in the dashboard. */
 export type AutoStepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -60,25 +60,8 @@ export const AUTO_STEPS: AutoStepDef[] = [
   { id: 'cut', label: 'Cut scene', isDone: (s) => !!s.clipUrl && !!s.clipAudioUrl },
   { id: 'sheets', label: 'Contact sheets', isDone: (s) => (s.sheets?.length ?? 0) > 0 },
   { id: 'refine', label: 'Refine scene', isDone: (s) => !!s.refined },
-  {
-    id: 'voice',
-    label: 'Voice segments',
-    // Only meaningful once refined. We check `refined.segments` directly (not
-    // effectiveSegments) because effectiveSegments falls back to the raw
-    // transcript when refined.segments is empty — which would leave an unvoiced
-    // phantom. An empty refined segment list is vacuously "all voiced".
-    isDone: (s) => !!s.refined && s.refined.segments.every((seg) => !!seg.audioUrl),
-  },
   { id: 'assemble', label: 'Assemble & save', isDone: (s) => !!s.assembledUrl },
 ]
-
-/** Voiced/total segment counts for the dashboard's "Voice (n/m)" sub-progress.
- *  Reads `refined.segments` (the same source as the voice step) so it never shows
- *  a phantom count on a not-yet-refined scene. */
-export function voiceProgress(scene: Scene): { done: number; total: number } {
-  const segs = scene.refined?.segments ?? []
-  return { done: segs.filter((s) => !!s.audioUrl).length, total: segs.length }
-}
 
 /** The first step on this scene that isn't done yet, or null when all are done. */
 export function nextStep(scene: Scene): AutoStepId | null {

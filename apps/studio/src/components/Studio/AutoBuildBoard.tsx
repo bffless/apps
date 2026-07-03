@@ -3,7 +3,6 @@ import {
   AUTO_STEPS,
   sceneStepStatuses,
   sceneRunStatus,
-  voiceProgress,
   type AutoBuildRun,
   type AutoStepStatus,
 } from '../../lib/autoBuild'
@@ -104,7 +103,6 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
           const rolled = sceneRunStatus(scene, run)
           const steps = sceneStepStatuses(scene, run)
           const expanded = scene.id === run.currentSceneId || scene.id === selectedId
-          const vp = voiceProgress(scene)
           return (
             <li key={scene.id} className="rounded-md border border-paper-line">
               <button
@@ -162,7 +160,6 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
                         STEP_ICON[steps[step.id]]
                       )}{' '}
                       {step.label}
-                      {step.id === 'voice' && steps.voice !== 'pending' ? ` (${vp.done}/${vp.total})` : ''}
                     </span>
                   ))}
                 </div>

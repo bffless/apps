@@ -17,11 +17,15 @@ function scene(over: Partial<Scene> = {}): Scene {
     end: 60,
     transcript: 'original transcript words',
     status: 'built',
-    narrationSeconds: null,
-    refined: { segments: [{ text: 'Hello there.', start: 0, end: 2 }], cuts: [], source: 'ai' },
     ...over,
   }
 }
+
+/** A wordsFor handing each scene timed words for "Hello there." */
+const wordsFor = () => [
+  { text: 'Hello', start: 0, end: 0.5 },
+  { text: 'there.', start: 1, end: 1.5 },
+]
 
 describe('buildThumbnailDraftRequest', () => {
   it('assembles title/description/script/notes, trimming and using the final script', () => {
@@ -30,6 +34,7 @@ describe('buildThumbnailDraftRequest', () => {
       '  My Great Video  ',
       '  A summary.\n\n0:00 Scene 1  ',
       '  bold, dark navy  ',
+      wordsFor,
     )
     expect(req).toEqual({
       title: 'My Great Video',
@@ -39,8 +44,8 @@ describe('buildThumbnailDraftRequest', () => {
     })
   })
 
-  it('produces an empty script when no scene has narration', () => {
-    const req = buildThumbnailDraftRequest([scene({ refined: null, transcript: '' })], 'T', 'D', '')
+  it('produces an empty script when a scene has no words at all', () => {
+    const req = buildThumbnailDraftRequest([scene({ transcript: '' })], 'T', 'D', '', () => [])
     expect(req.script).toBe('')
   })
 })

@@ -35,7 +35,6 @@ const STAGE_LABELS: Record<StageId, string> = {
   transcribe: 'Transcribe',
   thumbnails: 'Thumbnails',
   director: 'Director',
-  clone: 'Clone',
 }
 
 type RowProps = {

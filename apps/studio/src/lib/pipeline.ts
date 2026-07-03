@@ -14,7 +14,6 @@ export type StageId =
   | 'transcribe'
   | 'thumbnails'
   | 'director'
-  | 'clone'
 
 export type StageStatus = 'pending' | 'active' | 'done' | 'error'
 export type Where = 'browser' | 'pipeline' | 'browser+pipeline'
@@ -22,8 +21,8 @@ export type Where = 'browser' | 'pipeline' | 'browser+pipeline'
 /**
  * Whether a stage runs once per source video ('video') or once for the whole
  * project ('global'). Upload, extract, and transcribe are per-video so that
- * multiple source clips can each be processed independently; thumbnails,
- * director, and clone operate across all sources and run once.
+ * multiple source clips can each be processed independently; thumbnails and
+ * the director operate across all sources and run once.
  */
 export type StageScope = 'video' | 'global'
 
@@ -110,19 +109,9 @@ export const STAGE_DEFS: StageDef[] = [
     actionLabel: 'Generate thumbnails',
   },
   {
-    id: 'clone',
-    title: 'Clone or choose your voice',
-    note: "Set the voice your scenes are narrated in: record a short sample to clone your own voice (MiniMax voice-cloning), or pick one of MiniMax's preset voices. Opens a recorder below the scenes.",
-    where: 'browser+pipeline',
-    scope: 'global',
-    // Owned by the VoiceStudio resource, not the board runner: this button just
-    // reveals it (see Studio.tsx). Recording + clone/preset happen there.
-    actionLabel: 'Choose your voice',
-  },
-  {
     id: 'director',
     title: 'Send to the AI director',
-    note: 'Hand the timestamped transcript, the director contact sheets, and the cast voice setup to the AI master director (Gemini), with any direction of your own. One call groups the talk into logical 2–5 min scenes — each with its original-video timestamps, the footage to cut, and a starting prompt to steer its refine. You get back a one-line synopsis plus your chapters.',
+    note: 'Hand the timestamped transcript and the director contact sheets to the AI master director (Gemini), with any direction of your own. One call groups the talk into logical 2–5 min scenes — each with its original-video timestamps, the footage to cut, and a cutting brief to steer its refine. You get back a one-line synopsis plus your chapters.',
     where: 'pipeline',
     scope: 'global',
     // The master director (story 03): a single Gemini call does the scene
@@ -135,5 +124,5 @@ export const STAGE_DEFS: StageDef[] = [
 
 /** Stage ids that run once per source video (upload → extract → transcribe). */
 export const PER_VIDEO_STAGES = STAGE_DEFS.filter((s) => s.scope === 'video').map((s) => s.id)
-/** Stage ids that run once for the whole project (thumbnails → clone → director). */
+/** Stage ids that run once for the whole project (thumbnails → director). */
 export const GLOBAL_STAGES = STAGE_DEFS.filter((s) => s.scope === 'global').map((s) => s.id)

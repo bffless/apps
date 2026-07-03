@@ -1,30 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { Scene } from '../../lib/scenes'
 import type { ContactSheet } from '../../lib/frames'
 import { ScenePreviewDialog } from './ScenePreviewDialog'
 
-const toggle = vi.fn()
-const seek = vi.fn()
-const stop = vi.fn()
-const capturedEvents: unknown[] = []
-
-vi.mock('./usePreviewTransport', () => ({
-  usePreviewTransport: (events: unknown) => {
-    capturedEvents.push(events)
-    return {
-      playing: false,
-      loading: false,
-      failed: 0,
-      clock: () => 0,
-      toggle,
-      seek,
-      stop,
-    }
-  },
-}))
-
-// jsdom lacks showModal/close — polyfill them as ContactDialog.test.tsx does.
+// jsdom lacks showModal/close — polyfill them as ContactDialog.test.tsx does;
+// pause() dispatches the event a browser would.
 beforeEach(() => {
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
@@ -35,6 +16,13 @@ beforeEach(() => {
     HTMLDialogElement.prototype.close = function () {
       this.removeAttribute('open')
     }
+  }
+  HTMLMediaElement.prototype.pause = function () {
+    this.dispatchEvent(new Event('pause'))
+  }
+  HTMLMediaElement.prototype.play = function () {
+    this.dispatchEvent(new Event('play'))
+    return Promise.resolve()
   }
 })
 
@@ -68,68 +56,67 @@ function scene(over: Partial<Scene> = {}): Scene {
     end: 10,
     transcript: 'hello there',
     status: 'pending',
-    narrationSeconds: null,
     cuts: [],
-    refined: {
-      source: 'manual',
-      cuts: [],
-      segments: [
-        { text: 'hello', start: 0, end: 4, audioUrl: 'a.mp3', audioSeconds: 4 },
-        { text: 'there', start: 6, end: 10 }, // unvoiced
-      ],
-    },
+    refined: { source: 'manual', cuts: [{ start: 4, end: 6 }] },
     ...over,
   }
 }
 
-describe('ScenePreviewDialog', () => {
-  beforeEach(() => {
-    toggle.mockClear()
-    seek.mockClear()
-    stop.mockClear()
-    capturedEvents.length = 0
-  })
-
-  it('opens as a modal with the scene title and flags unvoiced runs', () => {
-    render(<ScenePreviewDialog open onClose={() => {}} scene={scene()} sheets={[sheet([0, 5])]} />)
-    const dialog = screen.getByRole('dialog')
-    expect(dialog).toBeInTheDocument()
-    expect(screen.getByText(/Intro/)).toBeInTheDocument()
-    expect(screen.getByText(/1 run unvoiced/)).toBeInTheDocument()
-  })
-
-  it('play button drives the transport', () => {
-    render(<ScenePreviewDialog open onClose={() => {}} scene={scene()} sheets={[sheet([0, 5])]} />)
-    fireEvent.click(screen.getByRole('button', { name: /play/i }))
-    expect(toggle).toHaveBeenCalledOnce()
-  })
-
-  it('with no usable sheets it shows the no-frames placeholder (audio still previews)', () => {
-    render(<ScenePreviewDialog open onClose={() => {}} scene={scene()} sheets={[]} />)
-    expect(screen.getByText(/no frames captured/i)).toBeInTheDocument()
-  })
-
-  it('an all-cut scene disables play', () => {
-    const s = scene({ refined: { source: 'manual', cuts: [{ start: 0, end: 10 }], segments: [] } })
-    render(<ScenePreviewDialog open onClose={() => {}} scene={s} sheets={[sheet([0, 5])]} />)
-    expect(screen.getByRole('button', { name: /play/i })).toBeDisabled()
-  })
-
-  it('closing the dialog stops the transport', () => {
-    const { rerender } = render(
-      <ScenePreviewDialog open onClose={() => {}} scene={scene()} sheets={[sheet([0, 5])]} />,
+describe('ScenePreviewDialog (cut-first, ADR-0003)', () => {
+  it('shows the stitched output length (footage minus cuts)', () => {
+    render(
+      <ScenePreviewDialog
+        open
+        onClose={() => {}}
+        scene={scene()}
+        sheets={[sheet([0, 5])]}
+        audioUrl="blob:audio"
+      />,
     )
-    stop.mockClear()
-    rerender(<ScenePreviewDialog open={false} onClose={() => {}} scene={scene()} sheets={[sheet([0, 5])]} />)
-    expect(stop).toHaveBeenCalled()
+    // 10s scene with a 2s cut → 8s output
+    expect(screen.getByText('0:00 / 0:08')).toBeInTheDocument()
   })
 
-  it('passes referentially stable events to the transport across re-renders (the hook contract)', () => {
-    const s = scene()
-    const sheets = [sheet([0, 5])]
-    const { rerender } = render(<ScenePreviewDialog open onClose={() => {}} scene={s} sheets={sheets} />)
-    rerender(<ScenePreviewDialog open onClose={() => {}} scene={s} sheets={sheets} />)
-    expect(capturedEvents.length).toBeGreaterThanOrEqual(2)
-    expect(capturedEvents[capturedEvents.length - 1]).toBe(capturedEvents[0])
+  it('play jumps the playhead over a cut as the audio reaches it', () => {
+    render(
+      <ScenePreviewDialog
+        open
+        onClose={() => {}}
+        scene={scene()}
+        sheets={[]}
+        audioUrl="blob:audio"
+      />,
+    )
+    const audio = document.querySelector('audio')!
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    // Simulate the clock landing inside the cut (source second 5): the handler
+    // must seek to the next kept span (source second 6).
+    Object.defineProperty(audio, 'currentTime', { value: 5, writable: true, configurable: true })
+    fireEvent.timeUpdate(audio)
+    expect(audio.currentTime).toBe(6)
+  })
+
+  it('disables Play when everything is cut', () => {
+    const allCut = scene({ refined: { source: 'manual', cuts: [{ start: 0, end: 10 }] } })
+    render(
+      <ScenePreviewDialog open onClose={() => {}} scene={allCut} sheets={[]} audioUrl="blob:audio" />,
+    )
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled()
+    expect(screen.getByText(/Everything in this scene is cut/)).toBeInTheDocument()
+  })
+
+  it('disables Play (frames only) when there is no extracted audio', () => {
+    render(<ScenePreviewDialog open onClose={() => {}} scene={scene()} sheets={[]} />)
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled()
+    expect(screen.getByText(/No extracted audio/)).toBeInTheDocument()
+  })
+
+  it('close button calls onClose', () => {
+    const onClose = vi.fn()
+    render(
+      <ScenePreviewDialog open onClose={onClose} scene={scene()} sheets={[]} audioUrl="blob:audio" />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close preview' }))
+    expect(onClose).toHaveBeenCalled()
   })
 })

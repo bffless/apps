@@ -164,7 +164,7 @@ const studioHandlers = [
   // posted `duration` so they fit any clip) are stashed as the job's `result` for
   // the poll endpoint to hand back. Mirrors the real enqueue shape: { jobId,
   // status }; the result blob mirrors { synopsis, scenes:[{ title, start, end,
-  // transcript, refinePrompt, voicing, cuts }] }.
+  // transcript, refinePrompt, cuts }] }.
   http.post('/api/scenes', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { duration?: number; direction?: string }
     const jobId = enqueueJob(
@@ -349,42 +349,6 @@ const studioHandlers = [
     })
   }),
 
-  // Scene narration (story 03c): a short tone stands in for the persisted mp3 so
-  // the diff-viewer audio players work offline. Returns a serve path nested under
-  // projects/<projectId>/narration/ — mirrors the real pipeline's storage key
-  // layout — with the WAV data stashed in objectStore so the GET route serves it.
-  http.post('/api/voice/narrate', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as {
-      text?: string
-      projectId?: string
-    }
-    const words = (body.text ?? '').trim().split(/\s+/).filter(Boolean).length
-    const seconds = Math.max(1, Math.round(words / 2.5))
-    const wavDataUrl = toneWavDataUrl(Math.min(seconds, 4))
-    const pid = body.projectId ?? 'unknown-project'
-    const filename = `narration-${Date.now()}.wav`
-    const keyPath = `projects/${pid}/narration/mock/${filename}`
-    // Decode the data-URL to raw bytes and stash in objectStore so the serve
-    // route hands it back if anything GETs the url.
-    try {
-      const base64 = wavDataUrl.split(',')[1]
-      if (base64) {
-        const binaryStr = atob(base64)
-        const bytes = new Uint8Array(binaryStr.length)
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-        objectStore.set(keyPath, { body: bytes.buffer as ArrayBuffer, type: 'audio/wav' })
-      }
-    } catch {
-      // Non-fatal — serve route will 404 but the audioUrl data-URL still plays.
-    }
-    return HttpResponse.json({ audioUrl: `/api/uploads/${keyPath}` })
-  }),
-
-  // Voice clone (story 04): return a real MiniMax preset id as the stub — matches
-  // the live clone-disabled pipeline, so the TTS preview below has a usable
-  // voice and no $3 clone is ever spent.
-  http.post('/api/voice/clone', () => HttpResponse.json({ voiceId: 'Friendly_Person' })),
-
   // Project CRUD (story 11d): in-memory projectStore mirrors the server's
   // pipeline_records table. `data` is stored as a JSON string (client sends it
   // that way); GET /api/projects/get returns it parsed to match the live contract.
@@ -442,28 +406,14 @@ const studioHandlers = [
     return HttpResponse.json({ deleted, prefix })
   }),
 
-  // Voice say (TTS preview): a short audible tone stands in for synthesized
-  // narration, with a word-count-derived duration, so the preview plays offline
-  // without a paid speech call.
-  http.post('/api/voice/say', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { text?: string }
-    const words = (body.text ?? '').trim().split(/\s+/).filter(Boolean).length
-    const durationSeconds = Math.max(1, Math.round(words / 2.5))
-    return HttpResponse.json({
-      audioUrl: toneWavDataUrl(Math.min(durationSeconds, 4)),
-      durationSeconds,
-    })
-  }),
 ]
 
 /**
  * A deterministic canned refiner response for one scene, rebuilt FROM SCRATCH off
- * the posted per-word timings (story 03p — no more first-pass `draftText`). The
- * scene's words are split into two runs around a dropped beat: the first run keeps
- * the creator's own audio (`source: 'original'`, copying the words' exact
- * start/end so auto-adopt slices the real take), the second is re-voiced
- * (`source: 'revoice'`), and the gap between them is the refined cut. Falls back
- * to one original run when there are too few words to split.
+ * the posted per-word timings (story 03p). Cut-first (ADR-0003): the mock finds
+ * the biggest silence between consecutive words in the scene and returns it as
+ * the one refined cut — no narration, no segments. Falls back to no cuts when
+ * there are too few words.
  */
 function mockRefiner(body: { start?: number; end?: number; wordTimings?: string }) {
   const start = Number.isFinite(body.start) ? (body.start as number) : 0
@@ -481,67 +431,20 @@ function mockRefiner(body: { start?: number; end?: number; wordTimings?: string 
         Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= start && w.start < end,
     )
 
-  if (words.length >= 4) {
-    const mid = Math.floor(words.length / 2)
-    const firstRun = words.slice(0, mid)
-    const secondRun = words.slice(mid + 1) // drop one word as the removed beat
-    const cutStart = firstRun[firstRun.length - 1].end
-    const cutEnd = secondRun[0].start
-    const segments = [
-      {
-        text: firstRun.map((w) => w.text).join(' '),
-        start: firstRun[0].start,
-        end: cutStart,
-        source: 'original',
-      },
-      {
-        text: secondRun.map((w) => w.text).join(' '),
-        start: cutEnd,
-        end: secondRun[secondRun.length - 1].end,
-        source: 'revoice',
-      },
-    ]
-    return { segments, cuts: cutEnd - cutStart > 0.05 ? [{ start: cutStart, end: cutEnd }] : [] }
-  }
+  if (words.length < 4) return { cuts: [] }
 
-  // Too few words to split — one original run across the whole span.
-  const text = words.map((w) => w.text).join(' ') || 'mock refined narration'
-  return { segments: [{ text, start, end, source: 'original' }], cuts: [] }
+  let cutStart = words[0].end
+  let cutEnd = words[1].start
+  for (let i = 1; i < words.length; i++) {
+    const gap = words[i].start - words[i - 1].end
+    if (gap > cutEnd - cutStart) {
+      cutStart = words[i - 1].end
+      cutEnd = words[i].start
+    }
+  }
+  return { cuts: cutEnd - cutStart > 0.05 ? [{ start: cutStart, end: cutEnd }] : [] }
 }
 
-/** A tiny mono 440 Hz tone encoded as a base64 WAV data URL — a stand-in clip. */
-function toneWavDataUrl(seconds: number): string {
-  const rate = 8000
-  const n = Math.max(1, Math.floor(rate * seconds))
-  const buffer = new ArrayBuffer(44 + n * 2)
-  const view = new DataView(buffer)
-  const writeStr = (off: number, s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i))
-  }
-  writeStr(0, 'RIFF')
-  view.setUint32(4, 36 + n * 2, true)
-  writeStr(8, 'WAVE')
-  writeStr(12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
-  view.setUint32(24, rate, true)
-  view.setUint32(28, rate * 2, true)
-  view.setUint16(32, 2, true)
-  view.setUint16(34, 16, true)
-  writeStr(36, 'data')
-  view.setUint32(40, n * 2, true)
-  for (let i = 0; i < n; i++) {
-    // gentle fade so it doesn't click; quiet amplitude
-    const env = Math.min(1, i / 400, (n - i) / 400)
-    const s = Math.sin((2 * Math.PI * 440 * i) / rate) * 0.2 * env
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
-  }
-  const bytes = new Uint8Array(buffer)
-  let bin = ''
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-  return `data:audio/wav;base64,${btoa(bin)}`
-}
 
 /**
  * A deterministic canned blog post (issue #68): YAML front-matter (title +
@@ -587,16 +490,13 @@ function mockBlog(script: string, direction: string): { markdown: string } {
 function mockDirector(duration: number, direction: string) {
   const total = Number.isFinite(duration) && duration > 0 ? duration : 600
   const count = Math.max(1, Math.round(total / 210)) // ~3.5 min scenes
-  // "keep my voice / cut the ums" direction → an all-original plan (story 03j).
-  const keepOriginal = /\b(um+s?|uh+s?|ah+s?|filler|keep my (own )?voice|original audio)\b/i.test(direction)
-  const VOICINGS = ['revoice', 'original', 'mixed'] as const
   const each = total / count
   const beats = [
     { title: 'Cold open — the problem', draft: 'Here is the problem we kept running into, and why the usual fix falls apart at scale.' },
     { title: 'The turn — what changed', draft: 'So we tried something different. The key insight was to let the pipeline do the rewriting up front.' },
-    { title: 'The demo', draft: 'Let me show you. You upload one clip, and it preps everything — transcript, scenes, your cloned voice.' },
+    { title: 'The demo', draft: 'Let me show you. You upload one clip, and it preps everything — transcript, scenes, cuts.' },
     { title: 'How it works', draft: 'Under the hood it is a chain of small steps, each one handed off to the next, no server code.' },
-    { title: 'Where it goes next', draft: 'Next we tighten each scene, line the footage up to the voice, and ship the cut.' },
+    { title: 'Where it goes next', draft: 'Next we tighten each scene, drop the dead space, and ship the cut.' },
   ]
   const scenes = Array.from({ length: count }, (_, i) => {
     const start = i * each
@@ -609,7 +509,6 @@ function mockDirector(duration: number, direction: string) {
       title: beat.title,
       start,
       end,
-      voicing: keepOriginal ? 'original' : VOICINGS[i % VOICINGS.length],
       transcript: `(${Math.round(end - start)}s of original footage for this scene)`,
       refinePrompt: `Tighten this beat${direction ? `, ${direction}` : ''}; drop the dead air in the middle, keep the on-screen action visible.`,
       cuts: [{ start: cutStart, end: cutEnd }],
@@ -617,7 +516,7 @@ function mockDirector(duration: number, direction: string) {
   })
   return {
     synopsis:
-      'A builder turns one long, rambly screen recording into a tight, scene-by-scene short — the AI cuts the dead weight, groups the rest into chapters, and re-voices it in the maker’s own cloned voice.',
+      'A builder turns one long, rambly screen recording into a tight, scene-by-scene short — the AI proposes the cuts, groups the rest into chapters, and the maker’s own voice carries the whole thing.',
     scenes,
   }
 }

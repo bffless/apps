@@ -5,12 +5,16 @@ import {
   videoChapters,
   formatChapters,
   scriptWords,
+  type SceneWords,
   type VideoDescription,
 } from '../../lib/describe'
 import { TranscriptText } from './TranscriptText'
 
 type Props = {
   scenes: Scene[]
+  /** Resolves a scene to its timed words — the kept script is those minus the
+   *  scene's cuts (ADR-0003). */
+  wordsFor: SceneWords
   /** The director's one-line take (synopsis) — shown as context, not the title. */
   synopsis: string | null
   /** The generated title + summary (+ the script it was written from), or null. */
@@ -30,15 +34,16 @@ type Props = {
  */
 export function ExportSummary({
   scenes,
+  wordsFor,
   synopsis,
   description,
   generating,
   onGenerate,
   onTitleChange,
 }: Props) {
-  const script = useMemo(() => videoScript(scenes), [scenes])
+  const script = useMemo(() => videoScript(scenes, wordsFor), [scenes, wordsFor])
   const chapters = useMemo(() => videoChapters(scenes), [scenes])
-  const words = useMemo(() => scriptWords(scenes), [scenes])
+  const words = useMemo(() => scriptWords(scenes, wordsFor), [scenes, wordsFor])
 
   // YouTube-ready description: the summary, then the chapter lines ("0:00 Title")
   // that YouTube turns into chapters. Chapters show even before the AI summary.

@@ -26,23 +26,22 @@ function scene(over: Partial<Scene> = {}): Scene {
     end: 60,
     transcript: 'original transcript words',
     status: 'built',
-    narrationSeconds: null,
     ...over,
   }
 }
 
-const refined = (segments: { text: string; start: number; end: number }[]) => ({
-  refined: { segments, cuts: [], source: 'ai' as const },
-})
+/** A wordsFor handing each scene one timed word per transcript token. */
+const wordsFor = (s: Scene) =>
+  s.transcript.split(/\s+/).map((t, i) => ({ text: t, start: i, end: i + 0.5 }))
 
 describe('buildBlogRequest', () => {
   it('shapes the final kept script + trimmed direction with empty context', () => {
     const scenes = [
-      scene({ id: 'a', title: 'Intro', transcript: 'raw intro', ...refined([{ text: 'Hello there.', start: 0, end: 2 }]) }),
-      scene({ id: 'b', title: 'Body', transcript: 'raw body', ...refined([{ text: 'Second scene.', start: 0, end: 2 }]) }),
+      scene({ id: 'a', title: 'Intro', transcript: 'raw intro' }),
+      scene({ id: 'b', title: 'Body', transcript: 'raw body' }),
     ]
-    expect(buildBlogRequest(scenes, '  keep it punchy  ')).toEqual({
-      script: 'Hello there.\n\nSecond scene.',
+    expect(buildBlogRequest(scenes, '  keep it punchy  ', wordsFor)).toEqual({
+      script: 'raw intro\n\nraw body',
       timedTranscript: '',
       direction: 'keep it punchy',
       title: '',
@@ -58,9 +57,9 @@ describe('buildBlogRequest', () => {
   })
 
   it('folds in title, summary, synopsis, signed sheet URLs and duration', () => {
-    const scenes = [scene({ id: 'a', title: 'Intro', transcript: 'raw intro', ...refined([{ text: 'Hi.', start: 0, end: 1 }]) })]
+    const scenes = [scene({ id: 'a', title: 'Intro', transcript: 'raw intro' })]
     expect(
-      buildBlogRequest(scenes, 'friendly', {
+      buildBlogRequest(scenes, 'friendly', wordsFor, {
         synopsis: '  a punchy logline  ',
         description: { title: '  The Title  ', summary: '  The summary.  ' },
         sheetUrls: ['/api/uploads/projects/p/thumbnails/a.jpg', null, '', undefined],
@@ -68,7 +67,7 @@ describe('buildBlogRequest', () => {
         timedTranscript: '  [0:00] hi there  ',
       }),
     ).toEqual({
-      script: 'Hi.',
+      script: 'raw intro',
       timedTranscript: '[0:00] hi there',
       direction: 'friendly',
       title: 'The Title',
@@ -81,7 +80,7 @@ describe('buildBlogRequest', () => {
   })
 
   it('tolerates an empty direction and no scenes', () => {
-    expect(buildBlogRequest([], '')).toEqual({
+    expect(buildBlogRequest([], '', wordsFor)).toEqual({
       script: '',
       timedTranscript: '',
       direction: '',

@@ -15,7 +15,8 @@
 
 import type { Scene } from './scenes'
 import { sceneVideoSeconds } from './scenes'
-import { effectiveCuts, effectiveSegments, normalizeCuts } from './refiner'
+import { effectiveCuts, keptWords, normalizeCuts } from './refiner'
+import type { TWord } from './transcriptGrid'
 
 /** The request body POSTed to `/api/describe`: the final kept script + the
  *  director's take, both as context for the title/summary. */
@@ -31,20 +32,34 @@ export type Chapter = { time: number; title: string }
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
 /**
- * The spoken script of the FINISHED video: every scene's effective narration
- * runs, in order, joined into one block (a blank line between scenes). This is
- * what survives the cuts — not the original transcript — so it's what we
- * summarize and show.
+ * Resolves a scene to its timed words — the slice of its source's transcript
+ * that overlaps the scene window. Callers build one with `sceneWordsLookup`;
+ * the indirection keeps this module pure while scenes only carry a `sourceId`.
  */
-export function videoScript(scenes: Scene[]): string {
+export type SceneWords = (scene: Scene) => TWord[]
+
+/** The standard `SceneWords` over the project's sources (story 09a shape). */
+export function sceneWordsLookup(sources: { id: string; words?: TWord[] }[]): SceneWords {
+  return (scene) =>
+    (sources.find((s) => s.id === scene.sourceId)?.words ?? []).filter(
+      (w) => w.start < scene.end && w.end > scene.start,
+    )
+}
+
+/**
+ * The spoken script of the FINISHED video: every scene's kept words (its timed
+ * words minus the effective cuts — ADR-0003: what the viewer hears IS the
+ * original speech that survives), in order, a blank line between scenes. A
+ * scene with no timed words (old restored data) falls back to its raw
+ * transcript — uncut, but better than dropping the scene from the summary.
+ */
+export function videoScript(scenes: Scene[], wordsFor: SceneWords): string {
   return scenes
     .map((s) => {
-      // Read `refined.segments` directly when refined — `effectiveSegments` falls
-      // back to a phantom transcript when the segments are EMPTY (a fully-cut
-      // scene), which would leak the uncut talk into the final script.
-      const segs = s.refined ? s.refined.segments : effectiveSegments(s)
-      return segs
-        .map((seg) => seg.text.trim())
+      const words = wordsFor(s)
+      if (!words.length) return s.transcript.trim()
+      return keptWords(words, effectiveCuts(s))
+        .map((w) => w.text.trim())
         .filter(Boolean)
         .join(' ')
         .trim()
@@ -90,23 +105,13 @@ export function formatChapters(chapters: Chapter[]): string {
 }
 
 /**
- * The final kept narration as a flat word list with interpolated timestamps —
- * the shape `TranscriptText` renders, so the Export page can show the script in
- * the SAME treatment as the prep transcript. Each segment's words are spread
- * evenly across its `[start, end]` span (original-video seconds).
+ * The final kept script as a flat word list — the shape `TranscriptText`
+ * renders, so the Export page can show the script in the SAME treatment as the
+ * prep transcript. These are the scene's real transcribed words (real
+ * timestamps, original-video seconds) minus the effective cuts.
  */
-export function scriptWords(scenes: Scene[]): { text: string; start: number; end: number }[] {
-  const out: { text: string; start: number; end: number }[] = []
-  for (const scene of scenes) {
-    const segs = scene.refined ? scene.refined.segments : effectiveSegments(scene)
-    for (const seg of segs) {
-      const words = seg.text.trim().split(/\s+/).filter(Boolean)
-      if (words.length === 0) continue
-      const per = Math.max(0.01, seg.end - seg.start) / words.length
-      words.forEach((w, i) => out.push({ text: w, start: seg.start + i * per, end: seg.start + (i + 1) * per }))
-    }
-  }
-  return out
+export function scriptWords(scenes: Scene[], wordsFor: SceneWords): TWord[] {
+  return scenes.flatMap((scene) => keptWords(wordsFor(scene), effectiveCuts(scene)))
 }
 
 /**
@@ -120,8 +125,12 @@ export function youtubeDescription(summary: string | null | undefined, chapters:
 }
 
 /** Build the `/api/describe` request — the final script + the director's take. */
-export function buildDescribeRequest(scenes: Scene[], synopsis: string | null): DescribeRequest {
-  return { script: videoScript(scenes), synopsis: (synopsis ?? '').trim() }
+export function buildDescribeRequest(
+  scenes: Scene[],
+  synopsis: string | null,
+  wordsFor: SceneWords,
+): DescribeRequest {
+  return { script: videoScript(scenes, wordsFor), synopsis: (synopsis ?? '').trim() }
 }
 
 /**

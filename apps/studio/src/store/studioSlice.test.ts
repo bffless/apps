@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import reducer, { setScenes, setDirection, addSavedVoice, freshWorkingState, type StudioState } from './studioSlice'
+import reducer, { setScenes, setDirection, freshWorkingState, type StudioState } from './studioSlice'
 import {
   createProject, openProject, closeProject, renameProject, deleteProject, resetProject,
 } from './studioSlice'
@@ -10,7 +10,6 @@ const withOneProject = (): StudioState => ({
   index: { p1: { id: 'p1', name: 'A', createdAt: 1, updatedAt: 1, phase: 'import', thumbnailUrl: null } },
   working: { p1: freshWorkingState() },
   activeProjectId: 'p1',
-  savedVoices: [],
 })
 
 describe('project-scoped reducers route to the active project', () => {
@@ -19,17 +18,9 @@ describe('project-scoped reducers route to the active project', () => {
     expect(next.working.p1.scenes).toHaveLength(1)
   })
   it('is a no-op when no project is active', () => {
-    const empty: StudioState = { index: {}, working: {}, activeProjectId: null, savedVoices: [] }
+    const empty: StudioState = { index: {}, working: {}, activeProjectId: null }
     const next = reducer(empty, setDirection('hi'))
     expect(next).toEqual(empty)
-  })
-})
-
-describe('savedVoices live at the root, shared across projects', () => {
-  it('addSavedVoice writes to root state, not a project', () => {
-    const next = reducer(withOneProject(), addSavedVoice({ voiceId: 'v1', label: 'Mine' }))
-    expect(next.savedVoices).toEqual([{ voiceId: 'v1', label: 'Mine' }])
-    expect('savedVoices' in next.working.p1).toBe(false)
   })
 })
 
@@ -101,7 +92,7 @@ describe('server-sync reducers', () => {
 
 describe('selectors', () => {
   it('selectActive returns a stable empty working state when none is open', () => {
-    const s = { studio: { index: {}, working: {}, activeProjectId: null, savedVoices: [] } } as never
+    const s = { studio: { index: {}, working: {}, activeProjectId: null } } as never
     expect(selectActive(s)).toBe(EMPTY_WORKING)
   })
   it('selectProjectList sorts by updatedAt desc', () => {

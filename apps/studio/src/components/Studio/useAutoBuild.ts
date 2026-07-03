@@ -42,7 +42,6 @@ type Pipe = {
   sliceScene: (id: string) => Promise<void>
   generateSceneSheets: (id: string) => Promise<void>
   refineScene: (id: string) => Promise<void>
-  voiceAllSegments: (id: string) => Promise<void>
   saveSceneCut: (id: string, blob: Blob) => Promise<string>
   saveFinalCut: (blob: Blob) => Promise<string>
   markBuilt: (id: string) => void
@@ -183,7 +182,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   return { run, start, pause, resume, stop }
 }
 
-/** Fire one step. cut/sheets/refine/voice swallow errors into `sceneError`;
+/** Fire one step. cut/sheets/refine swallow errors into `sceneError`;
  *  assemble (render + save) throws, so the caller's catch halts the run. */
 async function runStep(
   step: AutoStepId,
@@ -194,7 +193,6 @@ async function runStep(
   if (step === 'cut') return p.sliceScene(scene.id)
   if (step === 'sheets') return p.generateSceneSheets(scene.id)
   if (step === 'refine') return p.refineScene(scene.id)
-  if (step === 'voice') return p.voiceAllSegments(scene.id)
   // assemble: render the scene MP4 then save it (both throw on failure).
   const blob = await assembleSceneBlob({ scene, fetchBytes })
   await p.saveSceneCut(scene.id, blob)

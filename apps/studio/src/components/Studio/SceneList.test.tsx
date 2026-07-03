@@ -13,7 +13,6 @@ function scene(over: Partial<Scene>): Scene {
     end: 60,
     transcript: '',
     status: 'pending',
-    narrationSeconds: null,
     ...over,
   }
 }

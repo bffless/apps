@@ -11,7 +11,7 @@
  */
 
 import type { Scene } from './scenes'
-import { videoScript } from './describe'
+import { videoScript, type SceneWords } from './describe'
 
 /** POSTed to `/api/thumbnail/draft`: everything the prompt-drafting handler needs. */
 export type ThumbnailDraftRequest = {
@@ -39,11 +39,12 @@ export function buildThumbnailDraftRequest(
   title: string,
   description: string,
   notes: string,
+  wordsFor: SceneWords,
 ): ThumbnailDraftRequest {
   return {
     title: title.trim(),
     description: description.trim(),
-    script: videoScript(scenes),
+    script: videoScript(scenes, wordsFor),
     notes: notes.trim(),
   }
 }
