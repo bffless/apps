@@ -81,11 +81,16 @@ describe('SceneRefinePanel scene prompts (story 03l)', () => {
     expect(onChange).toHaveBeenCalledWith('trim the pause')
   })
 
-  it('prefills the direction textarea with the director\'s per-scene prompt (story 03q)', () => {
-    renderPanel(makeScene({ refinePrompt: 'Tighten the intro to a 15s hook.' }))
-    expect(screen.getByLabelText(/direction for this scene/i)).toHaveValue(
-      'Tighten the intro to a 15s hook.',
-    )
+  it('shows the director\'s cutting brief read-only, separate from the creator textarea (story 13f)', () => {
+    renderPanel(makeScene({ brief: 'Drop the second take of the demo.' }))
+    expect(screen.getByText('Drop the second take of the demo.')).toBeInTheDocument()
+    // The brief never leaks into the creator's own direction input.
+    expect(screen.getByLabelText(/direction for this scene/i)).toHaveValue('')
+  })
+
+  it('hides the brief row when the scene has none', () => {
+    renderPanel(makeScene())
+    expect(screen.queryByText(/cutting brief/i)).not.toBeInTheDocument()
   })
 
   it('hides the director-prompt row when there is no director prompt', () => {

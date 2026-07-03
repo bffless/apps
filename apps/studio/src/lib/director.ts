@@ -10,10 +10,12 @@
  *      demo at 12:30", …).
  *
  * It returns, as strict JSON, a one-line **synopsis** of the whole talk plus the
- * **scenes**: each a logical chapter with a default `refinePrompt` (the director's
- * per-scene instruction to the second-pass refiner — story 03q; it no longer
- * drafts a script), the original-video span it maps to (`start`–`end`), and the
- * footage spans to drop (`cuts`).
+ * **scenes** (story 13f contract, ADR-0003): each `{ title, start, end, brief,
+ * cuts[] }` — a titled window of the recording, its **cutting brief** (the
+ * director's prose instructions to the scene refiner), and the coarse baseline
+ * footage spans to drop. Scenes **tile** the recording: windows touch
+ * end-to-end, so footage can only be dropped by a cut, never by scene omission.
+ * There is no script — the final cut is the original recording minus cuts.
  *
  * This module is the *pure* half — request shaping + response coercion — so it's
  * unit-tested and shared by the MSW mock and the real `/api/scenes` pipeline (the
@@ -32,12 +34,14 @@ export type DirectorScene = {
   /** Original-video span this scene maps to, in seconds. */
   start: number
   end: number
-  /** The words the AI heard across this span (reference). */
-  transcript?: string
   /** Footage spans to drop, in original-video seconds, inside this scene. */
   cuts?: Cut[]
-  /** The director's default refine prompt for this scene (story 03q) — its
-   *  cutting brief for the per-scene refiner; seeds `scene.refinePrompt`. */
+  /** The director's cutting brief for this scene (story 13f): prose
+   *  instructions to the per-scene refiner — what to drop and why. */
+  brief?: string
+  /** Legacy wire fields (pre-13f pipeline), tolerated by `toScenes`: the span's
+   *  echoed words, and the old name for the brief. */
+  transcript?: string
   refinePrompt?: string
 }
 
@@ -104,11 +108,23 @@ function clampCut(cut: Cut, lo: number, hi: number): Cut | null {
   return { start, end }
 }
 
+/** A source as `toScenes` needs it: id + duration, plus (optionally) its timed
+ *  words so a scene's `transcript` can be derived locally — the 13f wire
+ *  contract no longer echoes the words back. */
+export type DirectorSource = SourceLike & { words?: TWord[] }
+
 /**
  * Coerce the director's raw scenes into the app's `Scene[]`, mapping from the
  * **global** (concatenated) timeline the director reasons over back to
  * **per-source local** coordinates. Each returned scene carries a `sourceId`
  * and local `start`/`end` within that source.
+ *
+ * Scenes **tile** the recording (story 13f, ADR-0003): on the global timeline
+ * the first scene starts at 0, each next scene starts exactly where the
+ * previous ended (gaps the model leaves are snapped shut), and the last ends at
+ * the total duration — footage can only be dropped by a cut, never by falling
+ * between scene windows. The same rule is re-applied per source after
+ * assignment, so every second of every source belongs to exactly one scene.
  *
  * A chapter belongs to exactly ONE video, so each scene is assigned to the single
  * source it **overlaps most**, then clamped to that source's local `[start, end)`
@@ -119,30 +135,41 @@ function clampCut(cut: Cut, lo: number, hi: number): Cut | null {
  * into a duplicate-titled sliver scene. Dominant-source assignment is robust to
  * that — one director scene maps to exactly one stored scene.
  *
- * The global timeline is clamped and forced monotonic first (defensive). A scene
- * with no real overlap (≤ 0.05 s) against any source is dropped. Single-source
- * projects behave identically to the old signature: local time equals global time
- * and every scene gets `sourceId = sources[0].id`.
+ * A scene with no real overlap (≤ 0.05 s) against any source is dropped.
+ * Single-source projects behave identically to the old signature: local time
+ * equals global time and every scene gets `sourceId = sources[0].id`.
+ *
+ * Tolerant of both wire shapes: the 13f `brief` and the legacy `refinePrompt`
+ * both land in `scene.brief`; a legacy echoed `transcript` is kept, otherwise
+ * the transcript is derived from the source's own words in the scene window.
  */
-export function toScenes(raw: DirectorScene[], sources: SourceLike[]): Scene[] {
+export function toScenes(raw: DirectorScene[], sources: DirectorSource[]): Scene[] {
   if (!Array.isArray(raw) || sources.length === 0) return []
   const spans = sourceOffsets(sources)
   const bound = spans[spans.length - 1].end
   const sorted = [...raw].sort((a, b) => num(a?.start) - num(b?.start))
 
-  // 1) clamp + monotonic on the GLOBAL timeline (the existing logic)
+  // 1) TILE the GLOBAL timeline: each scene opens where the previous closed
+  // (raw starts only decide the order), ends are clamped, the last runs to the
+  // total duration.
   const global: { start: number; end: number; raw: DirectorScene }[] = []
   let cursor = 0
   for (const s of sorted) {
-    const start = Math.min(Math.max(num(s?.start), cursor), bound)
+    const start = cursor
     let end = Math.min(Math.max(num(s?.end), start), bound)
     if (end <= start) end = Math.min(start + 0.05, bound)
     cursor = end
     global.push({ start, end, raw: s })
   }
+  if (global.length) global[global.length - 1].end = bound
 
   // 2) assign each global scene to the source it overlaps most; convert to local
-  const out: Scene[] = []
+  const assigned: {
+    span: { id: string; start: number; end: number }
+    start: number
+    end: number
+    raw: DirectorScene
+  }[] = []
   for (const g of global) {
     let best: { id: string; start: number; end: number } | null = null
     let bestOverlap = 0
@@ -154,23 +181,56 @@ export function toScenes(raw: DirectorScene[], sources: SourceLike[]): Scene[] {
       }
     }
     if (!best || bestOverlap <= 0.05) continue
-    const span = best
-    const localStart = Math.max(g.start, span.start) - span.start
-    const localEnd = Math.min(g.end, span.end) - span.start
-    const i = out.length
-    const transcript = str(g.raw?.transcript).trim()
-    const refinePrompt = str(g.raw?.refinePrompt).trim()
-    const title = str(g.raw?.title).trim() || (leadWords(transcript) ? `${leadWords(transcript)}…` : `Scene ${i + 1}`)
-    const cuts = (Array.isArray(g.raw?.cuts) ? g.raw.cuts : [])
-      .map((c) => clampCut({ start: num(c?.start) - span.start, end: num(c?.end) - span.start }, localStart, localEnd))
-      .filter((c): c is Cut => c !== null)
-    out.push({
-      id: `scene-${i + 1}`, index: i, sourceId: span.id, title,
-      start: localStart, end: localEnd, transcript, status: 'pending', cuts,
-      ...(refinePrompt ? { refinePrompt } : {}),
+    assigned.push({
+      span: best,
+      start: Math.max(g.start, best.start) - best.start,
+      end: Math.min(g.end, best.end) - best.start,
+      raw: g.raw,
     })
   }
-  return out.map((s, i) => ({ ...s, index: i, id: `scene-${i + 1}` }))
+
+  // 3) re-tile each source's local timeline: dominant-source assignment can
+  // orphan a source's head/tail (a boundary-crossing scene keeps only its
+  // dominant side), so snap the first scene to 0, each next to the previous
+  // end, and the last to the source's duration. Only ever widens a window, so
+  // the cuts clamped below stay inside it.
+  const lastBySource = new Map<string, number>()
+  for (let i = assigned.length - 1; i >= 0; i--) {
+    if (!lastBySource.has(assigned[i].span.id)) lastBySource.set(assigned[i].span.id, i)
+  }
+  const cursorBySource = new Map<string, number>()
+  for (let i = 0; i < assigned.length; i++) {
+    const a = assigned[i]
+    a.start = cursorBySource.get(a.span.id) ?? 0
+    if (lastBySource.get(a.span.id) === i) a.end = a.span.end - a.span.start
+    if (a.end < a.start) a.end = a.start
+    cursorBySource.set(a.span.id, a.end)
+  }
+
+  // 4) build the Scene objects off the final windows
+  const out: Scene[] = []
+  for (const a of assigned) {
+    const i = out.length
+    const source = sources.find((s) => s.id === a.span.id)
+    const transcript =
+      str(a.raw?.transcript).trim() ||
+      (source?.words ?? [])
+        .filter((w) => typeof w?.start === 'number' && w.start >= a.start && w.start < a.end)
+        .map((w) => str(w?.text).trim())
+        .filter(Boolean)
+        .join(' ')
+    const brief = str(a.raw?.brief).trim() || str(a.raw?.refinePrompt).trim()
+    const title = str(a.raw?.title).trim() || (leadWords(transcript) ? `${leadWords(transcript)}…` : `Scene ${i + 1}`)
+    const cuts = (Array.isArray(a.raw?.cuts) ? a.raw.cuts : [])
+      .map((c) => clampCut({ start: num(c?.start) - a.span.start, end: num(c?.end) - a.span.start }, a.start, a.end))
+      .filter((c): c is Cut => c !== null)
+    out.push({
+      id: `scene-${i + 1}`, index: i, sourceId: a.span.id, title,
+      start: a.start, end: a.end, transcript, status: 'pending', cuts,
+      ...(brief ? { brief } : {}),
+    })
+  }
+  return out
 }
 
 /** One source's transcript for the combined director request (story 09c). */

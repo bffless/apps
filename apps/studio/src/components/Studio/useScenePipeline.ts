@@ -19,6 +19,8 @@ import {
   toRefinement,
   refineDirections,
   sceneWordTimings,
+  sceneDeadSpace,
+  deadSpaceLines,
   sceneTail,
   addCut,
   addCuts,
@@ -370,7 +372,9 @@ export function useScenePipeline() {
       try {
         const { result } = await pollJob(jobId)
         const data = (result ?? {}) as { synopsis?: string; scenes?: DirectorScene[] }
-        const built = toScenes(data.scenes ?? [], sources.map((s) => ({ id: s.id, duration: s.duration })))
+        // Pass each source's words so the scene transcripts derive locally — the
+        // 13f director contract no longer echoes the spoken words back.
+        const built = toScenes(data.scenes ?? [], sources.map((s) => ({ id: s.id, duration: s.duration, words: s.words })))
         dispatch(setSynopsis(data.synopsis ?? null))
 
         // Scene-card art: capture one midpoint frame per scene if we can seek the
@@ -886,12 +890,12 @@ export function useScenePipeline() {
     [patch, dispatch, sources, signReq, uploadReq],
   )
 
-  // Stages ⑤⑥ — the master director (story 03). One multimodal Gemini call gets
-  // the timestamped transcript, the director contact sheets, and the user's
-  // optional direction, and returns the synopsis + scenes (per-scene refine
-  // prompt, original-video span, and cut spans). Marks BOTH the shorten and segment
-  // notes done (one call does both), then captures a midpoint thumb per scene
-  // for the scene-card art. Replaces the old mocked `buildScenes`.
+  // Stages ⑤⑥ — the master director (story 03, 13f contract). One multimodal
+  // Gemini call gets the timestamped transcript, the director contact sheets,
+  // and the user's optional direction, and returns the synopsis + scenes (title,
+  // tiled original-video span, cutting brief, and baseline cut spans). Marks BOTH
+  // the shorten and segment notes done (one call does both), then captures a
+  // midpoint thumb per scene for the scene-card art.
   const runDirector = useCallback(
     async ({ src }: StepContext) => {
       patch('director', { status: 'active' })
@@ -1088,9 +1092,10 @@ export function useScenePipeline() {
     [sheetingId, refiningId, scenes, sources, signFor, uploadReq, patchScene],
   )
 
-  // Button 2: hand the scene's word timings + the director's refinePrompt +
-  // the dense sheets to /api/refine-scene, store the result in
-  // `scene.refined` (NON-destructive — the director's baseline cuts are untouched).
+  // Button 2: hand the scene's word timings + the director's cutting brief +
+  // the dense sheets + the measured dead space to /api/refine-scene, store the
+  // returned cuts in `scene.refined` (NON-destructive — the director's baseline
+  // cuts are untouched).
   const refineScene = useCallback(
     async (id: string) => {
       if (sheetingId || refiningId) return
@@ -1126,6 +1131,13 @@ export function useScenePipeline() {
           wordTimings: sceneWordTimings(scoped),
           sheetUrls,
           audioUrl: scene.clipAudioUrl,
+          // The director's cutting brief (story 13f) — rides every refine
+          // untouched; distinct from the creator's own direction below.
+          brief: (scene.brief ?? '').trim(),
+          // Measured dead space for this scene (story 13c → 13f): true silence
+          // from the source's WAV, clamped to the scene window, so the model
+          // snaps cut edges into silence rather than clipping words.
+          deadSpace: deadSpaceLines(sceneDeadSpace(src?.deadSpace ?? deadSpace ?? [], scene)),
           // Creator steering (story 03l): the scene's own prompt + the global
           // director prompt (subject to the scene's include-checkbox).
           ...refineDirections(scene, direction),
@@ -1141,7 +1153,7 @@ export function useScenePipeline() {
         setRefiningId(null)
       }
     },
-    [sheetingId, refiningId, scenes, sources, direction, refineSceneReq, patchScene, completeRefineJob],
+    [sheetingId, refiningId, scenes, sources, deadSpace, direction, refineSceneReq, patchScene, completeRefineJob],
   )
 
   // Creator steering for the refine call (story 03l). Both are INPUT-layer scene

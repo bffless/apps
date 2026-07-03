@@ -12,9 +12,11 @@
  * Like `director.ts`, this is the *pure* half: request shaping + response
  * coercion, shared by the MSW mock and the real `/api/refine-scene` pipeline (the
  * pipeline clamps server-side too; this mirrors it client-side). The
- * authoritative prompt/system-instruction live in the BFFless pipeline. The wire
- * request is unchanged from the narration era for now (story 13f revises the
- * contract); a response's legacy `segments` are simply ignored.
+ * authoritative prompt/system-instruction live in the BFFless pipeline. The 13f
+ * request carries the scene's timed words, its dense contact sheets, the
+ * director's cutting `brief`, and the **measured dead space** (story 13c) so the
+ * model can snap cut edges into true silence, never mid-word; the response is
+ * `cuts[]` only. Legacy `segments` from an un-updated pipeline are ignored.
  *
  * **Non-destructive:** `toRefinement` produces a `SceneRefinement` that lives in
  * `scene.refined` — it never touches the director's baseline `cuts`, so the
@@ -22,10 +24,11 @@
  */
 
 import type { Cut, Scene, SceneRefinement } from './scenes'
+import type { DeadSpan } from './deadSpace'
 import type { TWord } from './transcriptGrid'
 
-/** The refiner's raw response. Legacy fields (`segments`) may be present on the
- *  wire until the 13f contract change lands — they're ignored. */
+/** The refiner's raw response: precise cuts, nothing else (story 13f). Legacy
+ *  fields (`segments`) from a pre-13f pipeline may still appear — ignored. */
 export type RefineSceneRaw = { cuts?: Cut[] }
 
 /** The request body the front end POSTs to `/api/refine-scene`. */
@@ -42,6 +45,14 @@ export type RefineSceneRequest = {
    *  the pipeline signs it like the sheets and Gemini listens to align cut
    *  boundaries to the natural flow of speech (story 03k). */
   audioUrl: string
+  /** The director's cutting brief for this scene (`scene.brief`, trimmed) —
+   *  story 13f: promoted from the old seeded refinePrompt to its own contract
+   *  field, so it always rides the request untouched by creator edits. */
+  brief: string
+  /** The scene's measured dead space (story 13c) as `start end` lines — the
+   *  same format as `wordTimings`, built by `deadSpaceLines(sceneDeadSpace(…))`.
+   *  True silence measured from the WAV: the prime territory for cut edges. */
+  deadSpace: string
   /** The creator's per-scene instruction (`scene.refinePrompt`, trimmed). */
   direction: string
   /** The creator's global director prompt, forwarded as whole-video context
@@ -95,6 +106,26 @@ export function sceneWordTimings(words: TWord[]): string {
     })
     .filter((l): l is string => l !== null)
     .join('\n')
+}
+
+/**
+ * The measured dead-space spans that concern ONE scene (story 13f): each span
+ * clamped to the scene's `[start, end]` window, spans that collapse to nothing
+ * dropped. Same shared-timeline seconds as the word timings and the cuts.
+ */
+export function sceneDeadSpace(spans: DeadSpan[], scene: Pick<Scene, 'start' | 'end'>): DeadSpan[] {
+  return (Array.isArray(spans) ? spans : [])
+    .map((s) => clampSpan(num(s?.start), num(s?.end), scene.start, scene.end))
+    .filter((s): s is DeadSpan => s !== null)
+}
+
+/**
+ * Dead-space spans as prompt lines — one `start end` pair per line, fixed to
+ * 2 decimals, mirroring `sceneWordTimings` so the model reads both lists in the
+ * same notation. `''` when the scene has no measured silence.
+ */
+export function deadSpaceLines(spans: DeadSpan[]): string {
+  return spans.map((s) => `${s.start.toFixed(2)} ${s.end.toFixed(2)}`).join('\n')
 }
 
 /** Clamp a cut span to `[lo, hi]`, returning null if it collapses to nothing. */

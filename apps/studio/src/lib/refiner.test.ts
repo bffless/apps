@@ -11,6 +11,8 @@ import {
   removeCut,
   refineDirections,
   sceneWordTimings,
+  sceneDeadSpace,
+  deadSpaceLines,
   type RefineSceneRaw,
 } from './refiner'
 import type { Scene } from './scenes'
@@ -290,6 +292,41 @@ describe('refineDirections (story 03l)', () => {
       direction: '',
       directorDirection: '',
     })
+  })
+})
+
+describe('sceneDeadSpace + deadSpaceLines (story 13f)', () => {
+  const sc = { start: 10, end: 40 }
+
+  it('clamps the measured spans to the scene window and drops the rest', () => {
+    expect(
+      sceneDeadSpace(
+        [
+          { start: 0, end: 5 }, // before the scene — dropped
+          { start: 8, end: 12 }, // straddles the opening — clamped
+          { start: 20, end: 24.5 }, // inside — kept
+          { start: 39.98, end: 45 }, // sliver after clamping — dropped
+        ],
+        sc,
+      ),
+    ).toEqual([
+      { start: 10, end: 12 },
+      { start: 20, end: 24.5 },
+    ])
+  })
+
+  it('tolerates junk input', () => {
+    expect(sceneDeadSpace(undefined as unknown as [], sc)).toEqual([])
+    expect(sceneDeadSpace([{ start: NaN, end: 20 } as { start: number; end: number }], sc)).toEqual([
+      { start: 10, end: 20 }, // NaN start coerces to 0 → clamps to the scene opening
+    ])
+  })
+
+  it('formats spans as `start end` lines, 2 decimals, mirroring the word timings', () => {
+    expect(deadSpaceLines([{ start: 10, end: 12 }, { start: 20.125, end: 24.5 }])).toBe(
+      '10.00 12.00\n20.13 24.50',
+    )
+    expect(deadSpaceLines([])).toBe('')
   })
 })
 

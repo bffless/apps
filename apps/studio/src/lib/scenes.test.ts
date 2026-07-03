@@ -27,12 +27,12 @@ describe('buildScenes', () => {
     }
   })
 
-  it('carries the full-span transcript and a default refine prompt', () => {
+  it('carries the full-span transcript and a default cutting brief', () => {
     const [scene] = buildScenes(120)
     // full-span transcript ≈ footage length at the speaking rate
     expect(wordCount(scene.transcript) / WORDS_PER_SECOND).toBeCloseTo(sceneVideoSeconds(scene), 0)
-    expect(scene.refinePrompt).toBeTruthy()
-    expect(typeof scene.refinePrompt).toBe('string')
+    expect(scene.brief).toBeTruthy()
+    expect(typeof scene.brief).toBe('string')
   })
 
   it('buildScenes stamps every scene with a sourceId', () => {

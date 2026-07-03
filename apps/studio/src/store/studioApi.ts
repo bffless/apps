@@ -72,8 +72,9 @@ export const studioApi = createApi({
       }),
     }),
 
-    // The master director (story 03): timestamped transcript + contact-sheet
-    // images + the user's direction → synopsis + scenes (script, span, cuts).
+    // The master director (story 03, 13f contract): timestamped transcript +
+    // contact-sheet images + the user's direction → synopsis + scenes (title,
+    // tiled span, cutting brief, baseline cuts).
     // Now ENQUEUE-ONLY (story 03f Part 0): returns a { jobId } to poll on; the
     // Gemini call runs in the pipeline's postSteps. The director's result lands in
     // the job row's `result` blob, read via `getStudioJob`.
@@ -85,9 +86,10 @@ export const studioApi = createApi({
       }),
     }),
 
-    // The per-scene refiner (story 03c): the scene's word timings + its cutting
-    // brief + the scene's dense contact sheets → refined cuts. Also enqueue-only
-    // now (story 03f Part 0) — returns a { jobId } to poll on.
+    // The per-scene refiner (story 03c, 13f contract): the scene's word timings
+    // + its cutting brief + dense contact sheets + measured dead space →
+    // precise cuts, nothing else. Also enqueue-only (story 03f Part 0) —
+    // returns a { jobId } to poll on.
     refineScene: builder.mutation<StartJobResponse, RefineSceneRequest>({
       query: (body) => ({
         url: 'api/refine-scene',
