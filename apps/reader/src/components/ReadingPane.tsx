@@ -5,8 +5,18 @@ import { sanitizeHtml } from '../lib/sanitize'
  * Right column: the reading pane. Feed HTML is stored raw and made safe **here**
  * via {@link sanitizeHtml} before it touches `dangerouslySetInnerHTML` — this is
  * the XSS boundary (D10). Nothing upstream is trusted.
+ *
+ * The header carries the manual read/unread toggle; auto-mark-on-open lives in
+ * the list wiring, so this only surfaces the current flag and lets the reader
+ * flip it back.
  */
-export function ReadingPane({ item }: { item: Item | null }) {
+export function ReadingPane({
+  item,
+  onToggleRead,
+}: {
+  item: Item | null
+  onToggleRead?: (item: Item) => void
+}) {
   if (!item) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-16 text-center text-sm text-slate-400">
@@ -20,6 +30,17 @@ export function ReadingPane({ item }: { item: Item | null }) {
   return (
     <article className="mx-auto max-w-2xl px-2 py-4">
       <header className="mb-4 border-b border-slate-200 pb-4">
+        {onToggleRead && (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => onToggleRead(item)}
+              className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+            >
+              {item.read ? 'Mark unread' : 'Mark read'}
+            </button>
+          </div>
+        )}
         <h1 className="text-xl font-semibold tracking-tight text-slate-900">
           {item.link ? (
             <a href={item.link} target="_blank" rel="noopener noreferrer nofollow" className="hover:underline">

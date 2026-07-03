@@ -1,16 +1,19 @@
 import { feedLabel, sortFeeds, type Feed } from '../lib/feeds'
+import { selectionEquals, type Selection } from '../lib/river'
 import { AddFeed } from './AddFeed'
 
-/** The special "all feeds" selection — `null` selected feed shows every item. */
-export const ALL_FEEDS = null
-
 /**
- * Left rail: add-feed, a "Refresh now" action, and the subscription list. Feeds
- * are sorted by label here (pure `sortFeeds`) so the order is deterministic.
+ * Left rail: add-feed, a "Refresh now" action, and the subscription list, led by
+ * the two cross-feed views — **River** (unread everywhere) and **All items**.
+ * Feeds are sorted by label (pure `sortFeeds`) and carry a per-feed unread badge
+ * from `unreadCounts` (keyed by `feedId` = url). Selection is the pure
+ * `Selection` union; the sidebar only decides which row is active.
  */
 export function FeedSidebar({
   feeds,
-  selected,
+  selection,
+  unreadCounts,
+  riverUnread,
   onSelect,
   onAdd,
   onRemove,
@@ -19,8 +22,10 @@ export function FeedSidebar({
   refreshing,
 }: {
   feeds: Feed[]
-  selected: string | null
-  onSelect: (url: string | null) => void
+  selection: Selection
+  unreadCounts: Record<string, number>
+  riverUnread: number
+  onSelect: (sel: Selection) => void
   onAdd: (url: string) => Promise<void>
   onRemove: (url: string) => void
   onRefresh: () => void
@@ -44,17 +49,25 @@ export function FeedSidebar({
 
       <nav className="flex flex-col gap-0.5">
         <FeedRow
-          label="All feeds"
-          active={selected === ALL_FEEDS}
-          onClick={() => onSelect(ALL_FEEDS)}
+          label="River"
+          active={selectionEquals(selection, { kind: 'river' })}
+          count={riverUnread}
+          onClick={() => onSelect({ kind: 'river' })}
         />
+        <FeedRow
+          label="All items"
+          active={selectionEquals(selection, { kind: 'all' })}
+          onClick={() => onSelect({ kind: 'all' })}
+        />
+        <div className="my-1 border-t border-slate-100" />
         {sorted.map((feed) => (
           <FeedRow
             key={feed.url}
             label={feedLabel(feed)}
-            active={selected === feed.url}
+            active={selectionEquals(selection, { kind: 'feed', url: feed.url })}
+            count={unreadCounts[feed.url] ?? 0}
             error={feed.lastError}
-            onClick={() => onSelect(feed.url)}
+            onClick={() => onSelect({ kind: 'feed', url: feed.url })}
             onRemove={() => onRemove(feed.url)}
           />
         ))}
@@ -69,12 +82,14 @@ export function FeedSidebar({
 function FeedRow({
   label,
   active,
+  count,
   error,
   onClick,
   onRemove,
 }: {
   label: string
   active: boolean
+  count?: number
   error?: string | null
   onClick: () => void
   onRemove?: () => void
@@ -89,6 +104,16 @@ function FeedRow({
         {label}
         {error && <span className="ml-1 text-red-500" title={error}>⚠</span>}
       </button>
+      {count != null && count > 0 && (
+        <span
+          className={`shrink-0 rounded-full px-1.5 text-xs tabular-nums ${
+            active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
+          } group-hover:opacity-100`}
+          aria-label={`${count} unread`}
+        >
+          {count}
+        </span>
+      )}
       {onRemove && (
         <button
           type="button"
