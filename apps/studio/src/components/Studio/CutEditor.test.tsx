@@ -210,7 +210,7 @@ describe('CutEditor original-audio playback highlight', () => {
   // currentTime — exactly the inputs the playhead tracking consumes.
   const playFromRowZero = () => {
     const audio = document.querySelector('audio')!
-    fireEvent.click(screen.getByRole('button', { name: 'Play original audio from 0:00' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play from 0:00' }))
     return audio
   }
   const seek = (audio: HTMLAudioElement, time: number) => {
@@ -234,5 +234,120 @@ describe('CutEditor original-audio playback highlight', () => {
     expect(cellOf('alpha').className).toContain('ring-terracotta')
     fireEvent.pause(audio)
     expect(cellOf('alpha').className).not.toContain('ring-terracotta')
+  })
+})
+
+describe('CutEditor stitched playback (story 13d)', () => {
+  beforeEach(() => {
+    HTMLMediaElement.prototype.pause = function () {
+      this.dispatchEvent(new Event('pause'))
+    }
+  })
+
+  // `writable` matters here: the stitched transport ASSIGNS currentTime to jump
+  // the playhead past a cut, so the stub must accept the write.
+  const seek = (el: HTMLMediaElement, time: number) => {
+    Object.defineProperty(el, 'currentTime', { value: time, writable: true, configurable: true })
+    fireEvent.timeUpdate(el)
+  }
+
+  const cuts = [{ start: 2, end: 4 }]
+  const renderWithCut = () =>
+    render(<CutEditor words={words} duration={6} cuts={cuts} originalAudioUrl="blob:original" />)
+
+  it('skips the red span: a tick inside the cut jumps the playhead to its end', () => {
+    renderWithCut()
+    const audio = document.querySelector('audio')!
+    fireEvent.click(screen.getByRole('button', { name: 'Play from 0:00' }))
+    seek(audio, 2.5)
+    expect(audio.currentTime).toBe(4)
+    expect(cellOf('gamma').className).toContain('ring-terracotta') // grid tracks the jump
+  })
+
+  it('modifier-click plays the raw source straight through the cut', () => {
+    renderWithCut()
+    const audio = document.querySelector('audio')!
+    fireEvent.click(screen.getByRole('button', { name: 'Play from 0:00' }), { altKey: true })
+    seek(audio, 2.5)
+    expect(audio.currentTime).toBe(2.5)
+    expect(screen.getByText(/Playing the raw source/)).toBeInTheDocument()
+  })
+
+  it('starting on a cut row begins at the first kept moment', () => {
+    renderWithCut()
+    fireEvent.click(screen.getByRole('button', { name: 'Play from 0:02' }))
+    // the playhead lights 4.0s (the cut's end) immediately, before any timeupdate
+    expect(cellOf('gamma').className).toContain('ring-terracotta')
+  })
+
+  it('does not start at all when everything to the window end is cut', () => {
+    render(
+      <CutEditor
+        words={words}
+        duration={6}
+        cuts={[{ start: 2, end: 6 }]}
+        windowEnd={6}
+        originalAudioUrl="blob:original"
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Play from 0:02' }))
+    expect(screen.queryByText(/Playing the final cut/)).not.toBeInTheDocument()
+  })
+
+  it('audition plays the seam — from 1.5s before the cut, skipping it, to 1.5s after', () => {
+    renderWithCut()
+    const audio = document.querySelector('audio')!
+    fireEvent.click(screen.getByRole('button', { name: 'Audition the cut at 0:02' }))
+    expect(screen.getByText(/Playing the final cut/)).toBeInTheDocument()
+    seek(audio, 2.1) // into the cut → skipped
+    expect(audio.currentTime).toBe(4)
+    seek(audio, 5.6) // past cut.end + 1.5 → the audition ends
+    expect(screen.queryByText(/Playing the final cut/)).not.toBeInTheDocument()
+  })
+
+  it('drives the synced video muted while playing, and releases it on pause', () => {
+    const v = document.createElement('video')
+    v.play = () => Promise.resolve()
+    Object.defineProperty(v, 'currentTime', { value: 0, writable: true, configurable: true })
+    const videoSync = { ref: { current: v }, offset: 0 }
+    render(
+      <CutEditor
+        words={words}
+        duration={6}
+        cuts={cuts}
+        originalAudioUrl="blob:original"
+        video={videoSync}
+      />,
+    )
+    const audio = document.querySelector('audio')!
+    fireEvent.click(screen.getByRole('button', { name: 'Play from 0:00' }))
+    seek(audio, 1)
+    expect(v.muted).toBe(true)
+    expect(v.currentTime).toBe(1)
+    fireEvent.pause(audio)
+    expect(v.muted).toBe(false)
+  })
+})
+
+describe('CutEditor duration readout (story 13d)', () => {
+  // Windowed to the first rows so the 12-minute duration doesn't render 365 of
+  // them — and so no row timestamp collides with the readout's clocks.
+  it('shows the final cut length against the source over the project cuts', () => {
+    render(
+      <CutEditor
+        words={words}
+        duration={730}
+        windowEnd={6}
+        projectCuts={[{ start: 10, end: 468 }]}
+      />,
+    )
+    expect(screen.getByText(/final cut/)).toBeInTheDocument()
+    expect(screen.getByText('4:32')).toBeInTheDocument() // 12:10 source − 7:38 cut
+    expect(screen.getByText('12:10')).toBeInTheDocument()
+  })
+
+  it('stays hidden without project cuts', () => {
+    render(<CutEditor words={words} duration={730} windowEnd={6} />)
+    expect(screen.queryByText(/final cut/)).not.toBeInTheDocument()
   })
 })

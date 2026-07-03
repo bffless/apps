@@ -281,6 +281,17 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
     [selected],
   )
 
+  // EVERY scene's effective cuts, for the editor header's live duration readout
+  // (story 13d) — the final cut is the whole source minus all of these.
+  const projectCuts = useMemo(() => pipe.scenes.flatMap((s) => effectiveCuts(s)), [pipe.scenes])
+
+  // Hand the Build page's <video> to the cut editor so stitched playback drives
+  // the picture too. A sliced scene clip's own timeline starts at scene.start;
+  // the full-source fallback is absolute. Keyed off the offset (not `selected`)
+  // so mid-play cut edits don't re-identity this and release the video.
+  const videoOffset = clipSrc && selected ? selected.start : 0
+  const videoSync = useMemo(() => ({ ref: videoRef, offset: videoOffset }), [videoOffset])
+
   // A cut hand-edit on the grid. The grid hands us a span on the whole-talk
   // timeline; route it to whichever scene owns its start, clamped to that scene
   // by `editSceneCut`. (A drag that crosses a scene boundary edits only the
@@ -687,6 +698,8 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     windowStart={selected.start}
                     windowEnd={selected.end}
                     originalAudioUrl={pipe.audioUrl ?? undefined}
+                    projectCuts={projectCuts}
+                    video={videoSync}
                     deadSpace={pipe.deadSpace ?? undefined}
                   />
                   ) : (
