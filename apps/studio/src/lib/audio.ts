@@ -5,7 +5,7 @@
  * the same decoded PCM the waveform and the dead-space measurement read from.
  */
 
-import { measureDeadSpace, type DeadSpan } from './deadSpace'
+import { measureDeadSpace, rmsPerSlice, type DeadSpan } from './deadSpace'
 
 /** Decode `file`'s audio, downmix to mono, and resample to `targetRate`. */
 async function decodeToMono(file: File, targetRate: number): Promise<Float32Array> {
@@ -114,6 +114,23 @@ export async function deadSpaceFromUrl(url: string): Promise<DeadSpan[]> {
   const blob = await res.blob()
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
   return measureDeadSpace(await decodeToMono(file, 16000), 16000)
+}
+
+/**
+ * Per-slice RMS of an already-uploaded audio URL (story 13e): the measurement
+ * BEHIND the dead-space spans. The extract stage keeps only the spans (small,
+ * threshold already applied), so the auto-trim tool's silence-threshold knob
+ * needs this to re-derive spans at a different threshold. One fetch + decode;
+ * the heavy PCM is dropped immediately and what's returned is one number per
+ * 0.1 s grid slice (~2 KB/min) — every further knob tweak re-derives from it
+ * for free.
+ */
+export async function rmsFromUrl(url: string): Promise<number[]> {
+  const res = await fetch(url, { credentials: 'include' })
+  if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
+  const blob = await res.blob()
+  const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
+  return rmsPerSlice(await decodeToMono(file, 16000), 16000)
 }
 
 /**

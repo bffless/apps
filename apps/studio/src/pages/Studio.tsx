@@ -304,6 +304,16 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
     [pipe],
   )
 
+  // Auto-trim dead space (story 13e): the tool's derived cuts land on the
+  // SELECTED scene as ONE manual edit (the editor is windowed to it, so every
+  // planned span is in-window) — same `refined`/'manual' layer as a drag.
+  const onAutoTrim = useCallback(
+    (spans: CutSpan[]) => {
+      if (selected) pipe.addSceneCuts(selected.id, spans)
+    },
+    [pipe, selected],
+  )
+
   // Transcript search (story 08): whole-talk, so it uses pipe.words (the FULL
   // transcript), not the scene slice the diff renders. Hits come back through
   // the shared coercion, annotated with the owning scene's title and the
@@ -692,6 +702,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     words={sceneWords}
                     cuts={cutSpans}
                     onEditCut={onEditCut}
+                    onAutoTrim={onAutoTrim}
                     onSearch={onSearch}
                     frames={filmstrip}
                     duration={duration}

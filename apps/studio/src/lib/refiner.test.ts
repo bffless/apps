@@ -7,6 +7,7 @@ import {
   sceneTail,
   normalizeCuts,
   addCut,
+  addCuts,
   removeCut,
   refineDirections,
   sceneWordTimings,
@@ -204,6 +205,35 @@ describe('addCut', () => {
   it('ignores a span that clamps to nothing', () => {
     expect(addCut([{ start: 0, end: 9 }], { start: 200, end: 300 }, sc)).toEqual([
       { start: 0, end: 9 },
+    ])
+  })
+})
+
+describe('addCuts (story 13e)', () => {
+  const sc = { start: 0, end: 100 }
+
+  it('merges a whole batch of spans into the cuts in one pass', () => {
+    expect(
+      addCuts(
+        [{ start: 0, end: 9 }],
+        [{ start: 30, end: 40 }, { start: 8, end: 12 }],
+        sc,
+      ),
+    ).toEqual([
+      { start: 0, end: 12 },
+      { start: 30, end: 40 },
+    ])
+  })
+
+  it('clamps each span to the scene and drops ones that collapse', () => {
+    expect(addCuts([], [{ start: 90, end: 200 }, { start: 200, end: 300 }], sc)).toEqual([
+      { start: 90, end: 100 },
+    ])
+  })
+
+  it('an empty batch just normalizes what is there', () => {
+    expect(addCuts([{ start: 9, end: 5 }, { start: 0, end: 3 }], [], sc)).toEqual([
+      { start: 0, end: 3 },
     ])
   })
 })
