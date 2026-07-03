@@ -86,6 +86,55 @@ describe('CutEditor cut painting', () => {
   })
 })
 
+describe('CutEditor measured dead space (story 13c)', () => {
+  // Row layout at the 2s/0.1s defaults: children[0] is the timestamp gutter,
+  // children[1 + col] is the 0.1s cell starting at `rowStart + col * 0.1`.
+  const rowOf = (text: string) => cellOf(text).parentElement!
+  const cellAt = (row: HTMLElement, col: number) => row.children[1 + col] as HTMLElement
+
+  // alpha spans 0–0.4; measured silence 1.0–2.0; so 0.4–1.0 is noise (sound,
+  // no words) on row 0.
+  const deadSpace = [{ start: 1.0, end: 2.0 }]
+
+  it('dims wordless cells inside a dead-space span', () => {
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} />)
+    const row = rowOf('alpha')
+    expect(cellAt(row, 12).className).toContain('bg-paper-deep/70') // 1.2s — silence
+    expect(cellAt(row, 5).className).not.toContain('bg-paper-deep/70') // 0.5s — noise
+  })
+
+  it('marks energy-but-no-words cells with a noise dot, but not cells inside a word’s span', () => {
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} />)
+    const row = rowOf('alpha')
+    expect(cellAt(row, 5).textContent).toBe('·') // 0.5s — sound, no words
+    expect(cellAt(row, 2).textContent).toBe('') // 0.2s — inside alpha's 0–0.4 span
+    expect(cellAt(row, 12).textContent).toBe('') // 1.2s — dead space, not noise
+  })
+
+  it('paints cuts red on top of dead space', () => {
+    render(
+      <CutEditor words={words} duration={6} deadSpace={deadSpace} cuts={[{ start: 1.0, end: 1.3 }]} />,
+    )
+    const row = rowOf('alpha')
+    expect(cellAt(row, 11).className).toContain('bg-terracotta/30')
+    expect(cellAt(row, 11).className).not.toContain('bg-paper-deep/70')
+    expect(cellAt(row, 14).className).toContain('bg-paper-deep/70') // past the cut, still dimmed
+  })
+
+  it('without a measurement the grid stays flat — no dimming, no dots', () => {
+    render(<CutEditor words={words} duration={6} />)
+    const row = rowOf('alpha')
+    expect(cellAt(row, 12).className).not.toContain('bg-paper-deep/70')
+    expect(cellAt(row, 5).textContent).toBe('')
+    expect(screen.getByText(/blank = dead space/)).toBeInTheDocument()
+  })
+
+  it('legend switches to the three-state key when measured', () => {
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} />)
+    expect(screen.getByText(/dimmed = dead space/)).toBeInTheDocument()
+  })
+})
+
 describe('CutEditor filmstrip', () => {
   it('clicking a filmstrip thumbnail opens (and ✕ closes) the full-size view', () => {
     const sheet: ContactSheet = {

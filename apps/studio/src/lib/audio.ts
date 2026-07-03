@@ -2,8 +2,10 @@
  * Browser-side audio extraction. Decodes a video/audio file with WebAudio,
  * downmixes to mono, resamples to a speech-friendly rate, and encodes a WAV —
  * small enough to upload to a transcription pipeline, no dependencies. This is
- * the same decoded PCM the waveform is drawn from.
+ * the same decoded PCM the waveform and the dead-space measurement read from.
  */
+
+import { measureDeadSpace, type DeadSpan } from './deadSpace'
 
 /** Decode `file`'s audio, downmix to mono, and resample to `targetRate`. */
 async function decodeToMono(file: File, targetRate: number): Promise<Float32Array> {
@@ -27,17 +29,22 @@ async function decodeToMono(file: File, targetRate: number): Promise<Float32Arra
 }
 
 /**
- * Decode once, return both the uploadable WAV **and** a tiny waveform summary —
- * so the extract step can show a "we got the audio" stenograph without the
- * cost of decoding the whole clip a second time just to draw it. The peaks are
- * a few hundred small numbers (cheap to persist), unlike the raw PCM.
+ * Decode once, return the uploadable WAV **plus** the two cheap derivations of
+ * the same PCM: a tiny waveform summary (the extract card's "we got the audio"
+ * stenograph) and the measured dead-space spans (story 13c — RMS per grid slice
+ * vs a silence threshold, never word-gap inference). Both are a few hundred
+ * small numbers, cheap to persist, unlike the raw PCM.
  */
 export async function extractAudio(
   file: File,
   targetRate = 16000,
-): Promise<{ wav: Blob; peaks: number[] }> {
+): Promise<{ wav: Blob; peaks: number[]; deadSpace: DeadSpan[] }> {
   const samples = await decodeToMono(file, targetRate)
-  return { wav: encodeWav(samples, targetRate), peaks: computePeaks(samples) }
+  return {
+    wav: encodeWav(samples, targetRate),
+    peaks: computePeaks(samples),
+    deadSpace: measureDeadSpace(samples, targetRate),
+  }
 }
 
 /**
@@ -93,6 +100,20 @@ export async function peaksFromUrl(url: string): Promise<number[]> {
   const blob = await res.blob()
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
   return computePeaks(await decodeToMono(file, 16000))
+}
+
+/**
+ * Measure dead space from an already-uploaded audio URL — the backfill for
+ * projects whose audio was extracted before spans were persisted (story 13c;
+ * extract never re-runs, so without this they'd never get measured). Same
+ * fetch + decode-once shape as `peaksFromUrl`; only the small spans are kept.
+ */
+export async function deadSpaceFromUrl(url: string): Promise<DeadSpan[]> {
+  const res = await fetch(url, { credentials: 'include' })
+  if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
+  const blob = await res.blob()
+  const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
+  return measureDeadSpace(await decodeToMono(file, 16000), 16000)
 }
 
 /**
