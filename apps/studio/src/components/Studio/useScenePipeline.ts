@@ -377,29 +377,36 @@ export function useScenePipeline() {
         const built = toScenes(data.scenes ?? [], sources.map((s) => ({ id: s.id, duration: s.duration, words: s.words })))
         dispatch(setSynopsis(data.synopsis ?? null))
 
-        // Scene-card art: capture one midpoint frame per scene if we can seek the
-        // source; never let a failed/absent source fail the whole job.
-        let thumbs: string[] = []
-        if (videoSrc) {
-          try {
-            thumbs = await captureFramesAt(videoSrc, built.map((s) => (s.start + s.end) / 2), 64)
-          } catch {
-            thumbs = []
-          }
-        }
-        const withThumbs = built.map((s, i) => ({ ...s, thumb: thumbs[i] }))
-        dispatch(setScenes(withThumbs))
-        dispatch(setSelected(withThumbs[0]?.id ?? null))
+        // Commit the scene queue FIRST — card art is cosmetic and must never
+        // gate the commit. (A stalled thumb capture once hung right here after
+        // the job row was already done, freezing prep until a reload.)
+        dispatch(setScenes(built))
+        dispatch(setSelected(built[0]?.id ?? null))
 
-        const cutCount = withThumbs.reduce((n, s) => n + (s.cuts?.length ?? 0), 0)
+        const cutCount = built.reduce((n, s) => n + (s.cuts?.length ?? 0), 0)
         patch('director', {
           status: 'done',
-          detail: `${withThumbs.length} scene${withThumbs.length === 1 ? '' : 's'} · ${cutCount} cut${cutCount === 1 ? '' : 's'} · script tightened`,
+          detail: `${built.length} scene${built.length === 1 ? '' : 's'} · ${cutCount} cut${cutCount === 1 ? '' : 's'} · briefs ready`,
         })
         // Remember the job row so the prompt disclosure can fetch what was sent
         // to Gemini (story 03m). Separate from the in-flight id cleared below.
         dispatch(setDirectorPromptJobId(jobId))
         dispatch(setScenesJobId(null))
+
+        // Scene-card art, best-effort and AFTER the commit: one midpoint frame
+        // per scene if we can seek the source, patched onto each scene once
+        // captured. captureFramesAt never hangs (stall watchdog) and never
+        // rejects, but stay defensive — a failed capture just means no art.
+        if (videoSrc && built.length) {
+          try {
+            const thumbs = await captureFramesAt(videoSrc, built.map((s) => (s.start + s.end) / 2), 64)
+            built.forEach((s, i) => {
+              if (thumbs[i]) patchScene(s.id, { thumb: thumbs[i] })
+            })
+          } catch {
+            // card art is optional
+          }
+        }
       } catch (e) {
         // Terminal: drop the persisted job id (so we don't resume a dead job) and
         // surface the failure on the director stage's existing error UI.
@@ -410,7 +417,7 @@ export function useScenePipeline() {
         setRunning(false)
       }
     },
-    [pollJob, dispatch, patch, sources],
+    [pollJob, dispatch, patch, patchScene, sources],
   )
 
   /**
