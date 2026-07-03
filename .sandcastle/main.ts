@@ -52,15 +52,22 @@ await run({
       // onSandboxReady runs once after the sandbox is initialised and the repo is
       // synced in, before the agent starts.
       onSandboxReady: [
-        // Wire the j5s-dev (BFFless) MCP into the sandbox agent. The template is
-        // checked in at .sandcastle/mcp.json — deliberately NOT at the repo root,
-        // because a root .mcp.json pointing at the maintainers' admin.j5s.dev is
-        // auto-loaded by a cloner's Claude Code and would import into the wrong
-        // project (that's why #96 removed the checked-in root file). Copying it to
-        // the repo-root .mcp.json here only happens inside the ephemeral container,
-        // so cloners' working trees stay clean. Claude Code loads it on startup and
-        // expands ${BFFLESS_API_KEY} from the sandbox env (.sandcastle/.env).
-        { command: "cp .sandcastle/mcp.json .mcp.json" },
+        // Wire the j5s-dev (BFFless) MCP into the sandbox agent by writing a
+        // repo-root .mcp.json that Claude Code auto-loads on startup. Written
+        // inline (not copied from a checked-in file) on purpose:
+        //   1. A checked-in ROOT .mcp.json is auto-loaded by a cloner's Claude Code
+        //      and would import into the maintainers' admin.j5s.dev — that's why
+        //      #96 removed it. Writing it only inside the ephemeral sandbox keeps
+        //      cloners' trees clean (and root .mcp.json is gitignored as a backstop).
+        //   2. The sandbox syncs the `sandcastle/work` branch, which lags main, so a
+        //      `cp` from a committed template isn't reliably present. Inline has no
+        //      such dependency — main.ts is read by the host from the current branch.
+        // The key is baked in from the sandbox env (.sandcastle/.env → BFFLESS_API_KEY);
+        // the guard fails the run loudly rather than writing an empty, silently-broken key.
+        {
+          command:
+            `[ -n "$BFFLESS_API_KEY" ] || { echo "BFFLESS_API_KEY not set in sandbox env" >&2; exit 1; }; printf '{"mcpServers":{"j5s-dev":{"type":"http","url":"https://admin.j5s.dev/mcp","headers":{"X-API-Key":"%s"}}}}' "$BFFLESS_API_KEY" > .mcp.json`,
+        },
         // Clean pnpm install from the lockfile (image has pnpm@10.33.0 via
         // corepack). CI=true keeps pnpm fully non-interactive (no purge/confirm
         // prompts, which abort without a TTY).
