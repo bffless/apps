@@ -69,4 +69,4 @@ Social/sharing and public shared-or-starred pages · full-text extraction of tru
 
 - **Blocked on the CE primitives PRD** — do not hand to Sandcastle until those have landed and are deployed.
 - Working name **Rivulet** (our unified stream is the "River" — internal rhyme). Rename is a directory + `package.json` change.
-- After merge, the live `/api/*` proxy rules must be created on the live BFFless set (and secrets/backend wired) — Sandcastle does **not** deploy live proxy rules (see workspace memory). The reverse-proxy auth rule + the two schedules are part of that wiring.
+- **Sandcastle owns live wiring:** using the BFFless deploy API key, it imports/attaches the proxy-rule-set and creates the live `/api/*` rules + the two `pipeline_schedules` (see slices #111 / #112 / #119) — not a manual post-merge step. Verify the key has proxy-rule + schedule scope; if it doesn't, that's a config fix to surface, not a design deferral.
