@@ -64,11 +64,12 @@ Social/sharing + public shared-or-starred pages (Q1) · full-text extraction of 
 
 ## Status
 
-Grilling complete — full design tree walked (D1–D13). Name settled: **Rivulet**. PRDs drafted and filed:
-- `docs/ce-primitives-prd.md` → **bffless/ce** issues (in-the-loop, unlabeled, build **first**):
-  - `#406` — `xml_feed_parse` handler + FeedParserService
-  - `#407` — `data_upsert_many` handler
-  - `#408` — `pipeline_schedules` (cron) primitive
-- `docs/rivulet-prd.md` → **bffless/apps#105** — the Rivulet app (unlabeled for now; add `ready-for-agent` to hand to Sandcastle **after** the CE issues land).
+Grilling complete — full design tree walked (D1–D13). Name settled: **Rivulet**.
 
-Next: build the CE primitives (#406–408) in-the-loop in `repos/ce`, then label #105 `ready-for-agent`.
+**CE primitives — DONE** (built in-the-loop in `repos/ce`): bffless/ce **#406** `xml_feed_parse`, **#407** `data_upsert_many`, **#408** `pipeline_schedules`.
+
+**App — sliced for Sandcastle.** PRD `bffless/apps#105`, broken into 9 `ready-for-agent` tracer-bullet issues:
+- **#111** scaffold + auth spine · **#112** add feed → read items (core tracer) · **#113** auto-discovery · **#114** river + read/unread · **#115** star/save · **#116** folders · **#117** OPML import/export · **#118** keyboard nav + oldest-first · **#119** background refresh + retention.
+- Dependency spine: everything blocks on **#111**, then most on **#112**; **#118**→#114; **#119**→#112/#114/#115.
+
+Next: Sandcastle works the slices (#111 first) and **owns live wiring** — proxy-rule-set import/attach + `/api/auth` + the two schedules — via its BFFless deploy API key (verify key scope). Live wiring is no longer a manual post-merge step.
