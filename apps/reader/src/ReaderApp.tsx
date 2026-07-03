@@ -168,12 +168,16 @@ export function ReaderApp() {
     })
   }, [visible, loadItems])
 
+  // Add a feed from a pasted URL — resolve it first (#113): a site homepage is
+  // discovered to its feed via the page's alternate link or a common-path probe;
+  // a URL that is already a feed is returned unchanged and added directly.
   const handleAdd = useCallback(
     async (url: string) => {
       setAdding(true)
       setError(null)
       try {
-        const feed = await api.addFeed({ url })
+        const discovered = await api.discoverFeed(url)
+        const feed = await api.addFeed({ url: discovered.url, title: discovered.title })
         await api.refresh()
         await Promise.all([loadFeeds(), loadItems()])
         selectView({ kind: 'feed', url: feed.url })

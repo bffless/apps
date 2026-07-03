@@ -17,11 +17,12 @@ core reading pipelines:
 | `/api/feeds/remove` | `POST` | unsubscribe (delete a feed row) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
 | `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`) |
+| `/api/discover` | `POST` | auto-discovery (#113): `http_request` fetches a site/feed URL server-side so the browser can `DOMParser` it for `<link rel="alternate">` feed links |
 
 All `/api/*` pipelines carry an `auth_required` validator (`allowApiKey: true`, so a schedule/system
 context and CI can drive them). They reference two data-table schemas, `reader_feeds` and
-`reader_items` (see **Data tables** below). Auto-discovery, the river, star, folders, OPML, keyboard
-nav, and the background schedules land with #113–#119 and grow this file further.
+`reader_items` (see **Data tables** below). The river, star, folders, OPML, keyboard nav, and the
+background schedules land with #114–#119 and grow this file further.
 
 ## Import
 
