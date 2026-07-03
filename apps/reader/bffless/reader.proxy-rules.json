@@ -4,7 +4,7 @@
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "reader",
-    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114) + item star-state (POST /api/items/star, data_update — bffless/apps#115). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas.",
+    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114) + item star-state (POST /api/items/star, data_update — bffless/apps#115) + feed auto-discovery (POST /api/discover, http_request — bffless/apps#113). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas.",
     "environment": null
   },
   "schemas": [
@@ -529,6 +529,59 @@
             "handlerType": "response_handler",
             "config": {
               "body": "{\"inserted\":{{steps.summary.inserted}},\"skipped\":{{steps.summary.skipped}},\"errors\":{{steps.summary.errors}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/discover",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 8,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Auto-discovery (#113): POST { url } -> http_request GET fetches the pasted site/feed URL server-side (dodging CORS, D12; failOnError:false so a common-path probe's 404 is data, not a halt) -> shape wraps the body in a JSON envelope { body, status, ok } (JSON.stringify escapes the HTML) -> respond. The browser DOMParses body for <link rel=alternate> feed links, or sniffs it as a feed. auth_required (allowApiKey).",
+      "pipelineConfig": {
+        "name": "Discover feed",
+        "steps": [
+          {
+            "id": "fetch",
+            "name": "fetch",
+            "handlerType": "http_request",
+            "config": {
+              "url": "request.body.url",
+              "method": "GET",
+              "failOnError": false,
+              "timeout": 20000,
+              "headers": {
+                "User-Agent": "Mozilla/5.0 (compatible; Rivulet/1.0; +https://j5s.dev)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,application/atom+xml;q=0.8,*/*;q=0.7"
+              }
+            }
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var f = (steps && steps.fetch) || {}\n  var raw = f.body\n  var body = (typeof raw === 'string') ? raw : (raw == null ? '' : JSON.stringify(raw))\n  return {\n    json: JSON.stringify({\n      body: body,\n      status: (typeof f.status === 'number') ? f.status : 0,\n      ok: (f.ok === true)\n    })\n  }\n}\n"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{{{steps.shape.json}}}",
               "status": 200,
               "headers": { "Cache-Control": "no-store" },
               "contentType": "application/json"

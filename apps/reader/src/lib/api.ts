@@ -9,6 +9,7 @@
 import { fetchWithReauth } from './session'
 import { shapeFeed, normalizeFeedUrl, type Feed, type RawFeed } from './feeds'
 import { shapeItem, type Item, type RawItem } from './items'
+import { resolveFeedUrl, type DiscoveredFeed, type FetchedPage } from './discover'
 
 async function readJson(res: Response): Promise<unknown> {
   if (!res.ok) {
@@ -66,6 +67,48 @@ export async function addFeed(input: {
   )
   const feed = (body && typeof body === 'object' && 'feed' in body ? (body as { feed: unknown }).feed : body) as RawFeed
   return shapeFeed({ url, ...(feed && typeof feed === 'object' ? feed : {}) })
+}
+
+/**
+ * Fetch a page's body for feed discovery through the `/api/discover`
+ * `http_request` proxy (dodging CORS — CONTEXT D12). The proxy answers 200 with
+ * a JSON envelope `{ body, status, ok }` — the upstream body as a string, so a
+ * common-path probe's 404 is *data* (ok:false, non-feed body), not a transport
+ * error that aborts the sweep. The pure `lib/discover` helpers sniff/parse the
+ * body; a 401/403 on the proxy itself is a real auth failure worth surfacing.
+ */
+async function discoverPage(url: string): Promise<FetchedPage> {
+  const res = await fetchWithReauth('/api/discover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  })
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('Sign in to discover feeds')
+  }
+  let body = ''
+  let upstreamOk = res.ok
+  try {
+    const env = await res.json()
+    if (env && typeof env === 'object') {
+      const e = env as Record<string, unknown>
+      if (typeof e.body === 'string') body = e.body
+      if (typeof e.ok === 'boolean') upstreamOk = e.ok
+    }
+  } catch {
+    // A non-JSON body (e.g. a proxy error page) leaves body empty — discovery
+    // then finds nothing and reports "No feed found", which is the right signal.
+  }
+  return { url, body, contentType: null, ok: upstreamOk }
+}
+
+/**
+ * Resolve a pasted URL — a site homepage or a feed — to a subscribable feed URL.
+ * If it's already a feed it's returned as-is; otherwise the page's alternate
+ * link, then well-known feed paths, are tried (all logic in tested `lib/discover`).
+ */
+export function discoverFeed(input: string): Promise<DiscoveredFeed> {
+  return resolveFeedUrl(input, discoverPage)
 }
 
 /**

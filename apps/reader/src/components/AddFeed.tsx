@@ -36,8 +36,8 @@ export function AddFeed({
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="Add a feed URL…"
-          aria-label="Feed URL"
+          placeholder="Add a feed or site URL…"
+          aria-label="Feed or site URL"
           disabled={busy}
           className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
         />
