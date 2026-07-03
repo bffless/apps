@@ -3,6 +3,7 @@ import {
   shapeItem,
   itemTimestamp,
   sortItemsNewestFirst,
+  sortItemsOldestFirst,
   itemPreview,
   itemBodyHtml,
   type Item,
@@ -74,6 +75,18 @@ describe('sortItemsNewestFirst', () => {
       shapeItem({ guid: 'c', publishedAt: '2026-02-01T00:00:00Z' }),
     ]
     expect(sortItemsNewestFirst(items).map((i) => i.guid)).toEqual(['b', 'c', 'a'])
+    expect(items[0].guid).toBe('a')
+  })
+})
+
+describe('sortItemsOldestFirst', () => {
+  it('orders oldest first — the exact reverse of newest-first — without mutating input', () => {
+    const items: Item[] = [
+      shapeItem({ guid: 'a', publishedAt: '2026-01-01T00:00:00Z' }),
+      shapeItem({ guid: 'b', publishedAt: '2026-03-01T00:00:00Z' }),
+      shapeItem({ guid: 'c', publishedAt: '2026-02-01T00:00:00Z' }),
+    ]
+    expect(sortItemsOldestFirst(items).map((i) => i.guid)).toEqual(['a', 'c', 'b'])
     expect(items[0].guid).toBe('a')
   })
 })

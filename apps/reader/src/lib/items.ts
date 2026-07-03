@@ -86,6 +86,15 @@ export function sortItemsNewestFirst(items: Item[]): Item[] {
 }
 
 /**
+ * Oldest-first ordering — the #118 chronological-reading toggle. The exact
+ * reverse of {@link sortItemsNewestFirst}, sharing {@link itemTimestamp} so the
+ * two orders stay consistent. Stable and non-mutating.
+ */
+export function sortItemsOldestFirst(items: Item[]): Item[] {
+  return [...items].sort((a, b) => itemTimestamp(a) - itemTimestamp(b))
+}
+
+/**
  * A short plain-text snippet for an item row: prefers `summary`, falls back to
  * `content` (truncated feeds may carry only one), flattened and clipped. Never
  * emits HTML — it routes through the sanitizer first.

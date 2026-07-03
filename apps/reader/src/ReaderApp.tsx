@@ -4,7 +4,8 @@ import { ItemList } from './components/ItemList'
 import { ReadingPane } from './components/ReadingPane'
 import * as api from './lib/api'
 import type { Feed } from './lib/feeds'
-import type { Item } from './lib/items'
+import { sortItemsNewestFirst, sortItemsOldestFirst, type Item } from './lib/items'
+import { keyToAction, nextSelection } from './lib/keyboard'
 import type { OpmlFeed } from './lib/opml'
 import {
   itemsForSelection,
@@ -36,6 +37,7 @@ export function ReaderApp() {
   const [items, setItems] = useState<Item[]>([])
   const [loadSeq, setLoadSeq] = useState(0)
   const [selectedGuid, setSelectedGuid] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
   const [itemsLoading, setItemsLoading] = useState(false)
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -96,6 +98,14 @@ export function ReaderApp() {
     // `feeds` re-scopes a folder view when a feed is moved in or out of it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection, loadSeq, feeds])
+
+  // The order shown is applied over the snapshot (not re-derived from `items`),
+  // so toggling newest/oldest reorders in place without dropping items that were
+  // marked read while the view is open. #118 — chronological-reading toggle.
+  const orderedVisible = useMemo(
+    () => (sortOrder === 'oldest' ? sortItemsOldestFirst(visible) : sortItemsNewestFirst(visible)),
+    [visible, sortOrder],
+  )
 
   const selectedItem = visible.find((i) => i.guid === selectedGuid) ?? null
 
@@ -255,6 +265,45 @@ export function ReaderApp() {
     [],
   )
 
+  // Keyboard navigation (#118): j/k move the cursor, space pages down, s/m/o act
+  // on the cursor item. The mapping + cursor math live in the pure `lib/keyboard`
+  // seam; this only wires DOM keydown to the existing star/read/open handlers.
+  // Typing in a field (Add-feed input, etc.) is left alone, as are modified
+  // chords (⌘/Ctrl/Alt) so browser shortcuts still work.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const action = keyToAction(e.key)
+      if (!action) return
+      e.preventDefault()
+      if (action.kind === 'move') {
+        setSelectedGuid((cur) => nextSelection(orderedVisible.map((i) => i.guid), cur, action.dir))
+        return
+      }
+      if (action.kind === 'page') {
+        window.scrollBy({ top: Math.round(window.innerHeight * 0.9), behavior: 'smooth' })
+        return
+      }
+      const item = orderedVisible.find((i) => i.guid === selectedGuid)
+      if (!item) return
+      if (action.kind === 'star') toggleStar(item)
+      else if (action.kind === 'toggleRead') toggleRead(item)
+      else if (action.kind === 'open') openItem(item)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [orderedVisible, selectedGuid, toggleStar, toggleRead, openItem])
+
   const unreadInView = visible.some((i) => !i.read)
 
   return (
@@ -281,19 +330,30 @@ export function ReaderApp() {
           {error && (
             <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
           )}
-          {unreadInView && (
-            <div className="flex justify-end border-b border-slate-100 px-3 py-1.5">
+          {visible.length > 0 && (
+            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5">
               <button
                 type="button"
-                onClick={markAllRead}
+                onClick={() => setSortOrder((o) => (o === 'newest' ? 'oldest' : 'newest'))}
+                aria-pressed={sortOrder === 'oldest'}
+                title="Toggle reading order"
                 className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
               >
-                Mark all read
+                {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
               </button>
+              {unreadInView && (
+                <button
+                  type="button"
+                  onClick={markAllRead}
+                  className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                >
+                  Mark all read
+                </button>
+              )}
             </div>
           )}
           <ItemList
-            items={visible}
+            items={orderedVisible}
             loading={itemsLoading}
             selectedGuid={selectedGuid}
             onSelect={openItem}
