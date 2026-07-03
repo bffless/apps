@@ -86,6 +86,24 @@ export async function listItems(feedId?: string): Promise<Item[]> {
   return asArray(body, 'items').map((r) => shapeItem(r as RawItem))
 }
 
+/**
+ * Persist an item's `read` flag via `data_update` (looked up by `guid`). The UI
+ * updates optimistically, so this is fire-and-confirm: it resolves on success
+ * and throws on failure, letting the caller revert. Mark-all-read fans this out
+ * over a view's unread guids — there's no bulk primitive, and at personal scale
+ * a handful of parallel writes is fine.
+ */
+export async function setItemRead(guid: string, read: boolean): Promise<void> {
+  if (!guid) throw new Error('guid is required')
+  await readJson(
+    await fetchWithReauth('/api/items/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guid, read }),
+    }),
+  )
+}
+
 export type RefreshResult = { inserted: number; skipped: number; errors: number }
 
 /**
