@@ -160,11 +160,12 @@ const studioHandlers = [
   }),
 
   // Master director: enqueue a job and return its id (story 03f Part 0). The
-  // canned synopsis + scenes (per-scene refinePrompt + cut spans, derived from the
-  // posted `duration` so they fit any clip) are stashed as the job's `result` for
-  // the poll endpoint to hand back. Mirrors the real enqueue shape: { jobId,
-  // status }; the result blob mirrors { synopsis, scenes:[{ title, start, end,
-  // transcript, refinePrompt, cuts }] }.
+  // canned synopsis + scenes (per-scene cutting brief + cut spans, derived from
+  // the posted `duration` so they fit any clip) are stashed as the job's `result`
+  // for the poll endpoint to hand back. Mirrors the real enqueue shape: { jobId,
+  // status }; the result blob mirrors the 13f contract { synopsis, scenes:
+  // [{ title, start, end, brief, cuts }] } — scenes tile the recording; no
+  // draftText, no transcript echo.
   http.post('/api/scenes', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { duration?: number; direction?: string }
     const jobId = enqueueJob(
@@ -176,17 +177,22 @@ const studioHandlers = [
     return HttpResponse.json({ jobId, status: 'pending' })
   }),
 
-  // Per-scene refiner (story 03c): enqueue a job (story 03f Part 0). The canned
-  // anchored segments + refined cuts — split into two runs around the kept
-  // pause/cut — are stashed as the job's `result`. Mirrors
-  // the enqueue shape { jobId, status }; the result blob mirrors { segments:
-  // [{ text, start, end }], cuts: [{ start, end }] }.
+  // Per-scene refiner (story 03c, 13f contract): enqueue a job (story 03f
+  // Part 0). The canned refined cuts — snapped into the posted measured dead
+  // space — are stashed as the job's `result`. Mirrors the enqueue shape
+  // { jobId, status }; the result blob mirrors the 13f contract:
+  // { cuts: [{ start, end }] }, nothing else.
   http.post('/api/refine-scene', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       start?: number
       end?: number
       wordTimings?: string
       audioUrl?: string
+      // The director's cutting brief + the measured dead-space lines (story
+      // 13f). The fixture cuts the longest posted silence; the brief is only
+      // surfaced in the prompt label (prompt transparency, story 03m).
+      brief?: string
+      deadSpace?: string
       // Creator steering (story 03l): the scene's own prompt + the global
       // director prompt (empty when the scene's include-checkbox is off).
       // Accepted so mock and real share the request shape; the deterministic
@@ -194,9 +200,9 @@ const studioHandlers = [
       direction?: string
       directorDirection?: string
       // Seam-aware context (story 03r): where this scene sits in the arc + the
-      // tail of the previous scene's narration. Accepted so mock and real share
-      // the request shape; the deterministic fixture ignores the content but
-      // surfaces it in the prompt label below (prompt transparency, story 03m).
+      // tail of the previous scene's kept speech. Accepted so mock and real
+      // share the request shape; the deterministic fixture ignores the content
+      // but surfaces it in the prompt label below (story 03m).
       sceneNumber?: number
       sceneCount?: number
       previousContext?: string
@@ -209,7 +215,7 @@ const studioHandlers = [
     const jobId = enqueueJob(
       'refine',
       mockRefiner(body),
-      `[mock] refine prompt — scene ${body.sceneNumber ?? 1} of ${body.sceneCount ?? 1} [${body.start ?? 0}, ${body.end ?? 0}] · scene direction: ${body.direction || '(none)'} · director context: ${body.directorDirection || '(none)'} · previous scene ended with: ${body.previousContext || '(none — first scene)'}`,
+      `[mock] refine prompt — scene ${body.sceneNumber ?? 1} of ${body.sceneCount ?? 1} [${body.start ?? 0}, ${body.end ?? 0}] · brief: ${body.brief || '(none)'} · dead space: ${body.deadSpace ? `${body.deadSpace.split('\n').length} span(s)` : '(none)'} · scene direction: ${body.direction || '(none)'} · director context: ${body.directorDirection || '(none)'} · previous scene ended with: ${body.previousContext || '(none — first scene)'}`,
       '[mock] refiner system instruction — the standing rules the real pipeline sends Gemini.',
     )
     return HttpResponse.json({ jobId, status: 'pending' })
@@ -409,18 +415,32 @@ const studioHandlers = [
 ]
 
 /**
- * A deterministic canned refiner response for one scene, rebuilt FROM SCRATCH off
- * the posted per-word timings (story 03p). Cut-first (ADR-0003): the mock finds
- * the biggest silence between consecutive words in the scene and returns it as
- * the one refined cut — no narration, no segments. Falls back to no cuts when
- * there are too few words.
+ * A deterministic canned refiner response for one scene — the 13f contract:
+ * `{ cuts }` only, no narration, no segments. Prefers the posted MEASURED dead
+ * space (story 13c: `start end` lines, the same shape the real prompt gets) and
+ * returns the longest silence in the scene as the one refined cut — the
+ * snap-into-silence behavior the real prompt asks for. Falls back to the
+ * biggest gap between consecutive posted word timings (story 03p) when no dead
+ * space was measured; no cuts when there's too little to go on.
  */
-function mockRefiner(body: { start?: number; end?: number; wordTimings?: string }) {
+function mockRefiner(body: { start?: number; end?: number; wordTimings?: string; deadSpace?: string }) {
   const start = Number.isFinite(body.start) ? (body.start as number) : 0
   const end =
     Number.isFinite(body.end) && (body.end as number) > start ? (body.end as number) : start + 1
 
-  // Parse the `start end word` lines into timed words within the scene span.
+  // Preferred: the longest measured dead-space span inside the scene.
+  const dead = (body.deadSpace ?? '')
+    .split('\n')
+    .map((l) => /^\s*([\d.]+)\s+([\d.]+)\s*$/.exec(l))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ start: Number(m[1]), end: Number(m[2]) }))
+    .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.start >= start && s.end <= end)
+  if (dead.length) {
+    const longest = dead.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a))
+    return { cuts: longest.end - longest.start > 0.05 ? [longest] : [] }
+  }
+
+  // Fallback: the biggest gap between consecutive words in the scene span.
   const words = (body.wordTimings ?? '')
     .split('\n')
     .map((l) => /^\s*([\d.]+)\s+([\d.]+)\s+(.+?)\s*$/.exec(l))
@@ -486,31 +506,32 @@ function mockBlog(script: string, direction: string): { markdown: string } {
   return { markdown: body }
 }
 
-/** A deterministic canned director response sized to the clip's duration. */
+/** A deterministic canned director response sized to the clip's duration —
+ *  the 13f cut-first contract: scenes tile `[0, duration]` end-to-end, each
+ *  `{ title, start, end, brief, cuts }`. Coerced by the app through the same
+ *  `toScenes` the real pipeline's response goes through. */
 function mockDirector(duration: number, direction: string) {
   const total = Number.isFinite(duration) && duration > 0 ? duration : 600
   const count = Math.max(1, Math.round(total / 210)) // ~3.5 min scenes
   const each = total / count
-  const beats = [
-    { title: 'Cold open — the problem', draft: 'Here is the problem we kept running into, and why the usual fix falls apart at scale.' },
-    { title: 'The turn — what changed', draft: 'So we tried something different. The key insight was to let the pipeline do the rewriting up front.' },
-    { title: 'The demo', draft: 'Let me show you. You upload one clip, and it preps everything — transcript, scenes, cuts.' },
-    { title: 'How it works', draft: 'Under the hood it is a chain of small steps, each one handed off to the next, no server code.' },
-    { title: 'Where it goes next', draft: 'Next we tighten each scene, drop the dead space, and ship the cut.' },
+  const titles = [
+    'Cold open — the problem',
+    'The turn — what changed',
+    'The demo',
+    'How it works',
+    'Where it goes next',
   ]
   const scenes = Array.from({ length: count }, (_, i) => {
     const start = i * each
     const end = i === count - 1 ? total : (i + 1) * each
-    const beat = beats[i % beats.length]
     // Drop a chunk of dead air in the middle third of each scene.
     const cutStart = start + each * 0.45
     const cutEnd = start + each * 0.62
     return {
-      title: beat.title,
+      title: titles[i % titles.length],
       start,
       end,
-      transcript: `(${Math.round(end - start)}s of original footage for this scene)`,
-      refinePrompt: `Tighten this beat${direction ? `, ${direction}` : ''}; drop the dead air in the middle, keep the on-screen action visible.`,
+      brief: `Tighten this beat${direction ? `, ${direction}` : ''}; drop the dead air in the middle, keep the on-screen action visible.`,
       cuts: [{ start: cutStart, end: cutEnd }],
     }
   })

@@ -51,6 +51,12 @@ export type Scene = {
    *  master director's first pass — never overwritten; refined edits live in
    *  `refined.cuts`. */
   cuts?: Cut[]
+  /** The director's **cutting brief** for this scene (story 13f, ADR-0003): its
+   *  prose instructions to the scene refiner — what to drop and why, grounded in
+   *  the whole recording. Guidance, not spans. Part of the director contract and
+   *  immutable like the baseline `cuts`; the creator's own steering lives in
+   *  `refinePrompt`. Absent on pre-13f projects. */
+  brief?: string
   /** Per-scene dense contact sheets captured for the refiner (story 03c,
    *  button 1). Like the prep sheets, only the bucket `url` is persisted — the
    *  base64 `dataUrl` is dropped after upload. */
@@ -58,9 +64,11 @@ export type Scene = {
   /** Second-pass refiner output (story 03c). Absent/null = fall back to the
    *  baseline (the director's `cuts`). */
   refined?: SceneRefinement | null
-  /** Creator's per-scene instruction for the refiner (story 03l) — the cutting
-   *  brief. An INPUT, not refiner output — it survives revert (`refined = null`)
-   *  and seeds the next re-refine. Sent as the refine request's `direction`. */
+  /** Creator's per-scene instruction for the refiner (story 03l). An INPUT, not
+   *  refiner output — it survives revert (`refined = null`) and seeds the next
+   *  re-refine. Sent as the refine request's `direction`, distinct from the
+   *  director's [[brief]] (which travels as the request's `brief`). As of 13f
+   *  the director no longer seeds it — it is the creator's own words only. */
   refinePrompt?: string
   /** Include the global director prompt as context in this scene's refine calls
    *  (story 03l). ABSENT = true (the checkbox defaults checked); explicit
@@ -134,10 +142,9 @@ function fillerText(words: number): string {
 
 /**
  * Mock of the slice + direct steps: break `duration` into a few logical
- * 2–5 min scenes (≈3.5 min target), never fewer than one. Each scene maps to an
- * original-video span (`start`–`end`), carries the full span `transcript`, and a
- * default `refinePrompt` — the director's cutting brief for the refiner
- * (story 03q).
+ * 2–5 min scenes (≈3.5 min target), never fewer than one. Scenes tile the
+ * recording end-to-end (ADR-0003). Each carries the full span `transcript` and
+ * a `brief` — the director's cutting brief for the refiner (story 13f).
  */
 export function buildScenes(duration: number, targetSceneSeconds = 210, sourceId = 'source-1'): Scene[] {
   if (!Number.isFinite(duration) || duration <= 0) return []
@@ -159,7 +166,7 @@ export function buildScenes(duration: number, targetSceneSeconds = 210, sourceId
       end,
       transcript,
       status: 'pending' as const,
-      refinePrompt: `Tighten scene ${i + 1} to a crisp run; drop the dead air in the middle.`,
+      brief: `Tighten scene ${i + 1} to a crisp run; drop the dead air in the middle.`,
     }
   })
 }

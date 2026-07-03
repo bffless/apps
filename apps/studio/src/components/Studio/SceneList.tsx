@@ -11,9 +11,9 @@ type Props = {
 /**
  * The scene queue — also the YouTube chapter list. Each scene is a unit you
  * build one at a time; built ones are checked off. A scene with a director
- * `refinePrompt` (story 03q) gets a chevron that reveals that default prompt
- * read-only — a quick peek without selecting the scene (editing stays in the
- * refine panel). Old scenes with no prompt show no chevron.
+ * cutting `brief` (story 13f; legacy projects: the old seeded `refinePrompt`)
+ * gets a chevron that reveals it read-only — a quick peek without selecting the
+ * scene. Old scenes with neither show no chevron.
  */
 export function SceneList({ scenes, selectedId, onSelect }: Props) {
   const built = scenes.filter((s) => s.status === 'built').length
@@ -38,7 +38,7 @@ export function SceneList({ scenes, selectedId, onSelect }: Props) {
         {scenes.map((scene) => {
           const active = scene.id === selectedId
           const done = scene.status === 'built'
-          const prompt = scene.refinePrompt?.trim()
+          const prompt = (scene.brief ?? scene.refinePrompt)?.trim()
           const isOpen = expanded.has(scene.id)
           const panelId = `scene-prompt-${scene.id}`
           return (
@@ -92,8 +92,8 @@ export function SceneList({ scenes, selectedId, onSelect }: Props) {
                       onClick={() => toggle(scene.id)}
                       aria-expanded={isOpen}
                       aria-controls={panelId}
-                      aria-label={`${isOpen ? 'Hide' : 'Show'} the director's prompt for this scene`}
-                      title="The director's prompt for this scene"
+                      aria-label={`${isOpen ? 'Hide' : 'Show'} the director's cutting brief for this scene`}
+                      title="The director's cutting brief for this scene"
                       className="flex w-9 flex-shrink-0 items-center justify-center text-ink-faint hover:text-ink-soft"
                     >
                       <svg
@@ -111,7 +111,7 @@ export function SceneList({ scenes, selectedId, onSelect }: Props) {
                 </div>
                 {prompt && isOpen && (
                   <div id={panelId} className="border-t border-paper-line/60 px-3 py-2.5">
-                    <p className="meta-label">Director&apos;s prompt</p>
+                    <p className="meta-label">Cutting brief</p>
                     <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-soft">
                       {prompt}
                     </p>

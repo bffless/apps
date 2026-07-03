@@ -42,7 +42,7 @@ export function DirectorPanel({
       <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
         {rerun
           ? 'Tweak your direction and send it again — the director re-cuts the whole video into fresh scenes.'
-          : `Gemini reads your ${wordCount.toLocaleString()}-word transcript and ${sheetCount} contact sheet${sheetCount === 1 ? '' : 's'} together, then returns a one-line synopsis and your scenes — each with its original-video span, the footage to cut, and a starting prompt to steer the per-scene refine.`}
+          : `Gemini reads your ${wordCount.toLocaleString()}-word transcript and ${sheetCount} contact sheet${sheetCount === 1 ? '' : 's'} together, then returns a one-line synopsis and your scenes — each with its original-video span, the footage to cut, and a cutting brief for the per-scene refine.`}
       </p>
 
       <label className="mt-4 flex flex-col gap-1.5">

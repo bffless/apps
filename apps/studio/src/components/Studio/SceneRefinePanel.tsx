@@ -53,7 +53,7 @@ export function SceneRefinePanel({
         First cut this scene out of the raw into its own short clip — then everything
         below (and the preview above) works on that clip, not the whole film. After
         that it's a zoomed-in second pass: capture a dense contact sheet for just
-        this scene, then ask the AI to place the new script and tighten the cuts.
+        this scene, then ask the AI to tighten the cuts.
       </p>
 
       <div className="mt-4 flex flex-col gap-3">
@@ -98,14 +98,15 @@ export function SceneRefinePanel({
           </button>
         </div>
 
-        {/* Step 2 — refine. The creator-steering inputs (stories 03l/03q) live
+        {/* Step 2 — refine. The creator-steering inputs (story 03l) live
             INSIDE this step, since they're what the Refine button consumes —
             grouped under the "2 ·" heading (with a divider from step 1) so they
-            don't read as part of the contact-sheet step above. The textarea is
-            prepopulated with the master director's per-scene suggestion (03q);
-            edit it freely. Both inputs survive Revert and seed the next
-            re-refine. The global director prompt itself isn't editable here:
-            include it as context, or don't. */}
+            don't read as part of the contact-sheet step above. The director's
+            cutting brief (story 13f) is shown read-only — it always rides the
+            refine request; the textarea is the creator's OWN words on top of
+            it. Both creator inputs survive Revert and seed the next re-refine.
+            The global director prompt itself isn't editable here: include it as
+            context, or don't. */}
         <div className="flex flex-col gap-3 border-t border-paper-line/60 pt-3">
           <span className="text-[13.5px] text-ink">
             2 · Refine the cuts
@@ -116,8 +117,17 @@ export function SceneRefinePanel({
             )}
           </span>
 
+          {(scene.brief ?? '').trim() !== '' && (
+            <div className="flex flex-col gap-1">
+              <p className="meta-label">The director&apos;s cutting brief — always sent with a refine</p>
+              <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-mute">
+                {scene.brief}
+              </p>
+            </div>
+          )}
+
           <label className="flex flex-col gap-1.5">
-            <span className="meta-label">Direction for this scene — the director&apos;s suggestion, edit freely</span>
+            <span className="meta-label">Direction for this scene — your own steering, optional</span>
             <textarea
               value={scene.refinePrompt ?? ''}
               onChange={(e) => onRefinePromptChange(e.target.value)}
@@ -190,7 +200,7 @@ export function SceneRefinePanel({
           <ContactSheetPreview
             sheets={scene.sheets ?? []}
             title="Scene contact sheets"
-            caption="The dense frames for this scene handed to the refiner — tighter spacing than the whole-clip director sheets, so it can place the new narration and tune the cuts more precisely."
+            caption="The dense frames for this scene handed to the refiner — tighter spacing than the whole-clip director sheets, so it can place the cuts more precisely."
           />
         </div>
       )}
