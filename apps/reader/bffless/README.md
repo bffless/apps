@@ -7,9 +7,21 @@ alias serving the app.
 [`reader.proxy-rules.json`](reader.proxy-rules.json) is the exported rule set (format
 `bffless-proxy-rule-set` v2). It contains **no secrets**.
 
-At this scaffold stage (bffless/apps#111) the set holds a single rule — the **SuperTokens auth
-reverse-proxy** (`/api/auth/*`). The feed/item/refresh pipelines and their data-table schemas land
-with the later stories (#112+), which will grow this file as they go.
+As of bffless/apps#112 the set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the
+core reading pipelines:
+
+| Path | Method | Pipeline |
+| --- | --- | --- |
+| `/api/feeds` | `GET` | list subscribed feeds |
+| `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `url`) |
+| `/api/feeds/remove` | `POST` | unsubscribe (delete a feed row) |
+| `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
+| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`) |
+
+All `/api/*` pipelines carry an `auth_required` validator (`allowApiKey: true`, so a schedule/system
+context and CI can drive them). They reference two data-table schemas, `reader_feeds` and
+`reader_items` (see **Data tables** below). Auto-discovery, the river, star, folders, OPML, keyboard
+nav, and the background schedules land with #113–#119 and grow this file further.
 
 ## Import
 
@@ -32,12 +44,29 @@ Everything the human must configure in the BFFless admin panel that the `install
 - **Secrets — none app-specific.** Rivulet's rules reference no named `secrets.*`.
 - **Storage backend — none required.** Rivulet stores feed/item rows in data tables, not the object
   store, so it works on any storage backend (including local file storage).
+- **Data tables** — the pipelines reference the `reader_feeds` and `reader_items` schemas. On import
+  into a fresh project these are created for you (or create them to match the **Data tables** section
+  below); the exported rule set's `schemaId`s are for the reference project and are remapped on
+  import.
 - **Response-header rules — none.** Rivulet needs no extra response headers.
 - **Auth relay** — the platform-level piece the gate depends on; see §1 below.
 - **Serve URL — domain mapping (private, SPA)** — see §2 below.
 
-Later stories add their own manual steps here (data tables for `feeds` / `items`, and the two
-`pipeline_schedules` for background refresh + retention).
+The background-refresh + retention `pipeline_schedules` land with #119.
+
+## Data tables
+
+Two schemas back the reader (content is stored **raw** and sanitized at render — CONTEXT.md D10):
+
+- **`reader_feeds`** — `url` (dedup key), `title`, `siteUrl`, `folder` (nullable), `iconUrl`,
+  `lastFetchedAt`, `lastError`, `addedAt`.
+- **`reader_items`** — `guid` (dedup key), `feedId` (the owning feed's `url`, = `xml_feed_parse`
+  `entry.source`), `title`, `link`, `author`, `publishedAt`, `summary`, `content`, `read`, `starred`,
+  `fetchedAt`.
+
+**`schemaId` portability caveat:** the exported rules embed the reference project's `schemaId`s. When
+you import into a different project, re-point each pipeline's `schemaId` to your project's
+`reader_feeds` / `reader_items` schema IDs (same as Handoff's caveat).
 
 ### 1. Auth relay
 
@@ -80,9 +109,10 @@ configured, and Rivulet is deployed (see the repo-root
 
 Open your deployed Rivulet (`reader.<your-domain>`). An unauthenticated visitor should see the **Sign
 in** prompt; signing in should bounce through `admin.<your-domain>/login` and land you back on the
-(empty) app shell. That round-trip exercises the session read (`/_bffless/auth/session`) and the
-`/api/auth/*` reverse-proxy refresh path end to end. If you reach the shell as a signed-in user,
-Rivulet's auth spine is live.
+reader shell (feed sidebar + reading pane). That round-trip exercises the session read
+(`/_bffless/auth/session`) and the `/api/auth/*` reverse-proxy refresh path end to end. Then **add a
+feed URL and hit “Refresh now”** — items should appear and open in the reading pane. If both work,
+Rivulet's core reading path is live.
 
 - A **404 on `/api/auth/*`** means the `reader` rule set isn't attached to the `reader` alias.
 - Bouncing endlessly to login (never settling on the shell) usually means the app can't reach the

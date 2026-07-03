@@ -4,9 +4,42 @@
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "reader",
-    "description": "Rivulet app backend — RSS/Atom reader. Scaffold: SuperTokens auth reverse-proxy. Feed/item/refresh pipelines land with later stories (bffless/apps#112+).",
+    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas.",
     "environment": null
   },
+  "schemas": [
+    {
+      "id": "d1216df3-9776-4de2-81b0-0343d758f83d",
+      "name": "reader_feeds",
+      "fields": [
+        { "name": "url", "type": "string", "required": true },
+        { "name": "title", "type": "string", "required": false },
+        { "name": "siteUrl", "type": "string", "required": false },
+        { "name": "folder", "type": "string", "required": false },
+        { "name": "iconUrl", "type": "string", "required": false },
+        { "name": "lastFetchedAt", "type": "number", "required": false },
+        { "name": "lastError", "type": "string", "required": false },
+        { "name": "addedAt", "type": "number", "required": false }
+      ]
+    },
+    {
+      "id": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+      "name": "reader_items",
+      "fields": [
+        { "name": "guid", "type": "string", "required": true },
+        { "name": "feedId", "type": "string", "required": true },
+        { "name": "title", "type": "string", "required": false },
+        { "name": "link", "type": "string", "required": false },
+        { "name": "author", "type": "string", "required": false },
+        { "name": "publishedAt", "type": "string", "required": false },
+        { "name": "summary", "type": "text", "required": false },
+        { "name": "content", "type": "text", "required": false },
+        { "name": "read", "type": "boolean", "required": false },
+        { "name": "starred", "type": "boolean", "required": false },
+        { "name": "fetchedAt", "type": "number", "required": false }
+      ]
+    }
+  ],
   "rules": [
     {
       "pathPattern": "/api/auth/*",
@@ -19,6 +52,329 @@
       "proxyType": "external_proxy",
       "isEnabled": true,
       "description": "Reverse-proxy SuperTokens auth endpoints (session, session/refresh, signout, oauth) to the CE backend so this subdomain app can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie. NOT the /_bffless/auth relay (that is reserved for cross-origin custom domains). See apps/reader/CONTEXT.md D11."
+    },
+    {
+      "pathPattern": "/api/feeds/remove",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 1,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Unsubscribe: POST { url } -> data_query finds the reader_feeds row by url -> pick extracts its recordId -> data_delete (conditional) removes it. Items are left in place (they age out via retention #119). auth_required.",
+      "pipelineConfig": {
+        "name": "Remove feed",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "filters": { "url": { "op": "eq", "value": "request.body.url" } },
+              "pageSize": 1
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "del",
+            "name": "del",
+            "handlerType": "data_delete",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "recordId": "steps.pick.recordId",
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"removed\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/feeds",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 2,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "List subscribed feeds: data_query(reader_feeds) -> respond { feeds: [...] } (raw rows; the client shapes them). auth_required.",
+      "pipelineConfig": {
+        "name": "List feeds",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "pageSize": 500
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"feeds\":{{{steps.query}}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/feeds",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 3,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Add a feed by URL. POST { url, title?, siteUrl?, folder?, addedAt } -> prep builds a one-element array + hasUrl/noUrl flags -> data_upsert_many(reader_feeds, dedupField url) inserts unless the url already exists (per-feed state survives) -> respond { ok, inserted, skipped } (or 400 if no url). auth_required.",
+      "pipelineConfig": {
+        "name": "Add feed (upsert, dedup by url)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var url = (typeof b.url === 'string') ? b.url.trim() : ''\n  var feed = {\n    url: url,\n    title: (typeof b.title === 'string') ? b.title : '',\n    siteUrl: (typeof b.siteUrl === 'string') ? b.siteUrl : '',\n    folder: (b.folder != null && b.folder !== '') ? String(b.folder) : null,\n    addedAt: Number(b.addedAt) || 0\n  }\n  return {\n    feeds: [feed],\n    hasUrl: !!url,\n    noUrl: !url\n  }\n}\n"
+            }
+          },
+          {
+            "id": "upsert",
+            "name": "upsert",
+            "handlerType": "data_upsert_many",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "items": "steps.prep.feeds",
+              "map": {
+                "url": "steps.item.url",
+                "title": "steps.item.title",
+                "siteUrl": "steps.item.siteUrl",
+                "folder": "steps.item.folder",
+                "addedAt": "steps.item.addedAt"
+              },
+              "dedupField": "url",
+              "dedupKey": "steps.item.url",
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"inserted\":{{steps.upsert.inserted}},\"skipped\":{{steps.upsert.skipped}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "respondNoUrl",
+            "name": "respondNoUrl",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"url is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noUrl"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/items",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 4,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Query stored items, optionally scoped to one feed. GET /api/items[?feedId=<url>] -> prep computes hasFeed/noFeed + feedId -> queryFeed (filter feedId, conditional) OR queryAll (conditional) -> merge picks whichever ran -> respond { items: [...] } (raw rows; the client shapes/sanitizes). auth_required.",
+      "pipelineConfig": {
+        "name": "List items",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var q = (request && request.query) || {}\n  var fid = (typeof q.feedId === 'string') ? q.feedId : ''\n  return {\n    feedId: fid,\n    hasFeed: !!fid,\n    noFeed: !fid\n  }\n}\n"
+            }
+          },
+          {
+            "id": "queryFeed",
+            "name": "queryFeed",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filters": { "feedId": { "op": "eq", "value": "steps.prep.feedId" } },
+              "pageSize": 500,
+              "condition": "steps.prep.hasFeed"
+            }
+          },
+          {
+            "id": "queryAll",
+            "name": "queryAll",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "pageSize": 500,
+              "condition": "steps.prep.noFeed"
+            }
+          },
+          {
+            "id": "merge",
+            "name": "merge",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var feed = (steps && steps.queryFeed) || null\n  var all = (steps && steps.queryAll) || null\n  var rows = (feed && feed.length != null) ? feed : (all || [])\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    out.push(rows[i])\n  }\n  return { items: out }\n}\n"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"items\":{{{steps.merge.items}}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/refresh",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 5,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "The ingest composition: data_query(reader_feeds) -> urls collects feed URLs -> xml_feed_parse fetches+parses them concurrently -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link) inserts new entries only (read/starred survive) -> respond { inserted, skipped, errors }. feedId = entry.source (= the feed's url). Runnable as a user action OR as system context on a schedule (#119). auth_required (allowApiKey so the schedule/system can fire it).",
+      "pipelineConfig": {
+        "name": "Refresh feeds (ingest)",
+        "steps": [
+          {
+            "id": "feeds",
+            "name": "feeds",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "pageSize": 500
+            }
+          },
+          {
+            "id": "urls",
+            "name": "urls",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.feeds) || []\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var u = rows[i] && rows[i].url\n    if (typeof u === 'string' && u) out.push(u)\n  }\n  return { urls: out, count: out.length }\n}\n"
+            }
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "handlerType": "xml_feed_parse",
+            "config": {
+              "urls": "steps.urls.urls",
+              "concurrency": 8,
+              "timeoutMs": 20000,
+              "condition": "steps.urls.count"
+            }
+          },
+          {
+            "id": "upsert",
+            "name": "upsert",
+            "handlerType": "data_upsert_many",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "items": "steps.parse.entries",
+              "map": {
+                "guid": "steps.item.guid",
+                "feedId": "steps.item.source",
+                "title": "steps.item.title",
+                "link": "steps.item.link",
+                "author": "steps.item.author",
+                "publishedAt": "steps.item.publishedAt",
+                "summary": "steps.item.summary",
+                "content": "steps.item.content",
+                "fetchedAt": "now()"
+              },
+              "dedupField": "guid",
+              "dedupKey": ["steps.item.guid", "steps.item.link"],
+              "condition": "steps.urls.count"
+            }
+          },
+          {
+            "id": "summary",
+            "name": "summary",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var up = (steps && steps.upsert) || {}\n  function n(v) { return (typeof v === 'number' && !isNaN(v)) ? v : 0 }\n  return {\n    inserted: n(up.inserted),\n    skipped: n(up.skipped),\n    errors: n(up.errored)\n  }\n}\n"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"inserted\":{{steps.summary.inserted}},\"skipped\":{{steps.summary.skipped}},\"errors\":{{steps.summary.errors}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
     }
   ]
 }
