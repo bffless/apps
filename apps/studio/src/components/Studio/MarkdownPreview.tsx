@@ -157,10 +157,28 @@ function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
   })
 }
 
-/** Render inline `**bold**`, `*italic*` / `_italic_`, and `` `code` `` spans. */
+/** Render inline `[text](url)` links, `**bold**`, `*italic*` / `_italic_`, and
+ *  `` `code` `` spans. The link alternative also swallows an optional leading `!`
+ *  so an inline image token (`![alt](url)`) still falls through as plain text —
+ *  images are rendered as figures at the block level, not inline. */
 function renderInline(text: string): ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|_[^_]+_)/g).filter((s) => s !== '')
+  const parts = text
+    .split(/(!?\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|_[^_]+_)/g)
+    .filter((s) => s !== '')
   return parts.map((part, i) => {
+    const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
+    if (link)
+      return (
+        <a
+          key={i}
+          href={link[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-terracotta underline decoration-1 underline-offset-2 hover:text-terracotta-hover"
+        >
+          {link[1]}
+        </a>
+      )
     if (part.startsWith('**') && part.endsWith('**'))
       return <strong key={i}>{part.slice(2, -2)}</strong>
     if (part.startsWith('`') && part.endsWith('`'))
