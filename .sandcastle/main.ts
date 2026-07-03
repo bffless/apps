@@ -50,10 +50,22 @@ await run({
   hooks: {
     sandbox: {
       // onSandboxReady runs once after the sandbox is initialised and the repo is
-      // synced in, before the agent starts. Clean pnpm install from the lockfile
-      // (image has pnpm@10.33.0 via corepack). CI=true keeps pnpm fully
-      // non-interactive (no purge/confirm prompts, which abort without a TTY).
-      onSandboxReady: [{ command: "CI=true pnpm install --frozen-lockfile" }],
+      // synced in, before the agent starts.
+      onSandboxReady: [
+        // Wire the j5s-dev (BFFless) MCP into the sandbox agent. The template is
+        // checked in at .sandcastle/mcp.json — deliberately NOT at the repo root,
+        // because a root .mcp.json pointing at the maintainers' admin.j5s.dev is
+        // auto-loaded by a cloner's Claude Code and would import into the wrong
+        // project (that's why #96 removed the checked-in root file). Copying it to
+        // the repo-root .mcp.json here only happens inside the ephemeral container,
+        // so cloners' working trees stay clean. Claude Code loads it on startup and
+        // expands ${BFFLESS_API_KEY} from the sandbox env (.sandcastle/.env).
+        { command: "cp .sandcastle/mcp.json .mcp.json" },
+        // Clean pnpm install from the lockfile (image has pnpm@10.33.0 via
+        // corepack). CI=true keeps pnpm fully non-interactive (no purge/confirm
+        // prompts, which abort without a TTY).
+        { command: "CI=true pnpm install --frozen-lockfile" },
+      ],
     },
   },
 });

@@ -24,3 +24,8 @@ screenshots
 # editor / OS
 .DS_Store
 .claude/settings.local.json
+
+# root MCP config — generated inside the Sandcastle sandbox from
+# .sandcastle/mcp.json; never commit it (would auto-load into a cloner's Claude
+# Code against the maintainers' instance — see #96).
+.mcp.json
