@@ -1,7 +1,9 @@
 import { feedLabel, type Feed } from '../lib/feeds'
 import { folderNames, folderUnread, groupFeedsByFolder } from '../lib/folders'
+import type { OpmlFeed } from '../lib/opml'
 import { selectionEquals, type Selection } from '../lib/river'
 import { AddFeed } from './AddFeed'
+import { OpmlControls } from './OpmlControls'
 
 /**
  * Left rail: add-feed, a "Refresh now" action, and the subscription list, led by
@@ -22,7 +24,9 @@ export function FeedSidebar({
   onRemove,
   onMoveFolder,
   onRefresh,
+  onImportOpml,
   adding,
+  importing,
   refreshing,
 }: {
   feeds: Feed[]
@@ -35,7 +39,9 @@ export function FeedSidebar({
   onRemove: (url: string) => void
   onMoveFolder: (feed: Feed, folder: string | null) => void
   onRefresh: () => void
+  onImportOpml: (parsed: OpmlFeed[]) => Promise<void>
   adding: boolean
+  importing: boolean
   refreshing: boolean
 }) {
   const groups = groupFeedsByFolder(feeds)
@@ -53,6 +59,8 @@ export function FeedSidebar({
       >
         {refreshing ? 'Refreshing…' : 'Refresh now'}
       </button>
+
+      <OpmlControls feeds={feeds} onImport={onImportOpml} busy={importing} />
 
       <nav className="flex flex-col gap-0.5">
         <FeedRow

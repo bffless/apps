@@ -5,6 +5,7 @@ import { ReadingPane } from './components/ReadingPane'
 import * as api from './lib/api'
 import type { Feed } from './lib/feeds'
 import type { Item } from './lib/items'
+import type { OpmlFeed } from './lib/opml'
 import {
   itemsForSelection,
   markGuidsRead,
@@ -37,6 +38,7 @@ export function ReaderApp() {
   const [selectedGuid, setSelectedGuid] = useState<string | null>(null)
   const [itemsLoading, setItemsLoading] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -182,6 +184,29 @@ export function ReaderApp() {
     [loadFeeds, loadItems, selectView],
   )
 
+  // OPML import: upsert every parsed feed (each add is dedup-by-url, so re-import
+  // is a no-op), carrying its folder, then refresh once so items land. Feeds are
+  // added in parallel and settled independently — one bad url doesn't abort the
+  // batch — mirroring the mark-all-read fan-out; there's no bulk add primitive.
+  const handleImportOpml = useCallback(
+    async (parsed: OpmlFeed[]) => {
+      setImporting(true)
+      setError(null)
+      try {
+        await Promise.allSettled(
+          parsed.map((f) => api.addFeed({ url: f.url, title: f.title, folder: f.folder })),
+        )
+        await api.refresh()
+        await Promise.all([loadFeeds(), loadItems()])
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Import failed')
+      } finally {
+        setImporting(false)
+      }
+    },
+    [loadFeeds, loadItems],
+  )
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     setError(null)
@@ -241,7 +266,9 @@ export function ReaderApp() {
         onRemove={handleRemove}
         onMoveFolder={handleMoveFolder}
         onRefresh={handleRefresh}
+        onImportOpml={handleImportOpml}
         adding={adding}
+        importing={importing}
         refreshing={refreshing}
       />
 
