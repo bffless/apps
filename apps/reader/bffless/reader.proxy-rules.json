@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "exportedAt": "2026-07-03T00:00:00.000Z",
+  "kind": "bffless-proxy-rule-set",
+  "ruleSet": {
+    "name": "reader",
+    "description": "Rivulet app backend — RSS/Atom reader. Scaffold: SuperTokens auth reverse-proxy. Feed/item/refresh pipelines land with later stories (bffless/apps#112+).",
+    "environment": null
+  },
+  "rules": [
+    {
+      "pathPattern": "/api/auth/*",
+      "targetUrl": "http://localhost:3000/api/auth",
+      "stripPrefix": true,
+      "order": 0,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": true,
+      "proxyType": "external_proxy",
+      "isEnabled": true,
+      "description": "Reverse-proxy SuperTokens auth endpoints (session, session/refresh, signout, oauth) to the CE backend so this subdomain app can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie. NOT the /_bffless/auth relay (that is reserved for cross-origin custom domains). See apps/reader/CONTEXT.md D11."
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+/* Rivulet keeps a small, calm palette — a single accent over neutral surfaces.
+   The full reading-view design lands with later stories; this is the shell. */
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+}
