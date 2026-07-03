@@ -1,10 +1,15 @@
 # Studio — story backlog
 
-`/studio` turns one long, rambly recording into a short video **re-voiced in the
-user's own cloned voice**. The AI shortens the transcript and groups it into
-scenes (chapters) with timestamps; the producer then builds each scene one at a
-time. Each story is written to be picked up **with fresh context**: read
-`00-architecture-and-state.md`, then the one story.
+`/studio` turns one long, rambly recording into a short video **in the user's own
+recorded voice**. The AI splits the recording into scenes and proposes cuts; the
+producer tunes the cuts scene by scene. Each story is written to be picked up
+**with fresh context**: read `00-architecture-and-state.md`, then the one story.
+
+> ⚠️ **Model pivot (2026-07): cut-first editing.** The AI no longer rewrites
+> narration and nothing is ever re-voiced — see `docs/adr/0003-cut-first-editing.md`
+> and story **13** (`13-cut-first-build-editor.md`), which supersede the
+> rewrite/voice framing used by many entries below (03d/h/j/k/n/o/p, 04, 10d).
+> The history in "Where we are now" describes the pre-pivot app.
 
 ## 📍 Where we are now
 

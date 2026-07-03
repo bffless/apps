@@ -1,19 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import {
-  buildScenes,
-  wordCount,
-  narrationSeconds,
-  alignment,
-  sceneVideoSeconds,
-  WORDS_PER_SECOND,
-  type Scene,
-} from './scenes'
+import { buildScenes, wordCount, sceneVideoSeconds, WORDS_PER_SECOND } from './scenes'
 
-describe('wordCount / narrationSeconds', () => {
-  it('counts words and estimates speaking time', () => {
+describe('wordCount', () => {
+  it('counts words', () => {
     expect(wordCount('')).toBe(0)
     expect(wordCount('  one   two three ')).toBe(3)
-    expect(narrationSeconds('a b c d e')).toBeCloseTo(5 / WORDS_PER_SECOND, 5)
   })
 })
 
@@ -21,7 +12,7 @@ describe('buildScenes', () => {
   it('returns one scene for a short clip', () => {
     const scenes = buildScenes(30)
     expect(scenes).toHaveLength(1)
-    expect(scenes[0]).toMatchObject({ start: 0, end: 30, status: 'pending', narrationSeconds: null })
+    expect(scenes[0]).toMatchObject({ start: 0, end: 30, status: 'pending' })
   })
 
   it('breaks a long talk into several ~3.5 min scenes covering the whole clip', () => {
@@ -38,8 +29,8 @@ describe('buildScenes', () => {
 
   it('carries the full-span transcript and a default refine prompt', () => {
     const [scene] = buildScenes(120)
-    // full-span transcript ≈ footage length
-    expect(narrationSeconds(scene.transcript)).toBeCloseTo(sceneVideoSeconds(scene), 0)
+    // full-span transcript ≈ footage length at the speaking rate
+    expect(wordCount(scene.transcript) / WORDS_PER_SECOND).toBeCloseTo(sceneVideoSeconds(scene), 0)
     expect(scene.refinePrompt).toBeTruthy()
     expect(typeof scene.refinePrompt).toBe('string')
   })
@@ -48,22 +39,5 @@ describe('buildScenes', () => {
     const scenes = buildScenes(420, 210, 'vid-1')
     expect(scenes.length).toBeGreaterThan(0)
     expect(scenes.every((s) => s.sourceId === 'vid-1')).toBe(true)
-  })
-})
-
-describe('alignment', () => {
-  const base: Scene = {
-    id: 's', index: 0, sourceId: 'source-1', title: 't', start: 0, end: 20,
-    transcript: '', status: 'pending', narrationSeconds: null,
-  }
-
-  it('is null until the scene is voiced', () => {
-    expect(alignment(base)).toBeNull()
-  })
-
-  it('flags short, long, and aligned narration', () => {
-    expect(alignment({ ...base, narrationSeconds: 10 })?.status).toBe('short')
-    expect(alignment({ ...base, narrationSeconds: 30 })?.status).toBe('long')
-    expect(alignment({ ...base, narrationSeconds: 20.5 })?.status).toBe('aligned')
   })
 })

@@ -18,7 +18,6 @@ const withOneProject = (): StudioState => ({
   index: { p1: { id: 'p1', name: 'A', createdAt: 1, updatedAt: 1, phase: 'import', thumbnailUrl: null } },
   working: { p1: freshWorkingState() },
   activeProjectId: 'p1',
-  savedVoices: [],
 })
 
 const initial = withOneProject()
@@ -60,8 +59,8 @@ describe('autoBuild reducers', () => {
   })
 
   it('setAutoPointer moves the pointer', () => {
-    const s = reducer(initial, setAutoPointer({ sceneId: 's2', stepId: 'voice' }))
-    expect(s.working.p1.autoBuild).toMatchObject({ currentSceneId: 's2', currentStepId: 'voice' })
+    const s = reducer(initial, setAutoPointer({ sceneId: 's2', stepId: 'assemble' }))
+    expect(s.working.p1.autoBuild).toMatchObject({ currentSceneId: 's2', currentStepId: 'assemble' })
   })
 
   it('complete → done', () => {

@@ -14,7 +14,7 @@ describe('phaseOf', () => {
   it('is export when every scene is built', () => {
     const w = freshWorkingState()
     w.sources = [{ id: 's1', order: 0, fileName: 'a.mp4', duration: 10, sourceUrl: 'u', audioUrl: null, audioPeaks: [], words: [], transcribeJobId: null, stageProgress: { upload: { status: 'done' }, extract: { status: 'done' }, transcribe: { status: 'done' } } }]
-    for (const id of ['thumbnails', 'clone', 'director'] as const) w.stageProgress[id] = { status: 'done' }
+    for (const id of ['thumbnails', 'director'] as const) w.stageProgress[id] = { status: 'done' }
     w.scenes = [{ id: 'sc1', status: 'built' } as never]
     expect(phaseOf(w)).toBe('export')
   })

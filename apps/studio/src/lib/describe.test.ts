@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { Scene } from './scenes'
+import type { TWord } from './transcriptGrid'
 import {
   videoScript,
   videoChapters,
   chapterTime,
   formatChapters,
   scriptWords,
+  sceneWordsLookup,
   buildDescribeRequest,
   toDescription,
   youtubeDescription,
@@ -21,30 +23,61 @@ function scene(over: Partial<Scene> = {}): Scene {
     end: 60,
     transcript: 'original transcript words',
     status: 'built',
-    narrationSeconds: null,
     ...over,
   }
 }
 
-const refined = (segments: { text: string; start: number; end: number }[], cuts: { start: number; end: number }[] = []) => ({
-  refined: { segments, cuts, source: 'ai' as const },
+const refined = (cuts: { start: number; end: number }[]) => ({
+  refined: { cuts, source: 'ai' as const },
 })
 
+/** Timed words spaced 1s apart from `start`, one per token. */
+const timed = (text: string, start = 0): TWord[] =>
+  text.split(/\s+/).map((t, i) => ({ text: t, start: start + i, end: start + i + 0.5 }))
+
+/** A wordsFor over a per-scene-id map. */
+const lookupBy = (map: Record<string, TWord[]>) => (s: Scene) => map[s.id] ?? []
+
 describe('videoScript', () => {
-  it('joins effective segment text across scenes in order', () => {
+  it('joins each scene’s kept words (its timed words minus the cuts), in order', () => {
     const scenes = [
-      scene({ id: 'a', ...refined([{ text: 'Hello there.', start: 0, end: 2 }]) }),
-      scene({ id: 'b', ...refined([{ text: 'Second scene.', start: 0, end: 2 }, { text: 'More.', start: 2, end: 3 }]) }),
+      scene({ id: 'a', ...refined([{ start: 1, end: 2 }]) }), // drops "there"
+      scene({ id: 'b' }),
     ]
-    expect(videoScript(scenes)).toBe('Hello there.\n\nSecond scene. More.')
+    const wordsFor = lookupBy({
+      a: timed('Hello there world'),
+      b: timed('Second scene', 10),
+    })
+    expect(videoScript(scenes, wordsFor)).toBe('Hello world\n\nSecond scene')
   })
 
-  it('skips scenes whose effective segments are empty', () => {
+  it('skips a fully-cut scene', () => {
     const scenes = [
-      scene({ id: 'a', ...refined([{ text: 'Kept.', start: 0, end: 2 }]) }),
-      scene({ id: 'b', ...refined([]) }),
+      scene({ id: 'a' }),
+      scene({ id: 'b', ...refined([{ start: 0, end: 60 }]) }),
     ]
-    expect(videoScript(scenes)).toBe('Kept.')
+    const wordsFor = lookupBy({ a: timed('Kept.'), b: timed('All gone') })
+    expect(videoScript(scenes, wordsFor)).toBe('Kept.')
+  })
+
+  it('falls back to the raw transcript when a scene has no timed words', () => {
+    const scenes = [scene({ id: 'a', transcript: 'fallback words' })]
+    expect(videoScript(scenes, () => [])).toBe('fallback words')
+  })
+})
+
+describe('sceneWordsLookup', () => {
+  it('slices the owning source’s words to the scene window', () => {
+    const sources = [
+      { id: 'source-1', words: timed('zero one two three four five') }, // starts at 0,1,2…
+    ]
+    const wordsFor = sceneWordsLookup(sources)
+    const s = scene({ start: 2, end: 4 })
+    expect(wordsFor(s).map((w) => w.text)).toEqual(['two', 'three'])
+  })
+
+  it('returns [] for an unknown source', () => {
+    expect(sceneWordsLookup([])(scene())).toEqual([])
   })
 })
 
@@ -52,9 +85,9 @@ describe('videoChapters', () => {
   it('starts the first chapter at 0 and accumulates final (post-cut) durations', () => {
     const scenes = [
       // 60s footage, 20s cut → 40s final
-      scene({ id: 'a', title: 'Intro', start: 0, end: 60, ...refined([{ text: 'x', start: 0, end: 1 }], [{ start: 0, end: 20 }]) }),
+      scene({ id: 'a', title: 'Intro', start: 0, end: 60, ...refined([{ start: 0, end: 20 }]) }),
       // 30s footage, no cuts → 30s final
-      scene({ id: 'b', title: 'Body', start: 60, end: 90, ...refined([{ text: 'y', start: 60, end: 61 }]) }),
+      scene({ id: 'b', title: 'Body', start: 60, end: 90 }),
     ]
     const chapters = videoChapters(scenes)
     expect(chapters).toEqual([
@@ -91,33 +124,33 @@ describe('formatChapters', () => {
 })
 
 describe('scriptWords', () => {
-  it('spreads each segment’s words evenly across its span', () => {
-    const scenes = [scene({ ...refined([{ text: 'Hello world', start: 0, end: 2 }]) })]
-    expect(scriptWords(scenes)).toEqual([
-      { text: 'Hello', start: 0, end: 1 },
-      { text: 'world', start: 1, end: 2 },
+  it('returns the kept words with their real timestamps', () => {
+    const scenes = [scene({ id: 'a', ...refined([{ start: 1, end: 2 }]) })]
+    const wordsFor = lookupBy({ a: timed('Hello there world') })
+    expect(scriptWords(scenes, wordsFor)).toEqual([
+      { text: 'Hello', start: 0, end: 0.5 },
+      { text: 'world', start: 2, end: 2.5 },
     ])
   })
 
-  it('concatenates across scenes and skips empty segments', () => {
-    const scenes = [
-      scene({ id: 'a', ...refined([{ text: 'One', start: 0, end: 1 }]) }),
-      scene({ id: 'b', ...refined([{ text: '   ', start: 1, end: 2 }, { text: 'Two', start: 2, end: 3 }]) }),
-    ]
-    expect(scriptWords(scenes).map((w) => w.text)).toEqual(['One', 'Two'])
+  it('concatenates across scenes', () => {
+    const scenes = [scene({ id: 'a' }), scene({ id: 'b' })]
+    const wordsFor = lookupBy({ a: timed('One'), b: timed('Two', 5) })
+    expect(scriptWords(scenes, wordsFor).map((w) => w.text)).toEqual(['One', 'Two'])
   })
 })
 
 describe('buildDescribeRequest', () => {
   it('pairs the final script with the trimmed director synopsis', () => {
-    const scenes = [scene({ ...refined([{ text: 'Kept line.', start: 0, end: 2 }]) })]
-    expect(buildDescribeRequest(scenes, '  A talk about onboarding.  ')).toEqual({
+    const scenes = [scene({ id: 'a' })]
+    const wordsFor = lookupBy({ a: timed('Kept line.') })
+    expect(buildDescribeRequest(scenes, '  A talk about onboarding.  ', wordsFor)).toEqual({
       script: 'Kept line.',
       synopsis: 'A talk about onboarding.',
     })
   })
   it('tolerates a null synopsis', () => {
-    expect(buildDescribeRequest([], null)).toEqual({ script: '', synopsis: '' })
+    expect(buildDescribeRequest([], null, () => [])).toEqual({ script: '', synopsis: '' })
   })
 })
 

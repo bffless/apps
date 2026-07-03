@@ -12,22 +12,28 @@ const base: Scene = {
   end: 100,
   transcript: 'one two three four five six seven eight nine ten',
   status: 'pending',
-  narrationSeconds: null,
 }
 
-describe('SceneMeta script stat', () => {
-  it('uses the refined narration text once refined, not the transcript', () => {
+describe('SceneMeta cut stats', () => {
+  it('reads the refined cuts once refined, not the director baseline', () => {
     const refined: Scene = {
       ...base,
-      refined: { segments: [{ text: 'one two three', start: 0, end: 30 }], cuts: [], source: 'ai' },
+      cuts: [{ start: 0, end: 50 }], // stale baseline — must NOT be read
+      refined: { cuts: [{ start: 10, end: 30 }], source: 'manual' },
     }
     const { container } = render(<SceneMeta scene={refined} />)
-    // transcript is 10 words, refined script is 3 → "10 → 3 words"
-    expect(container.textContent).toContain('10 → 3 words')
+    // 100s footage, 20s cut → 1:40 → 1:20, 80% kept
+    expect(container.textContent).toContain('1 · −0:20.0')
+    expect(container.textContent).toContain('80% kept')
   })
 
-  it('pre-refine, reflects the transcript fallback (no reduction)', () => {
+  it('pre-refine, reflects the director baseline cuts', () => {
+    const { container } = render(<SceneMeta scene={{ ...base, cuts: [{ start: 0, end: 10 }] }} />)
+    expect(container.textContent).toContain('−0:10.0')
+  })
+
+  it('shows "none" with no cuts anywhere', () => {
     const { container } = render(<SceneMeta scene={base} />)
-    expect(container.textContent).toContain('10 → 10 words')
+    expect(container.textContent).toContain('none')
   })
 })

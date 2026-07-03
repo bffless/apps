@@ -47,7 +47,6 @@ describe('toScenes', () => {
       start: 0,
       end: 60,
       status: 'pending',
-      narrationSeconds: null,
       transcript: 'Welcome to the talk',
       refinePrompt: 'Tighten the intro to a 15s hook.',
     })
@@ -83,18 +82,6 @@ describe('toScenes', () => {
     expect(toScenes(undefined as unknown as DirectorScene[], [{ id: 'source-1', duration: 10 }])).toEqual([])
   })
 
-  it('keeps a valid voicing plan and drops junk values (story 03j)', () => {
-    const scenes = toScenes(
-      [
-        { start: 0, end: 30, transcript: 'a', voicing: 'original' },
-        { start: 30, end: 60, transcript: 'b', voicing: 'mixed' },
-        { start: 60, end: 90, transcript: 'c', voicing: 'shout it' as unknown as DirectorScene['voicing'] },
-        { start: 90, end: 120, transcript: 'd' },
-      ],
-      [{ id: 'source-1', duration: 120 }],
-    )
-    expect(scenes.map((s) => s.voicing)).toEqual(['original', 'mixed', undefined, undefined])
-  })
 })
 
 describe('toScenes — multi-source (09c)', () => {

@@ -26,11 +26,6 @@ async function decodeToMono(file: File, targetRate: number): Promise<Float32Arra
   return rendered.getChannelData(0)
 }
 
-/** Decode `file`'s audio → 16 kHz mono WAV Blob (PCM16). */
-export async function extractAudioWav(file: File, targetRate = 16000): Promise<Blob> {
-  return encodeWav(await decodeToMono(file, targetRate), targetRate)
-}
-
 /**
  * Decode once, return both the uploadable WAV **and** a tiny waveform summary —
  * so the extract step can show a "we got the audio" stenograph without the

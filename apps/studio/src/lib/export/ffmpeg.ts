@@ -103,10 +103,8 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 export type AssembleAssets = {
-  /** The source video bytes (written as the command's input 0, e.g. `source.mp4`). */
+  /** The source video bytes (written as the command's input, e.g. `source.mp4`). */
   source: Uint8Array
-  /** One WAV per `command.audioInputs` entry, in that order (`a0.wav`, `a1.wav`…). */
-  clips: Uint8Array[]
   command: import('./assemble').FfmpegCommand
   /** 0–1 encode progress from ffmpeg's `progress` event. */
   onProgress?: (progress: number) => void
@@ -115,13 +113,12 @@ export type AssembleAssets = {
 }
 
 /**
- * Run one assemble: stage the source + clips into the wasm FS, exec the command,
- * read back `out.mp4`, and clean up. Returns the finished MP4 as a Blob. Throws
+ * Run one assemble: stage the source into the wasm FS, exec the command, read
+ * back the output, and clean up. Returns the finished MP4 as a Blob. Throws
  * with ffmpeg's last log lines attached if the exec fails.
  */
 export async function assemble({
   source,
-  clips,
   command,
   onProgress,
   onLog,
@@ -146,11 +143,6 @@ export async function assemble({
   try {
     await ff.writeFile(sourceName, source)
     written.push(sourceName)
-    for (let i = 0; i < clips.length; i++) {
-      const name = `a${i}.wav`
-      await ff.writeFile(name, clips[i])
-      written.push(name)
-    }
 
     const code = await ff.exec(command.args)
     if (code !== 0) {
@@ -166,52 +158,6 @@ export async function assemble({
   } finally {
     ff.off('log', onLogEvent)
     ff.off('progress', onProgressEvent)
-    for (const name of written) await ff.deleteFile(name).catch(() => {})
-  }
-}
-
-export type MeasureAssets = {
-  /** The narration clip to measure (written as `command.input`). */
-  clip: Uint8Array
-  command: { args: string[]; input: string }
-  /** Raw ffmpeg log lines (the loudnorm JSON arrives here). */
-  onLog?: (line: string) => void
-}
-
-/**
- * Loudnorm pass 1 (story 05 audio polish follow-up): decode one narration clip
- * through loudnorm's measurement mode and return the log lines, which carry the
- * stats JSON (`parseLoudnorm` in ./assemble.ts extracts it). Audio-only decode
- * into the null muxer — quick even single-threaded. Throws on a non-zero exit;
- * the caller treats that clip as unmeasured (single-pass fallback), so a bad
- * clip degrades the polish instead of failing the render.
- */
-export async function measureLoudness({ clip, command, onLog }: MeasureAssets): Promise<string[]> {
-  const ff = await getFFmpeg()
-
-  const lines: string[] = []
-  const onLogEvent = ({ message }: { message: string }) => {
-    if (lines.length < 200) lines.push(message)
-    onLog?.(message)
-  }
-  ff.on('log', onLogEvent)
-
-  const written: string[] = []
-  try {
-    // writeFile TRANSFERS the buffer to the worker, detaching it on this
-    // thread. Measurement is a side-read — hand over a copy so the caller can
-    // still write these same bytes in the assemble that follows ("attempting
-    // to access detached ArrayBuffer" otherwise).
-    await ff.writeFile(command.input, clip.slice())
-    written.push(command.input)
-
-    const code = await ff.exec(command.args)
-    if (code !== 0) {
-      throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${lines.slice(-12).join('\n')}`)
-    }
-    return lines
-  } finally {
-    ff.off('log', onLogEvent)
     for (const name of written) await ff.deleteFile(name).catch(() => {})
   }
 }

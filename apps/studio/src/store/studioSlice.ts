@@ -48,33 +48,6 @@ export type BlogPost = {
 export type TranscriptWord = { text: string; start: number; end: number; speaker?: string }
 
 /**
- * The narration voice the producer settled on in the clone prep step — either
- * their own **cloned** voice (recorded → MiniMax voice-cloning → `voiceId`) or a
- * picked **preset** voice. Durable: it's reused to voice every scene in Build and
- * across runs, so it's persisted. `sampleUrl` is the uploaded recording the clone
- * was made from (clone path only), kept for reference.
- */
-export type VoiceChoice = {
-  voiceId: string
-  /** How we got it: a fresh clone, a reused saved id, or a MiniMax preset. */
-  source: 'clone' | 'saved' | 'preset'
-  label: string
-  sampleUrl?: string | null
-}
-
-/** A person in the project cast (story 10b): a name + the one voice their lines
- *  are narrated in. Detected speaker labels are assigned to a person per video. */
-export type Person = { id: string; name: string; voice: VoiceChoice | null }
-
-/**
- * A cloned voice id worth keeping. MiniMax stores cloned voices server-side by
- * id, so once you've paid the $3 to clone, you can reuse that id forever without
- * re-cloning. We remember every id you mint (and any you paste in) here, persisted
- * to localStorage, so they're one click away next session.
- */
-export type SavedVoice = { voiceId: string; label: string }
-
-/**
  * Per-step progress — the ONLY dynamic part of the prep board, and all we keep
  * in state (and persist). The step *content* (title, note, where, action label)
  * is static `STAGE_DEFS` and is recombined with this in the hook, so editing the
@@ -141,8 +114,6 @@ const makeSource = (p: { id: string; fileName: string; duration: number; order: 
  * top-level studio slice when there was a single implicit project. Story 11a
  * turns the slice into a keyed collection of these (see `StudioState`), one per
  * project, with reducers re-pointed onto the active project via `active(state)`.
- * `savedVoices` is deliberately NOT here — it's a shared user library hoisted to
- * the root.
  */
 export type ProjectWorkingState = {
   stageProgress: StageProgressMap
@@ -194,8 +165,6 @@ export type ProjectWorkingState = {
    * status so the resume poller never re-runs a finished job).
    */
   directorPromptJobId: string | null
-  /** The narration voice (cloned, reused, or preset), set in the clone prep step. */
-  voice: VoiceChoice | null
   selectedId: string | null
   /** Source clip duration in seconds (from the <video> metadata). */
   duration: number
@@ -238,12 +207,6 @@ export type ProjectWorkingState = {
    * and are retired in a later task.
    */
   sources: VideoSource[]
-  /** Project cast (story 10b). Default seeds one person ('Me'); the legacy
-   *  top-level `voice` mirrors cast[0].voice for back-compat readers. */
-  cast: Person[]
-  /** Per-video speaker→person map: speakerAssignments[videoId][speakerLabel] = personId.
-   *  Absent entry + single-person cast resolves to that person (see speakers.ts). */
-  speakerAssignments: Record<string, Record<string, string>>
   /** Auto-build run pointer (story 03s). Durable so a reload knows a run was in
    *  progress; the orchestrator coerces a persisted `running` back to `paused`
    *  on reload (in-flight browser steps aren't resumable). The resumable truth is
@@ -267,7 +230,6 @@ export function freshWorkingState(): ProjectWorkingState {
     direction: '',
     scenesJobId: null,
     directorPromptJobId: null,
-    voice: null,
     selectedId: null,
     duration: 0,
     fileName: null,
@@ -276,8 +238,6 @@ export function freshWorkingState(): ProjectWorkingState {
     youtubeThumbnail: null,
     blog: null,
     sources: [],
-    cast: [],
-    speakerAssignments: {},
     autoBuild: { status: 'idle', currentSceneId: null, currentStepId: null, error: null },
   }
 }
@@ -287,45 +247,22 @@ export function freshWorkingState(): ProjectWorkingState {
  * holds the lightweight per-project metadata (name, phase, thumbnail) for the
  * dashboard; `working` holds the heavy working state keyed by the same id;
  * `activeProjectId` selects which one the project-scoped reducers mutate.
- * `savedVoices` is hoisted to the root — a shared user library across projects.
  */
 export type StudioState = {
   index: Record<string, ProjectMeta>
   working: Record<string, ProjectWorkingState>
   activeProjectId: string | null
-  savedVoices: SavedVoice[]
 }
 
 const initialState: StudioState = {
   index: {},
   working: {},
   activeProjectId: null,
-  savedVoices: [],
 }
 
 /** The active project's working state, or undefined when none is selected. */
 function active(state: StudioState): ProjectWorkingState | undefined {
   return state.activeProjectId ? state.working[state.activeProjectId] : undefined
-}
-
-const defaultPersonName = (i: number) => (i === 0 ? 'Me' : `Person ${i + 1}`)
-
-/**
- * Next collision-free person id, derived from the CURRENT cast — NOT a module
- * counter. `cast` persists across reloads (redux-persist) but a module counter
- * resets to 0 on every page load, so it would re-mint `person-1` and collide
- * with a rehydrated person; `setPersonVoice` would then `find` the wrong one and
- * edit the original (the "picking Person 2's voice changed Me" bug). Deriving the
- * id from the max existing suffix is stable, deterministic for tests, and
- * collision-free after a reload.
- */
-const nextPersonId = (cast: Person[]): string => {
-  let max = 0
-  for (const p of cast) {
-    const m = /^person-(\d+)$/.exec(p.id)
-    if (m) max = Math.max(max, Number(m[1]))
-  }
-  return `person-${max + 1}`
 }
 
 const studioSlice = createSlice({
@@ -404,22 +341,6 @@ const studioSlice = createSlice({
     setDirectorPromptJobId(state, action: PayloadAction<string | null>) {
       const w = active(state); if (!w) return
       w.directorPromptJobId = action.payload
-    },
-    setVoice(state, action: PayloadAction<VoiceChoice | null>) {
-      const w = active(state); if (!w) return
-      w.voice = action.payload
-    },
-    /** Remember a cloned/known voice id (newest first, deduped by id). */
-    addSavedVoice(state, action: PayloadAction<SavedVoice>) {
-      const id = action.payload.voiceId.trim()
-      if (!id) return
-      state.savedVoices = [
-        { voiceId: id, label: action.payload.label || id },
-        ...state.savedVoices.filter((v) => v.voiceId !== id),
-      ]
-    },
-    removeSavedVoice(state, action: PayloadAction<string>) {
-      state.savedVoices = state.savedVoices.filter((v) => v.voiceId !== action.payload)
     },
     /** Mint a new project (id + timestamp minted by the caller, kept out of the
      *  reducer so it stays pure), name it the next free "Untitled project", seed
@@ -575,7 +496,6 @@ const studioSlice = createSlice({
     removeSource(state, action: PayloadAction<string>) {
       const w = active(state); if (!w) return
       w.sources = w.sources.filter((s) => s.id !== action.payload).map((s, i) => ({ ...s, order: i }))
-      delete w.speakerAssignments[action.payload]
     },
     /** Move a source from index `from` to index `to` and renumber `order`. */
     reorderSources(state, action: PayloadAction<{ from: number; to: number }>) {
@@ -585,51 +505,6 @@ const studioSlice = createSlice({
       const [moved] = w.sources.splice(from, 1)
       w.sources.splice(to, 0, moved)
       w.sources = w.sources.map((s, i) => ({ ...s, order: i }))
-    },
-    /** Grow/shrink the cast to exactly `n` people (min 1). New people get a default
-     *  name + no voice; removing trims from the end and drops their assignments. */
-    setPeopleCount(state, action: PayloadAction<number>) {
-      const w = active(state); if (!w) return
-      const n = Math.max(1, Math.floor(action.payload))
-      while (w.cast.length < n)
-        w.cast.push({ id: nextPersonId(w.cast), name: defaultPersonName(w.cast.length), voice: null })
-      if (w.cast.length > n) {
-        const removed = w.cast.slice(n).map((p) => p.id)
-        w.cast = w.cast.slice(0, n)
-        for (const vid of Object.keys(w.speakerAssignments))
-          for (const label of Object.keys(w.speakerAssignments[vid]))
-            if (removed.includes(w.speakerAssignments[vid][label]))
-              delete w.speakerAssignments[vid][label]
-      }
-      w.voice = w.cast[0]?.voice ?? null
-    },
-    renamePerson(state, action: PayloadAction<{ id: string; name: string }>) {
-      const w = active(state); if (!w) return
-      const p = w.cast.find((x) => x.id === action.payload.id)
-      if (p) p.name = action.payload.name
-    },
-    setPersonVoice(state, action: PayloadAction<{ id: string; voice: VoiceChoice | null }>) {
-      const w = active(state); if (!w) return
-      const p = w.cast.find((x) => x.id === action.payload.id)
-      if (!p) return
-      p.voice = action.payload.voice
-      if (w.cast[0]?.id === p.id) w.voice = p.voice // legacy mirror
-    },
-    removePerson(state, action: PayloadAction<string>) {
-      const w = active(state); if (!w) return
-      w.cast = w.cast.filter((p) => p.id !== action.payload)
-      if (w.cast.length === 0)
-        w.cast = [{ id: nextPersonId(w.cast), name: defaultPersonName(0), voice: null }]
-      for (const vid of Object.keys(w.speakerAssignments))
-        for (const label of Object.keys(w.speakerAssignments[vid]))
-          if (w.speakerAssignments[vid][label] === action.payload)
-            delete w.speakerAssignments[vid][label]
-      w.voice = w.cast[0]?.voice ?? null
-    },
-    assignSpeaker(state, action: PayloadAction<{ videoId: string; label: string; personId: string }>) {
-      const w = active(state); if (!w) return
-      const { videoId, label, personId } = action.payload
-      ;(w.speakerAssignments[videoId] ??= {})[label] = personId
     },
     /** Begin / restart an auto-build run; clears any prior halt error. */
     startAutoBuild(state) {
@@ -707,9 +582,6 @@ export const {
   setDirection,
   setScenesJobId,
   setDirectorPromptJobId,
-  setVoice,
-  addSavedVoice,
-  removeSavedVoice,
   createProject,
   openProject,
   closeProject,
@@ -733,11 +605,6 @@ export const {
   patchSourceStage,
   removeSource,
   reorderSources,
-  setPeopleCount,
-  renamePerson,
-  setPersonVoice,
-  removePerson,
-  assignSpeaker,
   startAutoBuild,
   pauseAutoBuild,
   resumeAutoBuild,

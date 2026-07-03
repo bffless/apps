@@ -36,11 +36,8 @@ export type DirectorScene = {
   transcript?: string
   /** Footage spans to drop, in original-video seconds, inside this scene. */
   cuts?: Cut[]
-  /** The director's voicing plan for this scene (story 03j): keep the creator's
-   *  original audio, re-voice the tightened narration, or some of both. */
-  voicing?: 'original' | 'revoice' | 'mixed'
-  /** The director's default refine prompt for this scene (story 03q) — a short
-   *  instruction the per-scene refiner follows; seeds `scene.refinePrompt`. */
+  /** The director's default refine prompt for this scene (story 03q) — its
+   *  cutting brief for the per-scene refiner; seeds `scene.refinePrompt`. */
   refinePrompt?: string
 }
 
@@ -97,11 +94,6 @@ export function timedTranscript(words: TWord[], secondsPerLine = 8): string {
 function leadWords(text: string, n = 5): string {
   const words = text.trim().split(/\s+/).filter(Boolean).slice(0, n)
   return words.join(' ')
-}
-
-/** Validate the director's per-scene voicing plan; anything else → undefined. */
-function toVoicing(v: unknown): Scene['voicing'] {
-  return v === 'original' || v === 'revoice' || v === 'mixed' ? v : undefined
 }
 
 /** Clamp a cut span to `[lo, hi]`, returning null if it collapses to nothing. */
@@ -172,11 +164,9 @@ export function toScenes(raw: DirectorScene[], sources: SourceLike[]): Scene[] {
     const cuts = (Array.isArray(g.raw?.cuts) ? g.raw.cuts : [])
       .map((c) => clampCut({ start: num(c?.start) - span.start, end: num(c?.end) - span.start }, localStart, localEnd))
       .filter((c): c is Cut => c !== null)
-    const voicing = toVoicing(g.raw?.voicing)
     out.push({
       id: `scene-${i + 1}`, index: i, sourceId: span.id, title,
-      start: localStart, end: localEnd, transcript, status: 'pending', narrationSeconds: null, cuts,
-      ...(voicing ? { voicing } : {}),
+      start: localStart, end: localEnd, transcript, status: 'pending', cuts,
       ...(refinePrompt ? { refinePrompt } : {}),
     })
   }

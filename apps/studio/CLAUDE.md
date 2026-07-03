@@ -1,9 +1,10 @@
 # CLAUDE.md — Studio
 
 Guidance for Claude Code when working in the Studio app. Studio turns one long, rambly screen
-recording into a short video **re-voiced in the user's own cloned voice**: an AI "master director"
-shortens the transcript and splits it into scenes; the producer then builds each scene one at a time
-(refine the cut, voice the script, assemble).
+recording into a short video **in the user's own recorded voice** (cut-first — see
+`docs/adr/0003-cut-first-editing.md`): an AI "master director" splits the recording into scenes and
+proposes cuts; the producer tunes the cuts scene by scene (slice the clip, refine the cuts,
+assemble). Nothing is re-voiced and the AI never rewrites what was said.
 
 This app was extracted from the `example-upload` demo site into the `bffless-apps` monorepo. It is a
 self-contained pnpm workspace package — it no longer shares code with the demo site (it carries its
@@ -37,7 +38,7 @@ rules in the dashboard, re-export and commit the updated JSON.
 
 ## The locked pipeline
 
-Prep runs six stages **one at a time** (`STAGE_DEFS` in `src/lib/pipeline.ts`; top-level stepper is
+Prep runs five stages **one at a time** (`STAGE_DEFS` in `src/lib/pipeline.ts`; top-level stepper is
 Import → Prep → Build → Export):
 
 1. **Upload source** → bucket (presigned, story 01)
@@ -45,12 +46,12 @@ Import → Prep → Build → Export):
 3. **Transcribe** with word timestamps (WhisperX, story 02)
 4. **Contact sheet** — interval-sampled frames composed into one timestamped image (browser-side)
 5. **Master director** — `/api/scenes`: transcript + contact sheets → `google/gemini-3.1-pro` →
-   `{ synopsis, scenes[] }`, each scene `{ title, start, end, transcript, draftText, cuts[] }` (story 03)
-6. **Voice** — clone the user's voice / reuse a saved `voice_id` / pick a MiniMax preset (story 04)
+   `{ synopsis, scenes[] }`, each scene `{ title, start, end, transcript, refinePrompt, cuts[] }` (story 03)
 
-Then **Build** (per scene, `TranscriptDiff.tsx`): optionally run the per-scene refiner
-(`/api/refine-scene`, story 03c) for anchored `segments` + better `cuts`; hand-edit cuts; voice each
-segment; mark built. Export assembles via ffmpeg.wasm (story 05+).
+Then **Build** (per scene, `CutEditor.tsx`): slice the scene's clip + dense sheets, optionally run
+the per-scene refiner (`/api/refine-scene`, story 03c) for better `cuts`; hand-edit cuts on the
+grid; assemble (kept spans, the clip's own audio). Export stitches the saved scene cuts via
+ffmpeg.wasm (story 05+).
 
 ## Layout
 
@@ -73,9 +74,9 @@ segment; mark built. Export assembles via ffmpeg.wasm (story 05+).
 - **Never stream large files through a pipeline.** Edge nginx caps request bodies at **1 MB**.
   Uploads use the **presigned direct-to-bucket** flow; feed a bucket object to Replicate via a
   server-minted `signed_url`.
-- **Non-destructive layers.** The director's `draftText`/`cuts` are an immutable baseline; the
-  refiner and hand-edits write to `scene.refined` (`source: 'ai' | 'manual'`). Reverting =
-  `refined = null`. Downstream reads `refined ?? baseline` via `effectiveSegments`/`effectiveCuts`.
+- **Non-destructive layers.** The director's `cuts` are an immutable baseline; the refiner and
+  hand-edits write to `scene.refined` (`source: 'ai' | 'manual'`). Reverting = `refined = null`.
+  Downstream reads `refined ?? baseline` via `effectiveCuts`.
 - **No base64 in Redux/localStorage.** Contact sheets and audio persist **url-only**.
 - **One stage per PR**; `build`, `lint`, `test:run` must pass.
 

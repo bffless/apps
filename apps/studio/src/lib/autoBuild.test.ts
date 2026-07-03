@@ -7,7 +7,6 @@ import {
   nextStep,
   nextAction,
   isSceneComplete,
-  voiceProgress,
   sceneStepStatuses,
   sceneRunStatus,
   type AutoBuildRun,
@@ -25,14 +24,13 @@ function scene(over: Partial<Scene> = {}): Scene {
     end: 10,
     transcript: 'hello world',
     status: 'pending',
-    narrationSeconds: null,
     ...over,
   }
 }
 
 describe('AUTO_STEPS', () => {
-  it('runs cut → sheets → refine → voice → assemble', () => {
-    expect(AUTO_STEPS.map((s) => s.id)).toEqual(['cut', 'sheets', 'refine', 'voice', 'assemble'])
+  it('runs cut → sheets → refine → assemble', () => {
+    expect(AUTO_STEPS.map((s) => s.id)).toEqual(['cut', 'sheets', 'refine', 'assemble'])
   })
 })
 
@@ -51,22 +49,12 @@ describe('nextStep', () => {
     )
   })
 
-  it('moves to voice once refined, while a segment is unvoiced', () => {
+  it('moves to assemble once refined', () => {
     const s = scene({
       clipUrl: 'u',
       clipAudioUrl: 'a',
       sheets: [{} as ContactSheet],
-      refined: { segments: [{ text: 'hi', start: 0, end: 1 }], cuts: [], source: 'ai' },
-    })
-    expect(nextStep(s)).toBe('voice')
-  })
-
-  it('moves to assemble once every segment is voiced', () => {
-    const s = scene({
-      clipUrl: 'u',
-      clipAudioUrl: 'a',
-      sheets: [{} as ContactSheet],
-      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [], source: 'ai' },
+      refined: { cuts: [{ start: 2, end: 4 }], source: 'ai' },
     })
     expect(nextStep(s)).toBe('assemble')
   })
@@ -76,21 +64,11 @@ describe('nextStep', () => {
       clipUrl: 'u',
       clipAudioUrl: 'a',
       sheets: [{} as ContactSheet],
-      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [], source: 'ai' },
+      refined: { cuts: [], source: 'ai' },
       assembledUrl: 'done',
     })
     expect(nextStep(s)).toBeNull()
     expect(isSceneComplete(s)).toBe(true)
-  })
-
-  it('treats a refined scene with zero segments as voiced', () => {
-    const s = scene({
-      clipUrl: 'u',
-      clipAudioUrl: 'a',
-      sheets: [{} as ContactSheet],
-      refined: { segments: [], cuts: [], source: 'ai' },
-    })
-    expect(nextStep(s)).toBe('assemble')
   })
 })
 
@@ -103,7 +81,7 @@ describe('STALE_RENDER_PATCH', () => {
       clipUrl: 'u',
       clipAudioUrl: 'a',
       sheets: [{} as ContactSheet],
-      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [], source: 'ai' },
+      refined: { cuts: [], source: 'ai' },
       assembledUrl: 'scene-0.mp4',
     })
 
@@ -111,7 +89,7 @@ describe('STALE_RENDER_PATCH', () => {
     const edited: Scene = {
       ...built(),
       // mimic editSceneCut: a hand-edit writes a new cut onto `refined`…
-      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [{ start: 2, end: 6 }], source: 'manual' },
+      refined: { cuts: [{ start: 2, end: 6 }], source: 'manual' },
       // …and is patched through patchSceneEdit, which stamps this on top.
       ...STALE_RENDER_PATCH,
     }
@@ -121,17 +99,17 @@ describe('STALE_RENDER_PATCH', () => {
 
   it('makes the orchestrator re-assemble the edited scene', () => {
     const edited: Scene = { ...built(), ...STALE_RENDER_PATCH }
-    // The earlier steps (cut/sheets/refine/voice) are still done, so the only
-    // step the edit reopens is the render itself — not a full rebuild.
+    // The earlier steps (cut/sheets/refine) are still done, so the only step
+    // the edit reopens is the render itself — not a full rebuild.
     expect(nextStep(edited)).toBe('assemble')
     expect(isSceneComplete(edited)).toBe(false)
     expect(nextAction([edited])).toEqual({ scene: edited, step: 'assemble' })
   })
 
-  it('leaves the editable script intact so revert / re-refine still work', () => {
+  it('leaves the editable cut layer intact so revert / re-refine still work', () => {
     const edited: Scene = { ...built(), ...STALE_RENDER_PATCH }
-    // Only the rendered bytes + status are touched; the refined script (and the
-    // director baseline it falls back to) survive untouched.
+    // Only the rendered bytes + status are touched; the refined cuts (and the
+    // director baseline they fall back to) survive untouched.
     expect(edited.refined).toEqual(built().refined)
   })
 })
@@ -155,7 +133,7 @@ describe('nextAction', () => {
       clipUrl: 'u',
       clipAudioUrl: 'a',
       sheets: [{} as ContactSheet],
-      refined: { segments: [{ text: 'hi', start: 0, end: 1, audioUrl: 'v' }], cuts: [], source: 'ai' },
+      refined: { cuts: [], source: 'ai' },
       assembledUrl: 'done',
       status: 'pending',
     })
@@ -164,26 +142,6 @@ describe('nextAction', () => {
 
   it('returns null when every scene is built', () => {
     expect(nextAction([scene({ status: 'built' })])).toBeNull()
-  })
-})
-
-describe('voiceProgress', () => {
-  it('counts voiced vs total segments', () => {
-    const s = scene({
-      refined: {
-        segments: [
-          { text: 'a', start: 0, end: 1, audioUrl: 'v' },
-          { text: 'b', start: 1, end: 2 },
-        ],
-        cuts: [],
-        source: 'ai',
-      },
-    })
-    expect(voiceProgress(s)).toEqual({ done: 1, total: 2 })
-  })
-
-  it('returns { done: 0, total: 0 } for an unrefined scene', () => {
-    expect(voiceProgress(scene())).toEqual({ done: 0, total: 0 })
   })
 })
 

@@ -15,7 +15,7 @@
 
 import type { Scene } from './scenes'
 import type { VideoDescription } from './describe'
-import { videoScript } from './describe'
+import { videoScript, type SceneWords } from './describe'
 import { globalToLocal, type SourceLike } from './sources'
 
 /** One scene's heading + the words spoken in it, the outline the live `/api/blog`
@@ -79,10 +79,11 @@ const trim = (v: unknown): string => str(v).trim()
 export function buildBlogRequest(
   scenes: Scene[],
   direction: string,
+  wordsFor: SceneWords,
   ctx: BlogContext = {},
 ): BlogRequest {
   return {
-    script: videoScript(scenes),
+    script: videoScript(scenes, wordsFor),
     timedTranscript: trim(ctx.timedTranscript),
     direction: trim(direction),
     title: trim(ctx.description?.title),

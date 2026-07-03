@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Scene } from '../../lib/scenes'
-import { effectiveCuts, effectiveSegments, overlaps } from '../../lib/refiner'
+import { effectiveCuts } from '../../lib/refiner'
 import { planScene } from '../../lib/export/assemble'
 import { assembleSceneBlob } from '../../lib/export/assembleScene'
 import { useSignedBytes } from './useSignedBytes'
@@ -31,8 +31,8 @@ const fmtTime = (s: number) => {
  * the short per-scene clip — not the whole film — only that clip is ever in wasm
  * memory, which is what keeps the render from OOMing.
  *
- * The plan is the pure `planScene` walk (cuts dropped / narration over kept video /
- * dead space silent), rebased to the clip's local time. The final whole-video cut
+ * The plan is the pure `planScene` walk (the kept spans, with the clip's own
+ * audio — ADR-0003), rebased to the clip's local time. The final whole-video cut
  * is a separate, cheap concat of every scene's saved `assembledUrl` (see FinalCutBar).
  *
  * Mounted with `key={scene.id}` so switching tabs resets this transient state.
@@ -58,24 +58,17 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
     }
   }, [resultUrl])
 
-  // This scene's effective narration segments + cuts, rebased to the clip's local
-  // timeline (the clip starts at scene.start, so the plan walks [0, end-start]).
-  const segments = useMemo(() => effectiveSegments(scene), [scene])
+  // This scene's effective cuts, rebased to the clip's local timeline (the clip
+  // starts at scene.start, so the plan walks [0, end-start]).
   const plan = useMemo(
-    () => planScene({ segments, cuts: effectiveCuts(scene), start: scene.start, end: scene.end }),
-    [segments, scene],
+    () => planScene({ cuts: effectiveCuts(scene), start: scene.start, end: scene.end }),
+    [scene],
   )
 
   const sceneLen = Math.max(0, scene.end - scene.start)
   const droppedSeconds = Math.max(0, sceneLen - plan.duration)
-  const unvoiced = segments.filter((s) => !s.audioUrl).length
   const hasClip = !!scene.clipUrl
-  // Overlapping runs block assemble (story 03h): the assembler doesn't mix audio
-  // (no `amix`), so the producer resolves overlaps by moving/deleting a run
-  // first. Belt-and-braces — the planner's first-run-wins walk stays as the
-  // deterministic fallback, so a stray overlap can never crash a render.
-  const overlapCount = useMemo(() => overlaps(segments).length, [segments])
-  const canAssemble = hasClip && plan.video.length > 0 && overlapCount === 0
+  const canAssemble = hasClip && plan.video.length > 0
 
   const savedCurrent = !!resultBlob && savedBlob === resultBlob
   // Playback of the SAVED cut signs the serve path to a direct bucket URL (a
@@ -131,9 +124,9 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
       <p className="meta-label">Assemble this scene</p>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
         Render <span className="text-ink">just this scene</span> from its cut clip —
-        cut footage dropped, your re-voiced narration over the kept video, dead space
-        silent — then save it. Do each scene tab by tab; the final cut is stitched
-        from the scenes you’ve assembled.
+        cut footage dropped, your own voice and picture on everything kept — then
+        save it. Do each scene tab by tab; the final cut is stitched from the
+        scenes you’ve assembled.
       </p>
 
       {!hasClip ? (
@@ -145,17 +138,9 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
           <span>
             {fmtTime(sceneLen)} → {fmtTime(plan.duration)} ({fmtTime(droppedSeconds)} cut)
           </span>
-          <span>{plan.audio.filter((a) => a.kind === 'clip').length} narration clips</span>
-          {unvoiced > 0 && (
-            <span className="text-terracotta-ink">
-              {unvoiced} run{unvoiced === 1 ? '' : 's'} unvoiced → silent
-            </span>
-          )}
-          {overlapCount > 0 && (
-            <span className="text-amber-700">
-              Resolve {overlapCount} overlapping run{overlapCount === 1 ? '' : 's'} first
-            </span>
-          )}
+          <span>
+            {plan.video.length} kept span{plan.video.length === 1 ? '' : 's'}
+          </span>
           {scene.assembledUrl && !resultBlob && <span className="text-ink">✓ assembled</span>}
         </div>
       )}

@@ -1,67 +1,27 @@
 /**
- * Preview — pure timeline math for the scene preview player (story 03i).
+ * Preview — pure timeline math for the scene preview player (story 03i,
+ * reshaped by ADR-0003).
  *
  * The preview SIMULATES an `AssemblePlan` (the same pure plan ffmpeg renders —
- * see ./assemble.ts) with zero rendering: narration clips are scheduled on a
- * Web Audio clock at their output-timeline offsets, and the flipbook maps the
- * output clock back to original-video seconds to pick a contact-sheet frame.
- * This module is pure (no DOM, no Web Audio) and unit-tested; the transport
- * hook and the dialog are thin shells over it.
+ * see ./assemble.ts) with zero rendering: the original audio plays and jumps
+ * the cuts, and the flipbook maps the output clock back to original-video
+ * seconds to pick a contact-sheet frame. This module is pure (no DOM, no audio
+ * elements) and unit-tested; the dialog is a thin shell over it.
+ *
+ * Two clocks appear here:
+ *  - **output time** — seconds into the stitched result (`[0, plan.duration]`).
+ *  - **source time** — seconds in the original video. `planScene` rebased the
+ *    plan to clip-local time, so `sceneStart` shifts between the two frames.
  */
 
 import type { AssemblePlan } from './assemble'
 
-/** A segment as the preview needs it — just the voiced clip, if any. */
-export type PreviewSegment = { audioUrl?: string }
-
-/** One narration clip placed on the output timeline. */
-export type AudioEvent = {
-  segmentIndex: number
-  audioUrl: string
-  /** Output-timeline second this clip starts at. */
-  offset: number
-  /** Seconds of the clip that play (planAssembly already clamped ≤ its slot). */
-  duration: number
-  /** Seconds into the clip buffer to start from — non-zero when the segment's
-   *  front footage was cut, so playback skips the cut-away opening (mirrors the
-   *  render's clip seek). Omitted/0 when nothing before the kept region was cut. */
-  clipOffset?: number
-}
-
-/**
- * Walk `plan.audio` accumulating output time: silence pieces just advance the
- * clock; clip pieces emit an event at the current offset. A clip piece whose
- * segment has no `audioUrl` is skipped (planAssembly never emits those, but a
- * hand-built or stale plan must degrade to silence, not throw — the same
- * "never reference a missing input" rule the assembler follows).
- */
-export function audioEvents(plan: AssemblePlan, segments: PreviewSegment[]): AudioEvent[] {
-  const events: AudioEvent[] = []
-  let t = 0
-  for (const piece of plan.audio) {
-    if (piece.kind === 'clip') {
-      const audioUrl = segments[piece.segmentIndex]?.audioUrl
-      if (audioUrl) {
-        events.push({
-          segmentIndex: piece.segmentIndex,
-          audioUrl,
-          offset: t,
-          duration: piece.audioSeconds,
-          clipOffset: piece.offset,
-        })
-      }
-    }
-    t += piece.length
-  }
-  return events
-}
-
 /**
  * Map an output-timeline second to ORIGINAL-VIDEO seconds, for the filmstrip
- * lookup. Walks `plan.video` (kept source spans, clip-local time) accumulating
- * piece lengths; `sceneStart` lifts the clip-local result back to the original
- * timeline (`planScene` rebased everything by subtracting it). `t` clamps to
- * `[0, plan.duration]`; an all-cut plan (no video) returns `sceneStart`.
+ * lookup and audio seeks. Walks `plan.video` (kept source spans, clip-local
+ * time) accumulating piece lengths; `sceneStart` lifts the clip-local result
+ * back to the original timeline. `t` clamps to `[0, plan.duration]`; an all-cut
+ * plan (no video) returns `sceneStart`.
  */
 export function sourceTimeAt(plan: AssemblePlan, t: number, sceneStart: number): number {
   const last = plan.video[plan.video.length - 1]
@@ -76,35 +36,33 @@ export function sourceTimeAt(plan: AssemblePlan, t: number, sceneStart: number):
   return sceneStart + last.end
 }
 
-/** An event ready for `AudioBufferSourceNode.start(base + when, bufferOffset, duration)`. */
-export type ScheduledEvent = {
-  event: AudioEvent
-  /** Seconds from "now" until this clip starts (0 = immediately). */
-  when: number
-  /** Seconds into the clip's buffer to start from (mid-flight seek). */
-  bufferOffset: number
-  /** Seconds of the buffer to play. */
-  duration: number
+/**
+ * The inverse: map an original-video second to output time. A source second
+ * inside a cut maps to the moment the cut collapses to (the next kept piece's
+ * start — i.e. the output keeps running, footage just skipped). Before the
+ * first kept piece → 0; past the last → `plan.duration`.
+ */
+export function outputTimeAt(plan: AssemblePlan, sourceSec: number, sceneStart: number): number {
+  const local = sourceSec - sceneStart
+  let acc = 0
+  for (const piece of plan.video) {
+    if (local < piece.start) return acc
+    if (local <= piece.end) return acc + (local - piece.start)
+    acc += piece.end - piece.start
+  }
+  return plan.duration
 }
 
 /**
- * The seek math: given playback starting at output-second `offset`, future
- * events keep their relative delay, an event already underway starts now but
- * partway into its buffer, and an event that already finished is dropped.
+ * If `sourceSec` sits inside dropped footage, the source second playback should
+ * jump to (the next kept piece's start); null when it's inside kept footage.
+ * Past the last kept piece returns Infinity — the caller's "stop" signal.
  */
-export function scheduleFrom(events: AudioEvent[], offset: number): ScheduledEvent[] {
-  const out: ScheduledEvent[] = []
-  for (const event of events) {
-    // Where in the clip buffer this event normally begins (front-cut seek).
-    const base = event.clipOffset ?? 0
-    if (event.offset >= offset) {
-      out.push({ event, when: event.offset - offset, bufferOffset: base, duration: event.duration })
-    } else {
-      const into = offset - event.offset
-      if (into < event.duration) {
-        out.push({ event, when: 0, bufferOffset: base + into, duration: event.duration - into })
-      }
-    }
+export function nextKeptSource(plan: AssemblePlan, sourceSec: number, sceneStart: number): number | null {
+  const local = sourceSec - sceneStart
+  for (const piece of plan.video) {
+    if (local < piece.start) return sceneStart + piece.start
+    if (local < piece.end) return null
   }
-  return out
+  return Infinity
 }

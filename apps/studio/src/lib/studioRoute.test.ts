@@ -5,7 +5,7 @@ import { freshWorkingState } from '../store/studioSlice'
 function prepped(opts: { built?: boolean } = {}) {
   const w = freshWorkingState()
   w.sources = [{ id: 's1', order: 0, fileName: 'a.mp4', duration: 10, sourceUrl: 'u', audioUrl: 'a', audioPeaks: [], words: [], transcribeJobId: null, stageProgress: { upload: { status: 'done' }, extract: { status: 'done' }, transcribe: { status: 'done' } } }]
-  for (const id of ['thumbnails', 'clone', 'director'] as const) w.stageProgress[id] = { status: 'done' }
+  for (const id of ['thumbnails', 'director'] as const) w.stageProgress[id] = { status: 'done' }
   w.scenes = [{ id: 'sc1', status: opts.built ? 'built' : 'pending' } as never]
   return w
 }

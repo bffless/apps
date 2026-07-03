@@ -1,4 +1,4 @@
-import { describe, it, test, expect } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { STAGE_DEFS, studioPhase, PER_VIDEO_STAGES, GLOBAL_STAGES } from './pipeline'
 
 describe('STAGE_DEFS', () => {
@@ -8,7 +8,6 @@ describe('STAGE_DEFS', () => {
       'extract',
       'transcribe',
       'thumbnails',
-      'clone',
       'director',
     ])
     for (const s of STAGE_DEFS) {
@@ -18,15 +17,15 @@ describe('STAGE_DEFS', () => {
 
   it('gives each prep step its own action label', () => {
     const labelled = STAGE_DEFS.filter((s) => s.actionLabel).map((s) => s.id)
-    // Every step is now a single deliberate action: upload, extract+audio,
-    // transcribe, thumbnails, clone (voice), then the merged AI director
-    // (shorten + segment in one Gemini call).
+    // Every step is a single deliberate action: upload, extract+audio,
+    // transcribe, thumbnails, then the merged AI director (scene split +
+    // cutting briefs in one Gemini call). No voice step — the final cut is
+    // always the original recording minus cuts (ADR-0003).
     expect(labelled).toEqual([
       'upload',
       'extract',
       'transcribe',
       'thumbnails',
-      'clone',
       'director',
     ])
   })
@@ -44,15 +43,9 @@ describe('studioPhase', () => {
 describe('stage scopes', () => {
   it('tags upload/extract/transcribe as per-video and the rest as global', () => {
     expect(PER_VIDEO_STAGES).toEqual(['upload', 'extract', 'transcribe'])
-    expect(GLOBAL_STAGES).toEqual(['thumbnails', 'clone', 'director'])
+    expect(GLOBAL_STAGES).toEqual(['thumbnails', 'director'])
   })
   it('every STAGE_DEF carries a scope', () => {
     expect(STAGE_DEFS.every((s) => s.scope === 'video' || s.scope === 'global')).toBe(true)
   })
-})
-
-test('voice (clone) comes before the director in the global plan', () => {
-  expect(GLOBAL_STAGES).toEqual(['thumbnails', 'clone', 'director'])
-  const ids = STAGE_DEFS.map((s) => s.id)
-  expect(ids.indexOf('clone')).toBeLessThan(ids.indexOf('director'))
 })

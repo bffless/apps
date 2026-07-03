@@ -108,10 +108,9 @@ export function SceneRefinePanel({
             include it as context, or don't. */}
         <div className="flex flex-col gap-3 border-t border-paper-line/60 pt-3">
           <span className="text-[13.5px] text-ink">
-            2 · Refine cuts &amp; placement
+            2 · Refine the cuts
             {refined && (
               <span className="ml-2 font-mono text-[12px] text-ink-mute">
-                {refined.segments.length} segment{refined.segments.length === 1 ? '' : 's'} ·{' '}
                 {refined.cuts.length} cut{refined.cuts.length === 1 ? '' : 's'}
               </span>
             )}
@@ -169,8 +168,8 @@ export function SceneRefinePanel({
       </div>
 
       <p className="mt-3 text-[12.5px] leading-relaxed text-ink-soft">
-        Then voice each run right in the diff viewer below — record it yourself or
-        AI-generate it, per segment.
+        Then tune the cuts by hand in the editor below — drag empty cells to cut,
+        drag red cells to un-cut.
       </p>
 
       {error && <p className="mt-3 text-[13px] text-terracotta-ink">{error}</p>}
