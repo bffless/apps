@@ -32,7 +32,18 @@ export async function captureFrames(
  * the grid is composed — no double compression. */
 export type FrameEncoding = { type?: string; quality?: number }
 
-/** Capture one data-URL frame at each of the given timestamps (seconds). */
+/** Resolve with whatever's been captured if the video makes no load/seek
+ * progress for this long. A detached <video> can stall silently — firing no
+ * `loadeddata`, `seeked`, or `error` at all — and an unsettled promise here
+ * once froze the whole prep pipeline (the director job completed but its
+ * scene commit hung awaiting card thumbs). Frames are best-effort; hanging
+ * is never an option. */
+export const FRAME_CAPTURE_STALL_MS = 10_000
+
+/** Capture one data-URL frame at each of the given timestamps (seconds).
+ * Never rejects and never hangs: on a media error, a handler exception, or
+ * `FRAME_CAPTURE_STALL_MS` without progress it resolves with the frames
+ * captured so far (possibly `[]`). Callers treat missing frames as absent. */
 export async function captureFramesAt(
   src: string,
   times: number[],
@@ -43,34 +54,65 @@ export async function captureFramesAt(
 
   return new Promise((resolve) => {
     const video = document.createElement('video')
+    video.preload = 'auto'
     video.src = src
     video.muted = true
     video.crossOrigin = 'anonymous'
     const canvas = document.createElement('canvas')
     const out: string[] = []
 
+    // Settle exactly once, and always eventually: `done` resolves with the
+    // partial result; `kick` (re)arms the stall watchdog. `progress` and
+    // `loadedmetadata` also kick it, so a big clip that's genuinely still
+    // downloading isn't cut off — only true inactivity trips it.
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    const done = () => {
+      clearTimeout(watchdog)
+      resolve(out)
+    }
+    const kick = () => {
+      clearTimeout(watchdog)
+      watchdog = setTimeout(done, FRAME_CAPTURE_STALL_MS)
+    }
+    kick()
+
     const seekTo = (i: number) => {
-      if (i >= times.length) return resolve(out)
+      if (i >= times.length) return done()
+      kick()
       video.currentTime = times[i]
     }
 
-    video.addEventListener('loadeddata', () => seekTo(0))
-    video.addEventListener('seeked', () => {
-      const ratio = video.videoWidth / video.videoHeight || 16 / 9
-      // Never capture above the source resolution — upscaling just bloats the
-      // frame without adding detail (and would mask a genuinely low-res source).
-      const h = Math.min(height, video.videoHeight || height)
-      canvas.height = h
-      canvas.width = Math.round(h * ratio)
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        out.push(canvas.toDataURL(type, quality))
+    // Handler exceptions must not kill the seek chain (an uncaught throw here
+    // would leave the promise unsettled forever) — settle with what we have.
+    video.addEventListener('loadeddata', () => {
+      try {
+        seekTo(0)
+      } catch {
+        done()
       }
-      seekTo(out.length)
     })
-    video.addEventListener('error', () => resolve(out))
+    video.addEventListener('loadedmetadata', kick)
+    video.addEventListener('progress', kick)
+    video.addEventListener('seeked', () => {
+      try {
+        const ratio = video.videoWidth / video.videoHeight || 16 / 9
+        // Never capture above the source resolution — upscaling just bloats the
+        // frame without adding detail (and would mask a genuinely low-res source).
+        const h = Math.min(height, video.videoHeight || height)
+        canvas.height = h
+        canvas.width = Math.round(h * ratio)
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.imageSmoothingQuality = 'high'
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          out.push(canvas.toDataURL(type, quality))
+        }
+        seekTo(out.length)
+      } catch {
+        done()
+      }
+    })
+    video.addEventListener('error', done)
   })
 }
 
