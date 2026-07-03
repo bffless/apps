@@ -68,6 +68,30 @@ export async function addFeed(input: {
   return shapeFeed({ url, ...(feed && typeof feed === 'object' ? feed : {}) })
 }
 
+/**
+ * Move a feed into a folder (or out of one, with `folder: null`). There is no
+ * folder-specific backend: this re-upserts the *whole* feed row through the same
+ * `data_upsert_many` (dedup by url) as {@link addFeed}, carrying the feed's
+ * existing title/siteUrl/addedAt so only `folder` changes. Fields the upsert map
+ * doesn't touch (icon, last-fetch, last-error) are left intact.
+ */
+export async function setFeedFolder(feed: Feed, folder: string | null): Promise<void> {
+  if (!feed.url) throw new Error('feed url is required')
+  await readJson(
+    await fetchWithReauth('/api/feeds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: feed.url,
+        title: feed.title ?? '',
+        siteUrl: feed.siteUrl ?? '',
+        folder: folder && folder.trim() ? folder.trim() : null,
+        addedAt: feed.addedAt ?? Date.now(),
+      }),
+    }),
+  )
+}
+
 /** Unsubscribe: remove a feed by URL. Items are left in place (they age out via retention). */
 export async function removeFeed(url: string): Promise<void> {
   await readJson(

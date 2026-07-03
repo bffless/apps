@@ -88,11 +88,12 @@ export function ReaderApp() {
   const [visible, setVisible] = useState<Item[]>([])
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setVisible(itemsForSelection(items, selection))
+    setVisible(itemsForSelection(items, selection, feeds))
     // `items` is intentionally omitted: re-snapshotting on it would undo the
-    // read-toggle patches below. `loadSeq` covers genuine set replacement.
+    // read-toggle patches below. `loadSeq` covers genuine set replacement, and
+    // `feeds` re-scopes a folder view when a feed is moved in or out of it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, loadSeq])
+  }, [selection, loadSeq, feeds])
 
   const selectedItem = visible.find((i) => i.guid === selectedGuid) ?? null
 
@@ -208,6 +209,23 @@ export function ReaderApp() {
     [loadFeeds, loadItems, selection, selectView],
   )
 
+  // Move a feed to a folder (or out of one). Optimistic: patch the feed's folder
+  // locally so the sidebar regroups immediately, then persist via re-upsert;
+  // revert on failure. #116 — folder is a nullable field on the feed itself.
+  const handleMoveFolder = useCallback(
+    (feed: Feed, folder: string | null) => {
+      if ((feed.folder ?? null) === (folder ?? null)) return
+      const patch = (value: string | null) =>
+        setFeeds((prev) => prev.map((f) => (f.url === feed.url ? { ...f, folder: value } : f)))
+      patch(folder)
+      void api.setFeedFolder(feed, folder).catch((e) => {
+        patch(feed.folder) // revert to the pre-move folder
+        setError(e instanceof Error ? e.message : 'Could not move feed')
+      })
+    },
+    [],
+  )
+
   const unreadInView = visible.some((i) => !i.read)
 
   return (
@@ -221,6 +239,7 @@ export function ReaderApp() {
         onSelect={selectView}
         onAdd={handleAdd}
         onRemove={handleRemove}
+        onMoveFolder={handleMoveFolder}
         onRefresh={handleRefresh}
         adding={adding}
         refreshing={refreshing}
