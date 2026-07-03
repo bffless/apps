@@ -15,7 +15,21 @@ import {
 import { claimPlayback } from './clipPlayer'
 import { auditionSpan, finalCutSeconds, nextKeptTime } from '../../lib/playback'
 import { normalizeCuts } from '../../lib/refiner'
-import { noiseSpans, type DeadSpan } from '../../lib/deadSpace'
+import {
+  deadSpaceSpans,
+  noiseSpans,
+  DEAD_SLICE_SECONDS,
+  DEFAULT_SILENCE_THRESHOLD,
+  type DeadSpan,
+} from '../../lib/deadSpace'
+import {
+  planAutoTrim,
+  DEFAULT_AUTO_TRIM_KNOBS,
+  THRESHOLD_OPTIONS,
+  MIN_PAUSE_OPTIONS,
+  PADDING_OPTIONS,
+} from '../../lib/autoTrim'
+import { rmsFromUrl } from '../../lib/audio'
 import { frameForRow, spriteStyle, type FilmFrame } from '../../lib/filmstrip'
 import type { SearchHit } from '../../lib/search'
 
@@ -79,6 +93,12 @@ type Props = {
    *  **noise** (energy but no words — a breath/click marker), with cuts red on
    *  top of either. Omit (not yet measured) for the flat two-state grid. */
   deadSpace?: DeadSpan[]
+  /** Auto-trim dead space (story 13e): apply the tool's derived cuts as ONE
+   *  batch of manual cuts (the page routes them through the scene's `refined`
+   *  layer, so revert still works). The tool needs `deadSpace` to plan from;
+   *  omit either to hide it. Applying never auto-plays — the audition button
+   *  each new cut grows is the review gesture. */
+  onAutoTrim?: (cuts: CutSpan[]) => void
 }
 
 /** An in-progress cut drag: the cell it began on, the cell under the pointer
@@ -118,6 +138,7 @@ export function CutEditor({
   projectCuts,
   video,
   deadSpace,
+  onAutoTrim,
 }: Props) {
   const [secondsPerLine, setSecondsPerLine] = useState(DEFAULT_SECONDS_PER_LINE)
   const [segmentSeconds, setSegmentSeconds] = useState(DEFAULT_SEGMENT_SECONDS)
@@ -167,6 +188,36 @@ export function CutEditor({
   const edit: CellEdit | null = editable
     ? { onCellDown, onCellEnter, preview: cutPending, previewKind: drag?.op ?? null }
     : null
+
+  // Auto-trim dead space (story 13e): the knob bar's state. The knobs live here
+  // (not in the bar) so the plan they derive can also paint its pending cuts on
+  // the grid below. The per-slice RMS is fetched lazily — only when the
+  // threshold knob leaves the measured default — and cached (keyed by URL) so
+  // every further knob tweak re-derives spans without another decode.
+  const [trimOpen, setTrimOpen] = useState(false)
+  const [trimKnobs, setTrimKnobs] = useState(DEFAULT_AUTO_TRIM_KNOBS)
+  const [rms, setRms] = useState<{ url: string; values: number[] } | null>(null)
+  const [rmsBusy, setRmsBusy] = useState(false)
+  const [rmsError, setRmsError] = useState<string | null>(null)
+
+  // Moving the threshold off the default is what triggers the one-time WAV
+  // fetch + decode (an event handler, so no effect fires it): the stored spans
+  // are binary — the energy behind them was dropped at extract — so any other
+  // threshold has to re-measure.
+  const onTrimThreshold = useCallback(
+    (threshold: number) => {
+      setTrimKnobs((k) => ({ ...k, threshold }))
+      if (threshold === DEFAULT_SILENCE_THRESHOLD || !originalAudioUrl) return
+      if (rmsBusy || rms?.url === originalAudioUrl) return
+      setRmsBusy(true)
+      setRmsError(null)
+      rmsFromUrl(originalAudioUrl)
+        .then((values) => setRms({ url: originalAudioUrl, values }))
+        .catch((e) => setRmsError(e instanceof Error ? e.message : String(e)))
+        .finally(() => setRmsBusy(false))
+    },
+    [originalAudioUrl, rms, rmsBusy],
+  )
 
   // Transcript search (story 08): `searchOpen` shows the query bar; hits are
   // transient — closing the bar clears them. Each hit renders as a full-width
@@ -381,6 +432,30 @@ export function CutEditor({
   }, [frames])
   const rowHeight = tallRows ? fullRowHeight : FILMSTRIP_ROW
 
+  // The spans the auto-trim tool plans from (story 13e). At the measured
+  // default threshold they ARE the stored 13c spans — no fetch, and the tool
+  // agrees exactly with the cells the grid dims. Any other threshold re-derives
+  // spans from the cached RMS through the same `deadSpaceSpans` (same 0.3 s
+  // measurement floor, so the two paths differ only by threshold). Null = the
+  // RMS is still being measured (or failed) — no plan yet.
+  const trimSpans = useMemo(() => {
+    if (!deadSpace) return null
+    if (trimKnobs.threshold === DEFAULT_SILENCE_THRESHOLD) return deadSpace
+    if (rms && rms.url === originalAudioUrl)
+      return deadSpaceSpans(rms.values, DEAD_SLICE_SECONDS, { threshold: trimKnobs.threshold })
+    return null
+  }, [deadSpace, trimKnobs.threshold, rms, originalAudioUrl])
+
+  // What one Apply would do at the current knobs, planned against the cuts
+  // already there — so the readout counts only NEW footage removed, and a
+  // second Apply is a no-op. Live: applying flows the new cuts back down and
+  // this re-plans to "nothing to trim".
+  const trimPlan = useMemo(() => {
+    if (!trimOpen || !trimSpans) return null
+    const end = Number.isFinite(windowEnd) ? windowEnd : span
+    return planAutoTrim(trimSpans, cuts, { start: windowStart, end }, trimKnobs)
+  }, [trimOpen, trimSpans, cuts, windowStart, windowEnd, span, trimKnobs])
+
   // The third cell state (story 13c): with dead space measured, whatever is
   // neither spoken nor silent has sound but no words — a breath, a click. The
   // complement is a handful of spans, so each row reuses the same span→columns
@@ -429,6 +504,15 @@ export function CutEditor({
               {' · '}source <span className="text-ink">{formatClock(duration)}</span>
             </span>
           )}
+          {onAutoTrim && deadSpace && !trimOpen && (
+            <button
+              type="button"
+              className="border rule bg-paper px-2 py-1 text-ink transition-colors hover:bg-paper-deep/40"
+              onClick={() => setTrimOpen(true)}
+            >
+              ✂ Auto-trim
+            </button>
+          )}
           {onSearch && !searchOpen && (
             <button
               type="button"
@@ -465,6 +549,70 @@ export function CutEditor({
           )}
         </div>
       </div>
+
+      {trimOpen && onAutoTrim && deadSpace && (
+        // Auto-trim dead space (story 13e): deterministic knobs → a live plan.
+        // The pending cuts are outlined on the grid below while the bar is open;
+        // Apply writes them as one manual edit and never auto-plays — each new
+        // cut's audition button is the review gesture.
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b rule bg-paper-deep/40 px-5 py-2 text-[12.5px] text-ink-soft">
+          <span className="meta-label">Auto-trim dead space</span>
+          {originalAudioUrl ? (
+            <label className="flex items-center gap-2 font-mono text-[12px] text-ink-mute">
+              silence below
+              <Select value={trimKnobs.threshold} onChange={onTrimThreshold} options={THRESHOLD_OPTIONS} />
+            </label>
+          ) : (
+            // No WAV to re-measure from — the threshold is pinned to the one
+            // the stored spans were measured with.
+            <span className="font-mono text-[12px] text-ink-mute">silence below −40 dB</span>
+          )}
+          <label className="flex items-center gap-2 font-mono text-[12px] text-ink-mute">
+            min pause
+            <Select
+              value={trimKnobs.minPauseSeconds}
+              onChange={(v) => setTrimKnobs((k) => ({ ...k, minPauseSeconds: v }))}
+              options={MIN_PAUSE_OPTIONS.map((n) => ({ label: `${n}s`, value: n }))}
+            />
+          </label>
+          <label className="flex items-center gap-2 font-mono text-[12px] text-ink-mute">
+            keep
+            <Select
+              value={trimKnobs.keepPaddingSeconds}
+              onChange={(v) => setTrimKnobs((k) => ({ ...k, keepPaddingSeconds: v }))}
+              options={PADDING_OPTIONS.map((n) => ({ label: n === 0 ? 'none' : `${n}s`, value: n }))}
+            />
+          </label>
+          <span className="ml-auto flex items-center gap-3">
+            <span className="font-mono text-[12px] text-ink-mute" aria-live="polite">
+              {rmsBusy
+                ? 're-measuring the recording…'
+                : rmsError
+                  ? `couldn't re-measure — ${rmsError}`
+                  : !trimPlan
+                    ? ''
+                    : trimPlan.cuts.length === 0
+                      ? 'nothing to trim at these settings'
+                      : `${trimPlan.cuts.length} cut${trimPlan.cuts.length === 1 ? '' : 's'} · removes ${trimPlan.removedSeconds.toFixed(1)}s of dead space`}
+            </span>
+            <button
+              type="button"
+              disabled={!trimPlan || trimPlan.cuts.length === 0}
+              className="rounded border border-paper-line px-2 py-0.5 text-[11px] text-ink hover:bg-paper disabled:opacity-50"
+              onClick={() => trimPlan && onAutoTrim(trimPlan.cuts)}
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              className="rounded border border-paper-line px-2 py-0.5 text-[11px] text-ink hover:bg-paper"
+              onClick={() => setTrimOpen(false)}
+            >
+              Close
+            </button>
+          </span>
+        </div>
+      )}
 
       {searchOpen && (
         // Transcript search (story 08): query bar + results. Hits are whole-talk;
@@ -624,6 +772,7 @@ export function CutEditor({
             cuts={cuts}
             deadSpans={deadSpace ?? null}
             noise={noise}
+            pendingTrims={trimPlan?.cuts}
             minSeconds={span}
             windowStart={windowStart}
             windowEnd={windowEnd}
@@ -705,6 +854,9 @@ type PaneProps = {
   /** The energy-but-no-words complement (see `noiseSpans`), precomputed once by
    *  the editor. Ignored while `deadSpans` is null. */
   noise?: DeadSpan[]
+  /** The auto-trim bar's planned cuts (story 13e), outlined like an in-progress
+   *  cut paint while the bar is open — what Apply will write, before it does. */
+  pendingTrims?: CutSpan[]
   minSeconds: number
   /** Scene window on the absolute timeline — rows outside it are cropped so the
    *  pane shows only the selected scene (story 03c). 0 / Infinity ⇒ whole talk. */
@@ -866,6 +1018,7 @@ function Pane({
   cuts,
   deadSpans = null,
   noise = [],
+  pendingTrims = [],
   minSeconds,
   windowStart,
   windowEnd,
@@ -926,6 +1079,7 @@ function Pane({
               cuts={cuts}
               deadSpans={deadSpans}
               noise={noise}
+              pendingTrims={pendingTrims}
               edit={edit}
               rowHeight={rowHeight}
               onPlay={onPlayFrom ? (raw) => onPlayFrom(line.startSec, raw) : undefined}
@@ -950,6 +1104,7 @@ function Row({
   cuts,
   deadSpans = null,
   noise = [],
+  pendingTrims = [],
   edit,
   rowHeight,
   onPlay,
@@ -967,6 +1122,8 @@ function Row({
   /** Measured dead space / noise spans (story 13c) — see PaneProps. */
   deadSpans?: DeadSpan[] | null
   noise?: DeadSpan[]
+  /** The auto-trim bar's planned cuts (story 13e) — see PaneProps. */
+  pendingTrims?: CutSpan[]
   edit: CellEdit | null
   rowHeight: number
   /** Play from this row's start second; `raw` = the click carried a modifier. */
@@ -984,6 +1141,11 @@ function Row({
   const cutCols = cutColumns(line.startSec, line.cells.length, segmentSeconds, cuts)
   const previewCols =
     edit?.preview ? cutColumns(line.startSec, line.cells.length, segmentSeconds, [edit.preview]) : []
+  // Auto-trim's planned cuts (story 13e), outlined with the same ring an
+  // in-progress add drag paints — it IS a pending add, just tool-authored.
+  const trimCols = pendingTrims.length
+    ? cutColumns(line.startSec, line.cells.length, segmentSeconds, pendingTrims)
+    : []
   // Three-state cells (story 13c): dead space and noise reuse the same
   // span→columns mapping as cuts. Null (unmeasured) keeps the flat grid.
   const deadCols = deadSpans
@@ -1081,6 +1243,8 @@ function Row({
               playingCol === col ? 'ring-2 ring-inset ring-terracotta' : '',
               // the active cut/un-cut paint preview
               previewCols[col] && edit?.previewKind ? previewClass[edit.previewKind] : '',
+              // auto-trim's pending cuts, while its bar is open
+              trimCols[col] ? previewClass.add : '',
             ].join(' ')}
           >
             {auditionHere && (

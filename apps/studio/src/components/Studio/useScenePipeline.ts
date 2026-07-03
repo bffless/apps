@@ -21,6 +21,7 @@ import {
   sceneWordTimings,
   sceneTail,
   addCut,
+  addCuts,
   removeCut,
   type RefineSceneRaw,
 } from '../../lib/refiner'
@@ -1171,6 +1172,25 @@ export function useScenePipeline() {
     [scenes, patchSceneEdit],
   )
 
+  // Auto-trim dead space (story 13e): apply the tool's whole batch of
+  // deterministic silence cuts as ONE edit — the same non-destructive layer as
+  // a drag (`refined`, `source: 'manual'`, baseline untouched), so revert still
+  // clears back to the AI's first pass. One patch, not N `editSceneCut` calls:
+  // those would each rebuild `refined` from this render's stale scene and keep
+  // only the last span.
+  const addSceneCuts = useCallback(
+    (sceneId: string, spans: Cut[]) => {
+      if (!spans.length) return
+      const scene = scenes.find((s) => s.id === sceneId)
+      if (!scene) return
+      const base = scene.refined ?? { cuts: scene.cuts ?? [], source: 'ai' as const }
+      patchSceneEdit(sceneId, {
+        refined: { ...base, cuts: addCuts(base.cuts, spans, scene), source: 'manual' },
+      })
+    },
+    [scenes, patchSceneEdit],
+  )
+
   // Cut this scene into its own video clip + soundtrack (story 03g + 03k, build
   // step 0). The raw source is the immutable source of truth — every scene
   // re-reads it: prefer the in-memory `file` (no refetch), else pull the persisted
@@ -1497,6 +1517,7 @@ export function useScenePipeline() {
     directorPromptJobId,
     rerunDirector,
     editSceneCut,
+    addSceneCuts,
     sliceScene,
     clearRefinement,
     markBuilt,

@@ -135,6 +135,74 @@ describe('CutEditor measured dead space (story 13c)', () => {
   })
 })
 
+describe('CutEditor auto-trim (story 13e)', () => {
+  const rowOf = (text: string) => cellOf(text).parentElement!
+  const cellAt = (row: HTMLElement, col: number) => row.children[1 + col] as HTMLElement
+
+  // One second of measured silence between alpha and beta. At the default
+  // knobs (0.6s min pause, 0.2s keep-padding) it plans one cut: 1.2 → 1.8.
+  const deadSpace = [{ start: 1.0, end: 2.0 }]
+  const openTrim = () => fireEvent.click(screen.getByRole('button', { name: /✂ auto-trim/i }))
+
+  it('stays hidden without a measurement or without the callback', () => {
+    render(<CutEditor words={words} duration={6} onAutoTrim={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /auto-trim/i })).not.toBeInTheDocument()
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} />)
+    expect(screen.queryByRole('button', { name: /auto-trim/i })).not.toBeInTheDocument()
+  })
+
+  it('plans padded cuts from the stored spans and applies them as one batch', () => {
+    const onAutoTrim = vi.fn()
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} onAutoTrim={onAutoTrim} />)
+    openTrim()
+    expect(screen.getByText(/1 cut · removes 0\.6s of dead space/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onAutoTrim).toHaveBeenCalledTimes(1)
+    const [cuts] = onAutoTrim.mock.calls[0]
+    expect(cuts).toHaveLength(1)
+    expect(cuts[0].start).toBeCloseTo(1.2)
+    expect(cuts[0].end).toBeCloseTo(1.8)
+  })
+
+  it('outlines the planned cuts on the grid while the bar is open', () => {
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} onAutoTrim={vi.fn()} />)
+    const row = rowOf('alpha')
+    expect(cellAt(row, 13).className).not.toContain('ring-terracotta') // closed — no outline
+    openTrim()
+    expect(cellAt(row, 13).className).toContain('ring-terracotta') // 1.3s — inside the plan
+    expect(cellAt(row, 11).className).not.toContain('ring-terracotta') // 1.1s — keep-padding
+  })
+
+  it('raising the minimum pause above the silence empties the plan and disables Apply', () => {
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} onAutoTrim={vi.fn()} />)
+    openTrim()
+    fireEvent.change(screen.getByLabelText(/min pause/), { target: { value: '1.5' } })
+    expect(screen.getByText(/nothing to trim at these settings/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+  })
+
+  it('a pause already cut plans nothing — the tool is idempotent', () => {
+    render(
+      <CutEditor
+        words={words}
+        duration={6}
+        deadSpace={deadSpace}
+        cuts={[{ start: 1.0, end: 2.0 }]}
+        onAutoTrim={vi.fn()}
+      />,
+    )
+    openTrim()
+    expect(screen.getByText(/nothing to trim at these settings/)).toBeInTheDocument()
+  })
+
+  it('pins the threshold when there is no WAV to re-measure from', () => {
+    render(<CutEditor words={words} duration={6} deadSpace={deadSpace} onAutoTrim={vi.fn()} />)
+    openTrim()
+    expect(screen.getByText(/silence below −40 dB/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/silence below/)).not.toBeInTheDocument()
+  })
+})
+
 describe('CutEditor filmstrip', () => {
   it('clicking a filmstrip thumbnail opens (and ✕ closes) the full-size view', () => {
     const sheet: ContactSheet = {

@@ -151,6 +151,20 @@ export function addCut(cuts: Cut[], span: Cut, scene: Pick<Scene, 'start' | 'end
 }
 
 /**
+ * The batch form of `addCut` (story 13e auto-trim): merge a whole set of spans
+ * into the cuts in ONE pass — each clamped to the scene like any hand edit,
+ * the result normalized once. The tool writes all its cuts through a single
+ * state patch; feeding them one-by-one through `addCut` state writes would
+ * base each on a stale snapshot and keep only the last.
+ */
+export function addCuts(cuts: Cut[], spans: Cut[], scene: Pick<Scene, 'start' | 'end'>): Cut[] {
+  const clamped = spans
+    .map((s) => clampSpan(s.start, s.end, scene.start, scene.end))
+    .filter((c): c is Cut => c !== null)
+  return normalizeCuts([...cuts, ...clamped])
+}
+
+/**
  * Hand-edit: remove a span from the cut set — **contract a cut** from its edge,
  * or carve out the middle (which splits one cut into two). Spans the removal
  * doesn't touch pass through untouched.
