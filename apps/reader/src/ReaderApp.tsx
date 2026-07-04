@@ -31,7 +31,15 @@ import {
  * (`data_update`); a failed write reverts. This keeps all decision logic in the
  * tested `lib/*` seam; this component only orchestrates.
  */
-export function ReaderApp() {
+export function ReaderApp({
+  containerClass = 'max-w-6xl',
+  measureClass = 'max-w-2xl',
+}: {
+  /** Outer-container max-width class from the reading-width preference (#136). */
+  containerClass?: string
+  /** Reading-measure max-width class threaded to the reading pane (#136). */
+  measureClass?: string
+} = {}) {
   const [feeds, setFeeds] = useState<Feed[]>([])
   const [selection, setSelection] = useState<Selection>({ kind: 'river' })
   const [items, setItems] = useState<Item[]>([])
@@ -307,7 +315,9 @@ export function ReaderApp() {
   const unreadInView = visible.some((i) => !i.read)
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-6 sm:flex-row sm:px-6">
+    <div
+      className={`mx-auto flex w-full flex-1 flex-col gap-4 px-4 py-6 sm:flex-row sm:px-6 ${containerClass}`}
+    >
       <FeedSidebar
         feeds={feeds}
         selection={selection}
@@ -365,7 +375,12 @@ export function ReaderApp() {
         </section>
 
         <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white">
-          <ReadingPane item={selectedItem} onToggleRead={toggleRead} onToggleStar={toggleStar} />
+          <ReadingPane
+            item={selectedItem}
+            measureClass={measureClass}
+            onToggleRead={toggleRead}
+            onToggleStar={toggleStar}
+          />
         </section>
       </div>
     </div>
