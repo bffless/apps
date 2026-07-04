@@ -48,14 +48,14 @@ export function FeedSidebar({
   const existingFolders = folderNames(feeds)
 
   return (
-    <aside className="flex w-full flex-col gap-4 border-slate-200 sm:w-72 sm:border-r sm:pr-4">
+    <aside className="flex w-full flex-col gap-4 border-slate-200 sm:w-72 sm:border-r sm:pr-4 dark:border-slate-800">
       <AddFeed onAdd={onAdd} busy={adding} />
 
       <button
         type="button"
         onClick={onRefresh}
         disabled={refreshing || feeds.length === 0}
-        className="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+        className="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
       >
         {refreshing ? 'Refreshing…' : 'Refresh now'}
       </button>
@@ -80,7 +80,7 @@ export function FeedSidebar({
           count={starredCount}
           onClick={() => onSelect({ kind: 'starred' })}
         />
-        <div className="my-1 border-t border-slate-100" />
+        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
 
         {groups.map((group) => (
           <div key={group.folder ?? ' uncategorized'} className="flex flex-col gap-0.5">
@@ -112,7 +112,7 @@ export function FeedSidebar({
         ))}
 
         {feeds.length === 0 && (
-          <p className="px-2 py-3 text-sm text-slate-400">No feeds yet. Add one above.</p>
+          <p className="px-2 py-3 text-sm text-slate-400 dark:text-slate-500">No feeds yet. Add one above.</p>
         )}
       </nav>
     </aside>
@@ -154,7 +154,7 @@ function FeedRow({
     <div
       className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${
         indent ? 'ml-3' : ''
-      } ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}
+      } ${active ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}
     >
       <button
         type="button"
@@ -162,14 +162,14 @@ function FeedRow({
         className={`min-w-0 flex-1 truncate text-left ${folder ? 'font-medium' : ''}`}
         title={label}
       >
-        {folder && <span className="mr-1 text-slate-400" aria-hidden>📁</span>}
+        {folder && <span className="mr-1 text-slate-400 dark:text-slate-500" aria-hidden>📁</span>}
         {label}
-        {error && <span className="ml-1 text-red-500" title={error}>⚠</span>}
+        {error && <span className="ml-1 text-red-500 dark:text-red-400" title={error}>⚠</span>}
       </button>
       {count != null && count > 0 && (
         <span
           className={`shrink-0 rounded-full px-1.5 text-xs tabular-nums ${
-            active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
+            active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
           } group-hover:opacity-100`}
           aria-label={`${count} unread`}
         >
@@ -191,7 +191,7 @@ function FeedRow({
             onMoveFolder(v === NO_FOLDER ? null : v)
           }}
           onClick={(e) => e.stopPropagation()}
-          className="shrink-0 rounded border border-transparent bg-transparent text-xs text-slate-400 opacity-0 transition-opacity focus:border-slate-300 focus:opacity-100 group-hover:opacity-100"
+          className="shrink-0 rounded border border-transparent bg-transparent text-xs text-slate-400 opacity-0 transition-opacity focus:border-slate-300 focus:opacity-100 group-hover:opacity-100 dark:text-slate-500 dark:focus:border-slate-600"
         >
           <option value={NO_FOLDER}>Uncategorized</option>
           {(folders ?? []).map((f) => (
@@ -212,7 +212,7 @@ function FeedRow({
           onClick={onRemove}
           aria-label={`Unsubscribe from ${label}`}
           title="Unsubscribe"
-          className="shrink-0 rounded px-1 text-slate-400 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
+          className="shrink-0 rounded px-1 text-slate-400 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100 dark:text-slate-500 dark:hover:text-red-400"
         >
           ×
         </button>

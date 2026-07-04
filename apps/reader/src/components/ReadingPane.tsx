@@ -24,7 +24,7 @@ export function ReadingPane({
 }) {
   if (!item) {
     return (
-      <div className="flex h-full items-center justify-center px-6 py-16 text-center text-sm text-slate-400">
+      <div className="flex h-full items-center justify-center px-6 py-16 text-center text-sm text-slate-400 dark:text-slate-500">
         Select an item to read it here.
       </div>
     )
@@ -34,7 +34,7 @@ export function ReadingPane({
 
   return (
     <article className={`mx-auto px-2 py-4 ${measureClass}`}>
-      <header className="mb-4 border-b border-slate-200 pb-4">
+      <header className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
         {(onToggleRead || onToggleStar) && (
           <div className="mb-2 flex justify-end gap-1">
             {onToggleStar && (
@@ -43,8 +43,8 @@ export function ReadingPane({
                 onClick={() => onToggleStar(item)}
                 aria-pressed={item.starred}
                 aria-label={item.starred ? 'Unstar' : 'Star'}
-                className={`rounded px-2 py-1 text-xs font-medium transition-colors hover:bg-slate-100 ${
-                  item.starred ? 'text-amber-500' : 'text-slate-500 hover:text-slate-800'
+                className={`rounded px-2 py-1 text-xs font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                  item.starred ? 'text-amber-500' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
                 {item.starred ? '★ Starred' : '☆ Star'}
@@ -54,14 +54,14 @@ export function ReadingPane({
               <button
                 type="button"
                 onClick={() => onToggleRead(item)}
-                className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
               >
                 {item.read ? 'Mark unread' : 'Mark read'}
               </button>
             )}
           </div>
         )}
-        <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+        <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
           {item.link ? (
             <a href={item.link} target="_blank" rel="noopener noreferrer nofollow" className="hover:underline">
               {item.title || '(untitled)'}
@@ -70,7 +70,7 @@ export function ReadingPane({
             item.title || '(untitled)'
           )}
         </h1>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           {item.author && <span>{item.author}</span>}
           {item.author && item.publishedAt && <span> · </span>}
           {item.publishedAt && <time>{new Date(item.publishedAt).toLocaleString()}</time>}
@@ -78,12 +78,12 @@ export function ReadingPane({
       </header>
       {clean ? (
         <div
-          className="reader-content max-w-none text-sm leading-relaxed text-slate-800"
+          className="reader-content max-w-none text-sm leading-relaxed text-slate-800 dark:text-slate-200"
           // Sanitized immediately above; this is the single trusted injection point.
           dangerouslySetInnerHTML={{ __html: clean }}
         />
       ) : (
-        <p className="text-sm text-slate-400">This item has no content.</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500">This item has no content.</p>
       )}
     </article>
   )
