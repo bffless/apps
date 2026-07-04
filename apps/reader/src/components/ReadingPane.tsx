@@ -12,11 +12,18 @@ import { sanitizeHtml } from '../lib/sanitize'
  */
 export function ReadingPane({
   item,
+  loading = false,
   measureClass = 'max-w-2xl',
   onToggleRead,
   onToggleStar,
 }: {
   item: Item | null
+  /**
+   * A deep-linked item is selected but the full item set hasn't loaded yet, so
+   * it can't be resolved. Hold this loading state until items arrive rather than
+   * flashing the empty placeholder (#144).
+   */
+  loading?: boolean
   /** Reading-measure max-width class from the width preference (#136). */
   measureClass?: string
   onToggleRead?: (item: Item) => void
@@ -25,7 +32,7 @@ export function ReadingPane({
   if (!item) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-16 text-center text-sm text-slate-400 dark:text-slate-500">
-        Select an item to read it here.
+        {loading ? 'Loading…' : 'Select an item to read it here.'}
       </div>
     )
   }

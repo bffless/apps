@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, Link } from 'react-router-dom'
 import { useSession, adminLoginUrl, logout } from './lib/session'
 import { useReadingWidth } from './lib/useReadingWidth'
 import { useTheme } from './lib/useTheme'
@@ -99,8 +99,14 @@ function Header({
               <line x1="4" y1="17" x2="20" y2="17" />
             </svg>
           </button>
-          <RivuletMark />
-          <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Rivulet</span>
+          <Link
+            to="/"
+            aria-label="Rivulet — go to the river"
+            className="flex items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <RivuletMark />
+            <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Rivulet</span>
+          </Link>
         </div>
         <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
           <ThemeToggle choice={themeChoice} onChange={onThemeChange} />
@@ -157,10 +163,26 @@ function AppShell() {
 }
 
 function App() {
+  // Every navigable state is a route, and each renders the same <AppShell/> so
+  // the shell + the loaded feeds/items in ReaderApp stay mounted across
+  // navigation (React reconciles the identical element type in place). The view
+  // is derived from the pathname and the folder / feed / item ids from the
+  // dynamic segments (see lib/route.ts). Item forms nest under their view so an
+  // open item carries its context; genuinely unmatched paths redirect to the
+  // river. (#144)
   return (
     <Gate>
       <Routes>
         <Route index element={<AppShell />} />
+        <Route path="item/:itemId" element={<AppShell />} />
+        <Route path="all" element={<AppShell />} />
+        <Route path="all/item/:itemId" element={<AppShell />} />
+        <Route path="starred" element={<AppShell />} />
+        <Route path="starred/item/:itemId" element={<AppShell />} />
+        <Route path="folder/:folder" element={<AppShell />} />
+        <Route path="folder/:folder/item/:itemId" element={<AppShell />} />
+        <Route path="feed/:feedId" element={<AppShell />} />
+        <Route path="feed/:feedId/item/:itemId" element={<AppShell />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Gate>
