@@ -39,7 +39,7 @@ export function AddFeed({
           placeholder="Add a feed or site URL…"
           aria-label="Feed or site URL"
           disabled={busy}
-          className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+          className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
         />
         <button
           type="submit"
@@ -49,7 +49,7 @@ export function AddFeed({
           Add
         </button>
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </form>
   )
 }

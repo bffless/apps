@@ -378,11 +378,11 @@ export function ReaderApp({
   )
 
   const errorBanner = error && (
-    <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+    <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
   )
 
   const listToolbar = visible.length > 0 && (
-    <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5">
+    <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5 dark:border-slate-800">
       <button
         type="button"
         onClick={() => setSortOrder((o) => (o === 'newest' ? 'oldest' : 'newest'))}
@@ -396,7 +396,7 @@ export function ReaderApp({
         <button
           type="button"
           onClick={markAllRead}
-          className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
         >
           Mark all read
         </button>
@@ -412,7 +412,7 @@ export function ReaderApp({
         {sidebar}
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row">
-          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white lg:max-w-sm">
+          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white lg:max-w-sm dark:border-slate-800 dark:bg-slate-900">
             {errorBanner}
             {listToolbar}
             <ItemList
@@ -425,7 +425,7 @@ export function ReaderApp({
             />
           </section>
 
-          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white">
+          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             <ReadingPane
               item={selectedItem}
               measureClass={measureClass}
@@ -444,19 +444,19 @@ export function ReaderApp({
     <>
       {selectedItem ? (
         <div className="flex w-full flex-1 flex-col">
-          <div className="sticky top-14 z-10 flex items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur">
+          <div className="sticky top-14 z-10 flex items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
             <button
               type="button"
               onClick={backToList}
-              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
             >
               <span aria-hidden="true">←</span> Back
             </button>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-500">
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-500 dark:text-slate-400">
               {selectedItem.title || '(untitled)'}
             </span>
           </div>
-          <section className="min-w-0 flex-1 bg-white">
+          <section className="min-w-0 flex-1 bg-white dark:bg-slate-900">
             <ReadingPane
               item={selectedItem}
               measureClass={measureClass}
@@ -467,7 +467,7 @@ export function ReaderApp({
         </div>
       ) : (
         <div className="flex w-full flex-1 flex-col px-4 py-6">
-          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white">
+          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             {errorBanner}
             {listToolbar}
             <ItemList
@@ -497,7 +497,7 @@ export function ReaderApp({
           }`}
         />
         <div
-          className={`absolute inset-y-0 left-0 flex w-80 max-w-[85%] flex-col overflow-y-auto bg-white p-4 shadow-xl transition-transform duration-200 ${
+          className={`absolute inset-y-0 left-0 flex w-80 max-w-[85%] flex-col overflow-y-auto bg-white p-4 shadow-xl transition-transform duration-200 dark:bg-slate-900 ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >

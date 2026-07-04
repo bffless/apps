@@ -17,7 +17,7 @@ export function WidthControl({
     <div
       role="group"
       aria-label="Reading width"
-      className="hidden items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 lg:flex"
+      className="hidden items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 lg:flex dark:border-slate-700"
     >
       {WIDTH_PRESETS.map((preset) => {
         const active = preset.id === level
@@ -30,8 +30,8 @@ export function WidthControl({
             title={`${preset.label} reading width`}
             className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
               active
-                ? 'bg-slate-100 text-slate-900'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                ? 'bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
             }`}
           >
             {preset.label}
