@@ -2,11 +2,12 @@
  * Session hook for the Rivulet reader.
  *
  * Ported from apps/handoff/src/lib/session.ts — same pattern, same
- * single-flight refresh strategy. Talks to the BFFless built-in auth relay
- * (`/_bffless/auth/session`) and refreshes the SuperTokens session via the
- * `/api/auth/*` reverse-proxy rule (D11). Rivulet is served at a subdomain of
- * the primary domain, so the session lives in the shared `sAccessToken` /
- * `sRefreshToken` cookies on `.<primary-domain>`.
+ * single-flight refresh strategy. Reads the session from the reverse-proxied
+ * SuperTokens endpoint (`/api/auth/session`) first, falling back to the
+ * built-in relay (`/_bffless/auth/session`) only for cross-origin custom
+ * domains, and refreshes via the `/api/auth/*` reverse-proxy rule (D11).
+ * Rivulet is served at a subdomain of the primary domain, so the session lives
+ * in the shared `sAccessToken` / `sRefreshToken` cookies on `.<primary-domain>`.
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -35,7 +36,30 @@ let inFlight: Promise<Session> | null = null
  */
 let refreshInFlight: Promise<boolean> | null = null
 
-const SESSION_URL = '/_bffless/auth/session'
+/**
+ * Primary session read path: the **reverse-proxied SuperTokens** session.
+ *
+ * On the primary domain and its subdomains (e.g. `reader.j5s.dev`) this returns
+ * the canonical BFFless user — `{ id, email, role }` — where `id` is the real
+ * BFFless user id and `role` carries `admin`. That identity is what the app
+ * needs to gate owner/admin controls, so it must be the primary source.
+ *
+ * The built-in relay (`/_bffless/auth/session`, below) can't be primary: on a
+ * primary-domain subdomain it resolves via the shared `sAccessToken` fallback and
+ * returns an *under-hydrated* user (a non-BFFless `id`, no `role`). The relay is
+ * only correct on cross-origin custom domains (its `bffless_access` cookie path).
+ *
+ * This mirrors `doRefresh`, which already prefers the proxied
+ * `/api/auth/session/refresh` over the relay refresh.
+ */
+const PROXIED_SESSION_URL = '/api/auth/session'
+
+/**
+ * Fallback session read path: the built-in per-domain relay. Cross-origin custom
+ * domains only carry the `bffless_access` relay cookie (no `sAccessToken`), so the
+ * proxied endpoint reads as guest there — the relay is what authenticates them.
+ */
+const RELAY_SESSION_URL = '/_bffless/auth/session'
 
 /**
  * The actual refresh, run at most once at a time via {@link attemptRefresh}.
@@ -133,9 +157,15 @@ async function evaluate(res: Response): Promise<Evaluated> {
   return { authenticated: true, user }
 }
 
-export async function fetchSessionOnce(): Promise<Session> {
+/**
+ * Resolve the session from a single endpoint, refreshing once if the token is
+ * expired/absent. Always returns a settled Session (never `'needs-refresh'`):
+ * a second `'needs-refresh'` (refresh succeeded but still not authed) collapses
+ * to guest so we don't loop.
+ */
+async function resolveSession(url: string): Promise<Session> {
   const tryGet = async (): Promise<Response> =>
-    fetch(SESSION_URL, { credentials: 'include' })
+    fetch(url, { credentials: 'include' })
 
   let result = await evaluate(await tryGet())
 
@@ -144,9 +174,21 @@ export async function fetchSessionOnce(): Promise<Session> {
     result = refreshed ? await evaluate(await tryGet()) : { authenticated: false }
   }
 
-  // A second 'needs-refresh' (refresh succeeded but session still not authed)
-  // collapses to guest — don't loop.
   return result === 'needs-refresh' ? { authenticated: false } : result
+}
+
+export async function fetchSessionOnce(): Promise<Session> {
+  // Primary: the reverse-proxied SuperTokens session, which carries the canonical
+  // BFFless user (id + role) on the primary domain and its subdomains. If this
+  // authenticates, it is authoritative — return it before touching the relay,
+  // whose sAccessToken fallback would under-hydrate id/role on a subdomain.
+  const proxied = await resolveSession(PROXIED_SESSION_URL)
+  if (proxied.authenticated) return proxied
+
+  // Fallback: the built-in relay session for cross-origin custom domains, where
+  // the proxied endpoint reads as guest (no sAccessToken) but the relay cookie
+  // authenticates. On the primary domain this simply stays a guest.
+  return resolveSession(RELAY_SESSION_URL)
 }
 
 function getSession(): Promise<Session> {
