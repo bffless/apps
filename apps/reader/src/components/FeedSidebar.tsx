@@ -48,7 +48,7 @@ export function FeedSidebar({
   const existingFolders = folderNames(feeds)
 
   return (
-    <aside className="flex w-full flex-col gap-4 border-slate-200 sm:w-72 sm:border-r sm:pr-4 dark:border-slate-800">
+    <aside className="flex w-full flex-col gap-4">
       <AddFeed onAdd={onAdd} busy={adding} />
 
       <button

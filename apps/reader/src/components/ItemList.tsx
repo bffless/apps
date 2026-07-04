@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { itemPreview, type Item } from '../lib/items'
 
 /**
@@ -7,10 +7,16 @@ import { itemPreview, type Item } from '../lib/items'
  * renders — no sorting/filtering decisions live here.
  *
  * Unread rows are auto-marked read once they **scroll past** the top of the
- * viewport (via `IntersectionObserver`): a row that was on screen and then
- * leaves upward fires `onScrolledPast`. Rows never seen (still below the fold)
- * are left unread, so opening the app doesn't nuke the whole river. Where IO is
- * unavailable the list still works — read state then comes from opening items.
+ * list's scroll region (via `IntersectionObserver`): a row that was on screen
+ * and then leaves upward fires `onScrolledPast`. Rows never seen (still below
+ * the fold) are left unread, so opening the app doesn't nuke the whole river.
+ * Where IO is unavailable the list still works — read state then comes from
+ * opening items.
+ *
+ * On desktop the list scrolls inside its own container (#140), not the window,
+ * so the observer is rooted at `scrollRootRef` when provided; "past the top" is
+ * measured against the root's edge (`rootBounds`) rather than the viewport, so
+ * it works for both a windowed (mobile) and a container-scrolled (desktop) list.
  */
 export function ItemList({
   items,
@@ -19,6 +25,7 @@ export function ItemList({
   onSelect,
   onToggleStar,
   onScrolledPast,
+  scrollRootRef,
 }: {
   items: Item[]
   loading: boolean
@@ -26,6 +33,8 @@ export function ItemList({
   onSelect: (item: Item) => void
   onToggleStar?: (item: Item) => void
   onScrolledPast?: (item: Item) => void
+  /** Scroll container to root the mark-read observer at; window/viewport when omitted. */
+  scrollRootRef?: RefObject<HTMLElement | null>
 }) {
   const seen = useRef<Set<string>>(new Set())
   const rows = useRef<Map<string, HTMLLIElement>>(new Map())
@@ -41,18 +50,23 @@ export function ItemList({
           if (!guid) continue
           if (entry.isIntersecting) {
             seen.current.add(guid) // it's been on screen
-          } else if (seen.current.has(guid) && entry.boundingClientRect.top < 0) {
-            // Was visible, now gone above the top → scrolled past.
-            const item = items.find((i) => i.guid === guid)
-            if (item && !item.read) onScrolledPast(item)
+          } else if (seen.current.has(guid)) {
+            // Was visible, now gone above the root's top edge → scrolled past.
+            // `rootBounds.top` is 0 for the viewport root and the container's top
+            // when scrolling inside a pane (#140).
+            const rootTop = entry.rootBounds?.top ?? 0
+            if (entry.boundingClientRect.top < rootTop) {
+              const item = items.find((i) => i.guid === guid)
+              if (item && !item.read) onScrolledPast(item)
+            }
           }
         }
       },
-      { threshold: 0 },
+      { threshold: 0, root: scrollRootRef?.current ?? null },
     )
     for (const el of rows.current.values()) observer.observe(el)
     return () => observer.disconnect()
-  }, [items, onScrolledPast])
+  }, [items, onScrolledPast, scrollRootRef])
 
   if (loading) {
     return <p className="px-2 py-6 text-sm text-slate-400 dark:text-slate-500">Loading…</p>
