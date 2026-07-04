@@ -5,7 +5,7 @@ import { FeedSidebar } from './components/FeedSidebar'
 import { ItemList } from './components/ItemList'
 import { ReadingPane } from './components/ReadingPane'
 import * as api from './lib/api'
-import type { Feed } from './lib/feeds'
+import { feedTitleFor, type Feed } from './lib/feeds'
 import { sortItemsNewestFirst, sortItemsOldestFirst, type Item } from './lib/items'
 import { keyToAction, nextSelection } from './lib/keyboard'
 import {
@@ -140,6 +140,19 @@ export function ReaderApp({
   const counts = useMemo(() => unreadCountsByFeed(items), [items])
   const riverTotal = useMemo(() => totalUnread(items), [items])
   const starredTotal = useMemo(() => totalStarred(items), [items])
+
+  // Feed-name attribution: a row/article shows which feed it came from, but
+  // only in mixed views (river/all/folder/starred) where feeds are
+  // interleaved — in a single-feed view the source just repeats the sidebar
+  // selection, so `feedNameFor` is `undefined` there and the eyebrow is dropped.
+  const feedsByUrl = useMemo(() => new Map(feeds.map((f) => [f.url, f])), [feeds])
+  const feedNameFor = useMemo(
+    () =>
+      selection.kind === 'feed'
+        ? undefined
+        : (item: Item) => feedTitleFor(item.feedId, feedsByUrl),
+    [selection.kind, feedsByUrl],
+  )
 
   // The visible list is a snapshot captured when the view changes or a fresh
   // load lands (`loadSeq`) — deliberately NOT on every read toggle, so an item
@@ -530,6 +543,7 @@ export function ReaderApp({
                     onToggleStar={toggleStar}
                     onScrolledPast={markScrolledPast}
                     scrollRootRef={listScrollRef}
+                    feedNameFor={feedNameFor}
                   />
                 </div>
               </section>
@@ -543,6 +557,7 @@ export function ReaderApp({
                   measureClass={measureClass}
                   onToggleRead={toggleRead}
                   onToggleStar={toggleStar}
+                  feedNameFor={feedNameFor}
                 />
               </section>
             </div>
@@ -576,6 +591,7 @@ export function ReaderApp({
               measureClass={measureClass}
               onToggleRead={toggleRead}
               onToggleStar={toggleStar}
+              feedNameFor={feedNameFor}
             />
           </section>
         </div>
@@ -591,6 +607,7 @@ export function ReaderApp({
               onSelect={openItemMobile}
               onToggleStar={toggleStar}
               onScrolledPast={markScrolledPast}
+              feedNameFor={feedNameFor}
             />
           </section>
         </div>

@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeFeedUrl, shapeFeed, feedLabel, feedInitial, sortFeeds, type Feed } from './feeds'
+import {
+  normalizeFeedUrl,
+  shapeFeed,
+  feedLabel,
+  feedInitial,
+  feedTitleFor,
+  sortFeeds,
+  type Feed,
+} from './feeds'
 
 describe('normalizeFeedUrl', () => {
   it('defaults a missing scheme to https', () => {
@@ -97,6 +105,27 @@ describe('feedInitial', () => {
 
   it('falls back to a dot for a label with no alphanumerics', () => {
     expect(feedInitial(shapeFeed({ url: 'https://x.test/rss', title: '★' }))).toBe('•')
+  })
+})
+
+describe('feedTitleFor', () => {
+  const feeds = [
+    shapeFeed({ url: 'https://a.test/rss', title: 'Apple News' }),
+    shapeFeed({ url: 'https://b.test/rss' }), // untitled → label falls back to host+path
+  ]
+  const byUrl = new Map(feeds.map((f) => [f.url, f]))
+
+  it("returns the matching feed's label, looked up by feedId (= its url)", () => {
+    expect(feedTitleFor('https://a.test/rss', byUrl)).toBe('Apple News')
+  })
+
+  it('uses the label fallback for an untitled feed', () => {
+    expect(feedTitleFor('https://b.test/rss', byUrl)).toBe('b.test/rss')
+  })
+
+  it('returns null when no loaded feed matches the id (orphaned item)', () => {
+    expect(feedTitleFor('https://gone.test/rss', byUrl)).toBeNull()
+    expect(feedTitleFor('', byUrl)).toBeNull()
   })
 })
 
