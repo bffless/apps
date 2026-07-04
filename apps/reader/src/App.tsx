@@ -130,8 +130,12 @@ function AppShell() {
   // Mobile nav-drawer state lives here so the header hamburger can open it and
   // ReaderApp can render + close it (#135).
   const [menuOpen, setMenuOpen] = useState(false)
+  // On desktop the shell is a fixed-height column (`lg:h-svh` + `overflow-hidden`)
+  // so the page/body doesn't scroll — the reading surface fills the viewport
+  // below the sticky header and each pane scrolls internally (#140). On mobile it
+  // falls back to `min-h-svh` with normal page scroll.
   return (
-    <div className="flex min-h-svh flex-col bg-slate-50 dark:bg-slate-950">
+    <div className="flex min-h-svh flex-col bg-slate-50 lg:h-svh lg:overflow-hidden dark:bg-slate-950">
       <Header
         email={email}
         widthLevel={level}
@@ -140,7 +144,7 @@ function AppShell() {
         themeChoice={choice}
         onThemeChange={setChoice}
       />
-      <main className="flex flex-1 flex-col">
+      <main className="flex flex-1 flex-col lg:min-h-0">
         <ReaderApp
           containerClass={preset.container}
           measureClass={preset.measure}
