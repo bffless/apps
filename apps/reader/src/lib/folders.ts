@@ -5,9 +5,9 @@
  * matched **case-insensitively** (so `News` and `news` are one folder) while a
  * display label is preserved from the first feed that named it. Grouping, the
  * per-folder unread rollup, and folder-name discovery all live here; the sidebar
- * only renders what these return. Moving a feed between folders is just a
- * re-upsert of the feed row with a new `folder` (see `api.setFeedFolder`), so
- * there is no folder-specific backend.
+ * only renders what these return. Moving a feed between folders updates just the
+ * feed row's `folder` via `POST /api/feeds/folder` (see `api.setFeedFolder`) — a
+ * `data_update`, not an upsert, since the add endpoint is insert-only (ce#407).
  */
 
 import { sortFeeds, type Feed } from './feeds'
