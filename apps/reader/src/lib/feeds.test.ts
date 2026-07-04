@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeFeedUrl, shapeFeed, feedLabel, sortFeeds, type Feed } from './feeds'
+import { normalizeFeedUrl, shapeFeed, feedLabel, feedInitial, sortFeeds, type Feed } from './feeds'
 
 describe('normalizeFeedUrl', () => {
   it('defaults a missing scheme to https', () => {
@@ -78,6 +78,25 @@ describe('feedLabel', () => {
   it('falls back to host + path when untitled', () => {
     expect(feedLabel(shapeFeed({ url: 'https://x.test/rss' }))).toBe('x.test/rss')
     expect(feedLabel(shapeFeed({ url: 'https://x.test/' }))).toBe('x.test')
+  })
+})
+
+describe('feedInitial', () => {
+  it('takes the first letter of the title, uppercased', () => {
+    expect(feedInitial(shapeFeed({ url: 'https://x.test/rss', title: 'alpha Blog' }))).toBe('A')
+  })
+
+  it('derives from the host when untitled', () => {
+    expect(feedInitial(shapeFeed({ url: 'https://beta.test/rss' }))).toBe('B')
+  })
+
+  it('skips leading punctuation to the first alphanumeric', () => {
+    expect(feedInitial(shapeFeed({ url: 'https://x.test/rss', title: '“Quoted” News' }))).toBe('Q')
+    expect(feedInitial(shapeFeed({ url: 'https://x.test/rss', title: '7 Days' }))).toBe('7')
+  })
+
+  it('falls back to a dot for a label with no alphanumerics', () => {
+    expect(feedInitial(shapeFeed({ url: 'https://x.test/rss', title: '★' }))).toBe('•')
   })
 })
 

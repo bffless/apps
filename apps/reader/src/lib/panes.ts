@@ -29,15 +29,26 @@ export const SIDEBAR_MAX_SIZE = 42
 export const CONTENT_MIN_SIZE = 45
 
 /**
- * A collapsible panel reports its collapsed size (0%) via `onResize`; anything at
- * or below this threshold counts as collapsed. Kept just above 0 to absorb
- * sub-pixel rounding without a real, narrow sidebar reading as collapsed.
+ * Collapsed width, in **pixels**, of the feed sidebar's icon rail. Collapsing
+ * doesn't hide the sidebar — it shrinks to this fixed strip of square icon
+ * buttons (River / All / ★ / one per feed), so feeds stay switchable while the
+ * list + reading panes reclaim the width. Passed to `Panel` as `collapsedSize`
+ * (the library accepts a `px`-suffixed string; see the pixels-vs-% note above).
  */
-export const COLLAPSED_THRESHOLD = 0.5
+export const SIDEBAR_RAIL_PX = 56
 
-/** Whether a panel size (percentage of the group) should be treated as collapsed. */
-export function isCollapsedSize(pct: number): boolean {
-  return pct <= COLLAPSED_THRESHOLD
+/**
+ * The measured-width bound (pixels) at or below which the sidebar is the
+ * collapsed icon rail. `react-resizable-panels` reports each panel's pixel width
+ * via `onResize`; the rail sits at {@link SIDEBAR_RAIL_PX}, while the smallest
+ * *expanded* sidebar is `SIDEBAR_MIN_SIZE`% of the group — ≳130px on any desktop
+ * viewport — so this bound cleanly separates the two with room for rounding.
+ */
+export const SIDEBAR_COLLAPSED_MAX_PX = 96
+
+/** Whether a measured sidebar width (pixels) is the collapsed icon-rail state. */
+export function isCollapsedWidth(px: number): boolean {
+  return Number.isFinite(px) && px <= SIDEBAR_COLLAPSED_MAX_PX
 }
 
 /** How far a page-down keystroke advances a scroll container, as a fraction of its height. */

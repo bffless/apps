@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from 'react-resizable-panels'
+import { FeedRail } from './components/FeedRail'
 import { FeedSidebar } from './components/FeedSidebar'
 import { ItemList } from './components/ItemList'
 import { ReadingPane } from './components/ReadingPane'
@@ -15,7 +16,8 @@ import {
   SIDEBAR_MAX_SIZE,
   SIDEBAR_MIN_SIZE,
   SIDEBAR_PANEL_ID,
-  isCollapsedSize,
+  SIDEBAR_RAIL_PX,
+  isCollapsedWidth,
   pageScrollDelta,
 } from './lib/panes'
 import { DESKTOP_MEDIA_QUERY, useMediaQuery } from './lib/useMediaQuery'
@@ -415,6 +417,19 @@ export function ReaderApp({
     />
   )
 
+  // Collapsed-sidebar view: the icon rail (#140). Same selection model as the
+  // full sidebar, sized to the rail's fixed width.
+  const feedRail = (
+    <FeedRail
+      feeds={feeds}
+      selection={selection}
+      unreadCounts={counts}
+      riverUnread={riverTotal}
+      starredCount={starredTotal}
+      onSelect={selectView}
+    />
+  )
+
   const errorBanner = error && (
     <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
   )
@@ -486,11 +501,11 @@ export function ReaderApp({
             minSize={`${SIDEBAR_MIN_SIZE}%`}
             maxSize={`${SIDEBAR_MAX_SIZE}%`}
             collapsible
-            collapsedSize="0%"
-            onResize={(size) => setSidebarCollapsed(isCollapsedSize(size.asPercentage))}
-            className="pr-1"
+            collapsedSize={`${SIDEBAR_RAIL_PX}px`}
+            onResize={(size) => setSidebarCollapsed(isCollapsedWidth(size.inPixels))}
+            className={sidebarCollapsed ? undefined : 'pr-1'}
           >
-            {sidebar}
+            {sidebarCollapsed ? feedRail : sidebar}
           </Panel>
 
           <Separator className="group relative flex w-3 shrink-0 items-center justify-center">

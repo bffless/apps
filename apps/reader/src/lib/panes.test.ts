@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   CONTENT_MIN_SIZE,
-  COLLAPSED_THRESHOLD,
   PAGE_SCROLL_FRACTION,
+  SIDEBAR_COLLAPSED_MAX_PX,
   SIDEBAR_DEFAULT_SIZE,
   SIDEBAR_MAX_SIZE,
   SIDEBAR_MIN_SIZE,
-  isCollapsedSize,
+  SIDEBAR_RAIL_PX,
+  isCollapsedWidth,
   pageScrollDelta,
 } from './panes'
 
@@ -22,19 +23,31 @@ describe('sidebar sizing bounds', () => {
   })
 })
 
-describe('isCollapsedSize', () => {
-  it('treats a fully collapsed (0%) panel as collapsed', () => {
-    expect(isCollapsedSize(0)).toBe(true)
+describe('isCollapsedWidth', () => {
+  it('treats the icon rail width (and rounding around it) as collapsed', () => {
+    expect(isCollapsedWidth(SIDEBAR_RAIL_PX)).toBe(true)
+    expect(isCollapsedWidth(SIDEBAR_RAIL_PX + 1)).toBe(true)
+    expect(isCollapsedWidth(SIDEBAR_COLLAPSED_MAX_PX)).toBe(true)
   })
 
-  it('absorbs sub-pixel rounding at the threshold', () => {
-    expect(isCollapsedSize(COLLAPSED_THRESHOLD)).toBe(true)
-    expect(isCollapsedSize(COLLAPSED_THRESHOLD - 0.1)).toBe(true)
+  it('treats a zero/unmeasured width as collapsed (the safe rail default)', () => {
+    expect(isCollapsedWidth(0)).toBe(true)
+    expect(isCollapsedWidth(Number.NaN)).toBe(false)
   })
 
-  it('treats a real, narrow sidebar as expanded', () => {
-    expect(isCollapsedSize(SIDEBAR_MIN_SIZE)).toBe(false)
-    expect(isCollapsedSize(SIDEBAR_DEFAULT_SIZE)).toBe(false)
+  it('treats a real, expanded sidebar as not collapsed', () => {
+    // The narrowest expanded sidebar is SIDEBAR_MIN_SIZE% of the group, which is
+    // ≳130px on any desktop viewport — comfortably above the collapsed bound.
+    expect(isCollapsedWidth(SIDEBAR_COLLAPSED_MAX_PX + 1)).toBe(false)
+    expect(isCollapsedWidth(130)).toBe(false)
+    expect(isCollapsedWidth(300)).toBe(false)
+  })
+
+  it('keeps the collapsed bound clear of the smallest expanded sidebar', () => {
+    // Rail width < bound guarantees the rail reads as collapsed; the bound sits
+    // well under 14% of even a 1024px-wide desktop group (~130px).
+    expect(SIDEBAR_RAIL_PX).toBeLessThan(SIDEBAR_COLLAPSED_MAX_PX)
+    expect(SIDEBAR_COLLAPSED_MAX_PX).toBeLessThan((SIDEBAR_MIN_SIZE / 100) * 1024)
   })
 })
 

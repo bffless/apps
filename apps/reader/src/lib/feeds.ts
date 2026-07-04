@@ -101,6 +101,16 @@ export function feedLabel(feed: Feed): string {
 }
 
 /** Sort feeds by display label, case-insensitively, for a stable sidebar order. */
+/**
+ * A single-character badge for a feed's collapsed-rail icon — the first
+ * letter/digit of its label, uppercased. Falls back to `•` for a label with no
+ * alphanumeric character (e.g. an emoji-only or symbol title).
+ */
+export function feedInitial(feed: Feed): string {
+  const match = feedLabel(feed).match(/[a-z0-9]/i)
+  return match ? match[0].toUpperCase() : '•'
+}
+
 export function sortFeeds(feeds: Feed[]): Feed[] {
   return [...feeds].sort((a, b) =>
     feedLabel(a).toLocaleLowerCase().localeCompare(feedLabel(b).toLocaleLowerCase()),
