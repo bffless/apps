@@ -4,7 +4,7 @@
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "reader",
-    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114) + item star-state (POST /api/items/star, data_update — bffless/apps#115) + feed auto-discovery (POST /api/discover, http_request — bffless/apps#113). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas.",
+    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114) + item star-state (POST /api/items/star, data_update — bffless/apps#115) + feed auto-discovery (POST /api/discover, http_request — bffless/apps#113). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas. Background auto-refresh + retention (bffless/apps#119): /api/refresh stamps a numeric epoch-ms fetchedAt and defaults read/starred=false, and POST /api/prune (data_delete delete-by-query) removes read+unstarred items older than 30 days. Two pipeline_schedules drive them as system context — refresh every 15 min, prune nightly at 03:17 UTC.",
     "environment": null
   },
   "schemas": [
@@ -460,7 +460,7 @@
       "forwardCookies": false,
       "proxyType": "pipeline",
       "isEnabled": true,
-      "description": "The ingest composition: data_query(reader_feeds) -> urls collects feed URLs -> xml_feed_parse fetches+parses them concurrently -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link) inserts new entries only (read/starred survive) -> respond { inserted, skipped, errors }. feedId = entry.source (= the feed's url). Runnable as a user action OR as system context on a schedule (#119). auth_required (allowApiKey so the schedule/system can fire it).",
+      "description": "The ingest composition: data_query(reader_feeds) -> urls collects feed URLs -> xml_feed_parse fetches+parses them concurrently -> stamp captures now() as epoch ms -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link) inserts new entries only (read/starred survive re-runs). fetchedAt is stored as a numeric epoch-ms (the reader_items schema types it `number`, and the nightly prune filters it with a numeric `<`), and read/starred default to false so read+unstarred items become prune-eligible. -> respond { inserted, skipped, errors }. feedId = entry.source (= the feed's url). Runnable as a user action OR as system context on the 15-min schedule (#119). NO auth_required validator: the reader alias is private (edge-gated login) so /api/* is protected at the site level, and the CE scheduler fires this as a userless system run — auth_required (which needs context.user) would reject it.",
       "pipelineConfig": {
         "name": "Refresh feeds (ingest)",
         "steps": [
@@ -493,6 +493,14 @@
             }
           },
           {
+            "id": "stamp",
+            "name": "stamp",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler() {\n  return { ms: Date.now() }\n}\n"
+            }
+          },
+          {
             "id": "upsert",
             "name": "upsert",
             "handlerType": "data_upsert_many",
@@ -508,7 +516,9 @@
                 "publishedAt": "steps.item.publishedAt",
                 "summary": "steps.item.summary",
                 "content": "steps.item.content",
-                "fetchedAt": "now()"
+                "fetchedAt": "steps.stamp.ms",
+                "read": "false",
+                "starred": "false"
               },
               "dedupField": "guid",
               "dedupKey": ["steps.item.guid", "steps.item.link"],
@@ -535,7 +545,7 @@
             }
           }
         ],
-        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+        "validators": []
       }
     },
     {
@@ -589,6 +599,58 @@
           }
         ],
         "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/prune",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 9,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Retention prune (#119): cutoff = now - 30 days (epoch ms) -> data_delete(reader_items) delete-by-query where read=true AND starred!=true AND fetchedAt < cutoff -> respond { pruned: count }. Starred and unread rows never match the predicate, so they are exempt by construction (D5/D6). Fired nightly (03:17 UTC) by a pipeline_schedule as system context. The numeric fetchedAt (see /api/refresh) is what makes the `<` filter work — data_delete range ops cast the field to numeric. NO auth_required validator: the reader alias is private (edge-gated) so this is site-level protected, and the CE scheduler runs it userless — auth_required would reject a userless system run.",
+      "pipelineConfig": {
+        "name": "Prune old items (retention)",
+        "steps": [
+          {
+            "id": "cutoff",
+            "name": "cutoff",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler() {\n  var THIRTY_DAYS_MS = 2592000000\n  return { ms: Date.now() - THIRTY_DAYS_MS }\n}\n"
+            }
+          },
+          {
+            "id": "del",
+            "name": "del",
+            "handlerType": "data_delete",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filterLogic": "and",
+              "filters": {
+                "read": { "op": "eq", "value": "true" },
+                "starred": { "op": "ne", "value": "true" },
+                "fetchedAt": { "op": "lt", "value": "steps.cutoff.ms" }
+              }
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"pruned\":{{steps.del.count}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": []
       }
     }
   ]

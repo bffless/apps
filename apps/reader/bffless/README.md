@@ -16,13 +16,19 @@ core reading pipelines:
 | `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `url`) |
 | `/api/feeds/remove` | `POST` | unsubscribe (delete a feed row) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
-| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`) |
+| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
 | `/api/discover` | `POST` | auto-discovery (#113): `http_request` fetches a site/feed URL server-side so the browser can `DOMParser` it for `<link rel="alternate">` feed links |
+| `/api/prune` | `POST` | retention (#119): `data_delete` delete-by-query removes `read` + un`starred` items older than 30 days (`fetchedAt < now-30d`); starred + unread are exempt |
 
-All `/api/*` pipelines carry an `auth_required` validator (`allowApiKey: true`, so a schedule/system
-context and CI can drive them). They reference two data-table schemas, `reader_feeds` and
-`reader_items` (see **Data tables** below). The river, star, folders, OPML, keyboard nav, and the
-background schedules land with #114–#119 and grow this file further.
+Most `/api/*` pipelines carry an `auth_required` validator. The two **schedule-fired** pipelines —
+`/api/refresh` and `/api/prune` — deliberately **omit** it: the CE scheduler triggers them as a
+*userless* system run, and `auth_required` (which requires `context.user`) would reject that. They stay
+protected because the reader alias is **private** (edge-gated login), so anonymous HTTP to any route —
+including `/api/*` — is bounced to login before it reaches the pipeline; the scheduler bypasses that
+edge and runs the pipeline directly. All pipelines reference two data-table schemas, `reader_feeds` and
+`reader_items` (see **Data tables** below). Two **`pipeline_schedules`** (#119) fire `/api/refresh`
+every 15 minutes and `/api/prune` nightly at 03:17 UTC, both as system context (no user session) —
+see **Background schedules** below.
 
 ## Import
 
@@ -53,7 +59,40 @@ Everything the human must configure in the BFFless admin panel that the `install
 - **Auth relay** — the platform-level piece the gate depends on; see §1 below.
 - **Serve URL — domain mapping (private, SPA)** — see §2 below.
 
-The background-refresh + retention `pipeline_schedules` land with #119.
+- **Background schedules** — two `pipeline_schedules` (#119) drive the reader unattended; see
+  **Background schedules** below. They are created via the BFFless API/MCP (the `install-app` skill
+  can't yet manage schedules), so add them once per project after importing the rule set.
+
+## Background schedules
+
+Rivulet's "already there when you arrive" magic is background auto-refresh, plus 30-day retention so
+the item table doesn't grow forever. Both are `pipeline_schedules` (CE `pipeline_schedules` primitive)
+that fire a pipeline-type proxy rule on a cron cadence **as system context** (no user session), so
+feeds stay fresh and old items get pruned even with the app closed.
+
+Create both against your project (IDs are your project's, not the reference project's):
+
+| Schedule | Cron (UTC) | Target rule | Effect |
+| --- | --- | --- | --- |
+| Rivulet refresh (auto ingest) | `*/15 * * * *` | `POST /api/refresh` | pre-fetches every feed every 15 min |
+| Rivulet nightly prune (retention) | `17 3 * * *` | `POST /api/prune` | deletes read + unstarred items older than 30 days |
+
+**Claude / MCP:** ask Claude (BFFless MCP connected) to `create_pipeline_schedule` for each, pointing
+`targetProxyRuleId` at your project's `/api/refresh` and `/api/prune` rule IDs.
+
+**REST:** `POST /api/pipeline-schedules/projects/:projectId/schedules` with
+`{ targetProxyRuleId, cronExpression, timezone: "UTC", enabled: true }` (repo-scoped API key; gated on
+bffless/ce#411). Note the path is **`/api/pipeline-schedules/projects/:id/schedules`**, *not*
+`/api/projects/:id/pipeline-schedules` (which collides with the projects catch-all and returns a
+misleading `400 "Project not found"` — see CONTEXT.md).
+
+Both target rules **omit** the `auth_required` validator on purpose: CE fires a schedule as a
+*userless* system run, and `auth_required` needs `context.user`, so a gated pipeline fails with
+`"Authentication required to access this pipeline"` (`allowApiKey` only helps a *keyed HTTP request*,
+not a scheduler run). The endpoints stay protected by the **private alias** (anonymous HTTP is
+edge-bounced to login); the scheduler bypasses the edge and runs the pipeline directly. The prune's
+date filter relies on `fetchedAt` being a **numeric epoch-ms** (see **Data tables**) — `data_delete`
+range operators cast the field to numeric (bffless/ce#412), which an ISO string can't satisfy.
 
 ## Data tables
 
@@ -62,8 +101,10 @@ Two schemas back the reader (content is stored **raw** and sanitized at render �
 - **`reader_feeds`** — `url` (dedup key), `title`, `siteUrl`, `folder` (nullable), `iconUrl`,
   `lastFetchedAt`, `lastError`, `addedAt`.
 - **`reader_items`** — `guid` (dedup key), `feedId` (the owning feed's `url`, = `xml_feed_parse`
-  `entry.source`), `title`, `link`, `author`, `publishedAt`, `summary`, `content`, `read`, `starred`,
-  `fetchedAt`.
+  `entry.source`), `title`, `link`, `author`, `publishedAt` (feed timestamp, ISO string), `summary`,
+  `content`, `read` (boolean), `starred` (boolean), `fetchedAt` (**`number`** — epoch-ms; ingest
+  stamps `Date.now()`, and the nightly prune filters it with a numeric `<`, so it must not be an ISO
+  string).
 
 **`schemaId` portability caveat:** the exported rules embed the reference project's `schemaId`s. When
 you import into a different project, re-point each pipeline's `schemaId` to your project's
