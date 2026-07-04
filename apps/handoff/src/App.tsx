@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom'
+import { useDispatch, useSelector } from 'react-redux'
+import { setShareLinkFolderId } from './store/handoffSlice'
+import type { AppDispatch, RootState } from './store'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import type { Layout } from 'react-resizable-panels'
 import { HandoffHome } from './pages/HandoffHome'
@@ -98,6 +101,17 @@ function AccountMenu({ email }: { email?: string }) {
 function Shell() {
   const { session, loading } = useSession()
   const { pathname } = useLocation()
+  const dispatch = useDispatch<AppDispatch>()
+  const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
+
+  // An authenticated user is never a share visitor. Drop any stale
+  // shareLinkFolderId left in localStorage (e.g. after opening a /s/ link),
+  // so it can't poison the sidebar root or downgrade access on later visits.
+  useEffect(() => {
+    if (session?.authenticated && shareLinkFolderId) {
+      dispatch(setShareLinkFolderId(null))
+    }
+  }, [session, shareLinkFolderId, dispatch])
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   // Persisted sidebar/main split (react-resizable-panels Layout: { panelId: % }).
