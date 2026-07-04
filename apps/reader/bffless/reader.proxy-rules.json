@@ -1,0 +1,738 @@
+{
+  "version": 2,
+  "exportedAt": "2026-07-03T00:00:00.000Z",
+  "kind": "bffless-proxy-rule-set",
+  "ruleSet": {
+    "name": "reader",
+    "description": "Rivulet app backend — RSS/Atom reader. Auth reverse-proxy + feed/item/refresh pipelines (bffless/apps#112) + item read-state (POST /api/items/read, data_update — bffless/apps#114) + item star-state (POST /api/items/star, data_update — bffless/apps#115) + feed auto-discovery (POST /api/discover, http_request — bffless/apps#113). Composes CE primitives xml_feed_parse + data_upsert_many over the reader_feeds/reader_items schemas. Background auto-refresh + retention (bffless/apps#119): /api/refresh stamps a numeric epoch-ms fetchedAt and defaults read/starred=false, and POST /api/prune (data_delete delete-by-query) removes read+unstarred items older than 30 days. Two pipeline_schedules drive them as system context — refresh every 15 min, prune nightly at 03:17 UTC.",
+    "environment": null
+  },
+  "schemas": [
+    {
+      "id": "d1216df3-9776-4de2-81b0-0343d758f83d",
+      "name": "reader_feeds",
+      "fields": [
+        { "name": "url", "type": "string", "required": true },
+        { "name": "title", "type": "string", "required": false },
+        { "name": "siteUrl", "type": "string", "required": false },
+        { "name": "folder", "type": "string", "required": false },
+        { "name": "iconUrl", "type": "string", "required": false },
+        { "name": "lastFetchedAt", "type": "number", "required": false },
+        { "name": "lastError", "type": "string", "required": false },
+        { "name": "addedAt", "type": "number", "required": false }
+      ]
+    },
+    {
+      "id": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+      "name": "reader_items",
+      "fields": [
+        { "name": "guid", "type": "string", "required": true },
+        { "name": "feedId", "type": "string", "required": true },
+        { "name": "title", "type": "string", "required": false },
+        { "name": "link", "type": "string", "required": false },
+        { "name": "author", "type": "string", "required": false },
+        { "name": "publishedAt", "type": "string", "required": false },
+        { "name": "summary", "type": "text", "required": false },
+        { "name": "content", "type": "text", "required": false },
+        { "name": "read", "type": "boolean", "required": false },
+        { "name": "starred", "type": "boolean", "required": false },
+        { "name": "fetchedAt", "type": "number", "required": false }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "pathPattern": "/api/auth/*",
+      "targetUrl": "http://localhost:3000/api/auth",
+      "stripPrefix": true,
+      "order": 0,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": true,
+      "proxyType": "external_proxy",
+      "isEnabled": true,
+      "description": "Reverse-proxy SuperTokens auth endpoints (session, session/refresh, signout, oauth) to the CE backend so this subdomain app can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie. NOT the /_bffless/auth relay (that is reserved for cross-origin custom domains). See apps/reader/CONTEXT.md D11."
+    },
+    {
+      "pathPattern": "/api/feeds/remove",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 1,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Unsubscribe: POST { url } -> data_query finds the reader_feeds row by url -> pick extracts its recordId -> data_delete (conditional) removes it. Items are left in place (they age out via retention #119). auth_required.",
+      "pipelineConfig": {
+        "name": "Remove feed",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "filters": { "url": { "op": "eq", "value": "request.body.url" } },
+              "pageSize": 1
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "del",
+            "name": "del",
+            "handlerType": "data_delete",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "recordId": "steps.pick.recordId",
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"removed\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/feeds",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 2,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "List subscribed feeds: data_query(reader_feeds) -> respond { feeds: [...] } (raw rows; the client shapes them). auth_required.",
+      "pipelineConfig": {
+        "name": "List feeds",
+        "steps": [
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "pageSize": 500
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"feeds\":{{{steps.query}}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/feeds",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 3,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Add a feed by URL. POST { url, title?, siteUrl?, folder?, addedAt } -> prep builds a one-element array + hasUrl/noUrl flags -> data_upsert_many(reader_feeds, dedupField url) inserts unless the url already exists (per-feed state survives) -> respond { ok, inserted, skipped } (or 400 if no url). auth_required.",
+      "pipelineConfig": {
+        "name": "Add feed (upsert, dedup by url)",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var url = (typeof b.url === 'string') ? b.url.trim() : ''\n  var feed = {\n    url: url,\n    title: (typeof b.title === 'string') ? b.title : '',\n    siteUrl: (typeof b.siteUrl === 'string') ? b.siteUrl : '',\n    folder: (b.folder != null && b.folder !== '') ? String(b.folder) : null,\n    addedAt: Number(b.addedAt) || 0\n  }\n  return {\n    feeds: [feed],\n    hasUrl: !!url,\n    noUrl: !url\n  }\n}\n"
+            }
+          },
+          {
+            "id": "upsert",
+            "name": "upsert",
+            "handlerType": "data_upsert_many",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "items": "steps.prep.feeds",
+              "map": {
+                "url": "steps.item.url",
+                "title": "steps.item.title",
+                "siteUrl": "steps.item.siteUrl",
+                "folder": "steps.item.folder",
+                "addedAt": "steps.item.addedAt"
+              },
+              "dedupField": "url",
+              "dedupKey": "steps.item.url",
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"inserted\":{{steps.upsert.inserted}},\"skipped\":{{steps.upsert.skipped}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "respondNoUrl",
+            "name": "respondNoUrl",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"url is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noUrl"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/feeds/folder",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 10,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Move a feed between folders: POST { url, folder } -> prep coerces url + normalizes folder (empty -> null) -> query finds the reader_feeds row by url -> pick extracts its recordId -> data_update writes { folder } only (conditional) -> respond { ok, updated }. The add endpoint's data_upsert_many is insert-only (ce#407) so it can't change an existing feed's folder; this is the update twin, mirroring /api/items/read. Writing only `folder` leaves icon/lastFetchedAt/item read-star state intact. auth_required (allowApiKey).",
+      "pipelineConfig": {
+        "name": "Set feed folder",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var url = (typeof b.url === 'string') ? b.url.trim() : ''\n  var folder = (b.folder != null && typeof b.folder === 'string' && b.folder.trim() !== '') ? b.folder.trim() : null\n  return {\n    url: url,\n    folder: folder,\n    hasUrl: !!url,\n    noUrl: !url\n  }\n}\n"
+            }
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "filters": { "url": { "op": "eq", "value": "steps.prep.url" } },
+              "pageSize": 1,
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "recordId": "steps.pick.recordId",
+              "fields": { "folder": "steps.prep.folder" },
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"updated\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "respondNoUrl",
+            "name": "respondNoUrl",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"url is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noUrl"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/items",
+      "method": "GET",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 4,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Query stored items, optionally scoped to one feed. GET /api/items[?feedId=<url>] -> prep computes hasFeed/noFeed + feedId -> queryFeed (filter feedId, conditional) OR queryAll (conditional) -> merge picks whichever ran -> respond { items: [...] } (raw rows; the client shapes/sanitizes). auth_required.",
+      "pipelineConfig": {
+        "name": "List items",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var q = (request && request.query) || {}\n  var fid = (typeof q.feedId === 'string') ? q.feedId : ''\n  return {\n    feedId: fid,\n    hasFeed: !!fid,\n    noFeed: !fid\n  }\n}\n"
+            }
+          },
+          {
+            "id": "queryFeed",
+            "name": "queryFeed",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filters": { "feedId": { "op": "eq", "value": "steps.prep.feedId" } },
+              "pageSize": 500,
+              "condition": "steps.prep.hasFeed"
+            }
+          },
+          {
+            "id": "queryAll",
+            "name": "queryAll",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "pageSize": 500,
+              "condition": "steps.prep.noFeed"
+            }
+          },
+          {
+            "id": "merge",
+            "name": "merge",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var feed = (steps && steps.queryFeed) || null\n  var all = (steps && steps.queryAll) || null\n  var rows = (feed && feed.length != null) ? feed : (all || [])\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    out.push(rows[i])\n  }\n  return { items: out }\n}\n"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"items\":{{{steps.merge.items}}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/items/read",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 6,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Set an item's read flag: POST { guid, read } -> prep coerces guid/read -> query finds the reader_items row by guid -> pick extracts its recordId -> data_update writes { read } (conditional) -> respond { ok, updated }. Mark-all-read fans this out client-side over a view's unread guids (no bulk primitive). auth_required.",
+      "pipelineConfig": {
+        "name": "Set item read state",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var guid = (typeof b.guid === 'string') ? b.guid.trim() : ''\n  var read = (b.read === true || b.read === 'true' || b.read === 1 || b.read === '1')\n  return {\n    guid: guid,\n    read: read,\n    hasGuid: !!guid,\n    noGuid: !guid\n  }\n}\n"
+            }
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filters": { "guid": { "op": "eq", "value": "steps.prep.guid" } },
+              "pageSize": 1,
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "recordId": "steps.pick.recordId",
+              "fields": { "read": "steps.prep.read" },
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"updated\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
+            "id": "respondNoGuid",
+            "name": "respondNoGuid",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"guid is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noGuid"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/items/star",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 7,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Set an item's starred flag: POST { guid, starred } -> prep coerces guid/starred -> query finds the reader_items row by guid -> pick extracts its recordId -> data_update writes { starred } (conditional) -> respond { ok, updated }. Starred items are prune-exempt (retention #119). The /api/items/read twin (bffless/apps#115). auth_required.",
+      "pipelineConfig": {
+        "name": "Set item star state",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var guid = (typeof b.guid === 'string') ? b.guid.trim() : ''\n  var starred = (b.starred === true || b.starred === 'true' || b.starred === 1 || b.starred === '1')\n  return {\n    guid: guid,\n    starred: starred,\n    hasGuid: !!guid,\n    noGuid: !guid\n  }\n}\n"
+            }
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filters": { "guid": { "op": "eq", "value": "steps.prep.guid" } },
+              "pageSize": 1,
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "recordId": "steps.pick.recordId",
+              "fields": { "starred": "steps.prep.starred" },
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"updated\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
+            "id": "respondNoGuid",
+            "name": "respondNoGuid",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"guid is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noGuid"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/refresh",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 5,
+      "timeout": 120000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "The ingest composition: data_query(reader_feeds) -> urls collects feed URLs -> xml_feed_parse fetches+parses them concurrently -> stamp captures now() as epoch ms -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link) inserts new entries only (read/starred survive re-runs). fetchedAt is stored as a numeric epoch-ms (the reader_items schema types it `number`, and the nightly prune filters it with a numeric `<`), and read/starred default to false so read+unstarred items become prune-eligible. -> respond { inserted, skipped, errors }. feedId = entry.source (= the feed's url). Runnable as a user action OR as system context on the 15-min schedule (#119). NO auth_required validator: the reader alias is private (edge-gated login) so /api/* is protected at the site level, and the CE scheduler fires this as a userless system run — auth_required (which needs context.user) would reject it.",
+      "pipelineConfig": {
+        "name": "Refresh feeds (ingest)",
+        "steps": [
+          {
+            "id": "feeds",
+            "name": "feeds",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "pageSize": 500
+            }
+          },
+          {
+            "id": "urls",
+            "name": "urls",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.feeds) || []\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var u = rows[i] && rows[i].url\n    if (typeof u === 'string' && u) out.push(u)\n  }\n  return { urls: out, count: out.length }\n}\n"
+            }
+          },
+          {
+            "id": "parse",
+            "name": "parse",
+            "handlerType": "xml_feed_parse",
+            "config": {
+              "urls": "steps.urls.urls",
+              "concurrency": 8,
+              "timeoutMs": 20000,
+              "condition": "steps.urls.count"
+            }
+          },
+          {
+            "id": "stamp",
+            "name": "stamp",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler() {\n  return { ms: Date.now() }\n}\n"
+            }
+          },
+          {
+            "id": "upsert",
+            "name": "upsert",
+            "handlerType": "data_upsert_many",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "items": "steps.parse.entries",
+              "map": {
+                "guid": "steps.item.guid",
+                "feedId": "steps.item.source",
+                "title": "steps.item.title",
+                "link": "steps.item.link",
+                "author": "steps.item.author",
+                "publishedAt": "steps.item.publishedAt",
+                "summary": "steps.item.summary",
+                "content": "steps.item.content",
+                "fetchedAt": "steps.stamp.ms",
+                "read": "false",
+                "starred": "false"
+              },
+              "dedupField": "guid",
+              "dedupKey": ["steps.item.guid", "steps.item.link"],
+              "condition": "steps.urls.count"
+            }
+          },
+          {
+            "id": "summary",
+            "name": "summary",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var up = (steps && steps.upsert) || {}\n  function n(v) { return (typeof v === 'number' && !isNaN(v)) ? v : 0 }\n  return {\n    inserted: n(up.inserted),\n    skipped: n(up.skipped),\n    errors: n(up.errored)\n  }\n}\n"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"inserted\":{{steps.summary.inserted}},\"skipped\":{{steps.summary.skipped}},\"errors\":{{steps.summary.errors}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": []
+      }
+    },
+    {
+      "pathPattern": "/api/discover",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 8,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Auto-discovery (#113): POST { url } -> http_request GET fetches the pasted site/feed URL server-side (dodging CORS, D12; failOnError:false so a common-path probe's 404 is data, not a halt) -> shape wraps the body in a JSON envelope { body, status, ok } (JSON.stringify escapes the HTML) -> respond. The browser DOMParses body for <link rel=alternate> feed links, or sniffs it as a feed. auth_required (allowApiKey).",
+      "pipelineConfig": {
+        "name": "Discover feed",
+        "steps": [
+          {
+            "id": "fetch",
+            "name": "fetch",
+            "handlerType": "http_request",
+            "config": {
+              "url": "request.body.url",
+              "method": "GET",
+              "failOnError": false,
+              "timeout": 20000,
+              "headers": {
+                "User-Agent": "Mozilla/5.0 (compatible; Rivulet/1.0; +https://j5s.dev)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,application/atom+xml;q=0.8,*/*;q=0.7"
+              }
+            }
+          },
+          {
+            "id": "shape",
+            "name": "shape",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var f = (steps && steps.fetch) || {}\n  var raw = f.body\n  var body = (typeof raw === 'string') ? raw : (raw == null ? '' : JSON.stringify(raw))\n  return {\n    json: JSON.stringify({\n      body: body,\n      status: (typeof f.status === 'number') ? f.status : 0,\n      ok: (f.ok === true)\n    })\n  }\n}\n"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{{{steps.shape.json}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
+      "pathPattern": "/api/prune",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 9,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Retention prune (#119): cutoff = now - 30 days (epoch ms) -> data_delete(reader_items) delete-by-query where read=true AND starred!=true AND fetchedAt < cutoff -> respond { pruned: count }. Starred and unread rows never match the predicate, so they are exempt by construction (D5/D6). Fired nightly (03:17 UTC) by a pipeline_schedule as system context. The numeric fetchedAt (see /api/refresh) is what makes the `<` filter work — data_delete range ops cast the field to numeric. NO auth_required validator: the reader alias is private (edge-gated) so this is site-level protected, and the CE scheduler runs it userless — auth_required would reject a userless system run.",
+      "pipelineConfig": {
+        "name": "Prune old items (retention)",
+        "steps": [
+          {
+            "id": "cutoff",
+            "name": "cutoff",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler() {\n  var THIRTY_DAYS_MS = 2592000000\n  return { ms: Date.now() - THIRTY_DAYS_MS }\n}\n"
+            }
+          },
+          {
+            "id": "del",
+            "name": "del",
+            "handlerType": "data_delete",
+            "config": {
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "filterLogic": "and",
+              "filters": {
+                "read": { "op": "eq", "value": "true" },
+                "starred": { "op": "ne", "value": "true" },
+                "fetchedAt": { "op": "lt", "value": "steps.cutoff.ms" }
+              }
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"pruned\":{{steps.del.count}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json"
+            }
+          }
+        ],
+        "validators": []
+      }
+    }
+  ]
+}
