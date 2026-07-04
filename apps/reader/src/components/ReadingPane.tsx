@@ -12,10 +12,13 @@ import { sanitizeHtml } from '../lib/sanitize'
  */
 export function ReadingPane({
   item,
+  measureClass = 'max-w-2xl',
   onToggleRead,
   onToggleStar,
 }: {
   item: Item | null
+  /** Reading-measure max-width class from the width preference (#136). */
+  measureClass?: string
   onToggleRead?: (item: Item) => void
   onToggleStar?: (item: Item) => void
 }) {
@@ -30,7 +33,7 @@ export function ReadingPane({
   const clean = sanitizeHtml(itemBodyHtml(item))
 
   return (
-    <article className="mx-auto max-w-2xl px-2 py-4">
+    <article className={`mx-auto px-2 py-4 ${measureClass}`}>
       <header className="mb-4 border-b border-slate-200 pb-4">
         {(onToggleRead || onToggleStar) && (
           <div className="mb-2 flex justify-end gap-1">

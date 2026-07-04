@@ -1,5 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSession, adminLoginUrl, logout } from './lib/session'
+import { useReadingWidth } from './lib/useReadingWidth'
+import type { WidthLevel } from './lib/width'
+import { WidthControl } from './components/WidthControl'
 import { ReaderApp } from './ReaderApp'
 
 /** The Rivulet wordmark glyph — three flowing streams, matching the favicon. */
@@ -59,8 +62,16 @@ function Gate({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-/** Thin sticky header — wordmark + account. The reading views land with #112+. */
-function Header({ email }: { email?: string }) {
+/** Thin sticky header — wordmark + reading-width control + account. */
+function Header({
+  email,
+  widthLevel,
+  onWidthChange,
+}: {
+  email?: string
+  widthLevel: WidthLevel
+  onWidthChange: (level: WidthLevel) => void
+}) {
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="flex h-14 items-center justify-between px-4 sm:px-6">
@@ -69,6 +80,7 @@ function Header({ email }: { email?: string }) {
           <span className="text-lg font-semibold tracking-tight text-slate-900">Rivulet</span>
         </div>
         <div className="flex items-center gap-3 text-sm text-slate-500">
+          <WidthControl level={widthLevel} onChange={onWidthChange} />
           {email && <span className="hidden sm:inline">{email}</span>}
           <button
             type="button"
@@ -89,11 +101,12 @@ function Header({ email }: { email?: string }) {
 function AppShell() {
   const { session } = useSession()
   const email = session?.authenticated ? session.user.email : undefined
+  const { level, setLevel, preset } = useReadingWidth()
   return (
     <div className="flex min-h-svh flex-col bg-slate-50">
-      <Header email={email} />
+      <Header email={email} widthLevel={level} onWidthChange={setLevel} />
       <main className="flex flex-1 flex-col">
-        <ReaderApp />
+        <ReaderApp containerClass={preset.container} measureClass={preset.measure} />
       </main>
     </div>
   )
