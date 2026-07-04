@@ -1,8 +1,11 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSession, adminLoginUrl, logout } from './lib/session'
 import { useReadingWidth } from './lib/useReadingWidth'
+import { useTheme } from './lib/useTheme'
 import type { WidthLevel } from './lib/width'
+import type { ThemeChoice } from './lib/theme'
 import { WidthControl } from './components/WidthControl'
+import { ThemeToggle } from './components/ThemeToggle'
 import { ReaderApp } from './ReaderApp'
 
 /** The Rivulet wordmark glyph — three flowing streams, matching the favicon. */
@@ -30,7 +33,7 @@ function Gate({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-svh items-center justify-center text-slate-400">
+      <div className="flex min-h-svh items-center justify-center text-slate-400 dark:text-slate-500">
         <span>Loading…</span>
       </div>
     )
@@ -41,9 +44,9 @@ function Gate({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-svh flex-col items-center justify-center gap-6 px-6 text-center">
         <div className="flex items-center gap-3">
           <RivuletMark />
-          <span className="text-2xl font-semibold tracking-tight text-slate-900">Rivulet</span>
+          <span className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Rivulet</span>
         </div>
-        <p className="max-w-sm text-slate-500">
+        <p className="max-w-sm text-slate-500 dark:text-slate-400">
           A quiet RSS reader. Sign in to read your feeds.
         </p>
         <button
@@ -62,24 +65,29 @@ function Gate({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-/** Thin sticky header — wordmark + reading-width control + account. */
+/** Thin sticky header — wordmark + theme + reading-width control + account. */
 function Header({
   email,
   widthLevel,
   onWidthChange,
+  themeChoice,
+  onThemeChange,
 }: {
   email?: string
   widthLevel: WidthLevel
   onWidthChange: (level: WidthLevel) => void
+  themeChoice: ThemeChoice
+  onThemeChange: (choice: ThemeChoice) => void
 }) {
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
+    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
       <div className="flex h-14 items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-2.5">
           <RivuletMark />
-          <span className="text-lg font-semibold tracking-tight text-slate-900">Rivulet</span>
+          <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Rivulet</span>
         </div>
-        <div className="flex items-center gap-3 text-sm text-slate-500">
+        <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
+          <ThemeToggle choice={themeChoice} onChange={onThemeChange} />
           <WidthControl level={widthLevel} onChange={onWidthChange} />
           {email && <span className="hidden sm:inline">{email}</span>}
           <button
@@ -87,7 +95,7 @@ function Header({
             onClick={() => {
               void logout()
             }}
-            className="rounded-lg px-3 py-1.5 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-lg px-3 py-1.5 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
             Sign out
           </button>
@@ -102,9 +110,16 @@ function AppShell() {
   const { session } = useSession()
   const email = session?.authenticated ? session.user.email : undefined
   const { level, setLevel, preset } = useReadingWidth()
+  const { choice, setChoice } = useTheme()
   return (
-    <div className="flex min-h-svh flex-col bg-slate-50">
-      <Header email={email} widthLevel={level} onWidthChange={setLevel} />
+    <div className="flex min-h-svh flex-col bg-slate-50 dark:bg-slate-950">
+      <Header
+        email={email}
+        widthLevel={level}
+        onWidthChange={setLevel}
+        themeChoice={choice}
+        onThemeChange={setChoice}
+      />
       <main className="flex flex-1 flex-col">
         <ReaderApp containerClass={preset.container} measureClass={preset.measure} />
       </main>

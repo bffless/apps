@@ -55,18 +55,18 @@ export function ItemList({
   }, [items, onScrolledPast])
 
   if (loading) {
-    return <p className="px-2 py-6 text-sm text-slate-400">Loading…</p>
+    return <p className="px-2 py-6 text-sm text-slate-400 dark:text-slate-500">Loading…</p>
   }
   if (items.length === 0) {
     return (
-      <p className="px-2 py-6 text-sm text-slate-400">
+      <p className="px-2 py-6 text-sm text-slate-400 dark:text-slate-500">
         Nothing here. Add a feed, hit “Refresh now”, or you’re all caught up.
       </p>
     )
   }
 
   return (
-    <ul className="flex flex-col divide-y divide-slate-100">
+    <ul className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
       {items.map((item) => (
         <li
           key={item.guid}
@@ -87,7 +87,7 @@ export function ItemList({
               className={`absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded px-1 text-base leading-none transition-opacity ${
                 item.starred
                   ? 'text-amber-500 opacity-100'
-                  : 'text-slate-300 opacity-0 hover:text-amber-500 focus:opacity-100 group-hover:opacity-100'
+                  : 'text-slate-300 opacity-0 hover:text-amber-500 focus:opacity-100 group-hover:opacity-100 dark:text-slate-600'
               }`}
             >
               {item.starred ? '★' : '☆'}
@@ -96,8 +96,8 @@ export function ItemList({
           <button
             type="button"
             onClick={() => onSelect(item)}
-            className={`flex w-full items-start gap-2 py-3 pl-3 pr-8 text-left transition-colors hover:bg-slate-50 ${
-              item.guid === selectedGuid ? 'bg-blue-50' : ''
+            className={`flex w-full items-start gap-2 py-3 pl-3 pr-8 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 ${
+              item.guid === selectedGuid ? 'bg-blue-50 dark:bg-blue-950/40' : ''
             }`}
           >
             <span
@@ -108,19 +108,19 @@ export function ItemList({
               <span className="flex items-baseline justify-between gap-3">
                 <span
                   className={`truncate text-sm ${
-                    item.read ? 'font-normal text-slate-500' : 'font-semibold text-slate-900'
+                    item.read ? 'font-normal text-slate-500 dark:text-slate-400' : 'font-semibold text-slate-900 dark:text-slate-100'
                   }`}
                 >
                   {item.title || '(untitled)'}
                 </span>
                 {item.publishedAt && (
-                  <time className="shrink-0 text-xs text-slate-400">
+                  <time className="shrink-0 text-xs text-slate-400 dark:text-slate-500">
                     {new Date(item.publishedAt).toLocaleDateString()}
                   </time>
                 )}
               </span>
               {itemPreview(item) && (
-                <span className="mt-1 line-clamp-2 block text-xs text-slate-500">{itemPreview(item)}</span>
+                <span className="mt-1 line-clamp-2 block text-xs text-slate-500 dark:text-slate-400">{itemPreview(item)}</span>
               )}
             </span>
           </button>
