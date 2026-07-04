@@ -60,4 +60,56 @@ describe('fetchSessionOnce', () => {
     // session check → refresh attempt (both 401) → no re-check.
     expect(fetchMock).toHaveBeenCalled()
   })
+
+  it('reads the proxied SuperTokens endpoint first and skips the relay when it authenticates', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL) => {
+        calls.push(String(url))
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: 'u1', role: 'admin' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }),
+    )
+    await expect(fetchSessionOnce()).resolves.toEqual({
+      authenticated: true,
+      user: { id: 'u1', role: 'admin' },
+    })
+    // The proxied SuperTokens session is authoritative on a primary subdomain,
+    // so it must be tried first and the under-hydrating relay never touched.
+    expect(calls[0]).toBe('/api/auth/session')
+    expect(calls).not.toContain('/_bffless/auth/session')
+  })
+
+  it('falls back to the relay session when the proxied endpoint reads as guest', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL) => {
+        const u = String(url)
+        // Proxied read: authenticated guest (custom domain carries no sAccessToken).
+        if (u === '/api/auth/session') {
+          return new Response(JSON.stringify({ authenticated: false }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        // Both refresh paths fail, so the proxied resolve settles on guest.
+        if (u.endsWith('/refresh')) return new Response(null, { status: 401 })
+        // Relay read: the custom-domain cookie authenticates.
+        if (u === '/_bffless/auth/session') {
+          return new Response(
+            JSON.stringify({ authenticated: true, user: { id: 'relay-user' } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        }
+        return new Response(null, { status: 404 })
+      }),
+    )
+    await expect(fetchSessionOnce()).resolves.toEqual({
+      authenticated: true,
+      user: { id: 'relay-user' },
+    })
+  })
 })
