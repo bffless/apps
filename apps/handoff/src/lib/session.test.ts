@@ -35,32 +35,42 @@ function mockFetch(routes: Record<string, Route>) {
   return { calls }
 }
 
-const SESSION = '/_bffless/auth/session'
+const PROXIED = '/api/auth/session'
+const RELAY_SESSION = '/_bffless/auth/session'
 const ST_REFRESH = '/api/auth/session/refresh'
 const RELAY_REFRESH = '/_bffless/auth/refresh'
+
+/** Proxied SuperTokens session shape: `{ session, user, emailVerified }`. */
+function proxiedAuthed(user: typeof USER): Response {
+  return json(200, { session: { userId: user.id, handle: 'h' }, user, emailVerified: true })
+}
+const PROXIED_GUEST = { session: null, user: null, emailVerified: false }
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('fetchSessionOnce', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('returns the user without refreshing when the session is already valid', async () => {
+  it('reads id + role from the proxied endpoint, never the relay, when valid', async () => {
+    // Regression: on handoff.j5s.dev the relay's sAccessToken fallback returns an
+    // under-hydrated user (wrong id, no role), which stripped an admin owner's
+    // controls. The proxied SuperTokens session carries the canonical user, and
+    // must be authoritative — the relay must not even be consulted.
     const { calls } = mockFetch({
-      [SESSION]: () => json(200, { authenticated: true, user: USER }),
+      [PROXIED]: () => proxiedAuthed(USER),
+      [RELAY_SESSION]: () => json(200, { authenticated: true, user: { id: 'st-only', email: USER.email } }),
     })
 
     await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: true, user: USER })
-    expect(calls).toEqual([SESSION])
+    expect(calls).toEqual([PROXIED])
+    expect(calls).not.toContain(RELAY_SESSION)
     expect(calls).not.toContain(ST_REFRESH)
   })
 
-  it('refreshes via SuperTokens and recovers when the token is expired (200 guest shape)', async () => {
+  it('refreshes via SuperTokens and recovers when the proxied token is expired (200 guest shape)', async () => {
     let refreshed = false
     const { calls } = mockFetch({
-      [SESSION]: () =>
-        refreshed
-          ? json(200, { authenticated: true, user: USER })
-          : json(200, { authenticated: false, user: null }),
+      [PROXIED]: () => (refreshed ? proxiedAuthed(USER) : json(200, PROXIED_GUEST)),
       [ST_REFRESH]: () => {
         refreshed = true
         return new Response(null, { status: 200 })
@@ -68,16 +78,13 @@ describe('fetchSessionOnce', () => {
     })
 
     await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: true, user: USER })
-    expect(calls).toEqual([SESSION, ST_REFRESH, SESSION])
+    expect(calls).toEqual([PROXIED, ST_REFRESH, PROXIED])
   })
 
   it('refreshes via SuperTokens and recovers on an explicit 401', async () => {
     let refreshed = false
     const { calls } = mockFetch({
-      [SESSION]: () =>
-        refreshed
-          ? json(200, { authenticated: true, user: USER })
-          : new Response('try refresh token', { status: 401 }),
+      [PROXIED]: () => (refreshed ? proxiedAuthed(USER) : new Response('try refresh token', { status: 401 })),
       [ST_REFRESH]: () => {
         refreshed = true
         return new Response(null, { status: 200 })
@@ -85,37 +92,60 @@ describe('fetchSessionOnce', () => {
     })
 
     await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: true, user: USER })
-    expect(calls).toEqual([SESSION, ST_REFRESH, SESSION])
+    expect(calls).toEqual([PROXIED, ST_REFRESH, PROXIED])
   })
 
-  it('stays a guest when no refresh token exists (both refresh paths 401)', async () => {
+  it('authenticates a custom-domain user via the relay when the proxied endpoint is guest', async () => {
+    // Cross-origin custom domain: no sAccessToken, so the proxied endpoint reads
+    // as guest and both refresh paths 401; the bffless_access relay cookie
+    // authenticates via the relay session endpoint.
     const { calls } = mockFetch({
-      [SESSION]: () => json(200, { authenticated: false, user: null }),
+      [PROXIED]: () => json(200, PROXIED_GUEST),
+      [ST_REFRESH]: () => new Response(null, { status: 401 }),
+      [RELAY_REFRESH]: () => new Response(null, { status: 401 }),
+      [RELAY_SESSION]: () => json(200, { authenticated: true, user: USER }),
+    })
+
+    await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: true, user: USER })
+    expect(calls).toEqual([PROXIED, ST_REFRESH, RELAY_REFRESH, RELAY_SESSION])
+  })
+
+  it('stays a guest when neither endpoint authenticates and no refresh token exists', async () => {
+    const { calls } = mockFetch({
+      [PROXIED]: () => json(200, PROXIED_GUEST),
+      [RELAY_SESSION]: () => json(200, { authenticated: false, user: null }),
       [ST_REFRESH]: () => new Response(null, { status: 401 }),
       [RELAY_REFRESH]: () => new Response(null, { status: 401 }),
     })
 
     await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: false })
-    // tried SuperTokens first, then the relay fallback; never re-fetched session
-    expect(calls).toEqual([SESSION, ST_REFRESH, RELAY_REFRESH])
+    // proxied (refresh both paths) → relay session (refresh both paths again)
+    expect(calls).toEqual([
+      PROXIED,
+      ST_REFRESH,
+      RELAY_REFRESH,
+      RELAY_SESSION,
+      ST_REFRESH,
+      RELAY_REFRESH,
+    ])
   })
 
-  it('falls back to the relay refresh when SuperTokens refresh fails', async () => {
+  it('falls back to the relay refresh then relay session when SuperTokens refresh fails', async () => {
     let refreshed = false
     const { calls } = mockFetch({
-      [SESSION]: () =>
-        refreshed
-          ? json(200, { authenticated: true, user: USER })
-          : json(200, { authenticated: false, user: null }),
+      [PROXIED]: () => json(200, PROXIED_GUEST),
       [ST_REFRESH]: () => new Response(null, { status: 401 }),
       [RELAY_REFRESH]: () => {
         refreshed = true
         return new Response(null, { status: 200 })
       },
+      [RELAY_SESSION]: () =>
+        refreshed ? json(200, { authenticated: true, user: USER }) : json(200, { authenticated: false, user: null }),
     })
 
     await expect(fetchSessionOnce()).resolves.toEqual({ authenticated: true, user: USER })
-    expect(calls).toEqual([SESSION, ST_REFRESH, RELAY_REFRESH, SESSION])
+    // proxied guest → refresh (ST 401, relay 200) → proxied still guest → relay session authed
+    expect(calls).toEqual([PROXIED, ST_REFRESH, RELAY_REFRESH, PROXIED, RELAY_SESSION])
   })
 })
 
