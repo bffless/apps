@@ -1,16 +1,18 @@
 ---
 name: install-app
-description: Install a bffless-apps monorepo app onto the reader's own self-hosted BFFless — import its proxy rule set, attach it to the app's alias, add required response-header rules, and verify (not provision) the external connections/secrets the app declares. Drives the existing BFFless MCP against the reader's instance; no new runtime.
+description: Install a bffless-apps monorepo app onto the reader's own self-hosted BFFless — import its proxy rule set, attach it to the app's alias, add required response-header rules, create any background pipeline schedules, and verify (not provision) the external connections/secrets the app declares. Drives the existing BFFless MCP against the reader's instance; no new runtime.
 ---
 
 # install-app
 
 Automates the **backend install** step of `GETTING-STARTED.md` for one app
-(`studio` or `handoff`). It drives the **existing** BFFless MCP against **your own**
-BFFless project — it does not add a runtime or call the maintainers' instance. It
-covers everything reachable by MCP (rule-set import, alias attach, response-header
-rule) and then **verifies and reports** the manual admin-panel steps it cannot do
-(external AI-provider connections). It never obtains or enters provider tokens for you.
+(`studio`, `handoff`, or `reader`). It drives the **existing** BFFless MCP against
+**your own** BFFless project — it does not add a runtime or call the maintainers'
+instance. It covers everything reachable by MCP (rule-set import, alias attach,
+response-header rule, background pipeline schedules) and then **verifies and reports**
+the manual admin-panel steps it cannot do (external AI-provider connections, and
+platform-level pieces like a private/SPA domain mapping or the auth relay). It never
+obtains or enters provider tokens for you.
 
 ## Prerequisite: the MCP must point at YOUR instance
 
@@ -27,17 +29,24 @@ maintainers' project. Re-register it against your own domain first. (See `GETTIN
 
 ## Inputs
 
-- **app** — `studio` or `handoff`. Determines the paths below and the alias defaults.
+- **app** — `studio`, `handoff`, or `reader`. Determines the paths below and the alias
+  defaults.
 - **repository** — your fork's `owner/repo` on your instance (e.g. `you/apps`), used for
   the alias calls.
 
 Per-app facts (do not hard-code app specifics beyond this table — read the app's
 `bffless/README.md` for the authoritative connection/secret list):
 
-| app | rule-set export | default alias | response-header rule |
-| --- | --- | --- | --- |
-| `studio` | `apps/studio/bffless/studio.proxy-rules.json` | `studio` | COOP/COEP cross-origin isolation (see below) — **required** |
-| `handoff` | `apps/handoff/bffless/handoff.proxy-rules.json` | `handoff` | none |
+| app | rule-set export | default alias | response-header rule | background schedules |
+| --- | --- | --- | --- | --- |
+| `studio` | `apps/studio/bffless/studio.proxy-rules.json` | `studio` | COOP/COEP cross-origin isolation (see below) — **required** | none |
+| `handoff` | `apps/handoff/bffless/handoff.proxy-rules.json` | `handoff` | none | none |
+| `reader` | `apps/reader/bffless/reader.proxy-rules.json` | `reader` | none | two — `/api/refresh` every 15 min + `/api/prune` nightly 03:17 UTC (see step 4) |
+
+> **Reader's alias attach is also done by its deploy workflow.** `deploy-reader.yml`
+> passes `proxy-rule-set-name: reader`, so the first deploy attaches the set to the
+> `reader` alias for you. Step 2 below is still safe to run (idempotent) and makes the
+> set live before the first deploy — do it so the schedules in step 4 have rules to fire.
 
 ## What the skill does
 
@@ -75,9 +84,29 @@ with `create_response_header_rule`:
 - **Headers:** `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: credentialless`
 
-`handoff` needs no response-header rule.
+`handoff` and `reader` need no response-header rule.
 
-### 4. Verify (do NOT provision) the declared connections & secrets
+### 4. Create background pipeline schedules (if the app declares any)
+
+Some apps run pipelines on a cron cadence as a **userless system trigger** (no user
+session). These are `pipeline_schedules` and the MCP **can** create them with
+`create_pipeline_schedule` — so the skill does, unlike the admin-only provider tokens.
+
+Read the app's `bffless/README.md` **"Background schedules"** section for the
+authoritative list. **`studio` and `handoff` declare none.** For **`reader`**, create
+both (point `targetProxyRuleId` at *your* project's imported rule IDs — the ones from
+step 1, not the reference project's):
+
+| Schedule name | `cronExpression` | Target rule (`POST`) | `timezone` |
+| --- | --- | --- | --- |
+| `Rivulet refresh (auto ingest)` | `*/15 * * * *` | `/api/refresh` | `UTC` |
+| `Rivulet nightly prune (retention)` | `17 3 * * *` | `/api/prune` | `UTC` |
+
+Both target rules deliberately omit the `auth_required` validator (a scheduler run has no
+`context.user`); they stay protected because the `reader` alias is private (see step 5).
+If the schedules already exist for this project, don't duplicate them.
+
+### 5. Verify (do NOT provision) the declared connections & secrets
 
 Read the app's `apps/<app>/bffless/README.md` **"Manual setup (admin panel)"** section
 for the authoritative list of external connections, AI-provider tokens, and secrets.
@@ -102,12 +131,27 @@ Studio's connection map (from `apps/studio/bffless/README.md`):
 Handoff declares its own connections/secrets and, critically, a **storage-backend
 requirement** — read its `bffless/README.md` and verify what it lists.
 
-### 5. Report
+**Reader** declares **no AI connections, no secrets, and no storage-backend
+requirement** (it stores feed/item rows in data tables). What it *does* need are two
+**platform-level** pieces the skill **cannot** set via MCP — verify and report them:
+
+- **Private + SPA domain mapping** on the `reader` alias — `isPublic: false` (every route
+  is behind login) and `isSpa: true` (BrowserRouter deep links). Set on the domain
+  mapping in the admin panel.
+- **Auth relay** — the app reads `/_bffless/auth/session` and refreshes through the
+  `/api/auth/*` reverse-proxy rule (already in the imported set). On a
+  `reader.<primary-domain>` subdomain this works with no extra config; otherwise the fork
+  must build with `VITE_ADMIN_URL` pointing at the admin host.
+
+See `apps/reader/bffless/README.md` → "Manual setup (admin panel)" for the authoritative
+detail.
+
+### 6. Report
 
 End with a clear summary of:
 
 - what was done (rule set `<app>` created, attached to the `<app>` alias, header rule
-  added if applicable);
+  added if applicable, background schedules created if applicable);
 - **an explicit "you still need to set these manually in the admin panel:" list** — one
   line per missing connection/secret **with its link** — whenever anything is missing.
   If nothing is missing, say so.
@@ -130,6 +174,8 @@ The skill automates only what MCP can reach. It will **not**:
 - set external AI-provider connections (Replicate, Anthropic) — no MCP path; manual admin
   panel only;
 - invent, obtain, or enter any provider token value;
+- set a domain mapping's `isPublic` / `isSpa` flags or configure the auth relay (e.g.
+  Reader's private + SPA serve URL) — verify and report these, don't set them;
 - attach anything to a production alias on someone else's instance.
 
 Those stay manual admin-panel steps the guide (`GETTING-STARTED.md`) and each app's
