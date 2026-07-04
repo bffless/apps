@@ -26,6 +26,7 @@ export function ItemList({
   onToggleStar,
   onScrolledPast,
   scrollRootRef,
+  feedNameFor,
 }: {
   items: Item[]
   loading: boolean
@@ -35,6 +36,13 @@ export function ItemList({
   onScrolledPast?: (item: Item) => void
   /** Scroll container to root the mark-read observer at; window/viewport when omitted. */
   scrollRootRef?: RefObject<HTMLElement | null>
+  /**
+   * Resolve the feed-name eyebrow for a row. Supplied only in mixed views
+   * (river/all/folder/starred), where rows come from many feeds; omitted in a
+   * single-feed view where the source is redundant. A `null` return (orphaned
+   * item) renders no eyebrow.
+   */
+  feedNameFor?: (item: Item) => string | null
 }) {
   const seen = useRef<Set<string>>(new Set())
   const rows = useRef<Map<string, HTMLLIElement>>(new Map())
@@ -119,6 +127,14 @@ export function ItemList({
               className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${item.read ? 'bg-transparent' : 'bg-blue-500'}`}
             />
             <span className="min-w-0 flex-1">
+              {feedNameFor && (() => {
+                const feedName = feedNameFor(item)
+                return feedName ? (
+                  <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {feedName}
+                  </span>
+                ) : null
+              })()}
               <span className="flex items-baseline justify-between gap-3">
                 <span
                   className={`truncate text-sm ${

@@ -116,3 +116,15 @@ export function sortFeeds(feeds: Feed[]): Feed[] {
     feedLabel(a).toLocaleLowerCase().localeCompare(feedLabel(b).toLocaleLowerCase()),
   )
 }
+
+/**
+ * The display label for the feed an item belongs to, looked up by `feedId` —
+ * which is the feed's normalized `url` (D8/D12). Returns `null` when no loaded
+ * feed matches (an orphaned item whose feed was removed), so a caller can render
+ * nothing rather than a blank source label. Used to attribute an item to its
+ * feed in mixed views (river/all/folder/starred), where rows come from many feeds.
+ */
+export function feedTitleFor(feedId: string, feedsByUrl: Map<string, Feed>): string | null {
+  const feed = feedsByUrl.get(feedId)
+  return feed ? feedLabel(feed) : null
+}

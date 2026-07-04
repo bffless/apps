@@ -15,12 +15,19 @@ export function ReadingPane({
   measureClass = 'max-w-2xl',
   onToggleRead,
   onToggleStar,
+  feedNameFor,
 }: {
   item: Item | null
   /** Reading-measure max-width class from the width preference (#136). */
   measureClass?: string
   onToggleRead?: (item: Item) => void
   onToggleStar?: (item: Item) => void
+  /**
+   * Resolve the feed-name eyebrow shown above the title. Supplied only in mixed
+   * views (river/all/folder/starred); omitted in a single-feed view where the
+   * source is redundant. A `null` return (orphaned item) renders no eyebrow.
+   */
+  feedNameFor?: (item: Item) => string | null
 }) {
   if (!item) {
     return (
@@ -31,6 +38,7 @@ export function ReadingPane({
   }
 
   const clean = sanitizeHtml(itemBodyHtml(item))
+  const feedName = feedNameFor?.(item) ?? null
 
   return (
     <article className={`mx-auto px-2 py-4 ${measureClass}`}>
@@ -60,6 +68,11 @@ export function ReadingPane({
               </button>
             )}
           </div>
+        )}
+        {feedName && (
+          <p className="mb-1 truncate text-xs font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            {feedName}
+          </p>
         )}
         <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
           {item.link ? (
