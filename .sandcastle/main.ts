@@ -50,10 +50,42 @@ await run({
   hooks: {
     sandbox: {
       // onSandboxReady runs once after the sandbox is initialised and the repo is
-      // synced in, before the agent starts. Clean pnpm install from the lockfile
-      // (image has pnpm@10.33.0 via corepack). CI=true keeps pnpm fully
-      // non-interactive (no purge/confirm prompts, which abort without a TTY).
-      onSandboxReady: [{ command: "CI=true pnpm install --frozen-lockfile" }],
+      // synced in, before the agent starts.
+      onSandboxReady: [
+        // Wire the j5s-dev (BFFless) MCP into the sandbox agent by writing a
+        // repo-root .mcp.json that Claude Code auto-loads on startup.
+        //
+        // SECURITY: write the LITERAL placeholder ${BFFLESS_API_KEY}, never the
+        // resolved key. Claude Code expands ${BFFLESS_API_KEY} from the sandbox
+        // env (.sandcastle/.env) at load time — so the file on disk only ever
+        // holds the placeholder string. A previous version baked the real key in
+        // with printf %s; because .mcp.json was a *tracked* file on the epic branch
+        // (whose .gitignore lacked an entry), `git add -A` swept the live key into
+        // PR #134 (key since revoked). With the placeholder, an accidental commit
+        // exposes nothing. The guard still fails the run loudly if the env var is
+        // missing (Claude Code would otherwise have nothing to expand).
+        //
+        // Inline (not a checked-in template) on purpose: a checked-in ROOT
+        // .mcp.json is auto-loaded by a cloner's Claude Code and would import into
+        // the maintainers' admin.j5s.dev (#96); and the synced base branch may lag
+        // main, so a `cp` from a committed file isn't reliably present.
+        {
+          command:
+            "[ -n \"$BFFLESS_API_KEY\" ] || { echo \"BFFLESS_API_KEY not set in sandbox env\" >&2; exit 1; }; printf '%s' '{\"mcpServers\":{\"j5s-dev\":{\"type\":\"http\",\"url\":\"https://admin.j5s.dev/mcp\",\"headers\":{\"X-API-Key\":\"${BFFLESS_API_KEY}\"}}}}' > .mcp.json",
+        },
+        // Belt-and-suspenders: ignore .mcp.json via the sandbox's LOCAL git exclude,
+        // which applies no matter what the (possibly stale) base branch's committed
+        // .gitignore contains — so it can never be staged by `git add -A`, even on a
+        // branch that forgot the .gitignore entry (which is how #134 slipped through).
+        {
+          command:
+            "GITX=$(git rev-parse --git-path info/exclude 2>/dev/null); if [ -n \"$GITX\" ] && ! grep -qxF .mcp.json \"$GITX\" 2>/dev/null; then echo .mcp.json >> \"$GITX\"; fi",
+        },
+        // Clean pnpm install from the lockfile (image has pnpm@10.33.0 via
+        // corepack). CI=true keeps pnpm fully non-interactive (no purge/confirm
+        // prompts, which abort without a TTY).
+        { command: "CI=true pnpm install --frozen-lockfile" },
+      ],
     },
   },
 });

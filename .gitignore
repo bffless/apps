@@ -25,6 +25,7 @@ screenshots
 .DS_Store
 .claude/settings.local.json
 
-# MCP config written per-run inside the Sandcastle sandbox — never commit
-# (it is regenerated each run; committing it leaked keys in the past).
+# MCP config written per-run inside the Sandcastle sandbox — never commit.
+# It is regenerated each run, would auto-load into a cloner's Claude Code against
+# the maintainers' instance (#96), and committing it leaked a key before (#134).
 .mcp.json
