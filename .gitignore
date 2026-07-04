@@ -24,3 +24,7 @@ screenshots
 # editor / OS
 .DS_Store
 .claude/settings.local.json
+
+# MCP config written per-run inside the Sandcastle sandbox — never commit
+# (it is regenerated each run; committing it leaked keys in the past).
+.mcp.json
