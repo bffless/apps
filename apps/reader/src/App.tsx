@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSession, adminLoginUrl, logout } from './lib/session'
 import { useReadingWidth } from './lib/useReadingWidth'
@@ -62,20 +63,35 @@ function Gate({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-/** Thin sticky header — wordmark + reading-width control + account. */
+/** Thin sticky header — hamburger (mobile) + wordmark + reading-width control + account. */
 function Header({
   email,
   widthLevel,
   onWidthChange,
+  onMenuClick,
 }: {
   email?: string
   widthLevel: WidthLevel
   onWidthChange: (level: WidthLevel) => void
+  /** Open the mobile nav drawer; the button is hidden at `lg` and up (#135). */
+  onMenuClick: () => void
 }) {
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="flex h-14 items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="Open menu"
+            className="-ml-1.5 rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
           <RivuletMark />
           <span className="text-lg font-semibold tracking-tight text-slate-900">Rivulet</span>
         </div>
@@ -102,11 +118,24 @@ function AppShell() {
   const { session } = useSession()
   const email = session?.authenticated ? session.user.email : undefined
   const { level, setLevel, preset } = useReadingWidth()
+  // Mobile nav-drawer state lives here so the header hamburger can open it and
+  // ReaderApp can render + close it (#135).
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div className="flex min-h-svh flex-col bg-slate-50">
-      <Header email={email} widthLevel={level} onWidthChange={setLevel} />
+      <Header
+        email={email}
+        widthLevel={level}
+        onWidthChange={setLevel}
+        onMenuClick={() => setMenuOpen(true)}
+      />
       <main className="flex flex-1 flex-col">
-        <ReaderApp containerClass={preset.container} measureClass={preset.measure} />
+        <ReaderApp
+          containerClass={preset.container}
+          measureClass={preset.measure}
+          drawerOpen={menuOpen}
+          onDrawerOpenChange={setMenuOpen}
+        />
       </main>
     </div>
   )
