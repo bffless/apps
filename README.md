@@ -14,6 +14,7 @@ project.
 | --- | --- | --- |
 | **Studio** | [`apps/studio`](apps/studio) | Turns one long screen recording into a short video re-voiced in your own cloned voice — an AI director shortens the transcript into scenes, you build each one, then export. |
 | **Handoff** | [`apps/handoff`](apps/handoff) | Internal, permissioned file server on BFFless — upload docs/prototypes/HTML, organize into folders, control who sees each, served back live. |
+| **Reader** | [`apps/reader`](apps/reader) | Rivulet — a self-hostable, Google Reader–style RSS/Atom reader. Personal and private behind real auth: subscribe to feeds, have them auto-refreshed in the background, and read them in a fast keyboard-driven river with folders, star-to-keep, and OPML import/export. |
 
 ## Develop
 
