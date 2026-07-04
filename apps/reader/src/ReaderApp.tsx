@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FeedSidebar } from './components/FeedSidebar'
 import { ItemList } from './components/ItemList'
 import { ReadingPane } from './components/ReadingPane'
@@ -6,6 +6,7 @@ import * as api from './lib/api'
 import type { Feed } from './lib/feeds'
 import { sortItemsNewestFirst, sortItemsOldestFirst, type Item } from './lib/items'
 import { keyToAction, nextSelection } from './lib/keyboard'
+import { DESKTOP_MEDIA_QUERY, useMediaQuery } from './lib/useMediaQuery'
 import type { OpmlFeed } from './lib/opml'
 import {
   itemsForSelection,
@@ -34,11 +35,17 @@ import {
 export function ReaderApp({
   containerClass = 'max-w-6xl',
   measureClass = 'max-w-2xl',
+  drawerOpen = false,
+  onDrawerOpenChange,
 }: {
   /** Outer-container max-width class from the reading-width preference (#136). */
   containerClass?: string
   /** Reading-measure max-width class threaded to the reading pane (#136). */
   measureClass?: string
+  /** Mobile nav-drawer open state, lifted so the header hamburger drives it (#135). */
+  drawerOpen?: boolean
+  /** Report drawer open/close (opened by the header menu, closed on select/backdrop). */
+  onDrawerOpenChange?: (open: boolean) => void
 } = {}) {
   const [feeds, setFeeds] = useState<Feed[]>([])
   const [selection, setSelection] = useState<Selection>({ kind: 'river' })
@@ -83,10 +90,17 @@ export function ReaderApp({
     void loadItems()
   }, [loadFeeds, loadItems])
 
-  const selectView = useCallback((next: Selection) => {
-    setSelection(next)
-    setSelectedGuid(null)
-  }, [])
+  // Choosing a view (or a feed/folder) returns to the list and, on mobile,
+  // dismisses the nav drawer (#135). On desktop the drawer is never open, so
+  // the close is a no-op.
+  const selectView = useCallback(
+    (next: Selection) => {
+      setSelection(next)
+      setSelectedGuid(null)
+      onDrawerOpenChange?.(false)
+    },
+    [onDrawerOpenChange],
+  )
 
   const counts = useMemo(() => unreadCountsByFeed(items), [items])
   const riverTotal = useMemo(() => totalUnread(items), [items])
@@ -314,75 +328,182 @@ export function ReaderApp({
 
   const unreadInView = visible.some((i) => !i.read)
 
-  return (
-    <div
-      className={`mx-auto flex w-full flex-1 flex-col gap-4 px-4 py-6 sm:flex-row sm:px-6 ${containerClass}`}
-    >
-      <FeedSidebar
-        feeds={feeds}
-        selection={selection}
-        unreadCounts={counts}
-        riverUnread={riverTotal}
-        starredCount={starredTotal}
-        onSelect={selectView}
-        onAdd={handleAdd}
-        onRemove={handleRemove}
-        onMoveFolder={handleMoveFolder}
-        onRefresh={handleRefresh}
-        onImportOpml={handleImportOpml}
-        adding={adding}
-        importing={importing}
-        refreshing={refreshing}
-      />
+  // Desktop shows the three-column layout; below `lg` the mobile single-pane
+  // flow governs (#135). The JS branch flips at the same width as the `lg:`
+  // utilities, so the two never disagree.
+  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY)
 
-      <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row">
-        <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white lg:max-w-sm dark:border-slate-800 dark:bg-slate-900">
-          {error && (
-            <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
-          )}
-          {visible.length > 0 && (
-            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setSortOrder((o) => (o === 'newest' ? 'oldest' : 'newest'))}
-                aria-pressed={sortOrder === 'oldest'}
-                title="Toggle reading order"
-                className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-              >
-                {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
-              </button>
-              {unreadInView && (
-                <button
-                  type="button"
-                  onClick={markAllRead}
-                  className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                >
-                  Mark all read
-                </button>
-              )}
-            </div>
-          )}
-          <ItemList
-            items={orderedVisible}
-            loading={itemsLoading}
-            selectedGuid={selectedGuid}
-            onSelect={openItem}
-            onToggleStar={toggleStar}
-            onScrolledPast={(item) => {
-              if (!item.read) void persistRead(item.guid, true)
-            }}
-          />
-        </section>
+  // Mobile only: opening an item swaps the list for a full-screen article. Stash
+  // the list's scroll offset first so Back can restore it, and start the article
+  // from the top.
+  const listScrollY = useRef(0)
+  const openItemMobile = useCallback(
+    (item: Item) => {
+      listScrollY.current = window.scrollY
+      openItem(item)
+      window.scrollTo(0, 0)
+    },
+    [openItem],
+  )
+  const backToList = useCallback(() => {
+    setSelectedGuid(null)
+    // Restore after the list has re-rendered and reclaimed its height.
+    requestAnimationFrame(() => window.scrollTo(0, listScrollY.current))
+  }, [])
 
-        <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-          <ReadingPane
-            item={selectedItem}
-            measureClass={measureClass}
-            onToggleRead={toggleRead}
-            onToggleStar={toggleStar}
-          />
-        </section>
-      </div>
+  const markScrolledPast = useCallback(
+    (item: Item) => {
+      if (!item.read) void persistRead(item.guid, true)
+    },
+    [persistRead],
+  )
+
+  const sidebar = (
+    <FeedSidebar
+      feeds={feeds}
+      selection={selection}
+      unreadCounts={counts}
+      riverUnread={riverTotal}
+      starredCount={starredTotal}
+      onSelect={selectView}
+      onAdd={handleAdd}
+      onRemove={handleRemove}
+      onMoveFolder={handleMoveFolder}
+      onRefresh={handleRefresh}
+      onImportOpml={handleImportOpml}
+      adding={adding}
+      importing={importing}
+      refreshing={refreshing}
+    />
+  )
+
+  const errorBanner = error && (
+    <p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
+  )
+
+  const listToolbar = visible.length > 0 && (
+    <div className="flex items-center justify-between border-b border-slate-100 px-3 py-1.5 dark:border-slate-800">
+      <button
+        type="button"
+        onClick={() => setSortOrder((o) => (o === 'newest' ? 'oldest' : 'newest'))}
+        aria-pressed={sortOrder === 'oldest'}
+        title="Toggle reading order"
+        className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+      >
+        {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
+      </button>
+      {unreadInView && (
+        <button
+          type="button"
+          onClick={markAllRead}
+          className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        >
+          Mark all read
+        </button>
+      )}
     </div>
+  )
+
+  if (isDesktop) {
+    return (
+      <div
+        className={`mx-auto flex w-full flex-1 flex-col gap-4 px-4 py-6 sm:flex-row sm:px-6 ${containerClass}`}
+      >
+        {sidebar}
+
+        <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row">
+          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white lg:max-w-sm dark:border-slate-800 dark:bg-slate-900">
+            {errorBanner}
+            {listToolbar}
+            <ItemList
+              items={orderedVisible}
+              loading={itemsLoading}
+              selectedGuid={selectedGuid}
+              onSelect={openItem}
+              onToggleStar={toggleStar}
+              onScrolledPast={markScrolledPast}
+            />
+          </section>
+
+          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <ReadingPane
+              item={selectedItem}
+              measureClass={measureClass}
+              onToggleRead={toggleRead}
+              onToggleStar={toggleStar}
+            />
+          </section>
+        </div>
+      </div>
+    )
+  }
+
+  // Mobile single-pane flow: the article replaces the list when an item is open;
+  // otherwise the list is full-width. The sidebar is a slide-in drawer.
+  return (
+    <>
+      {selectedItem ? (
+        <div className="flex w-full flex-1 flex-col">
+          <div className="sticky top-14 z-10 flex items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+            <button
+              type="button"
+              onClick={backToList}
+              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            >
+              <span aria-hidden="true">←</span> Back
+            </button>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-500 dark:text-slate-400">
+              {selectedItem.title || '(untitled)'}
+            </span>
+          </div>
+          <section className="min-w-0 flex-1 bg-white dark:bg-slate-900">
+            <ReadingPane
+              item={selectedItem}
+              measureClass={measureClass}
+              onToggleRead={toggleRead}
+              onToggleStar={toggleStar}
+            />
+          </section>
+        </div>
+      ) : (
+        <div className="flex w-full flex-1 flex-col px-4 py-6">
+          <section className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            {errorBanner}
+            {listToolbar}
+            <ItemList
+              items={orderedVisible}
+              loading={itemsLoading}
+              selectedGuid={selectedGuid}
+              onSelect={openItemMobile}
+              onToggleStar={toggleStar}
+              onScrolledPast={markScrolledPast}
+            />
+          </section>
+        </div>
+      )}
+
+      {/* Slide-in navigation drawer, opened from the header hamburger. */}
+      <div
+        className={`fixed inset-0 z-30 lg:hidden ${drawerOpen ? '' : 'pointer-events-none'}`}
+        aria-hidden={!drawerOpen}
+      >
+        <button
+          type="button"
+          tabIndex={drawerOpen ? 0 : -1}
+          aria-label="Close menu"
+          onClick={() => onDrawerOpenChange?.(false)}
+          className={`absolute inset-0 h-full w-full cursor-default bg-slate-900/40 transition-opacity ${
+            drawerOpen ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+        <div
+          className={`absolute inset-y-0 left-0 flex w-80 max-w-[85%] flex-col overflow-y-auto bg-white p-4 shadow-xl transition-transform duration-200 dark:bg-slate-900 ${
+            drawerOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          {sidebar}
+        </div>
+      </div>
+    </>
   )
 }
