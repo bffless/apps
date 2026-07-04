@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { evaluateAccess } from './acl'
+import { evaluateAccess, inShareMode } from './acl'
 import type { FolderLink, Viewer } from './acl'
 
 // ---------------------------------------------------------------------------
@@ -228,5 +228,21 @@ describe('evaluateAccess', () => {
       viewer: viewer({ userId: 'admin-user', isAdmin: true }),
     })
     expect(result).toBe('owner')
+  })
+})
+
+describe('inShareMode', () => {
+  it('is true for a guest with a share-link folder', () => {
+    expect(inShareMode({ authenticated: false, shareLinkFolderId: 'folder-1' })).toBe(true)
+  })
+
+  it('is false with no share-link folder', () => {
+    expect(inShareMode({ authenticated: false, shareLinkFolderId: null })).toBe(false)
+  })
+
+  it('is false for an authenticated user even with a stale share-link folder', () => {
+    // Regression: a persisted shareLinkFolderId (from opening a /s/ link) must
+    // NOT downgrade a signed-in owner/admin into a scoped visitor.
+    expect(inShareMode({ authenticated: true, shareLinkFolderId: 'folder-1' })).toBe(false)
   })
 })

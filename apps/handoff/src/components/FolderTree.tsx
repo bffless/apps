@@ -11,6 +11,8 @@ import { useState, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { useListNodesQuery, useGetNodeQuery } from '../store/handoffApi'
+import { useSession } from '../lib/session'
+import { inShareMode } from '../lib/acl'
 import { FolderIcon, ChevronRightIcon } from './icons'
 import type { RootState } from '../store'
 
@@ -106,7 +108,12 @@ export function FolderTree() {
   const { pathname } = useLocation()
   const currentId = currentFolderId(pathname)
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
-  const rootId = shareLinkFolderId ?? 'root'
+  const { session } = useSession()
+  // Share-mode roots the tree at the shared folder — but only for guests. An
+  // authenticated user always gets the real "Home" root, never a stale share id.
+  const rootId = inShareMode({ authenticated: !!session?.authenticated, shareLinkFolderId })
+    ? (shareLinkFolderId as string)
+    : 'root'
 
   // Name of the shared root (share mode only); root is "Home" otherwise.
   const { data: sharedRoot } = useGetNodeQuery(rootId, { skip: rootId === 'root' })

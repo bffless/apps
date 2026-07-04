@@ -98,3 +98,21 @@ export function evaluateAccess(input: {
 
   return best
 }
+
+/**
+ * Whether the UI should treat the viewer as a **share-link visitor**.
+ *
+ * Share-mode is for GUESTS only. `shareLinkFolderId` is persisted to
+ * localStorage when a visitor opens a `/s/:token` link, and it is never on the
+ * URL of normal listing routes — so a stale value can outlive the visit. An
+ * authenticated user must always be evaluated by their real identity
+ * (role / ownership / grants); a leftover `shareLinkFolderId` must never
+ * downgrade them into a scoped 'view' visitor. This mirrors `evaluateAccess`,
+ * which only honours `shareLinkFolderId` when there is no `userId`.
+ */
+export function inShareMode(input: {
+  authenticated: boolean
+  shareLinkFolderId: string | null
+}): boolean {
+  return !!input.shareLinkFolderId && !input.authenticated
+}

@@ -46,7 +46,7 @@ import {
 import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { useSession, adminLoginUrl } from '../lib/session'
-import { evaluateAccess } from '../lib/acl'
+import { evaluateAccess, inShareMode } from '../lib/acl'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
 import { Menu } from '../components/Menu'
@@ -846,9 +846,12 @@ export function FolderView({ folderId }: FolderViewProps) {
   const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
 
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
-  const isShareMode = !!shareLinkFolderId
 
   const { session } = useSession()
+
+  // Share-mode is for guests only — an authenticated user is always evaluated by
+  // their real identity, even if a stale shareLinkFolderId lingers in localStorage.
+  const isShareMode = inShareMode({ authenticated: !!session?.authenticated, shareLinkFolderId })
 
   const { chain: folderChain } = buildAncestorFolderChain(ancestorNodesById, folderId)
   const chainReady = folderId === 'root' || ancestorChainComplete
@@ -856,7 +859,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   const effectiveLevel = evaluateAccess({
     folderChain,
     viewer: isShareMode
-      ? { shareLinkFolderId }
+      ? { shareLinkFolderId: shareLinkFolderId ?? undefined }
       : {
           userId: session?.authenticated ? session.user.id : undefined,
           isAdmin: session?.authenticated && session.user.role === 'admin',
