@@ -312,7 +312,7 @@
       "forwardCookies": false,
       "proxyType": "pipeline",
       "isEnabled": true,
-      "description": "Query stored items, optionally scoped to one feed. GET /api/items[?feedId=<url>] -> prep computes hasFeed/noFeed + feedId -> queryFeed (filter feedId, conditional) OR queryAll (conditional) -> merge picks whichever ran -> respond { items: [...] } (raw rows; the client shapes/sanitizes). auth_required.",
+      "description": "Query stored items, optionally scoped to one feed. GET /api/items[?feedId=<url>] -> prep computes hasFeed/noFeed + feedId -> queryFeed (filter feedId, conditional) OR queryAll (conditional) -> respondFeed OR respondAll emits { items: [...] } straight from whichever query ran (raw rows; the client shapes/sanitizes). prep guarantees exactly one of hasFeed/noFeed, so exactly one query + one respond fires. No intermediate function step: responding directly from the query (mirroring /api/feeds) avoids structure-cloning the content-heavy item set through the sandbox VM (bffless/apps#148). auth_required.",
       "pipelineConfig": {
         "name": "List items",
         "steps": [
@@ -346,22 +346,27 @@
             }
           },
           {
-            "id": "merge",
-            "name": "merge",
-            "handlerType": "function_handler",
+            "id": "respondFeed",
+            "name": "respondFeed",
+            "handlerType": "response_handler",
             "config": {
-              "code": "function handler({ steps }) {\n  var feed = (steps && steps.queryFeed) || null\n  var all = (steps && steps.queryAll) || null\n  var rows = (feed && feed.length != null) ? feed : (all || [])\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    out.push(rows[i])\n  }\n  return { items: out }\n}\n"
+              "body": "{\"items\":{{{steps.queryFeed}}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasFeed"
             }
           },
           {
-            "id": "respond",
-            "name": "respond",
+            "id": "respondAll",
+            "name": "respondAll",
             "handlerType": "response_handler",
             "config": {
-              "body": "{\"items\":{{{steps.merge.items}}}}",
+              "body": "{\"items\":{{{steps.queryAll}}}}",
               "status": 200,
               "headers": { "Cache-Control": "no-store" },
-              "contentType": "application/json"
+              "contentType": "application/json",
+              "condition": "steps.prep.noFeed"
             }
           }
         ],
