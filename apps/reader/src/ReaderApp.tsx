@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { FeedRail } from './components/FeedRail'
 import { FeedSidebar } from './components/FeedSidebar'
@@ -22,6 +23,7 @@ import {
 } from './lib/panes'
 import { DESKTOP_MEDIA_QUERY, useMediaQuery } from './lib/useMediaQuery'
 import type { OpmlFeed } from './lib/opml'
+import { pathForItem, pathForSelection, selectionFromParams, viewFromPathname } from './lib/route'
 import {
   itemsForSelection,
   markGuidsRead,
@@ -62,16 +64,41 @@ export function ReaderApp({
   onDrawerOpenChange?: (open: boolean) => void
 } = {}) {
   const [feeds, setFeeds] = useState<Feed[]>([])
-  const [selection, setSelection] = useState<Selection>({ kind: 'river' })
   const [items, setItems] = useState<Item[]>([])
   const [loadSeq, setLoadSeq] = useState(0)
-  const [selectedGuid, setSelectedGuid] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
   const [itemsLoading, setItemsLoading] = useState(false)
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // The URL is the single source of truth for the selected view and the open
+  // item (#144): the view comes from the pathname, the folder / feed ids from
+  // the dynamic segments (already %-decoded by the router), and the open item
+  // from `:itemId`. Deriving here — rather than holding React state — is what
+  // makes hard reload, Back / Forward, and bookmarking work. `selection` is
+  // memoized on its primitive keys so its identity only changes when the view
+  // does, keeping the `visible`-snapshot effect from re-firing every render.
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const { folder, feedId, itemId } = useParams()
+  const view = viewFromPathname(pathname)
+  const selection = useMemo<Selection>(
+    () => selectionFromParams({ view, folder, feedId }),
+    [view, folder, feedId],
+  )
+  const selectedGuid = itemId ?? null
+
+  // Navigate to a view (river/all/starred/folder/feed) and, on mobile, dismiss
+  // the nav drawer. Replaces the old local `selectView`.
+  const goToSelection = useCallback(
+    (next: Selection) => {
+      navigate(pathForSelection(next))
+      onDrawerOpenChange?.(false)
+    },
+    [navigate, onDrawerOpenChange],
+  )
 
   // Desktop pane layout (#140): the sidebar is a resizable, collapsible panel;
   // the list and reading pane each scroll in their own container. The panel ref
@@ -125,18 +152,6 @@ export function ReaderApp({
     void loadItems()
   }, [loadFeeds, loadItems])
 
-  // Choosing a view (or a feed/folder) returns to the list and, on mobile,
-  // dismisses the nav drawer (#135). On desktop the drawer is never open, so
-  // the close is a no-op.
-  const selectView = useCallback(
-    (next: Selection) => {
-      setSelection(next)
-      setSelectedGuid(null)
-      onDrawerOpenChange?.(false)
-    },
-    [onDrawerOpenChange],
-  )
-
   const counts = useMemo(() => unreadCountsByFeed(items), [items])
   const riverTotal = useMemo(() => totalUnread(items), [items])
   const starredTotal = useMemo(() => totalStarred(items), [items])
@@ -177,7 +192,22 @@ export function ReaderApp({
     [visible, sortOrder],
   )
 
-  const selectedItem = visible.find((i) => i.guid === selectedGuid) ?? null
+  // The open item resolves from the visible snapshot first, then falls back to
+  // the full set so a deep link opens an item that isn't in the current view's
+  // list (e.g. a read item under the river, which only lists unread). While the
+  // set is still loading a deep-linked id resolves to nothing yet — `itemLoading`
+  // holds the reading pane in its loading state until items arrive; an id that
+  // never resolves (deleted/unknown) just falls back to the view's list.
+  const selectedItem = useMemo(
+    () =>
+      selectedGuid === null
+        ? null
+        : (visible.find((i) => i.guid === selectedGuid) ??
+          items.find((i) => i.guid === selectedGuid) ??
+          null),
+    [visible, items, selectedGuid],
+  )
+  const itemLoading = selectedGuid !== null && selectedItem === null && itemsLoading
 
   /** Reflect a read-flag change in both the source set and the visible snapshot. */
   const applyRead = useCallback((guid: string, read: boolean) => {
@@ -198,15 +228,15 @@ export function ReaderApp({
     [applyRead],
   )
 
-  // Opening an item auto-marks it read — the "seen it" signal that keeps the
-  // unread count honest; it stays visible in the current snapshot until you
-  // leave the view.
+  // Opening an item navigates to its URL (in the context of the current view)
+  // and auto-marks it read — the "seen it" signal that keeps the unread count
+  // honest; it stays visible in the current snapshot until you leave the view.
   const openItem = useCallback(
     (item: Item) => {
-      setSelectedGuid(item.guid)
+      navigate(pathForItem(selection, item.guid))
       if (!item.read) void persistRead(item.guid, true)
     },
-    [persistRead],
+    [navigate, selection, persistRead],
   )
 
   const toggleRead = useCallback(
@@ -260,12 +290,12 @@ export function ReaderApp({
         const feed = await api.addFeed({ url: discovered.url, title: discovered.title })
         await api.refresh()
         await Promise.all([loadFeeds(), loadItems()])
-        selectView({ kind: 'feed', url: feed.url })
+        goToSelection({ kind: 'feed', url: feed.url })
       } finally {
         setAdding(false)
       }
     },
-    [loadFeeds, loadItems, selectView],
+    [loadFeeds, loadItems, goToSelection],
   )
 
   // OPML import: upsert every parsed feed (each add is dedup-by-url, so re-import
@@ -309,13 +339,13 @@ export function ReaderApp({
       setError(null)
       try {
         await api.removeFeed(url)
-        if (selection.kind === 'feed' && selection.url === url) selectView({ kind: 'river' })
+        if (selection.kind === 'feed' && selection.url === url) goToSelection({ kind: 'river' })
         await Promise.all([loadFeeds(), loadItems()])
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not unsubscribe')
       }
     },
-    [loadFeeds, loadItems, selection, selectView],
+    [loadFeeds, loadItems, selection, goToSelection],
   )
 
   // Move a feed to a folder (or out of one). Optimistic: patch the feed's folder
@@ -357,7 +387,11 @@ export function ReaderApp({
       if (!action) return
       e.preventDefault()
       if (action.kind === 'move') {
-        setSelectedGuid((cur) => nextSelection(orderedVisible.map((i) => i.guid), cur, action.dir))
+        const next = nextSelection(orderedVisible.map((i) => i.guid), selectedGuid, action.dir)
+        // Cursor moves replace history (not push) so Back steps between the
+        // views / items you explicitly opened, not every j/k keystroke. The move
+        // previews in the reading pane without marking read — 'o'/click do that.
+        if (next && next !== selectedGuid) navigate(pathForItem(selection, next), { replace: true })
         return
       }
       if (action.kind === 'page') {
@@ -377,7 +411,7 @@ export function ReaderApp({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [orderedVisible, selectedGuid, toggleStar, toggleRead, openItem])
+  }, [orderedVisible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection])
 
   const unreadInView = visible.some((i) => !i.read)
 
@@ -399,10 +433,12 @@ export function ReaderApp({
     [openItem],
   )
   const backToList = useCallback(() => {
-    setSelectedGuid(null)
+    // Navigate back to the current view's list (drops the /item/:id segment);
+    // the router keeps Back / Forward honest on mobile.
+    navigate(pathForSelection(selection))
     // Restore after the list has re-rendered and reclaimed its height.
     requestAnimationFrame(() => window.scrollTo(0, listScrollY.current))
-  }, [])
+  }, [navigate, selection])
 
   const markScrolledPast = useCallback(
     (item: Item) => {
@@ -418,7 +454,7 @@ export function ReaderApp({
       unreadCounts={counts}
       riverUnread={riverTotal}
       starredCount={starredTotal}
-      onSelect={selectView}
+      onSelect={goToSelection}
       onAdd={handleAdd}
       onRemove={handleRemove}
       onMoveFolder={handleMoveFolder}
@@ -439,7 +475,7 @@ export function ReaderApp({
       unreadCounts={counts}
       riverUnread={riverTotal}
       starredCount={starredTotal}
-      onSelect={selectView}
+      onSelect={goToSelection}
     />
   )
 
@@ -554,6 +590,7 @@ export function ReaderApp({
               >
                 <ReadingPane
                   item={selectedItem}
+                  loading={itemLoading}
                   measureClass={measureClass}
                   onToggleRead={toggleRead}
                   onToggleStar={toggleStar}
@@ -567,11 +604,14 @@ export function ReaderApp({
     )
   }
 
-  // Mobile single-pane flow: the article replaces the list when an item is open;
-  // otherwise the list is full-width. The sidebar is a slide-in drawer.
+  // Mobile single-pane flow: the article replaces the list when an item is open
+  // (or a deep-linked one is still resolving); otherwise the list is full-width.
+  // An unknown id that never resolves falls back to the list. The sidebar is a
+  // slide-in drawer.
+  const showArticle = selectedItem !== null || itemLoading
   return (
     <>
-      {selectedItem ? (
+      {showArticle ? (
         <div className="flex w-full flex-1 flex-col">
           <div className="sticky top-14 z-10 flex items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
             <button
@@ -582,12 +622,13 @@ export function ReaderApp({
               <span aria-hidden="true">←</span> Back
             </button>
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-500 dark:text-slate-400">
-              {selectedItem.title || '(untitled)'}
+              {selectedItem ? selectedItem.title || '(untitled)' : 'Loading…'}
             </span>
           </div>
           <section className="min-w-0 flex-1 bg-white dark:bg-slate-900">
             <ReadingPane
               item={selectedItem}
+              loading={itemLoading}
               measureClass={measureClass}
               onToggleRead={toggleRead}
               onToggleStar={toggleStar}
