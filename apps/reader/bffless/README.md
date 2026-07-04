@@ -7,15 +7,18 @@ alias serving the app.
 [`reader.proxy-rules.json`](reader.proxy-rules.json) is the exported rule set (format
 `bffless-proxy-rule-set` v2). It contains **no secrets**.
 
-As of bffless/apps#112 the set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the
-core reading pipelines:
+The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the reading pipelines
+(11 rules total, `order` 0–10):
 
 | Path | Method | Pipeline |
 | --- | --- | --- |
 | `/api/feeds` | `GET` | list subscribed feeds |
 | `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `url`) |
 | `/api/feeds/remove` | `POST` | unsubscribe (delete a feed row) |
+| `/api/feeds/folder` | `POST` | move a feed between folders (`data_update`; the insert-only add endpoint can't, #133) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
+| `/api/items/read` | `POST` | set an item's `read` flag (`data_update` by `guid`, #114) |
+| `/api/items/star` | `POST` | set an item's `starred` flag (`data_update` by `guid`; starred items are prune-exempt, #115) |
 | `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
 | `/api/discover` | `POST` | auto-discovery (#113): `http_request` fetches a site/feed URL server-side so the browser can `DOMParser` it for `<link rel="alternate">` feed links |
 | `/api/prune` | `POST` | retention (#119): `data_delete` delete-by-query removes `read` + un`starred` items older than 30 days (`fetchedAt < now-30d`); starred + unread are exempt |
@@ -60,8 +63,9 @@ Everything the human must configure in the BFFless admin panel that the `install
 - **Serve URL — domain mapping (private, SPA)** — see §2 below.
 
 - **Background schedules** — two `pipeline_schedules` (#119) drive the reader unattended; see
-  **Background schedules** below. They are created via the BFFless API/MCP (the `install-app` skill
-  can't yet manage schedules), so add them once per project after importing the rule set.
+  **Background schedules** below. The `install-app` skill creates them for you (via the MCP
+  `create_pipeline_schedule`); if you install by hand, add them once per project after importing the
+  rule set.
 
 ## Background schedules
 
@@ -77,8 +81,9 @@ Create both against your project (IDs are your project's, not the reference proj
 | Rivulet refresh (auto ingest) | `*/15 * * * *` | `POST /api/refresh` | pre-fetches every feed every 15 min |
 | Rivulet nightly prune (retention) | `17 3 * * *` | `POST /api/prune` | deletes read + unstarred items older than 30 days |
 
-**Claude / MCP:** ask Claude (BFFless MCP connected) to `create_pipeline_schedule` for each, pointing
-`targetProxyRuleId` at your project's `/api/refresh` and `/api/prune` rule IDs.
+**Claude / MCP:** the `install-app` skill does this for you; or ask Claude (BFFless MCP connected) to
+`create_pipeline_schedule` for each, pointing `targetProxyRuleId` at your project's `/api/refresh` and
+`/api/prune` rule IDs.
 
 **REST:** `POST /api/pipeline-schedules/projects/:projectId/schedules` with
 `{ targetProxyRuleId, cronExpression, timezone: "UTC", enabled: true }` (repo-scoped API key; gated on
@@ -164,7 +169,6 @@ Rivulet's core reading path is live.
 ## Notes
 
 - Re-export from the BFFless dashboard (Proxy Rules → Export) after changing rules, and commit the
-  updated JSON here so the giveaway stays current.
-- Later stories (#112+) add feed/item/refresh rules and their `schemaId` references. Once those
-  exist, this README will grow a **data tables** section and a **schemaId portability caveat** like
-  Handoff's.
+  updated JSON here so the giveaway stays current. When you add or remove endpoints, also update the
+  endpoint table at the top of this README and the **Data tables** section so they stay in sync with
+  the export.

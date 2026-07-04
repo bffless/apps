@@ -25,6 +25,7 @@ The spine below is written with a placeholder **`<app>`**. Choose the app you're
 | --- | --- | --- | --- | --- |
 | `studio` | [`apps/studio/bffless/README.md`](apps/studio/bffless/README.md) | `studio` | **Deploy Studio to BFFless** | upload a recording → see the transcript |
 | `handoff` | [`apps/handoff/bffless/README.md`](apps/handoff/bffless/README.md) | `handoff` | **Deploy Handoff to BFFless** | upload a file → see it served back |
+| `reader` | [`apps/reader/bffless/README.md`](apps/reader/bffless/README.md) | `reader` | **Deploy Reader to BFFless** | sign in → add a feed → see items appear |
 
 Each app's README has a **"Manual setup (admin panel)"** section (the human-only, admin-panel steps —
 external connections/AI tokens, secrets, **storage backend requirements**, response-header rules) and
@@ -38,9 +39,12 @@ one app's specifics into itself.
 > [`docs/app-pipelines-convention.md`](docs/app-pipelines-convention.md) (run `pnpm apps:check`
 > locally).
 
-> **Studio needs AI provider tokens (Replicate, Anthropic) + `HF_TOKEN`; Handoff needs none — but
-> Handoff requires a real bucket storage backend (not local file storage).** These differences live in
-> each app's README, not the spine.
+> **Apps differ in what they need beyond the rule set — and that lives in each app's README, not the
+> spine.** Studio needs AI provider tokens (Replicate, Anthropic) + `HF_TOKEN`. Handoff needs no
+> tokens but **requires a real bucket storage backend** (not local file storage). Reader needs neither
+> tokens nor a bucket, but needs **two background pipeline schedules** (auto-refresh + nightly prune)
+> and a **private, SPA domain mapping** plus the **auth relay** — the `install-app` skill creates the
+> schedules and reports the rest.
 
 ---
 
@@ -147,6 +151,10 @@ either here — follow the README so you always get the current one):
 - **Handoff** → **no AI tokens or secrets**, but it **requires a real bucket storage backend (S3/GCS/
   Spaces/MinIO) — it will not work on local file storage** — plus the `handoff_nodes` /
   `handoff_share_links` data tables and the auth relay.
+- **Reader** → **no AI tokens, no secrets, any storage backend** (feeds/items live in the
+  `reader_feeds` / `reader_items` data tables). It needs the **auth relay**, a **private + SPA** domain
+  mapping on the `reader` alias, and **two background pipeline schedules** (auto-refresh + nightly
+  prune) — the `install-app` skill creates the schedules for you.
 
 ## 5. Import the app's backend and attach it to the alias
 
@@ -157,13 +165,17 @@ serve once they're imported into your project and attached to the `<app>` alias.
 ### Recommended: run the `install-app` skill
 
 With the MCP registered against **your** instance (step 3), run the repo-local **`install-app`** skill
-for your `<app>` (`studio` or `handoff`). It automates everything reachable by MCP:
+for your `<app>` (`studio`, `handoff`, or `reader`). It automates everything reachable by MCP:
 
 1. imports `apps/<app>/bffless/<app>.proxy-rules.json` (creates the `<app>` rule set + rules),
 2. attaches it to the **`<app>` alias** alongside any existing sets,
-3. creates any required response-header rule (e.g. Studio's COOP/COEP; **Handoff needs none**),
-4. **verifies** the external connections the app declares and reports what's still missing **with
-   links** — it does *not* set the provider tokens (no MCP path).
+3. creates any required response-header rule (e.g. Studio's COOP/COEP; **Handoff and Reader need
+   none**),
+4. creates any background pipeline schedules the app declares (e.g. Reader's auto-refresh + nightly
+   prune; **Studio and Handoff declare none**),
+5. **verifies** the external connections the app declares and reports what's still missing **with
+   links** — it does *not* set provider tokens or platform-level pieces like Reader's private/SPA
+   domain mapping (no MCP path).
 
 It ends with an explicit "set these manually in the admin panel: …" list when connections are missing
 — those are step 4's admin-panel tokens, which no tooling can set. The skill ships in the repo
@@ -181,8 +193,9 @@ alias, `schemaId` remapping, any response-header rule) is in your app's
 2. **Attach** the `<app>` rule set to the **`<app>` alias** (the alias your deploy uploads to).
    `/api/*` only serves on aliases the rule set is attached to.
 3. **Apply any app-specific extras** the README calls out — e.g. Studio's COOP/COEP response-header
-   rule (needed for `ffmpeg.wasm` threading), or Handoff's `schemaId` remap to your own data tables.
-   **Handoff needs no response-header rule.**
+   rule (needed for `ffmpeg.wasm` threading), Handoff's `schemaId` remap to your own data tables, or
+   Reader's **two pipeline schedules** (auto-refresh + prune) plus its **private + SPA** domain
+   mapping. **Handoff and Reader need no response-header rule.**
 
 ## 6. Deploy the app
 
@@ -200,10 +213,16 @@ end-to-end round-trip in that app's README **"First-success checkpoint"** sectio
   upload, storage, and the WhisperX transcribe pipeline).
 - **Handoff** → **upload a file** and **see it served back** (exercises the presigned direct-to-bucket
   upload, `handoff_nodes` registration, and the ACL-gated serve path).
+- **Reader** → **sign in, add a feed URL, and hit "Refresh now"** — items should appear and open in the
+  reading pane (exercises the auth relay, the `/api/feeds` upsert, and the `xml_feed_parse` ingest
+  pipeline).
 
 **If your app does the thing, it's live.** 🎉
 
 If it doesn't, re-check step 4 (the app's admin-panel tokens/storage) and step 5 (rule set attached to
 the `<app>` alias) — a 404 on `/api/*` means the rule set isn't attached. For Handoff, a
 `PRESIGNED_NOT_SUPPORTED` on upload means the project is still on local file storage rather than a
-bucket. See `apps/<app>/bffless/README.md` for the full, app-specific troubleshooting notes.
+bucket. For Reader, a 404 on `/api/auth/*` means the `reader` rule set isn't attached to the `reader`
+alias, and an endless bounce back to login usually means the app can't reach the admin host (check the
+`reader.<primary>` → `admin.<primary>` derivation or set `VITE_ADMIN_URL`). See
+`apps/<app>/bffless/README.md` for the full, app-specific troubleshooting notes.
