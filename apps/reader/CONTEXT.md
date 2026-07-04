@@ -73,3 +73,10 @@ Grilling complete — full design tree walked (D1–D13). Name settled: **Rivule
 - Dependency spine: everything blocks on **#111**, then most on **#112**; **#118**→#114; **#119**→#112/#114/#115.
 
 Next: Sandcastle works the slices (#111 first) and **owns live wiring** — proxy-rule-set import/attach + `/api/auth` + the two schedules — via its BFFless deploy API key (verify key scope). Live wiring is no longer a manual post-merge step.
+
+**Schedule API — exact endpoint (don't guess the URL).** The `pipeline_schedules` CRUD lives on its own controller, **not** nested under projects:
+- create: `POST /api/pipeline-schedules/projects/:projectId/schedules`
+- list: `GET /api/pipeline-schedules/projects/:projectId/schedules`
+- by id: `GET|PUT|DELETE /api/pipeline-schedules/schedules/:id`
+
+Do **not** call `/api/projects/:projectId/pipeline-schedules` — that path doesn't exist and collides with the projects `:owner/:name` catch-all, returning a misleading `400 "Project not found"` (same trap for proxy-rule-sets, whose real path is `GET /api/proxy-rule-sets/project/:projectId`). Gated on **bffless/ce#411**: until that lands, the repo-scoped deploy key gets `403` at the correct URL because the schedules service doesn't yet honor api-key project scope. The prune pipeline additionally needs **bffless/ce#412** (`data_delete` range operators). See the wiring/blocker thread on `bffless/apps#119`.
