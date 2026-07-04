@@ -241,8 +241,8 @@ describe('inShareMode', () => {
   })
 
   it('is false for an authenticated user even with a stale share-link folder', () => {
-    // Regression: a shareLinkFolderId persisted in localStorage (from opening a
-    // /s/ link) must NOT downgrade a signed-in owner/admin into a scoped visitor.
+    // Regression: a persisted shareLinkFolderId (from opening a /s/ link) must
+    // NOT downgrade a signed-in owner/admin into a scoped visitor.
     expect(inShareMode({ authenticated: true, shareLinkFolderId: 'folder-1' })).toBe(false)
   })
 })

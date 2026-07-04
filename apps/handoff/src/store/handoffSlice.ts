@@ -1,7 +1,10 @@
 /**
- * The Handoff app's durable business state. Persisted to localStorage via
- * redux-persist (see `./index.ts`) so state survives hard reloads. Feature
- * slices #7+ will extend this with folder/file state.
+ * The Handoff app's business state. Persisted to sessionStorage via
+ * redux-persist (see `./index.ts`) so state survives a reload within the tab
+ * but not across tabs or restart — the right lifetime for the ephemeral
+ * `shareLinkFolderId` share-visit session. Feature slices #7+ will extend this
+ * with folder/file state (see the storage note in `./index.ts` before adding
+ * anything that must be durable across tabs).
  */
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
