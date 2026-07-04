@@ -112,24 +112,23 @@ export function discoverFeed(input: string): Promise<DiscoveredFeed> {
 }
 
 /**
- * Move a feed into a folder (or out of one, with `folder: null`). There is no
- * folder-specific backend: this re-upserts the *whole* feed row through the same
- * `data_upsert_many` (dedup by url) as {@link addFeed}, carrying the feed's
- * existing title/siteUrl/addedAt so only `folder` changes. Fields the upsert map
- * doesn't touch (icon, last-fetch, last-error) are left intact.
+ * Move a feed into a folder (or out of one, with `folder: null`). The add
+ * endpoint's `data_upsert_many` is insert-only (dedup by url, existing rows left
+ * untouched — ce#407), so it can never *change* an existing feed's folder. This
+ * instead hits the dedicated update path `POST /api/feeds/folder`
+ * (`data_query by url → data_update({ folder })`, mirroring `/api/items/read`),
+ * sending only `{ url, folder }`. Every other per-feed field (icon, last-fetch,
+ * item read/star state) is left intact because the update writes just `folder`.
  */
 export async function setFeedFolder(feed: Feed, folder: string | null): Promise<void> {
   if (!feed.url) throw new Error('feed url is required')
   await readJson(
-    await fetchWithReauth('/api/feeds', {
+    await fetchWithReauth('/api/feeds/folder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: feed.url,
-        title: feed.title ?? '',
-        siteUrl: feed.siteUrl ?? '',
         folder: folder && folder.trim() ? folder.trim() : null,
-        addedAt: feed.addedAt ?? Date.now(),
       }),
     }),
   )

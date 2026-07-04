@@ -221,6 +221,87 @@
       }
     },
     {
+      "pathPattern": "/api/feeds/folder",
+      "method": "POST",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 10,
+      "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Move a feed between folders: POST { url, folder } -> prep coerces url + normalizes folder (empty -> null) -> query finds the reader_feeds row by url -> pick extracts its recordId -> data_update writes { folder } only (conditional) -> respond { ok, updated }. The add endpoint's data_upsert_many is insert-only (ce#407) so it can't change an existing feed's folder; this is the update twin, mirroring /api/items/read. Writing only `folder` leaves icon/lastFetchedAt/item read-star state intact. auth_required (allowApiKey).",
+      "pipelineConfig": {
+        "name": "Set feed folder",
+        "steps": [
+          {
+            "id": "prep",
+            "name": "prep",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request }) {\n  var b = (request && request.body) || {}\n  var url = (typeof b.url === 'string') ? b.url.trim() : ''\n  var folder = (b.folder != null && typeof b.folder === 'string' && b.folder.trim() !== '') ? b.folder.trim() : null\n  return {\n    url: url,\n    folder: folder,\n    hasUrl: !!url,\n    noUrl: !url\n  }\n}\n"
+            }
+          },
+          {
+            "id": "query",
+            "name": "query",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "filters": { "url": { "op": "eq", "value": "steps.prep.url" } },
+              "pageSize": 1,
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "pick",
+            "name": "pick",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.query) || []\n  var q = (rows && rows.length) ? rows[0] : null\n  var rid = q ? (q.recordId || q.id || q._id) : null\n  return {\n    recordId: rid ? String(rid) : '',\n    found: rid ? true : false\n  }\n}\n"
+            }
+          },
+          {
+            "id": "update",
+            "name": "update",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
+              "recordId": "steps.pick.recordId",
+              "fields": { "folder": "steps.prep.folder" },
+              "condition": "steps.pick.found"
+            }
+          },
+          {
+            "id": "respond",
+            "name": "respond",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"ok\":true,\"updated\":{{steps.pick.found}}}",
+              "status": 200,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.hasUrl"
+            }
+          },
+          {
+            "id": "respondNoUrl",
+            "name": "respondNoUrl",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"url is required\"}",
+              "status": 400,
+              "headers": { "Cache-Control": "no-store" },
+              "contentType": "application/json",
+              "condition": "steps.prep.noUrl"
+            }
+          }
+        ],
+        "validators": [{ "type": "auth_required", "config": { "allowApiKey": true } }]
+      }
+    },
+    {
       "pathPattern": "/api/items",
       "method": "GET",
       "targetUrl": "pipeline",
