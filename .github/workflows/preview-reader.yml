@@ -1,0 +1,62 @@
+name: Preview Reader on BFFless
+
+# PR previews for Reader. Any PR that touches apps/reader (or this file) builds
+# the app and deploys it to the shared `reader-preview` alias, then comments the
+# URL on the PR. The alias is reused — the newest PR build wins — so this is best
+# for one preview at a time. We deliberately reuse one stable alias rather than
+# minting a per-PR alias: each new alias is a new origin that would need its own
+# proxy-rule-set wiring. reader-preview already carries the reader proxy rule set,
+# so /api/* (feeds, items, refresh, auth reverse-proxy) just works.
+on:
+  pull_request:
+    paths:
+      - 'apps/reader/**'
+      - '.github/workflows/preview-reader.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-reader-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter reader build
+
+      - name: Deploy preview to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/reader/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: reader-preview
+          # Attach the reader backend (/api/*) to the preview alias. Uses the
+          # singular (legacy) input on purpose: the plural proxy-rule-set-names is
+          # serialized as a CSV string by upload-artifact@v1, which the API rejects
+          # ("proxyRuleSetNames must be an array"). The singular goes through as a
+          # plain string and resolves the same rule set.
+          proxy-rule-set-name: reader
+          description: 'Reader preview for PR #${{ github.event.pull_request.number }}'
+          summary-title: Reader Preview
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
