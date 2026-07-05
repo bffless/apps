@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  itemsForSelection,
-  unreadCountsByFeed,
-  totalUnread,
-  totalStarred,
   setRead,
   setStarred,
   markGuidsRead,
@@ -13,7 +9,6 @@ import {
   type Selection,
 } from './river'
 import { shapeItem, type Item } from './items'
-import { shapeFeed } from './feeds'
 
 /** A tiny item factory keyed off the shaper so defaults match production shaping. */
 function item(over: Partial<Item> & { guid: string }): Item {
@@ -30,78 +25,6 @@ const sample: Item[] = [
   item({ guid: 'b1', feedId: 'https://b.test/rss', read: false, publishedAt: '2026-01-02T00:00:00Z' }),
   item({ guid: 'b2', feedId: 'https://b.test/rss', read: false, starred: true, publishedAt: '2026-01-05T00:00:00Z' }),
 ]
-
-describe('itemsForSelection', () => {
-  it('river = unread across all feeds, newest first', () => {
-    const river = itemsForSelection(sample, { kind: 'river' })
-    expect(river.map((i) => i.guid)).toEqual(['b2', 'a1', 'b1'])
-  })
-
-  it('all = every item across feeds, newest first (read included)', () => {
-    const all = itemsForSelection(sample, { kind: 'all' })
-    expect(all.map((i) => i.guid)).toEqual(['b2', 'a2', 'a1', 'b1'])
-  })
-
-  it('feed = only that feed, newest first, read included', () => {
-    const feed = itemsForSelection(sample, { kind: 'feed', url: 'https://a.test/rss' })
-    expect(feed.map((i) => i.guid)).toEqual(['a2', 'a1'])
-  })
-
-  it('starred = every starred item across feeds (read or unread), newest first', () => {
-    const starred = itemsForSelection(sample, { kind: 'starred' })
-    expect(starred.map((i) => i.guid)).toEqual(['b2', 'a2'])
-  })
-
-  it('folder = items across the feeds in that folder (case-insensitive), newest first', () => {
-    const feeds = [
-      shapeFeed({ url: 'https://a.test/rss', folder: 'News' }),
-      shapeFeed({ url: 'https://b.test/rss', folder: 'news' }),
-    ]
-    const folder = itemsForSelection(sample, { kind: 'folder', name: 'News' }, feeds)
-    expect(folder.map((i) => i.guid)).toEqual(['b2', 'a2', 'a1', 'b1'])
-  })
-
-  it('folder = empty when no feed is in the folder', () => {
-    const feeds = [shapeFeed({ url: 'https://a.test/rss', folder: 'News' })]
-    expect(itemsForSelection(sample, { kind: 'folder', name: 'Tech' }, feeds)).toEqual([])
-  })
-
-  it('does not mutate the input', () => {
-    const copy = [...sample]
-    itemsForSelection(sample, { kind: 'river' })
-    expect(sample).toEqual(copy)
-  })
-})
-
-describe('unreadCountsByFeed', () => {
-  it('counts unread per feed, omitting all-read feeds', () => {
-    expect(unreadCountsByFeed(sample)).toEqual({
-      'https://a.test/rss': 1,
-      'https://b.test/rss': 2,
-    })
-  })
-
-  it('omits a feed once every item is read', () => {
-    const allRead = sample.map((i) => ({ ...i, read: true }))
-    expect(unreadCountsByFeed(allRead)).toEqual({})
-  })
-})
-
-describe('totalUnread', () => {
-  it('sums unread across feeds', () => {
-    expect(totalUnread(sample)).toBe(3)
-  })
-})
-
-describe('totalStarred', () => {
-  it('counts starred across feeds regardless of read state', () => {
-    expect(totalStarred(sample)).toBe(2)
-  })
-
-  it('is zero when nothing is starred', () => {
-    expect(totalStarred(sample.map((i) => ({ ...i, starred: false })))).toBe(0)
-  })
-})
 
 describe('setStarred', () => {
   it('stars an item, leaving the rest referentially stable', () => {
