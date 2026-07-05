@@ -118,3 +118,19 @@ New rule (method POST, `/api/items/read-all`, `auth_required` allowApiKey):
 
 - After each increment, mirror the change into `apps/reader/bffless/reader.proxy-rules.json` (in the worktree) and commit. This is the source of truth for a fresh install; the live set and the JSON must not drift.
 - Rollout: Increment 1 ships the user-visible fix immediately. Increments 2–5 are prerequisites for Plan 3 (client); they don't change what the current client sees.
+
+---
+
+## Execution outcome (2026-07-05, applied live + verified)
+
+All five increments applied to the live `reader` set via MCP and verified over HTTP with a temporary repo-scoped API key (`X-API-Key` bypasses the edge login redirect and satisfies the pipelines' `auth_required allowApiKey`; key deleted after).
+
+**Two deviations from the written plan, both simplifications found during execution:**
+
+1. **`sortTs` → normalized `publishedAt` (no new field, no backfill).** A live check showed all 189 existing rows already have a valid `publishedAt`, and real feeds always provide one. So instead of a separate `sortTs` field + a 188-row backfill, the `enrich` step now guarantees `publishedAt` is populated (falls back to fetch-time only when a feed omits it), and every item query orders by `publishedAt DESC`. No mass backfill was needed. (One row, id `26a3e805`, was clobbered while probing `update_pipeline_record` — which REPLACES `data`, not merges — and was restored via update; it's a transient HN item with no user state, now carrying the short hnrss body.)
+
+2. **Server ordering is newest-first only.** The CE `data_query` `orderBy.direction` is static config (not expression-evaluated), so a dynamic newest/oldest can't be one step. Rather than double every page query, the server always returns `publishedAt DESC` + `total`; **oldest-first is Plan 3's client computing the reversed offset** (`offset = total - page*limit`) and reversing the page. `/api/items` accepts an `order` param but currently ignores it.
+
+**Verified live:** legacy no-param → 189 (client unaffected); `view=all` p1/20 → 20/total 189/10 pages; page1∩page2 = ∅ with monotonic ordering; `view=feed` → 20; `view=river` → 16; `view=starred` → 0; `view=folder macro` → 40 (the `in` operator, live); `/api/counts` `unreadByFeed` sums to 16 = river total; `/api/items/read-all` returns `{updated:0}` on already-read feeds/folders (real paths, no mutation) and `{updated:1}` on a reversible single-item test that restored to the original state. `/api/feeds` also switched `pageSize`→`limit`.
+
+**New/changed live rules:** `/api/items` (GET, rewritten), `/api/counts` (GET, new — `7270fb0e`), `/api/items/read-all` (POST, new — `f162ce86`), `/api/refresh` (enrich step), `/api/feeds` (limit fix).
