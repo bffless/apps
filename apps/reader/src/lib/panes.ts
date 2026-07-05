@@ -17,6 +17,23 @@ export const PANES_STORAGE_ID = 'rivulet:panes'
 export const SIDEBAR_PANEL_ID = 'sidebar'
 export const CONTENT_PANEL_ID = 'content'
 
+/**
+ * The content region is itself a nested horizontal split — a resizable item list
+ * and the reading pane — so the list column can be dragged wider (its own group,
+ * persisted separately from the sidebar split above).
+ */
+export const CONTENT_STORAGE_ID = 'rivulet:content-panes'
+export const LIST_PANEL_ID = 'list'
+export const READING_PANEL_ID = 'reading'
+
+/** Item-list column width as a percentage of the content group, with min/max bounds. */
+export const LIST_DEFAULT_SIZE = 36
+export const LIST_MIN_SIZE = 24
+export const LIST_MAX_SIZE = 62
+
+/** The reading pane never shrinks below this share of the content group. */
+export const READING_MIN_SIZE = 30
+
 // ⚠️ These are percentages, but `react-resizable-panels` v4 reads bare numeric
 // panel sizes as *pixels* — pass them to `Panel` as `%` strings (e.g. `22%`).
 
