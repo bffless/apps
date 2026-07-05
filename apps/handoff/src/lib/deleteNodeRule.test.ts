@@ -30,7 +30,7 @@ describe('handoff DELETE /api/node proxy rule', () => {
     const ids = rule!.pipelineConfig.steps.map((s: any) => s.id)
     expect(ids).toEqual([
       'pre', 'query', 'allFolders', 'children', 'gate',
-      'guardNonEmpty', 'purgeObject',
+      'guardNonEmpty', 'purgeObject', 'purgeSiteAssets',
       'del', 'response', 'deny401', 'deny403',
     ])
   })
@@ -53,6 +53,7 @@ describe('handoff DELETE /api/node proxy rule', () => {
     expect(code).toContain('allow=rank(level)>=2')
     // Precomputed single-boolean conditions (the engine has no `&&` in conditions).
     expect(code).toContain('doPurge')
+    expect(code).toContain('doPurgeSite')
     expect(code).toContain('doDelete')
     expect(code).toContain('guardBlocked')
   })
@@ -69,14 +70,20 @@ describe('handoff DELETE /api/node proxy rule', () => {
     expect(step('purgeObject').config.condition).toBe('steps.gate.doPurge')
   })
 
-  it('no longer carries the retired manifest-based site-asset purge (structural storage)', () => {
-    // Sites unified onto path-passthrough storage: there is no manifest to
-    // enumerate, so the siteKeys / purgeSiteAssets steps are gone. A Site's
-    // assets under its content prefix are left for the greenfield wipe.
-    expect(step('siteKeys')).toBeUndefined()
-    expect(step('purgeSiteAssets')).toBeUndefined()
+  it("purges a Site's assets by content-path prefix (file_delete prefix-mode) with a trailing slash", () => {
+    // Sites use path-passthrough storage (no manifest to enumerate). On delete
+    // the whole content prefix is swept, so a future Site reusing the same path
+    // can't serve stale leftover assets. The trailing slash keeps a sibling site
+    // that merely shares a name-prefix (e.g. "proto" vs "proto2") untouched.
+    const purge = step('purgeSiteAssets')
+    expect(purge.handlerType).toBe('file_delete')
+    expect(purge.config.prefix).toBe('{{steps.gate.sitePrefix}}')
+    expect(purge.config.condition).toBe('steps.gate.doPurgeSite')
     const gateCode = step('gate').config.code as string
-    expect(gateCode).not.toContain('doPurgeSite')
+    expect(gateCode).toContain("sitePrefix=(isSite&&storageKey)?(storageKey+'/'):''")
+    expect(gateCode).toContain('doPurgeSite=allow&&isSite&&!!sitePrefix')
+    // The retired manifest-based enumeration stays gone.
+    expect(step('siteKeys')).toBeUndefined()
     expect(gateCode).not.toContain('manifest')
   })
 
