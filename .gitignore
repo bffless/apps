@@ -20,6 +20,8 @@ screenshots
 .studio-test.mp4
 .bffless-backups/
 .superpowers/
+# impeccable skill's per-session hook cache (session-keyed, machine-local paths)
+.impeccable/
 
 # editor / OS
 .DS_Store
