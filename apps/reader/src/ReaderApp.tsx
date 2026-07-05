@@ -16,7 +16,14 @@ import { keyToAction, nextSelection } from './lib/keyboard'
 import {
   CONTENT_MIN_SIZE,
   CONTENT_PANEL_ID,
+  CONTENT_STORAGE_ID,
+  LIST_DEFAULT_SIZE,
+  LIST_MAX_SIZE,
+  LIST_MIN_SIZE,
+  LIST_PANEL_ID,
   PANES_STORAGE_ID,
+  READING_MIN_SIZE,
+  READING_PANEL_ID,
   SIDEBAR_DEFAULT_SIZE,
   SIDEBAR_MAX_SIZE,
   SIDEBAR_MIN_SIZE,
@@ -146,6 +153,14 @@ export function ReaderApp({
     id: PANES_STORAGE_ID,
     storage: typeof localStorage === 'undefined' ? undefined : localStorage,
   })
+  // The list ↔ reading split is its own persisted group so the list column can be
+  // dragged wider independently of the sidebar split above.
+  const { defaultLayout: contentLayout, onLayoutChanged: onContentLayoutChanged } = useDefaultLayout(
+    {
+      id: CONTENT_STORAGE_ID,
+      storage: typeof localStorage === 'undefined' ? undefined : localStorage,
+    },
+  )
   const toggleSidebar = useCallback(() => {
     const panel = sidebarPanelRef.current
     if (!panel) return
@@ -759,44 +774,62 @@ export function ReaderApp({
           </Separator>
 
           <Panel id={CONTENT_PANEL_ID} minSize={`${CONTENT_MIN_SIZE}%`} style={{ overflow: 'hidden' }}>
-            <div className="flex h-full min-h-0 gap-4">
-              <section className="flex min-h-0 min-w-0 max-w-sm flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                {errorBanner}
-                <div className="flex items-center gap-1 border-b border-slate-100 px-2 py-1.5 dark:border-slate-800">
-                  {sidebarToggleButton}
-                  {visible.length > 0 && sortButton}
-                  {markAllButton}
-                </div>
-                <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
-                  <ItemList
-                    items={visible}
-                    loading={loading}
-                    empty={pageData?.total === 0}
-                    selectedGuid={selectedGuid}
-                    onSelect={openItem}
+            <Group
+              orientation="horizontal"
+              defaultLayout={contentLayout}
+              onLayoutChanged={onContentLayoutChanged}
+            >
+              <Panel
+                id={LIST_PANEL_ID}
+                defaultSize={`${LIST_DEFAULT_SIZE}%`}
+                minSize={`${LIST_MIN_SIZE}%`}
+                maxSize={`${LIST_MAX_SIZE}%`}
+                style={{ overflow: 'hidden' }}
+              >
+                <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                  {errorBanner}
+                  <div className="flex items-center gap-1 border-b border-slate-100 px-2 py-1.5 dark:border-slate-800">
+                    {sidebarToggleButton}
+                    {visible.length > 0 && sortButton}
+                    {markAllButton}
+                  </div>
+                  <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+                    <ItemList
+                      items={visible}
+                      loading={loading}
+                      empty={pageData?.total === 0}
+                      selectedGuid={selectedGuid}
+                      onSelect={openItem}
+                      onToggleStar={toggleStar}
+                      onScrolledPast={markScrolledPast}
+                      scrollRootRef={listScrollRef}
+                      feedNameFor={feedNameFor}
+                    />
+                  </div>
+                  <Pager page={page} totalPages={pageData?.totalPages ?? 1} onPage={onPage} />
+                </section>
+              </Panel>
+
+              <Separator className="group relative flex w-3 shrink-0 items-center justify-center">
+                <span className="h-10 w-px rounded-full bg-slate-200 transition-colors group-hover:w-0.5 group-hover:bg-blue-400 dark:bg-slate-700 dark:group-hover:bg-blue-500" />
+              </Separator>
+
+              <Panel id={READING_PANEL_ID} minSize={`${READING_MIN_SIZE}%`} style={{ overflow: 'hidden' }}>
+                <section
+                  ref={readingScrollRef}
+                  className="h-full min-h-0 min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <ReadingPane
+                    item={selectedItem}
+                    loading={itemLoading}
+                    measureClass={measureClass}
+                    onToggleRead={toggleRead}
                     onToggleStar={toggleStar}
-                    onScrolledPast={markScrolledPast}
-                    scrollRootRef={listScrollRef}
                     feedNameFor={feedNameFor}
                   />
-                </div>
-                <Pager page={page} totalPages={pageData?.totalPages ?? 1} onPage={onPage} />
-              </section>
-
-              <section
-                ref={readingScrollRef}
-                className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
-              >
-                <ReadingPane
-                  item={selectedItem}
-                  loading={itemLoading}
-                  measureClass={measureClass}
-                  onToggleRead={toggleRead}
-                  onToggleStar={toggleStar}
-                  feedNameFor={feedNameFor}
-                />
-              </section>
-            </div>
+                </section>
+              </Panel>
+            </Group>
           </Panel>
         </Group>
       </div>

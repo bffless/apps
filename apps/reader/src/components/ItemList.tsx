@@ -126,8 +126,17 @@ export function ItemList({
           <button
             type="button"
             onClick={() => onSelect(item)}
-            className={`flex w-full items-start gap-2 py-3 pl-3 pr-8 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 ${
-              item.guid === selectedGuid ? 'bg-blue-50 dark:bg-blue-950/40' : ''
+            aria-current={item.guid === selectedGuid ? 'true' : undefined}
+            // The selected row's blue outline is driven by `selectedGuid` (an
+            // inset ring), NOT the browser's focus outline — j/k navigation moves
+            // the selection with `navigate({ replace: true })` and never moves DOM
+            // focus, so a native focus ring would strand on the last *clicked* row
+            // while the selection moved on. `focus:outline-none` drops that stray
+            // ring; the state-driven ring is the single, always-correct indicator.
+            className={`flex w-full items-start gap-2 py-3 pl-3 pr-8 text-left transition-colors focus:outline-none hover:bg-slate-50 dark:hover:bg-slate-800/60 ${
+              item.guid === selectedGuid
+                ? 'bg-blue-50 ring-2 ring-inset ring-blue-500 dark:bg-blue-950/40 dark:ring-blue-500'
+                : ''
             }`}
           >
             <span
