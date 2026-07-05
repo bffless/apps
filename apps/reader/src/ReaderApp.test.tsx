@@ -288,6 +288,60 @@ describe('ReaderApp — mark-all-read gating on counts', () => {
   })
 })
 
+describe('ReaderApp — oldest-first unknown-total re-issue (#164)', () => {
+  it('re-issues the oldest-first fetch once total is known after a refresh clears it', async () => {
+    // The subtlest fetch-effect branch: an oldest-first fetch with an UNKNOWN
+    // total falls back to the newest server page, then re-issues once `total` is
+    // known. It only fires when sortOrder==='oldest' AND totalRef===null.
+    const KNOWN_TOTAL = 45
+    // A feed so the sidebar's "Refresh now" button is enabled.
+    vi.mocked(api.listFeeds).mockResolvedValue([makeFeed()])
+    // Every page resolves a real positive total so the re-issue (result.total>0) fires.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem()], KNOWN_TOTAL))
+    vi.mocked(api.refresh).mockResolvedValue({ inserted: 0, skipped: 0, errors: 0 })
+
+    // Open the drawer so the sidebar "Refresh now" control is reachable.
+    renderAt(feedPath, { drawerOpen: true })
+
+    // Initial fetch: newest, unknown total. Records total=45 for this selection.
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+    )
+
+    // Toggle to oldest. total is already KNOWN here, so this is a single fetch
+    // with total=45 — NOT the path under test, just the setup to make oldest active.
+    fireEvent.click(await screen.findByRole('button', { name: /newest first/i }))
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: KNOWN_TOTAL }),
+    )
+
+    // Refresh clears totalRef (reload()). The ensuing refetch now runs with
+    // sortOrder==='oldest' AND totalRef===null → the unknown-total path: a
+    // fallback fetch with total:null, then a re-issue once the response's total
+    // (45) is known.
+    fireEvent.click(await screen.findByRole('button', { name: /refresh now/i }))
+    await waitFor(() => expect(api.refresh).toHaveBeenCalled())
+
+    // The null→N re-issue: first the oldest fetch with unknown total…
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: null }),
+    )
+    // …then the corrected re-issue with the now-known total. Prove it's the
+    // RE-ISSUE (not the earlier toggle's oldest+45 call) by asserting an oldest
+    // fetch with total:null is immediately followed by one with total:KNOWN_TOTAL
+    // in the oldest-only call subsequence.
+    await waitFor(() => {
+      const oldestTotals = vi
+        .mocked(api.listItems)
+        .mock.calls.filter(([, opts]) => opts?.order === 'oldest')
+        .map(([, opts]) => opts?.total)
+      const nullIdx = oldestTotals.indexOf(null)
+      expect(nullIdx).toBeGreaterThanOrEqual(0)
+      expect(oldestTotals[nullIdx + 1]).toBe(KNOWN_TOTAL)
+    })
+  })
+})
+
 describe('ReaderApp — refetch folder page after moving a feed in/out of it (#161)', () => {
   const NEWS_PATH = '/folder/News'
 
