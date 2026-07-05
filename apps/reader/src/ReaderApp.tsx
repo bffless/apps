@@ -192,6 +192,16 @@ export function ReaderApp({
   const selKey = selectionKey(selection)
   const totalRef = useRef<number | null>(null)
 
+  // The latest location pathname, mirrored into a ref so the fetch effect's async
+  // continuation can read the CURRENT path (which may have gained an `/item/:id`
+  // segment mid-flight) when it needs to clamp an out-of-range `?page` — reading
+  // `pathname` directly would capture a stale closure. Mirrored via an effect
+  // (not during render) so the in-flight continuation sees the committed path.
+  const pathnameRef = useRef(pathname)
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
+
   // A view change starts over with an unknown total (page itself resets to 1 via
   // the URL — a selection nav lands on a param-free path). Declared before the
   // fetch effect so, on a selection change, the `totalRef` clear lands before the
@@ -226,6 +236,18 @@ export function ReaderApp({
           if (!cancelled) result = corrected
         }
         if (cancelled) return
+        // Clamp an out-of-range `?page` (e.g. a stale bookmark `?page=3` on a
+        // view that now has 1 page): the server returns an empty list with a
+        // positive `total`, and the Pager hides itself (`totalPages <= 1`),
+        // stranding the user with no in-list way back. Replace the URL with the
+        // last valid page — preserving any open `/item/:id` via the current
+        // pathname — and skip rendering the empty page; the refetch for the
+        // valid last page renders instead. `total === 0` is the legitimate
+        // "caught up" empty state and is deliberately left to render.
+        if (result.total > 0 && result.totalPages >= 1 && page > result.totalPages) {
+          navigate(withPage(pathnameRef.current, result.totalPages), { replace: true })
+          return
+        }
         totalRef.current = result.total
         setPageData(result)
         setError(null)
@@ -242,7 +264,7 @@ export function ReaderApp({
     return () => {
       cancelled = true
     }
-  }, [selection, page, sortOrder, reloadSeq])
+  }, [selection, page, sortOrder, reloadSeq, navigate])
 
   // Reload the current page after a feed mutation (add/import/refresh/remove):
   // bump the fetch effect's key and refetch the badge counts. Mirrors the

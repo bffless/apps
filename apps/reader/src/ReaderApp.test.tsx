@@ -187,6 +187,55 @@ describe('ReaderApp — empty / all-caught-up states', () => {
   })
 })
 
+describe('ReaderApp — out-of-range page clamp', () => {
+  it('clamps an out-of-range ?page to the last valid page and renders it', async () => {
+    // First fetch (for the stale ?page=3) returns an empty out-of-range page: no
+    // items, but total>0 and totalPages<page — the stranding case the clamp fixes.
+    vi.mocked(api.listItems).mockResolvedValueOnce({
+      items: [],
+      total: 5,
+      page: 3,
+      pageSize: 20,
+      totalPages: 1,
+    })
+    // The default beforeEach mock (a normal page-1 page) serves the clamped refetch.
+    renderAt(`${feedPath}?page=3`)
+    // The client re-issues the fetch for the clamped last page (page 1), not page 3.
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+    )
+    // The valid last page renders — not the empty out-of-range page and not the
+    // misleading caught-up state.
+    expect(await screen.findByText('First article')).toBeInTheDocument()
+    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument()
+  })
+
+  it('preserves an open /item/:id when clamping an out-of-range ?page', async () => {
+    // A deep link to an off-page item on a stale ?page: the first fetch is the
+    // empty out-of-range page; the clamp must keep the /item/OFFPAGE segment so
+    // the open article survives (not drop back to the bare view path).
+    vi.mocked(api.listItems).mockResolvedValueOnce({
+      items: [],
+      total: 5,
+      page: 3,
+      pageSize: 20,
+      totalPages: 1,
+    })
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1' })], 3))
+    vi.mocked(api.getItem).mockResolvedValue(
+      makeItem({ guid: 'OFFPAGE', title: 'Off page article', content: '<p>off page body</p>', read: true }),
+    )
+    renderAt(`${feedPath}/item/OFFPAGE?page=3`)
+    // The clamp re-issues the page fetch for the last valid page (page 1).
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+    )
+    // The open item survives the clamp: the article is still rendered afterwards
+    // (a clamp to the bare view path would have closed it).
+    expect(await screen.findByRole('heading', { name: /Off page article/i })).toBeInTheDocument()
+  })
+})
+
 describe('ReaderApp — mark-all-read gating on counts', () => {
   it('shows the button when the loaded page is all-read but counts say the view has unread', async () => {
     // Loaded page is entirely read, yet the feed's unread count is > 0 (unread on
