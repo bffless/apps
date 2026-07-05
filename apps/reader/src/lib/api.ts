@@ -10,6 +10,8 @@ import { fetchWithReauth } from './session'
 import { shapeFeed, normalizeFeedUrl, type Feed, type RawFeed } from './feeds'
 import { shapeItem, type Item, type RawItem } from './items'
 import { resolveFeedUrl, type DiscoveredFeed, type FetchedPage } from './discover'
+import { buildItemsQuery, viewOf, type SortOrder, PAGE_SIZE } from './itemsQuery'
+import type { Selection } from './river'
 
 async function readJson(res: Response): Promise<unknown> {
   if (!res.ok) {
@@ -145,11 +147,68 @@ export async function removeFeed(url: string): Promise<void> {
   )
 }
 
-/** Query stored items, optionally scoped to one feed (by its URL = `feedId`). */
-export async function listItems(feedId?: string): Promise<Item[]> {
-  const path = feedId ? `/api/items?feedId=${encodeURIComponent(feedId)}` : '/api/items'
-  const body = await readJson(await fetchWithReauth(path))
-  return asArray(body, 'items').map((r) => shapeItem(r as RawItem))
+export type ItemsPage = { items: Item[]; total: number; page: number; pageSize: number; totalPages: number }
+
+/** Fetch one filtered, paginated page for a selection (see lib/itemsQuery). */
+export async function listItems(
+  sel: Selection,
+  opts: { page?: number; limit?: number; order?: SortOrder; total?: number | null } = {},
+): Promise<ItemsPage> {
+  const page = opts.page ?? 1
+  const limit = opts.limit ?? PAGE_SIZE
+  const { params, reverse } = buildItemsQuery(sel, page, limit, opts.order ?? 'newest', opts.total ?? null)
+  const body = await readJson(await fetchWithReauth(`/api/items?${params.toString()}`))
+  const b = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}) as Record<string, unknown>
+  const num = (v: unknown, d: number) => (typeof v === 'number' && !Number.isNaN(v) ? v : d)
+  const items = asArray(body, 'items').map((r) => shapeItem(r as RawItem))
+  if (reverse) items.reverse()
+  return {
+    items,
+    total: num(b.total, items.length),
+    page: num(b.page, page),
+    pageSize: num(b.pageSize, limit),
+    totalPages: num(b.totalPages, 1),
+  }
+}
+
+export type Counts = { unreadByFeed: Record<string, number>; starred: number }
+
+/** Fetch unread-by-feed and starred counts for sidebar badges. */
+export async function getCounts(): Promise<Counts> {
+  const body = await readJson(await fetchWithReauth('/api/counts'))
+  const b = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}) as Record<string, unknown>
+  const unreadByFeed =
+    b.unreadByFeed && typeof b.unreadByFeed === 'object' ? (b.unreadByFeed as Record<string, number>) : {}
+  const starred = typeof b.starred === 'number' && !Number.isNaN(b.starred) ? b.starred : 0
+  return { unreadByFeed, starred }
+}
+
+/**
+ * Mark every item in a selection's view as read in one server-side pass.
+ * Returns the number of rows updated.
+ */
+export async function markAllRead(sel: Selection): Promise<number> {
+  const payload: Record<string, unknown> = { view: viewOf(sel) }
+  if (sel.kind === 'feed') payload.feedId = sel.url
+  if (sel.kind === 'folder') payload.folder = sel.name
+  const body = await readJson(
+    await fetchWithReauth('/api/items/read-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  )
+  const b = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}) as Record<string, unknown>
+  return typeof b.updated === 'number' && !Number.isNaN(b.updated) ? b.updated : 0
+}
+
+/** Fetch a single item by guid (deep-link), or null if it doesn't exist. */
+export async function getItem(guid: string): Promise<Item | null> {
+  const params = new URLSearchParams()
+  params.set('guid', guid)
+  const body = await readJson(await fetchWithReauth(`/api/items?${params.toString()}`))
+  const items = asArray(body, 'items')
+  return items.length > 0 ? shapeItem(items[0] as RawItem) : null
 }
 
 /**
