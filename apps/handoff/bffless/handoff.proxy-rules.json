@@ -166,6 +166,38 @@
         "name": "Handoff presigned prepare",
         "steps": [
           {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.filename != null) ? String(b.filename) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sibling",
+            "name": "sibling",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.body.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.check"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "guard",
+            "name": "guard",
+            "config": {
+              "code": "function handler({ user, steps }) { var pre = (steps && steps.pre) || {}; if (!pre.check) return { collision: false, ok: true }; var uid = (user && user.id) || null; var isRoot = pre.parentId === 'root'; var rows = (steps && steps.sibling) || []; var hit = false; for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; if (isRoot && r.ownerId !== uid) continue; var nm = (r.displayName != null) ? r.displayName : ((r.original_name != null) ? r.original_name : r.filename); if (nm === pre.name) { hit = true; break; } } return { collision: hit, ok: !hit }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
             "id": "presigned",
             "name": "presigned",
             "config": {
@@ -174,7 +206,8 @@
               "key": "request.body.path",
               "filename": "request.body.filename",
               "expiresIn": 3600,
-              "maxFileSize": 524288000
+              "maxFileSize": 524288000,
+              "condition": "steps.guard.ok"
             },
             "handlerType": "presigned_upload"
           },
@@ -184,12 +217,24 @@
             "config": {
               "body": "{{{steps.presigned}}}",
               "status": 200,
+              "condition": "steps.guard.ok",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "conflict",
+            "name": "conflict",
+            "config": {
+              "body": "{\"error\":\"An item with that name already exists in this folder. Rename it and try again.\"}",
+              "status": 409,
+              "condition": "steps.guard.collision",
               "contentType": "application/json"
             },
             "handlerType": "response_handler"
           }
         ],
-        "description": "Mint a presigned PUT for direct-to-bucket upload"
+        "description": "Mint a presigned PUT for direct-to-bucket upload — rejects (409) when a sibling in the target Folder already has this name (in-Folder uniqueness), so the existing object is never overwritten"
       },
       "isEnabled": true,
       "description": "Mint a presigned PUT URL for a direct-to-bucket content upload"
@@ -205,6 +250,38 @@
       "pipelineConfig": {
         "name": "Handoff register node",
         "steps": [
+          {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.displayName != null) ? String(b.displayName) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sibling",
+            "name": "sibling",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.body.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.check"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "guard",
+            "name": "guard",
+            "config": {
+              "code": "function handler({ user, steps }) { var pre = (steps && steps.pre) || {}; if (!pre.check) return { collision: false, ok: true }; var uid = (user && user.id) || null; var isRoot = pre.parentId === 'root'; var rows = (steps && steps.sibling) || []; var hit = false; for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; if (isRoot && r.ownerId !== uid) continue; var nm = (r.displayName != null) ? r.displayName : ((r.original_name != null) ? r.original_name : r.filename); if (nm === pre.name) { hit = true; break; } } return { collision: hit, ok: !hit }; }"
+            },
+            "handlerType": "function_handler"
+          },
           {
             "id": "register",
             "name": "register",
@@ -222,7 +299,8 @@
                 "displayName": "request.body.displayName"
               },
               "maxFileSize": 524288000,
-              "originalName": "request.body.originalName"
+              "originalName": "request.body.originalName",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "register_upload"
           },
@@ -230,7 +308,8 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.register) || {};\n  var body = (request && request.body) || {};\n  var rawSize = (r.size != null) ? r.size : null;\n  var size = (rawSize != null) ? Number(rawSize) : null;\n  var rawCreated = (r.createdMs != null) ? r.createdMs : body.createdMs;\n  var created = (rawCreated != null) ? Number(rawCreated) : 0;\n  return {\n    node: {\n      id: r.id || r.recordId || r.record_id || null,\n      type: r.nodeType || 'file',\n      name: r.displayName || body.displayName || r.original_name || r.filename || 'Untitled',\n      mime: r.content_type || r.mime_type || null,\n      size: (size != null && !isNaN(size)) ? size : null,\n      url: r.url || null,\n      storageKey: r.storage_path || body.storageKey || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: 'inheriting', grants: [],\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.register) || {};\n  var body = (request && request.body) || {};\n  var rawSize = (r.size != null) ? r.size : null;\n  var size = (rawSize != null) ? Number(rawSize) : null;\n  var rawCreated = (r.createdMs != null) ? r.createdMs : body.createdMs;\n  var created = (rawCreated != null) ? Number(rawCreated) : 0;\n  return {\n    node: {\n      id: r.id || r.recordId || r.record_id || null,\n      type: r.nodeType || 'file',\n      name: r.displayName || body.displayName || r.original_name || r.filename || 'Untitled',\n      mime: r.content_type || r.mime_type || null,\n      size: (size != null && !isNaN(size)) ? size : null,\n      url: r.url || null,\n      storageKey: r.storage_path || body.storageKey || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: 'inheriting', grants: [],\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "function_handler"
           },
@@ -240,12 +319,24 @@
             "config": {
               "body": "{\"node\": {{{steps.shape.node}}}}",
               "status": 200,
+              "condition": "steps.guard.ok",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "conflict",
+            "name": "conflict",
+            "config": {
+              "body": "{\"error\":\"An item with that name already exists in this folder. Rename it and try again.\"}",
+              "status": 409,
+              "condition": "steps.guard.collision",
               "contentType": "application/json"
             },
             "handlerType": "response_handler"
           }
         ],
-        "description": "Register an uploaded file as a node and return the shaped Node"
+        "description": "Register an uploaded file as a node and return the shaped Node — rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)"
       },
       "isEnabled": true,
       "description": "Finalize a direct-to-bucket upload into a handoff_nodes file record"
@@ -754,6 +845,38 @@
         "name": "Handoff register site",
         "steps": [
           {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.name != null) ? String(b.name) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sibling",
+            "name": "sibling",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.body.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.check"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "guard",
+            "name": "guard",
+            "config": {
+              "code": "function handler({ user, steps }) { var pre = (steps && steps.pre) || {}; if (!pre.check) return { collision: false, ok: true }; var uid = (user && user.id) || null; var isRoot = pre.parentId === 'root'; var rows = (steps && steps.sibling) || []; var hit = false; for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; if (isRoot && r.ownerId !== uid) continue; var nm = (r.displayName != null) ? r.displayName : ((r.original_name != null) ? r.original_name : r.filename); if (nm === pre.name) { hit = true; break; } } return { collision: hit, ok: !hit }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
             "id": "build",
             "name": "build",
             "config": {
@@ -776,7 +899,8 @@
                 "storage_path": "steps.build.storagePrefix",
                 "displayName": "request.body.name"
               },
-              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "data_create"
           },
@@ -784,7 +908,8 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var build = (steps && steps.build) || {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var entry = r.siteEntry || build.entry || body.entry || 'index.html';\n  var created = (r.createdMs != null) ? Number(r.createdMs) : (body.createdMs != null ? Number(body.createdMs) : 0);\n  var url = r.url || build.url || null;\n  return {\n    node: {\n      id: id, type: r.nodeType || 'site',\n      name: r.displayName || body.name || 'Untitled site',\n      mime: null, size: null, url: url, storageKey: null,\n      path: build.path || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting', grants: [],\n      siteEntry: entry,\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var build = (steps && steps.build) || {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var entry = r.siteEntry || build.entry || body.entry || 'index.html';\n  var created = (r.createdMs != null) ? Number(r.createdMs) : (body.createdMs != null ? Number(body.createdMs) : 0);\n  var url = r.url || build.url || null;\n  return {\n    node: {\n      id: id, type: r.nodeType || 'site',\n      name: r.displayName || body.name || 'Untitled site',\n      mime: null, size: null, url: url, storageKey: null,\n      path: build.path || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting', grants: [],\n      siteEntry: entry,\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "function_handler"
           },
@@ -794,12 +919,24 @@
             "config": {
               "body": "{\"node\": {{{steps.shape.node}}}}",
               "status": 200,
+              "condition": "steps.guard.ok",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "conflict",
+            "name": "conflict",
+            "config": {
+              "body": "{\"error\":\"An item with that name already exists in this folder. Rename it and try again.\"}",
+              "status": 409,
+              "condition": "steps.guard.collision",
               "contentType": "application/json"
             },
             "handlerType": "response_handler"
           }
         ],
-        "description": "Create a site node at its content path prefix (storage_path = owner/repo/uploads/content/<path>; url = the Entry's content URL) and return the shaped Node. No manifest — assets serve by path passthrough on the unified content endpoint (structural storage)."
+        "description": "Create a site node at its content path prefix (storage_path = owner/repo/uploads/content/<path>; url = the Entry's content URL) and return the shaped Node. No manifest — assets serve by path passthrough on the unified content endpoint (structural storage). Rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)."
       },
       "isEnabled": true,
       "description": "Register a Site node (multi-file HTML bundle) at its content path prefix"
