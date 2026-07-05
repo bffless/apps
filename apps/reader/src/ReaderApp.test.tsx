@@ -39,7 +39,7 @@ function makePage(items: Item[], total = items.length): ItemsPage {
 
 // Counts consistent with the default page (the feed has unread items): the
 // mark-all-read button is now gated on server counts, not a loaded-page scan.
-const FEED_COUNTS: Counts = { unreadByFeed: { [FEED_URL]: 3 }, starred: 0 }
+const FEED_COUNTS: Counts = { unreadByFeed: { [FEED_URL]: 3 }, starred: 0, unreadStarred: 0 }
 
 /** Mirror the App.tsx route table, rendering ReaderApp for each navigable view. */
 function renderAt(path: string) {
@@ -256,15 +256,37 @@ describe('ReaderApp — mark-all-read gating on counts', () => {
     // Loaded page is entirely read, yet the feed's unread count is > 0 (unread on
     // another page). The button is gated on counts, so it must still show.
     vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', read: true })], 3))
-    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 2 }, starred: 0 })
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 2 }, starred: 0, unreadStarred: 0 })
     renderAt(feedPath)
     expect(await screen.findByRole('button', { name: /mark all read/i })).toBeInTheDocument()
   })
 
   it('hides the button when counts report the view has no unread', async () => {
     vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', read: true })], 3))
-    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 0 }, starred: 0 })
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 0 }, starred: 0, unreadStarred: 0 })
     renderAt(feedPath)
+    await waitFor(() => expect(api.getCounts).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /mark all read/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('ReaderApp — starred mark-all-read gating on unreadStarred (#163)', () => {
+  it('shows the button in the starred view when unreadStarred > 0', async () => {
+    // The starred view's mark-all-read is gated on the server `unreadStarred`
+    // count (unread AND starred), not a loaded-page scan.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', starred: true, read: false })], 3))
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: {}, starred: 5, unreadStarred: 2 })
+    renderAt('/starred')
+    expect(await screen.findByRole('button', { name: /mark all read/i })).toBeInTheDocument()
+  })
+
+  it('hides the button in the starred view when unreadStarred is 0 even if the loaded page has an unread row', async () => {
+    // Loaded page holds an unread starred row, but the server reports no
+    // unread-among-starred — the button is gated on the count, so it must hide.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', starred: true, read: false })], 3))
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: {}, starred: 5, unreadStarred: 0 })
+    renderAt('/starred')
     await waitFor(() => expect(api.getCounts).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /mark all read/i })).not.toBeInTheDocument()

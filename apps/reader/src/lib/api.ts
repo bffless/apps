@@ -171,7 +171,7 @@ export async function listItems(
   }
 }
 
-export type Counts = { unreadByFeed: Record<string, number>; starred: number }
+export type Counts = { unreadByFeed: Record<string, number>; starred: number; unreadStarred: number }
 
 /** Fetch unread-by-feed and starred counts for sidebar badges. */
 export async function getCounts(): Promise<Counts> {
@@ -180,7 +180,8 @@ export async function getCounts(): Promise<Counts> {
   const unreadByFeed =
     b.unreadByFeed && typeof b.unreadByFeed === 'object' ? (b.unreadByFeed as Record<string, number>) : {}
   const starred = typeof b.starred === 'number' && !Number.isNaN(b.starred) ? b.starred : 0
-  return { unreadByFeed, starred }
+  const unreadStarred = typeof b.unreadStarred === 'number' && !Number.isNaN(b.unreadStarred) ? b.unreadStarred : 0
+  return { unreadByFeed, starred, unreadStarred }
 }
 
 /**

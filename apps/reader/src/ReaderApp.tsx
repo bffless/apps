@@ -75,7 +75,7 @@ export function ReaderApp({
 } = {}) {
   const [feeds, setFeeds] = useState<Feed[]>([])
   const [pageData, setPageData] = useState<ItemsPage | null>(null)
-  const [counts, setCounts] = useState<Counts>({ unreadByFeed: {}, starred: 0 })
+  const [counts, setCounts] = useState<Counts>({ unreadByFeed: {}, starred: 0, unreadStarred: 0 })
   const [reloadSeq, setReloadSeq] = useState(0)
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [loading, setLoading] = useState(true)
@@ -578,11 +578,12 @@ export function ReaderApp({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [visible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection, page])
 
-  // Does the CURRENT view have unread items? Derived from server counts/totals
-  // (not a loaded-page scan), so the "Mark all read" button shows when the view
-  // has unread on ANY page, even if the loaded page happens to be all-read.
-  // Starred is the exception: counts don't expose "unread among starred", so it
-  // falls back to scanning the loaded page (starred sets are small).
+  // Does the CURRENT view have unread items? Derived entirely from server
+  // counts/totals (not a loaded-page scan), so the "Mark all read" button shows
+  // when the view has unread on ANY page, even if the loaded page happens to be
+  // all-read. Starred uses the server's `unreadStarred` count (#163) — the count
+  // of items that are both unread and starred — rather than the old fallback that
+  // scanned only the loaded page.
   const viewHasUnread = useMemo(() => {
     switch (selection.kind) {
       case 'river':
@@ -595,9 +596,9 @@ export function ReaderApp({
         return folderUnread(counts.unreadByFeed, feeds.filter((f) => urls.has(f.url))) > 0
       }
       case 'starred':
-        return visible.some((i) => !i.read)
+        return counts.unreadStarred > 0
     }
-  }, [selection, riverTotal, counts, feeds, visible])
+  }, [selection, riverTotal, counts, feeds])
 
   // Desktop shows the three-column layout; below `lg` the mobile single-pane
   // flow governs (#135). The JS branch flips at the same width as the `lg:`
