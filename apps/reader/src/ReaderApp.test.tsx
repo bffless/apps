@@ -4,6 +4,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { ReaderApp } from './ReaderApp'
 import * as api from './lib/api'
 import type { Item } from './lib/items'
+import type { Feed } from './lib/feeds'
 import type { ItemsPage, Counts } from './lib/api'
 
 // `lib/api` is the transport seam; the component's job is *which* calls it makes
@@ -37,25 +38,40 @@ function makePage(items: Item[], total = items.length): ItemsPage {
   return { items, total, page: 1, pageSize: 20, totalPages: Math.max(1, Math.ceil(total / 20)) }
 }
 
+function makeFeed(overrides: Partial<Feed> = {}): Feed {
+  return {
+    url: FEED_URL,
+    title: 'Example Feed',
+    siteUrl: null,
+    folder: null,
+    iconUrl: null,
+    lastFetchedAt: null,
+    lastError: null,
+    addedAt: null,
+    ...overrides,
+  }
+}
+
 // Counts consistent with the default page (the feed has unread items): the
 // mark-all-read button is now gated on server counts, not a loaded-page scan.
-const FEED_COUNTS: Counts = { unreadByFeed: { [FEED_URL]: 3 }, starred: 0 }
+const FEED_COUNTS: Counts = { unreadByFeed: { [FEED_URL]: 3 }, starred: 0, unreadStarred: 0 }
 
 /** Mirror the App.tsx route table, rendering ReaderApp for each navigable view. */
-function renderAt(path: string) {
+function renderAt(path: string, props: Parameters<typeof ReaderApp>[0] = {}) {
+  const el = <ReaderApp {...props} />
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route index element={<ReaderApp />} />
-        <Route path="item/:itemId" element={<ReaderApp />} />
-        <Route path="all" element={<ReaderApp />} />
-        <Route path="all/item/:itemId" element={<ReaderApp />} />
-        <Route path="starred" element={<ReaderApp />} />
-        <Route path="starred/item/:itemId" element={<ReaderApp />} />
-        <Route path="folder/:folder" element={<ReaderApp />} />
-        <Route path="folder/:folder/item/:itemId" element={<ReaderApp />} />
-        <Route path="feed/:feedId" element={<ReaderApp />} />
-        <Route path="feed/:feedId/item/:itemId" element={<ReaderApp />} />
+        <Route index element={el} />
+        <Route path="item/:itemId" element={el} />
+        <Route path="all" element={el} />
+        <Route path="all/item/:itemId" element={el} />
+        <Route path="starred" element={el} />
+        <Route path="starred/item/:itemId" element={el} />
+        <Route path="folder/:folder" element={el} />
+        <Route path="folder/:folder/item/:itemId" element={el} />
+        <Route path="feed/:feedId" element={el} />
+        <Route path="feed/:feedId/item/:itemId" element={el} />
       </Routes>
     </MemoryRouter>,
   )
@@ -69,6 +85,7 @@ beforeEach(() => {
   vi.mocked(api.getItem).mockResolvedValue(null)
   vi.mocked(api.setItemRead).mockResolvedValue(undefined)
   vi.mocked(api.setItemStar).mockResolvedValue(undefined)
+  vi.mocked(api.setFeedFolder).mockResolvedValue(undefined)
   vi.mocked(api.markAllRead).mockResolvedValue(0)
 })
 
@@ -256,15 +273,128 @@ describe('ReaderApp — mark-all-read gating on counts', () => {
     // Loaded page is entirely read, yet the feed's unread count is > 0 (unread on
     // another page). The button is gated on counts, so it must still show.
     vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', read: true })], 3))
-    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 2 }, starred: 0 })
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 2 }, starred: 0, unreadStarred: 0 })
     renderAt(feedPath)
     expect(await screen.findByRole('button', { name: /mark all read/i })).toBeInTheDocument()
   })
 
   it('hides the button when counts report the view has no unread', async () => {
     vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', read: true })], 3))
-    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 0 }, starred: 0 })
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 0 }, starred: 0, unreadStarred: 0 })
     renderAt(feedPath)
+    await waitFor(() => expect(api.getCounts).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /mark all read/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('ReaderApp — oldest-first unknown-total re-issue (#164)', () => {
+  it('re-issues the oldest-first fetch once total is known after a refresh clears it', async () => {
+    // The subtlest fetch-effect branch: an oldest-first fetch with an UNKNOWN
+    // total falls back to the newest server page, then re-issues once `total` is
+    // known. It only fires when sortOrder==='oldest' AND totalRef===null.
+    const KNOWN_TOTAL = 45
+    // A feed so the sidebar's "Refresh now" button is enabled.
+    vi.mocked(api.listFeeds).mockResolvedValue([makeFeed()])
+    // Every page resolves a real positive total so the re-issue (result.total>0) fires.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem()], KNOWN_TOTAL))
+    vi.mocked(api.refresh).mockResolvedValue({ inserted: 0, skipped: 0, errors: 0 })
+
+    // Open the drawer so the sidebar "Refresh now" control is reachable.
+    renderAt(feedPath, { drawerOpen: true })
+
+    // Initial fetch: newest, unknown total. Records total=45 for this selection.
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+    )
+
+    // Toggle to oldest. total is already KNOWN here, so this is a single fetch
+    // with total=45 — NOT the path under test, just the setup to make oldest active.
+    fireEvent.click(await screen.findByRole('button', { name: /newest first/i }))
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: KNOWN_TOTAL }),
+    )
+
+    // Refresh clears totalRef (reload()). The ensuing refetch now runs with
+    // sortOrder==='oldest' AND totalRef===null → the unknown-total path: a
+    // fallback fetch with total:null, then a re-issue once the response's total
+    // (45) is known.
+    fireEvent.click(await screen.findByRole('button', { name: /refresh now/i }))
+    await waitFor(() => expect(api.refresh).toHaveBeenCalled())
+
+    // The null→N re-issue: first the oldest fetch with unknown total…
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: null }),
+    )
+    // …then the corrected re-issue with the now-known total. Prove it's the
+    // RE-ISSUE (not the earlier toggle's oldest+45 call) by asserting an oldest
+    // fetch with total:null is immediately followed by one with total:KNOWN_TOTAL
+    // in the oldest-only call subsequence.
+    await waitFor(() => {
+      const oldestTotals = vi
+        .mocked(api.listItems)
+        .mock.calls.filter(([, opts]) => opts?.order === 'oldest')
+        .map(([, opts]) => opts?.total)
+      const nullIdx = oldestTotals.indexOf(null)
+      expect(nullIdx).toBeGreaterThanOrEqual(0)
+      expect(oldestTotals[nullIdx + 1]).toBe(KNOWN_TOTAL)
+    })
+  })
+})
+
+describe('ReaderApp — refetch folder page after moving a feed in/out of it (#161)', () => {
+  const NEWS_PATH = '/folder/News'
+
+  it('refetches the item page when a feed is moved OUT of the folder being viewed', async () => {
+    // Viewing folder "News" with a feed in it. The item page is server-scoped to
+    // that folder's membership, so moving the feed out must refetch it — the
+    // sidebar badge regroups client-side but the fetched page would go stale.
+    vi.mocked(api.listFeeds).mockResolvedValue([makeFeed({ folder: 'News' })])
+    // Open the nav drawer so the sidebar (with the move-folder select) is in the
+    // accessibility tree in the mobile single-pane branch jsdom renders.
+    renderAt(NEWS_PATH, { drawerOpen: true })
+    await waitFor(() => expect(api.listItems).toHaveBeenCalledTimes(1))
+    // Move the feed to Uncategorized (the " none" sentinel value) → out of "News".
+    const select = await screen.findByLabelText(/move example feed to a folder/i)
+    fireEvent.change(select, { target: { value: ' none' } })
+    // The move persists…
+    await waitFor(() => expect(api.setFeedFolder).toHaveBeenCalled())
+    // …and reload() re-issues the folder page fetch (case-insensitive match on
+    // the viewed folder's old membership).
+    await waitFor(() => expect(api.listItems).toHaveBeenCalledTimes(2))
+  })
+
+  it('does NOT refetch when the move does not involve the folder being viewed', async () => {
+    // Viewing folder "News", but the feed lives in "Tech". Moving it out of Tech
+    // touches neither the old nor the new = the viewed folder, so the item page
+    // membership is unchanged and must not refetch.
+    vi.mocked(api.listFeeds).mockResolvedValue([makeFeed({ folder: 'Tech' })])
+    renderAt(NEWS_PATH, { drawerOpen: true })
+    await waitFor(() => expect(api.listItems).toHaveBeenCalledTimes(1))
+    const select = await screen.findByLabelText(/move example feed to a folder/i)
+    fireEvent.change(select, { target: { value: ' none' } })
+    await waitFor(() => expect(api.setFeedFolder).toHaveBeenCalled())
+    // No extra page fetch: the move is unrelated to the "News" view.
+    expect(api.listItems).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ReaderApp — starred mark-all-read gating on unreadStarred (#163)', () => {
+  it('shows the button in the starred view when unreadStarred > 0', async () => {
+    // The starred view's mark-all-read is gated on the server `unreadStarred`
+    // count (unread AND starred), not a loaded-page scan.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', starred: true, read: false })], 3))
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: {}, starred: 5, unreadStarred: 2 })
+    renderAt('/starred')
+    expect(await screen.findByRole('button', { name: /mark all read/i })).toBeInTheDocument()
+  })
+
+  it('hides the button in the starred view when unreadStarred is 0 even if the loaded page has an unread row', async () => {
+    // Loaded page holds an unread starred row, but the server reports no
+    // unread-among-starred — the button is gated on the count, so it must hide.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', starred: true, read: false })], 3))
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: {}, starred: 5, unreadStarred: 0 })
+    renderAt('/starred')
     await waitFor(() => expect(api.getCounts).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /mark all read/i })).not.toBeInTheDocument()
