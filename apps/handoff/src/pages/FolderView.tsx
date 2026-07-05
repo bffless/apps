@@ -198,6 +198,9 @@ function Breadcrumb({ folderId, onChainUpdate }: BreadcrumbProps) {
 
 interface UploadFolderControlProps {
   folderId: string
+  /** The owning Folder's verbatim content path — the structural prefix a folder
+   *  import stores its files under (`''` for a root import). */
+  folderPath: string
   onDone: (message: string) => void
 }
 
@@ -208,7 +211,7 @@ export interface UploadFolderControlHandle {
 }
 
 const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderControlProps>(
-  function UploadFolderControl({ folderId, onDone }, ref) {
+  function UploadFolderControl({ folderId, folderPath, onDone }, ref) {
     const folderRef = useRef<HTMLInputElement>(null)
     const zipRef = useRef<HTMLInputElement>(null)
 
@@ -290,7 +293,7 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       setPhase('importing')
       setUploadProgress(`Importing ${plural(folderCount, 'folder')} and ${plural(fileCount, 'file')}…`)
       setUploadError(null)
-      const result = await importFolder({ items: rawItems, parentId: folderId })
+      const result = await importFolder({ items: rawItems, parentId: folderId, basePath: folderPath })
       if ('error' in result) {
         const err = result.error
         const msg =
@@ -930,6 +933,14 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
+  // The current Folder's verbatim content path — the prefix every File uploaded
+  // here (single file OR folder import) is stored under, so relative refs resolve
+  // on the unified content endpoint (structural storage). '' for a root upload.
+  const currentFolderPath = folderContentPath(
+    currentFolder ? { ...ancestorNodesById, [currentFolder.id]: currentFolder } : ancestorNodesById,
+    folderId,
+  )
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUploadedNodes([])
@@ -940,13 +951,10 @@ export function FolderView({ folderId }: FolderViewProps) {
   async function handleFile(file: File) {
     // Store the File at its verbatim structural key (owning Folder path + name)
     // so relative refs resolve on the unified content endpoint (structural
-    // storage, Slice 1). The current Folder's node is in the resolved chain.
-    const nodesById = currentFolder
-      ? { ...ancestorNodesById, [currentFolder.id]: currentFolder }
-      : ancestorNodesById
+    // storage, Slice 1).
     let path: string
     try {
-      path = contentSubPath(folderContentPath(nodesById, folderId), file.name)
+      path = contentSubPath(currentFolderPath, file.name)
     } catch {
       toast(`Can’t upload “${file.name}”: unsupported name.`, 'error')
       return
@@ -1144,7 +1152,12 @@ export function FolderView({ folderId }: FolderViewProps) {
       {/* Upload engine — panels render here when a folder/zip is being ingested */}
       {canWrite && (
         <div className="mb-4">
-          <UploadFolderControl ref={uploadFolderRef} folderId={folderId} onDone={handleImportDone} />
+          <UploadFolderControl
+            ref={uploadFolderRef}
+            folderId={folderId}
+            folderPath={currentFolderPath}
+            onDone={handleImportDone}
+          />
         </div>
       )}
 

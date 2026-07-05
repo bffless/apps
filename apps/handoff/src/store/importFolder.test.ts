@@ -105,6 +105,84 @@ describe('importFolder — no-HTML nested tree', () => {
   })
 })
 
+describe('importFolder — verbatim structural storage', () => {
+  it('stores each file at its structural path (parent path + relative path) so cross-sibling refs resolve', async () => {
+    const store = makeStore()
+    // A doc under docs/ plus a sibling asset folder — the classic
+    // `../assets/img.png` cross-sibling reference the slice must keep intact.
+    const items = [
+      item('docs/guide.md', '![](../assets/logo.png)'),
+      item('assets/logo.png', 'PNG'),
+    ]
+
+    const result = await store.dispatch(
+      handoffApi.endpoints.importFolder.initiate({ items, parentId: 'root', basePath: '' }),
+    )
+    expect('data' in result).toBe(true)
+    expect(result.data!.failures).toEqual([])
+
+    const root = await listFolder('root')
+    const docs = root.find((n) => n.type === 'folder' && n.name === 'docs')!
+    const assets = root.find((n) => n.type === 'folder' && n.name === 'assets')!
+
+    const guide = (await listFolder(docs.id)).find((n) => n.name === 'guide.md')!
+    const logo = (await listFolder(assets.id)).find((n) => n.name === 'logo.png')!
+
+    // Keys mirror the dropped tree verbatim — no UUID prefix, no flattening —
+    // so `../assets/logo.png` from docs/guide.md resolves to the real object.
+    expect(guide.path).toBe('docs/guide.md')
+    expect(guide.url).toBe('/api/uploads/content/docs/guide.md')
+    expect(logo.path).toBe('assets/logo.png')
+    expect(logo.url).toBe('/api/uploads/content/assets/logo.png')
+
+    // The cross-sibling relative reference resolves to the stored asset URL.
+    const resolved = new URL('../assets/logo.png', `https://x/api/uploads/content/docs/guide.md`)
+    expect(resolved.pathname).toBe('/api/uploads/content/assets/logo.png')
+  })
+
+  it('prefixes the owning Folder path when importing into a sub-folder (non-root basePath)', async () => {
+    const store = makeStore()
+    const items = [item('sub/a.md'), item('b.md')]
+
+    const result = await store.dispatch(
+      handoffApi.endpoints.importFolder.initiate({
+        items,
+        parentId: 'parent-folder',
+        basePath: 'Design Docs',
+      }),
+    )
+    expect('data' in result).toBe(true)
+    expect(result.data!.failures).toEqual([])
+
+    const inParent = await listFolder('parent-folder')
+    const b = inParent.find((n) => n.name === 'b.md')!
+    const sub = inParent.find((n) => n.type === 'folder' && n.name === 'sub')!
+    const a = (await listFolder(sub.id)).find((n) => n.name === 'a.md')!
+
+    expect(b.path).toBe('Design Docs/b.md')
+    expect(a.path).toBe('Design Docs/sub/a.md')
+  })
+
+  it('rejects a structurally-unsafe name as a per-file failure without aborting the import', async () => {
+    const store = makeStore()
+    // The junk-drop in planSiteUpload strips typical junk; a control char in a
+    // name is what contentSubPath refuses — it must surface as a failure, not
+    // abort the whole import.
+    const items = [item('ok.md'), item(`bad${String.fromCharCode(1)}.md`)]
+
+    const result = await store.dispatch(
+      handoffApi.endpoints.importFolder.initiate({ items, parentId: 'root', basePath: '' }),
+    )
+    expect('data' in result).toBe(true)
+    expect(result.data!.filesUploaded).toBe(1)
+    expect(result.data!.failures).toHaveLength(1)
+    expect(result.data!.failures[0]!.relPath).toContain('bad')
+
+    const root = await listFolder('root')
+    expect(root.map((n) => n.name)).toContain('ok.md')
+  })
+})
+
 describe('importFolder — tree branch ignores HTML', () => {
   it('registers index.html as a plain File when imported as a folder of files', async () => {
     const store = makeStore()

@@ -19,6 +19,7 @@ import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
 import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
+import { contentSubPath } from '../lib/contentPath'
 import type { Grant } from '../lib/acl'
 
 export type { HandoffNode, PreparedUpload, RegisterBody, Grant }
@@ -301,17 +302,25 @@ export const handoffApi = createApi({
      *   2. Create each sub-folder via POST /api/folders, building a
      *      `relDir -> folderId` map (root dir '' = the starting parentId).
      *   3. Upload each file (prepare → bucket PUT → POST /api/nodes register)
-     *      into its owning folder, with a bounded concurrency pool.
+     *      into its owning folder at its VERBATIM structural key
+     *      (`contentSubPath(basePath, relPath)` = owning-Folder path + the file's
+     *      normalised relative path), with a bounded concurrency pool. Storing at
+     *      the structural key mirrors the dropped tree, so relative references —
+     *      same-folder `assets/x` and cross-sibling `../y/z` — resolve on the
+     *      unified content endpoint (structural storage, Slice 2).
      *
      * A folder-creation failure aborts (children would be orphaned). File
-     * failures are collected into `failures` so a partial import still reports
-     * what landed and what didn't — never a silent no-op.
+     * failures — including a structurally-unsafe name `contentSubPath` refuses —
+     * are collected into `failures` so a partial import still reports what
+     * landed and what didn't — never a silent no-op.
+     *
+     * `basePath` is the owning Folder's content path (`''` for a root import).
      */
     importFolder: builder.mutation<
       ImportFolderResult,
-      { items: { relPath: string; file: File }[]; parentId: string }
+      { items: { relPath: string; file: File }[]; parentId: string; basePath?: string }
     >({
-      async queryFn({ items, parentId }, _queryApi, _extraOptions, baseQuery) {
+      async queryFn({ items, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
         try {
           // Normalise once (carries the File through) so file lookup uses the
           // same paths planFolderImport derives its dirs/files from.
@@ -352,10 +361,20 @@ export const handoffApi = createApi({
             }
             const targetId = dirToId[f.dir] ?? parentId
             try {
+              // Verbatim structural key = owning-Folder path + the file's
+              // normalised relative path, so the stored key mirrors the tree.
+              // A structurally-unsafe name is rejected here (never sanitised)
+              // and surfaces as a per-file failure below.
+              let path: string
+              try {
+                path = contentSubPath(basePath, f.relPath)
+              } catch {
+                throw new Error('unsupported name')
+              }
               const prepRes = await baseQuery({
                 url: 'api/uploads/prepare',
                 method: 'POST',
-                body: { filename: f.name, contentType: file.type || 'application/octet-stream' },
+                body: { filename: f.name, contentType: file.type || 'application/octet-stream', path },
               })
               if (prepRes.error) throw new Error(`prepare failed (${JSON.stringify(prepRes.error)})`)
               const prepared = prepRes.data as PreparedUpload
