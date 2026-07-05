@@ -89,6 +89,36 @@ export function viewFromPathname(pathname: string): ViewName {
 }
 
 /**
+ * The current page number encoded in a location `search` string (`?page=n`).
+ * Page is a *query* param — deliberately off the path — so it coexists with the
+ * `/…/item/:itemId` nesting and page 1 is the clean, param-free URL. Anything
+ * missing, non-numeric, or ≤ 0 collapses to page 1 (the always-valid default);
+ * a fractional value is floored.
+ */
+export function pageFromSearch(search: string): number {
+  const raw = new URLSearchParams(search).get('page')
+  const n = Math.floor(Number(raw))
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
+
+/**
+ * A path (from {@link pathForSelection} / {@link pathForItem}) with its `?page`
+ * query param set to `page` — the inverse of {@link pageFromSearch}. Page 1 is
+ * the clean URL, so it *removes* any `page` param (page 1 == absent); other
+ * pages replace an existing `page` rather than duplicating it, and any other
+ * query params on the path are preserved. Handles both a bare path and one that
+ * already carries a query string.
+ */
+export function withPage(path: string, page: number): string {
+  const [base, query = ''] = path.split('?')
+  const params = new URLSearchParams(query)
+  if (page <= 1) params.delete('page')
+  else params.set('page', String(page))
+  const qs = params.toString()
+  return qs ? `${base}?${qs}` : base
+}
+
+/**
  * The internal {@link Selection} for a set of route params. Params carry the
  * already-decoded folder name / feed url, so this maps straight through. An
  * unknown / missing folder or feed id yields an empty-keyed selection (which

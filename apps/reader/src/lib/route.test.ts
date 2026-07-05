@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  pageFromSearch,
   pathForItem,
   pathForSelection,
   selectionFromParams,
   viewFromPathname,
+  withPage,
   type RouteParams,
 } from './route'
 import type { Selection } from './river'
@@ -101,6 +103,62 @@ describe('selectionFromParams', () => {
   it('falls back to an empty-keyed selection for a missing id (no crash)', () => {
     expect(selectionFromParams({ view: 'folder' })).toEqual({ kind: 'folder', name: '' })
     expect(selectionFromParams({ view: 'feed' })).toEqual({ kind: 'feed', url: '' })
+  })
+})
+
+describe('pageFromSearch', () => {
+  it('reads the page number from the query string', () => {
+    expect(pageFromSearch('?page=3')).toBe(3)
+    expect(pageFromSearch('?page=1')).toBe(1)
+    expect(pageFromSearch('?page=42')).toBe(42)
+  })
+
+  it('reads page alongside other query params', () => {
+    expect(pageFromSearch('?foo=bar&page=5')).toBe(5)
+    expect(pageFromSearch('?page=5&foo=bar')).toBe(5)
+  })
+
+  it('defaults to 1 when absent or empty', () => {
+    expect(pageFromSearch('')).toBe(1)
+    expect(pageFromSearch('?')).toBe(1)
+    expect(pageFromSearch('?foo=bar')).toBe(1)
+  })
+
+  it('clamps non-numeric or non-positive values to 1', () => {
+    expect(pageFromSearch('?page=abc')).toBe(1)
+    expect(pageFromSearch('?page=0')).toBe(1)
+    expect(pageFromSearch('?page=-4')).toBe(1)
+    expect(pageFromSearch('?page=')).toBe(1)
+  })
+
+  it('floors fractional values', () => {
+    expect(pageFromSearch('?page=2.9')).toBe(2)
+  })
+})
+
+describe('withPage', () => {
+  it('appends ?page for pages beyond the first', () => {
+    expect(withPage('/feed/abc', 3)).toBe('/feed/abc?page=3')
+    expect(withPage('/', 2)).toBe('/?page=2')
+  })
+
+  it('omits ?page for page 1 (clean path)', () => {
+    expect(withPage('/feed/abc', 1)).toBe('/feed/abc')
+    expect(withPage('/', 1)).toBe('/')
+  })
+
+  it('preserves an existing query string when adding page', () => {
+    expect(withPage('/feed/abc?foo=bar', 3)).toBe('/feed/abc?foo=bar&page=3')
+  })
+
+  it('replaces an existing page rather than duplicating it', () => {
+    expect(withPage('/feed/abc?page=2', 4)).toBe('/feed/abc?page=4')
+    expect(withPage('/feed/abc?foo=bar&page=2', 4)).toBe('/feed/abc?foo=bar&page=4')
+  })
+
+  it('drops an existing page when navigating back to page 1', () => {
+    expect(withPage('/feed/abc?page=2', 1)).toBe('/feed/abc')
+    expect(withPage('/feed/abc?foo=bar&page=2', 1)).toBe('/feed/abc?foo=bar')
   })
 })
 

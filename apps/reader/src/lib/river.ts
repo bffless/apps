@@ -1,25 +1,22 @@
 /**
- * River + read/unread + unread-count logic — pure, so it's the tested seam for
- * story #114. A **selection** (the river, all feeds, or one feed) plus the loaded
- * item set is enough to derive the display list and every unread count; the
- * component just renders what these functions return and calls the persistence
- * seam (`data_update` via `api.setItemRead`). Read state is toggled with
- * immutable transitions so the UI can update optimistically before the write
- * lands and revert on failure.
+ * Selection identity + read/starred/unread transition logic — pure, so it's the
+ * tested seam for story #114. A **selection** (the river, all feeds, or one
+ * feed) identifies what the component is viewing; the server-paginated item
+ * page is fetched separately (see `itemsQuery`/`api`). Read state is toggled
+ * with immutable transitions so the UI can update optimistically before the
+ * write lands and revert on failure, calling the persistence seam
+ * (`data_update` via `api.setItemRead`).
  *
  * The **river** is the unread stream across every feed (D-river): read items
  * drop out of it but stay queryable in the "all"/per-feed views — nothing is
  * deleted here (retention is #119).
  *
  * Star state (#115) rides the same rails: {@link setStarred} is the immutable
- * transition, the `starred` selection scopes the saved-items view, and
- * {@link totalStarred} feeds its badge — persisted via `data_update` at the same
- * seam as read.
+ * transition, and the `starred` selection scopes the saved-items view —
+ * persisted via `data_update` at the same seam as read.
  */
 
-import { sortItemsNewestFirst, type Item } from './items'
-import { feedUrlsInFolder } from './folders'
-import type { Feed } from './feeds'
+import type { Item } from './items'
 
 /** What the sidebar has selected. */
 export type Selection =
@@ -39,44 +36,6 @@ export function selectionKey(sel: Selection): string {
 /** Whether two selections point at the same view. */
 export function selectionEquals(a: Selection, b: Selection): boolean {
   return selectionKey(a) === selectionKey(b)
-}
-
-/**
- * The ordered list to display for a selection, derived client-side from the full
- * loaded set: the river filters to unread; a feed scopes to its `feedId`; all
- * passes everything. Always newest-first (shared comparator with the per-feed
- * list). Non-mutating.
- */
-export function itemsForSelection(items: Item[], sel: Selection, feeds: Feed[] = []): Item[] {
-  let scoped = items
-  if (sel.kind === 'feed') scoped = items.filter((i) => i.feedId === sel.url)
-  if (sel.kind === 'folder') {
-    const urls = feedUrlsInFolder(feeds, sel.name)
-    scoped = items.filter((i) => urls.has(i.feedId))
-  }
-  if (sel.kind === 'river') scoped = scoped.filter((i) => !i.read)
-  if (sel.kind === 'starred') scoped = scoped.filter((i) => i.starred)
-  return sortItemsNewestFirst(scoped)
-}
-
-/** Unread count keyed by `feedId`, over the whole set. Feeds with none are omitted. */
-export function unreadCountsByFeed(items: Item[]): Record<string, number> {
-  const counts: Record<string, number> = {}
-  for (const item of items) {
-    if (item.read) continue
-    counts[item.feedId] = (counts[item.feedId] ?? 0) + 1
-  }
-  return counts
-}
-
-/** Total unread across all feeds — the river's badge. */
-export function totalUnread(items: Item[]): number {
-  return items.reduce((n, item) => (item.read ? n : n + 1), 0)
-}
-
-/** Total starred across all feeds — the starred view's badge (#115). */
-export function totalStarred(items: Item[]): number {
-  return items.reduce((n, item) => (item.starred ? n + 1 : n), 0)
 }
 
 /**
