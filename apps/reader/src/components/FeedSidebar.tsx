@@ -150,9 +150,10 @@ function FeedRow({
   onRemove?: () => void
   onMoveFolder?: (folder: string | null) => void
 }) {
+  const hasControls = Boolean(onMoveFolder || onRemove)
   return (
     <div
-      className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${
+      className={`group relative flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${
         indent ? 'ml-3' : ''
       } ${active ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}
     >
@@ -168,54 +169,66 @@ function FeedRow({
       </button>
       {count != null && count > 0 && (
         <span
-          className={`shrink-0 rounded-full px-1.5 text-xs tabular-nums ${
+          className={`shrink-0 rounded-full px-1.5 text-xs tabular-nums transition-opacity ${
             active ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-          } group-hover:opacity-100`}
+          } ${hasControls ? 'group-hover:opacity-0' : ''}`}
           aria-label={`${count} unread`}
         >
           {count}
         </span>
       )}
-      {onMoveFolder && (
-        <select
-          aria-label={`Move ${label} to a folder`}
-          title="Move to folder"
-          value={currentFolder ?? NO_FOLDER}
-          onChange={(e) => {
-            const v = e.target.value
-            if (v === NEW_FOLDER) {
-              const name = window.prompt('New folder name')?.trim()
-              if (name) onMoveFolder(name)
-              return
-            }
-            onMoveFolder(v === NO_FOLDER ? null : v)
-          }}
-          onClick={(e) => e.stopPropagation()}
-          className="shrink-0 rounded border border-transparent bg-transparent text-xs text-slate-400 opacity-0 transition-opacity focus:border-slate-300 focus:opacity-100 group-hover:opacity-100 dark:text-slate-500 dark:focus:border-slate-600"
-        >
-          <option value={NO_FOLDER}>Uncategorized</option>
-          {(folders ?? []).map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-          {/* Keep the current folder selectable even if it's the only feed in it. */}
-          {currentFolder && !(folders ?? []).includes(currentFolder) && (
-            <option value={currentFolder}>{currentFolder}</option>
+      {/*
+       * Hover controls live in an absolutely-positioned overlay so they reserve
+       * NO layout width when idle — otherwise the invisible `<select>` (as wide as
+       * the folder name) would permanently squeeze the label's `flex-1` and
+       * truncate it early against empty space (#…). The overlay fades in over the
+       * row's right edge on hover/focus, masking the text tail behind `bg-inherit`
+       * (which tracks the row's hover/active background in both light and dark).
+       */}
+      {hasControls && (
+        <div className="absolute inset-y-0 right-1 flex items-center gap-1 rounded-lg bg-inherit pl-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          {onMoveFolder && (
+            <select
+              aria-label={`Move ${label} to a folder`}
+              title="Move to folder"
+              value={currentFolder ?? NO_FOLDER}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v === NEW_FOLDER) {
+                  const name = window.prompt('New folder name')?.trim()
+                  if (name) onMoveFolder(name)
+                  return
+                }
+                onMoveFolder(v === NO_FOLDER ? null : v)
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-[7rem] rounded border border-transparent bg-transparent text-xs text-slate-400 focus:border-slate-300 dark:text-slate-500 dark:focus:border-slate-600"
+            >
+              <option value={NO_FOLDER}>Uncategorized</option>
+              {(folders ?? []).map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+              {/* Keep the current folder selectable even if it's the only feed in it. */}
+              {currentFolder && !(folders ?? []).includes(currentFolder) && (
+                <option value={currentFolder}>{currentFolder}</option>
+              )}
+              <option value={NEW_FOLDER}>＋ New folder…</option>
+            </select>
           )}
-          <option value={NEW_FOLDER}>＋ New folder…</option>
-        </select>
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Unsubscribe from ${label}`}
-          title="Unsubscribe"
-          className="shrink-0 rounded px-1 text-slate-400 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100 dark:text-slate-500 dark:hover:text-red-400"
-        >
-          ×
-        </button>
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Unsubscribe from ${label}`}
+              title="Unsubscribe"
+              className="shrink-0 rounded px-1 text-slate-400 transition-colors hover:text-red-600 dark:text-slate-500 dark:hover:text-red-400"
+            >
+              ×
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
