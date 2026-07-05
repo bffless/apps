@@ -131,6 +131,21 @@ describe('ReaderApp — paged per-view fetch', () => {
     await waitFor(() => expect(api.setItemRead).toHaveBeenCalledWith('g1', true))
     await waitFor(() => expect(api.getCounts).toHaveBeenCalledTimes(2))
   })
+
+  it('does NOT refetch the list page when opening an item', async () => {
+    // Opening an item is a navigation (adds /item/:id, keeps ?page) but the
+    // selection/page/order are unchanged — the loaded page already holds the
+    // item, so the page fetch must not re-run. Regression guard: the fetch
+    // effect must not be re-triggered merely because react-router's `navigate`
+    // identity changes on navigation.
+    renderAt(feedPath)
+    await waitFor(() => expect(api.listItems).toHaveBeenCalledTimes(1))
+    fireEvent.click(await screen.findByText('First article'))
+    // The article opens (auto-mark-read fires)…
+    await waitFor(() => expect(api.setItemRead).toHaveBeenCalledWith('g1', true))
+    // …but the list page is NOT refetched.
+    expect(api.listItems).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('ReaderApp — deep-link getItem fallback', () => {

@@ -197,10 +197,18 @@ export function ReaderApp({
   // segment mid-flight) when it needs to clamp an out-of-range `?page` — reading
   // `pathname` directly would capture a stale closure. Mirrored via an effect
   // (not during render) so the in-flight continuation sees the committed path.
+  // Mirror `pathname` and `navigate` into refs read by the fetch effect's async
+  // continuation (for the out-of-range clamp). `navigate` MUST NOT be a fetch-
+  // effect dependency: react-router gives it a fresh identity on every location
+  // change, so depending on it would re-run the page fetch on *any* navigation —
+  // including opening an item, which keeps the same selection/page and shouldn't
+  // refetch the list. Reading it through a ref decouples the fetch from it.
   const pathnameRef = useRef(pathname)
+  const navigateRef = useRef(navigate)
   useEffect(() => {
     pathnameRef.current = pathname
-  }, [pathname])
+    navigateRef.current = navigate
+  }, [pathname, navigate])
 
   // A view change starts over with an unknown total (page itself resets to 1 via
   // the URL — a selection nav lands on a param-free path). Declared before the
@@ -245,7 +253,7 @@ export function ReaderApp({
         // valid last page renders instead. `total === 0` is the legitimate
         // "caught up" empty state and is deliberately left to render.
         if (result.total > 0 && result.totalPages >= 1 && page > result.totalPages) {
-          navigate(withPage(pathnameRef.current, result.totalPages), { replace: true })
+          navigateRef.current(withPage(pathnameRef.current, result.totalPages), { replace: true })
           return
         }
         totalRef.current = result.total
@@ -264,7 +272,7 @@ export function ReaderApp({
     return () => {
       cancelled = true
     }
-  }, [selection, page, sortOrder, reloadSeq, navigate])
+  }, [selection, page, sortOrder, reloadSeq])
 
   // Reload the current page after a feed mutation (add/import/refresh/remove):
   // bump the fetch effect's key and refetch the badge counts. Mirrors the
