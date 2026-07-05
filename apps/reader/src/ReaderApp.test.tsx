@@ -66,6 +66,7 @@ beforeEach(() => {
   vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem()], 3))
   vi.mocked(api.setItemRead).mockResolvedValue(undefined)
   vi.mocked(api.setItemStar).mockResolvedValue(undefined)
+  vi.mocked(api.markAllRead).mockResolvedValue(0)
 })
 
 const feedPath = `/feed/${encodeURIComponent(FEED_URL)}`
@@ -106,13 +107,17 @@ describe('ReaderApp — paged per-view fetch', () => {
     )
   })
 
-  it('refetches counts after mark-all-read', async () => {
+  it('marks the whole view read via the server primitive, then refetches the page and counts', async () => {
     renderAt(feedPath)
+    await waitFor(() => expect(api.listItems).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(api.getCounts).toHaveBeenCalledTimes(1))
     fireEvent.click(await screen.findByRole('button', { name: /mark all read/i }))
+    // The server primitive is called with the current selection, not a per-guid fan-out.
+    await waitFor(() => expect(api.markAllRead).toHaveBeenCalledWith(FEED_SEL))
+    expect(api.setItemRead).not.toHaveBeenCalled()
+    // reload() reconciles the visible page and badge counts after the server call resolves.
+    await waitFor(() => expect(api.listItems).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(api.getCounts).toHaveBeenCalledTimes(2))
-    // Mark-all fans the read write out over the loaded page's unread guids.
-    expect(api.setItemRead).toHaveBeenCalledWith('g1', true)
   })
 
   it('refetches counts after an optimistic read write', async () => {

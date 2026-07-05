@@ -348,20 +348,23 @@ export function ReaderApp({
     [applyStar, refreshCounts],
   )
 
-  // Mark every unread item on the loaded page read: patch the page, fan the
-  // per-guid writes out (no bulk primitive yet — Task 6 swaps in
-  // `api.markAllRead`), then refetch counts. A failed fan-out reloads the page.
+  // Mark the entire view read server-side via `api.markAllRead` — not just the
+  // loaded page. Optimistically patch the loaded page's unread rows for snappy
+  // UX (that's all we have client-side); `reload()` then refetches the current
+  // page and counts from the server, reconciling both on success or failure.
   const markAllRead = useCallback(() => {
     const guids = unreadGuids(pageData?.items ?? [])
-    if (guids.length === 0) return
-    setPageData((prev) => (prev ? { ...prev, items: markGuidsRead(prev.items, guids) } : prev))
-    void Promise.all(guids.map((g) => api.setItemRead(g, true)))
-      .then(() => refreshCounts())
+    if (guids.length > 0) {
+      setPageData((prev) => (prev ? { ...prev, items: markGuidsRead(prev.items, guids) } : prev))
+    }
+    void api
+      .markAllRead(selection)
+      .then(() => reload())
       .catch((e) => {
         setError(e instanceof Error ? e.message : 'Could not mark all read')
         reload()
       })
-  }, [pageData, refreshCounts, reload])
+  }, [selection, pageData, reload])
 
   // Add a feed from a pasted URL — resolve it first (#113): a site homepage is
   // discovered to its feed via the page's alternate link or a common-path probe;
