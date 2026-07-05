@@ -228,7 +228,7 @@
       "forwardCookies": false,
       "proxyType": "pipeline",
       "isEnabled": true,
-      "description": "List items: view (all|river|starred|feed|folder) + page/limit, ordered by publishedAt desc, with a matching total count. Legacy no-param call returns the full set. Folder uses the CE `in` operator over the folder's feed URLs. auth_required (allowApiKey).",
+      "description": "List items: view (all|river|starred|feed|folder) + page/limit, ordered by publishedAt desc, with a matching total count. Single-item guid branch (?guid=…) short-circuits view branches and returns just that row. Legacy no-param call returns the full set. Folder uses the CE `in` operator over the folder's feed URLs. auth_required (allowApiKey).",
       "pipelineConfig": {
         "name": "List items",
         "steps": [
@@ -237,7 +237,7 @@
             "name": "prep",
             "handlerType": "function_handler",
             "config": {
-              "code": "function handler({ request }) {\n  var q = (request && request.query) || {}\n  var view = (typeof q.view === 'string') ? q.view : ''\n  var feedId = (typeof q.feedId === 'string') ? q.feedId : ''\n  var folder = (typeof q.folder === 'string') ? q.folder : ''\n  var page = parseInt(q.page, 10)\n  if (isNaN(page) || page < 1) page = 1\n  var hasPage = (typeof q.page !== 'undefined' && q.page !== '')\n  var limit = parseInt(q.limit, 10)\n  var order = (q.order === 'oldest') ? 'asc' : 'desc'\n  var legacy = (!view && !hasPage)\n  if (isNaN(limit) || limit < 1) limit = legacy ? 2000 : 20\n  if (!view && feedId) view = 'feed'\n  if (!view) view = 'all'\n  var offset = (page - 1) * limit\n  return {\n    view: view, feedId: feedId, folder: folder,\n    page: page, limit: limit, offset: offset, order: order, legacy: legacy,\n    isAll: view === 'all', isRiver: view === 'river', isStarred: view === 'starred',\n    isFeed: view === 'feed', isFolder: view === 'folder', hasFolder: view === 'folder'\n  }\n}\n"
+              "code": "function handler({ request }) {\n  var q = (request && request.query) || {}\n  var guid = (typeof q.guid === 'string') ? q.guid : ''\n  var hasGuid = !!guid\n  var view = (typeof q.view === 'string') ? q.view : ''\n  var feedId = (typeof q.feedId === 'string') ? q.feedId : ''\n  var folder = (typeof q.folder === 'string') ? q.folder : ''\n  var page = parseInt(q.page, 10)\n  if (isNaN(page) || page < 1) page = 1\n  var hasPage = (typeof q.page !== 'undefined' && q.page !== '')\n  var limit = parseInt(q.limit, 10)\n  var order = (q.order === 'oldest') ? 'asc' : 'desc'\n  var legacy = (!view && !hasPage && !hasGuid)\n  if (isNaN(limit) || limit < 1) limit = legacy ? 2000 : 20\n  if (!view && feedId) view = 'feed'\n  if (!view) view = 'all'\n  var offset = (page - 1) * limit\n  return {\n    guid: guid, hasGuid: hasGuid,\n    view: view, feedId: feedId, folder: folder,\n    page: page, limit: limit, offset: offset, order: order, legacy: legacy,\n    isAll: view === 'all' && !hasGuid, isRiver: view === 'river' && !hasGuid, isStarred: view === 'starred' && !hasGuid,\n    isFeed: view === 'feed' && !hasGuid, isFolder: view === 'folder' && !hasGuid, hasFolder: view === 'folder' && !hasGuid\n  }\n}\n"
             }
           },
           {
@@ -379,11 +379,22 @@
             }
           },
           {
+            "id": "pageGuid",
+            "name": "pageGuid",
+            "handlerType": "data_query",
+            "config": {
+              "limit": 2,
+              "filters": { "guid": { "op": "eq", "value": "steps.prep.guid" } },
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "condition": "steps.prep.hasGuid"
+            }
+          },
+          {
             "id": "assemble",
             "name": "assemble",
             "handlerType": "function_handler",
             "config": {
-              "code": "function handler({ steps }) {\n  var p = steps.prep || {}\n  function rows(v) { return (v && v.length != null) ? v : null }\n  var items = rows(steps.pageAll) || rows(steps.pageRiver) || rows(steps.pageStarred) || rows(steps.pageFeed) || rows(steps.pageFolder) || []\n  function cnt(c) { return (c && typeof c.result === 'number') ? c.result : null }\n  var total = cnt(steps.countAll)\n  if (total == null) total = cnt(steps.countRiver)\n  if (total == null) total = cnt(steps.countStarred)\n  if (total == null) total = cnt(steps.countFeed)\n  if (total == null) total = cnt(steps.countFolder)\n  if (total == null) total = items.length\n  var pageSize = p.limit || items.length || 1\n  var totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 1\n  var out = []\n  for (var i = 0; i < items.length; i++) out.push(items[i])\n  return { items: out, total: total, page: p.page || 1, pageSize: pageSize, totalPages: totalPages }\n}\n"
+              "code": "function handler({ steps }) {\n  var p = steps.prep || {}\n  function rows(v) { return (v && v.length != null) ? v : null }\n  var items = rows(steps.pageGuid) || rows(steps.pageAll) || rows(steps.pageRiver) || rows(steps.pageStarred) || rows(steps.pageFeed) || rows(steps.pageFolder) || []\n  function cnt(c) { return (c && typeof c.result === 'number') ? c.result : null }\n  var total = null\n  if (p.hasGuid) {\n    total = items.length\n  } else {\n    total = cnt(steps.countAll)\n    if (total == null) total = cnt(steps.countRiver)\n    if (total == null) total = cnt(steps.countStarred)\n    if (total == null) total = cnt(steps.countFeed)\n    if (total == null) total = cnt(steps.countFolder)\n    if (total == null) total = items.length\n  }\n  var pageSize = p.limit || items.length || 1\n  var totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 1\n  var out = []\n  for (var i = 0; i < items.length; i++) out.push(items[i])\n  return { items: out, total: total, page: p.page || 1, pageSize: pageSize, totalPages: totalPages }\n}\n"
             }
           },
           {
