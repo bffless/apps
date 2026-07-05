@@ -525,8 +525,19 @@ export function ReaderApp({
         patch(feed.folder) // revert to the pre-move folder
         setError(e instanceof Error ? e.message : 'Could not move feed')
       })
+      // The sidebar badge is client-derived and regroups from the patch above,
+      // but the fetched item page is server-scoped (keyed on the selection). If
+      // this move takes the feed INTO or OUT OF the folder we're currently
+      // viewing, that page's membership changed, so refetch it (#161). Folders
+      // match case-insensitively (see lib/folders), and the old folder may be null.
+      if (selection.kind === 'folder') {
+        const viewed = selection.name.toLowerCase()
+        const oldFolder = feed.folder?.toLowerCase() ?? null
+        const newFolder = folder?.toLowerCase() ?? null
+        if (viewed === oldFolder || viewed === newFolder) reload()
+      }
     },
-    [],
+    [selection, reload],
   )
 
   // Keyboard navigation (#118): j/k move the cursor, space pages down, s/m/o act
