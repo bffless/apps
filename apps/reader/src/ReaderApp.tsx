@@ -4,6 +4,7 @@ import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from 'react-re
 import { FeedRail } from './components/FeedRail'
 import { FeedSidebar } from './components/FeedSidebar'
 import { ItemList } from './components/ItemList'
+import { Pager } from './components/Pager'
 import { ReadingPane } from './components/ReadingPane'
 import * as api from './lib/api'
 import type { Counts, ItemsPage } from './lib/api'
@@ -25,7 +26,14 @@ import {
 } from './lib/panes'
 import { DESKTOP_MEDIA_QUERY, useMediaQuery } from './lib/useMediaQuery'
 import type { OpmlFeed } from './lib/opml'
-import { pathForItem, pathForSelection, selectionFromParams, viewFromPathname } from './lib/route'
+import {
+  pageFromSearch,
+  pathForItem,
+  pathForSelection,
+  selectionFromParams,
+  viewFromPathname,
+  withPage,
+} from './lib/route'
 import {
   markGuidsRead,
   selectionKey,
@@ -67,9 +75,6 @@ export function ReaderApp({
   const [feeds, setFeeds] = useState<Feed[]>([])
   const [pageData, setPageData] = useState<ItemsPage | null>(null)
   const [counts, setCounts] = useState<Counts>({ unreadByFeed: {}, starred: 0 })
-  // `page` is local for now — the page 1 default and the reset-on-selection-change
-  // below keep every view starting at its first page. Task 5 moves it to `?page=`.
-  const [page, setPage] = useState(1)
   const [reloadSeq, setReloadSeq] = useState(0)
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [loading, setLoading] = useState(true)
@@ -86,7 +91,7 @@ export function ReaderApp({
   // memoized on its primitive keys so its identity only changes when the view
   // does, keeping the `visible`-snapshot effect from re-firing every render.
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const { folder, feedId, itemId } = useParams()
   const view = viewFromPathname(pathname)
   const selection = useMemo<Selection>(
@@ -94,6 +99,12 @@ export function ReaderApp({
     [view, folder, feedId],
   )
   const selectedGuid = itemId ?? null
+
+  // The current page is a URL query param (`?page=n`, #144) — derived, not
+  // React state — so it survives reload / Back-Forward and coexists with the
+  // open-item path. A selection navigation goes to a param-free `pathForSelection`
+  // path, so `page` resets to 1 for free on any view change (no manual reset).
+  const page = useMemo(() => pageFromSearch(search), [search])
 
   // Navigate to a view (river/all/starred/folder/feed) and, on mobile, dismiss
   // the nav drawer. Replaces the old local `selectView`.
@@ -103,6 +114,16 @@ export function ReaderApp({
       onDrawerOpenChange?.(false)
     },
     [navigate, onDrawerOpenChange],
+  )
+
+  // Page through the current view: write the target page into the URL (`?page=n`,
+  // dropped for page 1). The fetch effect is keyed on the derived `page`, so this
+  // one navigation triggers exactly one refetch — the URL is the only driver.
+  const onPage = useCallback(
+    (p: number) => {
+      navigate(withPage(pathForSelection(selection), p))
+    },
+    [navigate, selection],
   )
 
   // Desktop pane layout (#140): the sidebar is a resizable, collapsible panel;
@@ -165,12 +186,11 @@ export function ReaderApp({
   const selKey = selectionKey(selection)
   const totalRef = useRef<number | null>(null)
 
-  // A view change starts over at page 1 with an unknown total. Declared before
-  // the fetch effect so, on a selection change, the reset lands before the page
-  // fetch reads `totalRef`.
+  // A view change starts over with an unknown total (page itself resets to 1 via
+  // the URL — a selection nav lands on a param-free path). Declared before the
+  // fetch effect so, on a selection change, the `totalRef` clear lands before the
+  // page fetch reads it.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPage(1)
     totalRef.current = null
   }, [selKey])
 
@@ -223,6 +243,11 @@ export function ReaderApp({
   // retired `loadSeq` idiom, but re-runs one paginated request instead of
   // reloading the whole set.
   const reload = useCallback(() => {
+    // A feed mutation can change `total`, which drives the oldest-first server-
+    // page mapping. Clear the cached total so the refetch re-derives it (same
+    // path as a fresh selection); newest-first ignores `total`, so it's a no-op
+    // there. Keeps the post-mutation page at least as correct as before.
+    totalRef.current = null
     setReloadSeq((n) => n + 1)
     void refreshCounts()
   }, [refreshCounts])
@@ -285,10 +310,12 @@ export function ReaderApp({
   // honest; it stays visible in the current snapshot until you leave the view.
   const openItem = useCallback(
     (item: Item) => {
-      navigate(pathForItem(selection, item.guid))
+      // Carry `?page` onto the item URL so the still-visible desktop list stays
+      // on the user's page (a bare item path would re-derive page 1 and jump).
+      navigate(withPage(pathForItem(selection, item.guid), page))
       if (!item.read) void persistRead(item.guid, true)
     },
-    [navigate, selection, persistRead],
+    [navigate, selection, page, persistRead],
   )
 
   const toggleRead = useCallback(
@@ -453,7 +480,8 @@ export function ReaderApp({
         // Cursor moves replace history (not push) so Back steps between the
         // views / items you explicitly opened, not every j/k keystroke. The move
         // previews in the reading pane without marking read — 'o'/click do that.
-        if (next && next !== selectedGuid) navigate(pathForItem(selection, next), { replace: true })
+        if (next && next !== selectedGuid)
+          navigate(withPage(pathForItem(selection, next), page), { replace: true })
         return
       }
       if (action.kind === 'page') {
@@ -473,7 +501,7 @@ export function ReaderApp({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [visible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection])
+  }, [visible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection, page])
 
   const unreadInView = visible.some((i) => !i.read)
 
@@ -495,12 +523,13 @@ export function ReaderApp({
     [openItem],
   )
   const backToList = useCallback(() => {
-    // Navigate back to the current view's list (drops the /item/:id segment);
+    // Navigate back to the current view's list (drops the /item/:id segment) but
+    // KEEP `?page` so returning to the list lands on the page you opened from;
     // the router keeps Back / Forward honest on mobile.
-    navigate(pathForSelection(selection))
+    navigate(withPage(pathForSelection(selection), page))
     // Restore after the list has re-rendered and reclaimed its height.
     requestAnimationFrame(() => window.scrollTo(0, listScrollY.current))
-  }, [navigate, selection])
+  }, [navigate, selection, page])
 
   const markScrolledPast = useCallback(
     (item: Item) => {
@@ -644,6 +673,7 @@ export function ReaderApp({
                     feedNameFor={feedNameFor}
                   />
                 </div>
+                <Pager page={page} totalPages={pageData?.totalPages ?? 1} onPage={onPage} />
               </section>
 
               <section
@@ -712,6 +742,7 @@ export function ReaderApp({
               onScrolledPast={markScrolledPast}
               feedNameFor={feedNameFor}
             />
+            <Pager page={page} totalPages={pageData?.totalPages ?? 1} onPage={onPage} />
           </section>
         </div>
       )}
