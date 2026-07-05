@@ -48,6 +48,7 @@ import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { useSession, adminLoginUrl } from '../lib/session'
 import { evaluateAccess, inShareMode } from '../lib/acl'
+import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
 import { Menu } from '../components/Menu'
@@ -938,6 +939,14 @@ export function FolderView({ folderId }: FolderViewProps) {
   }, [folderId])
 
   async function handleFile(file: File) {
+    // In-Folder name uniqueness (structural storage, Slice 4): a name identifies
+    // content within a Folder, so reject a File whose name duplicates an existing
+    // sibling up front — never overwrite the sibling's bytes, never auto-suffix.
+    // The pipeline enforces this authoritatively too; this is instant feedback.
+    if (isNameTaken(rawNodes ?? [], folderId, file.name)) {
+      toast(nameCollisionMessage(file.name), 'error')
+      return
+    }
     // Store the File at its verbatim structural key (owning Folder path + name)
     // so relative refs resolve on the unified content endpoint (structural
     // storage, Slice 1). The current Folder's node is in the resolved chain.

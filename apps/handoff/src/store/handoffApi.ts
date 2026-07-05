@@ -109,6 +109,20 @@ interface SubtreeNode {
   depth: number
 }
 
+/**
+ * Turn a base-query error into a clear message when the pipeline rejected a
+ * duplicate name (409). The in-Folder uniqueness pipelines respond
+ * `{ error: "<message>" }`, so a raw `Upload failed (409)` would bury the real,
+ * actionable reason. Falls back to `null` for any other error so callers keep
+ * their existing handling.
+ */
+function conflictMessage(err: unknown): string | null {
+  const e = err as { status?: number; data?: unknown }
+  if (e?.status !== 409) return null
+  const data = e.data as { error?: unknown } | undefined
+  return typeof data?.error === 'string' ? data.error : 'A sibling with that name already exists.'
+}
+
 const rawBaseQuery = fetchBaseQuery({ baseUrl: '/', credentials: 'include' })
 
 /**
@@ -172,7 +186,7 @@ export const handoffApi = createApi({
      */
     prepareUpload: builder.mutation<
       PreparedUpload,
-      { filename: string; contentType?: string; path?: string }
+      { filename: string; contentType?: string; path?: string; parentId?: string }
     >({
       query: (body) => ({
         url: 'api/uploads/prepare',
@@ -279,7 +293,14 @@ export const handoffApi = createApi({
             method: 'POST',
             body: { parentId, name, entry, manifest, createdMs: Date.now() },
           })
-          if (siteRes.error) return { error: siteRes.error }
+          if (siteRes.error) {
+            // In-Folder name collision (Slice 4): reject a Site whose name
+            // duplicates an existing sibling in the target Folder.
+            const msg = conflictMessage(siteRes.error)
+            return msg
+              ? { error: { status: 'CUSTOM_ERROR' as const, error: msg } }
+              : { error: siteRes.error }
+          }
           const node = toNode((siteRes.data as { node?: unknown }).node)
           return { data: node }
         } catch (e) {
@@ -535,9 +556,17 @@ export const handoffApi = createApi({
               filename: file.name,
               contentType: file.type || 'application/octet-stream',
               path,
+              parentId,
             },
           })
-          if (prepRes.error) return { error: prepRes.error }
+          if (prepRes.error) {
+            // In-Folder name collision (Slice 4): prepare rejects before any
+            // bytes are minted/PUT, so the existing file is never overwritten.
+            const msg = conflictMessage(prepRes.error)
+            return msg
+              ? { error: { status: 'CUSTOM_ERROR' as const, error: msg } }
+              : { error: prepRes.error }
+          }
           const prepared = prepRes.data as PreparedUpload
 
           // 2. PUT bytes directly to the bucket (no proxy, no credentials)
@@ -563,7 +592,12 @@ export const handoffApi = createApi({
             method: 'POST',
             body: regBody,
           })
-          if (regRes.error) return { error: regRes.error }
+          if (regRes.error) {
+            const msg = conflictMessage(regRes.error)
+            return msg
+              ? { error: { status: 'CUSTOM_ERROR' as const, error: msg } }
+              : { error: regRes.error }
+          }
           const node = toNode((regRes.data as { node?: unknown }).node)
           return { data: node }
         } catch (e) {
