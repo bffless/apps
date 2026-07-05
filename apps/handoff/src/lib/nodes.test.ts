@@ -36,6 +36,22 @@ describe('toNode — happy path', () => {
   })
 })
 
+describe('toNode — content path', () => {
+  it('passes an explicit path through verbatim', () => {
+    expect(toNode({ path: 'Design Docs/doc.md' }).path).toBe('Design Docs/doc.md')
+  })
+
+  it('derives path from the content url when not explicit', () => {
+    expect(toNode({ url: '/api/uploads/content/Design Docs/doc.md' }).path).toBe(
+      'Design Docs/doc.md',
+    )
+  })
+
+  it('is null when there is no content url (e.g. presigned video)', () => {
+    expect(toNode({ url: null }).path).toBeNull()
+  })
+})
+
 describe('toNode — missing / undefined fields', () => {
   it('defaults id to empty string when absent', () => {
     expect(toNode({})).toMatchObject({ id: '' })
@@ -236,5 +252,11 @@ describe('buildRegisterBody', () => {
   it('works with a different parentId', () => {
     const body = buildRegisterBody(prepared, file, 'folder-42', nowMs)
     expect(body.parentId).toBe('folder-42')
+  })
+
+  it('records the verbatim content path (publicPath minus the serve prefix)', () => {
+    const nested = { ...prepared, publicPath: '/api/uploads/content/Design Docs/doc.md' }
+    const body = buildRegisterBody(nested, file, parentId, nowMs)
+    expect(body.path).toBe('Design Docs/doc.md')
   })
 })

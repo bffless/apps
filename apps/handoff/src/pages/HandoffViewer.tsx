@@ -10,7 +10,8 @@ import { useRef, useState, useEffect } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
-import { renderMarkdown } from '../lib/markdown'
+import { renderMarkdown, markdownDocument } from '../lib/markdown'
+import { viewerBase } from '../lib/contentPath'
 import type { HandoffNode } from '../lib/nodes'
 import { useSession, fetchWithReauth } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
@@ -302,32 +303,48 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
 // Content renderers
 // ---------------------------------------------------------------------------
 
-type MdState = { url: string; html: string } | null
+type MdState = { url: string; doc: string } | null
 
-function MarkdownPreview({ url }: { url: string }) {
+/**
+ * Renders Markdown into a same-origin iframe (structural storage, Slice 1).
+ *
+ * The document sets `<base href>` to the file's own Folder on the content
+ * endpoint (`viewerBase`), so a relative reference like `assets/logo.png`
+ * resolves to the real sibling content URL — with no rewriting of the stored
+ * Markdown. Sanitization (DOMPurify, in `renderMarkdown`) is retained before
+ * injection; the iframe is same-origin/unsandboxed, consistent with how Sites
+ * already render (ADR-0001).
+ */
+function MarkdownPreview({ node }: { node: HandoffNode }) {
+  const url = node.url ?? ''
   const [result, setResult] = useState<MdState>(null)
 
   useEffect(() => {
     let cancelled = false
+    const base = viewerBase(node)
     fetchWithReauth(url)
       .then((r) => r.text())
       .then((text) => {
-        if (!cancelled) setResult({ url, html: renderMarkdown(text) })
+        if (!cancelled) setResult({ url, doc: markdownDocument(renderMarkdown(text), base) })
       })
       .catch(() => {
-        if (!cancelled) setResult({ url, html: '<p>Failed to load Markdown.</p>' })
+        if (!cancelled) {
+          setResult({ url, doc: markdownDocument('<p>Failed to load Markdown.</p>', base) })
+        }
       })
     return () => { cancelled = true }
-  }, [url])
+  }, [url, node])
 
   if (!result || result.url !== url) {
     return <div className="py-16 text-center text-sm text-muted">Loading…</div>
   }
 
   return (
-    <div
-      className="markdown-body mx-auto max-w-3xl px-4 py-8 leading-relaxed text-ink"
-      dangerouslySetInnerHTML={{ __html: result.html }}
+    <iframe
+      srcDoc={result.doc}
+      title={node.name}
+      className="h-full w-full flex-1"
+      style={{ minHeight: 'calc(100vh - 7.5rem)' }}
     />
   )
 }
@@ -568,7 +585,7 @@ export function HandoffViewer() {
           </div>
         )}
         {!sourceShown && kind === 'markdown' && node.url && (
-          <MarkdownPreview url={node.url} />
+          <MarkdownPreview node={node} />
         )}
         {kind === 'video' && (
           <MediaPreview node={node} kind="video" />

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildBreadcrumb, buildAncestorFolderChain, parentFolderPath } from './tree'
+import { buildBreadcrumb, buildAncestorFolderChain, parentFolderPath, folderContentPath } from './tree'
 import { evaluateAccess } from './acl'
 import type { Crumb } from './tree'
 import type { FolderLink } from './acl'
@@ -27,6 +27,7 @@ function makeFolder(
     size: null,
     url: null,
     storageKey: null,
+    path: null,
     parentId,
     createdAt: 0,
     ownerId: null,
@@ -39,6 +40,30 @@ function makeFolder(
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
+
+describe('folderContentPath', () => {
+  it('returns "" for root (a root upload keys off the bare name)', () => {
+    expect(folderContentPath({}, 'root')).toBe('')
+  })
+
+  it('returns the folder name one level deep', () => {
+    const nodesById = { abc: makeFolder('abc', 'Design Docs', 'root') }
+    expect(folderContentPath(nodesById, 'abc')).toBe('Design Docs')
+  })
+
+  it('joins ancestor + own names verbatim, root→current', () => {
+    const nodesById: Record<string, HandoffNode> = {
+      a: makeFolder('a', 'Design Docs', 'root'),
+      b: makeFolder('b', 'Q3 Handoff', 'a'),
+    }
+    expect(folderContentPath(nodesById, 'b')).toBe('Design Docs/Q3 Handoff')
+  })
+
+  it('stops gracefully on a missing ancestor (partial chain)', () => {
+    const nodesById = { b: makeFolder('b', 'Q3 Handoff', 'missing') }
+    expect(folderContentPath(nodesById, 'b')).toBe('Q3 Handoff')
+  })
+})
 
 describe('buildBreadcrumb', () => {
   it('returns [root] when folderId is "root"', () => {

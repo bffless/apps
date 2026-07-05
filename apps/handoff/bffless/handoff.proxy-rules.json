@@ -144,6 +144,8 @@
             "name": "presigned",
             "config": {
               "subDir": "content",
+              "keyStrategy": "verbatim",
+              "key": "request.body.path",
               "filename": "request.body.filename",
               "expiresIn": 3600,
               "maxFileSize": 524288000
@@ -182,6 +184,8 @@
             "name": "register",
             "config": {
               "subDir": "content",
+              "keyStrategy": "verbatim",
+              "key": "request.body.path",
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
               "storageKey": "request.body.storageKey",
               "extraFields": {

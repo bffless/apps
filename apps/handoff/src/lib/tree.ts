@@ -33,6 +33,33 @@ export function parentFolderPath(parentId: string): string {
   return parentId && parentId !== 'root' ? `/folder/${parentId}` : '/'
 }
 
+/**
+ * Compute a Folder's verbatim content path (its ancestor + own names joined by
+ * `/`) from the resolved node map — the prefix a File uploaded into this Folder
+ * is stored under. Returns `''` for the root (a root upload keys off the bare
+ * file name). Walks the same `parentId` chain as `buildBreadcrumb`; stops
+ * gracefully on a missing ancestor (partial chain) and caps cycles at MAX_HOPS.
+ */
+export function folderContentPath(
+  nodesById: Record<string, HandoffNode>,
+  folderId: string,
+): string {
+  if (folderId === 'root') return ''
+
+  const names: string[] = []
+  let current = folderId
+  let hops = 0
+  while (current !== 'root' && hops < MAX_HOPS) {
+    const node = nodesById[current]
+    if (!node) break
+    names.push(node.name)
+    current = node.parentId
+    hops++
+  }
+  names.reverse()
+  return names.join('/')
+}
+
 export function buildBreadcrumb(nodesById: Record<string, HandoffNode>, folderId: string): Crumb[] {
   if (folderId === 'root') return [ROOT_CRUMB]
 

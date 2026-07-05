@@ -35,7 +35,8 @@ import {
 } from '../store/handoffApi'
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
-import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
+import { buildBreadcrumb, buildAncestorFolderChain, folderContentPath } from '../lib/tree'
+import { contentSubPath } from '../lib/contentPath'
 import { formatBytes, formatDate } from '../lib/format'
 import {
   filesFromDirectoryInput,
@@ -937,7 +938,20 @@ export function FolderView({ folderId }: FolderViewProps) {
   }, [folderId])
 
   async function handleFile(file: File) {
-    const result = await uploadFile({ file, parentId: folderId })
+    // Store the File at its verbatim structural key (owning Folder path + name)
+    // so relative refs resolve on the unified content endpoint (structural
+    // storage, Slice 1). The current Folder's node is in the resolved chain.
+    const nodesById = currentFolder
+      ? { ...ancestorNodesById, [currentFolder.id]: currentFolder }
+      : ancestorNodesById
+    let path: string
+    try {
+      path = contentSubPath(folderContentPath(nodesById, folderId), file.name)
+    } catch {
+      toast(`Can’t upload “${file.name}”: unsupported name.`, 'error')
+      return
+    }
+    const result = await uploadFile({ file, parentId: folderId, path })
     if (!('error' in result)) {
       // Managers get the inline "copy a share link" panel; others a toast.
       if (canManage) setUploadedNodes((prev) => [...prev, result.data])
