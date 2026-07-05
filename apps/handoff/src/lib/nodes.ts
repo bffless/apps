@@ -7,6 +7,7 @@
  */
 
 import type { Grant } from './acl'
+import { CONTENT_PREFIX } from './contentPath'
 
 export type { Grant }
 
@@ -20,6 +21,8 @@ export interface HandoffNode {
   size: number | null
   url: string | null          // BFFless serve path, e.g. /api/uploads/content/<key>
   storageKey: string | null
+  /** Verbatim content path (relative to uploads/content/), e.g. `Docs/a.md`. */
+  path: string | null
   parentId: string            // 'root' for top-level files
   createdAt: number           // ms epoch
   /** Null for files/sites; the owner user id for folders. */
@@ -33,6 +36,8 @@ export interface HandoffNode {
 /** Body sent to POST /api/nodes to register a freshly-uploaded file. */
 export interface RegisterBody {
   storageKey: string
+  /** Verbatim content sub-path the file was stored at (folder path + name). */
+  path: string
   originalName: string
   parentId: string
   displayName: string
@@ -93,6 +98,15 @@ export function toNode(raw: unknown): HandoffNode {
   const rawKey = obj['storageKey']
   const storageKey = typeof rawKey === 'string' ? rawKey : null
 
+  // path: explicit verbatim content path, else derived from the content url.
+  const rawPath = obj['path']
+  const path =
+    typeof rawPath === 'string'
+      ? rawPath
+      : url && url.startsWith(CONTENT_PREFIX)
+        ? url.slice(CONTENT_PREFIX.length)
+        : null
+
   // parentId: string, fallback 'root'
   const rawParent = obj['parentId']
   const parentId = typeof rawParent === 'string' ? rawParent : 'root'
@@ -122,7 +136,7 @@ export function toNode(raw: unknown): HandoffNode {
   const rawMode = obj['mode']
   const mode: 'inheriting' | 'restricted' = rawMode === 'restricted' ? 'restricted' : 'inheriting'
 
-  return { id, type, name, mime, size, url, storageKey, parentId, createdAt, ownerId, grants, mode }
+  return { id, type, name, mime, size, url, storageKey, path, parentId, createdAt, ownerId, grants, mode }
 }
 
 /**
@@ -158,8 +172,13 @@ export function buildRegisterBody(
   parentId: string,
   nowMs: number,
 ): RegisterBody {
+  // The verbatim content sub-path is the publicPath minus the serve prefix.
+  const path = prepared.publicPath.startsWith(CONTENT_PREFIX)
+    ? prepared.publicPath.slice(CONTENT_PREFIX.length)
+    : prepared.publicPath
   return {
     storageKey: prepared.storageKey,
+    path,
     originalName: file.name,
     parentId,
     displayName: file.name,

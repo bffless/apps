@@ -170,7 +170,10 @@ export const handoffApi = createApi({
      * POST /api/uploads/prepare → PreparedUpload
      * Mints a presigned PUT URL; the caller PUTs bytes directly to the bucket.
      */
-    prepareUpload: builder.mutation<PreparedUpload, { filename: string; contentType?: string }>({
+    prepareUpload: builder.mutation<
+      PreparedUpload,
+      { filename: string; contentType?: string; path?: string }
+    >({
       query: (body) => ({
         url: 'api/uploads/prepare',
         method: 'POST',
@@ -520,14 +523,19 @@ export const handoffApi = createApi({
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
      * On success, invalidates the node list so the listing refetches.
      */
-    uploadFile: builder.mutation<HandoffNode, { file: File; parentId: string }>({
-      async queryFn({ file, parentId }, _queryApi, _extraOptions, baseQuery) {
+    uploadFile: builder.mutation<HandoffNode, { file: File; parentId: string; path: string }>({
+      async queryFn({ file, parentId, path }, _queryApi, _extraOptions, baseQuery) {
         try {
-          // 1. Prepare — mint a presigned bucket PUT URL
+          // 1. Prepare — mint a presigned bucket PUT URL at the verbatim content
+          //    sub-path (folder path + name), so the stored key mirrors the tree.
           const prepRes = await baseQuery({
             url: 'api/uploads/prepare',
             method: 'POST',
-            body: { filename: file.name, contentType: file.type || 'application/octet-stream' },
+            body: {
+              filename: file.name,
+              contentType: file.type || 'application/octet-stream',
+              path,
+            },
           })
           if (prepRes.error) return { error: prepRes.error }
           const prepared = prepRes.data as PreparedUpload

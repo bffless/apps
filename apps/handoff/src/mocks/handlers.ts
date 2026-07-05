@@ -365,9 +365,17 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as {
       filename?: string
       contentType?: string
+      path?: string
     }
     const filename = body.filename ?? 'upload'
-    const storageKey = `handoff/uploads/mock/${Date.now()}-${filename}`
+    // Verbatim structural key when the client sends a `path` (structural
+    // storage, Slice 1); otherwise the legacy uuid-ish mock key. The serve
+    // path mirrors the key, so relative refs resolve on the content endpoint.
+    // The mock's storageKey is the content-relative path (everything after the
+    // `/api/uploads/content/` serve prefix), so a verbatim `path` maps to it 1:1.
+    const storageKey = body.path
+      ? body.path
+      : `handoff/uploads/mock/${Date.now()}-${filename}`
     return HttpResponse.json({
       uploadUrl: mockUploadUrl(storageKey),
       storageKey,
