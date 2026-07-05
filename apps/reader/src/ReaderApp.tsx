@@ -6,8 +6,10 @@ import { FeedSidebar } from './components/FeedSidebar'
 import { ItemList } from './components/ItemList'
 import { ReadingPane } from './components/ReadingPane'
 import * as api from './lib/api'
+import type { Counts, ItemsPage } from './lib/api'
 import { feedTitleFor, type Feed } from './lib/feeds'
-import { sortItemsNewestFirst, sortItemsOldestFirst, type Item } from './lib/items'
+import { type Item } from './lib/items'
+import type { SortOrder } from './lib/itemsQuery'
 import { keyToAction, nextSelection } from './lib/keyboard'
 import {
   CONTENT_MIN_SIZE,
@@ -25,13 +27,10 @@ import { DESKTOP_MEDIA_QUERY, useMediaQuery } from './lib/useMediaQuery'
 import type { OpmlFeed } from './lib/opml'
 import { pathForItem, pathForSelection, selectionFromParams, viewFromPathname } from './lib/route'
 import {
-  itemsForSelection,
   markGuidsRead,
+  selectionKey,
   setRead,
   setStarred,
-  totalStarred,
-  totalUnread,
-  unreadCountsByFeed,
   unreadGuids,
   type Selection,
 } from './lib/river'
@@ -41,12 +40,14 @@ import {
  * pane. Landing view is the **river** (unread across all feeds) — the "already
  * there when you arrive" loop.
  *
- * The full item set is loaded once (`api.listItems()`), and every view — river,
- * all, per-feed — plus the unread counts is derived from it client-side by the
- * pure `lib/river` helpers. Read-state writes are optimistic: local state flips
- * immediately via the same pure transitions, then `api.setItemRead` persists it
- * (`data_update`); a failed write reverts. This keeps all decision logic in the
- * tested `lib/*` seam; this component only orchestrates.
+ * Each view fetches exactly one filtered, paginated page from the server
+ * (`api.listItems(selection, { page, order })`) plus the sidebar counts
+ * (`api.getCounts()`) — the client no longer loads the whole set or derives
+ * views from it. `pageData.items` arrives already server-ordered (and reversed
+ * for oldest-first). Read/star writes are optimistic: the loaded page flips
+ * immediately via the pure `lib/river` transitions, then `api.setItemRead` /
+ * `api.setItemStar` persist it (`data_update`) and the counts are refetched; a
+ * failed write reverts. This component only orchestrates fetch + optimistic UI.
  */
 export function ReaderApp({
   containerClass = 'max-w-6xl',
@@ -64,10 +65,14 @@ export function ReaderApp({
   onDrawerOpenChange?: (open: boolean) => void
 } = {}) {
   const [feeds, setFeeds] = useState<Feed[]>([])
-  const [items, setItems] = useState<Item[]>([])
-  const [loadSeq, setLoadSeq] = useState(0)
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
-  const [itemsLoading, setItemsLoading] = useState(false)
+  const [pageData, setPageData] = useState<ItemsPage | null>(null)
+  const [counts, setCounts] = useState<Counts>({ unreadByFeed: {}, starred: 0 })
+  // `page` is local for now — the page 1 default and the reset-on-selection-change
+  // below keep every view starting at its first page. Task 5 moves it to `?page=`.
+  const [page, setPage] = useState(1)
+  const [reloadSeq, setReloadSeq] = useState(0)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
+  const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -130,16 +135,17 @@ export function ReaderApp({
     }
   }, [])
 
-  const loadItems = useCallback(async () => {
-    setItemsLoading(true)
+  // Sidebar badge counts come straight from the server (`/api/counts`) rather
+  // than being derived from a loaded set — refetched on mount, after refresh,
+  // and after any read/star/mark-all write. Counts are non-critical chrome, so a
+  // failed refresh is swallowed (the last-known counts stay) rather than
+  // surfacing an error over the reading surface.
+  const refreshCounts = useCallback(async () => {
     try {
-      const rows = await api.listItems()
-      setItems(rows)
-      setLoadSeq((n) => n + 1)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load items')
-    } finally {
-      setItemsLoading(false)
+      const next = await api.getCounts()
+      setCounts(next)
+    } catch {
+      // keep the last-known counts
     }
   }, [])
 
@@ -149,12 +155,77 @@ export function ReaderApp({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadFeeds()
-    void loadItems()
-  }, [loadFeeds, loadItems])
+    void refreshCounts()
+  }, [loadFeeds, refreshCounts])
 
-  const counts = useMemo(() => unreadCountsByFeed(items), [items])
-  const riverTotal = useMemo(() => totalUnread(items), [items])
-  const starredTotal = useMemo(() => totalStarred(items), [items])
+  // The last-known `total` for the CURRENT selection, kept in a ref so it can
+  // seed the next fetch without being a render dependency. Reset to null when the
+  // selection changes so an oldest-first first load falls back to the newest
+  // page-`page` (see `buildItemsQuery`) and re-issues once total is known.
+  const selKey = selectionKey(selection)
+  const totalRef = useRef<number | null>(null)
+
+  // A view change starts over at page 1 with an unknown total. Declared before
+  // the fetch effect so, on a selection change, the reset lands before the page
+  // fetch reads `totalRef`.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1)
+    totalRef.current = null
+  }, [selKey])
+
+  // Fetch exactly one filtered, paginated page for the current selection/page/
+  // order (plus a `reloadSeq` bump after feed mutations). The returned items are
+  // already server-ordered and reversed for oldest-first — rendered as-is. A
+  // stale response that resolves after a newer request is dropped via the
+  // `cancelled` cleanup flag (out-of-order guard). For oldest-first, the first
+  // fetch of a fresh selection can't know `total`, so it falls back to the
+  // newest page-`page`; once the response carries `total`, we re-issue for the
+  // correctly mirrored server page.
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      try {
+        let result = await api.listItems(selection, {
+          page,
+          order: sortOrder,
+          total: totalRef.current,
+        })
+        if (!cancelled && sortOrder === 'oldest' && totalRef.current === null && result.total > 0) {
+          const corrected = await api.listItems(selection, {
+            page,
+            order: sortOrder,
+            total: result.total,
+          })
+          if (!cancelled) result = corrected
+        }
+        if (cancelled) return
+        totalRef.current = result.total
+        setPageData(result)
+        setError(null)
+      } catch (e) {
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : 'Could not load items')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true)
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selection, page, sortOrder, reloadSeq])
+
+  // Reload the current page after a feed mutation (add/import/refresh/remove):
+  // bump the fetch effect's key and refetch the badge counts. Mirrors the
+  // retired `loadSeq` idiom, but re-runs one paginated request instead of
+  // reloading the whole set.
+  const reload = useCallback(() => {
+    setReloadSeq((n) => n + 1)
+    void refreshCounts()
+  }, [refreshCounts])
 
   // Feed-name attribution: a row/article shows which feed it came from, but
   // only in mixed views (river/all/folder/starred) where feeds are
@@ -169,50 +240,30 @@ export function ReaderApp({
     [selection.kind, feedsByUrl],
   )
 
-  // The visible list is a snapshot captured when the view changes or a fresh
-  // load lands (`loadSeq`) — deliberately NOT on every read toggle, so an item
-  // marked read while open doesn't vanish from the river mid-read. Read items
-  // leave the river on the next view change / refresh, staying queryable in the
-  // "all"/per-feed views.
-  const [visible, setVisible] = useState<Item[]>([])
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setVisible(itemsForSelection(items, selection, feeds))
-    // `items` is intentionally omitted: re-snapshotting on it would undo the
-    // read-toggle patches below. `loadSeq` covers genuine set replacement, and
-    // `feeds` re-scopes a folder view when a feed is moved in or out of it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, loadSeq, feeds])
+  // The loaded page's items — already server-ordered (and reversed for
+  // oldest-first by `api.listItems`), so they're rendered straight through with
+  // no client-side sort. Optimistic read/star writes patch this array in place.
+  const visible = useMemo(() => pageData?.items ?? [], [pageData])
 
-  // The order shown is applied over the snapshot (not re-derived from `items`),
-  // so toggling newest/oldest reorders in place without dropping items that were
-  // marked read while the view is open. #118 — chronological-reading toggle.
-  const orderedVisible = useMemo(
-    () => (sortOrder === 'oldest' ? sortItemsOldestFirst(visible) : sortItemsNewestFirst(visible)),
-    [visible, sortOrder],
+  // The river's total-unread badge is the sum of the per-feed unread counts.
+  const riverTotal = useMemo(
+    () => Object.values(counts.unreadByFeed).reduce((n, c) => n + c, 0),
+    [counts],
   )
 
-  // The open item resolves from the visible snapshot first, then falls back to
-  // the full set so a deep link opens an item that isn't in the current view's
-  // list (e.g. a read item under the river, which only lists unread). While the
-  // set is still loading a deep-linked id resolves to nothing yet — `itemLoading`
-  // holds the reading pane in its loading state until items arrive; an id that
-  // never resolves (deleted/unknown) just falls back to the view's list.
+  // The open item resolves from the loaded page. A deep link to an item off the
+  // current page is Task 7 (a `getItem` fallback); for now it stays unresolved.
+  // While a page fetch is in flight and the id isn't found yet, `itemLoading`
+  // holds the reading pane in its loading state.
   const selectedItem = useMemo(
-    () =>
-      selectedGuid === null
-        ? null
-        : (visible.find((i) => i.guid === selectedGuid) ??
-          items.find((i) => i.guid === selectedGuid) ??
-          null),
-    [visible, items, selectedGuid],
+    () => (selectedGuid === null ? null : (pageData?.items.find((i) => i.guid === selectedGuid) ?? null)),
+    [pageData, selectedGuid],
   )
-  const itemLoading = selectedGuid !== null && selectedItem === null && itemsLoading
+  const itemLoading = selectedGuid !== null && selectedItem === null && loading
 
-  /** Reflect a read-flag change in both the source set and the visible snapshot. */
+  /** Reflect a read-flag change in the loaded page. */
   const applyRead = useCallback((guid: string, read: boolean) => {
-    setItems((prev) => setRead(prev, guid, read))
-    setVisible((prev) => setRead(prev, guid, read))
+    setPageData((prev) => (prev ? { ...prev, items: setRead(prev.items, guid, read) } : prev))
   }, [])
 
   const persistRead = useCallback(
@@ -220,12 +271,13 @@ export function ReaderApp({
       applyRead(guid, read)
       try {
         await api.setItemRead(guid, read)
+        void refreshCounts()
       } catch (e) {
         applyRead(guid, !read) // revert the optimistic flip
         setError(e instanceof Error ? e.message : 'Could not save read state')
       }
     },
-    [applyRead],
+    [applyRead, refreshCounts],
   )
 
   // Opening an item navigates to its URL (in the context of the current view)
@@ -246,37 +298,43 @@ export function ReaderApp({
     [persistRead],
   )
 
-  /** Reflect a star-flag change in both the source set and the visible snapshot. */
+  /** Reflect a star-flag change in the loaded page. */
   const applyStar = useCallback((guid: string, starred: boolean) => {
-    setItems((prev) => setStarred(prev, guid, starred))
-    setVisible((prev) => setStarred(prev, guid, starred))
+    setPageData((prev) => (prev ? { ...prev, items: setStarred(prev.items, guid, starred) } : prev))
   }, [])
 
-  // Star writes mirror read: optimistic flip, persist, revert on failure. The
-  // item stays in the current snapshot when unstarred from the starred view (it
-  // leaves on the next view change), so the row doesn't vanish under the cursor.
+  // Star writes mirror read: optimistic flip, persist, refetch counts, revert on
+  // failure. The item stays in the loaded page when unstarred from the starred
+  // view (it leaves on the next fetch), so the row doesn't vanish under the cursor.
   const toggleStar = useCallback(
     (item: Item) => {
       const next = !item.starred
       applyStar(item.guid, next)
-      void api.setItemStar(item.guid, next).catch((e) => {
-        applyStar(item.guid, !next)
-        setError(e instanceof Error ? e.message : 'Could not save starred state')
-      })
+      void api
+        .setItemStar(item.guid, next)
+        .then(() => refreshCounts())
+        .catch((e) => {
+          applyStar(item.guid, !next)
+          setError(e instanceof Error ? e.message : 'Could not save starred state')
+        })
     },
-    [applyStar],
+    [applyStar, refreshCounts],
   )
 
+  // Mark every unread item on the loaded page read: patch the page, fan the
+  // per-guid writes out (no bulk primitive yet — Task 6 swaps in
+  // `api.markAllRead`), then refetch counts. A failed fan-out reloads the page.
   const markAllRead = useCallback(() => {
-    const guids = unreadGuids(visible)
+    const guids = unreadGuids(pageData?.items ?? [])
     if (guids.length === 0) return
-    setItems((prev) => markGuidsRead(prev, guids))
-    setVisible((prev) => markGuidsRead(prev, guids))
-    void Promise.all(guids.map((g) => api.setItemRead(g, true))).catch((e) => {
-      setError(e instanceof Error ? e.message : 'Could not mark all read')
-      void loadItems()
-    })
-  }, [visible, loadItems])
+    setPageData((prev) => (prev ? { ...prev, items: markGuidsRead(prev.items, guids) } : prev))
+    void Promise.all(guids.map((g) => api.setItemRead(g, true)))
+      .then(() => refreshCounts())
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : 'Could not mark all read')
+        reload()
+      })
+  }, [pageData, refreshCounts, reload])
 
   // Add a feed from a pasted URL — resolve it first (#113): a site homepage is
   // discovered to its feed via the page's alternate link or a common-path probe;
@@ -289,13 +347,14 @@ export function ReaderApp({
         const discovered = await api.discoverFeed(url)
         const feed = await api.addFeed({ url: discovered.url, title: discovered.title })
         await api.refresh()
-        await Promise.all([loadFeeds(), loadItems()])
+        await loadFeeds()
+        reload()
         goToSelection({ kind: 'feed', url: feed.url })
       } finally {
         setAdding(false)
       }
     },
-    [loadFeeds, loadItems, goToSelection],
+    [loadFeeds, reload, goToSelection],
   )
 
   // OPML import: upsert every parsed feed (each add is dedup-by-url, so re-import
@@ -311,14 +370,15 @@ export function ReaderApp({
           parsed.map((f) => api.addFeed({ url: f.url, title: f.title, folder: f.folder })),
         )
         await api.refresh()
-        await Promise.all([loadFeeds(), loadItems()])
+        await loadFeeds()
+        reload()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Import failed')
       } finally {
         setImporting(false)
       }
     },
-    [loadFeeds, loadItems],
+    [loadFeeds, reload],
   )
 
   const handleRefresh = useCallback(async () => {
@@ -326,13 +386,14 @@ export function ReaderApp({
     setError(null)
     try {
       await api.refresh()
-      await Promise.all([loadFeeds(), loadItems()])
+      await loadFeeds()
+      reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Refresh failed')
     } finally {
       setRefreshing(false)
     }
-  }, [loadFeeds, loadItems])
+  }, [loadFeeds, reload])
 
   const handleRemove = useCallback(
     async (url: string) => {
@@ -340,12 +401,13 @@ export function ReaderApp({
       try {
         await api.removeFeed(url)
         if (selection.kind === 'feed' && selection.url === url) goToSelection({ kind: 'river' })
-        await Promise.all([loadFeeds(), loadItems()])
+        await loadFeeds()
+        reload()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not unsubscribe')
       }
     },
-    [loadFeeds, loadItems, selection, goToSelection],
+    [loadFeeds, reload, selection, goToSelection],
   )
 
   // Move a feed to a folder (or out of one). Optimistic: patch the feed's folder
@@ -387,7 +449,7 @@ export function ReaderApp({
       if (!action) return
       e.preventDefault()
       if (action.kind === 'move') {
-        const next = nextSelection(orderedVisible.map((i) => i.guid), selectedGuid, action.dir)
+        const next = nextSelection(visible.map((i) => i.guid), selectedGuid, action.dir)
         // Cursor moves replace history (not push) so Back steps between the
         // views / items you explicitly opened, not every j/k keystroke. The move
         // previews in the reading pane without marking read — 'o'/click do that.
@@ -403,7 +465,7 @@ export function ReaderApp({
         else window.scrollBy({ top: pageScrollDelta(window.innerHeight), behavior: 'smooth' })
         return
       }
-      const item = orderedVisible.find((i) => i.guid === selectedGuid)
+      const item = visible.find((i) => i.guid === selectedGuid)
       if (!item) return
       if (action.kind === 'star') toggleStar(item)
       else if (action.kind === 'toggleRead') toggleRead(item)
@@ -411,7 +473,7 @@ export function ReaderApp({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [orderedVisible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection])
+  }, [visible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection])
 
   const unreadInView = visible.some((i) => !i.read)
 
@@ -451,9 +513,9 @@ export function ReaderApp({
     <FeedSidebar
       feeds={feeds}
       selection={selection}
-      unreadCounts={counts}
+      unreadCounts={counts.unreadByFeed}
       riverUnread={riverTotal}
-      starredCount={starredTotal}
+      starredCount={counts.starred}
       onSelect={goToSelection}
       onAdd={handleAdd}
       onRemove={handleRemove}
@@ -472,9 +534,9 @@ export function ReaderApp({
     <FeedRail
       feeds={feeds}
       selection={selection}
-      unreadCounts={counts}
+      unreadCounts={counts.unreadByFeed}
       riverUnread={riverTotal}
-      starredCount={starredTotal}
+      starredCount={counts.starred}
       onSelect={goToSelection}
     />
   )
@@ -572,8 +634,8 @@ export function ReaderApp({
                 </div>
                 <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
                   <ItemList
-                    items={orderedVisible}
-                    loading={itemsLoading}
+                    items={visible}
+                    loading={loading}
                     selectedGuid={selectedGuid}
                     onSelect={openItem}
                     onToggleStar={toggleStar}
@@ -642,8 +704,8 @@ export function ReaderApp({
             {errorBanner}
             {listToolbar}
             <ItemList
-              items={orderedVisible}
-              loading={itemsLoading}
+              items={visible}
+              loading={loading}
               selectedGuid={selectedGuid}
               onSelect={openItemMobile}
               onToggleStar={toggleStar}
