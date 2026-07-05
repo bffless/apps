@@ -246,7 +246,6 @@
             "handlerType": "data_query",
             "config": {
               "limit": 500,
-              "filters": { "folder": { "op": "eq", "value": "steps.prep.folder" } },
               "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
               "condition": "steps.prep.hasFolder"
             }
@@ -256,7 +255,7 @@
             "name": "folderUrls",
             "handlerType": "function_handler",
             "config": {
-              "code": "function handler({ steps }) {\n  var rows = (steps && steps.folderFeeds) || []\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var u = rows[i] && rows[i].url\n    if (typeof u === 'string' && u) out.push(u)\n  }\n  return { urls: out, count: out.length }\n}\n",
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.folderFeeds) || []\n  var target = ((steps && steps.prep && steps.prep.folder) || '').toLowerCase()\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var f = rows[i] && rows[i].folder\n    var u = rows[i] && rows[i].url\n    if (typeof u === 'string' && u && typeof f === 'string' && f.toLowerCase() === target) out.push(u)\n  }\n  return { urls: out, count: out.length }\n}\n",
               "condition": "steps.prep.hasFolder"
             }
           },
@@ -899,11 +898,22 @@
             }
           },
           {
+            "id": "unreadStarred",
+            "name": "unreadStarred",
+            "handlerType": "db_aggregate",
+            "config": {
+              "filters": { "read": { "op": "eq", "value": "false" }, "starred": { "op": "eq", "value": "true" } },
+              "filterLogic": "and",
+              "schemaId": "96a1b5e7-96f0-43a4-baa8-2e19b539d07c",
+              "operation": "count"
+            }
+          },
+          {
             "id": "shape",
             "name": "shape",
             "handlerType": "function_handler",
             "config": {
-              "code": "function handler({ steps }) {\n  var u = (steps && steps.unread && steps.unread.results) || []\n  var map = {}\n  for (var i = 0; i < u.length; i++) {\n    var r = u[i] || {}\n    if (r.key != null) map[r.key] = r.value\n  }\n  var s = (steps && steps.starred && typeof steps.starred.result === 'number') ? steps.starred.result : 0\n  return { json: JSON.stringify({ unreadByFeed: map, starred: s }) }\n}\n"
+              "code": "function handler({ steps }) {\n  var u = (steps && steps.unread && steps.unread.results) || []\n  var map = {}\n  for (var i = 0; i < u.length; i++) {\n    var r = u[i] || {}\n    if (r.key != null) map[r.key] = r.value\n  }\n  var s = (steps && steps.starred && typeof steps.starred.result === 'number') ? steps.starred.result : 0\n  var us = (steps && steps.unreadStarred && typeof steps.unreadStarred.result === 'number') ? steps.unreadStarred.result : 0\n  return { json: JSON.stringify({ unreadByFeed: map, starred: s, unreadStarred: us }) }\n}\n"
             }
           },
           {
@@ -950,7 +960,6 @@
             "handlerType": "data_query",
             "config": {
               "limit": 500,
-              "filters": { "folder": { "op": "eq", "value": "steps.prep.folder" } },
               "schemaId": "d1216df3-9776-4de2-81b0-0343d758f83d",
               "condition": "steps.prep.hasFolder"
             }
@@ -960,7 +969,7 @@
             "name": "folderUrls",
             "handlerType": "function_handler",
             "config": {
-              "code": "function handler({ steps }) {\n  var rows = (steps && steps.folderFeeds) || []\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var u = rows[i] && rows[i].url\n    if (typeof u === 'string' && u) out.push(u)\n  }\n  return { urls: out, count: out.length }\n}\n",
+              "code": "function handler({ steps }) {\n  var rows = (steps && steps.folderFeeds) || []\n  var target = ((steps && steps.prep && steps.prep.folder) || '').toLowerCase()\n  var out = []\n  for (var i = 0; i < rows.length; i++) {\n    var f = rows[i] && rows[i].folder\n    var u = rows[i] && rows[i].url\n    if (typeof u === 'string' && u && typeof f === 'string' && f.toLowerCase() === target) out.push(u)\n  }\n  return { urls: out, count: out.length }\n}\n",
               "condition": "steps.prep.hasFolder"
             }
           },
