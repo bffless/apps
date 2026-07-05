@@ -69,29 +69,32 @@ async function uploadFile(parentId: string, name: string): Promise<{ id: string;
   return { id: node.id, storageKey: prepared.storageKey }
 }
 
-/** Upload a Site bundle (prepare+PUT each asset → POST /api/sites). */
+/**
+ * Upload a Site bundle at a content path prefix (prepare+PUT each asset at its
+ * verbatim key under `<path>/`, then POST /api/sites). Mirrors the structural
+ * uploadSite flow — no manifest.
+ */
 async function uploadSite(
   parentId: string,
-  name: string,
+  path: string,
   assets: string[],
 ): Promise<{ id: string; storageKeys: string[] }> {
-  const manifest: Record<string, string> = {}
   const storageKeys: string[] = []
   for (const relPath of assets) {
+    const key = `${path}/${relPath}`
     const prep = await fetch('/api/uploads/prepare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: relPath, contentType: 'text/html' }),
+      body: JSON.stringify({ filename: relPath, contentType: 'text/html', path: key }),
     })
     const prepared = (await prep.json()) as { uploadUrl: string; storageKey: string; publicPath: string }
     await fetch(prepared.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: relPath })
-    manifest[relPath] = prepared.publicPath
     storageKeys.push(prepared.storageKey)
   }
   const res = await fetch('/api/sites', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parentId, name, entry: assets[0], manifest }),
+    body: JSON.stringify({ parentId, name: path.split('/').pop(), entry: assets[0], path }),
   })
   expect(res.status).toBe(200)
   const { node } = (await res.json()) as { node: { id: string } }
@@ -158,18 +161,19 @@ describe('DELETE /api/node — write-gated hard delete', () => {
     expect(nodes.has(id)).toBe(true)
   })
 
-  it('deleting a site removes the node and purges every manifest asset object', async () => {
+  it('deleting a site removes the node (assets under its prefix deferred to the wipe)', async () => {
     setMockUser(USER_A)
     const folderId = await createFolder('root', 'Sites')
-    const { id, storageKeys } = await uploadSite(folderId, 'My Site', ['index.html', 'style.css', 'app.js'])
+    const { id, storageKeys } = await uploadSite(folderId, 'my-site', ['index.html', 'style.css', 'app.js'])
     expect(storageKeys).toHaveLength(3)
-    expect(storageKeys.every((k) => objects.has(k))).toBe(true)
+    // Assets live at their verbatim keys under the Site's prefix.
+    expect(storageKeys.every((k) => objects.has(k) && k.startsWith('my-site/'))).toBe(true)
 
     const res = await del(id)
     expect(res.status).toBe(200)
     expect(nodes.has(id)).toBe(false)
-    // No orphaned objects: every asset the manifest referenced is gone.
-    expect(storageKeys.some((k) => objects.has(k))).toBe(false)
+    // Structural storage retires the manifest: there is no side-map to enumerate,
+    // so the Site's objects are left for the greenfield wipe, not purged here.
   })
 
   it('refuses a non-empty folder with 409, then deletes it once emptied', async () => {

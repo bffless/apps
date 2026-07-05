@@ -273,7 +273,7 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       setPhase('uploading')
       setUploadProgress(`Uploading ${plural(siteItems.length, 'file')}…`)
       setUploadError(null)
-      const result = await uploadSite({ items: siteItems, entry, name: trimmedName, parentId: folderId })
+      const result = await uploadSite({ items: siteItems, entry, name: trimmedName, parentId: folderId, basePath: folderPath })
       if ('error' in result) {
         const err = result.error
         const msg =
