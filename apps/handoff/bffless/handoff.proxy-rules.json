@@ -4,7 +4,7 @@
   "kind": "bffless-proxy-rule-set",
   "ruleSet": {
     "name": "handoff",
-    "description": "Handoff app backend \u2014 uploads (presigned), node tree, ACL-gated serving, grants, share links.",
+    "description": "Handoff app backend — uploads (presigned), node tree, ACL-gated serving, grants, share links.",
     "environment": null
   },
   "rules": [
@@ -84,10 +84,25 @@
             "handlerType": "data_query"
           },
           {
+            "id": "allSites",
+            "name": "allSites",
+            "config": {
+              "filters": {
+                "nodeType": {
+                  "op": "eq",
+                  "value": "site"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+            },
+            "handlerType": "data_query"
+          },
+          {
             "id": "gate",
             "name": "gate",
             "config": {
-              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var uid=(user&&user.id)||null; var isAdmin=!!user&&user.role==='admin'; var stok=vtok(readCookie('hf_s')); var shareFolderId=(stok&&stok.s)?String(stok.s):''; var ftok=vtok(readCookie('hf_f')); var viewer; if(uid)viewer={userId:uid,isAdmin:isAdmin}; else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId}; else viewer={}; var folders=(steps&&steps.allFolders)||[]; var rows=(steps&&steps.nodeByKey)||[]; var node=(rows&&rows.length)?rows[0]:null; var allow=false; var level='none'; if(node){ var ch=folderChain(folders,node.parentId); ch.push({id:node.id,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); level=evalAccess(ch,viewer); allow=level!=='none'; } else { if(isAdmin)allow=true; else if(ftok)allow=true; else if(shareFolderId)allow=true; } var hasCred=!!uid||!!shareFolderId||!!ftok; var deny401=!allow&&!hasCred; var deny403=!allow&&hasCred; return {allow:allow,deny401:deny401,deny403:deny403,level:level,hasNode:!!node}; }"
+              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var uid=(user&&user.id)||null; var isAdmin=!!user&&user.role==='admin'; var stok=vtok(readCookie('hf_s')); var shareFolderId=(stok&&stok.s)?String(stok.s):''; var ftok=vtok(readCookie('hf_f')); var viewer; if(uid)viewer={userId:uid,isAdmin:isAdmin}; else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId}; else viewer={}; var folders=(steps&&steps.allFolders)||[]; var sitesList=(steps&&steps.allSites)||[]; var fullKey=(steps&&steps.parsePath&&steps.parsePath.fullKey)||''; var rows=(steps&&steps.nodeByKey)||[]; var node=(rows&&rows.length)?rows[0]:null; var allow=false; var level='none'; var resolved=false; if(node){ resolved=true; var ch=folderChain(folders,node.parentId); ch.push({id:node.id,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); level=evalAccess(ch,viewer); allow=level!=='none'; } else { var best=null; var bestLen=-1; for(var si=0;si<sitesList.length;si++){ var s=sitesList[si]||{}; var sp=String(s.storage_path||''); if(!sp)continue; if(fullKey===sp||fullKey.indexOf(sp+'/')===0){ if(sp.length>bestLen){bestLen=sp.length;best=s;} } } if(best){ resolved=true; var sid=best.id||best.recordId||best.record_id; var sch=folderChain(folders,best.parentId); sch.push({id:sid,ownerId:best.ownerId||null,grants:[],mode:'inheriting'}); level=evalAccess(sch,viewer); allow=level!=='none'; } } var notFound=!resolved; var hasCred=!!uid||!!shareFolderId; var deny401=!allow&&!notFound&&!hasCred; var deny403=!allow&&!notFound&&hasCred; return {allow:allow,deny401:deny401,deny403:deny403,deny404:notFound,level:level,hasNode:!!node,resolved:resolved}; }"
             },
             "handlerType": "function_handler"
           },
@@ -99,6 +114,17 @@
               "condition": "steps.gate.allow"
             },
             "handlerType": "file_serve_handler"
+          },
+          {
+            "id": "deny404",
+            "name": "deny404",
+            "config": {
+              "body": "{\"error\":\"not found\"}",
+              "status": 404,
+              "condition": "steps.gate.deny404",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
           },
           {
             "id": "deny401",
@@ -123,10 +149,10 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Serve content with per-folder ACL gate (ADR-0002). Resolves the file node by storage_path, evaluates access over its folder chain; site assets (no node) require a valid signed folder/share cookie; admin bypass."
+        "description": "Serve content with per-folder ACL gate (ADR-0002). Resolves a File node by its exact storage_path, or a Site-internal asset by the deepest Site node whose storage_path prefixes the request key (structural storage); evaluates access over the owning folder chain and serves the object by its exact key. 404 when the path resolves to neither a node nor a Site."
       },
       "isEnabled": true,
-      "description": "Serve files from handoff_nodes"
+      "description": "Serve files and Site assets from handoff_nodes (unified path-passthrough content endpoint)"
     },
     {
       "pathPattern": "/api/uploads/prepare",
@@ -140,13 +166,48 @@
         "name": "Handoff presigned prepare",
         "steps": [
           {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.filename != null) ? String(b.filename) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sibling",
+            "name": "sibling",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.body.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.check"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "guard",
+            "name": "guard",
+            "config": {
+              "code": "function handler({ user, steps }) { var pre = (steps && steps.pre) || {}; if (!pre.check) return { collision: false, ok: true }; var uid = (user && user.id) || null; var isRoot = pre.parentId === 'root'; var rows = (steps && steps.sibling) || []; var hit = false; for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; if (isRoot && r.ownerId !== uid) continue; var nm = (r.displayName != null) ? r.displayName : ((r.original_name != null) ? r.original_name : r.filename); if (nm === pre.name) { hit = true; break; } } return { collision: hit, ok: !hit }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
             "id": "presigned",
             "name": "presigned",
             "config": {
               "subDir": "content",
+              "keyStrategy": "verbatim",
+              "key": "request.body.path",
               "filename": "request.body.filename",
               "expiresIn": 3600,
-              "maxFileSize": 524288000
+              "maxFileSize": 524288000,
+              "condition": "steps.guard.ok"
             },
             "handlerType": "presigned_upload"
           },
@@ -156,12 +217,24 @@
             "config": {
               "body": "{{{steps.presigned}}}",
               "status": 200,
+              "condition": "steps.guard.ok",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "conflict",
+            "name": "conflict",
+            "config": {
+              "body": "{\"error\":\"An item with that name already exists in this folder. Rename it and try again.\"}",
+              "status": 409,
+              "condition": "steps.guard.collision",
               "contentType": "application/json"
             },
             "handlerType": "response_handler"
           }
         ],
-        "description": "Mint a presigned PUT for direct-to-bucket upload"
+        "description": "Mint a presigned PUT for direct-to-bucket upload — rejects (409) when a sibling in the target Folder already has this name (in-Folder uniqueness), so the existing object is never overwritten"
       },
       "isEnabled": true,
       "description": "Mint a presigned PUT URL for a direct-to-bucket content upload"
@@ -178,10 +251,44 @@
         "name": "Handoff register node",
         "steps": [
           {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.displayName != null) ? String(b.displayName) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sibling",
+            "name": "sibling",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.body.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.check"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "guard",
+            "name": "guard",
+            "config": {
+              "code": "function handler({ user, steps }) { var pre = (steps && steps.pre) || {}; if (!pre.check) return { collision: false, ok: true }; var uid = (user && user.id) || null; var isRoot = pre.parentId === 'root'; var rows = (steps && steps.sibling) || []; var hit = false; for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; if (isRoot && r.ownerId !== uid) continue; var nm = (r.displayName != null) ? r.displayName : ((r.original_name != null) ? r.original_name : r.filename); if (nm === pre.name) { hit = true; break; } } return { collision: hit, ok: !hit }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
             "id": "register",
             "name": "register",
             "config": {
               "subDir": "content",
+              "keyStrategy": "verbatim",
+              "key": "request.body.path",
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
               "storageKey": "request.body.storageKey",
               "extraFields": {
@@ -192,7 +299,8 @@
                 "displayName": "request.body.displayName"
               },
               "maxFileSize": 524288000,
-              "originalName": "request.body.originalName"
+              "originalName": "request.body.originalName",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "register_upload"
           },
@@ -200,7 +308,8 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.register) || {};\n  var body = (request && request.body) || {};\n  var rawSize = (r.size != null) ? r.size : null;\n  var size = (rawSize != null) ? Number(rawSize) : null;\n  var rawCreated = (r.createdMs != null) ? r.createdMs : body.createdMs;\n  var created = (rawCreated != null) ? Number(rawCreated) : 0;\n  return {\n    node: {\n      id: r.id || r.recordId || r.record_id || null,\n      type: r.nodeType || 'file',\n      name: r.displayName || body.displayName || r.original_name || r.filename || 'Untitled',\n      mime: r.content_type || r.mime_type || null,\n      size: (size != null && !isNaN(size)) ? size : null,\n      url: r.url || null,\n      storageKey: r.storage_path || body.storageKey || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: 'inheriting', grants: [],\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.register) || {};\n  var body = (request && request.body) || {};\n  var rawSize = (r.size != null) ? r.size : null;\n  var size = (rawSize != null) ? Number(rawSize) : null;\n  var rawCreated = (r.createdMs != null) ? r.createdMs : body.createdMs;\n  var created = (rawCreated != null) ? Number(rawCreated) : 0;\n  return {\n    node: {\n      id: r.id || r.recordId || r.record_id || null,\n      type: r.nodeType || 'file',\n      name: r.displayName || body.displayName || r.original_name || r.filename || 'Untitled',\n      mime: r.content_type || r.mime_type || null,\n      size: (size != null && !isNaN(size)) ? size : null,\n      url: r.url || null,\n      storageKey: r.storage_path || body.storageKey || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: 'inheriting', grants: [],\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "function_handler"
           },
@@ -210,12 +319,24 @@
             "config": {
               "body": "{\"node\": {{{steps.shape.node}}}}",
               "status": 200,
+              "condition": "steps.guard.ok",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "conflict",
+            "name": "conflict",
+            "config": {
+              "body": "{\"error\":\"An item with that name already exists in this folder. Rename it and try again.\"}",
+              "status": 409,
+              "condition": "steps.guard.collision",
               "contentType": "application/json"
             },
             "handlerType": "response_handler"
           }
         ],
-        "description": "Register an uploaded file as a node and return the shaped Node"
+        "description": "Register an uploaded file as a node and return the shaped Node — rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)"
       },
       "isEnabled": true,
       "description": "Finalize a direct-to-bucket upload into a handoff_nodes file record"
@@ -282,7 +403,7 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ steps }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } var folders=(steps&&steps.allFolders)||[]; var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var fid=f.id||f.recordId||f.record_id;if(fid)byId[fid]=f;} function folderChain(startId){ var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var vw=(steps&&steps.gate&&steps.gate.viewer)||{}; var rows=(steps&&steps.query)||[]; var out=[]; for (var i=0;i<rows.length;i++){ var r=rows[i]||{}; var id=r.id||r.recordId||r.record_id||null; if(!id)continue; var t=r.nodeType||'file'; var entry=r.siteEntry||'index.html'; var size=(typeof r.size==='number')?r.size:(r.size!=null?Number(r.size):null); var created=(typeof r.createdMs==='number')?r.createdMs:(r.createdMs!=null?Number(r.createdMs):0); var url=(t==='site'&&id)?('/api/sites/'+id+'/'+entry):(r.url||null); var grants=r.grantsJson; if(typeof grants==='string'){try{grants=JSON.parse(grants);}catch(e){grants=[];}} if(!grants||Object.prototype.toString.call(grants)!=='[object Array]')grants=[]; var ch; if(t==='folder'){ch=folderChain(id);} else {ch=folderChain(r.parentId);ch.push({id:id,ownerId:r.ownerId||null,grants:[],mode:'inheriting'});} if(evalAccess(ch,vw)==='none')continue; out.push({ id:id, type:t, name:r.displayName||r.original_name||r.filename||'Untitled', mime:r.content_type||r.mime_type||null, size:(size!=null&&!isNaN(size))?size:null, url:url, storageKey:r.storage_path||null, parentId:r.parentId||'root', ownerId:r.ownerId||null, mode:r.mode||'inheriting', grants:grants, createdAt:(created!=null&&!isNaN(created))?created:0 }); } return { nodes: out }; }",
+              "code": "function handler({ steps }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } var folders=(steps&&steps.allFolders)||[]; var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var fid=f.id||f.recordId||f.record_id;if(fid)byId[fid]=f;} function folderChain(startId){ var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var vw=(steps&&steps.gate&&steps.gate.viewer)||{}; var rows=(steps&&steps.query)||[]; var out=[]; for (var i=0;i<rows.length;i++){ var r=rows[i]||{}; var id=r.id||r.recordId||r.record_id||null; if(!id)continue; var t=r.nodeType||'file'; var entry=r.siteEntry||'index.html'; var size=(typeof r.size==='number')?r.size:(r.size!=null?Number(r.size):null); var created=(typeof r.createdMs==='number')?r.createdMs:(r.createdMs!=null?Number(r.createdMs):0); var url=r.url||null; var grants=r.grantsJson; if(typeof grants==='string'){try{grants=JSON.parse(grants);}catch(e){grants=[];}} if(!grants||Object.prototype.toString.call(grants)!=='[object Array]')grants=[]; var ch; if(t==='folder'){ch=folderChain(id);} else {ch=folderChain(r.parentId);ch.push({id:id,ownerId:r.ownerId||null,grants:[],mode:'inheriting'});} if(evalAccess(ch,vw)==='none')continue; out.push({ id:id, type:t, name:r.displayName||r.original_name||r.filename||'Untitled', mime:r.content_type||r.mime_type||null, size:(size!=null&&!isNaN(size))?size:null, url:url, storageKey:r.storage_path||null, parentId:r.parentId||'root', ownerId:r.ownerId||null, mode:r.mode||'inheriting', grants:grants, createdAt:(created!=null&&!isNaN(created))?created:0 }); } return { nodes: out }; }",
               "condition": "steps.gate.allow"
             },
             "handlerType": "function_handler"
@@ -321,7 +442,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "List nodes whose parentId matches the query \u2014 gated by per-folder ACL (ADR-0002). Requires view+ on a non-root parent; children are filtered to those the viewer can access (private by default at root)."
+        "description": "List nodes whose parentId matches the query — gated by per-folder ACL (ADR-0002). Requires view+ on a non-root parent; children are filtered to those the viewer can access (private by default at root)."
       },
       "isEnabled": true,
       "description": "List child nodes of a folder (default root)"
@@ -382,7 +503,7 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ steps }) {\n  var r = (steps && steps.query) || {};\n  if (r == null || typeof r !== 'object') r = {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var t = r.nodeType || 'file';\n  var entry = r.siteEntry || 'index.html';\n  var size = (typeof r.size === 'number') ? r.size : (r.size != null ? Number(r.size) : null);\n  var created = (typeof r.createdMs === 'number') ? r.createdMs : (r.createdMs != null ? Number(r.createdMs) : 0);\n  var url = (t === 'site' && id) ? ('/api/sites/' + id + '/' + entry) : (r.url || null);\n  var grants = r.grantsJson;\n  if (typeof grants === 'string') { try { grants = JSON.parse(grants); } catch (e) { grants = []; } }\n  if (!grants || Object.prototype.toString.call(grants) !== '[object Array]') { grants = []; }\n  var node = id ? {\n    id: id, type: t,\n    name: r.displayName || r.original_name || r.filename || 'Untitled',\n    mime: r.content_type || r.mime_type || null,\n    size: (size != null && !isNaN(size)) ? size : null,\n    url: url, storageKey: r.storage_path || null,\n    parentId: r.parentId || 'root',\n    ownerId: r.ownerId || null,\n    mode: r.mode || 'inheriting',\n    grants: grants,\n    createdAt: (created != null && !isNaN(created)) ? created : 0\n  } : null;\n  return { node: node };\n}",
+              "code": "function handler({ steps }) {\n  var r = (steps && steps.query) || {};\n  if (r == null || typeof r !== 'object') r = {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var t = r.nodeType || 'file';\n  var entry = r.siteEntry || 'index.html';\n  var size = (typeof r.size === 'number') ? r.size : (r.size != null ? Number(r.size) : null);\n  var created = (typeof r.createdMs === 'number') ? r.createdMs : (r.createdMs != null ? Number(r.createdMs) : 0);\n  var url = r.url || null;\n  var grants = r.grantsJson;\n  if (typeof grants === 'string') { try { grants = JSON.parse(grants); } catch (e) { grants = []; } }\n  if (!grants || Object.prototype.toString.call(grants) !== '[object Array]') { grants = []; }\n  var node = id ? {\n    id: id, type: t,\n    name: r.displayName || r.original_name || r.filename || 'Untitled',\n    mime: r.content_type || r.mime_type || null,\n    size: (size != null && !isNaN(size)) ? size : null,\n    url: url, storageKey: r.storage_path || null,\n    parentId: r.parentId || 'root',\n    ownerId: r.ownerId || null,\n    mode: r.mode || 'inheriting',\n    grants: grants,\n    createdAt: (created != null && !isNaN(created)) ? created : 0\n  } : null;\n  return { node: node };\n}",
               "condition": "steps.gate.allow"
             },
             "handlerType": "function_handler"
@@ -421,7 +542,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Return one node by id, shaped \u2014 gated by per-folder ACL (ADR-0002)."
+        "description": "Return one node by id, shaped — gated by per-folder ACL (ADR-0002)."
       },
       "isEnabled": true,
       "description": "Fetch a single node by id (?id=)"
@@ -490,7 +611,7 @@
             "id": "gate",
             "name": "gate",
             "config": {
-              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } \n  var uid=(user&&user.id)||null;\n  var isAdmin=!!user&&user.role==='admin';\n  var stok=vtok(readCookie('hf_s'));\n  var shareFolderId=(stok&&stok.s)?String(stok.s):'';\n  var ftok=vtok(readCookie('hf_f'));\n  var viewer;\n  if(uid)viewer={userId:uid,isAdmin:isAdmin};\n  else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId};\n  else viewer={};\n  var folders=(steps&&steps.allFolders)||[];\n  var node=(steps&&steps.query)||null;\n  if(node&&typeof node==='object'){ var hasId=node.id||node.recordId||node.record_id; if(!hasId)node=null; } else { node=null; }\n  var allow=false; var level='none';\n  var nodeType=''; var isFile=false; var isFolder=false; var isSite=false; var storageKey='';\n  if(node){\n    var nid=node.id||node.recordId||node.record_id;\n    nodeType=node.nodeType||'file';\n    isFile=nodeType==='file'; isFolder=nodeType==='folder'; isSite=nodeType==='site';\n    var ch;\n    if(isFolder){ ch=folderChain(folders,nid); }\n    else { ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); }\n    level=evalAccess(ch,viewer);\n    allow=rank(level)>=2;\n    var sp=String(node.storage_path||'');\n    var um=sp.indexOf('/uploads/');\n    storageKey=(um>=0)?sp.slice(um+9):'';\n  }\n  var kids=(steps&&steps.children)||[];\n  var childCount=(Object.prototype.toString.call(kids)==='[object Array]')?kids.length:0;\n  var hasChildren=childCount>0;\n  var guardBlocked=isFolder&&hasChildren;\n  var hasCred=!!uid||!!shareFolderId||!!ftok;\n  var deny401=!allow&&!hasCred;\n  var deny403=!allow&&hasCred;\n  var doPurge=allow&&isFile&&!!storageKey;\n  var doPurgeSite=allow&&isSite;\n  var doDelete=allow&&!guardBlocked;\n  return {\n    allow:allow, deny401:deny401, deny403:deny403, level:level,\n    isFile:isFile, isFolder:isFolder, isSite:isSite, storageKey:storageKey,\n    childCount:childCount, hasChildren:hasChildren, guardBlocked:guardBlocked,\n    doPurge:doPurge, doPurgeSite:doPurgeSite, doDelete:doDelete\n  };\n}"
+              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } \n  var uid=(user&&user.id)||null;\n  var isAdmin=!!user&&user.role==='admin';\n  var stok=vtok(readCookie('hf_s'));\n  var shareFolderId=(stok&&stok.s)?String(stok.s):'';\n  var ftok=vtok(readCookie('hf_f'));\n  var viewer;\n  if(uid)viewer={userId:uid,isAdmin:isAdmin};\n  else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId};\n  else viewer={};\n  var folders=(steps&&steps.allFolders)||[];\n  var node=(steps&&steps.query)||null;\n  if(node&&typeof node==='object'){ var hasId=node.id||node.recordId||node.record_id; if(!hasId)node=null; } else { node=null; }\n  var allow=false; var level='none';\n  var nodeType=''; var isFile=false; var isFolder=false; var isSite=false; var storageKey='';\n  if(node){\n    var nid=node.id||node.recordId||node.record_id;\n    nodeType=node.nodeType||'file';\n    isFile=nodeType==='file'; isFolder=nodeType==='folder'; isSite=nodeType==='site';\n    var ch;\n    if(isFolder){ ch=folderChain(folders,nid); }\n    else { ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); }\n    level=evalAccess(ch,viewer);\n    allow=rank(level)>=2;\n    var sp=String(node.storage_path||'');\n    var um=sp.indexOf('/uploads/');\n    storageKey=(um>=0)?sp.slice(um+9):'';\n  }\n  var kids=(steps&&steps.children)||[];\n  var childCount=(Object.prototype.toString.call(kids)==='[object Array]')?kids.length:0;\n  var hasChildren=childCount>0;\n  var guardBlocked=isFolder&&hasChildren;\n  var hasCred=!!uid||!!shareFolderId||!!ftok;\n  var deny401=!allow&&!hasCred;\n  var deny403=!allow&&hasCred;\n  var doPurge=allow&&isFile&&!!storageKey;\n  var doDelete=allow&&!guardBlocked;\n  return {\n    allow:allow, deny401:deny401, deny403:deny403, level:level,\n    isFile:isFile, isFolder:isFolder, isSite:isSite, storageKey:storageKey,\n    childCount:childCount, hasChildren:hasChildren, guardBlocked:guardBlocked,\n    doPurge:doPurge, doDelete:doDelete\n  };\n}"
             },
             "handlerType": "function_handler"
           },
@@ -506,29 +627,11 @@
             "handlerType": "response_handler"
           },
           {
-            "id": "siteKeys",
-            "name": "siteKeys",
-            "config": {
-              "code": "function handler({ steps }) {\n  var node = (steps && steps.query) || {};\n  if (!node || typeof node !== 'object') node = {};\n  var man = node.manifest;\n  if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } }\n  if (!man || typeof man !== 'object') man = {};\n  var marker = '/api/uploads/';\n  var list = [];\n  var seen = {};\n  for (var rel in man) {\n    if (!Object.prototype.hasOwnProperty.call(man, rel)) continue;\n    var target = man[rel];\n    if (typeof target !== 'string') continue;\n    if (target.indexOf(marker) !== 0) continue;\n    if (target.indexOf('..') >= 0) continue;\n    var key = target.slice(marker.length);\n    if (!key || seen[key]) continue;\n    seen[key] = true;\n    list.push(key);\n  }\n  return { list: list, count: list.length };\n}",
-              "condition": "steps.gate.isSite"
-            },
-            "handlerType": "function_handler"
-          },
-          {
             "id": "purgeObject",
             "name": "purgeObject",
             "config": {
               "key": "{{steps.gate.storageKey}}",
               "condition": "steps.gate.doPurge"
-            },
-            "handlerType": "file_delete"
-          },
-          {
-            "id": "purgeSiteAssets",
-            "name": "purgeSiteAssets",
-            "config": {
-              "keys": "steps.siteKeys.list",
-              "condition": "steps.gate.doPurgeSite"
             },
             "handlerType": "file_delete"
           },
@@ -576,10 +679,10 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Hard-delete one node by id \u2014 write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files; refuses a non-empty folder with 409. Client recurses for subtree delete."
+        "description": "Hard-delete one node by id — write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files; refuses a non-empty folder with 409. A Site drops its record only — its assets under the Site's content path prefix are left for the greenfield wipe (no manifest to enumerate). Client recurses for subtree delete."
       },
       "isEnabled": true,
-      "description": "Delete a single node by id (?id=) \u2014 write-gated, hard delete"
+      "description": "Delete a single node by id (?id=) — write-gated, hard delete"
     },
     {
       "pathPattern": "/api/sign",
@@ -674,7 +777,7 @@
             "handlerType": "response_handler"
           }
         ],
-        "description": "Presigned GET for direct bucket playback (video/audio) \u2014 gated by per-folder ACL (ADR-0002). Resolves the file node by storage_path and requires view+ access (or admin); no cookie fallback since this mints a bucket URL."
+        "description": "Presigned GET for direct bucket playback (video/audio) — gated by per-folder ACL (ADR-0002). Resolves the file node by storage_path and requires view+ access (or admin); no cookie fallback since this mints a bucket URL."
       },
       "isEnabled": true,
       "description": "Mint a short-lived presigned GET URL for a content object (video/audio direct play)"
@@ -742,20 +845,62 @@
         "name": "Handoff register site",
         "steps": [
           {
+            "id": "pre",
+            "name": "pre",
+            "config": {
+              "code": "function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.name != null) ? String(b.name) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "sibling",
+            "name": "sibling",
+            "config": {
+              "filters": {
+                "parentId": {
+                  "op": "eq",
+                  "value": "request.body.parentId"
+                }
+              },
+              "pageSize": 500,
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.pre.check"
+            },
+            "handlerType": "data_query"
+          },
+          {
+            "id": "guard",
+            "name": "guard",
+            "config": {
+              "code": "function handler({ user, steps }) { var pre = (steps && steps.pre) || {}; if (!pre.check) return { collision: false, ok: true }; var uid = (user && user.id) || null; var isRoot = pre.parentId === 'root'; var rows = (steps && steps.sibling) || []; var hit = false; for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; if (isRoot && r.ownerId !== uid) continue; var nm = (r.displayName != null) ? r.displayName : ((r.original_name != null) ? r.original_name : r.filename); if (nm === pre.name) { hit = true; break; } } return { collision: hit, ok: !hit }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
+            "id": "build",
+            "name": "build",
+            "config": {
+              "code": "function handler({ request, deployment }) { var body = (request && request.body) || {}; var path = String(body.path || ''); var entry = String(body.entry || 'index.html'); var owner = (deployment && deployment.owner) || ''; var repo = (deployment && deployment.repo) || ''; var storagePrefix = (path && owner && repo) ? (owner + '/' + repo + '/uploads/content/' + path) : ''; var url = path ? ('/api/uploads/content/' + path + '/' + entry) : null; return { path: path, entry: entry, storagePrefix: storagePrefix, url: url }; }"
+            },
+            "handlerType": "function_handler"
+          },
+          {
             "id": "create",
             "name": "create",
             "config": {
               "fields": {
                 "mode": "'inheriting'",
+                "url": "steps.build.url",
                 "ownerId": "user.id",
-                "manifest": "request.body.manifest",
                 "nodeType": "'site'",
                 "parentId": "request.body.parentId",
                 "createdMs": "request.body.createdMs",
-                "siteEntry": "request.body.entry",
+                "siteEntry": "steps.build.entry",
+                "storage_path": "steps.build.storagePrefix",
                 "displayName": "request.body.name"
               },
-              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "data_create"
           },
@@ -763,7 +908,8 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var entry = r.siteEntry || body.entry || 'index.html';\n  var created = (r.createdMs != null) ? Number(r.createdMs) : (body.createdMs != null ? Number(body.createdMs) : 0);\n  var url = id ? ('/api/sites/' + id + '/' + entry) : null;\n  return {\n    node: {\n      id: id, type: r.nodeType || 'site',\n      name: r.displayName || body.name || 'Untitled site',\n      mime: null, size: null, url: url, storageKey: null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting', grants: [],\n      siteEntry: entry,\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}"
+              "code": "function handler({ request, steps }) {\n  var r = (steps && steps.create) || {};\n  var body = (request && request.body) || {};\n  var build = (steps && steps.build) || {};\n  var id = r.id || r.recordId || r.record_id || null;\n  var entry = r.siteEntry || build.entry || body.entry || 'index.html';\n  var created = (r.createdMs != null) ? Number(r.createdMs) : (body.createdMs != null ? Number(body.createdMs) : 0);\n  var url = r.url || build.url || null;\n  return {\n    node: {\n      id: id, type: r.nodeType || 'site',\n      name: r.displayName || body.name || 'Untitled site',\n      mime: null, size: null, url: url, storageKey: null,\n      path: build.path || null,\n      parentId: r.parentId || body.parentId || 'root',\n      ownerId: r.ownerId || null,\n      mode: r.mode || 'inheriting', grants: [],\n      siteEntry: entry,\n      createdAt: (created != null && !isNaN(created)) ? created : 0\n    }\n  };\n}",
+              "condition": "steps.guard.ok"
             },
             "handlerType": "function_handler"
           },
@@ -773,123 +919,27 @@
             "config": {
               "body": "{\"node\": {{{steps.shape.node}}}}",
               "status": 200,
+              "condition": "steps.guard.ok",
+              "contentType": "application/json"
+            },
+            "handlerType": "response_handler"
+          },
+          {
+            "id": "conflict",
+            "name": "conflict",
+            "config": {
+              "body": "{\"error\":\"An item with that name already exists in this folder. Rename it and try again.\"}",
+              "status": 409,
+              "condition": "steps.guard.collision",
               "contentType": "application/json"
             },
             "handlerType": "response_handler"
           }
         ],
-        "description": "Create a site node with manifest and return the shaped Node (url = iframe view path)"
+        "description": "Create a site node at its content path prefix (storage_path = owner/repo/uploads/content/<path>; url = the Entry's content URL) and return the shaped Node. No manifest — assets serve by path passthrough on the unified content endpoint (structural storage). Rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)."
       },
       "isEnabled": true,
-      "description": "Register a Site node (multi-file HTML bundle) with its manifest"
-    },
-    {
-      "pathPattern": "/api/sites/*",
-      "method": "GET",
-      "targetUrl": "pipeline",
-      "stripPrefix": true,
-      "order": 10,
-      "timeout": 30000,
-      "proxyType": "pipeline",
-      "pipelineConfig": {
-        "name": "Handoff serve site",
-        "steps": [
-          {
-            "id": "parse",
-            "name": "parse",
-            "config": {
-              "code": "function handler({ request }) { var p = (request && request.path) || ''; var marker = '/api/sites/'; var i = p.indexOf(marker); var rest = (i >= 0) ? p.slice(i + marker.length) : ''; var slash = rest.indexOf('/'); var siteId = (slash >= 0) ? rest.slice(0, slash) : rest; var relPath = (slash >= 0) ? rest.slice(slash + 1) : ''; var isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(siteId); return { siteId: siteId, relPath: relPath, hasSite: isUuid }; }"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "query",
-            "name": "query",
-            "config": {
-              "recordId": "steps.parse.siteId",
-              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
-              "condition": "steps.parse.hasSite"
-            },
-            "handlerType": "data_query"
-          },
-          {
-            "id": "allFolders",
-            "name": "allFolders",
-            "config": {
-              "filters": {
-                "nodeType": {
-                  "op": "eq",
-                  "value": "folder"
-                }
-              },
-              "pageSize": 500,
-              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0"
-            },
-            "handlerType": "data_query"
-          },
-          {
-            "id": "gate",
-            "name": "gate",
-            "config": {
-              "code": "function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\\s+|\\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}return inC?'view':'none';} if(!vw.userId)return 'none'; var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){if(gs[e].principalId===vw.userId&&rank(gs[e].level)>rank(best))best=gs[e].level;}} return best; } function folderChain(folders,startId){ var byId={};for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id)byId[id]=f;} var rev=[];var cur=String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=n.parentId||'';g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } var uid=(user&&user.id)||null; var isAdmin=!!user&&user.role==='admin'; var stok=vtok(readCookie('hf_s')); var shareFolderId=(stok&&stok.s)?String(stok.s):''; var ftok=vtok(readCookie('hf_f')); var viewer; if(uid)viewer={userId:uid,isAdmin:isAdmin}; else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId}; else viewer={}; var folders=(steps&&steps.allFolders)||[]; var node=(steps&&steps.query)||null; if(node&&typeof node==='object'){ if(!(node.id||node.recordId||node.record_id))node=null; } else { node=null; } var allow=false; var level='none'; if(node){ var nid=node.id||node.recordId||node.record_id; var ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); level=evalAccess(ch,viewer); allow=level!=='none'; } var hasCred=!!uid||!!shareFolderId||!!ftok; var deny401=!allow&&!hasCred; var deny403=!allow&&hasCred; return {allow:allow,deny401:deny401,deny403:deny403,level:level}; }"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "resolve",
-            "name": "resolve",
-            "config": {
-              "code": "function handler({ steps }) { var node = (steps && steps.query) || {}; if (!node || typeof node !== 'object') node = {}; var man = node.manifest; if (typeof man === 'string') { try { man = JSON.parse(man); } catch (e) { man = {}; } } if (!man || typeof man !== 'object') man = {}; var entry = node.siteEntry || 'index.html'; var rel = (steps.parse && steps.parse.relPath) || ''; try { rel = decodeURIComponent(rel); } catch (e) {} if (!rel || rel.charAt(rel.length - 1) === '/') rel = entry; var target = (man[rel] != null) ? man[rel] : null; var marker = '/api/uploads/'; var serveKey = ''; if (target && typeof target === 'string' && target.indexOf(marker) === 0 && target.indexOf('..') < 0) serveKey = target.slice(marker.length); var allow = !!(steps.gate && steps.gate.allow); var hasKey = !!serveKey; return { target: target, serveKey: serveKey, rel: rel, doServe: allow && hasKey, notFound: allow && !hasKey }; }"
-            },
-            "handlerType": "function_handler"
-          },
-          {
-            "id": "serve",
-            "name": "serve",
-            "config": {
-              "key": "{{steps.resolve.serveKey}}",
-              "condition": "steps.resolve.doServe"
-            },
-            "handlerType": "file_serve_handler"
-          },
-          {
-            "id": "notfound",
-            "name": "notfound",
-            "config": {
-              "body": "{\"error\":\"asset not found\"}",
-              "status": 404,
-              "condition": "steps.resolve.notFound",
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          },
-          {
-            "id": "deny401",
-            "name": "deny401",
-            "config": {
-              "body": "{\"error\":\"unauthorized\"}",
-              "status": 401,
-              "condition": "steps.gate.deny401",
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          },
-          {
-            "id": "deny403",
-            "name": "deny403",
-            "config": {
-              "body": "{\"error\":\"forbidden\"}",
-              "status": 403,
-              "condition": "steps.gate.deny403",
-              "contentType": "application/json"
-            },
-            "handlerType": "response_handler"
-          }
-        ],
-        "description": "Map /api/sites/<id>/<relPath> to the stored object via manifest, then serve the bytes IN-PLACE (file_serve_handler, 200) \u2014 gated by per-folder ACL (ADR-0002). Serving in-place (no 302) keeps the iframe document URL under /api/sites/<id>/, so a Site's relative sub-resources re-enter this rule and re-resolve the manifest, and every asset request resolves the site node for its own ACL check (no hf_f cookie dependency)."
-      },
-      "isEnabled": true,
-      "description": "Serve a Site asset by relative path via manifest (in-place, same-origin)"
+      "description": "Register a Site node (multi-file HTML bundle) at its content path prefix"
     },
     {
       "pathPattern": "/api/grants",
@@ -1431,7 +1481,7 @@
         "description": "Validate a share-link token and issue a signed hf_s share cookie (View-only, folder-scoped)."
       },
       "isEnabled": true,
-      "description": "Claim a share-link token (public) \u2014 validates the token and sets a signed folder-scoped hf_s view cookie the ACL gate accepts (ADR-0002)."
+      "description": "Claim a share-link token (public) — validates the token and sets a signed folder-scoped hf_s view cookie the ACL gate accepts (ADR-0002)."
     },
     {
       "pathPattern": "/r/*",

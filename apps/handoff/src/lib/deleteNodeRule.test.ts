@@ -30,7 +30,7 @@ describe('handoff DELETE /api/node proxy rule', () => {
     const ids = rule!.pipelineConfig.steps.map((s: any) => s.id)
     expect(ids).toEqual([
       'pre', 'query', 'allFolders', 'children', 'gate',
-      'guardNonEmpty', 'siteKeys', 'purgeObject', 'purgeSiteAssets',
+      'guardNonEmpty', 'purgeObject',
       'del', 'response', 'deny401', 'deny403',
     ])
   })
@@ -69,18 +69,15 @@ describe('handoff DELETE /api/node proxy rule', () => {
     expect(step('purgeObject').config.condition).toBe('steps.gate.doPurge')
   })
 
-  it('purges a site\'s manifest assets via file_delete keys-as-expression', () => {
-    // siteKeys parses the node manifest into uploads-root-relative object keys.
-    const siteKeys = step('siteKeys')
-    expect(siteKeys.handlerType).toBe('function_handler')
-    expect(siteKeys.config.condition).toBe('steps.gate.isSite')
-    expect(siteKeys.config.code).toContain('node.manifest')
-    expect(siteKeys.config.code).toContain('/api/uploads/')
-    // purgeSiteAssets feeds that runtime list to the keys-as-expression mode (ce#364).
-    const purge = step('purgeSiteAssets')
-    expect(purge.handlerType).toBe('file_delete')
-    expect(purge.config.keys).toBe('steps.siteKeys.list')
-    expect(purge.config.condition).toBe('steps.gate.doPurgeSite')
+  it('no longer carries the retired manifest-based site-asset purge (structural storage)', () => {
+    // Sites unified onto path-passthrough storage: there is no manifest to
+    // enumerate, so the siteKeys / purgeSiteAssets steps are gone. A Site's
+    // assets under its content prefix are left for the greenfield wipe.
+    expect(step('siteKeys')).toBeUndefined()
+    expect(step('purgeSiteAssets')).toBeUndefined()
+    const gateCode = step('gate').config.code as string
+    expect(gateCode).not.toContain('doPurgeSite')
+    expect(gateCode).not.toContain('manifest')
   })
 
   it('hard-deletes the record and 200s only when actually deleted', () => {

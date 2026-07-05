@@ -15,7 +15,7 @@ const guestSession: Session = { authenticated: false }
 function folder(ownerId: string | null): HandoffNode {
   return {
     id: 'f1', type: 'folder', name: 'F', mime: null, size: null, url: null,
-    storageKey: null, parentId: 'root', createdAt: 0, ownerId, grants: [], mode: 'inheriting',
+    storageKey: null, path: null, parentId: 'root', createdAt: 0, ownerId, grants: [], mode: 'inheriting',
   }
 }
 

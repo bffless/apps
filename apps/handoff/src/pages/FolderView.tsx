@@ -35,7 +35,8 @@ import {
 } from '../store/handoffApi'
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
-import { buildBreadcrumb, buildAncestorFolderChain } from '../lib/tree'
+import { buildBreadcrumb, buildAncestorFolderChain, folderContentPath } from '../lib/tree'
+import { contentSubPath } from '../lib/contentPath'
 import { formatBytes, formatDate } from '../lib/format'
 import {
   filesFromDirectoryInput,
@@ -47,6 +48,7 @@ import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { useSession, adminLoginUrl } from '../lib/session'
 import { evaluateAccess, inShareMode } from '../lib/acl'
+import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
 import { Menu } from '../components/Menu'
@@ -197,6 +199,9 @@ function Breadcrumb({ folderId, onChainUpdate }: BreadcrumbProps) {
 
 interface UploadFolderControlProps {
   folderId: string
+  /** The owning Folder's verbatim content path — the structural prefix a folder
+   *  import stores its files under (`''` for a root import). */
+  folderPath: string
   onDone: (message: string) => void
 }
 
@@ -207,7 +212,7 @@ export interface UploadFolderControlHandle {
 }
 
 const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderControlProps>(
-  function UploadFolderControl({ folderId, onDone }, ref) {
+  function UploadFolderControl({ folderId, folderPath, onDone }, ref) {
     const folderRef = useRef<HTMLInputElement>(null)
     const zipRef = useRef<HTMLInputElement>(null)
 
@@ -269,7 +274,7 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       setPhase('uploading')
       setUploadProgress(`Uploading ${plural(siteItems.length, 'file')}…`)
       setUploadError(null)
-      const result = await uploadSite({ items: siteItems, entry, name: trimmedName, parentId: folderId })
+      const result = await uploadSite({ items: siteItems, entry, name: trimmedName, parentId: folderId, basePath: folderPath })
       if ('error' in result) {
         const err = result.error
         const msg =
@@ -289,7 +294,7 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       setPhase('importing')
       setUploadProgress(`Importing ${plural(folderCount, 'folder')} and ${plural(fileCount, 'file')}…`)
       setUploadError(null)
-      const result = await importFolder({ items: rawItems, parentId: folderId })
+      const result = await importFolder({ items: rawItems, parentId: folderId, basePath: folderPath })
       if ('error' in result) {
         const err = result.error
         const msg =
@@ -929,6 +934,14 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
 
+  // The current Folder's verbatim content path — the prefix every File uploaded
+  // here (single file OR folder import) is stored under, so relative refs resolve
+  // on the unified content endpoint (structural storage). '' for a root upload.
+  const currentFolderPath = folderContentPath(
+    currentFolder ? { ...ancestorNodesById, [currentFolder.id]: currentFolder } : ancestorNodesById,
+    folderId,
+  )
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUploadedNodes([])
@@ -937,7 +950,25 @@ export function FolderView({ folderId }: FolderViewProps) {
   }, [folderId])
 
   async function handleFile(file: File) {
-    const result = await uploadFile({ file, parentId: folderId })
+    // In-Folder name uniqueness (structural storage, Slice 4): a name identifies
+    // content within a Folder, so reject a File whose name duplicates an existing
+    // sibling up front — never overwrite the sibling's bytes, never auto-suffix.
+    // The pipeline enforces this authoritatively too; this is instant feedback.
+    if (isNameTaken(rawNodes ?? [], folderId, file.name)) {
+      toast(nameCollisionMessage(file.name), 'error')
+      return
+    }
+    // Store the File at its verbatim structural key (owning Folder path + name)
+    // so relative refs resolve on the unified content endpoint (structural
+    // storage, Slice 1).
+    let path: string
+    try {
+      path = contentSubPath(currentFolderPath, file.name)
+    } catch {
+      toast(`Can’t upload “${file.name}”: unsupported name.`, 'error')
+      return
+    }
+    const result = await uploadFile({ file, parentId: folderId, path })
     if (!('error' in result)) {
       // Managers get the inline "copy a share link" panel; others a toast.
       if (canManage) setUploadedNodes((prev) => [...prev, result.data])
@@ -1130,7 +1161,12 @@ export function FolderView({ folderId }: FolderViewProps) {
       {/* Upload engine — panels render here when a folder/zip is being ingested */}
       {canWrite && (
         <div className="mb-4">
-          <UploadFolderControl ref={uploadFolderRef} folderId={folderId} onDone={handleImportDone} />
+          <UploadFolderControl
+            ref={uploadFolderRef}
+            folderId={folderId}
+            folderPath={currentFolderPath}
+            onDone={handleImportDone}
+          />
         </div>
       )}
 

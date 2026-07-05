@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renderMarkdown } from './markdown'
+import { renderMarkdown, markdownDocument } from './markdown'
 
 describe('renderMarkdown', () => {
   it('renders # H1 as <h1>', () => {
@@ -34,5 +34,31 @@ describe('renderMarkdown', () => {
   it('passes through plain text', () => {
     const html = renderMarkdown('Hello world')
     expect(html).toContain('Hello world')
+  })
+})
+
+describe('markdownDocument', () => {
+  it('injects a <base href> from the viewer base so relative refs resolve', () => {
+    const doc = markdownDocument('<p>hi</p>', '/api/uploads/content/Design Docs/')
+    expect(doc).toContain('<base href="/api/uploads/content/Design Docs/">')
+    expect(doc).toContain('<div class="markdown-body"><p>hi</p></div>')
+  })
+
+  it('inlines the markdown-body styling', () => {
+    const doc = markdownDocument('<p>hi</p>', '/api/uploads/content/')
+    expect(doc).toContain('.markdown-body')
+    expect(doc).toContain('<style>')
+  })
+
+  it('omits the <base> tag when there is no base', () => {
+    const doc = markdownDocument('<p>hi</p>', null)
+    expect(doc).not.toContain('<base')
+  })
+
+  it('embeds the rendered body verbatim (no re-rewriting of relative src)', () => {
+    const body = renderMarkdown('![logo](assets/logo.png)')
+    const doc = markdownDocument(body, '/api/uploads/content/Docs/')
+    // The stored relative src is preserved; the <base> does the resolution.
+    expect(doc).toContain('src="assets/logo.png"')
   })
 })

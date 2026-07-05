@@ -19,6 +19,7 @@ import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
 import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
+import { contentSubPath } from '../lib/contentPath'
 import type { Grant } from '../lib/acl'
 
 export type { HandoffNode, PreparedUpload, RegisterBody, Grant }
@@ -109,6 +110,20 @@ interface SubtreeNode {
   depth: number
 }
 
+/**
+ * Turn a base-query error into a clear message when the pipeline rejected a
+ * duplicate name (409). The in-Folder uniqueness pipelines respond
+ * `{ error: "<message>" }`, so a raw `Upload failed (409)` would bury the real,
+ * actionable reason. Falls back to `null` for any other error so callers keep
+ * their existing handling.
+ */
+function conflictMessage(err: unknown): string | null {
+  const e = err as { status?: number; data?: unknown }
+  if (e?.status !== 409) return null
+  const data = e.data as { error?: unknown } | undefined
+  return typeof data?.error === 'string' ? data.error : 'A sibling with that name already exists.'
+}
+
 const rawBaseQuery = fetchBaseQuery({ baseUrl: '/', credentials: 'include' })
 
 /**
@@ -170,7 +185,10 @@ export const handoffApi = createApi({
      * POST /api/uploads/prepare → PreparedUpload
      * Mints a presigned PUT URL; the caller PUTs bytes directly to the bucket.
      */
-    prepareUpload: builder.mutation<PreparedUpload, { filename: string; contentType?: string }>({
+    prepareUpload: builder.mutation<
+      PreparedUpload,
+      { filename: string; contentType?: string; path?: string; parentId?: string }
+    >({
       query: (body) => ({
         url: 'api/uploads/prepare',
         method: 'POST',
@@ -224,29 +242,65 @@ export const handoffApi = createApi({
     }),
 
     /**
-     * Multi-file presigned-upload flow for a site bundle:
-     *   1. For each item: POST /api/uploads/prepare, PUT bytes, collect publicPath
-     *   2. POST /api/sites with { parentId, name, entry, manifest, createdMs }
-     *   3. Return the registered site node; invalidate the parent's node list.
+     * Multi-file presigned-upload flow for a site bundle (structural storage,
+     * Slice 3). A Site now stores under its own path prefix on the unified
+     * content endpoint — no `manifest` side-map:
+     *   1. Compute the Site's content path prefix (`contentSubPath(basePath,
+     *      name)` = owning-Folder path + the Site's name). Each asset's verbatim
+     *      key is that prefix + its normalised relative path, so the whole bundle
+     *      mirrors the dropped tree and relative refs + runtime `fetch()` resolve
+     *      same-origin on `/api/uploads/content/*` (ADR-0001).
+     *   2. For each item: POST /api/uploads/prepare (with the verbatim `path`),
+     *      PUT bytes straight to bucket.
+     *   3. POST /api/sites with { parentId, name, entry, path, createdMs }; the
+     *      registered node's `url` is the Entry's content URL. Invalidate the
+     *      parent's node list.
      *
-     * `manifest` maps relPath → publicPath (served URL for each file).
+     * `basePath` is the owning Folder's content path (`''` for a root upload).
      */
     uploadSite: builder.mutation<
       HandoffNode,
-      { items: { relPath: string; file: File }[]; entry: string; name: string; parentId: string }
+      {
+        items: { relPath: string; file: File }[]
+        entry: string
+        name: string
+        parentId: string
+        basePath?: string
+      }
     >({
-      async queryFn({ items, entry, name, parentId }, _queryApi, _extraOptions, baseQuery) {
+      async queryFn({ items, entry, name, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
         try {
-          const manifest: Record<string, string> = {}
+          // The Site's content path prefix (owning-Folder path + name). An unsafe
+          // name is rejected here — never sanitised — so the bundle's keys stay
+          // byte-for-byte what the browser will request.
+          let sitePath: string
+          try {
+            sitePath = contentSubPath(basePath, name)
+          } catch {
+            return {
+              error: { status: 'CUSTOM_ERROR' as const, error: `Unsupported site name: ${name}` },
+            }
+          }
 
           for (const { relPath, file } of items) {
-            // 1a. Prepare presigned PUT URL
+            // The asset's verbatim key = the Site prefix + its relative path.
+            let path: string
+            try {
+              path = contentSubPath(sitePath, relPath)
+            } catch {
+              return {
+                error: { status: 'CUSTOM_ERROR' as const, error: `Unsupported path: ${relPath}` },
+              }
+            }
+
+            // 1a. Prepare presigned PUT URL at the verbatim key.
             const prepRes = await baseQuery({
               url: 'api/uploads/prepare',
               method: 'POST',
               body: {
                 filename: relPath.split('/').pop() ?? file.name,
                 contentType: file.type || 'application/octet-stream',
+                path,
               },
             })
             if (prepRes.error) return { error: prepRes.error }
@@ -266,17 +320,22 @@ export const handoffApi = createApi({
                 },
               }
             }
-
-            manifest[relPath] = prepared.publicPath
           }
 
-          // 2. Register site node
+          // 2. Register site node at its path prefix (no manifest).
           const siteRes = await baseQuery({
             url: 'api/sites',
             method: 'POST',
-            body: { parentId, name, entry, manifest, createdMs: Date.now() },
+            body: { parentId, name, entry, path: sitePath, createdMs: Date.now() },
           })
-          if (siteRes.error) return { error: siteRes.error }
+          if (siteRes.error) {
+            // In-Folder name collision (Slice 4): reject a Site whose name
+            // duplicates an existing sibling in the target Folder.
+            const msg = conflictMessage(siteRes.error)
+            return msg
+              ? { error: { status: 'CUSTOM_ERROR' as const, error: msg } }
+              : { error: siteRes.error }
+          }
           const node = toNode((siteRes.data as { node?: unknown }).node)
           return { data: node }
         } catch (e) {
@@ -298,17 +357,25 @@ export const handoffApi = createApi({
      *   2. Create each sub-folder via POST /api/folders, building a
      *      `relDir -> folderId` map (root dir '' = the starting parentId).
      *   3. Upload each file (prepare → bucket PUT → POST /api/nodes register)
-     *      into its owning folder, with a bounded concurrency pool.
+     *      into its owning folder at its VERBATIM structural key
+     *      (`contentSubPath(basePath, relPath)` = owning-Folder path + the file's
+     *      normalised relative path), with a bounded concurrency pool. Storing at
+     *      the structural key mirrors the dropped tree, so relative references —
+     *      same-folder `assets/x` and cross-sibling `../y/z` — resolve on the
+     *      unified content endpoint (structural storage, Slice 2).
      *
      * A folder-creation failure aborts (children would be orphaned). File
-     * failures are collected into `failures` so a partial import still reports
-     * what landed and what didn't — never a silent no-op.
+     * failures — including a structurally-unsafe name `contentSubPath` refuses —
+     * are collected into `failures` so a partial import still reports what
+     * landed and what didn't — never a silent no-op.
+     *
+     * `basePath` is the owning Folder's content path (`''` for a root import).
      */
     importFolder: builder.mutation<
       ImportFolderResult,
-      { items: { relPath: string; file: File }[]; parentId: string }
+      { items: { relPath: string; file: File }[]; parentId: string; basePath?: string }
     >({
-      async queryFn({ items, parentId }, _queryApi, _extraOptions, baseQuery) {
+      async queryFn({ items, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
         try {
           // Normalise once (carries the File through) so file lookup uses the
           // same paths planFolderImport derives its dirs/files from.
@@ -349,10 +416,20 @@ export const handoffApi = createApi({
             }
             const targetId = dirToId[f.dir] ?? parentId
             try {
+              // Verbatim structural key = owning-Folder path + the file's
+              // normalised relative path, so the stored key mirrors the tree.
+              // A structurally-unsafe name is rejected here (never sanitised)
+              // and surfaces as a per-file failure below.
+              let path: string
+              try {
+                path = contentSubPath(basePath, f.relPath)
+              } catch {
+                throw new Error('unsupported name')
+              }
               const prepRes = await baseQuery({
                 url: 'api/uploads/prepare',
                 method: 'POST',
-                body: { filename: f.name, contentType: file.type || 'application/octet-stream' },
+                body: { filename: f.name, contentType: file.type || 'application/octet-stream', path },
               })
               if (prepRes.error) throw new Error(`prepare failed (${JSON.stringify(prepRes.error)})`)
               const prepared = prepRes.data as PreparedUpload
@@ -520,16 +597,29 @@ export const handoffApi = createApi({
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
      * On success, invalidates the node list so the listing refetches.
      */
-    uploadFile: builder.mutation<HandoffNode, { file: File; parentId: string }>({
-      async queryFn({ file, parentId }, _queryApi, _extraOptions, baseQuery) {
+    uploadFile: builder.mutation<HandoffNode, { file: File; parentId: string; path: string }>({
+      async queryFn({ file, parentId, path }, _queryApi, _extraOptions, baseQuery) {
         try {
-          // 1. Prepare — mint a presigned bucket PUT URL
+          // 1. Prepare — mint a presigned bucket PUT URL at the verbatim content
+          //    sub-path (folder path + name), so the stored key mirrors the tree.
           const prepRes = await baseQuery({
             url: 'api/uploads/prepare',
             method: 'POST',
-            body: { filename: file.name, contentType: file.type || 'application/octet-stream' },
+            body: {
+              filename: file.name,
+              contentType: file.type || 'application/octet-stream',
+              path,
+              parentId,
+            },
           })
-          if (prepRes.error) return { error: prepRes.error }
+          if (prepRes.error) {
+            // In-Folder name collision (Slice 4): prepare rejects before any
+            // bytes are minted/PUT, so the existing file is never overwritten.
+            const msg = conflictMessage(prepRes.error)
+            return msg
+              ? { error: { status: 'CUSTOM_ERROR' as const, error: msg } }
+              : { error: prepRes.error }
+          }
           const prepared = prepRes.data as PreparedUpload
 
           // 2. PUT bytes directly to the bucket (no proxy, no credentials)
@@ -555,7 +645,12 @@ export const handoffApi = createApi({
             method: 'POST',
             body: regBody,
           })
-          if (regRes.error) return { error: regRes.error }
+          if (regRes.error) {
+            const msg = conflictMessage(regRes.error)
+            return msg
+              ? { error: { status: 'CUSTOM_ERROR' as const, error: msg } }
+              : { error: regRes.error }
+          }
           const node = toNode((regRes.data as { node?: unknown }).node)
           return { data: node }
         } catch (e) {
