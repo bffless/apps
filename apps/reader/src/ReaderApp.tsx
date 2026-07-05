@@ -9,6 +9,7 @@ import { ReadingPane } from './components/ReadingPane'
 import * as api from './lib/api'
 import type { Counts, ItemsPage } from './lib/api'
 import { feedTitleFor, type Feed } from './lib/feeds'
+import { feedUrlsInFolder, folderUnread } from './lib/folders'
 import { type Item } from './lib/items'
 import type { SortOrder } from './lib/itemsQuery'
 import { keyToAction, nextSelection } from './lib/keyboard'
@@ -82,6 +83,11 @@ export function ReaderApp({
   const [importing, setImporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Deep-link fallback: the item for `selectedGuid` when it isn't in the loaded
+  // page, fetched by guid via `api.getItem` (see the effect below). `loadingItem`
+  // tracks that fetch so `itemLoading` reflects it too.
+  const [offPageItem, setOffPageItem] = useState<Item | null>(null)
+  const [loadingItem, setLoadingItem] = useState(false)
 
   // The URL is the single source of truth for the selected view and the open
   // item (#144): the view comes from the pathname, the folder / feed ids from
@@ -276,15 +282,51 @@ export function ReaderApp({
     [counts],
   )
 
-  // The open item resolves from the loaded page. A deep link to an item off the
-  // current page is Task 7 (a `getItem` fallback); for now it stays unresolved.
-  // While a page fetch is in flight and the id isn't found yet, `itemLoading`
-  // holds the reading pane in its loading state.
+  // The open item resolves from the loaded page first; a deep link to an item
+  // OFF the current page falls back to `offPageItem`, fetched by guid below.
   const selectedItem = useMemo(
-    () => (selectedGuid === null ? null : (pageData?.items.find((i) => i.guid === selectedGuid) ?? null)),
-    [pageData, selectedGuid],
+    () =>
+      selectedGuid === null
+        ? null
+        : (pageData?.items.find((i) => i.guid === selectedGuid) ??
+          (offPageItem?.guid === selectedGuid ? offPageItem : null)),
+    [pageData, selectedGuid, offPageItem],
   )
-  const itemLoading = selectedGuid !== null && selectedItem === null && loading
+  // Loading while EITHER the page fetch or the deep-link `getItem` fetch is still
+  // resolving the id. Once `getItem` resolves (item or null) `loadingItem` flips
+  // false, so an unknown/deleted guid stops spinning and falls back to the list.
+  const itemLoading = selectedGuid !== null && selectedItem === null && (loading || loadingItem)
+
+  // Deep-link resolution. When `selectedGuid` isn't in the loaded page, fetch the
+  // item by guid and cache it in `offPageItem`; clear it when nothing's open or
+  // the guid IS in the loaded page. Guards against a refetch loop: skip if
+  // `offPageItem` already matches the guid (so unrelated `pageData` changes don't
+  // re-fetch), and drop a stale response whose guid changed mid-flight via the
+  // `cancelled` flag (mirroring the page-fetch effect's out-of-order guard).
+  useEffect(() => {
+    if (selectedGuid === null || pageData?.items.some((i) => i.guid === selectedGuid)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (offPageItem !== null) setOffPageItem(null)
+      return
+    }
+    if (offPageItem?.guid === selectedGuid) return
+    let cancelled = false
+    const run = async () => {
+      try {
+        const item = await api.getItem(selectedGuid)
+        if (!cancelled) setOffPageItem(item)
+      } catch {
+        if (!cancelled) setOffPageItem(null)
+      } finally {
+        if (!cancelled) setLoadingItem(false)
+      }
+    }
+    setLoadingItem(true)
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedGuid, pageData, offPageItem])
 
   /** Reflect a read-flag change in the loaded page. */
   const applyRead = useCallback((guid: string, read: boolean) => {
@@ -390,7 +432,7 @@ export function ReaderApp({
   // OPML import: upsert every parsed feed (each add is dedup-by-url, so re-import
   // is a no-op), carrying its folder, then refresh once so items land. Feeds are
   // added in parallel and settled independently — one bad url doesn't abort the
-  // batch — mirroring the mark-all-read fan-out; there's no bulk add primitive.
+  // batch — because there's no bulk add primitive.
   const handleImportOpml = useCallback(
     async (parsed: OpmlFeed[]) => {
       setImporting(true)
@@ -506,7 +548,26 @@ export function ReaderApp({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [visible, selectedGuid, toggleStar, toggleRead, openItem, navigate, selection, page])
 
-  const unreadInView = visible.some((i) => !i.read)
+  // Does the CURRENT view have unread items? Derived from server counts/totals
+  // (not a loaded-page scan), so the "Mark all read" button shows when the view
+  // has unread on ANY page, even if the loaded page happens to be all-read.
+  // Starred is the exception: counts don't expose "unread among starred", so it
+  // falls back to scanning the loaded page (starred sets are small).
+  const viewHasUnread = useMemo(() => {
+    switch (selection.kind) {
+      case 'river':
+      case 'all':
+        return riverTotal > 0
+      case 'feed':
+        return (counts.unreadByFeed[selection.url] ?? 0) > 0
+      case 'folder': {
+        const urls = feedUrlsInFolder(feeds, selection.name)
+        return folderUnread(counts.unreadByFeed, feeds.filter((f) => urls.has(f.url))) > 0
+      }
+      case 'starred':
+        return visible.some((i) => !i.read)
+    }
+  }, [selection, riverTotal, counts, feeds, visible])
 
   // Desktop shows the three-column layout; below `lg` the mobile single-pane
   // flow governs (#135). The JS branch flips at the same width as the `lg:`
@@ -589,7 +650,7 @@ export function ReaderApp({
     </button>
   )
 
-  const markAllButton = unreadInView && (
+  const markAllButton = viewHasUnread && (
     <button
       type="button"
       onClick={markAllRead}
@@ -668,6 +729,7 @@ export function ReaderApp({
                   <ItemList
                     items={visible}
                     loading={loading}
+                    empty={pageData?.total === 0}
                     selectedGuid={selectedGuid}
                     onSelect={openItem}
                     onToggleStar={toggleStar}
@@ -739,6 +801,7 @@ export function ReaderApp({
             <ItemList
               items={visible}
               loading={loading}
+              empty={pageData?.total === 0}
               selectedGuid={selectedGuid}
               onSelect={openItemMobile}
               onToggleStar={toggleStar}

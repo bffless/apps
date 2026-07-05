@@ -37,7 +37,9 @@ function makePage(items: Item[], total = items.length): ItemsPage {
   return { items, total, page: 1, pageSize: 20, totalPages: Math.max(1, Math.ceil(total / 20)) }
 }
 
-const EMPTY_COUNTS: Counts = { unreadByFeed: {}, starred: 0 }
+// Counts consistent with the default page (the feed has unread items): the
+// mark-all-read button is now gated on server counts, not a loaded-page scan.
+const FEED_COUNTS: Counts = { unreadByFeed: { [FEED_URL]: 3 }, starred: 0 }
 
 /** Mirror the App.tsx route table, rendering ReaderApp for each navigable view. */
 function renderAt(path: string) {
@@ -62,8 +64,9 @@ function renderAt(path: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(api.listFeeds).mockResolvedValue([])
-  vi.mocked(api.getCounts).mockResolvedValue(EMPTY_COUNTS)
+  vi.mocked(api.getCounts).mockResolvedValue(FEED_COUNTS)
   vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem()], 3))
+  vi.mocked(api.getItem).mockResolvedValue(null)
   vi.mocked(api.setItemRead).mockResolvedValue(undefined)
   vi.mocked(api.setItemStar).mockResolvedValue(undefined)
   vi.mocked(api.markAllRead).mockResolvedValue(0)
@@ -127,5 +130,79 @@ describe('ReaderApp — paged per-view fetch', () => {
     fireEvent.click(await screen.findByText('First article'))
     await waitFor(() => expect(api.setItemRead).toHaveBeenCalledWith('g1', true))
     await waitFor(() => expect(api.getCounts).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('ReaderApp — deep-link getItem fallback', () => {
+  it('resolves an item off the current page via api.getItem and renders it', async () => {
+    // The loaded page holds g1; the deep-linked guid is NOT in it.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1' })], 3))
+    vi.mocked(api.getItem).mockResolvedValue(
+      makeItem({ guid: 'OFFPAGE', title: 'Off page article', content: '<p>off page body</p>', read: true }),
+    )
+    renderAt(`${feedPath}/item/OFFPAGE`)
+    // The guid absent from the page triggers a getItem fetch for it.
+    await waitFor(() => expect(api.getItem).toHaveBeenCalledWith('OFFPAGE'))
+    // The fetched item renders in the reading pane (title + body).
+    expect(await screen.findByRole('heading', { name: /Off page article/i })).toBeInTheDocument()
+    expect(await screen.findByText('off page body')).toBeInTheDocument()
+  })
+
+  it('does not spin forever when getItem resolves null (unknown/deleted guid)', async () => {
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1' })], 3))
+    vi.mocked(api.getItem).mockResolvedValue(null)
+    renderAt(`${feedPath}/item/GHOST`)
+    await waitFor(() => expect(api.getItem).toHaveBeenCalledWith('GHOST'))
+    // With no item resolved, the loading state clears and the view falls back to
+    // the list rather than spinning indefinitely.
+    expect(await screen.findByText('First article')).toBeInTheDocument()
+  })
+
+  it('does not call getItem when opening an item already on the loaded page', async () => {
+    // Opening from the list (page already loaded, item present) resolves from the
+    // page — no by-guid fetch fires; getItem is only the off-page fallback.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1' })], 3))
+    renderAt(feedPath)
+    fireEvent.click(await screen.findByText('First article'))
+    await waitFor(() => expect(screen.getByRole('heading', { name: /First article/i })).toBeInTheDocument())
+    expect(api.getItem).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReaderApp — empty / all-caught-up states', () => {
+  it('shows the “all caught up” message when the view total is 0', async () => {
+    vi.mocked(api.listItems).mockResolvedValue(makePage([], 0))
+    renderAt(feedPath)
+    expect(await screen.findByText(/all caught up/i)).toBeInTheDocument()
+  })
+
+  it('does not show the caught-up message for an empty out-of-range page (total > 0)', async () => {
+    // Page is empty but the view has items (total 5) — an out-of-range page, not
+    // an empty view, so the misleading "all caught up" message must NOT appear.
+    vi.mocked(api.listItems).mockResolvedValue({ items: [], total: 5, page: 2, pageSize: 20, totalPages: 1 })
+    renderAt(feedPath)
+    await waitFor(() => expect(api.listItems).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument())
+    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('ReaderApp — mark-all-read gating on counts', () => {
+  it('shows the button when the loaded page is all-read but counts say the view has unread', async () => {
+    // Loaded page is entirely read, yet the feed's unread count is > 0 (unread on
+    // another page). The button is gated on counts, so it must still show.
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', read: true })], 3))
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 2 }, starred: 0 })
+    renderAt(feedPath)
+    expect(await screen.findByRole('button', { name: /mark all read/i })).toBeInTheDocument()
+  })
+
+  it('hides the button when counts report the view has no unread', async () => {
+    vi.mocked(api.listItems).mockResolvedValue(makePage([makeItem({ guid: 'g1', read: true })], 3))
+    vi.mocked(api.getCounts).mockResolvedValue({ unreadByFeed: { [FEED_URL]: 0 }, starred: 0 })
+    renderAt(feedPath)
+    await waitFor(() => expect(api.getCounts).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /mark all read/i })).not.toBeInTheDocument()
   })
 })

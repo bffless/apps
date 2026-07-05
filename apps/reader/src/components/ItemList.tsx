@@ -21,6 +21,7 @@ import { itemPreview, type Item } from '../lib/items'
 export function ItemList({
   items,
   loading,
+  empty = items.length === 0,
   selectedGuid,
   onSelect,
   onToggleStar,
@@ -30,6 +31,13 @@ export function ItemList({
 }: {
   items: Item[]
   loading: boolean
+  /**
+   * Whether the whole VIEW is empty (server `total === 0`), which drives the
+   * "all caught up" / "nothing here" message — distinct from the loaded page
+   * being empty (an out-of-range page has `total > 0`, so no message shows).
+   * Defaults to `items.length === 0` so the component still behaves standalone.
+   */
+  empty?: boolean
   selectedGuid: string | null
   onSelect: (item: Item) => void
   onToggleStar?: (item: Item) => void
@@ -79,7 +87,7 @@ export function ItemList({
   if (loading) {
     return <p className="px-2 py-6 text-sm text-slate-400 dark:text-slate-500">Loading…</p>
   }
-  if (items.length === 0) {
+  if (empty) {
     return (
       <p className="px-2 py-6 text-sm text-slate-400 dark:text-slate-500">
         Nothing here. Add a feed, hit “Refresh now”, or you’re all caught up.
