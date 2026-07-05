@@ -228,29 +228,65 @@ export const handoffApi = createApi({
     }),
 
     /**
-     * Multi-file presigned-upload flow for a site bundle:
-     *   1. For each item: POST /api/uploads/prepare, PUT bytes, collect publicPath
-     *   2. POST /api/sites with { parentId, name, entry, manifest, createdMs }
-     *   3. Return the registered site node; invalidate the parent's node list.
+     * Multi-file presigned-upload flow for a site bundle (structural storage,
+     * Slice 3). A Site now stores under its own path prefix on the unified
+     * content endpoint — no `manifest` side-map:
+     *   1. Compute the Site's content path prefix (`contentSubPath(basePath,
+     *      name)` = owning-Folder path + the Site's name). Each asset's verbatim
+     *      key is that prefix + its normalised relative path, so the whole bundle
+     *      mirrors the dropped tree and relative refs + runtime `fetch()` resolve
+     *      same-origin on `/api/uploads/content/*` (ADR-0001).
+     *   2. For each item: POST /api/uploads/prepare (with the verbatim `path`),
+     *      PUT bytes straight to bucket.
+     *   3. POST /api/sites with { parentId, name, entry, path, createdMs }; the
+     *      registered node's `url` is the Entry's content URL. Invalidate the
+     *      parent's node list.
      *
-     * `manifest` maps relPath → publicPath (served URL for each file).
+     * `basePath` is the owning Folder's content path (`''` for a root upload).
      */
     uploadSite: builder.mutation<
       HandoffNode,
-      { items: { relPath: string; file: File }[]; entry: string; name: string; parentId: string }
+      {
+        items: { relPath: string; file: File }[]
+        entry: string
+        name: string
+        parentId: string
+        basePath?: string
+      }
     >({
-      async queryFn({ items, entry, name, parentId }, _queryApi, _extraOptions, baseQuery) {
+      async queryFn({ items, entry, name, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
         try {
-          const manifest: Record<string, string> = {}
+          // The Site's content path prefix (owning-Folder path + name). An unsafe
+          // name is rejected here — never sanitised — so the bundle's keys stay
+          // byte-for-byte what the browser will request.
+          let sitePath: string
+          try {
+            sitePath = contentSubPath(basePath, name)
+          } catch {
+            return {
+              error: { status: 'CUSTOM_ERROR' as const, error: `Unsupported site name: ${name}` },
+            }
+          }
 
           for (const { relPath, file } of items) {
-            // 1a. Prepare presigned PUT URL
+            // The asset's verbatim key = the Site prefix + its relative path.
+            let path: string
+            try {
+              path = contentSubPath(sitePath, relPath)
+            } catch {
+              return {
+                error: { status: 'CUSTOM_ERROR' as const, error: `Unsupported path: ${relPath}` },
+              }
+            }
+
+            // 1a. Prepare presigned PUT URL at the verbatim key.
             const prepRes = await baseQuery({
               url: 'api/uploads/prepare',
               method: 'POST',
               body: {
                 filename: relPath.split('/').pop() ?? file.name,
                 contentType: file.type || 'application/octet-stream',
+                path,
               },
             })
             if (prepRes.error) return { error: prepRes.error }
@@ -270,15 +306,13 @@ export const handoffApi = createApi({
                 },
               }
             }
-
-            manifest[relPath] = prepared.publicPath
           }
 
-          // 2. Register site node
+          // 2. Register site node at its path prefix (no manifest).
           const siteRes = await baseQuery({
             url: 'api/sites',
             method: 'POST',
-            body: { parentId, name, entry, manifest, createdMs: Date.now() },
+            body: { parentId, name, entry, path: sitePath, createdMs: Date.now() },
           })
           if (siteRes.error) return { error: siteRes.error }
           const node = toNode((siteRes.data as { node?: unknown }).node)

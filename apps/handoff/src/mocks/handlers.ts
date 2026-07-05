@@ -30,10 +30,12 @@ export const nodes = new Map<string, HandoffNode>()
 export const objects = new Map<string, { body: ArrayBuffer; type: string }>()
 
 /**
- * Site metadata for mock site nodes.
- * Key: site node id; Value: { entry, manifest }
+ * Site metadata for mock site nodes (structural storage, Slice 3). A Site's
+ * assets are stored as normal objects under its own path prefix on the unified
+ * content endpoint — no manifest side-map.
+ * Key: site node id; Value: { entry, path } (path = the Site's content prefix).
  */
-export const sites = new Map<string, { entry: string; manifest: Record<string, string> }>()
+export const sites = new Map<string, { entry: string; path: string }>()
 
 /** ACL data keyed by node id. */
 export const nodeAcl = new Map<string, { ownerId: string | null; grants: Grant[]; mode: 'inheriting' | 'restricted' }>()
@@ -536,8 +538,9 @@ export const handlers = [
    *   - a folder that still has children → 409 (the client deletes bottom-up, so
    *     this only guards direct/out-of-order calls from orphaning a subtree).
    *   - a file → its stored object is purged too.
-   *   - a site → every object its manifest references is purged (the live
-   *     pipeline does this via `file_delete` keys-as-expression — ce#364 / #35).
+   *   - a site → the record is dropped; its assets under the Site's path prefix
+   *     are left for the greenfield wipe (structural storage, Slice 3 defers
+   *     subtree purge, matching the live pipeline — no manifest to enumerate).
    * Response: { deleted: true, id }.
    */
   http.delete('/api/node', ({ request }) => {
@@ -564,18 +567,10 @@ export const handlers = [
       }
     }
 
-    // Hard delete: purge the stored object(s), then drop the record + ACL.
+    // Hard delete: purge the stored object for a file, then drop the record +
+    // ACL. A Site's assets under its path prefix are deferred to the wipe.
     if (node.type === 'file' && node.storageKey) {
       objects.delete(node.storageKey)
-    } else if (node.type === 'site') {
-      // Purge every object the site's manifest references (mirrors the live
-      // siteKeys → file_delete keys[] step). Manifest values are serve paths
-      // (/api/uploads/content/<storageKey>); strip back to the objects key.
-      const manifest = sites.get(id)?.manifest ?? {}
-      for (const target of Object.values(manifest)) {
-        const key = target.replace(/^\/api\/uploads\/content\//, '')
-        if (key) objects.delete(key)
-      }
     }
     nodes.delete(id)
     nodeAcl.delete(id)
@@ -617,21 +612,25 @@ export const handlers = [
 
   /**
    * POST /api/sites
-   * Body: { parentId, name, entry, manifest, createdMs }
-   * Response: { node: HandoffNode } — type:'site', url = /api/sites/<id>/<entry>
+   * Body: { parentId, name, entry, path, createdMs }
+   * Response: { node: HandoffNode } — type:'site', url = the Entry's content URL
+   * on the unified endpoint (`/api/uploads/content/<path>/<entry>`). The Site's
+   * assets were already PUT to the mock bucket at their verbatim keys under
+   * `<path>/`, so they serve straight through GET /api/uploads/content/* — no
+   * manifest, no dedicated site route (structural storage, Slice 3).
    */
   http.post('/api/sites', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       parentId?: string
       name?: string
       entry?: string
-      manifest?: Record<string, string>
+      path?: string
       createdMs?: number
     }
     const id = String(++nodeCounter)
     const entry = body.entry ?? 'index.html'
-    const manifest = body.manifest ?? {}
-    const siteUrl = `/api/sites/${id}/${entry}`
+    const path = body.path ?? ''
+    const siteUrl = mockServePath(`${path}/${entry}`)
     const ownerId = mockCurrentUser?.id ?? null
 
     const raw = {
@@ -642,6 +641,7 @@ export const handlers = [
       size: null,
       url: siteUrl,
       storageKey: null,
+      path,
       parentId: body.parentId ?? 'root',
       createdAt: typeof body.createdMs === 'number' ? body.createdMs : Date.now(),
       ownerId,
@@ -650,38 +650,9 @@ export const handlers = [
     }
     const node = toNode(raw)
     nodes.set(id, node)
-    sites.set(id, { entry, manifest })
+    sites.set(id, { entry, path })
     nodeAcl.set(id, { ownerId, grants: [], mode: 'inheriting' })
     return HttpResponse.json({ node })
-  }),
-
-  /**
-   * GET /api/sites/<siteId>/<relPath...>
-   * Resolves the relPath via the site's manifest to a storageKey / publicPath,
-   * then serves the bytes from the objects store.
-   */
-  http.get('/api/sites/:siteId/*', ({ request, params }) => {
-    const siteId = String(params.siteId)
-    // The wildcard part after /api/sites/<siteId>/
-    const url = new URL(request.url)
-    const relPath = url.pathname.replace(`/api/sites/${siteId}/`, '')
-
-    const site = sites.get(siteId)
-    if (!site) return new HttpResponse(null, { status: 404 })
-
-    // Look up the publicPath for this relPath in the manifest
-    const publicPath = site.manifest[relPath]
-    if (!publicPath) return new HttpResponse(null, { status: 404 })
-
-    // Derive the storageKey from the publicPath (reverse of mockServePath)
-    const storageKey = publicPath.replace('/api/uploads/content/', '')
-    const obj = objects.get(storageKey)
-    if (!obj) return new HttpResponse(null, { status: 404 })
-
-    return new HttpResponse(obj.body, {
-      status: 200,
-      headers: { 'Content-Type': obj.type },
-    })
   }),
 
   // ---------------------------------------------------------------------------
