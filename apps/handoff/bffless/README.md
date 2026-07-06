@@ -89,7 +89,6 @@ files appear in the Uploads tab). Then add these extra columns:
 | `manifest` | text | JSON object mapping `relPath → storageUrl` (site nodes only) |
 | `siteEntry` | text | entry file (e.g. `index.html`) within the manifest |
 | `createdMs` | integer | client-provided creation timestamp (ms) |
-| `public` | boolean | opt-in public flag — when `true`, a small file node is servable at the stable, anonymous `/api/public/content/<key>` URL (default/unset = private). See **Public serve** below. |
 
 **`handoff_share_links`** — stores folder-scoped share link tokens.
 
@@ -175,7 +174,7 @@ tables. You have two options:
 1. **Update the rule set after import:** In the BFFless dashboard open each rule that references a
    `schemaId` (register node, list nodes, get node, create folder, register site, serve site, add
    grant, revoke grant, list grants, mint share link, validate share link, revoke share link, list
-   share links, serve public content, toggle node public) and replace the `schemaId` with the id of your own `handoff_nodes` or
+   share links) and replace the `schemaId` with the id of your own `handoff_nodes` or
    `handoff_share_links` table. The table id appears in the URL when you open the table in the
    dashboard.
 
@@ -239,34 +238,7 @@ via its **keys-as-expression** mode (`keys: "steps.siteKeys.list"`, ce#364) — 
 a static `keys[]` array can't express. An empty manifest resolves to `[]` (a no-op), so nothing is
 orphaned.
 
-## Public serve (opt-in, no-auth) — issue #57
-
-Two rules add a **stable, anonymous URL** for an explicitly-public file (e.g. a PR screenshot a
-Sandcastle agent embeds inline — GitHub's image proxy fetches server-side with no cookies, so the URL
-must be public and stable). **Private stays the default** — only nodes explicitly flagged `public` are
-anonymously servable.
-
-- **`POST /api/public`** — owner/admin (API-key allowed, so CI/agents can publish) sets a file node's
-  `public` flag. Body `{ id, public }`. Returns `{ public, url }`, where `url` is the stable
-  `/api/public/content/<key>` reverse-proxy path (null when flipping back to private).
-- **`GET /api/public/content/*`** — resolves the file node by `storage_path` and **streams its bytes
-  through the file server** (`file_serve_handler`) only when the node is `public === true` **and** its
-  size is within the **10 MB** ceiling; otherwise **404** (existence is not leaked). Anything else →
-  404.
-
-**The bucket is never exposed.** Unlike `/api/sign` and `/r/*` (which 302 to a *short-lived* presigned
-bucket URL — acceptable *because they expire*), the public path is effectively unlimited-lifetime, so it
-must **not** hand out a bucket URL. It reverse-proxies the bytes from the **private** bucket through the
-file server; the client only ever sees the app origin. That's also why it's **size-scoped to small
-images** — proxying large/video assets through the app is too costly, and those stay on the existing
-direct/authenticated path.
-
-`file_serve_handler` emits `Cache-Control: public` here (correct — the content is genuinely public),
-with a short `max-age` (300s) so flipping a node back to private bounds cache/CDN revocation lag to the
-TTL. The `public` gate is the cache key's safety net: a private node 404s, so an aggressive shared cache
-can't serve private bytes from the public path.
-
-### CDN caching note for forkers
+## CDN caching note for forkers
 
 `file_serve_handler` emits `Cache-Control: public, max-age=3600` on served content by default. On a
 single-origin deploy (or a CDN that treats `/api/*` as dynamic, like the reference `j5s.dev` Cloudflare
