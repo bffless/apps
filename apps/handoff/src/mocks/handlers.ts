@@ -18,6 +18,7 @@ import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
 import { evaluateAccess } from '../lib/acl'
 import type { AccessLevel, Grant, FolderLink } from '../lib/acl'
+import { pathFromPathname } from '../lib/pathUrl'
 
 // ---------------------------------------------------------------------------
 // In-memory state
@@ -642,19 +643,7 @@ export const handlers = [
    * Response: { node } | 401 | 403 | 404 — mirrors the live resolve rule.
    */
   http.get('/api/resolve/*', ({ request }) => {
-    const pathname = new URL(request.url).pathname
-    const path = pathname
-      .slice('/api/resolve/'.length)
-      .split('/')
-      .filter((s) => s.length > 0)
-      .map((s) => {
-        try {
-          return decodeURIComponent(s)
-        } catch {
-          return s
-        }
-      })
-      .join('/')
+    const path = pathFromPathname(new URL(request.url).pathname, '/api/resolve/')
     if (!path) return new HttpResponse(null, { status: 404 })
 
     // File/site: exact path match. Folder: name-walk from root.
