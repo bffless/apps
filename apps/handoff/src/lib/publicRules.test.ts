@@ -70,7 +70,9 @@ describe('handoff public serve rule (GET /api/public/content/*)', () => {
     // The bucket must stay private: no signed_url / presigned step on this path.
     expect(types).not.toContain('signed_url')
     const fileServe = serve!.pipelineConfig.steps.find((s: any) => s.id === 'serve')
-    expect(fileServe.config.subDir).toBe('content')
+    // Explicit key mode — same decode contract as the authed serve rule.
+    expect(fileServe.config.key).toBe('content/{{steps.parsePath.rest}}')
+    expect(fileServe.config.subDir).toBeUndefined()
     expect(fileServe.config.condition).toBe('steps.publicGate.allow')
   })
 

@@ -110,7 +110,7 @@
             "id": "serve",
             "name": "serve",
             "config": {
-              "subDir": "content",
+              "key": "content/{{steps.parsePath.rest}}",
               "condition": "steps.gate.allow"
             },
             "handlerType": "file_serve_handler"
@@ -1646,7 +1646,7 @@
             "id": "serve",
             "name": "serve",
             "config": {
-              "subDir": "content",
+              "key": "content/{{steps.parsePath.rest}}",
               "cacheMaxAge": 300,
               "condition": "steps.publicGate.allow"
             },

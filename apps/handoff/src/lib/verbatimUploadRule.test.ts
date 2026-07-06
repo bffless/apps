@@ -71,7 +71,11 @@ describe('unified content serve rule (GET /api/uploads/content/*) — path passt
     expect(types).toContain('file_serve_handler')
     expect(types).not.toContain('signed_url')
     const fileServe = serve!.pipelineConfig.steps.find((s: any) => s.id === 'serve')
-    expect(fileServe.config.subDir).toBe('content')
+    // Explicit key mode: serve the exact decoded key from parsePath. subDir
+    // mode would re-derive the key from the percent-encoded request URL and
+    // miss any object whose name needed encoding (spaces, unicode).
+    expect(fileServe.config.key).toBe('content/{{steps.parsePath.rest}}')
+    expect(fileServe.config.subDir).toBeUndefined()
     expect(fileServe.config.condition).toBe('steps.gate.allow')
   })
 
