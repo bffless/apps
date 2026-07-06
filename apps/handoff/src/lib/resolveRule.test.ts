@@ -162,4 +162,19 @@ describe('gate step — resolution + ACL', () => {
     expect(out.allow).toBe(false)
     expect(out.deny404).toBe(true)
   })
+
+  it('treats a dot-segment path as unresolved (404) even when a valid prefix exists', () => {
+    const out = runGate({
+      user: { id: 'owner-1' },
+      parse: {
+        path: 'Test',
+        segments: ['Test'],
+        fullKey: 'bffless/apps/uploads/content/Test',
+        hasPath: false,
+      },
+    })
+    expect(out.allow).toBe(false)
+    expect(out.deny404).toBe(true)
+    expect(out.deny403).toBe(false)
+  })
 })
