@@ -37,12 +37,20 @@ _Avoid_: Index, main, root file
 Folder-level permissions are an app-level concept Handoff owns. BFFless's built-in roles are
 project-wide only (no per-folder permission), so Handoff maintains its own access list per [[Folder]]
 keyed off the BFFless-authenticated identity. Content is **private by default**: a new folder is
-visible only to its creator and project admins until a [[Grant]] is added. See `docs/adr/`.
+visible only to its creator and project admins until a [[Grant]] is added. A folder is made public by
+granting [[Anyone]] `View` — publicness is a grant, not a mode. See `docs/adr/`.
 
 **Principal**:
-An entity a [[Grant]] is given to: an individual BFFless user, a BFFless user group, or — for
-no-account access — a [[Share Link]].
+An entity a [[Grant]] is given to: an individual BFFless user, a BFFless user group, [[Anyone]], or —
+for no-account access to a private folder — a [[Share Link]].
 _Avoid_: Subject, role, account
+
+**Anyone**:
+The anonymous-public [[Principal]] — every visitor, signed in or not. Granting `(Anyone, View)` on a
+[[Folder]] is what "making it public" means; there is no separate visibility flag. Capped at `View`
+(never `Edit`). It inherits and is cut off by `Restricted` exactly like any other [[Grant]]. Unlike a
+[[Share Link]] it needs no token and never expires — the folder is browsable at its plain URL.
+_Avoid_: Everyone, world, guest, public flag, visibility setting
 
 **Grant**:
 A single access entry on a folder: a [[Principal]] paired with an access level (`View` or `Edit`).
