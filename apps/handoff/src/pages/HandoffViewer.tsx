@@ -1,5 +1,7 @@
 /**
- * File viewer page for Handoff.
+ * File viewer for Handoff — `ViewerBody`, rendered by the `/blob/<path>` and
+ * legacy `/view/:id` routes (see `src/pages/PathPages.tsx`), which own the
+ * share-token claim + id resolution before mounting this component.
  *
  * Resolves a node by id via `useGetNodeQuery`, shows a sticky control bar
  * (Back, title, open-in-new-tab, fullscreen, download), and renders the
@@ -7,7 +9,7 @@
  */
 
 import { useRef, useState, useEffect } from 'react'
-import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown, markdownDocument } from '../lib/markdown'
@@ -19,6 +21,7 @@ import { canDeleteNode } from '../lib/deleteGate'
 import { ShareDialog } from '../components/ShareDialog'
 import { TrashIcon, ChevronRightIcon } from '../components/icons'
 import { parentFolderPath } from '../lib/tree'
+import { treeUrl, parentPath } from '../lib/pathUrl'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { InvalidLink } from '../components/InvalidLink'
 import { toast } from '../lib/toast'
@@ -36,6 +39,16 @@ interface ControlBarProps {
   /** True when the content region is currently showing raw source. */
   showSource: boolean
   onToggleSource: () => void
+}
+
+/**
+ * Back target: the parent folder's canonical path URL, falling back to the
+ * legacy `/folder/:id` route when the node has no path yet (rollout safety).
+ */
+function backTarget(node: HandoffNode): string {
+  return node.path != null && node.path !== ''
+    ? treeUrl(parentPath(node.path))
+    : parentFolderPath(node.parentId)
 }
 
 function CodeIcon() {
@@ -64,6 +77,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !(session?.authenticated) })
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
   const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
+  const backTo = backTarget(node)
 
   const [shareOpen, setShareOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -75,7 +89,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
     try {
       await deleteNode({ id: node.id, parentId: node.parentId }).unwrap()
       toast(`Deleted “${node.name}”.`)
-      navigate(parentFolderPath(node.parentId))
+      navigate(backTo)
     } catch {
       setDeleting(false)
       toast(`Couldn’t delete “${node.name}”. Please try again.`, 'error')
@@ -96,7 +110,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       {/* Back — returns to the parent Folder (PRD story 27), not always Home. */}
       <button
         type="button"
-        onClick={() => navigate(parentFolderPath(node.parentId))}
+        onClick={() => navigate(backTo)}
         className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -119,7 +133,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           <span className="flex min-w-0 items-center gap-1">
             <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted/60" />
             <Link
-              to={`/folder/${node.parentId}`}
+              to={backTo}
               className="truncate rounded px-1 no-underline transition-colors hover:bg-surface-2 hover:text-ink"
             >
               {parentNode.name}
@@ -499,11 +513,17 @@ function MediaPreview({ node, kind }: { node: HandoffNode; kind: 'video' | 'audi
 }
 
 // ---------------------------------------------------------------------------
-// HandoffViewer
+// ViewerBody
 // ---------------------------------------------------------------------------
 
-export function HandoffViewer() {
-  const { id } = useParams<{ id: string }>()
+/**
+ * Renders the file/site viewer for a resolved node `id`. Mounted by the
+ * `/blob/<path>` and legacy `/view/:id` routes (`src/pages/PathPages.tsx`),
+ * which own path/id resolution; this component still runs its own
+ * share-token claim so it behaves correctly when reached directly (e.g. the
+ * legacy route's in-place fallback render).
+ */
+export function ViewerBody({ id }: { id: string }) {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
   const { session, loading: sessionLoading } = useSession()
@@ -519,8 +539,8 @@ export function HandoffViewer() {
     if (needClaim && token) void claimToken(token)
   }, [needClaim, token, claimToken])
 
-  const { data: node, isLoading, isError } = useGetNodeQuery(id ?? '', {
-    skip: !id || sessionLoading || claimPending || (needClaim && claimData?.valid === false),
+  const { data: node, isLoading, isError } = useGetNodeQuery(id, {
+    skip: sessionLoading || claimPending || (needClaim && claimData?.valid === false),
   })
   const contentRef = useRef<HTMLDivElement>(null)
 

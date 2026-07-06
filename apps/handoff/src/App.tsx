@@ -6,8 +6,7 @@ import type { AppDispatch, RootState } from './store'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import type { Layout } from 'react-resizable-panels'
 import { HandoffHome } from './pages/HandoffHome'
-import { HandoffViewer } from './pages/HandoffViewer'
-import { HandoffFolder } from './pages/HandoffFolder'
+import { TreePage, BlobPage, LegacyFolderRedirect, LegacyViewRedirect } from './pages/PathPages'
 import { ShareLinkEntry } from './pages/ShareLinkEntry'
 import { useSession, adminLoginUrl, logout } from './lib/session'
 import { useTheme } from './lib/theme'
@@ -131,7 +130,7 @@ function Shell() {
     }
   }
   // Folder tree only makes sense on listing routes (not the viewer).
-  const showTree = pathname === '/' || pathname.startsWith('/folder/')
+  const showTree = pathname === '/' || pathname.startsWith('/tree/') || pathname.startsWith('/folder/')
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -255,8 +254,10 @@ function App() {
         <Route path="s/:token" element={<ShareLinkEntry />} />
         <Route element={<Shell />}>
           <Route index element={<HandoffHome />} />
-          <Route path="view/:id" element={<HandoffViewer />} />
-          <Route path="folder/:id" element={<HandoffFolder />} />
+          <Route path="tree/*" element={<TreePage />} />
+          <Route path="blob/*" element={<BlobPage />} />
+          <Route path="view/:id" element={<LegacyViewRedirect />} />
+          <Route path="folder/:id" element={<LegacyFolderRedirect />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
