@@ -11,7 +11,7 @@ import { CONTENT_PREFIX } from './contentPath'
 
 export type { Grant }
 
-export type NodeType = 'file' | 'folder' | 'site'
+export type NodeType = 'file' | 'folder' | 'site' | 'root'
 
 export interface HandoffNode {
   id: string
@@ -57,7 +57,7 @@ export interface PreparedUpload {
   allowedMimeTypes: string[]
 }
 
-const KNOWN_TYPES: NodeType[] = ['file', 'folder', 'site']
+const KNOWN_TYPES: NodeType[] = ['file', 'folder', 'site', 'root']
 
 /**
  * Coerce an unknown API response object into a `HandoffNode`. Never throws.
