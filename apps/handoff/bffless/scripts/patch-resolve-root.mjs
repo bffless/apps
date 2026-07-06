@@ -9,7 +9,7 @@
  *
  * The proxy-rules JSON is written back with `JSON.stringify(doc, null, 2) + '\n'`,
  * the same canonical format the file is already in, so a patched file diffs only
- * on the four touched rules. Run: `node bffless/scripts/patch-resolve-root.mjs`
+ * on the five touched rules. Run: `node bffless/scripts/patch-resolve-root.mjs`
  * from the app dir (or `node apps/handoff/bffless/scripts/patch-resolve-root.mjs`).
  */
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -89,6 +89,17 @@ function spliceGroup(rule, beforeId, group) {
   const rows = getStep(r, 'rows')
   rows.config.filters.folderId.value = EFFECTIVE
   rows.config.condition = EFFECTIVE
+}
+
+// --- POST /api/grants/revoke: read-only group before `folder` ----------------
+{
+  const r = getRule('POST', '/api/grants/revoke')
+  spliceGroup(r, 'folder', readGroup)
+  const folder = getStep(r, 'folder')
+  folder.config.recordId = EFFECTIVE
+  folder.config.condition = EFFECTIVE
+  // save keeps its existing `condition: steps.merge.allowed`.
+  getStep(r, 'save').config.recordId = EFFECTIVE
 }
 
 writeFileSync(jsonUrl, JSON.stringify(doc, null, 2) + '\n')

@@ -114,6 +114,26 @@ describe('resolve-root wired into share-links read (GET /api/share-links)', () =
   })
 })
 
+describe('resolve-root wired into grants revoke (POST /api/grants/revoke)', () => {
+  const r = rule('POST', '/api/grants/revoke')
+
+  it('splices the read-only group (no rootCreate) before the folder query', () => {
+    const list = ids(r)
+    for (const id of ['resolveRootPre', 'rootRecord', 'resolveRootShape']) {
+      expect(list).toContain(id)
+    }
+    expect(list).not.toContain('rootCreate')
+    expect(list.indexOf('resolveRootShape')).toBeLessThan(list.indexOf('folder'))
+  })
+
+  it('feeds the resolved folder id into the folder query and the grants save', () => {
+    expect(step(r, 'folder').config.recordId).toBe(EFFECTIVE)
+    expect(step(r, 'folder').config.condition).toBe(EFFECTIVE)
+    expect(step(r, 'save').config.recordId).toBe(EFFECTIVE)
+    expect(step(r, 'save').config.condition).toBe('steps.merge.allowed')
+  })
+})
+
 describe('patched proxy-rules JSON', () => {
   it('still parses', () => {
     const raw = readFileSync(
