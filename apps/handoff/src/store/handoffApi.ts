@@ -15,6 +15,7 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
 import { attemptRefresh } from '../lib/session'
 import { toNode, toNodeList, buildRegisterBody } from '../lib/nodes'
+import { encodePath } from '../lib/pathUrl'
 import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
 import { planSiteUpload } from '../lib/site'
@@ -179,6 +180,21 @@ export const handoffApi = createApi({
         return n ? toNode(n) : null
       },
       providesTags: (_result, _err, id) => [{ type: 'Node' as const, id }],
+    }),
+
+    /**
+     * GET /api/resolve/<encoded path> → { node: HandoffNode | null }
+     * Resolves a /tree//blob content path to its node server-side, under the
+     * same ACL gate as content serving — the client cannot walk ancestors it
+     * isn't allowed to list (nested grants, share visitors).
+     */
+    resolvePath: builder.query<HandoffNode | null, string>({
+      query: (path) => `api/resolve/${encodePath(path)}`,
+      transformResponse: (r) => {
+        const n = (r as { node?: unknown }).node
+        return n ? toNode(n) : null
+      },
+      providesTags: (result) => (result ? [{ type: 'Node' as const, id: result.id }] : []),
     }),
 
     /**
@@ -772,6 +788,7 @@ export const handoffApi = createApi({
 export const {
   useListNodesQuery,
   useGetNodeQuery,
+  useResolvePathQuery,
   useGetSignedUrlQuery,
   usePrepareUploadMutation,
   useRegisterNodeMutation,
