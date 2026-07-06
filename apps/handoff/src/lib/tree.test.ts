@@ -68,7 +68,7 @@ describe('folderContentPath', () => {
 describe('buildBreadcrumb', () => {
   it('returns [root] when folderId is "root"', () => {
     const result = buildBreadcrumb({}, 'root')
-    expect(result).toEqual<Crumb[]>([{ id: 'root', name: 'Home' }])
+    expect(result).toEqual<Crumb[]>([{ id: 'root', name: '~/' }])
   })
 
   it('one level deep: folder whose parentId is "root"', () => {
@@ -77,7 +77,7 @@ describe('buildBreadcrumb', () => {
     }
     const result = buildBreadcrumb(nodesById, 'abc')
     expect(result).toEqual<Crumb[]>([
-      { id: 'root', name: 'Home' },
+      { id: 'root', name: '~/' },
       { id: 'abc', name: 'Documents' },
     ])
   })
@@ -90,7 +90,7 @@ describe('buildBreadcrumb', () => {
     }
     const result = buildBreadcrumb(nodesById, 'c')
     expect(result).toEqual<Crumb[]>([
-      { id: 'root', name: 'Home' },
+      { id: 'root', name: '~/' },
       { id: 'a', name: 'Level A' },
       { id: 'b', name: 'Level B' },
       { id: 'c', name: 'Level C' },
@@ -107,7 +107,7 @@ describe('buildBreadcrumb', () => {
       c: makeFolder('c', 'Level C', 'b'),
     }
     const result = buildBreadcrumb(nodesById, 'c')
-    expect(result[0]).toEqual({ id: 'root', name: 'Home' })
+    expect(result[0]).toEqual({ id: 'root', name: '~/' })
     // Should include 'b' and 'c' (the known part of the chain)
     const ids = result.map((c: Crumb) => c.id)
     expect(ids).toContain('b')
@@ -124,7 +124,7 @@ describe('buildBreadcrumb', () => {
     // Should not hang; result must be an array starting with root crumb
     const result = buildBreadcrumb(nodesById, 'x')
     expect(Array.isArray(result)).toBe(true)
-    expect(result[0]).toEqual({ id: 'root', name: 'Home' })
+    expect(result[0]).toEqual({ id: 'root', name: '~/' })
     // Should have at most MAX_HOPS + 1 (root) entries
     expect(result.length).toBeLessThanOrEqual(65)
   })
@@ -136,13 +136,13 @@ describe('buildBreadcrumb', () => {
     }
     const result = buildBreadcrumb(nodesById, 'a')
     expect(Array.isArray(result)).toBe(true)
-    expect(result[0]).toEqual({ id: 'root', name: 'Home' })
+    expect(result[0]).toEqual({ id: 'root', name: '~/' })
     expect(result.length).toBeLessThanOrEqual(65)
   })
 
-  it('unknown folderId (not in map) → still returns [{ id:"root", name:"Home" }]', () => {
+  it('unknown folderId (not in map) → still returns [{ id:"root", name:"~/" }]', () => {
     const result = buildBreadcrumb({}, 'unknown-id')
-    expect(result).toEqual<Crumb[]>([{ id: 'root', name: 'Home' }])
+    expect(result).toEqual<Crumb[]>([{ id: 'root', name: '~/' }])
   })
 })
 

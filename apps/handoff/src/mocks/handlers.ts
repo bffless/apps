@@ -18,6 +18,7 @@ import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
 import { evaluateAccess } from '../lib/acl'
 import type { AccessLevel, Grant, FolderLink } from '../lib/acl'
+import { pathFromPathname } from '../lib/pathUrl'
 
 // ---------------------------------------------------------------------------
 // In-memory state
@@ -255,6 +256,74 @@ function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '40
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Compute a node's content path by walking parentId names (mock mirror of the
+ * server-side folderPath). Returns null when the chain is broken.
+ */
+export function mockNodePath(id: string): string | null {
+  const names: string[] = []
+  let cur = id
+  let hops = 0
+  while (cur && cur !== 'root' && hops < 64) {
+    const n = nodes.get(cur)
+    if (!n) return null
+    names.unshift(n.name ?? 'Untitled')
+    cur = n.parentId
+    hops++
+  }
+  return names.join('/')
+}
+
+/** Test seam: create a folder node directly in mock state (mirrors POST /api/folders). */
+export function seedFolder(name: string, parentId: string): HandoffNode {
+  const id = String(++nodeCounter)
+  const ownerId = mockCurrentUser?.id ?? null
+  const folderGrants: Grant[] = []
+  const raw = {
+    id,
+    type: 'folder',
+    name,
+    mime: null,
+    size: null,
+    url: null,
+    storageKey: null,
+    parentId,
+    createdAt: Date.now(),
+    ownerId,
+    grants: folderGrants,
+    mode: 'inheriting' as const,
+  }
+  const node = toNode(raw)
+  nodes.set(id, node)
+  nodeAcl.set(id, { ownerId, grants: folderGrants, mode: 'inheriting' })
+  grants.set(id, folderGrants)
+  return node
+}
+
+/** Test seam: create a file node directly in mock state (mirrors POST /api/nodes). */
+export function seedFile(name: string, parentId: string): HandoffNode {
+  const id = String(++nodeCounter)
+  const ownerId = mockCurrentUser?.id ?? null
+  const raw = {
+    id,
+    type: 'file',
+    name,
+    mime: null,
+    size: null,
+    url: null,
+    storageKey: null,
+    parentId,
+    createdAt: Date.now(),
+    ownerId,
+    grants: [],
+    mode: 'inheriting' as const,
+  }
+  const node = toNode(raw)
+  nodes.set(id, node)
+  nodeAcl.set(id, { ownerId, grants: [], mode: 'inheriting' })
+  return node
+}
 
 const MOCK_BUCKET_PREFIX = '/__mock_bucket'
 
@@ -534,7 +603,7 @@ export const handlers = [
     }
 
     const filtered = [...nodes.values()].filter((n) => n.parentId === parentId)
-    // Attach ACL fields to each node in response
+    // Attach ACL fields + server-computed path to each node in response
     const withAcl = filtered.map((n) => {
       const acl = nodeAcl.get(n.id)
       return {
@@ -542,6 +611,7 @@ export const handlers = [
         ownerId: acl?.ownerId ?? n.ownerId,
         grants: acl?.grants ?? n.grants,
         mode: acl?.mode ?? n.mode,
+        path: mockNodePath(n.id),
       }
     })
     return HttpResponse.json({ nodes: withAcl })
@@ -564,8 +634,35 @@ export const handlers = [
     if (!node) return HttpResponse.json({ node: null })
 
     const acl = nodeAcl.get(id)
-    const nodeWithAcl = acl ? { ...node, ...acl } : node
+    const nodeWithAcl = { ...node, ...(acl ?? {}), path: mockNodePath(id) }
     return HttpResponse.json({ node: nodeWithAcl })
+  }),
+
+  /**
+   * GET /api/resolve/<encoded path>
+   * Response: { node } | 401 | 403 | 404 — mirrors the live resolve rule.
+   */
+  http.get('/api/resolve/*', ({ request }) => {
+    const path = pathFromPathname(new URL(request.url).pathname, '/api/resolve/')
+    if (!path) return new HttpResponse(null, { status: 404 })
+
+    // File/site: exact path match. Folder: name-walk from root.
+    let target: string | null = null
+    for (const [id] of nodes) {
+      if (mockNodePath(id) === path) {
+        target = id
+        break
+      }
+    }
+    if (!target) return HttpResponse.json({ error: 'not found' }, { status: 404 })
+
+    const access = checkAccess(target)
+    if (access === '401') return new HttpResponse(null, { status: 401 })
+    if (access === '403') return new HttpResponse(null, { status: 403 })
+
+    const node = nodes.get(target)!
+    const acl = nodeAcl.get(target)
+    return HttpResponse.json({ node: { ...node, ...(acl ?? {}), path } })
   }),
 
   /**
