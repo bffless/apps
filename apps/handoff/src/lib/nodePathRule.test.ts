@@ -49,6 +49,22 @@ const FILE_C = {
   createdMs: 1,
   size: 10,
 }
+// A Site: url ends in the entry file, but storage_path is the dir prefix — the
+// path must derive from storage_path (what GET /api/resolve/* matches), not
+// from stripping the CONTENT prefix off url (which would wrongly include the
+// entry filename).
+const SITE_D = {
+  id: 'dddddddd-0000-4000-8000-000000000004',
+  nodeType: 'site',
+  displayName: 'My Site',
+  parentId: FOLDER_A.id,
+  ownerId: 'u1',
+  siteEntry: 'index.html',
+  url: '/api/uploads/content/Test/My Site/index.html',
+  storage_path: 'bffless/apps/uploads/content/Test/My Site',
+  createdMs: 2,
+  size: 0,
+}
 
 describe('GET /api/nodes shape step — node.path', () => {
   it('emits folder paths from ancestor names and file paths from the content url', () => {
@@ -64,6 +80,19 @@ describe('GET /api/nodes shape step — node.path', () => {
     expect(byName['Sub Folder'].path).toBe('Test/Sub Folder')
     expect(byName['My File.png'].path).toBe('Test/Sub Folder/My File.png')
   })
+
+  it('emits a Site path from storage_path (dir prefix), not from the entry-suffixed url', () => {
+    const shape = handlerOf(listRule!, 'shape')
+    const out = shape({
+      steps: {
+        allFolders: [FOLDER_A, FOLDER_B],
+        gate: { viewer: { userId: 'u1', isAdmin: false } },
+        query: [SITE_D],
+      },
+    })
+    const byName = Object.fromEntries(out.nodes.map((n: any) => [n.name, n]))
+    expect(byName['My Site'].path).toBe('Test/My Site')
+  })
 })
 
 describe('GET /api/node shape step — node.path', () => {
@@ -77,5 +106,11 @@ describe('GET /api/node shape step — node.path', () => {
     const shape = handlerOf(nodeRule!, 'shape')
     const out = shape({ steps: { query: FILE_C, allFolders: [FOLDER_A, FOLDER_B] } })
     expect(out.node.path).toBe('Test/Sub Folder/My File.png')
+  })
+
+  it('emits a Site path from storage_path (dir prefix), not from the entry-suffixed url', () => {
+    const shape = handlerOf(nodeRule!, 'shape')
+    const out = shape({ steps: { query: SITE_D, allFolders: [FOLDER_A, FOLDER_B] } })
+    expect(out.node.path).toBe('Test/My Site')
   })
 })

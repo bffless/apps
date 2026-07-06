@@ -102,12 +102,14 @@ describe('gate step — resolution + ACL', () => {
     user?: { id: string; role?: string } | null
     parse: any
     nodeByKey?: any[]
+    request?: any
+    utils?: any
   }) {
     const gate = handlerOf('gate')
     return gate({
       user: opts.user ?? null,
-      request: { headers: {} },
-      utils: { verify: () => false, base64urlDecode: () => '' },
+      request: opts.request ?? { headers: {} },
+      utils: opts.utils ?? { verify: () => false, base64urlDecode: () => '' },
       steps: {
         parse: opts.parse,
         nodeByKey: opts.nodeByKey ?? [],
@@ -125,6 +127,12 @@ describe('gate step — resolution + ACL', () => {
     path: 'Test/Sub Folder',
     segments: ['Test', 'Sub Folder'],
     fullKey: 'bffless/apps/uploads/content/Test/Sub Folder',
+    hasPath: true,
+  }
+  const rootFolderParse = {
+    path: 'Test',
+    segments: ['Test'],
+    fullKey: 'bffless/apps/uploads/content/Test',
     hasPath: true,
   }
 
@@ -176,5 +184,30 @@ describe('gate step — resolution + ACL', () => {
     expect(out.allow).toBe(false)
     expect(out.deny404).toBe(true)
     expect(out.deny403).toBe(false)
+  })
+
+  it('resolves for a share visitor (hf_s cookie) within scope, and denies (403) outside scope', () => {
+    const shareRequest = { headers: { cookie: 'hf_s=body.sig' } }
+    const shareUtils = {
+      verify: () => true,
+      base64urlDecode: () => JSON.stringify({ s: FOLDER_B.id, exp: Date.now() + 60_000 }),
+    }
+    const inScope = runGate({
+      user: null,
+      parse: folderParse,
+      request: shareRequest,
+      utils: shareUtils,
+    })
+    expect(inScope.allow).toBe(true)
+    expect(inScope.level).toBe('view')
+
+    const outOfScope = runGate({
+      user: null,
+      parse: rootFolderParse,
+      request: shareRequest,
+      utils: shareUtils,
+    })
+    expect(outOfScope.allow).toBe(false)
+    expect(outOfScope.deny403).toBe(true)
   })
 })

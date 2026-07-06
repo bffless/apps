@@ -119,7 +119,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         Back
       </button>
 
-      {/* Location breadcrumb (PRD story 26): Home › [parent folder] › file.
+      {/* Location breadcrumb (PRD story 26): ~/ › [parent folder] › file.
           The parent folder crumb only renders once its node has resolved (it is
           skipped for guests / root items), so the chain degrades gracefully. */}
       <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted">
@@ -127,7 +127,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           to="/"
           className="shrink-0 rounded px-1 no-underline transition-colors hover:bg-surface-2 hover:text-ink"
         >
-          Home
+          ~/
         </Link>
         {!isRoot && parentNode && (
           <span className="flex min-w-0 items-center gap-1">

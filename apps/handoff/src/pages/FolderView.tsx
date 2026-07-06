@@ -36,7 +36,7 @@ import {
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain, folderContentPath } from '../lib/tree'
-import { nodeUrl, treeUrl, crumbPathAt } from '../lib/pathUrl'
+import { nodeUrl } from '../lib/pathUrl'
 import { contentSubPath } from '../lib/contentPath'
 import { formatBytes, formatDate } from '../lib/format'
 import {
@@ -174,7 +174,11 @@ function BreadcrumbInner({ folderId, onChainUpdate }: BreadcrumbProps) {
                 <span className="font-medium text-ink">{crumb.name}</span>
               ) : (
                 <Link
-                  to={crumb.id === 'root' ? '/' : treeUrl(crumbPathAt(crumbs, i))}
+                  to={
+                    crumb.id === 'root'
+                      ? '/'
+                      : nodeUrl({ type: 'folder', path: nodesById[crumb.id]?.path ?? null, id: crumb.id })
+                  }
                   className="rounded px-1 no-underline transition-colors hover:bg-surface-2 hover:text-ink"
                 >
                   {crumb.name}
