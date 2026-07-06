@@ -1162,7 +1162,7 @@
               },
               "recordId": "steps.resolveRootShape.effectiveFolderId",
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
-              "condition": "steps.merge.allowed"
+              "condition": "steps.merge.allowed && steps.resolveRootShape.effectiveFolderId"
             },
             "handlerType": "data_update"
           },

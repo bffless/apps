@@ -130,7 +130,11 @@ describe('resolve-root wired into grants revoke (POST /api/grants/revoke)', () =
     expect(step(r, 'folder').config.recordId).toBe(EFFECTIVE)
     expect(step(r, 'folder').config.condition).toBe(EFFECTIVE)
     expect(step(r, 'save').config.recordId).toBe(EFFECTIVE)
-    expect(step(r, 'save').config.condition).toBe('steps.merge.allowed')
+    // CRITICAL: merge short-circuits allowed=true for an ADMIN even when steps.folder
+    // is empty (never-created root). save must ALSO be guarded on effectiveFolderId or
+    // an admin revoking on a non-existent root runs save with recordId=null -> 500.
+    expect(step(r, 'save').config.condition).toContain('steps.merge.allowed')
+    expect(step(r, 'save').config.condition).toContain(EFFECTIVE)
   })
 })
 

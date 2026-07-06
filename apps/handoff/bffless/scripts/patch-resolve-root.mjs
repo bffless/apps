@@ -98,8 +98,12 @@ function spliceGroup(rule, beforeId, group) {
   const folder = getStep(r, 'folder')
   folder.config.recordId = EFFECTIVE
   folder.config.condition = EFFECTIVE
-  // save keeps its existing `condition: steps.merge.allowed`.
-  getStep(r, 'save').config.recordId = EFFECTIVE
+  const save = getStep(r, 'save')
+  save.config.recordId = EFFECTIVE
+  // CRITICAL: merge short-circuits allowed=true for an ADMIN even when steps.folder
+  // is empty (root never created). Guard save on effectiveFolderId too, or an admin
+  // revoking on a non-existent root runs save with recordId=null -> UUID-cast 500.
+  save.config.condition = `steps.merge.allowed && ${EFFECTIVE}`
 }
 
 writeFileSync(jsonUrl, JSON.stringify(doc, null, 2) + '\n')
