@@ -10,7 +10,7 @@
  * represented with a synthetic FolderLink (no ownerId, no grants, inheriting).
  *
  * Guarantees:
- *   - Always starts with the synthetic root crumb { id:'root', name:'Home' }.
+ *   - Always starts with the synthetic root crumb { id:'root', name:'~/' }.
  *   - If folderId === 'root', returns just the root crumb.
  *   - If an ancestor is missing from the map, stops gracefully (partial chain).
  *   - Cycles (self-parent or A→B→A loops) are capped at MAX_HOPS.
@@ -21,7 +21,7 @@ import type { FolderLink } from './acl'
 
 export interface Crumb { id: string; name: string }
 
-const ROOT_CRUMB: Crumb = { id: 'root', name: 'Home' }
+const ROOT_CRUMB: Crumb = { id: 'root', name: '~/' }
 const MAX_HOPS = 64
 
 /**

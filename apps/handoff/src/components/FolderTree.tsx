@@ -13,34 +13,37 @@ import { useSelector } from 'react-redux'
 import { useListNodesQuery, useGetNodeQuery } from '../store/handoffApi'
 import { useSession } from '../lib/session'
 import { inShareMode } from '../lib/acl'
+import { nodeUrl, pathFromPathname } from '../lib/pathUrl'
 import { FolderIcon, ChevronRightIcon } from './icons'
 import type { RootState } from '../store'
 
-function currentFolderId(pathname: string): string {
-  if (pathname === '/' || pathname === '') return 'root'
-  const m = pathname.match(/^\/folder\/(.+)$/)
-  return m ? m[1] : '' // viewer / other routes → nothing highlighted
+/** The content path of the folder the current route shows ('' = root; null = no listing route). */
+function currentFolderPath(pathname: string): string | null {
+  if (pathname === '/' || pathname === '') return ''
+  if (pathname.startsWith('/tree/')) return pathFromPathname(pathname, '/tree/')
+  return null // viewer / legacy routes → nothing highlighted
 }
 
 interface TreeFolderProps {
   id: string
   name: string
+  path: string | null
   depth: number
   expanded: Set<string>
   toggle: (id: string) => void
-  currentId: string
+  currentPath: string | null
   /** Root link target differs (root → "/"). */
   rootId: string
 }
 
-function TreeFolder({ id, name, depth, expanded, toggle, currentId, rootId }: TreeFolderProps) {
+function TreeFolder({ id, name, path, depth, expanded, toggle, currentPath, rootId }: TreeFolderProps) {
   const isOpen = expanded.has(id)
   const { data: children, isFetching } = useListNodesQuery({ parentId: id }, { skip: !isOpen })
   const folders = (children ?? []).filter((n) => n.type === 'folder')
-  const isCurrent = id === currentId
+  const isCurrent = path != null && path === currentPath
   // Show a caret if we haven't loaded yet (might have children) or we have some.
   const showCaret = !isOpen || folders.length > 0
-  const to = id === rootId && rootId === 'root' ? '/' : `/folder/${id}`
+  const to = id === rootId && rootId === 'root' ? '/' : nodeUrl({ type: 'folder', path, id })
 
   return (
     <li>
@@ -83,10 +86,11 @@ function TreeFolder({ id, name, depth, expanded, toggle, currentId, rootId }: Tr
               key={f.id}
               id={f.id}
               name={f.name}
+              path={f.path}
               depth={depth + 1}
               expanded={expanded}
               toggle={toggle}
-              currentId={currentId}
+              currentPath={currentPath}
               rootId={rootId}
             />
           ))}
@@ -106,18 +110,18 @@ function TreeFolder({ id, name, depth, expanded, toggle, currentId, rootId }: Tr
 
 export function FolderTree() {
   const { pathname } = useLocation()
-  const currentId = currentFolderId(pathname)
+  const currentPath = currentFolderPath(pathname)
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
   const { session } = useSession()
   // Share-mode roots the tree at the shared folder — but only for guests. An
-  // authenticated user always gets the real "Home" root, never a stale share id.
+  // authenticated user always gets the real "~/" root, never a stale share id.
   const rootId = inShareMode({ authenticated: !!session?.authenticated, shareLinkFolderId })
     ? (shareLinkFolderId as string)
     : 'root'
 
-  // Name of the shared root (share mode only); root is "Home" otherwise.
+  // Name of the shared root (share mode only); root is "~/" otherwise.
   const { data: sharedRoot } = useGetNodeQuery(rootId, { skip: rootId === 'root' })
-  const rootName = rootId === 'root' ? 'Home' : (sharedRoot?.name ?? 'Shared folder')
+  const rootName = rootId === 'root' ? '~/' : (sharedRoot?.name ?? 'Shared folder')
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([rootId]))
   const toggle = useCallback((id: string) => {
@@ -136,10 +140,11 @@ export function FolderTree() {
         <TreeFolder
           id={rootId}
           name={rootName}
+          path={rootId === 'root' ? '' : (sharedRoot?.path ?? null)}
           depth={0}
           expanded={expanded}
           toggle={toggle}
-          currentId={currentId}
+          currentPath={currentPath}
           rootId={rootId}
         />
       </ul>

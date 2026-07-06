@@ -36,6 +36,7 @@ import {
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain, folderContentPath } from '../lib/tree'
+import { nodeUrl, treeUrl, crumbPathAt } from '../lib/pathUrl'
 import { contentSubPath } from '../lib/contentPath'
 import { formatBytes, formatDate } from '../lib/format'
 import {
@@ -173,7 +174,7 @@ function BreadcrumbInner({ folderId, onChainUpdate }: BreadcrumbProps) {
                 <span className="font-medium text-ink">{crumb.name}</span>
               ) : (
                 <Link
-                  to={crumb.id === 'root' ? '/' : `/folder/${crumb.id}`}
+                  to={crumb.id === 'root' ? '/' : treeUrl(crumbPathAt(crumbs, i))}
                   className="rounded px-1 no-underline transition-colors hover:bg-surface-2 hover:text-ink"
                 >
                   {crumb.name}
@@ -684,7 +685,7 @@ function RowKebab({
   onDelete?: () => void
 }) {
   const navigate = useNavigate()
-  const to = node.type === 'folder' ? `/folder/${node.id}` : `/view/${node.id}`
+  const to = nodeUrl(node)
   const items: import('../components/Menu').MenuItem[] = [
     {
       label: 'Open',
@@ -744,7 +745,7 @@ function ListingRow({
   onShare: () => void
   onDelete?: () => void
 }) {
-  const to = node.type === 'folder' ? `/folder/${node.id}` : `/view/${node.id}`
+  const to = nodeUrl(node)
   const iconColor =
     node.type === 'folder' ? 'text-folder' : node.type === 'site' ? 'text-site' : 'text-file'
 
