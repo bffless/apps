@@ -267,4 +267,29 @@ describe('buildAncestorFolderChain', () => {
     })
     expect(level).toBe('edit')
   })
+
+  it('roots the chain at the real root record when provided', () => {
+    const rootRec = {
+      id: 'R-uuid',
+      type: 'root',
+      ownerId: 'owner-1',
+      grants: [{ principalId: 'u2', level: 'view' as const }],
+      mode: 'inheriting' as const,
+    } as HandoffNode
+    const top = makeFolder('f1', 'F1', 'root', { ownerId: 'owner-1' })
+    const { chain, complete } = buildAncestorFolderChain({ f1: top }, 'f1', rootRec)
+    expect(complete).toBe(true)
+    expect(chain[0]).toEqual({
+      id: 'R-uuid',
+      ownerId: 'owner-1',
+      grants: [{ principalId: 'u2', level: 'view' }],
+      mode: 'inheriting',
+    })
+    expect(chain[1].id).toBe('f1')
+  })
+
+  it('falls back to the share-link scope id at the head when no root record', () => {
+    const { chain } = buildAncestorFolderChain({}, 'root', null, 'R-uuid')
+    expect(chain[0].id).toBe('R-uuid')
+  })
 })
