@@ -1,0 +1,11 @@
+[
+  { "id": "resolveRootPre", "name": "resolveRootPre", "handlerType": "function_handler",
+    "config": { "code": "function handler({ request }) { var b=(request&&request.body)||{}; var q=(request&&request.query)||{}; var fid=String(b.folderId||q.folderId||''); var isRoot=fid==='root'; return { folderId: fid, isRoot: isRoot }; }" } },
+  { "id": "rootRecord", "name": "rootRecord", "handlerType": "data_query",
+    "config": { "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0", "filters": { "nodeType": { "op": "eq", "value": "root" } }, "pageSize": 1, "condition": "steps.resolveRootPre.isRoot" } },
+  { "id": "rootCreate", "name": "rootCreate", "handlerType": "data_create",
+    "config": { "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0", "condition": "steps.resolveRootPre.isRoot && !steps.rootRecord[0]",
+      "fields": { "nodeType": "root", "displayName": "My Files", "parentId": "", "ownerId": "user.id", "mode": "inheriting", "grantsJson": "[]", "createdMs": "now()" } } },
+  { "id": "resolveRootShape", "name": "resolveRootShape", "handlerType": "function_handler",
+    "config": { "code": "function handler({ user, steps }) { var pre=steps.resolveRootPre||{}; if(!pre.isRoot){ return { effectiveFolderId: pre.folderId, rootOwnerId: null }; } var rows=steps.rootRecord||[]; var rec=rows.length?rows[0]:(steps.rootCreate||null); var id=rec?(rec.id||rec.recordId||rec.record_id):null; var owner=rec?(rec.ownerId||((user&&user.id)||null)):null; return { effectiveFolderId: id, rootOwnerId: owner }; }" } }
+]
