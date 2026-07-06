@@ -80,4 +80,31 @@ describe('unified content serve rule (GET /api/uploads/content/*) — path passt
     expect(parse.handlerType).toBe('function_handler')
     expect(parse.config.code).toContain('/api/uploads/content/')
   })
+
+  it('URL-decodes each request-path segment so names with spaces/unicode resolve', () => {
+    // The browser percent-encodes the path; storage_path holds the decoded
+    // verbatim key. Run the real embedded handler to pin the decode.
+    const parse = serve!.pipelineConfig.steps.find((s: any) => s.id === 'parsePath')
+    const handler = new Function(`return (${parse.config.code})`)() as (ctx: any) => {
+      rest: string
+      fullKey: string
+      hasKey: boolean
+    }
+    const out = handler({
+      request: {
+        path: '/api/uploads/content/Test/Screenshot%202026-07-06%20at%206.47.11%E2%80%AFAM.png',
+      },
+      deployment: { owner: 'bffless', repo: 'apps' },
+    })
+    expect(out.fullKey).toBe(
+      // %E2%80%AF is U+202F (narrow no-break space, macOS screenshot names).
+      'bffless/apps/uploads/content/Test/Screenshot 2026-07-06 at 6.47.11\u202FAM.png',
+    )
+    // A malformed escape must not throw — the raw segment is kept.
+    const bad = handler({
+      request: { path: '/api/uploads/content/Test/100%.png' },
+      deployment: { owner: 'o', repo: 'r' },
+    })
+    expect(bad.fullKey).toBe('o/r/uploads/content/Test/100%.png')
+  })
 })

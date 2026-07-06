@@ -42,6 +42,28 @@ describe('handoff public serve rule (GET /api/public/content/*)', () => {
     expect(node.config.filters.storage_path.value).toBe('steps.parsePath.fullKey')
   })
 
+  it('URL-decodes each request-path segment so names with spaces/unicode resolve', () => {
+    // Same decode contract as the authed serve rule: the browser percent-
+    // encodes the path; storage_path holds the decoded verbatim key.
+    const parse = serve!.pipelineConfig.steps.find((s: any) => s.id === 'parsePath')
+    const handler = new Function(`return (${parse.config.code})`)() as (ctx: any) => {
+      rest: string
+      fullKey: string
+      hasKey: boolean
+    }
+    const out = handler({
+      request: { path: '/api/public/content/Test/My%20Image%20%E2%9C%A8.png' },
+      deployment: { owner: 'bffless', repo: 'apps' },
+    })
+    expect(out.fullKey).toBe('bffless/apps/uploads/content/Test/My Image ✨.png')
+    // A malformed escape must not throw — the raw segment is kept.
+    const bad = handler({
+      request: { path: '/api/public/content/Test/100%.png' },
+      deployment: { owner: 'o', repo: 'r' },
+    })
+    expect(bad.fullKey).toBe('o/r/uploads/content/Test/100%.png')
+  })
+
   it('streams bytes through the file server — never a presigned bucket URL', () => {
     const types = serve!.pipelineConfig.steps.map((s: any) => s.handlerType)
     expect(types).toContain('file_serve_handler')
