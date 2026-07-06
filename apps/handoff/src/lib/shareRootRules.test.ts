@@ -123,3 +123,88 @@ describe('patched proxy-rules JSON', () => {
     expect(() => JSON.parse(raw)).not.toThrow()
   })
 })
+
+/**
+ * Structural guard for Task 5: the ACL gates must resolve the 'root' sentinel
+ * into the folder chain. Every embedded `folderChain` walks parentId upward; it
+ * used to stop at the 'root' sentinel, so the singleton root record R was never
+ * in the chain and a root-scoped share visitor / root grantee was never matched.
+ *
+ * The patch makes each folderChain (a) capture R's id while building `byId`
+ * (`f.nodeType==='root'`) and (b) resolve `parentId==='root'` → that id so R
+ * becomes chain[0]; and widens each chain-feeding query (allFolders / folders)
+ * from nodeType eq 'folder' to in ['folder','root'] so R is actually fetched.
+ *
+ * folderPath (the human breadcrumb walk) must NOT gain root — prepending R
+ * ("My Files") would corrupt every displayed path — so its distinct
+ * `cur=byId[cur].parentId||''` line must stay untouched.
+ */
+describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
+  // Every step's embedded handler code across all rules.
+  const allCode: string[] = []
+  for (const r of proxy.rules) {
+    const stepList = (r.pipelineConfig && r.pipelineConfig.steps) || []
+    for (const s of stepList) {
+      const code = s.config && s.config.code
+      if (typeof code === 'string') allCode.push(code)
+    }
+  }
+
+  const chainCodes = allCode.filter((c) => c.includes('function folderChain'))
+  // Tolerant of optional spaces around === and && (sandbox code is minified, but
+  // the assertion should not be brittle to whitespace).
+  const CAPTURE = /nodeType\s*===\s*'root'/
+  const SENTINEL = /===\s*'root'\s*&&\s*rootId/
+
+  it('has exactly 8 embedded folderChain functions', () => {
+    expect(chainCodes.length).toBe(8)
+  })
+
+  it('every folderChain captures the root record id and resolves the root sentinel', () => {
+    for (const c of chainCodes) {
+      expect(c, 'folderChain captures nodeType root -> rootId').toMatch(CAPTURE)
+      expect(c, "folderChain resolves parentId==='root' -> rootId").toMatch(SENTINEL)
+    }
+  })
+
+  it('widens every chain-feeding query (allFolders / folders) to nodeType in [folder, root]', () => {
+    const widened: Array<Record<string, any>> = []
+    for (const r of proxy.rules) {
+      const stepList = (r.pipelineConfig && r.pipelineConfig.steps) || []
+      for (const s of stepList) {
+        if (s.id === 'allFolders' || s.id === 'folders') {
+          const nt = s.config && s.config.filters && s.config.filters.nodeType
+          expect(nt, `${r.method} ${r.pathPattern} ${s.id} nodeType widened`).toEqual({
+            op: 'in',
+            value: ['folder', 'root'],
+          })
+          widened.push(s)
+        }
+      }
+    }
+    expect(widened.length).toBe(7)
+  })
+
+  it('leaves allSites (nodeType site) queries unchanged', () => {
+    let seen = 0
+    for (const r of proxy.rules) {
+      const stepList = (r.pipelineConfig && r.pipelineConfig.steps) || []
+      for (const s of stepList) {
+        if (s.id === 'allSites') {
+          const nt = s.config && s.config.filters && s.config.filters.nodeType
+          expect(nt).toEqual({ op: 'eq', value: 'site' })
+          seen++
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(0)
+  })
+
+  it('leaves the folderPath breadcrumb walk untouched (no root prepended to paths)', () => {
+    // The GET /api/nodes shape step carries both folderChain (ACL) and folderPath
+    // (breadcrumb). Only folderChain gains root; folderPath still walks parentId
+    // via its distinct `cur=byId[cur].parentId||''` line.
+    const shape = step(rule('GET', '/api/nodes'), 'shape')
+    expect(shape.config.code).toContain("cur=byId[cur].parentId||''")
+  })
+})
