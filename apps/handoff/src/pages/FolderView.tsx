@@ -622,6 +622,7 @@ const TYPE_LABEL: Record<HandoffNode['type'], string> = {
   folder: 'Folder',
   site: 'Site',
   file: 'File',
+  root: 'Folder',
 }
 
 function typeLabel(node: HandoffNode): string {
