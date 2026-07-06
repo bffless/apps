@@ -74,7 +74,12 @@ describe('resolve-root wired into grants (POST /api/grants)', () => {
     expect(step(r, 'folder').config.recordId).toBe(EFFECTIVE)
     expect(step(r, 'folder').config.condition).toBe(EFFECTIVE)
     expect(step(r, 'save').config.recordId).toBe(EFFECTIVE)
-    expect(step(r, 'save').config.condition).toBe('steps.merge.allowed')
+    // Fix #3: save must be guarded on BOTH steps.merge.allowed AND the resolved
+    // folder id (same uniform guard the revoke path got) — an admin's merge
+    // short-circuits allowed=true even for a never-created root, so without the
+    // effectiveFolderId conjunct save would run with recordId=null -> UUID-cast 500.
+    expect(step(r, 'save').config.condition).toContain('steps.merge.allowed')
+    expect(step(r, 'save').config.condition).toContain(EFFECTIVE)
   })
 
   it('gates root creation to admins only (security guard)', () => {
@@ -191,6 +196,34 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     }
   })
 
+  // Fix #1: a node sitting directly in "My Files" has parentId==='root' (the
+  // sentinel), so the gate calls folderChain(...,'root'). The walk's UUID.test
+  // fails on 'root' and returns [] — R is never injected, so top-level FILES and
+  // SITES (the DEFAULT upload target) are missed by a root share/grant. The fix
+  // seeds the walk at R when startId is the sentinel.
+  const SEED = /var rev=\[\];var cur=\(String\(startId\|\|''\)\s*===\s*'root'\s*&&\s*rootId\)\?rootId:String\(startId\|\|''\)/
+
+  it('every folderChain seeds the walk at R when startId is the root sentinel (Fix #1)', () => {
+    for (const c of chainCodes) {
+      expect(c, 'folderChain seeds startId===root -> rootId').toMatch(SEED)
+    }
+    // Belt-and-braces: exactly 8 seeded bodies across the whole document.
+    const seeded = allCode.filter((c) => SEED.test(c))
+    expect(seeded.length).toBe(8)
+  })
+
+  it('leaves the two folderPath breadcrumb seeds plain (no root, Fix #1)', () => {
+    // folderPath must NOT gain root — its seed uses a distinct `var names=[]`
+    // form and must remain the plain `String(startId||'')`.
+    const pathSeeds = allCode.filter((c) => c.includes("var names=[]; var cur=String(startId||'')"))
+    expect(pathSeeds.length).toBe(2)
+    for (const c of pathSeeds) {
+      expect(c, 'folderPath seed stays plain (no rootId)').not.toMatch(
+        /var names=\[\]; var cur=\(String\(startId\|\|''\)\s*===\s*'root'/,
+      )
+    }
+  })
+
   it('widens every chain-feeding query (allFolders / folders) to nodeType in [folder, root]', () => {
     const widened: Array<Record<string, any>> = []
     for (const r of proxy.rules) {
@@ -230,5 +263,21 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     // via its distinct `cur=byId[cur].parentId||''` line.
     const shape = step(rule('GET', '/api/nodes'), 'shape')
     expect(shape.config.code).toContain("cur=byId[cur].parentId||''")
+  })
+})
+
+/**
+ * Fix #4: the singleton root marker R (nodeType 'root') must be non-deletable.
+ * The DELETE /api/node gate blocks deletion of a folder with children
+ * (`guardBlocked = isFolder && hasChildren`), but R is nodeType 'root', not
+ * 'folder', so an admin knowing R's UUID could delete it — orphaning every
+ * grant/link scoped to it. The guard must also block nodeType==='root'.
+ */
+describe('Fix #4 — the root marker is non-deletable', () => {
+  it("the DELETE /api/node gate blocks deletion when nodeType==='root'", () => {
+    const gate = step(rule('DELETE', '/api/node'), 'gate')
+    expect(gate.config.code).toMatch(
+      /var guardBlocked=\(isFolder&&hasChildren\)\|\|nodeType===['"]root['"];/,
+    )
   })
 })

@@ -120,6 +120,55 @@ describe('a root-scoped guest browses nested content', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 2b. A root-scoped guest sees a TOP-LEVEL file (parentId:'root') — Fix #1/#2
+// ---------------------------------------------------------------------------
+//
+// The headline case the whole feature is named for: a file uploaded to the
+// DEFAULT location sits directly in "My Files" (parentId === 'root'). The real
+// gate builds its chain via folderChain(...,node.parentId) === folderChain(...,'root'),
+// which used to return [] (UUID.test('root') fails) so R was never injected and
+// the top-level file was DENIED. Fix #1 seeds that walk at R so the chain is
+// [R, file] — converging with this mock (buildAncestorIds already resolved the
+// node's own parentId==='root' to R). This e2e is the regression guard.
+
+describe('a root-scoped guest browses TOP-LEVEL content', () => {
+  it('a guest scoped to R can getNode a top-level file (parentId root)', async () => {
+    setMockUser(ADMIN)
+    const topFile = seedFile('Top.txt', 'root')
+
+    const minted = await mintLink('root')
+    expect(minted.folderId).toBe(ROOT_RECORD_ID)
+
+    setMockUser(null)
+    setMockShareLinkFolderId(minted.folderId)
+
+    // The chain for a top-level file is [R, file]; the guest is scoped to R, so
+    // R matches chain[0] and access is granted. Before Fix #1 the live gate's
+    // chain was just [file] (R missing) and this was silently DENIED.
+    const nodeRes = await fetch(`/api/node?id=${topFile.id}`)
+    expect(nodeRes.status).toBe(200)
+    const { node } = (await nodeRes.json()) as { node: { id: string; name: string } | null }
+    expect(node?.id).toBe(topFile.id)
+    expect(node?.name).toBe('Top.txt')
+    // Note: listing at the literal `parentId=root` sentinel is a separate,
+    // deliberately out-of-scope path for share-link viewers (see handlers.ts
+    // GET /api/nodes) — the headline case is direct access to the top-level file.
+  })
+
+  it('a non-admin grantee on root can access a top-level file (parentId root)', async () => {
+    setMockUser(ADMIN)
+    const topFile = seedFile('TopGrant.txt', 'root')
+
+    const { grants: updated } = await grant('root', GRANTEE.id, 'view')
+    expect(updated.some((g) => g.principalId === GRANTEE.id)).toBe(true)
+
+    setMockUser(GRANTEE)
+    const nodeRes = await fetch(`/api/node?id=${topFile.id}`)
+    expect(nodeRes.status).toBe(200)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 3. A grant on root inherits down to nested content for a non-admin grantee
 // ---------------------------------------------------------------------------
 

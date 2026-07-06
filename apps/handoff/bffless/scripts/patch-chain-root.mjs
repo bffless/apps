@@ -43,8 +43,20 @@ const doc = JSON.parse(readFileSync(jsonUrl, 'utf8'))
 
 const SENTINEL = "cur=(n.parentId==='root'&&rootId)?rootId:(n.parentId||'');"
 
+// Fix #1: seed the walk at R when startId IS the 'root' sentinel. A node sitting
+// directly in "My Files" has parentId==='root', so gates call folderChain(...,'root').
+// The plain seed `var cur=String(startId||'')` then fails UUID.test('root') on entry
+// and returns [] — R never injected, top-level FILES/SITES missed by a root share.
+// This is gated INDEPENDENTLY of the `var rootId=` capture (that substring is already
+// present from the earlier in-loop hop), keyed on the plain seed still being present,
+// so it applies to all 8 folderChain bodies and no-ops on re-run. folderPath uses a
+// distinct `var names=[]; var cur=String(startId||'')` seed and is NOT matched.
+const SEED_PLAIN = "var rev=[];var cur=String(startId||'');"
+const SEED_ROOTED = "var rev=[];var cur=(String(startId||'')==='root'&&rootId)?rootId:String(startId||'');"
+
 let chains = 0
 let filters = 0
+let seeds = 0
 
 for (const rule of doc.rules) {
   const steps = (rule.pipelineConfig && rule.pipelineConfig.steps) || []
@@ -64,44 +76,56 @@ for (const rule of doc.rules) {
     // --- Inject root into folderChain ------------------------------------
     const code = s.config && s.config.code
     if (typeof code !== 'string' || !code.includes('function folderChain')) continue
-    if (code.includes('var rootId=')) continue // already patched (idempotent)
 
-    let next
-    if (code.includes('function folderChain(folders,startId)')) {
-      // Variant A: byId built inside with loop var `id`.
-      if (
-        !code.includes('var byId={};') ||
-        !code.includes('if(id)byId[id]=f;}') ||
-        !code.includes("cur=n.parentId||'';")
-      ) {
-        throw new Error(`Variant A substrings missing in ${rule.method} ${rule.pathPattern}:${s.id}`)
+    let next = code
+
+    // (a) rootId capture + in-loop hop. Idempotent on `var rootId=` (skip if
+    //     already present from an earlier run).
+    if (!next.includes('var rootId=')) {
+      if (next.includes('function folderChain(folders,startId)')) {
+        // Variant A: byId built inside with loop var `id`.
+        if (
+          !next.includes('var byId={};') ||
+          !next.includes('if(id)byId[id]=f;}') ||
+          !next.includes("cur=n.parentId||'';")
+        ) {
+          throw new Error(`Variant A substrings missing in ${rule.method} ${rule.pathPattern}:${s.id}`)
+        }
+        next = next
+          .replace('var byId={};', "var byId={};var rootId='';")
+          .replace('if(id)byId[id]=f;}', "if(id){byId[id]=f;if(f.nodeType==='root')rootId=id;}}")
+          .replace("cur=n.parentId||'';", SENTINEL)
+      } else if (next.includes('function folderChain(startId)')) {
+        // Variant B: byId built outside with loop var `fid`.
+        if (
+          !next.includes('var byId={};') ||
+          !next.includes('if(fid)byId[fid]=f;}') ||
+          !next.includes("cur=n.parentId||'';")
+        ) {
+          throw new Error(`Variant B substrings missing in ${rule.method} ${rule.pathPattern}:${s.id}`)
+        }
+        next = next
+          .replace('var byId={};', "var byId={};var rootId='';")
+          .replace('if(fid)byId[fid]=f;}', "if(fid){byId[fid]=f;if(f.nodeType==='root')rootId=fid;}}")
+          .replace("cur=n.parentId||'';", SENTINEL)
+      } else {
+        throw new Error(`Unknown folderChain variant in ${rule.method} ${rule.pathPattern}:${s.id}`)
       }
-      next = code
-        .replace('var byId={};', "var byId={};var rootId='';")
-        .replace('if(id)byId[id]=f;}', "if(id){byId[id]=f;if(f.nodeType==='root')rootId=id;}}")
-        .replace("cur=n.parentId||'';", SENTINEL)
-    } else if (code.includes('function folderChain(startId)')) {
-      // Variant B: byId built outside with loop var `fid`.
-      if (
-        !code.includes('var byId={};') ||
-        !code.includes('if(fid)byId[fid]=f;}') ||
-        !code.includes("cur=n.parentId||'';")
-      ) {
-        throw new Error(`Variant B substrings missing in ${rule.method} ${rule.pathPattern}:${s.id}`)
-      }
-      next = code
-        .replace('var byId={};', "var byId={};var rootId='';")
-        .replace('if(fid)byId[fid]=f;}', "if(fid){byId[fid]=f;if(f.nodeType==='root')rootId=fid;}}")
-        .replace("cur=n.parentId||'';", SENTINEL)
-    } else {
-      throw new Error(`Unknown folderChain variant in ${rule.method} ${rule.pathPattern}:${s.id}`)
+      chains++
     }
 
-    if (next === code) throw new Error(`no-op patch in ${rule.method} ${rule.pathPattern}:${s.id}`)
+    // (b) Fix #1: seed the walk at R when startId is the 'root' sentinel.
+    //     Gated on the plain seed still being present (independent of `var rootId=`),
+    //     so it applies exactly once per folderChain body and no-ops on re-run.
+    if (next.includes(SEED_PLAIN)) {
+      next = next.replace(SEED_PLAIN, SEED_ROOTED)
+      seeds++
+    }
+
+    if (next === code) continue // nothing to do (fully patched already)
     s.config.code = next
-    chains++
   }
 }
 
 writeFileSync(jsonUrl, JSON.stringify(doc, null, 2) + '\n')
-console.log(`chains patched: ${chains} filters: ${filters}`)
+console.log(`chains patched: ${chains} filters: ${filters} seeds: ${seeds}`)

@@ -222,6 +222,15 @@ function levelRank(l: AccessLevel): number {
  * included as `chain[0]` instead of the walk stopping short of it — mirrors
  * the Task-5 live gate's `folderChain` root injection. Capped at 64 hops to
  * avoid hanging on a cycle.
+ *
+ * Equivalence with the live gate (Fix #1/#2): for a TOP-LEVEL node whose
+ * `parentId === 'root'`, this walk resolves that sentinel to `R` and yields
+ * `[R, node]`. The live gate builds the same chain as
+ * `folderChain(folders, node.parentId).concat(node)`; before Fix #1
+ * `folderChain(...,'root')` returned `[]` (UUID.test('root') fails), so the
+ * live gate diverged (`[node]`) and this mock masked the bug. After Fix #1
+ * seeds that walk at `R`, the live gate also yields `[R, node]` — the two
+ * converge, which the `mocks/shareRoot.test.ts` top-level-file e2e guards.
  */
 function buildAncestorIds(nodeId: string): string[] {
   const MAX_HOPS = 64

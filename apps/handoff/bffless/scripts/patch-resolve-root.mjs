@@ -69,8 +69,13 @@ function spliceGroup(rule, beforeId, group) {
   const folder = getStep(r, 'folder')
   folder.config.recordId = EFFECTIVE
   folder.config.condition = EFFECTIVE
-  // save keeps its existing `condition: steps.merge.allowed`.
-  getStep(r, 'save').config.recordId = EFFECTIVE
+  const save = getStep(r, 'save')
+  save.config.recordId = EFFECTIVE
+  // Fix #3: guard save on effectiveFolderId too (same uniform guard the revoke
+  // path got). merge short-circuits allowed=true for an ADMIN even when
+  // steps.folder is empty (never-created root), so without this an admin's grant
+  // on a non-existent root runs save with recordId=null -> UUID-cast 500.
+  save.config.condition = `steps.merge.allowed && ${EFFECTIVE}`
 }
 
 // --- GET /api/grants: read-only group before `folder` ------------------------
