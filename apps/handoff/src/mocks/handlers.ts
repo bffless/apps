@@ -105,6 +105,54 @@ export function setMockShareLinkFolderId(folderId: string | null): void {
 let nodeCounter = 0
 let tokenCounter = 0
 
+/**
+ * Stable id for the mock's singleton root record `R` — mirrors the live,
+ * admin-owned root record resolved by the `'root'` sentinel in mint/grants
+ * (Task 4) and injected into ACL chains (Task 5). Kept distinct from the
+ * counter-based ids `seedFolder`/`seedFile` hand out so tests can reference it
+ * directly.
+ */
+export const ROOT_RECORD_ID = 'root-record-0000-0000-0000-000000000000'
+
+/**
+ * Test seam: seed the singleton root record `R` (`type:'root'`, `ownerId` an
+ * admin, `grants:[]`) into the mock node/ACL state — mirrors the live
+ * admin-owned root record. Called by `resetMockState()` so `R` exists from
+ * the start of every test, matching the fact that sharing/granting on root
+ * requires it to already be resolvable. Idempotent — re-seeding just resets
+ * `R` to a fresh state (e.g. to change its owner).
+ */
+export function seedRoot(ownerId: string = mockCurrentUser?.id ?? 'user-owner'): HandoffNode {
+  const raw = {
+    id: ROOT_RECORD_ID,
+    type: 'root',
+    name: 'My Files',
+    mime: null,
+    size: null,
+    url: null,
+    storageKey: null,
+    parentId: '',
+    createdAt: Date.now(),
+    ownerId,
+    grants: [],
+    mode: 'inheriting' as const,
+  }
+  const node = toNode(raw)
+  nodes.set(ROOT_RECORD_ID, node)
+  nodeAcl.set(ROOT_RECORD_ID, { ownerId, grants: [], mode: 'inheriting' })
+  grants.set(ROOT_RECORD_ID, [])
+  return node
+}
+
+/**
+ * Resolve the `'root'` sentinel to `R`'s id — mirrors the live
+ * `resolveRootShape.effectiveFolderId` used by mint, grants, and grants/revoke
+ * (Tasks 4 & 6). Any other folderId passes through unchanged.
+ */
+function resolveFolderId(folderId: string): string {
+  return folderId === 'root' ? ROOT_RECORD_ID : folderId
+}
+
 /** Reset all mock state — exported for use in tests. */
 export function resetMockState(): void {
   nodes.clear()
@@ -117,6 +165,7 @@ export function resetMockState(): void {
   tokenCounter = 0
   mockCurrentUser = { id: 'user-owner', email: 'owner@example.com', role: 'admin' }
   mockShareLinkFolderId = null
+  seedRoot()
 }
 
 /** Set the current mock user (or null for unauthenticated). */
@@ -167,6 +216,41 @@ function levelRank(l: AccessLevel): number {
   return l === 'owner' ? 3 : l === 'edit' ? 2 : l === 'view' ? 1 : 0
 }
 
+/**
+ * Build the root→target ancestor id chain by walking `parentId` upward from
+ * `nodeId`. Resolves the `'root'` sentinel to `R`'s id so the root record is
+ * included as `chain[0]` instead of the walk stopping short of it — mirrors
+ * the Task-5 live gate's `folderChain` root injection. Capped at 64 hops to
+ * avoid hanging on a cycle.
+ */
+function buildAncestorIds(nodeId: string): string[] {
+  const MAX_HOPS = 64
+  const ancestorIds: string[] = []
+  let cursor: string | undefined = nodeId
+  let hops = 0
+  while (cursor && cursor !== 'root' && hops < MAX_HOPS) {
+    ancestorIds.unshift(cursor)
+    const n = nodes.get(cursor)
+    const parentId = n?.parentId
+    cursor = parentId === 'root' ? ROOT_RECORD_ID : (parentId ?? undefined)
+    hops++
+  }
+  return ancestorIds
+}
+
+/** Build the ordered root→target FolderLink[] chain (via `buildAncestorIds`) from the in-memory ACL maps. */
+function buildFolderChain(nodeId: string): FolderLink[] {
+  return buildAncestorIds(nodeId).map((id) => {
+    const a = nodeAcl.get(id)
+    return {
+      id,
+      ownerId: a?.ownerId ?? null,
+      grants: a?.grants ?? [],
+      mode: a?.mode ?? 'inheriting',
+    }
+  })
+}
+
 function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '401' | '403' {
   // Share-link viewer path: no user, just a scoped folderId.
   if (mockShareLinkFolderId !== null) {
@@ -175,29 +259,9 @@ function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '40
     const acl = nodeAcl.get(nodeId)
     if (!acl) return 'ok' // no ACL = open
 
-    const MAX_HOPS = 64
-    const ancestorIds: string[] = []
-    let cursor: string | undefined = nodeId
-    let hops = 0
-    while (cursor && cursor !== 'root' && hops < MAX_HOPS) {
-      ancestorIds.unshift(cursor)
-      const n = nodes.get(cursor)
-      cursor = n?.parentId ?? undefined
-      hops++
-    }
-
-    const folderChain: FolderLink[] = ancestorIds.map((id) => {
-      const a = nodeAcl.get(id)
-      return {
-        id,
-        ownerId: a?.ownerId ?? null,
-        grants: a?.grants ?? [],
-        mode: a?.mode ?? 'inheriting',
-      }
-    })
-
+    let folderChain = buildFolderChain(nodeId)
     if (folderChain.length === 0) {
-      folderChain.push({ id: nodeId, ownerId: acl.ownerId, grants: acl.grants, mode: acl.mode })
+      folderChain = [{ id: nodeId, ownerId: acl.ownerId, grants: acl.grants, mode: acl.mode }]
     }
 
     const level = evaluateAccess({ folderChain, viewer: { shareLinkFolderId: mockShareLinkFolderId } })
@@ -210,38 +274,12 @@ function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '40
   const acl = nodeAcl.get(nodeId)
   if (!acl) return 'ok' // no ACL record = open (root or file)
 
-  // Build ancestor chain: walk parentId links from root down to nodeId.
-  const MAX_HOPS = 64
-  const ancestorIds: string[] = []
-  let cursor: string | undefined = nodeId
-  let hops = 0
-  while (cursor && cursor !== 'root' && hops < MAX_HOPS) {
-    ancestorIds.unshift(cursor)
-    const n = nodes.get(cursor)
-    cursor = n?.parentId ?? undefined
-    hops++
-  }
-
-  // Build the FolderLink chain (root → target).
-  const folderChain: FolderLink[] = ancestorIds.map((id) => {
-    const a = nodeAcl.get(id)
-    return {
-      id,
-      ownerId: a?.ownerId ?? null,
-      grants: a?.grants ?? [],
-      mode: a?.mode ?? 'inheriting',
-    }
-  })
-
-  // If the chain is somehow empty (e.g. nodeId not in nodes map), fall back to
-  // the direct ACL entry so we still enforce something.
+  // Build the FolderLink chain (root → target). If it's somehow empty (e.g.
+  // nodeId not in the nodes map), fall back to the direct ACL entry so we
+  // still enforce something.
+  let folderChain = buildFolderChain(nodeId)
   if (folderChain.length === 0) {
-    folderChain.push({
-      id: nodeId,
-      ownerId: acl.ownerId,
-      grants: acl.grants,
-      mode: acl.mode,
-    })
+    folderChain = [{ id: nodeId, ownerId: acl.ownerId, grants: acl.grants, mode: acl.mode }]
   }
 
   const viewer = {
@@ -364,7 +402,7 @@ export const handlers = [
    */
   http.get('/api/grants', ({ request }) => {
     if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
-    const folderId = new URL(request.url).searchParams.get('folderId') ?? ''
+    const folderId = resolveFolderId(new URL(request.url).searchParams.get('folderId') ?? '')
     const acl = nodeAcl.get(folderId)
     // Only owner or admin can manage grants
     if (acl) {
@@ -388,7 +426,7 @@ export const handlers = [
       principalEmail?: string
       level?: 'view' | 'edit'
     }
-    const folderId = body.folderId ?? ''
+    const folderId = resolveFolderId(body.folderId ?? '')
     const acl = nodeAcl.get(folderId)
     if (acl) {
       const isAdmin = mockCurrentUser.role === 'admin'
@@ -422,7 +460,7 @@ export const handlers = [
       folderId?: string
       principalId?: string
     }
-    const folderId = body.folderId ?? ''
+    const folderId = resolveFolderId(body.folderId ?? '')
     const acl = nodeAcl.get(folderId)
     if (acl) {
       const isAdmin = mockCurrentUser.role === 'admin'
@@ -815,7 +853,7 @@ export const handlers = [
       folderId?: string
       expiresMs?: number
     }
-    const folderId = body.folderId ?? ''
+    const folderId = resolveFolderId(body.folderId ?? '')
     const acl = nodeAcl.get(folderId)
     if (acl) {
       const isAdmin = mockCurrentUser.role === 'admin'
@@ -844,7 +882,7 @@ export const handlers = [
    */
   http.get('/api/share-links', ({ request }) => {
     if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
-    const folderId = new URL(request.url).searchParams.get('folderId') ?? ''
+    const folderId = resolveFolderId(new URL(request.url).searchParams.get('folderId') ?? '')
     const acl = nodeAcl.get(folderId)
     if (acl) {
       const isAdmin = mockCurrentUser.role === 'admin'

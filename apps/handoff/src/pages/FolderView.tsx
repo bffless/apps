@@ -864,7 +864,12 @@ export function FolderView({ folderId }: FolderViewProps) {
   // their real identity, even if a stale shareLinkFolderId lingers in localStorage.
   const isShareMode = inShareMode({ authenticated: !!session?.authenticated, shareLinkFolderId })
 
-  const { chain: folderChain } = buildAncestorFolderChain(ancestorNodesById, folderId)
+  const { chain: folderChain } = buildAncestorFolderChain(
+    ancestorNodesById,
+    folderId,
+    null,
+    isShareMode ? (shareLinkFolderId ?? undefined) : undefined,
+  )
   const chainReady = folderId === 'root' || ancestorChainComplete
 
   const effectiveLevel = evaluateAccess({
