@@ -48,7 +48,7 @@
             "id": "parsePath",
             "name": "parsePath",
             "config": {
-              "code": "function handler({ request, deployment }) { var p = (request && request.path) || ''; var marker = '/api/uploads/content/'; var i = p.indexOf(marker); var rest = (i >= 0) ? p.slice(i + marker.length) : ''; var q = rest.indexOf('?'); if (q >= 0) rest = rest.slice(0, q); var owner = (deployment && deployment.owner) || ''; var repo = (deployment && deployment.repo) || ''; var fullKey = (rest && owner && repo) ? (owner + '/' + repo + '/uploads/content/' + rest) : ''; return { rest: rest, fullKey: fullKey, hasKey: !!fullKey }; }"
+              "code": "function handler({ request, deployment }) { var p = (request && request.path) || ''; var marker = '/api/uploads/content/'; var i = p.indexOf(marker); var rest = (i >= 0) ? p.slice(i + marker.length) : ''; var q = rest.indexOf('?'); if (q >= 0) rest = rest.slice(0, q); var segs = rest.split('/'); for (var s = 0; s < segs.length; s++) { try { segs[s] = decodeURIComponent(segs[s]); } catch (e) { /* malformed escape - keep raw */ } } rest = segs.join('/'); var owner = (deployment && deployment.owner) || ''; var repo = (deployment && deployment.repo) || ''; var fullKey = (rest && owner && repo) ? (owner + '/' + repo + '/uploads/content/' + rest) : ''; return { rest: rest, fullKey: fullKey, hasKey: !!fullKey }; }"
             },
             "handlerType": "function_handler"
           },
@@ -110,7 +110,7 @@
             "id": "serve",
             "name": "serve",
             "config": {
-              "subDir": "content",
+              "key": "content/{{steps.parsePath.rest}}",
               "condition": "steps.gate.allow"
             },
             "handlerType": "file_serve_handler"
@@ -1614,7 +1614,7 @@
             "id": "parsePath",
             "name": "parsePath",
             "config": {
-              "code": "function handler({ request, deployment }) {\n  var p = (request && request.path) || '';\n  var marker = '/api/public/content/';\n  var i = p.indexOf(marker);\n  var rest = (i >= 0) ? p.slice(i + marker.length) : '';\n  var q = rest.indexOf('?');\n  if (q >= 0) rest = rest.slice(0, q);\n  var owner = (deployment && deployment.owner) || '';\n  var repo = (deployment && deployment.repo) || '';\n  var fullKey = (rest && owner && repo) ? (owner + '/' + repo + '/uploads/content/' + rest) : '';\n  return { rest: rest, fullKey: fullKey, hasKey: !!fullKey };\n}\n"
+              "code": "function handler({ request, deployment }) {\n  var p = (request && request.path) || '';\n  var marker = '/api/public/content/';\n  var i = p.indexOf(marker);\n  var rest = (i >= 0) ? p.slice(i + marker.length) : '';\n  var q = rest.indexOf('?');\n  if (q >= 0) rest = rest.slice(0, q);\n  var segs = rest.split('/');\n  for (var s = 0; s < segs.length; s++) {\n    try { segs[s] = decodeURIComponent(segs[s]); } catch (e) { /* malformed escape - keep raw */ }\n  }\n  rest = segs.join('/');\n  var owner = (deployment && deployment.owner) || '';\n  var repo = (deployment && deployment.repo) || '';\n  var fullKey = (rest && owner && repo) ? (owner + '/' + repo + '/uploads/content/' + rest) : '';\n  return { rest: rest, fullKey: fullKey, hasKey: !!fullKey };\n}\n"
             },
             "handlerType": "function_handler"
           },
@@ -1646,7 +1646,7 @@
             "id": "serve",
             "name": "serve",
             "config": {
-              "subDir": "content",
+              "key": "content/{{steps.parsePath.rest}}",
               "cacheMaxAge": 300,
               "condition": "steps.publicGate.allow"
             },
