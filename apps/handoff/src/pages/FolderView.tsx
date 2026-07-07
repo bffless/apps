@@ -998,6 +998,15 @@ export function FolderView({ folderId }: FolderViewProps) {
         : folderChain,
     )
 
+  // ShareDialog's `parentChain` — root → the shared folder's PARENT, i.e.
+  // `folderChain` with the current folder's own trailing link stripped when
+  // present (it's included once the ancestor walk has resolved this folder's
+  // own node — see the comment above). At root, folderChain is just the
+  // synthetic root link, whose id also equals `folderId` ('root'), so this
+  // same guard naturally strips it down to `[]` — own-grant state only, as
+  // intended for root.
+  const parentChain = chainTail?.id === folderId ? folderChain.slice(0, -1) : folderChain
+
   // The current Folder's verbatim content path — the prefix every File uploaded
   // here (single file OR folder import) is stored under, so relative refs resolve
   // on the unified content endpoint (structural storage). '' for a root upload.
@@ -1204,6 +1213,8 @@ export function FolderView({ folderId }: FolderViewProps) {
           title={shareTarget.title}
           nodeId={shareTarget.nodeId}
           isFile={shareTarget.isFile}
+          parentChain={parentChain}
+          folderMode={currentFolder?.mode ?? 'inheriting'}
           onClose={() => setShareTarget(null)}
         />
       )}
