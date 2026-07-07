@@ -138,6 +138,41 @@ describe('ShareDialog parentChain/folderMode — per share target (Critical find
     expect(within(dialog).getByRole('button', { name: 'Make private' })).toBeInTheDocument()
   })
 
+  it('Make private at a public root revokes directly — no confirm dialog, no mode PATCH (Important finding)', async () => {
+    // At literal root, `folderChain`'s tail carries the resolved root RECORD
+    // id (a UUID), never the `folderId` sentinel string 'root' — so the
+    // page-target `parentChain` strip guard in FolderView can't fire there,
+    // and the toolbar Share dialog was handed the UNSTRIPPED `[rootLink]`
+    // chain (root's own Anyone grant, double-counted as "inherited"). That
+    // made GeneralAccess treat root's own publicness as inherited-from-parent
+    // and route "Make private" through MakePrivateConfirmDialog (whose
+    // parent-folder copy is nonsensical at root — root has no parent) and
+    // then PATCH `setNodeMode({id:'root', mode:'restricted'})`, which the
+    // mock (mirroring the live rule) 400s since 'root' isn't a folder node id.
+    seedRoot()
+    setMockGrants(ROOT_RECORD_ID, [{ principalId: ANYONE_PRINCIPAL, level: 'view' }])
+
+    renderRoot()
+
+    expect(await screen.findByText('Public')).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+
+    const dialog = getShareDialog()
+    // Wait for GeneralAccess's own grants query to resolve before querying
+    // for its toggle button — otherwise it's still `null` (isLoading).
+    expect(await within(dialog).findByText('Public')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make private' }))
+
+    // No confirm dialog — root's publicness is judged from its OWN grant
+    // only, so revoking it directly is enough (no parent to cut off from).
+    expect(screen.queryByText('Make this folder private?')).not.toBeInTheDocument()
+
+    // The Anyone grant is revoked directly and the section flips to Private.
+    expect(await within(dialog).findByText('Private')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Make public' })).toBeInTheDocument()
+  })
+
   it('a fresh subfolder row Share dialog shows Public (inherited from its parent), not Private, when the page folder itself is public', async () => {
     seedRoot()
     const docs = seedFolder('Docs', 'root')

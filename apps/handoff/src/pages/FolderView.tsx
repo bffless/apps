@@ -1011,11 +1011,17 @@ export function FolderView({ folderId }: FolderViewProps) {
   // ShareDialog's `parentChain` for the CURRENT-FOLDER share target (toolbar
   // Share, and file-row shares — both share the folder we're viewing) — root →
   // the shared folder's PARENT, i.e. `folderChain` with the current folder's
-  // own trailing link stripped when present. At root, folderChain is just the
-  // synthetic root link, whose id also equals `folderId` ('root'), so this
-  // same guard naturally strips it down to `[]` — own-grant state only, as
-  // intended for root.
-  const parentChain = chainTail?.id === folderId ? folderChain.slice(0, -1) : folderChain
+  // own trailing link stripped when present. At root the strip guard below
+  // can't fire: `folderChain`'s tail id is the resolved root RECORD id (a
+  // UUID from rootMeta), never the `folderId` sentinel string 'root', so
+  // `folderChain` would pass through UNSTRIPPED as `[rootLink]`. Root has no
+  // parent, so special-case it straight to `[]` — own-grant state only
+  // (Important finding fix: otherwise GeneralAccess double-counts the root's
+  // own Anyone grant as "inherited" too, routing "Make private" through the
+  // parent-cutoff confirm dialog and a `mode:'restricted'` PATCH that 400s on
+  // the non-folder 'root' id).
+  const parentChain =
+    folderId === 'root' ? [] : chainTail?.id === folderId ? folderChain.slice(0, -1) : folderChain
 
   // ShareDialog's parentChain/folderMode, resolved PER SHARE TARGET (Critical
   // finding fix): a folder-ROW share's target is a *different* folder than the
