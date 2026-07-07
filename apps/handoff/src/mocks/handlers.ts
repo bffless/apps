@@ -16,7 +16,7 @@
 import { http, HttpResponse } from 'msw'
 import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
-import { evaluateAccess, ANYONE_PRINCIPAL } from '../lib/acl'
+import { evaluateAccess, hasAnyoneGrant, ANYONE_PRINCIPAL } from '../lib/acl'
 import type { AccessLevel, Grant, FolderLink } from '../lib/acl'
 import { pathFromPathname } from '../lib/pathUrl'
 
@@ -633,8 +633,11 @@ export const handlers = [
 
   /**
    * GET /api/nodes?parentId=…
-   * Response: { nodes: HandoffNode[] }
+   * Response: { nodes: HandoffNode[], root: { id, public } }
    * Enforces ACL: checks mockCurrentUser (or share-link viewer) against the parentId's ACL.
+   * `root` mirrors the live listing's rootMeta (Task 2): the singleton root
+   * record's id (or null if never seeded) and whether it carries an Anyone
+   * grant — appended to every 200 response, not just root listings.
    */
   http.get('/api/nodes', ({ request }) => {
     const parentId = new URL(request.url).searchParams.get('parentId') ?? 'root'
@@ -667,7 +670,11 @@ export const handlers = [
         path: mockNodePath(n.id),
       }
     })
-    return HttpResponse.json({ nodes: withAcl })
+    const rootAcl = nodeAcl.get(ROOT_RECORD_ID)
+    const root = rootAcl
+      ? { id: ROOT_RECORD_ID, public: hasAnyoneGrant(rootAcl.grants) }
+      : { id: null, public: false }
+    return HttpResponse.json({ nodes: withAcl, root })
   }),
 
   /**
@@ -764,6 +771,41 @@ export const handlers = [
     grants.delete(id)
     sites.delete(id)
     return HttpResponse.json({ deleted: true, id })
+  }),
+
+  /**
+   * PATCH /api/node
+   * Body: { id, mode: 'inheriting' | 'restricted' }
+   * Response: { id, mode }
+   * Mirrors the live `node-set-mode` pipeline (Task 3): 400 on a bad/missing
+   * id or mode, or a non-folder target (root and files rejected); 403 for
+   * anyone who isn't the folder's owner or an admin (anonymous included —
+   * there is no 401 branch, matching the real rule's `denied` step).
+   */
+  http.patch('/api/node', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { id?: string; mode?: string }
+    const id = String(body.id ?? '')
+    const mode: 'inheriting' | 'restricted' | '' =
+      body.mode === 'restricted' ? 'restricted' : body.mode === 'inheriting' ? 'inheriting' : ''
+    const node = id ? nodes.get(id) : undefined
+    const isFolder = !!node && node.type === 'folder'
+    const badRequest = !id || !mode || !isFolder
+
+    if (badRequest) {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
+    }
+
+    const acl = nodeAcl.get(id)
+    const isAdmin = mockCurrentUser?.role === 'admin'
+    const isOwner = !!mockCurrentUser && acl?.ownerId === mockCurrentUser.id
+    const allowed = isAdmin || isOwner
+    if (!allowed) {
+      return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+
+    if (acl) acl.mode = mode
+    nodes.set(id, { ...node!, mode })
+    return HttpResponse.json({ id, mode })
   }),
 
   /**

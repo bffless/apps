@@ -5,12 +5,13 @@
  * containing folder and offers a file-direct link (ADR-0004).
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PeopleAccess, GeneralAccess } from './ManageAccessPanel'
 import { ShareLinksSection } from './ShareLinksSection'
-import { XIcon, ShareIcon } from './icons'
+import { XIcon, ShareIcon, RssIcon } from './icons'
 import { useGetGrantsQuery } from '../store/handoffApi'
-import { hasAnyoneGrant } from '../lib/acl'
+import { hasAnyoneGrant, isEffectivelyPublic, type FolderLink } from '../lib/acl'
+import { feedUrl } from '../lib/pathUrl'
 
 export interface ShareDialogProps {
   folderId: string
@@ -20,15 +21,31 @@ export interface ShareDialogProps {
   nodeId?: string
   /** True when sharing a file (shows the "shares the containing folder" note). */
   isFile?: boolean
+  /**
+   * Root → parent chain (this folder's own link excluded). Optional — absent
+   * means "behave as today" (own-grant state only), forwarded to
+   * `GeneralAccess` and used for the share-links `isPublic` note.
+   */
+  parentChain?: FolderLink[]
+  /** This folder's own inheritance mode. Absent is treated as 'inheriting'. */
+  folderMode?: 'inheriting' | 'restricted'
+  /**
+   * Content path of the folder being shared ('' for the root folder). When set
+   * and the folder is effectively public, the dialog offers a tokenless
+   * "Copy RSS feed URL" (#188). Absent for file targets.
+   */
+  feedPath?: string
   onClose: () => void
 }
 
-export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareDialogProps) {
+export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, folderMode, feedPath, onClose }: ShareDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
 
   // RTK Query dedupes this with GeneralAccess/PeopleAccess's identical query.
   const { data: grantsData } = useGetGrantsQuery({ folderId })
-  const isPublic = hasAnyoneGrant(grantsData?.grants ?? [])
+  const ownAnyone = hasAnyoneGrant(grantsData?.grants ?? [])
+  const inheritedPublic = folderMode !== 'restricted' && isEffectivelyPublic(parentChain ?? [])
+  const isPublic = ownAnyone || inheritedPublic
 
   useEffect(() => {
     const dlg = ref.current
@@ -74,10 +91,49 @@ export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareD
       </div>
 
       <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
-        <GeneralAccess folderId={folderId} />
+        <GeneralAccess folderId={folderId} parentChain={parentChain} folderMode={folderMode} />
+        {isPublic && !isFile && feedPath != null && <PublicFeedRow feedPath={feedPath} />}
         <PeopleAccess folderId={folderId} />
         <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} isPublic={isPublic} />
       </div>
     </dialog>
+  )
+}
+
+/**
+ * PublicFeedRow — the tokenless "Copy RSS feed URL" affordance for an
+ * effectively-public folder (#188). The URL is path-based (`/feed/<path>.xml`,
+ * or `/feed.xml` for the root) and carries no token — safe to share publicly.
+ */
+function PublicFeedRow({ feedPath }: { feedPath: string }) {
+  const [copied, setCopied] = useState(false)
+  const url = `${window.location.origin}${feedUrl(feedPath)}`
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <RssIcon className="h-4 w-4 shrink-0 text-accent-600" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">RSS feed</p>
+            <p className="truncate font-mono text-xs text-muted">{url}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+        >
+          {copied ? 'Copied!' : 'Copy RSS feed URL'}
+        </button>
+      </div>
+    </div>
   )
 }

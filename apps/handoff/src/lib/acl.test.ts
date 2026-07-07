@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { evaluateAccess, hasAnyoneGrant, ANYONE_PRINCIPAL, inShareMode } from './acl'
+import { evaluateAccess, hasAnyoneGrant, ANYONE_PRINCIPAL, inShareMode, isEffectivelyPublic, childIsPublic } from './acl'
 import type { FolderLink, Viewer } from './acl'
 
 // ---------------------------------------------------------------------------
@@ -309,5 +309,47 @@ describe('inShareMode', () => {
     // Regression: a persisted shareLinkFolderId (from opening a /s/ link) must
     // NOT downgrade a signed-in owner/admin into a scoped visitor.
     expect(inShareMode({ authenticated: true, shareLinkFolderId: 'folder-1' })).toBe(false)
+  })
+})
+
+describe('isEffectivelyPublic', () => {
+  it('returns true when chain with anyone grant on head is public', () => {
+    const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
+    const folderChain: FolderLink[] = [F({ grants: [anyone] })]
+    expect(isEffectivelyPublic(folderChain)).toBe(true)
+  })
+
+  it('returns false when chain has empty grants', () => {
+    const folderChain: FolderLink[] = [F({ grants: [] })]
+    expect(isEffectivelyPublic(folderChain)).toBe(false)
+  })
+
+  it('returns false when restricted tail under public head blocks access', () => {
+    const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
+    const folderChain: FolderLink[] = [F({ grants: [anyone] }), F({ mode: 'restricted', grants: [] })]
+    expect(isEffectivelyPublic(folderChain)).toBe(false)
+  })
+})
+
+describe('childIsPublic', () => {
+  it('returns true with public parent and default child', () => {
+    const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
+    const parent: FolderLink = F({ grants: [anyone] })
+    const child = { id: 'child-1', ownerId: null }
+    expect(childIsPublic([parent], child)).toBe(true)
+  })
+
+  it('returns false with mode: restricted child even if parent is public', () => {
+    const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
+    const parent: FolderLink = F({ grants: [anyone] })
+    const child = { id: 'child-1', ownerId: null, mode: 'restricted' as const }
+    expect(childIsPublic([parent], child)).toBe(false)
+  })
+
+  it('returns true with private parent but child has own anyone grant', () => {
+    const parent: FolderLink = F({ grants: [] })
+    const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
+    const child = { id: 'child-1', ownerId: null, grants: [anyone] }
+    expect(childIsPublic([parent], child)).toBe(true)
   })
 })

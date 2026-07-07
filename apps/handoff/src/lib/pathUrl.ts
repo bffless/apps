@@ -52,6 +52,16 @@ export function blobUrl(path: string): string {
   return `/blob/${encodePath(path)}`
 }
 
+/**
+ * RSS feed URL for a folder path. The root folder's feed is the tokenless
+ * `/feed.xml`; every other folder is `/feed/<encoded path>.xml`. Mirrors the
+ * `/feed/*` + `/feed.xml` proxy rules (Handoff RSS spine, #188). Sibling to
+ * `shareLinkCopyUrl` — a private feed appends the share-link token (#189).
+ */
+export function feedUrl(path: string): string {
+  return path ? `/feed/${encodePath(path)}.xml` : '/feed.xml'
+}
+
 /** The owning folder's path ('' for a root-level node). */
 export function parentPath(path: string): string {
   const i = path.lastIndexOf('/')

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { pickRootNode, rootFolderLink, ROOT_SENTINEL } from './rootNode'
+import { pickRootNode, rootFolderLink, ROOT_SENTINEL, rootMetaNode } from './rootNode'
+import { ANYONE_PRINCIPAL } from './acl'
 import type { HandoffNode } from './nodes'
 
 const R = (over: Partial<HandoffNode> = {}): HandoffNode =>
@@ -27,5 +28,38 @@ describe('rootFolderLink', () => {
   })
   it('falls back to the sentinel when nothing is known', () => {
     expect(rootFolderLink(null)).toEqual({ id: ROOT_SENTINEL, ownerId: null, grants: [], mode: 'inheriting' })
+  })
+})
+
+describe('rootMetaNode', () => {
+  it('returns null when meta is undefined', () => {
+    expect(rootMetaNode(undefined)).toBeNull()
+  })
+
+  it('returns null when meta.id is null', () => {
+    expect(rootMetaNode({ id: null, public: false })).toBeNull()
+  })
+
+  it('returns a synthetic root node with anyone grant when public is true', () => {
+    const result = rootMetaNode({ id: 'R', public: true })
+    expect(result).not.toBeNull()
+    if (result) {
+      expect(result.id).toBe('R')
+      expect(result.type).toBe('root')
+      expect(result.name).toBe('My Files')
+      expect(result.parentId).toBe('')
+      expect(result.ownerId).toBeNull()
+      expect(result.mode).toBe('inheriting')
+      expect(result.grants).toEqual([{ principalId: ANYONE_PRINCIPAL, level: 'view' }])
+    }
+  })
+
+  it('returns a synthetic root node with empty grants when public is false', () => {
+    const result = rootMetaNode({ id: 'R', public: false })
+    expect(result).not.toBeNull()
+    if (result) {
+      expect(result.id).toBe('R')
+      expect(result.grants).toEqual([])
+    }
   })
 })
