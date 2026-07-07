@@ -39,7 +39,12 @@ describe('handoff DELETE /api/node proxy rule', () => {
     expect(step('query').config.recordId).toBe('request.query.id')
     expect(step('query').config.schemaId).toBe(SCHEMA)
     expect(step('query').config.condition).toBe('steps.pre.idOk')
-    expect(step('allFolders').config.filters.nodeType.value).toBe('folder')
+    // Widened in Task 5 so the singleton root record R is also fetched into the
+    // chain (folder OR root), letting a root-scoped grantee be matched.
+    expect(step('allFolders').config.filters.nodeType).toEqual({
+      op: 'in',
+      value: ['folder', 'root'],
+    })
     // Cheap existence probe so a non-empty folder can be refused.
     expect(step('children').config.filters.parentId.value).toBe('request.query.id')
     expect(step('children').config.pageSize).toBe(1)

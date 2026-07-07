@@ -18,6 +18,7 @@
 
 import type { HandoffNode } from './nodes'
 import type { FolderLink } from './acl'
+import { rootFolderLink } from './rootNode'
 
 export interface Crumb { id: string; name: string }
 
@@ -97,9 +98,11 @@ export function buildBreadcrumb(nodesById: Record<string, HandoffNode>, folderId
 export function buildAncestorFolderChain(
   nodesById: Record<string, HandoffNode>,
   folderId: string,
+  rootNode: HandoffNode | null = null,
+  shareLinkFolderId?: string,
 ): { chain: FolderLink[]; complete: boolean } {
-  // Synthetic root FolderLink — no ownerId, no grants, inheriting.
-  const rootLink: FolderLink = { id: 'root', ownerId: null, grants: [], mode: 'inheriting' }
+  // Real root FolderLink when available; else a synthetic sentinel/scope-id link.
+  const rootLink: FolderLink = rootFolderLink(rootNode, shareLinkFolderId)
 
   if (folderId === 'root') {
     return { chain: [rootLink], complete: true }
