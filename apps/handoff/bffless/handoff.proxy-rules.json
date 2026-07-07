@@ -1948,6 +1948,94 @@
           }
         ]
       }
+    },
+    {
+      "pathPattern": "/api/node",
+      "method": "PATCH",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 31,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Set a folder's inheritance mode (inheriting|restricted); owner/admin only",
+      "pipelineConfig": {
+        "name": "node-set-mode",
+        "steps": [
+          {
+            "id": "pre",
+            "name": "pre",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request, user }) { var b=(request&&request.body)||{}; var id=String(b.id||''); var mode=(b.mode==='restricted')?'restricted':((b.mode==='inheriting')?'inheriting':''); var UUID=/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; var valid=!!id&&UUID.test(id)&&!!mode; return { id: id, mode: mode, valid: valid, isAdmin: !!user&&user.role==='admin', uid: (user&&user.id)||null }; }"
+            }
+          },
+          {
+            "id": "folder",
+            "name": "folder",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "recordId": "steps.pre.id",
+              "condition": "steps.pre.valid"
+            }
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) { var pre=steps.pre||{}; var f=steps.folder||null; var isFolder=!!f&&f.nodeType==='folder'; var isOwner=!!pre.uid&&!!f&&f.ownerId===pre.uid; var bad=(pre.valid!==true)||!isFolder; var allowed=!bad&&(pre.isAdmin===true||isOwner); return { allowed: allowed, badRequest: bad, denied: !allowed&&!bad }; }"
+            }
+          },
+          {
+            "id": "save",
+            "name": "save",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "recordId": "steps.pre.id",
+              "fields": {
+                "mode": "steps.pre.mode"
+              },
+              "condition": "steps.check.allowed"
+            }
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"id\": \"{{steps.pre.id}}\", \"mode\": \"{{steps.pre.mode}}\"}",
+              "status": 200,
+              "condition": "steps.check.allowed",
+              "contentType": "application/json"
+            }
+          },
+          {
+            "id": "bad",
+            "name": "bad",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"invalid request\"}",
+              "status": 400,
+              "condition": "steps.check.badRequest",
+              "contentType": "application/json"
+            }
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.check.denied",
+              "contentType": "application/json"
+            }
+          }
+        ]
+      }
     }
   ]
 }
