@@ -123,3 +123,39 @@ export function inShareMode(input: {
 }): boolean {
   return !!input.shareLinkFolderId && !input.authenticated
 }
+
+/**
+ * Determine whether a folder chain grants any public access.
+ *
+ * A folder chain is considered effectively public if an anonymous viewer
+ * (with no userId or shareLinkFolderId) has access level > 'none'.
+ *
+ * @param folderChain - Ordered root → target array of FolderLinks.
+ * @returns True if public access exists, false otherwise.
+ */
+export function isEffectivelyPublic(folderChain: FolderLink[]): boolean {
+  return evaluateAccess({ folderChain, viewer: {} }) !== 'none'
+}
+
+/**
+ * Determine whether a child folder is effectively public given its parent chain.
+ *
+ * Appends the child as a FolderLink (coercing optional grants and mode fields)
+ * to the parent chain and evaluates public access on the combined chain.
+ *
+ * @param folderChain - Parent chain (root → parent).
+ * @param child - Child folder with id, ownerId, and optional grants/mode.
+ * @returns True if the child is effectively public, false otherwise.
+ */
+export function childIsPublic(
+  folderChain: FolderLink[],
+  child: Pick<FolderLink, 'id' | 'ownerId'> & { grants?: Grant[]; mode?: FolderLink['mode'] },
+): boolean {
+  const childLink: FolderLink = {
+    id: child.id,
+    ownerId: child.ownerId,
+    grants: child.grants ?? [],
+    mode: child.mode ?? 'inheriting',
+  }
+  return isEffectivelyPublic([...folderChain, childLink])
+}

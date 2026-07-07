@@ -265,9 +265,11 @@ describe('FolderView wiring: threads the share scope into buildAncestorFolderCha
     const args = call![1]
     expect(args).toContain('ancestorNodesById')
     expect(args).toContain('folderId')
-    // 3rd positional arg (rootNode) must stay null — fetching R for
-    // authenticated grantees' chain grants is an explicit deferred follow-up.
-    expect(args).toMatch(/null\s*,/)
+    // 3rd positional arg (rootNode) is now wired to the synthetic root node
+    // built from getRootMeta — the deferred follow-up this comment used to
+    // flag is task 5 (effective Public/Private UI): the badge/tint chain
+    // needs R's own grants (the Anyone grant) in the chain head.
+    expect(args).toMatch(/rootNode\s*,/)
     expect(args).toMatch(/isShareMode\s*\?\s*\(shareLinkFolderId\s*\?\?\s*undefined\)\s*:\s*undefined/)
   })
 })
