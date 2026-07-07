@@ -208,6 +208,19 @@ function getSession(): Promise<Session> {
   return inFlight
 }
 
+/**
+ * Test-only seam: drop the module-level session caches so the next
+ * `useSession()` re-fetches from scratch. Without it the first resolved session
+ * (`inFlight`) leaks across tests in a file — a guest render after an
+ * authenticated one still observes `authenticated: true`. Production code never
+ * calls this; a real auth change flows through `refetch()` / the
+ * `bffless:auth:refetch` event instead.
+ */
+export function __resetSessionCache(): void {
+  inFlight = null
+  refreshInFlight = null
+}
+
 export function useSession(): { session: Session | null; loading: boolean; refetch: () => void } {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
