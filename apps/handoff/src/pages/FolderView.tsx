@@ -37,7 +37,7 @@ import {
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain, folderContentPath } from '../lib/tree'
-import { nodeUrl } from '../lib/pathUrl'
+import { nodeUrl, feedUrl } from '../lib/pathUrl'
 import { contentSubPath } from '../lib/contentPath'
 import { formatBytes, formatDate } from '../lib/format'
 import {
@@ -54,6 +54,7 @@ import { rootMetaNode } from '../lib/rootNode'
 import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
+import { FeedAutodiscovery } from '../components/FeedAutodiscovery'
 import { Menu } from '../components/Menu'
 import { EmptyState } from '../components/EmptyState'
 import {
@@ -1220,6 +1221,14 @@ export function FolderView({ folderId }: FolderViewProps) {
           e.target.value = ''
         }}
       />
+
+      {/* RSS autodiscovery — public folders only (ADR-0008); the tokenless feed
+          URL is advertised in the head so a reader finds it from the page URL.
+          Gated on the same effective-public signal as the badge, so a cut-off
+          unmounts this and removes the link. */}
+      {isPublicHere && (
+        <FeedAutodiscovery href={feedUrl(currentFolderPath)} title={`${pageTitle} — Feed`} />
+      )}
 
       <Breadcrumb folderId={folderId} onChainUpdate={handleChainUpdate} />
 
