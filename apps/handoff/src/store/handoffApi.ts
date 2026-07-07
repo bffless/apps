@@ -22,8 +22,9 @@ import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { contentSubPath } from '../lib/contentPath'
 import type { Grant } from '../lib/acl'
+import type { RootMeta } from '../lib/rootNode'
 
-export type { HandoffNode, PreparedUpload, RegisterBody, Grant }
+export type { HandoffNode, PreparedUpload, RegisterBody, Grant, RootMeta }
 
 // ---------------------------------------------------------------------------
 // Share-link types
@@ -167,6 +168,19 @@ export const handoffApi = createApi({
         result
           ? [...result.map(({ id }) => ({ type: 'Node' as const, id })), { type: 'Node', id: `LIST:${parentId}` }]
           : [{ type: 'Node', id: `LIST:${parentId}` }],
+    }),
+
+    /**
+     * GET /api/nodes?parentId=root → { nodes: [...], root: { id, public } }
+     * Root-only meta: whether the singleton root record ("My Files") carries
+     * an Anyone grant. Tagged 'Grant' (not 'Node') so the existing
+     * addGrant/revokeGrant/setNodeMode `invalidatesTags: ['Grant', ...]`
+     * refreshes the public toggle without a dedicated tag.
+     */
+    getRootMeta: builder.query<RootMeta, void>({
+      query: () => 'api/nodes?parentId=root',
+      transformResponse: (raw) => (raw as { root?: RootMeta }).root ?? { id: null, public: false },
+      providesTags: ['Grant'],
     }),
 
     /**
@@ -535,6 +549,29 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * PATCH /api/node { id, mode } → { id, mode }
+     * Sets a folder's inheritance mode ('inheriting' | 'restricted');
+     * owner/admin only (400 invalid/non-folder incl. root, 403 otherwise).
+     * Invalidates 'Grant' (the public toggle reads via getRootMeta/evaluated
+     * chains) plus the node itself and, when known, its parent's listing.
+     */
+    setNodeMode: builder.mutation<
+      { id: string; mode: string },
+      { id: string; mode: 'inheriting' | 'restricted'; parentId?: string }
+    >({
+      query: ({ id, mode }) => ({
+        url: 'api/node',
+        method: 'PATCH',
+        body: { id, mode },
+      }),
+      invalidatesTags: (_result, _err, { id, parentId }) => [
+        'Grant',
+        { type: 'Node' as const, id },
+        ...(parentId ? [{ type: 'Node' as const, id: parentId }] : []),
+      ],
+    }),
+
+    /**
      * GET /api/directory?search=<q> → { users: { id: string; email: string }[] }
      */
     searchDirectory: builder.query<{ users: { id: string; email: string }[] }, { search: string }>({
@@ -787,6 +824,7 @@ export const handoffApi = createApi({
 
 export const {
   useListNodesQuery,
+  useGetRootMetaQuery,
   useGetNodeQuery,
   useResolvePathQuery,
   useGetSignedUrlQuery,
@@ -801,6 +839,7 @@ export const {
   useGetGrantsQuery,
   useAddGrantMutation,
   useRevokeGrantMutation,
+  useSetNodeModeMutation,
   useSearchDirectoryQuery,
   useMintShareLinkMutation,
   useListShareLinksQuery,
