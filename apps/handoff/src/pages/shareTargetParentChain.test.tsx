@@ -22,7 +22,7 @@
  * Same provider/MSW/BasedRequest harness as `folderBadge.test.tsx`.
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
@@ -203,5 +203,92 @@ describe('ShareDialog parentChain/folderMode — per share target (Critical find
     // a folder that is, in fact, effectively public through its parent.
     expect(await within(dialog).findByText('Public')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Make private' })).toBeInTheDocument()
+  })
+})
+
+describe('Live chain tail / live row mode after mutations (final-review Important findings)', () => {
+  it('the HEADER badge on a non-root page folder flips to Private after a direct revoke, with no remount (Finding 1)', async () => {
+    // `AncestorNodesInner.handleResolved` is first-write-wins, so once Docs's
+    // own node has landed in the ancestor map its cached entry never gets
+    // replaced by a later refetch — before the fix, `folderChain`'s tail
+    // (Docs itself, once the walk is complete) stayed stale after the toolbar
+    // Share dialog's "Make private" revoked Docs's own Anyone grant, so the
+    // HEADER kept reading "Public" even though the dialog (which reads grants
+    // live) correctly flipped.
+    seedRoot()
+    const docs = seedFolder('Docs', 'root')
+    setMockGrants(docs.id, [{ principalId: ANYONE_PRINCIPAL, level: 'view' }])
+
+    render(
+      <Provider store={makeStore()}>
+        <MemoryRouter initialEntries={['/']}>
+          <FolderView folderId={docs.id} />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    const heading = await screen.findByRole('heading', { level: 1, name: 'Docs' })
+    const header = heading.parentElement!
+    await waitFor(() => expect(header.textContent).toContain('Public'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+
+    const dialog = getShareDialog()
+    // Docs is public purely via its own grant (no public ancestor) — wait for
+    // GeneralAccess's own grants query to resolve before reading its state.
+    expect(await within(dialog).findByText('Public')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make private' }))
+
+    // Own-grant-only publicness → direct revoke, no parent-cutoff confirm.
+    expect(screen.queryByText('Make this folder private?')).not.toBeInTheDocument()
+    expect(await within(dialog).findByText('Private')).toBeInTheDocument()
+
+    // The bug: this assertion failed before the fix — the header stayed
+    // "Public" until a remount (e.g. navigating away and back).
+    await waitFor(() => expect(header.textContent).toContain('Private'))
+  })
+
+  it('a row Share dialog reflects its OWN cut-off live — no confirm loop (Finding 2)', async () => {
+    // Docs (the page folder) is public via its own grant; Reports is a fresh
+    // subfolder row that inherits that publicness (mode defaults to
+    // 'inheriting'). Before the fix, the row's `mode` was captured on the
+    // ShareTarget at click time and never re-read — after the PATCH succeeds
+    // and the listing refetches with mode:'restricted', the STILL-OPEN
+    // dialog kept computing `inheritedPublic` from the stale 'inheriting'
+    // mode, so it kept showing Public/"Make private" (a confirm loop).
+    seedRoot()
+    const docs = seedFolder('Docs', 'root')
+    setMockGrants(docs.id, [{ principalId: ANYONE_PRINCIPAL, level: 'view' }])
+    const reports = seedFolder('Reports', docs.id)
+
+    render(
+      <Provider store={makeStore()}>
+        <MemoryRouter initialEntries={['/']}>
+          <FolderView folderId={docs.id} />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    // Sanity: the page (Docs) itself reads Public via its own Anyone grant.
+    expect(await screen.findByText('Public')).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: `Actions for ${reports.name}` }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Share…' }))
+
+    const dialog = getShareDialog()
+    // Reports inherits Docs's publicness (mode defaults to 'inheriting').
+    expect(await within(dialog).findByText('Public')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make private' }))
+
+    // Inherited publicness routes through the parent-cutoff confirm dialog.
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Make this folder private?' })
+    fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Make private' }))
+
+    // The bug: before the fix, these assertions failed — the dialog kept
+    // showing Public/"Make private" forever (confirm loop) because
+    // `shareFolderMode` never re-read the row's live mode.
+    expect(await within(dialog).findByText('Private')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Make public' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Make this folder private?' })).not.toBeInTheDocument()
   })
 })

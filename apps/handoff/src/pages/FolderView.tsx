@@ -988,16 +988,24 @@ export function FolderView({ folderId }: FolderViewProps) {
   // there, independent of chainReady which is already true at root).
   const publicReady = chainReady && !rootMetaLoading
   const chainTail = folderChain[folderChain.length - 1]
-  // Root → THIS folder INCLUDING its own link — `folderChain` already carries
-  // it once the ancestor walk has resolved this folder's own node (e.g.
-  // reached via Breadcrumb navigation); append it here otherwise, guarding
-  // against double-appending/double-counting its grants. This is also the
-  // correct `parentChain` for a folder-ROW share below: the page folder IS
-  // that row's parent, own link and all.
-  const folderChainIncludingCurrent =
-    currentFolder && chainTail?.id !== currentFolder.id
+
+  // Live chain tail (Important finding fix): `AncestorNodesInner.handleResolved`
+  // is first-write-wins (`if (prev[node.id]) return prev`) — once the CURRENT
+  // folder's own node has landed in the ancestor map (e.g. via the initial
+  // Breadcrumb walk), a later setNodeMode/addGrant/revokeGrant on that same
+  // folder never overwrites the cached entry, so `folderChain`'s tail (which
+  // IS the current folder once the walk is complete) goes stale — the badge,
+  // row tints, and Share dialogs kept showing pre-mutation grants/mode until
+  // a remount. `currentFolder` (useGetNodeQuery) DOES refetch on that
+  // invalidation, so when the chain tail is the current folder, swap the
+  // live node in for it here. Every display/derivation below reads THIS, not
+  // `folderChain` directly — buildAncestorFolderChain/the resolver map itself
+  // are unchanged; other callers (evaluateAccess/share-link scope) still use
+  // the raw `folderChain`.
+  const liveFolderChain: FolderLink[] =
+    currentFolder && chainTail?.id === currentFolder.id
       ? [
-          ...folderChain,
+          ...folderChain.slice(0, -1),
           {
             id: currentFolder.id,
             ownerId: currentFolder.ownerId,
@@ -1006,35 +1014,61 @@ export function FolderView({ folderId }: FolderViewProps) {
           },
         ]
       : folderChain
+
+  // Root → THIS folder INCLUDING its own link — `liveFolderChain` already
+  // carries it once the ancestor walk has resolved this folder's own node
+  // (e.g. reached via Breadcrumb navigation); append the live current folder
+  // here otherwise, guarding against double-appending/double-counting its
+  // grants. This is also the correct `parentChain` for a folder-ROW share
+  // below: the page folder IS that row's parent, own link and all.
+  const folderChainIncludingCurrent =
+    currentFolder && chainTail?.id !== currentFolder.id
+      ? [
+          ...liveFolderChain,
+          {
+            id: currentFolder.id,
+            ownerId: currentFolder.ownerId,
+            grants: currentFolder.grants,
+            mode: currentFolder.mode,
+          },
+        ]
+      : liveFolderChain
   const isPublicHere = publicReady && isEffectivelyPublic(folderChainIncludingCurrent)
 
   // ShareDialog's `parentChain` for the CURRENT-FOLDER share target (toolbar
   // Share, and file-row shares — both share the folder we're viewing) — root →
-  // the shared folder's PARENT, i.e. `folderChain` with the current folder's
+  // the shared folder's PARENT, i.e. `liveFolderChain` with the current folder's
   // own trailing link stripped when present. At root the strip guard below
   // can't fire: `folderChain`'s tail id is the resolved root RECORD id (a
   // UUID from rootMeta), never the `folderId` sentinel string 'root', so
-  // `folderChain` would pass through UNSTRIPPED as `[rootLink]`. Root has no
+  // `liveFolderChain` would pass through UNSTRIPPED as `[rootLink]`. Root has no
   // parent, so special-case it straight to `[]` — own-grant state only
   // (Important finding fix: otherwise GeneralAccess double-counts the root's
   // own Anyone grant as "inherited" too, routing "Make private" through the
   // parent-cutoff confirm dialog and a `mode:'restricted'` PATCH that 400s on
   // the non-folder 'root' id).
   const parentChain =
-    folderId === 'root' ? [] : chainTail?.id === folderId ? folderChain.slice(0, -1) : folderChain
+    folderId === 'root' ? [] : chainTail?.id === folderId ? liveFolderChain.slice(0, -1) : liveFolderChain
 
   // ShareDialog's parentChain/folderMode, resolved PER SHARE TARGET (Critical
   // finding fix): a folder-ROW share's target is a *different* folder than the
   // page we're viewing — its parent is the page folder itself, so it needs
   // `folderChainIncludingCurrent` (not `parentChain`, which is the PAGE
-  // folder's parent) and its own `mode` (captured on the row's ShareTarget at
-  // click time, not the page folder's `currentFolder?.mode`). The page-folder
-  // share target (toolbar + file rows) keeps today's reviewed-correct values.
+  // folder's parent) and its own `mode`. The page-folder share target
+  // (toolbar + file rows) keeps today's reviewed-correct values.
   const isPageFolderShareTarget = shareTarget?.folderId === folderId
   const shareParentChain = isPageFolderShareTarget ? parentChain : folderChainIncludingCurrent
+  // Row target's mode, resolved LIVE (Important finding fix): the row's mode
+  // was captured on the ShareTarget at click time (see the row onShare below)
+  // and never re-read, so a cut-off performed INSIDE the row's own open
+  // dialog (setNodeMode invalidates this folder's Node tag, which is one of
+  // `rawNodes`'s listing tags — the listing refetches) left the dialog
+  // computing from the stale, pre-mutation mode forever (confirm loops). Read
+  // the live listing row when it's there; the click-time capture is only the
+  // fallback for the instant before that refetch lands.
   const shareFolderMode = isPageFolderShareTarget
     ? (currentFolder?.mode ?? 'inheriting')
-    : (shareTarget?.mode ?? 'inheriting')
+    : ((rawNodes?.find((n) => n.id === shareTarget?.folderId)?.mode ?? shareTarget?.mode) ?? 'inheriting')
 
   // The current Folder's verbatim content path — the prefix every File uploaded
   // here (single file OR folder import) is stored under, so relative refs resolve
@@ -1456,7 +1490,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                 <ListingRow
                   key={node.id}
                   node={node}
-                  folderChain={folderChain}
+                  folderChain={liveFolderChain}
                   tintReady={publicReady}
                   canManage={canManage}
                   copyState={fileCopyStatus(node.id)}
