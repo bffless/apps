@@ -682,6 +682,11 @@ interface ShareTarget {
    * a row's mode is NOT the page folder's `currentFolder?.mode`).
    */
   mode?: 'inheriting' | 'restricted'
+  /**
+   * Content path of the shared folder ('' for root), for the tokenless public
+   * RSS feed URL (#188). Undefined for file targets (no folder feed offered).
+   */
+  feedPath?: string
 }
 
 function RowKebab({
@@ -1238,7 +1243,7 @@ export function FolderView({ folderId }: FolderViewProps) {
           {canManage && (
             <button
               type="button"
-              onClick={() => setShareTarget({ folderId, title: pageTitle })}
+              onClick={() => setShareTarget({ folderId, title: pageTitle, feedPath: currentFolderPath })}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface-2"
             >
               <ShareIcon className="h-4 w-4 text-muted" />
@@ -1278,6 +1283,7 @@ export function FolderView({ folderId }: FolderViewProps) {
           isFile={shareTarget.isFile}
           parentChain={shareParentChain}
           folderMode={shareFolderMode}
+          feedPath={shareTarget.feedPath}
           onClose={() => setShareTarget(null)}
         />
       )}
@@ -1498,7 +1504,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                   onShare={() =>
                     setShareTarget(
                       node.type === 'folder'
-                        ? { folderId: node.id, title: node.name, mode: node.mode }
+                        ? { folderId: node.id, title: node.name, mode: node.mode, feedPath: node.path ?? undefined }
                         : { folderId, title: node.name, nodeId: node.id, isFile: true },
                     )
                   }

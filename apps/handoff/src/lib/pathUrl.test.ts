@@ -4,6 +4,7 @@ import {
   pathFromPathname,
   treeUrl,
   blobUrl,
+  feedUrl,
   parentPath,
   nodeUrl,
   crumbPathAt,
@@ -48,6 +49,12 @@ describe('URL builders', () => {
 
   it('blobUrl always encodes under /blob/', () => {
     expect(blobUrl('Test/My File.png')).toBe('/blob/Test/My%20File.png')
+  })
+
+  it('feedUrl maps "" to /feed.xml and encodes otherwise', () => {
+    expect(feedUrl('')).toBe('/feed.xml')
+    expect(feedUrl('Test')).toBe('/feed/Test.xml')
+    expect(feedUrl('Test/Sub Folder')).toBe('/feed/Test/Sub%20Folder.xml')
   })
 
   it('parentPath strips the final segment', () => {
