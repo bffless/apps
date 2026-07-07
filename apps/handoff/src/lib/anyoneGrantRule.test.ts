@@ -149,4 +149,23 @@ describe('grants merge caps the Anyone principal at view', () => {
     expect(out.allowed).toBe(true)
     expect(out.grants).toEqual([{ principalId: 'anyone', principalEmail: null, level: 'view' }])
   })
+
+  it('behaviorally: replacing an existing anyone grant with stale principalEmail still nulls it', () => {
+    const handler = new Function(`return (${mergeCode})`)() as (ctx: any) => any
+    const out = handler({
+      user: { id: 'owner-1', role: 'admin' },
+      request: { body: { folderId: 'f1', principalId: 'anyone', level: 'edit' } },
+      steps: {
+        folder: {
+          id: 'f1',
+          ownerId: 'owner-1',
+          grantsJson: JSON.stringify([
+            { principalId: 'anyone', principalEmail: 'legacy@example.com', level: 'edit' },
+          ]),
+        },
+        resolveRootShape: { effectiveFolderId: 'f1', rootOwnerId: null },
+      },
+    })
+    expect(out.grants).toEqual([{ principalId: 'anyone', principalEmail: null, level: 'view' }])
+  })
 })
