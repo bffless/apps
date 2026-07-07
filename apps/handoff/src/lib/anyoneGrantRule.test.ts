@@ -124,3 +124,29 @@ describe('embedded evalAccess ≡ evaluateAccess (port equivalence)', () => {
     })
   }
 })
+
+describe('grants merge caps the Anyone principal at view', () => {
+  const grantsPost = proxy.rules.find(
+    (r) => r.pathPattern === '/api/grants' && r.method === 'POST',
+  )!
+  const mergeStep = grantsPost.pipelineConfig.steps.find((s: any) => s.id === 'merge')
+  const mergeCode: string = mergeStep.config.code
+
+  it('contains the cap', () => {
+    expect(mergeCode).toContain("pid === 'anyone'")
+  })
+
+  it('behaviorally: an edit-level anyone request is stored as view', () => {
+    const handler = new Function(`return (${mergeCode})`)() as (ctx: any) => any
+    const out = handler({
+      user: { id: 'owner-1', role: 'admin' },
+      request: { body: { folderId: 'f1', principalId: 'anyone', level: 'edit' } },
+      steps: {
+        folder: { id: 'f1', ownerId: 'owner-1', grantsJson: '[]' },
+        resolveRootShape: { effectiveFolderId: 'f1', rootOwnerId: null },
+      },
+    })
+    expect(out.allowed).toBe(true)
+    expect(out.grants).toEqual([{ principalId: 'anyone', principalEmail: null, level: 'view' }])
+  })
+})
