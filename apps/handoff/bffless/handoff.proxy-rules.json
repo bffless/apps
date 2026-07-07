@@ -409,7 +409,7 @@
             "id": "shape",
             "name": "shape",
             "config": {
-              "code": "function handler({ steps }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){var g=gs[e]||{};if(g.principalId==='anyone'){if(rank('view')>rank(best))best='view';}else if(vw.userId&&g.principalId===vw.userId&&rank(g.level)>rank(best))best=g.level;}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}if(inC&&rank('view')>rank(best))best='view';} return best; } var folders=(steps&&steps.allFolders)||[]; var byId={};var rootId='';for(var a=0;a<folders.length;a++){var f=folders[a]||{};var fid=f.id||f.recordId||f.record_id;if(fid){byId[fid]=f;if(f.nodeType==='root')rootId=fid;}} function folderChain(startId){ var rev=[];var cur=(String(startId||'')==='root'&&rootId)?rootId:String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=(n.parentId==='root'&&rootId)?rootId:(n.parentId||'');g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } function folderPath(startId){ var names=[]; var cur=String(startId||''); var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){ names.push(String(byId[cur].displayName||'Untitled')); cur=byId[cur].parentId||''; g++; } var out=[]; for(var b=names.length-1;b>=0;b--)out.push(names[b]); return out.join('/'); } var CONTENT='/api/uploads/content/'; var SPM='/uploads/content/'; var vw=(steps&&steps.gate&&steps.gate.viewer)||{}; var rows=(steps&&steps.query)||[]; var out=[]; for (var i=0;i<rows.length;i++){ var r=rows[i]||{}; var id=r.id||r.recordId||r.record_id||null; if(!id)continue; var t=r.nodeType||'file'; var entry=r.siteEntry||'index.html'; var size=(typeof r.size==='number')?r.size:(r.size!=null?Number(r.size):null); var created=(typeof r.createdMs==='number')?r.createdMs:(r.createdMs!=null?Number(r.createdMs):0); var url=r.url||null; var grants=r.grantsJson; if(typeof grants==='string'){try{grants=JSON.parse(grants);}catch(e){grants=[];}} if(!grants||Object.prototype.toString.call(grants)!=='[object Array]')grants=[]; var ch; if(t==='folder'){ch=folderChain(id);} else {ch=folderChain(r.parentId);ch.push({id:id,ownerId:r.ownerId||null,grants:[],mode:'inheriting'});} if(evalAccess(ch,vw)==='none')continue; var sp=r.storage_path||''; var mi=sp.indexOf(SPM); var nonFolderPath=(mi>=0)?sp.slice(mi+SPM.length):((url&&url.indexOf(CONTENT)===0)?url.slice(CONTENT.length):null); out.push({ id:id, type:t, name:r.displayName||r.original_name||r.filename||'Untitled', mime:r.content_type||r.mime_type||null, size:(size!=null&&!isNaN(size))?size:null, url:url, storageKey:r.storage_path||null, path:(t==='folder')?folderPath(id):nonFolderPath, parentId:r.parentId||'root', ownerId:r.ownerId||null, mode:r.mode||'inheriting', grants:grants, createdAt:(created!=null&&!isNaN(created))?created:0 }); } return { nodes: out }; }",
+              "code": "function handler({ steps }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){var g=gs[e]||{};if(g.principalId==='anyone'){if(rank('view')>rank(best))best='view';}else if(vw.userId&&g.principalId===vw.userId&&rank(g.level)>rank(best))best=g.level;}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}if(inC&&rank('view')>rank(best))best='view';} return best; } var folders=(steps&&steps.allFolders)||[]; var byId={};var rootId='';for(var a=0;a<folders.length;a++){var f=folders[a]||{};var fid=f.id||f.recordId||f.record_id;if(fid){byId[fid]=f;if(f.nodeType==='root')rootId=fid;}} function folderChain(startId){ var rev=[];var cur=(String(startId||'')==='root'&&rootId)?rootId:String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=(n.parentId==='root'&&rootId)?rootId:(n.parentId||'');g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } function folderPath(startId){ var names=[]; var cur=String(startId||''); var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){ names.push(String(byId[cur].displayName||'Untitled')); cur=byId[cur].parentId||''; g++; } var out=[]; for(var b=names.length-1;b>=0;b--)out.push(names[b]); return out.join('/'); } var CONTENT='/api/uploads/content/'; var SPM='/uploads/content/'; var vw=(steps&&steps.gate&&steps.gate.viewer)||{}; var rows=(steps&&steps.query)||[]; var out=[]; for (var i=0;i<rows.length;i++){ var r=rows[i]||{}; var id=r.id||r.recordId||r.record_id||null; if(!id)continue; var t=r.nodeType||'file'; var entry=r.siteEntry||'index.html'; var size=(typeof r.size==='number')?r.size:(r.size!=null?Number(r.size):null); var created=(typeof r.createdMs==='number')?r.createdMs:(r.createdMs!=null?Number(r.createdMs):0); var url=r.url||null; var grants=r.grantsJson; if(typeof grants==='string'){try{grants=JSON.parse(grants);}catch(e){grants=[];}} if(!grants||Object.prototype.toString.call(grants)!=='[object Array]')grants=[]; var ch; if(t==='folder'){ch=folderChain(id);} else {ch=folderChain(r.parentId);ch.push({id:id,ownerId:r.ownerId||null,grants:[],mode:'inheriting'});} if(evalAccess(ch,vw)==='none')continue; var sp=r.storage_path||''; var mi=sp.indexOf(SPM); var nonFolderPath=(mi>=0)?sp.slice(mi+SPM.length):((url&&url.indexOf(CONTENT)===0)?url.slice(CONTENT.length):null); out.push({ id:id, type:t, name:r.displayName||r.original_name||r.filename||'Untitled', mime:r.content_type||r.mime_type||null, size:(size!=null&&!isNaN(size))?size:null, url:url, storageKey:r.storage_path||null, path:(t==='folder')?folderPath(id):nonFolderPath, parentId:r.parentId||'root', ownerId:r.ownerId||null, mode:r.mode||'inheriting', grants:grants, createdAt:(created!=null&&!isNaN(created))?created:0 }); } var rootRec=null;for(var ri=0;ri<folders.length;ri++){if((folders[ri]||{}).nodeType==='root'){rootRec=folders[ri];break;}} var rootId=null;var rootPublic=false; if(rootRec){rootId=rootRec.id||rootRec.recordId||rootRec.record_id||null; var rg=rootRec.grantsJson; if(typeof rg==='string'){try{rg=JSON.parse(rg);}catch(e){rg=[];}} if(rg&&Object.prototype.toString.call(rg)==='[object Array]'){for(var gi=0;gi<rg.length;gi++){if((rg[gi]||{}).principalId==='anyone'){rootPublic=true;break;}}}} return { nodes: out, rootMeta: { id: rootId, public: rootPublic } }; }",
               "condition": "steps.gate.allow"
             },
             "handlerType": "function_handler"
@@ -418,7 +418,7 @@
             "id": "response",
             "name": "response",
             "config": {
-              "body": "{\"nodes\": {{{steps.shape.nodes}}}}",
+              "body": "{\"nodes\": {{{steps.shape.nodes}}}, \"root\": {{{steps.shape.rootMeta}}}}",
               "status": 200,
               "condition": "steps.gate.allow",
               "contentType": "application/json"
@@ -1943,6 +1943,94 @@
               "body": "{\"error\":\"forbidden\"}",
               "status": 403,
               "condition": "steps.gate.deny403",
+              "contentType": "application/json"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "pathPattern": "/api/node",
+      "method": "PATCH",
+      "targetUrl": "pipeline",
+      "stripPrefix": true,
+      "order": 31,
+      "timeout": 30000,
+      "proxyType": "pipeline",
+      "isEnabled": true,
+      "description": "Set a folder's inheritance mode (inheriting|restricted); owner/admin only",
+      "pipelineConfig": {
+        "name": "node-set-mode",
+        "steps": [
+          {
+            "id": "pre",
+            "name": "pre",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ request, user }) { var b=(request&&request.body)||{}; var id=String(b.id||''); var mode=(b.mode==='restricted')?'restricted':((b.mode==='inheriting')?'inheriting':''); var UUID=/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; var valid=!!id&&UUID.test(id)&&!!mode; return { id: id, mode: mode, valid: valid, isAdmin: !!user&&user.role==='admin', uid: (user&&user.id)||null }; }"
+            }
+          },
+          {
+            "id": "folder",
+            "name": "folder",
+            "handlerType": "data_query",
+            "config": {
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "recordId": "steps.pre.id",
+              "condition": "steps.pre.valid"
+            }
+          },
+          {
+            "id": "check",
+            "name": "check",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) { var pre=steps.pre||{}; var f=steps.folder||null; var isFolder=!!f&&f.nodeType==='folder'; var isOwner=!!pre.uid&&!!f&&f.ownerId===pre.uid; var bad=(pre.valid!==true)||!isFolder; var allowed=!bad&&(pre.isAdmin===true||isOwner); return { allowed: allowed, badRequest: bad, denied: !allowed&&!bad }; }"
+            }
+          },
+          {
+            "id": "save",
+            "name": "save",
+            "handlerType": "data_update",
+            "config": {
+              "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
+              "recordId": "steps.pre.id",
+              "fields": {
+                "mode": "steps.pre.mode"
+              },
+              "condition": "steps.check.allowed"
+            }
+          },
+          {
+            "id": "ok",
+            "name": "ok",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"id\": \"{{steps.pre.id}}\", \"mode\": \"{{steps.pre.mode}}\"}",
+              "status": 200,
+              "condition": "steps.check.allowed",
+              "contentType": "application/json"
+            }
+          },
+          {
+            "id": "bad",
+            "name": "bad",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"invalid request\"}",
+              "status": 400,
+              "condition": "steps.check.badRequest",
+              "contentType": "application/json"
+            }
+          },
+          {
+            "id": "denied",
+            "name": "denied",
+            "handlerType": "response_handler",
+            "config": {
+              "body": "{\"error\":\"forbidden\"}",
+              "status": 403,
+              "condition": "steps.check.denied",
               "contentType": "application/json"
             }
           }

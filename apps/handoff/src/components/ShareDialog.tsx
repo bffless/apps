@@ -10,7 +10,7 @@ import { PeopleAccess, GeneralAccess } from './ManageAccessPanel'
 import { ShareLinksSection } from './ShareLinksSection'
 import { XIcon, ShareIcon } from './icons'
 import { useGetGrantsQuery } from '../store/handoffApi'
-import { hasAnyoneGrant } from '../lib/acl'
+import { hasAnyoneGrant, isEffectivelyPublic, type FolderLink } from '../lib/acl'
 
 export interface ShareDialogProps {
   folderId: string
@@ -20,15 +20,25 @@ export interface ShareDialogProps {
   nodeId?: string
   /** True when sharing a file (shows the "shares the containing folder" note). */
   isFile?: boolean
+  /**
+   * Root → parent chain (this folder's own link excluded). Optional — absent
+   * means "behave as today" (own-grant state only), forwarded to
+   * `GeneralAccess` and used for the share-links `isPublic` note.
+   */
+  parentChain?: FolderLink[]
+  /** This folder's own inheritance mode. Absent is treated as 'inheriting'. */
+  folderMode?: 'inheriting' | 'restricted'
   onClose: () => void
 }
 
-export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareDialogProps) {
+export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, folderMode, onClose }: ShareDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
 
   // RTK Query dedupes this with GeneralAccess/PeopleAccess's identical query.
   const { data: grantsData } = useGetGrantsQuery({ folderId })
-  const isPublic = hasAnyoneGrant(grantsData?.grants ?? [])
+  const ownAnyone = hasAnyoneGrant(grantsData?.grants ?? [])
+  const inheritedPublic = folderMode !== 'restricted' && isEffectivelyPublic(parentChain ?? [])
+  const isPublic = ownAnyone || inheritedPublic
 
   useEffect(() => {
     const dlg = ref.current
@@ -74,7 +84,7 @@ export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareD
       </div>
 
       <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
-        <GeneralAccess folderId={folderId} />
+        <GeneralAccess folderId={folderId} parentChain={parentChain} folderMode={folderMode} />
         <PeopleAccess folderId={folderId} />
         <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} isPublic={isPublic} />
       </div>

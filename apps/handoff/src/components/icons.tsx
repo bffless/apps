@@ -98,6 +98,16 @@ export const ShareIcon = (p: IconProps) => (
   </Svg>
 )
 
+/** Public/world indicator — used on the effective-public badge (small globe). */
+export const GlobeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+      <circle cx="10" cy="10" r="7.25" />
+      <path d="M10 2.75c2.4 1.9 2.4 12.6 0 14.5M10 2.75c-2.4 1.9-2.4 12.6 0 14.5M3 10h14" />
+    </g>
+  </Svg>
+)
+
 export const LinkIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M8.5 5.5a3.5 3.5 0 0 1 5.78-2.66l.38.38a3.5 3.5 0 0 1-.18 5.12l-1.2 1.06a.75.75 0 1 1-1-1.12l1.2-1.06a2 2 0 0 0 .1-2.93l-.38-.38A2 2 0 0 0 10 5.5a.75.75 0 0 1-1.5 0Z" />

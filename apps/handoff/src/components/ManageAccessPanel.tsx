@@ -11,8 +11,10 @@ import {
   useAddGrantMutation,
   useRevokeGrantMutation,
   useSearchDirectoryQuery,
+  useSetNodeModeMutation,
 } from '../store/handoffApi'
-import { ANYONE_PRINCIPAL, hasAnyoneGrant } from '../lib/acl'
+import { ANYONE_PRINCIPAL, hasAnyoneGrant, isEffectivelyPublic, type FolderLink } from '../lib/acl'
+import { GlobeIcon } from './icons'
 
 // ---------------------------------------------------------------------------
 // Level badge
@@ -34,39 +36,73 @@ function LevelBadge({ level }: { level: 'view' | 'edit' }) {
 // GeneralAccess — Public/Private switch
 // ---------------------------------------------------------------------------
 
-function GlobeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a13.5 13.5 0 010 18M12 3a13.5 13.5 0 000 18" />
-    </svg>
-  )
+export interface GeneralAccessProps {
+  folderId: string
+  /**
+   * Root → parent chain (this folder's own link excluded). Absent (or
+   * omitted entirely) means "behave as today" — own-grant state only.
+   */
+  parentChain?: FolderLink[]
+  /** This folder's own inheritance mode. Absent is treated as 'inheriting'. */
+  folderMode?: 'inheriting' | 'restricted'
 }
 
 /**
- * GeneralAccess — the folder's Public/Private switch (ADR-0005). "Public" is
- * the (Anyone, View) grant on this folder; making it private revokes it.
+ * GeneralAccess — the folder's Public/Private switch (ADR-0005), showing the
+ * *effective* state: public either because this folder has its own
+ * (Anyone, View) grant, or because it inherits publicness from a public
+ * ancestor (and hasn't cut that off with `mode:'restricted'`).
+ *
+ * Making it public always just adds the folder's own Anyone grant. Making it
+ * private is more nuanced: if the folder is public purely via its own grant,
+ * revoking that grant is enough (unchanged, no confirmation). If it's public
+ * (in whole or in part) via inheritance, revoking the local grant alone
+ * wouldn't stop it from being public — so that path opens a confirmation
+ * dialog that also sets `mode:'restricted'` to cut off inheritance.
+ *
  * Renders nothing for viewers who can't manage access (grants GET 403s).
  */
-export function GeneralAccess({ folderId }: { folderId: string }) {
+export function GeneralAccess({ folderId, parentChain, folderMode }: GeneralAccessProps) {
   const { data, isLoading, isError } = useGetGrantsQuery({ folderId })
   const [addGrant, { isLoading: saving }] = useAddGrantMutation()
   const [revokeGrant, { isLoading: reverting }] = useRevokeGrantMutation()
+  const [setNodeMode, { isLoading: cuttingOff }] = useSetNodeModeMutation()
   const [toggleError, setToggleError] = useState<string | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   if (isLoading || isError) return null
 
-  const isPublic = hasAnyoneGrant(data?.grants ?? [])
-  const busy = saving || reverting
+  const ownAnyone = hasAnyoneGrant(data?.grants ?? [])
+  const inheritedPublic = folderMode !== 'restricted' && isEffectivelyPublic(parentChain ?? [])
+  const effectivePublic = ownAnyone || inheritedPublic
+  const busy = saving || reverting || cuttingOff
 
   async function handleToggle() {
     setToggleError(null)
-    const result = isPublic
-      ? await revokeGrant({ folderId, principalId: ANYONE_PRINCIPAL })
-      : await addGrant({ folderId, principalId: ANYONE_PRINCIPAL, level: 'view' })
-    if ('error' in result) {
-      setToggleError('Failed to update general access. Please try again.')
+    if (!effectivePublic) {
+      const result = await addGrant({ folderId, principalId: ANYONE_PRINCIPAL, level: 'view' })
+      if ('error' in result) setToggleError('Failed to update general access. Please try again.')
+      return
     }
+    if (inheritedPublic) {
+      setConfirmOpen(true)
+      return
+    }
+    const result = await revokeGrant({ folderId, principalId: ANYONE_PRINCIPAL })
+    if ('error' in result) setToggleError('Failed to update general access. Please try again.')
+  }
+
+  async function handleConfirmCutOff() {
+    setToggleError(null)
+    const results = await Promise.all([
+      setNodeMode({ id: folderId, mode: 'restricted' }),
+      ...(ownAnyone ? [revokeGrant({ folderId, principalId: ANYONE_PRINCIPAL })] : []),
+    ])
+    if (results.some((r) => 'error' in r)) {
+      setToggleError('Failed to update general access. Please try again.')
+      return
+    }
+    setConfirmOpen(false)
   }
 
   return (
@@ -74,11 +110,11 @@ export function GeneralAccess({ folderId }: { folderId: string }) {
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">General access</p>
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          <GlobeIcon className={`h-4 w-4 shrink-0 ${isPublic ? 'text-accent-600' : 'text-muted'}`} />
+          <GlobeIcon className={`h-4 w-4 shrink-0 ${effectivePublic ? 'text-accent-600' : 'text-muted'}`} />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-ink">{isPublic ? 'Public' : 'Private'}</p>
+            <p className="text-sm font-medium text-ink">{effectivePublic ? 'Public' : 'Private'}</p>
             <p className="truncate text-xs text-muted">
-              {isPublic
+              {effectivePublic
                 ? 'Anyone on the internet can view this folder.'
                 : 'Only people with access can view this folder.'}
             </p>
@@ -90,10 +126,80 @@ export function GeneralAccess({ folderId }: { folderId: string }) {
           onClick={handleToggle}
           className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
         >
-          {busy ? 'Saving…' : isPublic ? 'Make private' : 'Make public'}
+          {busy ? 'Saving…' : effectivePublic ? 'Make private' : 'Make public'}
         </button>
       </div>
       {toggleError && <p className="mt-1 text-xs text-danger">{toggleError}</p>}
+      {confirmOpen && (
+        <MakePrivateConfirmDialog
+          busy={busy}
+          onCancel={() => {
+            if (!busy) setConfirmOpen(false)
+          }}
+          onConfirm={handleConfirmCutOff}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// MakePrivateConfirmDialog — cut-off confirmation for inherited public access.
+// ---------------------------------------------------------------------------
+
+function MakePrivateConfirmDialog({
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Make this folder private?"
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 'var(--z-modal)' }}
+      onClick={onCancel}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div
+        className="share-dialog relative w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-bg text-accent-600">
+            <GlobeIcon className="h-4 w-4" />
+          </span>
+          <h2 className="text-sm font-semibold text-ink">Make this folder private?</h2>
+        </div>
+        <p className="mt-1.5 text-sm text-muted">
+          People who can only see it through a parent folder — including everyone on the internet
+          while a parent is public — will lose access. People added directly to this folder keep
+          access.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            className="inline-flex items-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? 'Saving…' : 'Make private'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

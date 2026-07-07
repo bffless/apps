@@ -3,14 +3,14 @@
  * Same store-construction + MSW pattern as src/pages/pathRoutes.test.tsx.
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
 import { setupServer } from 'msw/node'
 import { handlers, resetMockState, setMockUser, seedFolder, setMockGrants } from '../mocks/handlers'
-import { handoffApi } from '../store/handoffApi'
+import { handoffApi, useGetNodeQuery } from '../store/handoffApi'
 import handoffReducer from '../store/handoffSlice'
-import { ANYONE_PRINCIPAL } from '../lib/acl'
+import { ANYONE_PRINCIPAL, type FolderLink } from '../lib/acl'
 import { GeneralAccess, PeopleAccess } from './ManageAccessPanel'
 
 const server = setupServer(...handlers)
@@ -46,6 +46,17 @@ function makeStore() {
 
 const OWNER = { id: 'user-owner', email: 'owner@example.com', role: 'admin' }
 
+/**
+ * Mirrors how FolderView threads `folderMode` — from a live `getNode` query
+ * that gets invalidated (and refetched) when `setNodeMode` succeeds — so the
+ * "panel re-renders Private after confirming" behavior is exercised for
+ * real, not asserted against a static prop.
+ */
+function EffectiveAccessHarness({ folderId, parentChain }: { folderId: string; parentChain: FolderLink[] }) {
+  const { data } = useGetNodeQuery(folderId)
+  return <GeneralAccess folderId={folderId} parentChain={parentChain} folderMode={data?.mode ?? 'inheriting'} />
+}
+
 describe('GeneralAccess', () => {
   it('shows Private and toggles to Public (adds the Anyone grant)', async () => {
     setMockUser(OWNER)
@@ -73,6 +84,50 @@ describe('GeneralAccess', () => {
     expect(await screen.findByText('Public')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Make private' }))
     expect(await screen.findByText('Private')).toBeInTheDocument()
+  })
+
+  it('shows effective Public from an inherited parentChain, confirms the cut-off, and reverts to Private', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    const parentChain: FolderLink[] = [
+      { id: 'root', ownerId: 'someone-else', grants: [{ principalId: ANYONE_PRINCIPAL, level: 'view' }], mode: 'inheriting' },
+    ]
+    render(
+      <Provider store={makeStore()}>
+        <EffectiveAccessHarness folderId={folder.id} parentChain={parentChain} />
+      </Provider>,
+    )
+
+    expect(await screen.findByText('Public')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Make private' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Make this folder private?' })
+    expect(within(dialog).getByText('Make this folder private?')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(
+        'People who can only see it through a parent folder — including everyone on the internet while a parent is public — will lose access. People added directly to this folder keep access.',
+      ),
+    ).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make private' }))
+
+    expect(await screen.findByText('Private')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Make this folder private?' })).not.toBeInTheDocument()
+  })
+
+  it('folderMode:"restricted" overrides a public parentChain and shows Private', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    const parentChain: FolderLink[] = [
+      { id: 'root', ownerId: 'someone-else', grants: [{ principalId: ANYONE_PRINCIPAL, level: 'view' }], mode: 'inheriting' },
+    ]
+    render(
+      <Provider store={makeStore()}>
+        <GeneralAccess folderId={folder.id} parentChain={parentChain} folderMode="restricted" />
+      </Provider>,
+    )
+    expect(await screen.findByText('Private')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Make public' })).toBeInTheDocument()
   })
 })
 
