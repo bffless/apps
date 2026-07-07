@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { PeopleAccess, GeneralAccess } from './ManageAccessPanel'
+import { PeopleAccess, GeneralAccess, FeedExclusion } from './ManageAccessPanel'
 import { ShareLinksSection } from './ShareLinksSection'
 import { XIcon, ShareIcon, RssIcon } from './icons'
 import { useGetGrantsQuery } from '../store/handoffApi'
@@ -30,6 +30,13 @@ export interface ShareDialogProps {
   /** This folder's own inheritance mode. Absent is treated as 'inheriting'. */
   folderMode?: 'inheriting' | 'restricted'
   /**
+   * This folder's feed-exclusion flag (#191). Owner/admin see a toggle for it;
+   * absent is treated as false. Ignored for file targets.
+   */
+  folderFeedExcluded?: boolean
+  /** Parent folder id of the shared folder — forwarded for cache invalidation. */
+  parentId?: string
+  /**
    * Content path of the folder being shared ('' for the root folder). When set
    * and the folder is effectively public, the dialog offers a tokenless
    * "Copy RSS feed URL" (#188). Absent for file targets.
@@ -38,7 +45,7 @@ export interface ShareDialogProps {
   onClose: () => void
 }
 
-export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, folderMode, feedPath, onClose }: ShareDialogProps) {
+export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, folderMode, folderFeedExcluded, parentId, feedPath, onClose }: ShareDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
 
   // RTK Query dedupes this with GeneralAccess/PeopleAccess's identical query.
@@ -93,6 +100,9 @@ export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, fold
       <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
         <GeneralAccess folderId={folderId} parentChain={parentChain} folderMode={folderMode} />
         {isPublic && !isFile && feedPath != null && <PublicFeedRow feedPath={feedPath} />}
+        {!isFile && (
+          <FeedExclusion folderId={folderId} feedExcluded={folderFeedExcluded} parentId={parentId} />
+        )}
         <PeopleAccess folderId={folderId} />
         <ShareLinksSection
           folderId={folderId}

@@ -119,18 +119,30 @@ describe('GET /api/nodes shape handler (behavioral)', () => {
 describe('PATCH /api/node (structural)', () => {
   const rule = proxy.rules.find((r) => r.pathPattern === '/api/node' && r.method === 'PATCH')!
 
-  it('exists at /api/node PATCH with the 7 step ids in order', () => {
+  it('exists at /api/node PATCH with the step ids in order (field-scoped saves)', () => {
     expect(rule).toBeTruthy()
     expect(rule.order).toBe(31)
     expect(rule.pipelineConfig.steps.map((s: any) => s.id)).toEqual([
       'pre',
       'folder',
       'check',
-      'save',
+      // #191: mode and feedExcluded each get their own conditional data_update so
+      // a field-disjoint write never clobbers the other (see #194).
+      'saveMode',
+      'saveFeedExcluded',
       'ok',
       'bad',
       'denied',
     ])
+  })
+
+  it('saveMode writes only mode, saveFeedExcluded writes only feedExcluded', () => {
+    const saveMode = rule.pipelineConfig.steps.find((s: any) => s.id === 'saveMode')
+    const saveFe = rule.pipelineConfig.steps.find((s: any) => s.id === 'saveFeedExcluded')
+    expect(saveMode.config.fields).toEqual({ mode: 'steps.pre.mode' })
+    expect(saveMode.config.condition).toBe('steps.check.saveMode')
+    expect(saveFe.config.fields).toEqual({ feedExcluded: 'steps.pre.feedExcluded' })
+    expect(saveFe.config.condition).toBe('steps.check.saveFeedExcluded')
   })
 })
 
@@ -142,11 +154,20 @@ describe('PATCH /api/node pre + check handlers (behavioral)', () => {
   const pre = new Function(`return (${preCode})`)() as (ctx: {
     request: { body: Record<string, unknown> }
     user: { id: string; role?: string } | null
-  }) => { id: string; mode: string; valid: boolean; isAdmin: boolean; uid: string | null }
+  }) => {
+    id: string
+    mode: string
+    hasMode: boolean
+    hasFeedExcluded: boolean
+    feedExcluded: boolean
+    valid: boolean
+    isAdmin: boolean
+    uid: string | null
+  }
 
   const check = new Function(`return (${checkCode})`)() as (ctx: {
     steps: { pre: any; folder: any }
-  }) => { allowed: boolean; badRequest: boolean; denied: boolean }
+  }) => { allowed: boolean; badRequest: boolean; denied: boolean; saveMode: boolean; saveFeedExcluded: boolean }
 
   const FOLDER_ID = '11111111-1111-1111-1111-111111111111'
   const folderRec = { id: FOLDER_ID, nodeType: 'folder', ownerId: 'owner-1' }
@@ -155,46 +176,67 @@ describe('PATCH /api/node pre + check handlers (behavioral)', () => {
   function run(
     user: { id: string; role?: string } | null,
     folder: any,
-    mode: unknown = 'restricted',
-    id: unknown = FOLDER_ID,
+    body: Record<string, unknown> = { id: FOLDER_ID, mode: 'restricted' },
   ) {
-    const preOut = pre({ request: { body: { id, mode } }, user })
+    const preOut = pre({ request: { body }, user })
     const checkOut = check({ steps: { pre: preOut, folder } })
     return { preOut, checkOut }
   }
 
-  it('owner + folder -> allowed', () => {
+  it('owner + folder (mode) -> allowed, saveMode only', () => {
     const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec)
-    expect(checkOut).toEqual({ allowed: true, badRequest: false, denied: false })
+    expect(checkOut).toEqual({ allowed: true, badRequest: false, denied: false, saveMode: true, saveFeedExcluded: false })
   })
 
-  it('admin + folder -> allowed', () => {
+  it('admin + folder (mode) -> allowed', () => {
     const { checkOut } = run({ id: 'someone-else', role: 'admin' }, folderRec)
-    expect(checkOut).toEqual({ allowed: true, badRequest: false, denied: false })
+    expect(checkOut).toEqual({ allowed: true, badRequest: false, denied: false, saveMode: true, saveFeedExcluded: false })
+  })
+
+  it('feedExcluded-only PATCH -> allowed, saveFeedExcluded only (no mode clobber)', () => {
+    const { preOut, checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, {
+      id: FOLDER_ID,
+      feedExcluded: true,
+    })
+    expect(preOut.valid).toBe(true)
+    expect(preOut.feedExcluded).toBe(true)
+    // A feedExcluded write must NOT trigger the mode save — that field stays put.
+    expect(checkOut).toEqual({ allowed: true, badRequest: false, denied: false, saveMode: false, saveFeedExcluded: true })
+  })
+
+  it('mode-only PATCH -> saveFeedExcluded false (no feedExcluded clobber)', () => {
+    const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, { id: FOLDER_ID, mode: 'inheriting' })
+    expect(checkOut.saveMode).toBe(true)
+    expect(checkOut.saveFeedExcluded).toBe(false)
   })
 
   it('non-owner user -> denied (not badRequest)', () => {
     const { checkOut } = run({ id: 'other-user', role: 'user' }, folderRec)
-    expect(checkOut).toEqual({ allowed: false, badRequest: false, denied: true })
+    expect(checkOut).toEqual({ allowed: false, badRequest: false, denied: true, saveMode: false, saveFeedExcluded: false })
   })
 
   it('anonymous (user null) -> denied', () => {
     const { checkOut } = run(null, folderRec)
-    expect(checkOut).toEqual({ allowed: false, badRequest: false, denied: true })
+    expect(checkOut).toEqual({ allowed: false, badRequest: false, denied: true, saveMode: false, saveFeedExcluded: false })
   })
 
   it("nodeType 'root' target -> badRequest", () => {
     const { checkOut } = run({ id: 'owner-1', role: 'user' }, rootRec)
-    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false })
+    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false, saveMode: false, saveFeedExcluded: false })
   })
 
-  it('bad mode value -> badRequest', () => {
-    const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, 'bogus')
-    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false })
+  it('empty body (neither mode nor feedExcluded) -> badRequest', () => {
+    const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, { id: FOLDER_ID })
+    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false, saveMode: false, saveFeedExcluded: false })
+  })
+
+  it('bad mode value (no feedExcluded) -> badRequest', () => {
+    const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, { id: FOLDER_ID, mode: 'bogus' })
+    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false, saveMode: false, saveFeedExcluded: false })
   })
 
   it('non-uuid id -> badRequest', () => {
-    const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, 'restricted', 'not-a-uuid')
-    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false })
+    const { checkOut } = run({ id: 'owner-1', role: 'user' }, folderRec, { id: 'not-a-uuid', mode: 'restricted' })
+    expect(checkOut).toEqual({ allowed: false, badRequest: true, denied: false, saveMode: false, saveFeedExcluded: false })
   })
 })

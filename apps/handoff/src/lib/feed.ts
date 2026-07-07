@@ -54,12 +54,28 @@ export interface FeedContext {
  * cap at {@link FEED_ITEM_LIMIT}. Folders are structural and never surface as
  * items; a Site is a single item, never exploded into its internal assets.
  *
+ * A leaf whose ancestor chain includes a `feedExcluded` folder (#191 / ADR-0007)
+ * is dropped — the flag rides the parentId walk, no extra query and no change to
+ * access (an excluded folder stays fully browsable). Excluded folders must be
+ * present in `nodes` for the walk to see them.
+ *
  * Access filtering and subtree scoping are the caller's job — the `/feed/*`
  * pipeline passes only publicly-viewable subtree leaves.
  */
 export function selectFeedItems(nodes: HandoffNode[]): FeedItem[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const underExcluded = (leaf: HandoffNode): boolean => {
+    let cur = byId.get(leaf.parentId)
+    let guard = 0
+    while (cur && guard < 64) {
+      if (cur.feedExcluded === true) return true
+      cur = byId.get(cur.parentId)
+      guard++
+    }
+    return false
+  }
   return nodes
-    .filter((n) => (n.type === 'file' || n.type === 'site') && !!n.path)
+    .filter((n) => (n.type === 'file' || n.type === 'site') && !!n.path && !underExcluded(n))
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, FEED_ITEM_LIMIT)
     .map((n) => ({

@@ -17,6 +17,7 @@ function node(partial: Partial<HandoffNode> & Pick<HandoffNode, 'id' | 'type'>):
     ownerId: partial.ownerId ?? null,
     grants: partial.grants ?? [],
     mode: partial.mode ?? 'inheriting',
+    feedExcluded: partial.feedExcluded ?? false,
   }
 }
 
@@ -38,6 +39,30 @@ describe('selectFeedItems', () => {
       node({ id: 'mid', type: 'file', path: 'c', createdAt: 200 }),
     ])
     expect(items.map((i) => i.id)).toEqual(['new', 'mid', 'old'])
+  })
+
+  it('drops leaves whose ancestor chain includes a feedExcluded folder (#191)', () => {
+    const items = selectFeedItems([
+      node({ id: 'post', type: 'folder', path: 'Post' }),
+      node({ id: 'body', type: 'file', parentId: 'post', path: 'Post/index.md', createdAt: 3 }),
+      // assets/ is excluded — its subtree must not surface, even nested.
+      node({ id: 'assets', type: 'folder', parentId: 'post', path: 'Post/assets', feedExcluded: true }),
+      node({ id: 'img', type: 'file', parentId: 'assets', path: 'Post/assets/a.png', createdAt: 2 }),
+      node({ id: 'deep', type: 'folder', parentId: 'assets', path: 'Post/assets/deep' }),
+      node({ id: 'nested', type: 'file', parentId: 'deep', path: 'Post/assets/deep/b.png', createdAt: 1 }),
+    ])
+    expect(items.map((i) => i.id)).toEqual(['body'])
+  })
+
+  it('keeps an excluded folder browsable — unmarking restores its leaves (#191)', () => {
+    const withExclusion = (excluded: boolean) =>
+      selectFeedItems([
+        node({ id: 'post', type: 'folder', path: 'Post' }),
+        node({ id: 'assets', type: 'folder', parentId: 'post', path: 'Post/assets', feedExcluded: excluded }),
+        node({ id: 'img', type: 'file', parentId: 'assets', path: 'Post/assets/a.png', createdAt: 2 }),
+      ]).map((i) => i.id)
+    expect(withExclusion(true)).toEqual([])
+    expect(withExclusion(false)).toEqual(['img'])
   })
 
   it(`caps at the ${FEED_ITEM_LIMIT} most recent`, () => {
