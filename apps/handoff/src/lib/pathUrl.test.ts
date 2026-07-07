@@ -57,6 +57,15 @@ describe('URL builders', () => {
     expect(feedUrl('Test/Sub Folder')).toBe('/feed/Test/Sub%20Folder.xml')
   })
 
+  it('feedUrl appends a share-link token for a private feed (#189)', () => {
+    const tok = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    expect(feedUrl('Test', tok)).toBe(`/feed/Test.xml?token=${tok}`)
+    expect(feedUrl('', tok)).toBe(`/feed.xml?token=${tok}`)
+    // An empty/undefined token stays tokenless.
+    expect(feedUrl('Test', undefined)).toBe('/feed/Test.xml')
+    expect(feedUrl('Test', '')).toBe('/feed/Test.xml')
+  })
+
   it('parentPath strips the final segment', () => {
     expect(parentPath('Test/Sub/file.png')).toBe('Test/Sub')
     expect(parentPath('file.png')).toBe('')

@@ -36,18 +36,39 @@ const HIDDEN = { id: '11111111-0000-4000-8000-000000000007', nodeType: 'file', d
 
 const ALL = [ROOT, PUB, PRIV, SECRET, F1, F2, SITE1, HIDDEN]
 
-function runSelect(segments: string[], opts?: { isRoot?: boolean; bad?: boolean; nodes?: any[] }) {
+function runSelect(
+  segments: string[],
+  opts?: { isRoot?: boolean; bad?: boolean; nodes?: any[]; token?: string; link?: any },
+) {
   const select = handlerOf(feedRule, 'select')
   // data_query rows are FROZEN in the CE sandbox — freeze here too so a handler
   // that mutates a row (e.g. stamping an id) fails in the test, not just live.
   const nodes = (opts?.nodes ?? ALL.map((n) => ({ ...n }))).map((n) => Object.freeze({ ...n }))
+  const token = opts?.token ?? ''
   return select({
     request: { headers: { host: 'handoff.j5s.dev' } },
     steps: {
-      parse: { path: segments.join('/'), segments, isRoot: opts?.isRoot ?? segments.length === 0, bad: opts?.bad ?? false },
+      parse: {
+        path: segments.join('/'),
+        segments,
+        isRoot: opts?.isRoot ?? segments.length === 0,
+        bad: opts?.bad ?? false,
+        token,
+        hasToken: token !== '',
+      },
       allNodes: Object.freeze(nodes),
+      // The link data_query returns a single record (or undefined when the
+      // condition/token is absent) — freeze it like a live row.
+      link: opts?.link ? Object.freeze({ ...opts.link }) : undefined,
     },
   })
+}
+
+// A live-ish Share Link record (raw data-table shape the check reads), scoped to
+// the private folder and not revoked/expired.
+const TOKEN = '99999999-0000-4000-8000-0000000000aa'
+function shareLink(folderId: string, over?: Record<string, unknown>) {
+  return { token: TOKEN, folderId, revoked: false, expiresMs: null, ...over }
 }
 
 describe('/feed/* + /feed.xml — structure', () => {
@@ -109,6 +130,20 @@ describe('parse step', () => {
     const out = parse()({ request: { path: '/feed/Public/../secret.xml' } })
     expect(out.bad).toBe(true)
   })
+
+  it('surfaces a well-formed ?token= as hasToken (#189)', () => {
+    const out = parse()({ request: { path: '/feed/Private.xml', query: { token: TOKEN } } })
+    expect(out.token).toBe(TOKEN)
+    expect(out.hasToken).toBe(true)
+  })
+
+  it('does not treat a malformed token as usable', () => {
+    const out = parse()({ request: { path: '/feed/Private.xml', query: { token: 'not-a-uuid' } } })
+    expect(out.token).toBe('not-a-uuid')
+    expect(out.hasToken).toBe(false)
+    // No query → empty token.
+    expect(parse()({ request: { path: '/feed/Private.xml' } }).hasToken).toBe(false)
+  })
 })
 
 describe('select step — flatten + Anyone gate + render', () => {
@@ -143,6 +178,37 @@ describe('select step — flatten + Anyone gate + render', () => {
     const out = runSelect(['Private'])
     expect(out.found).toBe(false)
     expect(out.notfound).toBe(true)
+  })
+
+  it('serves a private folder feed with a valid Share Link token (#189)', () => {
+    // A file under the private folder so the feed has a leaf to render.
+    const pf = { id: 'aaaa0000-0000-4000-8000-0000000000f1', nodeType: 'file', displayName: 'p.txt', parentId: PRIV.id, content_type: 'text/plain', size: 7, createdMs: 50 }
+    const out = runSelect(['Private'], { nodes: [ROOT, PRIV, pf], token: TOKEN, link: shareLink(PRIV.id) })
+    expect(out.found).toBe(true)
+    const xml: string = out.xml
+    expect(xml).toContain(`<guid isPermaLink="false">${pf.id}</guid>`)
+    // Every item link + enclosure + the self href carries the token.
+    expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Private/p.txt?token=${TOKEN}</link>`)
+    expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/r/${pf.id}/p.txt?token=${TOKEN}" type="text/plain" length="7"/>`)
+    expect(xml).toContain(`href="https://handoff.j5s.dev/feed/Private.xml?token=${TOKEN}"`)
+  })
+
+  it('denies a private folder feed when the token is revoked or expired (no leak)', () => {
+    const pf = { id: 'aaaa0000-0000-4000-8000-0000000000f2', nodeType: 'file', displayName: 'p.txt', parentId: PRIV.id, content_type: 'text/plain', size: 7, createdMs: 50 }
+    const revoked = runSelect(['Private'], { nodes: [ROOT, PRIV, pf], token: TOKEN, link: shareLink(PRIV.id, { revoked: true }) })
+    expect(revoked.notfound).toBe(true)
+    const expired = runSelect(['Private'], { nodes: [ROOT, PRIV, pf], token: TOKEN, link: shareLink(PRIV.id, { expiresMs: 1 }) })
+    expect(expired.notfound).toBe(true)
+    // Token scoped to a DIFFERENT folder must not unlock this one.
+    const wrong = runSelect(['Private'], { nodes: [ROOT, PRIV, pf], token: TOKEN, link: shareLink(PUB.id) })
+    expect(wrong.notfound).toBe(true)
+  })
+
+  it('keeps a public folder feed tokenless even when a token is supplied', () => {
+    // Public feed accessed with a token still renders public, tokenless URLs
+    // unless the token validates for it — here no link record, so no token.
+    const xml: string = runSelect(['Public'], { token: TOKEN }).xml
+    expect(xml).not.toContain('?token=')
   })
 
   it('404s an unresolvable path', () => {

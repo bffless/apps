@@ -105,3 +105,43 @@ describe('ShareDialog — public RSS feed URL', () => {
     expect(screen.queryByRole('button', { name: 'Copy RSS feed URL' })).toBeNull()
   })
 })
+
+describe('ShareDialog — per-share-link private RSS (#189)', () => {
+  it('offers a tokened Copy RSS on each share link of a private folder', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Secret', 'root')
+    setMockGrants(folder.id, [])
+
+    renderDialog({ folderId: folder.id, feedPath: 'Secret' })
+
+    // No public feed row for a private folder.
+    await screen.findByText(/Only you can see this folder/i)
+    expect(screen.queryByRole('button', { name: 'Copy RSS feed URL' })).toBeNull()
+
+    // Mint a link → it appears in the active list with a Copy RSS action.
+    fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
+    const rssBtn = await screen.findByRole('button', { name: 'Copy RSS' })
+
+    let written = ''
+    Object.assign(navigator, {
+      clipboard: { writeText: (t: string) => ((written = t), Promise.resolve()) },
+    })
+    fireEvent.click(rssBtn)
+    // The private feed URL is the folder's tokenless feed + the link's token.
+    expect(written).toMatch(new RegExp(`^${ORIGIN}/feed/Secret\\.xml\\?token=mock-token-\\d+$`))
+  })
+
+  it('does not offer Copy RSS on a file-direct share link', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    setMockGrants(folder.id, [])
+
+    renderDialog({ folderId: folder.id, isFile: true, nodeId: 'file-1', title: 'a.png' })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
+    // Wait for the link to land in the active list (its Revoke action), then
+    // assert no RSS action exists for a file target.
+    await screen.findByRole('button', { name: 'Revoke' })
+    expect(screen.queryByRole('button', { name: 'Copy RSS' })).toBeNull()
+  })
+})

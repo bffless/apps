@@ -94,7 +94,13 @@ export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, fold
         <GeneralAccess folderId={folderId} parentChain={parentChain} folderMode={folderMode} />
         {isPublic && !isFile && feedPath != null && <PublicFeedRow feedPath={feedPath} />}
         <PeopleAccess folderId={folderId} />
-        <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} isPublic={isPublic} />
+        <ShareLinksSection
+          folderId={folderId}
+          nodeId={nodeId}
+          fileName={isFile ? title : undefined}
+          isPublic={isPublic}
+          feedPath={isFile ? undefined : feedPath}
+        />
       </div>
     </dialog>
   )

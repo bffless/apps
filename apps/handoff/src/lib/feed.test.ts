@@ -105,4 +105,29 @@ describe('renderFeedXml', () => {
     expect(xml).toContain('<link>https://handoff.j5s.dev/</link>')
     expect(xml).toContain('href="https://handoff.j5s.dev/feed.xml"')
   })
+
+  it('threads a private feed token into the self href, item links, and enclosures (#189)', () => {
+    const tok = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const xml = renderFeedXml(
+      selectFeedItems([
+        node({ id: 'file-1', type: 'file', name: 'a.png', path: 'Docs/a.png', mime: 'image/png', size: 10, createdAt: 0 }),
+        node({ id: 'site-1', type: 'site', name: 'Portfolio', path: 'Docs/Portfolio', createdAt: 1 }),
+      ]),
+      { ...ctx, token: tok },
+    )
+    // Self href carries the token so a reader re-fetching the feed keeps access.
+    expect(xml).toContain(`href="https://handoff.j5s.dev/feed/Docs.xml?token=${tok}"`)
+    // Every item link and enclosure carries the token (File + Site).
+    expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Docs/a.png?token=${tok}</link>`)
+    expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Docs/Portfolio?token=${tok}</link>`)
+    expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/r/file-1/a.png?token=${tok}" type="image/png" length="10"/>`)
+  })
+
+  it('a public feed (no token) keeps item links and enclosures tokenless', () => {
+    const xml = renderFeedXml(
+      selectFeedItems([node({ id: 'f', type: 'file', name: 'a.png', path: 'Docs/a.png', mime: 'image/png', size: 10, createdAt: 0 })]),
+      ctx,
+    )
+    expect(xml).not.toContain('?token=')
+  })
 })
