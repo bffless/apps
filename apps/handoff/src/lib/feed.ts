@@ -8,7 +8,7 @@
  * has no server), kept behaviourally equivalent like the other embedded copies.
  */
 
-import { blobUrl, feedUrl, treeUrl } from './pathUrl'
+import { blobUrl, contentUrl, feedUrl, treeUrl } from './pathUrl'
 import { slugifyFilename } from './share'
 import type { HandoffNode } from './nodes'
 
@@ -105,10 +105,55 @@ function rfc822(ms: number): string {
 }
 
 /**
- * Render RSS 2.0 for the given feed items. A File item carries a `<link>` to
- * its viewer and an `<enclosure>` (mime + length) so readers preview inline; a
- * Site item is a single `<link>` only. An empty item list yields a valid empty
- * channel. All text is XML-escaped.
+ * HTML-attribute-safe escape for text placed INSIDE a CDATA `<img alt="…">`.
+ * Inside CDATA the XML parser does not unescape, but the browser still parses
+ * the HTML, so an attribute value's quotes/angle-brackets must be encoded.
+ */
+function htmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Human-readable byte size for a non-image item's `<description>` (''=unknown). */
+function humanSize(bytes: number | null): string {
+  if (bytes == null || bytes < 0) return ''
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']
+  let n = bytes
+  let i = 0
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${i === 0 ? String(n) : n.toFixed(1)} ${u[i]}`
+}
+
+/**
+ * A media URL a cross-domain reader can load with NONE of this app's cookies:
+ * - a **public** feed serves the bytes directly from the tokenless, cacheable
+ *   content endpoint (the "Anyone" ACL passes);
+ * - a **private** feed (share-link token present) must use the token-in-URL
+ *   `/r/<id>/<slug>?token=` redirect route, since the content endpoint is
+ *   cookie/session-gated and takes no token.
+ *
+ * Either way this is a *stable indirection* — never the (≈5-min) presigned
+ * bucket URL — so it re-resolves per fetch and never ships expired.
+ */
+function mediaUrl(it: FeedItem, ctx: FeedContext): string {
+  return ctx.token
+    ? `${ctx.origin}/r/${it.id}/${slugifyFilename(it.name)}?token=${ctx.token}`
+    : `${ctx.origin}${contentUrl(it.path)}`
+}
+
+/**
+ * Render RSS 2.0 for the given feed items. A File item carries a `<link>` to its
+ * viewer, an `<enclosure>` (mime + length), and — so reader/article views show a
+ * body rather than "no content" — a `<description>`: an inline `<img>` (CDATA)
+ * plus `<media:content>`/`<media:thumbnail>` for images, a name+size line
+ * otherwise. A Site item is a `<link>` with a one-line `<description>`. An empty
+ * item list yields a valid empty channel. All text is XML-escaped.
  */
 export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
   const tokenQs = ctx.token ? `?token=${ctx.token}` : ''
@@ -116,7 +161,7 @@ export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
   const selfHref = `${ctx.origin}${feedUrl(ctx.folderPath, ctx.token)}`
   const lines: string[] = []
   lines.push('<?xml version="1.0" encoding="UTF-8"?>')
-  lines.push('<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">')
+  lines.push('<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">')
   lines.push('<channel>')
   lines.push(`<title>${xmlEscape(ctx.title)}</title>`)
   lines.push(`<link>${xmlEscape(channelLink)}</link>`)
@@ -132,10 +177,24 @@ export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
     lines.push(`<guid isPermaLink="false">${xmlEscape(it.id)}</guid>`)
     lines.push(`<pubDate>${rfc822(it.createdAt)}</pubDate>`)
     if (it.type === 'file') {
-      const encUrl = `${ctx.origin}/r/${it.id}/${slugifyFilename(it.name)}${tokenQs}`
+      const media = mediaUrl(it, ctx)
       const mime = it.mime ?? 'application/octet-stream'
       const length = it.size != null && it.size >= 0 ? it.size : 0
-      lines.push(`<enclosure url="${xmlEscape(encUrl)}" type="${xmlEscape(mime)}" length="${length}"/>`)
+      lines.push(`<enclosure url="${xmlEscape(media)}" type="${xmlEscape(mime)}" length="${length}"/>`)
+      if (it.mime && it.mime.startsWith('image/')) {
+        // Reader/article views render <description>, not <enclosure>; an inline
+        // <img> gives them a body + the picture. media:* feeds thumbnail-driven
+        // readers (Feedly/Inoreader/NetNewsWire).
+        lines.push(`<description><![CDATA[<p><img src="${media}" alt="${htmlAttr(it.name)}" /></p>]]></description>`)
+        lines.push(`<media:content url="${xmlEscape(media)}" type="${xmlEscape(mime)}" medium="image"/>`)
+        lines.push(`<media:thumbnail url="${xmlEscape(media)}"/>`)
+      } else {
+        const size = humanSize(it.size)
+        lines.push(`<description>${xmlEscape(size ? `${it.name} (${size})` : it.name)}</description>`)
+      }
+    } else {
+      // Site: a one-line description so the reader shows a body, not "no content".
+      lines.push(`<description>${xmlEscape(it.name)}</description>`)
     }
     lines.push('</item>')
   }

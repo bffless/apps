@@ -105,7 +105,33 @@ describe('renderFeedXml', () => {
     expect(xml).toContain('<guid isPermaLink="false">file-1</guid>')
     // path is surfaced through the item link (per-segment encoded).
     expect(xml).toContain('<link>https://handoff.j5s.dev/blob/Docs/My%20File.png</link>')
-    expect(xml).toContain('<enclosure url="https://handoff.j5s.dev/r/file-1/my-file.png" type="image/png" length="2048"/>')
+    // A public feed's media URL is the tokenless byte-serving content endpoint —
+    // a cross-domain reader loads it with no cookie/token (not the /r/ viewer).
+    expect(xml).toContain(
+      '<enclosure url="https://handoff.j5s.dev/api/uploads/content/Docs/My%20File.png" type="image/png" length="2048"/>',
+    )
+  })
+
+  it('an image File item carries an inline <img> description + media:* thumbnail (reader view)', () => {
+    const media = 'https://handoff.j5s.dev/api/uploads/content/Docs/a.png'
+    const xml = renderFeedXml(
+      selectFeedItems([node({ id: 'img', type: 'file', name: 'a.png', path: 'Docs/a.png', mime: 'image/png', size: 10, createdAt: 0 })]),
+      ctx,
+    )
+    expect(xml).toContain(`<description><![CDATA[<p><img src="${media}" alt="a.png" /></p>]]></description>`)
+    expect(xml).toContain(`<media:content url="${media}" type="image/png" medium="image"/>`)
+    expect(xml).toContain(`<media:thumbnail url="${media}"/>`)
+    expect(xml).toContain('xmlns:media="http://search.yahoo.com/mrss/"')
+  })
+
+  it('a non-image File item gets a name+size text description (not an <img>)', () => {
+    const xml = renderFeedXml(
+      selectFeedItems([node({ id: 'doc', type: 'file', name: 'notes.pdf', path: 'Docs/notes.pdf', mime: 'application/pdf', size: 2048, createdAt: 0 })]),
+      ctx,
+    )
+    expect(xml).toContain('<description>notes.pdf (2.0 KB)</description>')
+    expect(xml).not.toContain('<img')
+    expect(xml).not.toContain('<media:')
   })
 
   it('renders a Site item as a single link with no enclosure', () => {

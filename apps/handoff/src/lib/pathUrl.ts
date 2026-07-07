@@ -53,6 +53,18 @@ export function blobUrl(path: string): string {
 }
 
 /**
+ * Public raw-content URL for a file path — the ACL-gated byte-serving endpoint
+ * (`GET /api/uploads/content/*`). For a publicly-viewable ("Anyone") file this
+ * serves the bytes directly with no cookie and no token, so it works when a
+ * cross-domain RSS reader loads it. Used for public-feed media URLs; a private
+ * feed can't use it (the endpoint is cookie/session-gated and takes no token)
+ * and falls back to the `/r/<id>/<slug>?token=` redirect route instead.
+ */
+export function contentUrl(path: string): string {
+  return `/api/uploads/content/${encodePath(path)}`
+}
+
+/**
  * RSS feed URL for a folder path. The root folder's feed is the tokenless
  * `/feed.xml`; every other folder is `/feed/<encoded path>.xml`. Mirrors the
  * `/feed/*` + `/feed.xml` proxy rules (Handoff RSS spine, #188). Sibling to
