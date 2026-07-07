@@ -596,6 +596,33 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * PATCH /api/node/meta { id, title?, description? } → { id, title, description }
+     * Sets a File/Site's display title + description (feed-surfaced metadata).
+     * Requires `edit` on the parent-folder chain (mirrors the DELETE gate);
+     * 400 for a non-leaf/no-field body, 401 no credential, 403 insufficient.
+     * An empty string clears a field to null. Single isolated write — never
+     * Promise.all with another same-node write (CE data_update clobbers, #194).
+     */
+    updateNodeMeta: builder.mutation<
+      { id: string; title: string | null; description: string | null },
+      { id: string; title?: string; description?: string; parentId?: string }
+    >({
+      query: ({ id, title, description }) => ({
+        url: 'api/node/meta',
+        method: 'PATCH',
+        body: {
+          id,
+          ...(title !== undefined ? { title } : {}),
+          ...(description !== undefined ? { description } : {}),
+        },
+      }),
+      invalidatesTags: (_result, _err, { id, parentId }) => [
+        { type: 'Node' as const, id },
+        ...(parentId ? [{ type: 'Node' as const, id: `LIST:${parentId}` }] : []),
+      ],
+    }),
+
+    /**
      * GET /api/directory?search=<q> → { users: { id: string; email: string }[] }
      */
     searchDirectory: builder.query<{ users: { id: string; email: string }[] }, { search: string }>({
@@ -865,6 +892,7 @@ export const {
   useRevokeGrantMutation,
   useSetNodeModeMutation,
   useSetNodeFeedExcludedMutation,
+  useUpdateNodeMetaMutation,
   useSearchDirectoryQuery,
   useMintShareLinkMutation,
   useListShareLinksQuery,

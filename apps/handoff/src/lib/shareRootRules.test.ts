@@ -215,9 +215,10 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
   const CAPTURE = /nodeType\s*===\s*'root'/
   const SENTINEL = /===\s*'root'\s*&&\s*rootId/
 
-  it('has exactly 10 embedded folderChain functions', () => {
-    // 8 original + the two feed select handlers (#188), each a verbatim copy.
-    expect(chainCodes.length).toBe(10)
+  it('has exactly 11 embedded folderChain functions', () => {
+    // 8 original + the two feed select handlers (#188) + the PATCH
+    // /api/node/meta gate (Task 5), each a verbatim copy.
+    expect(chainCodes.length).toBe(11)
   })
 
   it('every folderChain captures the root record id and resolves the root sentinel', () => {
@@ -238,9 +239,9 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     for (const c of chainCodes) {
       expect(c, 'folderChain seeds startId===root -> rootId').toMatch(SEED)
     }
-    // Belt-and-braces: exactly 10 seeded bodies across the whole document.
+    // Belt-and-braces: exactly 11 seeded bodies across the whole document.
     const seeded = allCode.filter((c) => SEED.test(c))
-    expect(seeded.length).toBe(10)
+    expect(seeded.length).toBe(11)
   })
 
   it('leaves the two folderPath breadcrumb seeds plain (no root, Fix #1)', () => {
@@ -270,7 +271,7 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
         }
       }
     }
-    expect(widened.length).toBe(7)
+    expect(widened.length).toBe(8)
   })
 
   it('leaves allSites (nodeType site) queries unchanged', () => {

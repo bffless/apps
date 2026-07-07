@@ -39,10 +39,11 @@ function evalAccessCopies(): string[] {
 describe('embedded evalAccess copies (structural)', () => {
   const copies = evalAccessCopies()
 
-  it('there are exactly 9 copies and they are identical', () => {
-    // 7 original + the two /feed/* + /feed.xml select handlers (#188), each a
-    // verbatim copy of the canonical evalAccess.
-    expect(copies.length).toBe(9)
+  it('there are exactly 10 copies and they are identical', () => {
+    // 7 original + the two /feed/* + /feed.xml select handlers (#188) + the
+    // PATCH /api/node/meta gate (Task 5), each a verbatim copy of the
+    // canonical evalAccess.
+    expect(copies.length).toBe(10)
     expect(new Set(copies).size).toBe(1)
   })
 
