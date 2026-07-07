@@ -73,3 +73,31 @@ A folder's inheritance mode. `Inheriting` (default) takes all parent [[Grant]]s 
 `Restricted` ignores inherited grants and uses only its own (Owner/admins always retain access). One
 bit per folder; there are no negative/deny grants.
 _Avoid_: Private/public, break-inheritance
+
+## Feeds
+
+**Feed**:
+A read-only, reverse-chronological RSS rendering of a [[Folder]] for feed readers. Every [[File]] and
+[[Site]] anywhere in the folder's subtree becomes one linear item ordered by upload time — it is
+deliberately *not* a tree. Sharing a new file into the folder makes it appear as a new item in
+subscribers' readers. A feed is governed by the **same [[Grant]]s as its folder**: a public folder
+([[Anyone]]) has an open feed at a plain URL; a private folder's feed is reached through a
+[[Share Link]] token, so each share link is independently renderable as a feed and no reader ever
+needs an account. Feeds carry no access logic of their own — they run the folder's ACL and nothing
+more.
+_Avoid_: RSS reader (that's the *consumer* — a separate app, Rivulet), stream, timeline, river
+
+**Feed Item**:
+One item in a [[Feed]]: a single leaf [[File]] or [[Site]] — one leaf node makes exactly one item,
+never a [[Folder]], never a [[Site]]'s internal assets (those have no node records, so a Site is
+always one item). Dated by the leaf's upload time (what makes a newly-shared file a *new* item) and
+carrying its path within the folder. A [[File]] item attaches its raw content so readers preview it
+inline; a [[Site]] item is a single link into Handoff's viewer.
+_Avoid_: Post, article, node (a node is the tree record; the item is its feed projection)
+
+**Feed-excluded**:
+A per-[[Folder]] flag (default off) that keeps a folder's whole subtree out of *every* [[Feed]]: its
+leaves produce no [[Feed Item]]s. Purely a surfacing control, **orthogonal to access** — an excluded
+folder stays fully browsable and its files openable; it is neither private nor [[Restricted]]. Used
+e.g. to keep a markdown post's `assets/` images from surfacing as their own items.
+_Avoid_: Private, hidden, unlisted, restricted, muted (each implies an access or listing change)
