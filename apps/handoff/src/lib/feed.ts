@@ -39,6 +39,13 @@ export interface FeedContext {
   folderPath: string
   /** Optional ms epoch for `<lastBuildDate>`. */
   buildDate?: number
+  /**
+   * Share-link token for a private feed (#189 / ADR-0008). When present it is
+   * threaded into the self href and every item `<link>`/`<enclosure>` URL so a
+   * reader can fetch the feed and its media unauthenticated; absent for a public
+   * feed, whose URLs stay tokenless.
+   */
+  token?: string
 }
 
 /**
@@ -88,8 +95,9 @@ function rfc822(ms: number): string {
  * channel. All text is XML-escaped.
  */
 export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
+  const tokenQs = ctx.token ? `?token=${ctx.token}` : ''
   const channelLink = `${ctx.origin}${treeUrl(ctx.folderPath)}`
-  const selfHref = `${ctx.origin}${feedUrl(ctx.folderPath)}`
+  const selfHref = `${ctx.origin}${feedUrl(ctx.folderPath, ctx.token)}`
   const lines: string[] = []
   lines.push('<?xml version="1.0" encoding="UTF-8"?>')
   lines.push('<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">')
@@ -104,11 +112,11 @@ export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
   for (const it of items) {
     lines.push('<item>')
     lines.push(`<title>${xmlEscape(it.name)}</title>`)
-    lines.push(`<link>${xmlEscape(ctx.origin + blobUrl(it.path))}</link>`)
+    lines.push(`<link>${xmlEscape(ctx.origin + blobUrl(it.path) + tokenQs)}</link>`)
     lines.push(`<guid isPermaLink="false">${xmlEscape(it.id)}</guid>`)
     lines.push(`<pubDate>${rfc822(it.createdAt)}</pubDate>`)
     if (it.type === 'file') {
-      const encUrl = `${ctx.origin}/r/${it.id}/${slugifyFilename(it.name)}`
+      const encUrl = `${ctx.origin}/r/${it.id}/${slugifyFilename(it.name)}${tokenQs}`
       const mime = it.mime ?? 'application/octet-stream'
       const length = it.size != null && it.size >= 0 ? it.size : 0
       lines.push(`<enclosure url="${xmlEscape(encUrl)}" type="${xmlEscape(mime)}" length="${length}"/>`)
