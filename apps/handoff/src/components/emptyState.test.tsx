@@ -9,7 +9,7 @@ describe('EmptyState', () => {
       <EmptyState canWrite={false} isRoot signedOut onNew={() => {}} onSignIn={onSignIn} />,
     )
     expect(screen.getByText('Nothing public here')).toBeInTheDocument()
-    expect(screen.getByText("Sign in to view your team's content.")).toBeInTheDocument()
+    expect(screen.getByText('Sign in to view your team’s content.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     expect(onSignIn).toHaveBeenCalledOnce()
   })

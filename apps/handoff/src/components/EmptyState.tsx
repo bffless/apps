@@ -29,10 +29,10 @@ export function EmptyState({
       </h2>
       <p className="mt-1 max-w-sm text-sm text-muted">
         {guestAtRoot
-          ? "Sign in to view your team's content."
+          ? 'Sign in to view your team’s content.'
           : canWrite
             ? 'Drag files or a folder anywhere on this page, or use New to upload content and create sub-folders.'
-            : "There's nothing to see in this folder yet."}
+            : 'There’s nothing to see in this folder yet.'}
       </p>
       {guestAtRoot && (
         <button

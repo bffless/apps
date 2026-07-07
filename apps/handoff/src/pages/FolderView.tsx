@@ -859,7 +859,7 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
 
-  const { session } = useSession()
+  const { session, loading: sessionLoading } = useSession()
 
   // Share-mode is for guests only — an authenticated user is always evaluated by
   // their real identity, even if a stale shareLinkFolderId lingers in localStorage.
@@ -1302,7 +1302,7 @@ export function FolderView({ folderId }: FolderViewProps) {
         <EmptyState
           canWrite={canWrite}
           isRoot={folderId === 'root'}
-          signedOut={!session?.authenticated}
+          signedOut={!sessionLoading && !session?.authenticated}
           onNew={() => filesInputRef.current?.click()}
           onSignIn={() => {
             window.location.href = adminLoginUrl(window.location.href)
