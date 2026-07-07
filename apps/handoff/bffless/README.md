@@ -222,6 +222,21 @@ viewer at `view`, scoped to the link's folder and its descendants.
 returned children are filtered to those you can access — so root listing is private by default and
 restricted siblings stay hidden.
 
+**Public folders — the Anyone principal (ADR-0005, bffless/apps#183):** a folder is made public by
+granting the reserved principal id **`anyone`** on it — there is no visibility field or global
+setting. Every `evalAccess` copy in the gates matches an `anyone` grant for **all** viewers
+(anonymous included) and caps it at `view` regardless of the stored level; anonymous requests flow
+through the normal evaluation instead of being rejected up front (401 remains the deny for
+credential-less requests). Publicness inherits through `inheriting` children and is cut off by a
+`restricted` descendant, exactly like any other grant. Write-side, the `/api/grants` merge step
+forces `level: "view"` and `principalEmail: null` for `anyone` on both its insert and replace
+branches, so the grant can never escalate. Share links are unchanged and remain the tokened
+mechanism for private folders. The root record (`nodeType: 'root'`, ADR root-sharing) makes
+whole-site public just an `anyone` grant on root. The canonical semantics live in
+`src/lib/acl.ts` (`ANYONE_PRINCIPAL`); `src/lib/anyoneGrantRule.test.ts` holds the structural
+guards and the embedded↔TS port-equivalence matrix, and `scripts/patch-anyone-eval.mjs` /
+`scripts/patch-anyone-cap.mjs` are the repeatable patches that produced the rule bodies.
+
 **Delete is WRITE-gated** (`DELETE /api/node?id=<uuid>`): the same ACL gate, but the allow test
 requires **write** (`rank(level) >= 2` — `edit`/`owner`, admin bypass; view-only and share-link
 viewers get `403`). It hard-deletes a single node — purging a file's stored object via `file_delete`
