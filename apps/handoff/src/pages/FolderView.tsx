@@ -743,6 +743,7 @@ function RowKebab({
 function ListingRow({
   node,
   folderChain,
+  tintReady,
   canManage,
   copyState,
   onCopyLink,
@@ -751,6 +752,10 @@ function ListingRow({
 }: {
   node: HandoffNode
   folderChain: FolderLink[]
+  /** chainReady && !rootMetaLoading — an incomplete chain can compute a WRONG
+   *  tint (e.g. a missing restricted ancestor yields a false-positive public
+   *  tint), so the tint stays neutral until the chain + root meta are ready. */
+  tintReady: boolean
   canManage: boolean
   copyState: 'idle' | 'busy' | 'copied' | 'error'
   onCopyLink: () => void
@@ -760,7 +765,7 @@ function ListingRow({
   const to = nodeUrl(node)
   // Only folder rows carry an effective-public tint — files/sites keep their
   // existing type color (childIsPublic is meaningless for a non-folder leaf).
-  const isFolderPublic = node.type === 'folder' && childIsPublic(folderChain, node)
+  const isFolderPublic = node.type === 'folder' && tintReady && childIsPublic(folderChain, node)
   const iconColor =
     node.type === 'folder'
       ? isFolderPublic
@@ -874,7 +879,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   )
 
   const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
-  const { data: rootMeta } = useGetRootMetaQuery()
+  const { data: rootMeta, isLoading: rootMetaLoading } = useGetRootMetaQuery()
   const rootNode = rootMetaNode(rootMeta)
 
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
@@ -970,9 +975,15 @@ export function FolderView({ folderId }: FolderViewProps) {
   // present in the ancestor map (e.g. reached via Breadcrumb navigation), so
   // only append it here when the chain tail isn't already this folder — avoids
   // double-appending and double-counting its grants.
+  // rootMeta is the chain HEAD at every depth (the root record's grants decide
+  // publicness everywhere) — gate on its own load state too, not just the
+  // ancestor chain, so a public root doesn't flash "Private" while rootMeta is
+  // still loading on first paint (rootMetaLoading is briefly false-negative
+  // there, independent of chainReady which is already true at root).
+  const publicReady = chainReady && !rootMetaLoading
   const chainTail = folderChain[folderChain.length - 1]
   const isPublicHere =
-    chainReady &&
+    publicReady &&
     isEffectivelyPublic(
       currentFolder && chainTail?.id !== currentFolder.id
         ? [
@@ -1139,7 +1150,7 @@ export function FolderView({ folderId }: FolderViewProps) {
       <div className="mb-5 mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">{pageTitle}</h1>
-          {chainReady &&
+          {publicReady &&
             (isPublicHere ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-accent-100 px-2 py-0.5 text-xs font-medium text-accent-700">
                 <GlobeIcon className="h-3 w-3" />
@@ -1406,6 +1417,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                   key={node.id}
                   node={node}
                   folderChain={folderChain}
+                  tintReady={publicReady}
                   canManage={canManage}
                   copyState={fileCopyStatus(node.id)}
                   onCopyLink={() => void copy.copyLink(node.id, node.name)}

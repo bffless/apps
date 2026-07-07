@@ -40,6 +40,9 @@ interface TreeFolderProps {
   mode: 'inheriting' | 'restricted'
   /** Whether this folder's parent is effectively public — seeded from `rootMeta?.public` at the tree root. */
   parentPublic: boolean
+  /** Whether the tint recursion is allowed to claim publicness at all — false
+   *  in share-scoped trees (see FolderTree's `tintEnabled` for why). */
+  tintEnabled: boolean
 }
 
 function TreeFolder({
@@ -54,6 +57,7 @@ function TreeFolder({
   grants,
   mode,
   parentPublic,
+  tintEnabled,
 }: TreeFolderProps) {
   const isOpen = expanded.has(id)
   const { data: children, isFetching } = useListNodesQuery({ parentId: id }, { skip: !isOpen })
@@ -61,7 +65,10 @@ function TreeFolder({
   const isCurrent = path != null && path === currentPath
   // A folder is public when its parent is public and it doesn't opt out via
   // 'restricted' mode, OR it carries its own Anyone grant regardless of parent.
-  const isPublic = (parentPublic && mode !== 'restricted') || hasAnyoneGrant(grants ?? [])
+  // Gated on tintEnabled: a share-scoped tree can't see intermediate ancestors
+  // above its root, so it must never claim a folder is public (own-grant
+  // tinting is suppressed too, not just inherited parentPublic).
+  const isPublic = tintEnabled && ((parentPublic && mode !== 'restricted') || hasAnyoneGrant(grants ?? []))
   // Show a caret if we haven't loaded yet (might have children) or we have some.
   const showCaret = !isOpen || folders.length > 0
   const to = id === rootId && rootId === 'root' ? '/' : nodeUrl({ type: 'folder', path, id })
@@ -118,6 +125,7 @@ function TreeFolder({
               grants={f.grants ?? []}
               mode={f.mode}
               parentPublic={isPublic}
+              tintEnabled={tintEnabled}
             />
           ))}
           {!isFetching && folders.length === 0 && (
@@ -153,6 +161,14 @@ export function FolderTree() {
   // from the Anyone grant on the singleton root record.
   const { data: rootMeta } = useGetRootMetaQuery()
 
+  // The tint recursion is only sound when the tree is rooted at the real root:
+  // rootMeta reflects the true root's grants, and every folder below it is
+  // fully visible to the recursion. A share-scoped tree is rooted below the
+  // real root (rootId !== 'root') with intermediate ancestors the recursion
+  // never sees, so seeding parentPublic from rootMeta there would be a
+  // provable mistint in either direction — disable tinting entirely instead.
+  const tintEnabled = rootId === 'root'
+
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([rootId]))
   const toggle = useCallback((id: string) => {
     setExpanded((prev) => {
@@ -178,7 +194,8 @@ export function FolderTree() {
           rootId={rootId}
           grants={rootId === 'root' ? [] : (sharedRoot?.grants ?? [])}
           mode={rootId === 'root' ? 'inheriting' : (sharedRoot?.mode ?? 'inheriting')}
-          parentPublic={rootMeta?.public ?? false}
+          parentPublic={tintEnabled ? (rootMeta?.public ?? false) : false}
+          tintEnabled={tintEnabled}
         />
       </ul>
     </nav>

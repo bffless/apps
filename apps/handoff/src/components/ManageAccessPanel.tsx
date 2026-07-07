@@ -13,6 +13,7 @@ import {
   useSearchDirectoryQuery,
 } from '../store/handoffApi'
 import { ANYONE_PRINCIPAL, hasAnyoneGrant } from '../lib/acl'
+import { GlobeIcon } from './icons'
 
 // ---------------------------------------------------------------------------
 // Level badge
@@ -33,15 +34,6 @@ function LevelBadge({ level }: { level: 'view' | 'edit' }) {
 // ---------------------------------------------------------------------------
 // GeneralAccess — Public/Private switch
 // ---------------------------------------------------------------------------
-
-function GlobeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a13.5 13.5 0 010 18M12 3a13.5 13.5 0 000 18" />
-    </svg>
-  )
-}
 
 /**
  * GeneralAccess — the folder's Public/Private switch (ADR-0005). "Public" is
