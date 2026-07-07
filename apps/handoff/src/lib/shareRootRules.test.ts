@@ -44,9 +44,11 @@ describe('resolve-root wired into mint (POST /api/share-links)', () => {
 
   it('splices the full write group in resolve order', () => {
     const list = ids(r)
-    for (const id of ['resolveRootPre', 'rootRecord', 'rootCreate', 'resolveRootShape']) {
+    for (const id of ['resolveRootPre', 'rootRecord', 'rootGate', 'rootCreate', 'resolveRootShape']) {
       expect(list).toContain(id)
     }
+    expect(list.indexOf('rootRecord')).toBeLessThan(list.indexOf('rootGate'))
+    expect(list.indexOf('rootGate')).toBeLessThan(list.indexOf('rootCreate'))
     expect(list.indexOf('resolveRootShape')).toBeLessThan(list.indexOf('folder'))
   })
 
@@ -56,8 +58,12 @@ describe('resolve-root wired into mint (POST /api/share-links)', () => {
     expect(step(r, 'create').config.fields.folderId).toBe(EFFECTIVE)
   })
 
-  it('gates root creation to admins only (security guard)', () => {
-    expect(step(r, 'rootCreate').config.condition).toContain('steps.resolveRootPre.isAdmin')
+  it('gates root creation to admins only, via a simple-path condition on rootGate', () => {
+    // BFFless conditions only evaluate simple paths — the admin/exists logic lives in
+    // the rootGate function, referenced here by a plain path (never a compound expression).
+    expect(step(r, 'rootCreate').config.condition).toBe('steps.rootGate.shouldCreate')
+    expect(step(r, 'rootGate').config.code).toContain('isAdmin')
+    expect(step(r, 'rootGate').config.code).toContain('shouldCreate')
   })
 })
 
@@ -74,16 +80,19 @@ describe('resolve-root wired into grants (POST /api/grants)', () => {
     expect(step(r, 'folder').config.recordId).toBe(EFFECTIVE)
     expect(step(r, 'folder').config.condition).toBe(EFFECTIVE)
     expect(step(r, 'save').config.recordId).toBe(EFFECTIVE)
-    // Fix #3: save must be guarded on BOTH steps.merge.allowed AND the resolved
-    // folder id (same uniform guard the revoke path got) — an admin's merge
-    // short-circuits allowed=true even for a never-created root, so without the
-    // effectiveFolderId conjunct save would run with recordId=null -> UUID-cast 500.
-    expect(step(r, 'save').config.condition).toContain('steps.merge.allowed')
-    expect(step(r, 'save').config.condition).toContain(EFFECTIVE)
+    // save must run only when merge allowed AND a folder id resolved (admin's merge
+    // short-circuits allowed=true even for an empty/never-created root; without the
+    // resolved-id guard save would run with recordId=null -> UUID-cast 500). That
+    // compound predicate lives in merge as `canSave`; the condition is a simple path.
+    expect(step(r, 'save').config.condition).toBe('steps.merge.canSave')
+    expect(step(r, 'merge').config.code).toContain('canSave')
+    expect(step(r, 'merge').config.code).toContain('effectiveFolderId')
   })
 
-  it('gates root creation to admins only (security guard)', () => {
-    expect(step(r, 'rootCreate').config.condition).toContain('steps.resolveRootPre.isAdmin')
+  it('gates root creation to admins only, via a simple-path condition on rootGate', () => {
+    expect(step(r, 'rootCreate').config.condition).toBe('steps.rootGate.shouldCreate')
+    expect(step(r, 'rootGate').config.code).toContain('isAdmin')
+    expect(step(r, 'rootGate').config.code).toContain('shouldCreate')
   })
 })
 
@@ -136,10 +145,31 @@ describe('resolve-root wired into grants revoke (POST /api/grants/revoke)', () =
     expect(step(r, 'folder').config.condition).toBe(EFFECTIVE)
     expect(step(r, 'save').config.recordId).toBe(EFFECTIVE)
     // CRITICAL: merge short-circuits allowed=true for an ADMIN even when steps.folder
-    // is empty (never-created root). save must ALSO be guarded on effectiveFolderId or
+    // is empty (never-created root). save must ALSO be guarded on the resolved id or
     // an admin revoking on a non-existent root runs save with recordId=null -> 500.
-    expect(step(r, 'save').config.condition).toContain('steps.merge.allowed')
-    expect(step(r, 'save').config.condition).toContain(EFFECTIVE)
+    // That predicate lives in merge as `canSave`; the condition is a simple path.
+    expect(step(r, 'save').config.condition).toBe('steps.merge.canSave')
+    expect(step(r, 'merge').config.code).toContain('canSave')
+    expect(step(r, 'merge').config.code).toContain('effectiveFolderId')
+  })
+})
+
+describe('no pipeline step uses a compound condition (BFFless evaluates simple paths only)', () => {
+  // Regression guard for apps#181: a step `condition` is evaluated as a single truthy
+  // path lookup — `&&`, `||`, `!`, `[0]` indexing, and `===` silently resolve falsy and
+  // skip the step. Any compound predicate MUST be computed in a function_handler and
+  // referenced by a simple path. This scans EVERY rule, not just the share-root ones.
+  it('every step condition across the rule set is a bare path (no &&, ||, !, [, ===)', () => {
+    const offenders: string[] = []
+    for (const rl of proxy.rules) {
+      for (const s of rl.pipelineConfig?.steps ?? []) {
+        const cond: string | undefined = s.config?.condition
+        if (cond && /&&|\|\||!|\[|===/.test(cond)) {
+          offenders.push(`${rl.pathPattern} :: ${s.id} :: ${cond}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })
 

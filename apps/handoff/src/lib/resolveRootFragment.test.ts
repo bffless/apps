@@ -23,13 +23,21 @@ describe('resolve-root pipeline fragment', () => {
     expect(Array.isArray(resolveRootFragment)).toBe(true)
   })
 
-  it('contains exactly 4 steps', () => {
-    expect(resolveRootFragment).toHaveLength(4)
+  it('contains exactly 5 steps', () => {
+    expect(resolveRootFragment).toHaveLength(5)
   })
 
   it('has step ids in the expected order', () => {
     const ids = resolveRootFragment.map((s) => s.id)
-    expect(ids).toEqual(['resolveRootPre', 'rootRecord', 'rootCreate', 'resolveRootShape'])
+    expect(ids).toEqual(['resolveRootPre', 'rootRecord', 'rootGate', 'rootCreate', 'resolveRootShape'])
+  })
+
+  it('rootGate computes shouldCreate (BFFless conditions only take simple paths)', () => {
+    const gate = resolveRootFragment[2]
+    expect(gate.id).toBe('rootGate')
+    expect(gate.handlerType).toBe('function_handler')
+    expect(gate.config.code).toContain('shouldCreate')
+    expect(gate.config.code).toContain('isAdmin')
   })
 
   it('every step has a non-empty handlerType and config object', () => {
@@ -58,18 +66,16 @@ describe('resolve-root pipeline fragment', () => {
     expect(rec.config.condition).toBe('steps.resolveRootPre.isRoot')
   })
 
-  it('rootCreate is a data_create with schemaId, condition, and fields', () => {
-    const create = resolveRootFragment[2]
+  it('rootCreate is a data_create gated by a simple-path condition on rootGate', () => {
+    const create = resolveRootFragment[3]
     expect(create.id).toBe('rootCreate')
     expect(create.handlerType).toBe('data_create')
     expect(create.config.schemaId).toBe('1c5d4802-596e-4f50-a08f-c41fb8f9fab0')
-    expect(create.config.condition).toContain('steps.resolveRootPre.isRoot')
-    expect(create.config.condition).toContain('steps.rootRecord')
-    expect(create.config.condition).toContain('!steps.rootRecord[0]')
+    expect(create.config.condition).toBe('steps.rootGate.shouldCreate')
   })
 
   it('rootCreate fields include expected node structure', () => {
-    const create = resolveRootFragment[2]
+    const create = resolveRootFragment[3]
     const fields = create.config.fields
     expect(fields.nodeType).toBe('root')
     expect(fields.displayName).toBe('My Files')
@@ -79,7 +85,7 @@ describe('resolve-root pipeline fragment', () => {
   })
 
   it('resolveRootShape is a function_handler that outputs effectiveFolderId and rootOwnerId', () => {
-    const shape = resolveRootFragment[3]
+    const shape = resolveRootFragment[4]
     expect(shape.id).toBe('resolveRootShape')
     expect(shape.handlerType).toBe('function_handler')
     expect(shape.config.code).toBeTruthy()

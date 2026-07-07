@@ -1001,12 +1001,21 @@
             }
           },
           {
+            "id": "rootGate",
+            "name": "rootGate",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var pre = (steps && steps.resolveRootPre) || {};\n  var rows = (steps && steps.rootRecord);\n  var exists = false;\n  if (Object.prototype.toString.call(rows) === '[object Array]') { exists = rows.length > 0; }\n  else if (rows) { exists = true; }\n  return { shouldCreate: (pre.isRoot === true) && (pre.isAdmin === true) && (exists === false) };\n}",
+              "condition": "steps.resolveRootPre.isRoot"
+            }
+          },
+          {
             "id": "rootCreate",
             "name": "rootCreate",
             "handlerType": "data_create",
             "config": {
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
-              "condition": "steps.resolveRootPre.isRoot && !steps.rootRecord[0] && steps.resolveRootPre.isAdmin",
+              "condition": "steps.rootGate.shouldCreate",
               "fields": {
                 "nodeType": "root",
                 "displayName": "My Files",
@@ -1040,7 +1049,7 @@
             "id": "merge",
             "name": "merge",
             "config": {
-              "code": "function handler({ user, request, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var body = (request && request.body) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  if (!isAdmin && !isOwner) {\n    return { allowed: false, denied: true, grants: [] };\n  }\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var pid = String(body.principalId || '').trim();\n  var level = (body.level === 'edit') ? 'edit' : 'view';\n  var email = body.principalEmail ? String(body.principalEmail) : null;\n  var out = [];\n  var replaced = false;\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId === pid && pid) {\n      out.push({ principalId: pid, principalEmail: email || g.principalEmail || null, level: level });\n      replaced = true;\n    } else if (g.principalId) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  if (pid && !replaced) {\n    out.push({ principalId: pid, principalEmail: email, level: level });\n  }\n  return { allowed: true, denied: false, grants: out };\n}"
+              "code": "function handler({ user, request, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var body = (request && request.body) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  var eff = (steps && steps.resolveRootShape && steps.resolveRootShape.effectiveFolderId) || null;\n  if (!isAdmin && !isOwner) {\n    return { allowed: false, denied: true, grants: [], canSave: false };\n  }\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var pid = String(body.principalId || '').trim();\n  var level = (body.level === 'edit') ? 'edit' : 'view';\n  var email = body.principalEmail ? String(body.principalEmail) : null;\n  var out = [];\n  var replaced = false;\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId === pid && pid) {\n      out.push({ principalId: pid, principalEmail: email || g.principalEmail || null, level: level });\n      replaced = true;\n    } else if (g.principalId) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  if (pid && !replaced) {\n    out.push({ principalId: pid, principalEmail: email, level: level });\n  }\n  return { allowed: true, denied: false, grants: out, canSave: !!eff };\n}"
             },
             "handlerType": "function_handler"
           },
@@ -1053,7 +1062,7 @@
               },
               "recordId": "steps.resolveRootShape.effectiveFolderId",
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
-              "condition": "steps.merge.allowed && steps.resolveRootShape.effectiveFolderId"
+              "condition": "steps.merge.canSave"
             },
             "handlerType": "data_update"
           },
@@ -1149,7 +1158,7 @@
             "id": "merge",
             "name": "merge",
             "config": {
-              "code": "function handler({ user, request, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var body = (request && request.body) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  if (!isAdmin && !isOwner) {\n    return { allowed: false, denied: true, grants: [] };\n  }\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var pid = String(body.principalId || '').trim();\n  var out = [];\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId && g.principalId !== pid) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  return { allowed: true, denied: false, grants: out };\n}"
+              "code": "function handler({ user, request, steps }) {\n  var folder = (steps && steps.folder) || {};\n  var body = (request && request.body) || {};\n  var uid = (user && user.id) || null;\n  var isAdmin = !!user && user.role === 'admin';\n  var isOwner = !!uid && folder.ownerId === uid;\n  var eff = (steps && steps.resolveRootShape && steps.resolveRootShape.effectiveFolderId) || null;\n  if (!isAdmin && !isOwner) {\n    return { allowed: false, denied: true, grants: [], canSave: false };\n  }\n  var existing = folder.grantsJson;\n  if (typeof existing === 'string') {\n    try { existing = JSON.parse(existing); } catch (e) { existing = []; }\n  }\n  if (!existing || Object.prototype.toString.call(existing) !== '[object Array]') {\n    existing = [];\n  }\n  var pid = String(body.principalId || '').trim();\n  var out = [];\n  for (var i = 0; i < existing.length; i++) {\n    var g = existing[i] || {};\n    if (g.principalId && g.principalId !== pid) {\n      out.push({ principalId: g.principalId, principalEmail: g.principalEmail || null, level: (g.level === 'edit') ? 'edit' : 'view' });\n    }\n  }\n  return { allowed: true, denied: false, grants: out, canSave: !!eff };\n}"
             },
             "handlerType": "function_handler"
           },
@@ -1162,7 +1171,7 @@
               },
               "recordId": "steps.resolveRootShape.effectiveFolderId",
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
-              "condition": "steps.merge.allowed && steps.resolveRootShape.effectiveFolderId"
+              "condition": "steps.merge.canSave"
             },
             "handlerType": "data_update"
           },
@@ -1321,12 +1330,21 @@
             }
           },
           {
+            "id": "rootGate",
+            "name": "rootGate",
+            "handlerType": "function_handler",
+            "config": {
+              "code": "function handler({ steps }) {\n  var pre = (steps && steps.resolveRootPre) || {};\n  var rows = (steps && steps.rootRecord);\n  var exists = false;\n  if (Object.prototype.toString.call(rows) === '[object Array]') { exists = rows.length > 0; }\n  else if (rows) { exists = true; }\n  return { shouldCreate: (pre.isRoot === true) && (pre.isAdmin === true) && (exists === false) };\n}",
+              "condition": "steps.resolveRootPre.isRoot"
+            }
+          },
+          {
             "id": "rootCreate",
             "name": "rootCreate",
             "handlerType": "data_create",
             "config": {
               "schemaId": "1c5d4802-596e-4f50-a08f-c41fb8f9fab0",
-              "condition": "steps.resolveRootPre.isRoot && !steps.rootRecord[0] && steps.resolveRootPre.isAdmin",
+              "condition": "steps.rootGate.shouldCreate",
               "fields": {
                 "nodeType": "root",
                 "displayName": "My Files",
