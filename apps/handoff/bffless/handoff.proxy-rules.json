@@ -12,20 +12,20 @@
       "pathPattern": "/api/auth/*",
       "targetUrl": "http://localhost:3000/api/auth",
       "stripPrefix": true,
-      "order": 0,
+      "order": 20,
       "timeout": 30000,
       "preserveHost": false,
       "forwardCookies": true,
       "proxyType": "external_proxy",
       "isEnabled": true,
-      "description": "Reverse-proxy SuperTokens auth endpoints (session refresh, signout, oauth) to the CE backend so subdomain apps can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie."
+      "description": "Reverse-proxy SuperTokens auth endpoints (session refresh, signout, oauth) to the CE backend so this subdomain app can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken cookie."
     },
     {
       "pathPattern": "/api/directory",
       "method": "GET",
       "targetUrl": "http://localhost:3000/api/users/directory",
       "stripPrefix": true,
-      "order": 20,
+      "order": 10,
       "timeout": 30000,
       "preserveHost": false,
       "forwardCookies": true,
@@ -40,6 +40,8 @@
       "stripPrefix": true,
       "order": 1,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Serve handoff_nodes",
@@ -155,7 +157,7 @@
         "description": "Serve content with per-folder ACL gate (ADR-0002). Resolves a File node by its exact storage_path, or a Site-internal asset by the deepest Site node whose storage_path prefixes the request key (structural storage); evaluates access over the owning folder chain and serves the object by its exact key. 404 when the path resolves to neither a node nor a Site."
       },
       "isEnabled": true,
-      "description": "Serve files and Site assets from handoff_nodes (unified path-passthrough content endpoint)"
+      "description": "Serve files + Site assets via unified path-passthrough content endpoint (structural storage)"
     },
     {
       "pathPattern": "/api/uploads/prepare",
@@ -164,6 +166,8 @@
       "stripPrefix": true,
       "order": 2,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff presigned prepare",
@@ -240,7 +244,7 @@
         "description": "Mint a presigned PUT for direct-to-bucket upload — rejects (409) when a sibling in the target Folder already has this name (in-Folder uniqueness), so the existing object is never overwritten"
       },
       "isEnabled": true,
-      "description": "Mint a presigned PUT URL for a direct-to-bucket content upload"
+      "description": "Verbatim presigned prepare + in-Folder uniqueness (structural storage)"
     },
     {
       "pathPattern": "/api/nodes",
@@ -249,6 +253,8 @@
       "stripPrefix": true,
       "order": 3,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff register node",
@@ -342,7 +348,7 @@
         "description": "Register an uploaded file as a node and return the shaped Node — rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)"
       },
       "isEnabled": true,
-      "description": "Finalize a direct-to-bucket upload into a handoff_nodes file record"
+      "description": "Verbatim register node + in-Folder uniqueness (structural storage)"
     },
     {
       "pathPattern": "/api/nodes",
@@ -351,6 +357,8 @@
       "stripPrefix": true,
       "order": 4,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff list nodes",
@@ -451,7 +459,7 @@
         "description": "List nodes whose parentId matches the query — gated by per-folder ACL (ADR-0002). Requires view+ on a non-root parent; children are filtered to those the viewer can access (private by default at root)."
       },
       "isEnabled": true,
-      "description": "List child nodes of a folder (default root)"
+      "description": "List nodes — a Site's url is its stored content URL (structural storage)"
     },
     {
       "pathPattern": "/api/node",
@@ -460,6 +468,8 @@
       "stripPrefix": true,
       "order": 5,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff get node",
@@ -554,7 +564,7 @@
         "description": "Return one node by id, shaped — gated by per-folder ACL (ADR-0002)."
       },
       "isEnabled": true,
-      "description": "Fetch a single node by id (?id=)"
+      "description": "Get node — a Site's url is its stored content URL (structural storage)"
     },
     {
       "pathPattern": "/api/node",
@@ -563,6 +573,8 @@
       "stripPrefix": true,
       "order": 8,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff delete node",
@@ -703,7 +715,7 @@
         "description": "Hard-delete one node by id — write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files (key mode) and a Site's assets under its content path prefix (prefix mode, trailing slash so a sibling site sharing a name-prefix is untouched); refuses a non-empty folder with 409. Client recurses for subtree delete."
       },
       "isEnabled": true,
-      "description": "Delete a single node by id (?id=) — write-gated, hard delete"
+      "description": "Delete node — files purged (key), Site assets purged by content prefix (structural storage)"
     },
     {
       "pathPattern": "/api/sign",
@@ -712,6 +724,8 @@
       "stripPrefix": true,
       "order": 6,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff sign GET",
@@ -813,6 +827,8 @@
       "stripPrefix": true,
       "order": 7,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff create folder",
@@ -864,6 +880,8 @@
       "stripPrefix": true,
       "order": 9,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff register site",
@@ -963,7 +981,7 @@
         "description": "Create a site node at its content path prefix (storage_path = owner/repo/uploads/content/<path>; url = the Entry's content URL) and return the shaped Node. No manifest — assets serve by path passthrough on the unified content endpoint (structural storage). Rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)."
       },
       "isEnabled": true,
-      "description": "Register a Site node (multi-file HTML bundle) at its content path prefix"
+      "description": "Register a Site node at its content path prefix, no manifest (structural storage)"
     },
     {
       "pathPattern": "/api/grants",
@@ -972,6 +990,8 @@
       "stripPrefix": true,
       "order": 11,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff add grant",
@@ -1108,6 +1128,8 @@
       "stripPrefix": true,
       "order": 12,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff revoke grant",
@@ -1217,6 +1239,8 @@
       "stripPrefix": true,
       "order": 13,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff list grants",
@@ -1301,6 +1325,8 @@
       "stripPrefix": true,
       "order": 14,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff mint share link",
@@ -1447,6 +1473,8 @@
       "stripPrefix": true,
       "order": 15,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff validate share link",
@@ -1499,6 +1527,8 @@
       "stripPrefix": true,
       "order": 16,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff revoke share link",
@@ -1575,6 +1605,8 @@
       "stripPrefix": true,
       "order": 17,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff list share links",
@@ -1665,6 +1697,8 @@
       "stripPrefix": true,
       "order": 18,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff claim share link",
@@ -1736,6 +1770,8 @@
       "stripPrefix": false,
       "order": 19,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "pipelineConfig": {
         "name": "Handoff raw file redirect",
@@ -1839,9 +1875,9 @@
     {
       "pathPattern": "/api/resolve/*",
       "method": "GET",
-      "targetUrl": "http://internal/pipeline",
+      "targetUrl": "pipeline",
       "stripPrefix": true,
-      "order": 30,
+      "order": 21,
       "timeout": 30000,
       "preserveHost": false,
       "forwardCookies": false,
@@ -1956,6 +1992,8 @@
       "stripPrefix": true,
       "order": 31,
       "timeout": 30000,
+      "preserveHost": false,
+      "forwardCookies": false,
       "proxyType": "pipeline",
       "isEnabled": true,
       "description": "Set a folder's inheritance mode (inheriting|restricted); owner/admin only",
