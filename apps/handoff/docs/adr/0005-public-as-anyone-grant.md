@@ -1,7 +1,8 @@
 # Publicness is a grant to an "Anyone" principal, not a visibility field
 
-**Status: proposed (2026-07-06).** Depends on the share-root work (singleton root record `R`)
-landing first; making the whole site public = granting Anyone on root.
+**Status: accepted (2026-07-07).** Re-verified against the landed share-root work (apps #181 + #182):
+the singleton root record `R` exists and grants on root ride the resolve-root pipeline, so making the
+whole site public = the ordinary grants write with `folderId: 'root'` and the Anyone principal.
 
 **Decision.** Making a [[Folder]] public means adding the [[Grant]] `(Anyone, View)` to its existing
 grants list, where **Anyone** is a reserved [[Principal]] id representing every visitor, signed in or
@@ -31,6 +32,13 @@ grants instead of short-circuiting to `none`.
   though "public pierces everything" was considered.
 - [[Share Link]]s remain the mechanism for *tokened* access to private folders (expiry, revocation);
   a public folder needs no token and its plain URLs (`/tree/…`, `/blob/…`, `/r/*`) work logged-out.
-- Anonymous visitors flow through the normal ACL evaluation as viewers holding only Anyone grants —
-  the gates' current "401 before evaluation" behavior for sessionless requests must change, and the
-  root listing shows them the per-child-filtered public subset (empty state + sign-in when none).
+- Anonymous visitors flow through the normal ACL evaluation as viewers holding only Anyone grants.
+  The merged gates already evaluate before denying (401 only when unallowed *and* credential-less),
+  so the change is confined to the embedded `evalAccess` bodies (and their `src/lib/acl.ts` mirror):
+  every viewer's grant scan also matches the Anyone principal, replacing the current
+  `no userId → 'none'` short-circuit. Root listing already allows all viewers and filters per child,
+  so anonymous public browse at root falls out of the same `evalAccess` change (empty state +
+  sign-in when nothing is public).
+- The grants write path accepts arbitrary principal ids already, so storing the Anyone grant needs no
+  new endpoint — but the write-side `merge` step must cap the Anyone principal at `View` (it would
+  otherwise happily store `edit`).
