@@ -1076,6 +1076,16 @@ export function FolderView({ folderId }: FolderViewProps) {
     ? (currentFolder?.mode ?? 'inheriting')
     : ((rawNodes?.find((n) => n.id === shareTarget?.folderId)?.mode ?? shareTarget?.mode) ?? 'inheriting')
 
+  // Feed-exclusion flag (#191), resolved LIVE from the listing like the mode
+  // above so the toggle reflects a just-written value. The page-folder target
+  // reads the current folder; a folder-row target reads its listing row.
+  const shareFolderFeedExcluded = isPageFolderShareTarget
+    ? currentFolder?.feedExcluded === true
+    : rawNodes?.find((n) => n.id === shareTarget?.folderId)?.feedExcluded === true
+  // Parent id of the shared folder — the page folder's own parent for the
+  // page/file-row target, else the page folder itself for a folder-row target.
+  const shareFolderParentId = isPageFolderShareTarget ? currentFolder?.parentId : folderId
+
   // The current Folder's verbatim content path — the prefix every File uploaded
   // here (single file OR folder import) is stored under, so relative refs resolve
   // on the unified content endpoint (structural storage). '' for a root upload.
@@ -1292,6 +1302,8 @@ export function FolderView({ folderId }: FolderViewProps) {
           isFile={shareTarget.isFile}
           parentChain={shareParentChain}
           folderMode={shareFolderMode}
+          folderFeedExcluded={shareFolderFeedExcluded}
+          parentId={shareFolderParentId}
           feedPath={shareTarget.feedPath}
           onClose={() => setShareTarget(null)}
         />

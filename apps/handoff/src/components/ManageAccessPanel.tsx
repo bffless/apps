@@ -12,9 +12,10 @@ import {
   useRevokeGrantMutation,
   useSearchDirectoryQuery,
   useSetNodeModeMutation,
+  useSetNodeFeedExcludedMutation,
 } from '../store/handoffApi'
 import { ANYONE_PRINCIPAL, hasAnyoneGrant, isEffectivelyPublic, type FolderLink } from '../lib/acl'
-import { GlobeIcon } from './icons'
+import { GlobeIcon, RssIcon } from './icons'
 
 // ---------------------------------------------------------------------------
 // Level badge
@@ -148,6 +149,70 @@ export function GeneralAccess({ folderId, parentChain, folderMode }: GeneralAcce
           onConfirm={handleConfirmCutOff}
         />
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// FeedExclusion — "Exclude from feed" surfacing toggle (#191 / ADR-0007)
+// ---------------------------------------------------------------------------
+
+export interface FeedExclusionProps {
+  folderId: string
+  /** This folder's current feed-exclusion flag. Absent is treated as false. */
+  feedExcluded?: boolean
+  /** Parent folder id, forwarded for cache invalidation of its listing. */
+  parentId?: string
+}
+
+/**
+ * FeedExclusion — an Owner/admin toggle that keeps this folder's whole subtree
+ * out of every RSS feed while leaving it fully browsable (#191 / ADR-0007). It
+ * is a surfacing flag, NOT a grant: it never touches access, so an excluded
+ * folder can still be public-and-hidden or private-and-fed.
+ *
+ * Renders nothing for viewers who can't manage the folder (grants GET 403s) —
+ * same owner/admin gate as {@link GeneralAccess}.
+ */
+export function FeedExclusion({ folderId, feedExcluded, parentId }: FeedExclusionProps) {
+  const { isLoading, isError } = useGetGrantsQuery({ folderId })
+  const [setNodeFeedExcluded, { isLoading: saving }] = useSetNodeFeedExcludedMutation()
+  const [error, setError] = useState<string | null>(null)
+
+  if (isLoading || isError) return null
+
+  const excluded = feedExcluded === true
+
+  async function handleToggle() {
+    setError(null)
+    const result = await setNodeFeedExcluded({ id: folderId, feedExcluded: !excluded, parentId })
+    if ('error' in result) setError('Failed to update feed setting. Please try again.')
+  }
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <RssIcon className={`h-4 w-4 shrink-0 ${excluded ? 'text-muted' : 'text-accent-600'}`} />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">{excluded ? 'Hidden from feed' : 'In feed'}</p>
+            <p className="truncate text-xs text-muted">
+              {excluded
+                ? 'This folder and its contents don’t appear in any RSS feed.'
+                : 'This folder’s files appear in RSS feeds.'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={handleToggle}
+          className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : excluded ? 'Show in feed' : 'Exclude from feed'}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   )
 }

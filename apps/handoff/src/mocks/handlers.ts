@@ -775,21 +775,30 @@ export const handlers = [
 
   /**
    * PATCH /api/node
-   * Body: { id, mode: 'inheriting' | 'restricted' }
-   * Response: { id, mode }
-   * Mirrors the live `node-set-mode` pipeline (Task 3): 400 on a bad/missing
-   * id or mode, or a non-folder target (root and files rejected); 403 for
-   * anyone who isn't the folder's owner or an admin (anonymous included —
-   * there is no 401 branch, matching the real rule's `denied` step).
+   * Body: { id, mode?: 'inheriting' | 'restricted', feedExcluded?: boolean }
+   * Response: { id, mode?, feedExcluded? } — echoes only the fields updated.
+   * Mirrors the live `node-set-mode` pipeline (extended for #191): 400 on a
+   * bad/missing id, a non-folder target (root and files rejected), or a body
+   * carrying neither a valid mode nor a feedExcluded boolean; 403 for anyone
+   * who isn't the folder's owner or an admin (anonymous included — there is no
+   * 401 branch, matching the real rule's `denied` step). Each field is written
+   * independently (a mode-only PATCH never touches feedExcluded and vice versa)
+   * so field-disjoint writes don't clobber each other.
    */
   http.patch('/api/node', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { id?: string; mode?: string }
+    const body = (await request.json().catch(() => ({}))) as {
+      id?: string
+      mode?: string
+      feedExcluded?: unknown
+    }
     const id = String(body.id ?? '')
     const mode: 'inheriting' | 'restricted' | '' =
       body.mode === 'restricted' ? 'restricted' : body.mode === 'inheriting' ? 'inheriting' : ''
+    const hasFeedExcluded = typeof body.feedExcluded === 'boolean'
+    const feedExcluded = body.feedExcluded === true
     const node = id ? nodes.get(id) : undefined
     const isFolder = !!node && node.type === 'folder'
-    const badRequest = !id || !mode || !isFolder
+    const badRequest = !id || (!mode && !hasFeedExcluded) || !isFolder
 
     if (badRequest) {
       return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
@@ -803,9 +812,19 @@ export const handlers = [
       return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
     }
 
-    if (acl) acl.mode = mode
-    nodes.set(id, { ...node!, mode })
-    return HttpResponse.json({ id, mode })
+    let updated = { ...node! }
+    const resp: { id: string; mode?: string; feedExcluded?: boolean } = { id }
+    if (mode) {
+      if (acl) acl.mode = mode
+      updated = { ...updated, mode }
+      resp.mode = mode
+    }
+    if (hasFeedExcluded) {
+      updated = { ...updated, feedExcluded }
+      resp.feedExcluded = feedExcluded
+    }
+    nodes.set(id, updated)
+    return HttpResponse.json(resp)
   }),
 
   /**

@@ -166,6 +166,37 @@ describe('select step — flatten + Anyone gate + render', () => {
     expect(xml).not.toContain('hidden.txt')
   })
 
+  it('drops a feedExcluded folder subtree from an ancestor feed, keeping siblings (#191)', () => {
+    // assets/ under the public folder is feed-excluded — its image must not
+    // surface, even nested — while PUB's own files stay.
+    const ASSETS = { id: 'a5555555-0000-4000-8000-0000000000e1', nodeType: 'folder', displayName: 'assets', parentId: PUB.id, ownerId: 'owner-1', mode: 'inheriting', grantsJson: '[]', feedExcluded: true }
+    const IMG = { id: 'a5555555-0000-4000-8000-0000000000e2', nodeType: 'file', displayName: 'pic.png', parentId: ASSETS.id, content_type: 'image/png', size: 5, createdMs: 500 }
+    const DEEP = { id: 'a5555555-0000-4000-8000-0000000000e3', nodeType: 'folder', displayName: 'deep', parentId: ASSETS.id, ownerId: 'owner-1', mode: 'inheriting', grantsJson: '[]' }
+    const NESTED = { id: 'a5555555-0000-4000-8000-0000000000e4', nodeType: 'file', displayName: 'nested.png', parentId: DEEP.id, content_type: 'image/png', size: 6, createdMs: 600 }
+    const xml: string = runSelect(['Public'], { nodes: [ROOT, PUB, F1, ASSETS, IMG, DEEP, NESTED] }).xml
+    // PUB's own leaf stays; the excluded subtree (direct + nested) is gone.
+    expect(xml).toContain(`<guid isPermaLink="false">${F1.id}</guid>`)
+    expect(xml).not.toContain(IMG.id)
+    expect(xml).not.toContain(NESTED.id)
+  })
+
+  it('unmarking feedExcluded restores the subtree (#191)', () => {
+    const ASSETS = { id: 'a5555555-0000-4000-8000-0000000000f5', nodeType: 'folder', displayName: 'assets', parentId: PUB.id, ownerId: 'owner-1', mode: 'inheriting', grantsJson: '[]', feedExcluded: false }
+    const IMG = { id: 'a5555555-0000-4000-8000-0000000000f6', nodeType: 'file', displayName: 'pic.png', parentId: ASSETS.id, content_type: 'image/png', size: 5, createdMs: 500 }
+    const xml: string = runSelect(['Public'], { nodes: [ROOT, PUB, ASSETS, IMG] }).xml
+    expect(xml).toContain(`<guid isPermaLink="false">${IMG.id}</guid>`)
+  })
+
+  it('an excluded folder’s OWN feed surfaces nothing but stays browsable (#191)', () => {
+    const ASSETS = { id: 'a5555555-0000-4000-8000-0000000000a7', nodeType: 'folder', displayName: 'assets', parentId: PUB.id, ownerId: 'owner-1', mode: 'inheriting', grantsJson: JSON.stringify([{ principalId: 'anyone', level: 'view' }]), feedExcluded: true }
+    const IMG = { id: 'a5555555-0000-4000-8000-0000000000a8', nodeType: 'file', displayName: 'pic.png', parentId: ASSETS.id, content_type: 'image/png', size: 5, createdMs: 500 }
+    const out = runSelect(['Public', 'assets'], { nodes: [ROOT, PUB, ASSETS, IMG] })
+    // Resolves + is public (found), but its excluded subtree yields no items.
+    expect(out.found).toBe(true)
+    expect(out.xml).not.toContain(IMG.id)
+    expect(out.xml).not.toContain('<item>')
+  })
+
   it('gives File items an enclosure (mime + length) and XML-escapes names; Site items get none', () => {
     const xml: string = runSelect(['Public']).xml
     expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/r/${F2.id}/b-c.txt" type="text/plain" length="200"/>`)

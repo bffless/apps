@@ -16,6 +16,7 @@ import {
   setMockGrants,
   setMockUser,
   nodeAcl,
+  nodes,
   ROOT_RECORD_ID,
 } from '../mocks/handlers'
 import { ANYONE_PRINCIPAL } from '../lib/acl'
@@ -97,5 +98,46 @@ describe('setNodeMode', () => {
     const err = (res as { error: { status?: number } }).error
     expect(err.status).toBe(403)
     expect(nodeAcl.get(folder.id)?.mode).toBe('inheriting')
+  })
+})
+
+describe('setNodeFeedExcluded (#191)', () => {
+  it('writes the feedExcluded flag on a folder for its owner', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    const store = makeStore()
+    const res = await store
+      .dispatch(handoffApi.endpoints.setNodeFeedExcluded.initiate({ id: folder.id, feedExcluded: true }))
+      .unwrap()
+    expect(res).toEqual({ id: folder.id, feedExcluded: true })
+    expect(nodes.get(folder.id)?.feedExcluded).toBe(true)
+  })
+
+  it('sequential mode + feedExcluded writes on the same node do not clobber (#194)', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    const store = makeStore()
+    // Sequenced on purpose — never Promise.all a same-node pair (CE data_update
+    // is a whole-record read-modify-write). Both disjoint fields must survive.
+    await store.dispatch(handoffApi.endpoints.setNodeMode.initiate({ id: folder.id, mode: 'restricted' })).unwrap()
+    await store
+      .dispatch(handoffApi.endpoints.setNodeFeedExcluded.initiate({ id: folder.id, feedExcluded: true }))
+      .unwrap()
+    expect(nodeAcl.get(folder.id)?.mode).toBe('restricted')
+    expect(nodes.get(folder.id)?.feedExcluded).toBe(true)
+  })
+
+  it('rejects with 403 for a non-owner', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+
+    setMockUser(OTHER)
+    const store = makeStore()
+    const res = await store.dispatch(
+      handoffApi.endpoints.setNodeFeedExcluded.initiate({ id: folder.id, feedExcluded: true }),
+    )
+    expect('error' in res).toBe(true)
+    expect((res as { error: { status?: number } }).error.status).toBe(403)
+    expect(nodes.get(folder.id)?.feedExcluded).toBeFalsy()
   })
 })
