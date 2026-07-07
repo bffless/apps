@@ -10,7 +10,7 @@ export type AccessLevel = 'none' | 'view' | 'edit' | 'owner'
 
 export interface Grant {
   principalId: string
-  principalEmail?: string
+  principalEmail?: string | null
   level: 'view' | 'edit'
 }
 
