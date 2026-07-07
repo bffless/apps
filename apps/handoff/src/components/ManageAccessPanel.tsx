@@ -94,13 +94,22 @@ export function GeneralAccess({ folderId, parentChain, folderMode }: GeneralAcce
 
   async function handleConfirmCutOff() {
     setToggleError(null)
-    const results = await Promise.all([
-      setNodeMode({ id: folderId, mode: 'restricted' }),
-      ...(ownAnyone ? [revokeGrant({ folderId, principalId: ANYONE_PRINCIPAL })] : []),
-    ])
-    if (results.some((r) => 'error' in r)) {
+    // Sequential on purpose: CE's data_update is a whole-record read-modify-write
+    // ({...existingData, ...updates}), so two concurrent updates to the same
+    // record clobber each other's fields — a parallel revoke erased the mode
+    // change in live testing (bffless/ce data-update.handler). Mode first; the
+    // revoke only fires once the restrict has landed.
+    const modeResult = await setNodeMode({ id: folderId, mode: 'restricted' })
+    if ('error' in modeResult) {
       setToggleError('Failed to update general access. Please try again.')
       return
+    }
+    if (ownAnyone) {
+      const revokeResult = await revokeGrant({ folderId, principalId: ANYONE_PRINCIPAL })
+      if ('error' in revokeResult) {
+        setToggleError('Failed to update general access. Please try again.')
+        return
+      }
     }
     setConfirmOpen(false)
   }
