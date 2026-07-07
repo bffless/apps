@@ -6,9 +6,11 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { PeopleAccess } from './ManageAccessPanel'
+import { PeopleAccess, GeneralAccess } from './ManageAccessPanel'
 import { ShareLinksSection } from './ShareLinksSection'
 import { XIcon, ShareIcon } from './icons'
+import { useGetGrantsQuery } from '../store/handoffApi'
+import { hasAnyoneGrant } from '../lib/acl'
 
 export interface ShareDialogProps {
   folderId: string
@@ -23,6 +25,10 @@ export interface ShareDialogProps {
 
 export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
+
+  // RTK Query dedupes this with GeneralAccess/PeopleAccess's identical query.
+  const { data: grantsData } = useGetGrantsQuery({ folderId })
+  const isPublic = hasAnyoneGrant(grantsData?.grants ?? [])
 
   useEffect(() => {
     const dlg = ref.current
@@ -68,8 +74,9 @@ export function ShareDialog({ folderId, title, nodeId, isFile, onClose }: ShareD
       </div>
 
       <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+        <GeneralAccess folderId={folderId} />
         <PeopleAccess folderId={folderId} />
-        <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} />
+        <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} isPublic={isPublic} />
       </div>
     </dialog>
   )

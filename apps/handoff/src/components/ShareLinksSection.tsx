@@ -30,9 +30,11 @@ export interface ShareLinksSectionProps {
   nodeId?: string
   /** Optional file name; when set, appends a vanity slug segment to file-direct URLs. */
   fileName?: string
+  /** When true, renders a note that links are redundant while the folder is public. */
+  isPublic?: boolean
 }
 
-export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileName }: ShareLinksSectionProps) {
+export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileName, isPublic }: ShareLinksSectionProps) {
   const { data: links, isLoading: loadingLinks } = useListShareLinksQuery({ folderId })
   const [mintShareLink, { isLoading: minting }] = useMintShareLinkMutation()
   const [revokeShareLink, { isLoading: revoking }] = useRevokeShareLinkMutation()
@@ -93,6 +95,12 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileNam
 
   return (
     <div className={topDivider ? 'mt-5 border-t border-border pt-5' : ''}>
+      {isPublic && (
+        <p className="mb-3 rounded-lg bg-accent-bg px-3 py-2 text-xs text-accent-700">
+          This folder is public — anyone can view it without a link. Share links keep working and matter
+          again if you make it private.
+        </p>
+      )}
       <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">Share link</p>
       <p className="mb-3 text-xs text-muted">
         {nodeId

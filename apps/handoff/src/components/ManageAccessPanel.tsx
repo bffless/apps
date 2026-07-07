@@ -12,6 +12,7 @@ import {
   useRevokeGrantMutation,
   useSearchDirectoryQuery,
 } from '../store/handoffApi'
+import { ANYONE_PRINCIPAL, hasAnyoneGrant } from '../lib/acl'
 
 // ---------------------------------------------------------------------------
 // Level badge
@@ -26,6 +27,74 @@ function LevelBadge({ level }: { level: 'view' | 'edit' }) {
     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {level === 'edit' ? 'Can edit' : 'Can view'}
     </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// GeneralAccess — Public/Private switch
+// ---------------------------------------------------------------------------
+
+function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a13.5 13.5 0 010 18M12 3a13.5 13.5 0 000 18" />
+    </svg>
+  )
+}
+
+/**
+ * GeneralAccess — the folder's Public/Private switch (ADR-0005). "Public" is
+ * the (Anyone, View) grant on this folder; making it private revokes it.
+ * Renders nothing for viewers who can't manage access (grants GET 403s).
+ */
+export function GeneralAccess({ folderId }: { folderId: string }) {
+  const { data, isLoading, isError } = useGetGrantsQuery({ folderId })
+  const [addGrant, { isLoading: saving }] = useAddGrantMutation()
+  const [revokeGrant, { isLoading: reverting }] = useRevokeGrantMutation()
+  const [toggleError, setToggleError] = useState<string | null>(null)
+
+  if (isLoading || isError) return null
+
+  const isPublic = hasAnyoneGrant(data?.grants ?? [])
+  const busy = saving || reverting
+
+  async function handleToggle() {
+    setToggleError(null)
+    const result = isPublic
+      ? await revokeGrant({ folderId, principalId: ANYONE_PRINCIPAL })
+      : await addGrant({ folderId, principalId: ANYONE_PRINCIPAL, level: 'view' })
+    if ('error' in result) {
+      setToggleError('Failed to update general access. Please try again.')
+    }
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">General access</p>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <GlobeIcon className={`h-4 w-4 shrink-0 ${isPublic ? 'text-accent-600' : 'text-muted'}`} />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">{isPublic ? 'Public' : 'Private'}</p>
+            <p className="truncate text-xs text-muted">
+              {isPublic
+                ? 'Anyone on the internet can view this folder.'
+                : 'Only people with access can view this folder.'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={handleToggle}
+          className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : isPublic ? 'Make private' : 'Make public'}
+        </button>
+      </div>
+      {toggleError && <p className="mt-1 text-xs text-danger">{toggleError}</p>}
+    </div>
   )
 }
 
@@ -143,7 +212,7 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
   const [revoking, setRevoking] = useState<string | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
 
-  const grants = data?.grants ?? []
+  const grants = (data?.grants ?? []).filter((g) => g.principalId !== ANYONE_PRINCIPAL)
 
   const accessErrorStatus = isError ? (error as { status?: number }).status : undefined
   const accessError =
