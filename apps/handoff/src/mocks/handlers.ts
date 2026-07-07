@@ -16,7 +16,7 @@
 import { http, HttpResponse } from 'msw'
 import { toNode } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
-import { evaluateAccess } from '../lib/acl'
+import { evaluateAccess, ANYONE_PRINCIPAL } from '../lib/acl'
 import type { AccessLevel, Grant, FolderLink } from '../lib/acl'
 import { pathFromPathname } from '../lib/pathUrl'
 
@@ -277,9 +277,10 @@ function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '40
     return levelRank(level) >= levelRank(minLevel) ? 'ok' : '403'
   }
 
-  // Normal user path.
-  if (!mockCurrentUser) return '401'
-
+  // Normal user path — guests included (Task 6). Guests reach evaluation
+  // instead of being blanket-401'd here, mirroring the real gates: a guest
+  // is denied with no credential (401), while a signed-in user with an
+  // insufficient level is denied with a credential (403).
   const acl = nodeAcl.get(nodeId)
   if (!acl) return 'ok' // no ACL record = open (root or file)
 
@@ -291,13 +292,13 @@ function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '40
     folderChain = [{ id: nodeId, ownerId: acl.ownerId, grants: acl.grants, mode: acl.mode }]
   }
 
-  const viewer = {
-    userId: mockCurrentUser.id,
-    isAdmin: mockCurrentUser.role === 'admin',
-  }
+  const viewer = mockCurrentUser
+    ? { userId: mockCurrentUser.id, isAdmin: mockCurrentUser.role === 'admin' }
+    : {}
 
   const level = evaluateAccess({ folderChain, viewer })
-  return levelRank(level) >= levelRank(minLevel) ? 'ok' : '403'
+  if (levelRank(level) >= levelRank(minLevel)) return 'ok'
+  return mockCurrentUser ? '403' : '401'
 }
 
 // ---------------------------------------------------------------------------
@@ -443,10 +444,11 @@ export const handlers = [
       if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
     }
     const existing = grants.get(folderId) ?? []
+    const isAnyone = body.principalId === ANYONE_PRINCIPAL
     const newGrant: Grant = {
       principalId: body.principalId ?? '',
-      principalEmail: body.principalEmail,
-      level: body.level ?? 'view',
+      principalEmail: isAnyone ? null : (body.principalEmail ?? null),
+      level: isAnyone ? 'view' : (body.level ?? 'view'),
     }
     // Replace if already exists, otherwise append
     const updated = [
@@ -637,21 +639,25 @@ export const handlers = [
   http.get('/api/nodes', ({ request }) => {
     const parentId = new URL(request.url).searchParams.get('parentId') ?? 'root'
 
-    // ACL check on the parentId folder (skip for root)
+    // ACL check on the parentId folder (skip for root). Guests reach
+    // evaluation now (Task 6) — mirrors the real gates.
     if (parentId !== 'root') {
       const access = checkAccess(parentId)
       if (access === '401') return new HttpResponse(null, { status: 401 })
       if (access === '403') return new HttpResponse(null, { status: 403 })
-    } else {
-      // root requires auth (share-link viewers are never at root)
-      if (!mockCurrentUser && mockShareLinkFolderId === null) return new HttpResponse(null, { status: 401 })
-      // Share-link viewers trying to list root → 403 (out of scope)
-      if (mockShareLinkFolderId !== null) return new HttpResponse(null, { status: 403 })
+    } else if (mockShareLinkFolderId !== null && !mockCurrentUser) {
+      // Share-link viewers are folder-scoped; root stays out of scope.
+      return new HttpResponse(null, { status: 403 })
     }
 
     const filtered = [...nodes.values()].filter((n) => n.parentId === parentId)
+    // Guests see only children they can access (mirrors the real shape filter).
+    const visible =
+      !mockCurrentUser && parentId === 'root'
+        ? filtered.filter((n) => checkAccess(n.id) === 'ok')
+        : filtered
     // Attach ACL fields + server-computed path to each node in response
-    const withAcl = filtered.map((n) => {
+    const withAcl = visible.map((n) => {
       const acl = nodeAcl.get(n.id)
       return {
         ...n,
@@ -670,8 +676,7 @@ export const handlers = [
    * Enforces ACL (supports share-link viewer context).
    */
   http.get('/api/node', ({ request }) => {
-    // Allow share-link viewers (no user required)
-    if (!mockCurrentUser && mockShareLinkFolderId === null) return new HttpResponse(null, { status: 401 })
+    // Guests reach evaluation now (Task 6) — evaluateAccess handles them.
     const id = new URL(request.url).searchParams.get('id') ?? ''
     const access = checkAccess(id)
     if (access === '401') return new HttpResponse(null, { status: 401 })

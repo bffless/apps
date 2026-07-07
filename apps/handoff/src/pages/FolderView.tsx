@@ -53,6 +53,7 @@ import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
 import { Menu } from '../components/Menu'
+import { EmptyState } from '../components/EmptyState'
 import {
   NodeIcon,
   ChevronRightIcon,
@@ -858,7 +859,7 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
 
-  const { session } = useSession()
+  const { session, loading: sessionLoading } = useSession()
 
   // Share-mode is for guests only — an authenticated user is always evaluated by
   // their real identity, even if a stale shareLinkFolderId lingers in localStorage.
@@ -1301,7 +1302,11 @@ export function FolderView({ folderId }: FolderViewProps) {
         <EmptyState
           canWrite={canWrite}
           isRoot={folderId === 'root'}
+          signedOut={!sessionLoading && !session?.authenticated}
           onNew={() => filesInputRef.current?.click()}
+          onSignIn={() => {
+            window.location.href = adminLoginUrl(window.location.href)
+          }}
         />
       )}
 
@@ -1369,46 +1374,6 @@ export function FolderView({ folderId }: FolderViewProps) {
             </tbody>
           </table>
         </div>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Empty state — teaches the interface; primary CTA when the viewer can write.
-// ---------------------------------------------------------------------------
-
-function EmptyState({
-  canWrite,
-  isRoot,
-  onNew,
-}: {
-  canWrite: boolean
-  isRoot: boolean
-  onNew: () => void
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-16 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-bg text-accent-600">
-        <UploadIcon className="h-7 w-7" />
-      </div>
-      <h2 className="text-base font-semibold text-ink">
-        {isRoot ? 'Nothing here yet' : 'This folder is empty'}
-      </h2>
-      <p className="mt-1 max-w-sm text-sm text-muted">
-        {canWrite
-          ? 'Drag files or a folder anywhere on this page, or use New to upload content and create sub-folders.'
-          : 'There’s nothing to see in this folder yet.'}
-      </p>
-      {canWrite && (
-        <button
-          type="button"
-          onClick={onNew}
-          className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-700"
-        >
-          <UploadIcon className="h-4 w-4" />
-          Upload files
-        </button>
       )}
     </div>
   )
