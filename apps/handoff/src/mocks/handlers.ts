@@ -373,6 +373,57 @@ export function seedFile(name: string, parentId: string): HandoffNode {
   return node
 }
 
+/**
+ * Test seam: create a site node directly in mock state (mirrors a served Site
+ * upload). Unlike `seedFile`, a site carries a `url` (its served entry) so the
+ * viewer renders the site iframe rather than the "preview unavailable" card.
+ */
+export function seedSite(name: string, parentId: string): HandoffNode {
+  const id = String(++nodeCounter)
+  const ownerId = mockCurrentUser?.id ?? null
+  const raw = {
+    id,
+    type: 'site',
+    name,
+    mime: null,
+    size: null,
+    url: `/api/uploads/content/site-${id}/index.html`,
+    storageKey: `site-${id}`,
+    parentId,
+    createdAt: Date.now(),
+    ownerId,
+    grants: [],
+    mode: 'inheriting' as const,
+  }
+  const node = toNode(raw)
+  nodes.set(id, node)
+  nodeAcl.set(id, { ownerId, grants: [], mode: 'inheriting' })
+  return node
+}
+
+/**
+ * Test seam: mint a share link for `folderId` directly in mock state (mirrors
+ * POST /api/share-links, without the owner-auth round-trip). Returns the link
+ * so a test can hand its `token` to a `/blob/<path>?token=` render.
+ */
+export function seedShareLink(
+  folderId: string,
+  opts: { revoked?: boolean; expiresAt?: number | null } = {},
+): MockShareLink {
+  const token = `mock-token-${++tokenCounter}`
+  const link: MockShareLink = {
+    token,
+    folderId,
+    expiresAt: opts.expiresAt ?? null,
+    revoked: opts.revoked ?? false,
+    url: `/s/${token}`,
+    createdAt: Date.now(),
+    creatorId: mockCurrentUser?.id ?? 'user-owner',
+  }
+  shareLinks.set(token, link)
+  return link
+}
+
 const MOCK_BUCKET_PREFIX = '/__mock_bucket'
 
 function mockUploadUrl(storageKey: string): string {
@@ -1012,8 +1063,12 @@ export const handlers = [
    * Body: { token }
    * Response: { valid: boolean, folderId: string | null }
    * PUBLIC — validates the token and (in production) sets a signed, folder-scoped
-   * hf_s view cookie the ACL gate accepts. The mock returns the same shape so the
-   * share-link entry flow works offline; cookie-setting is a no-op under MSW.
+   * hf_s view cookie the ACL gate accepts. There is no cookie jar under MSW, so
+   * the mock mirrors that Set-Cookie by setting the in-memory share-link viewer
+   * context (`mockShareLinkFolderId`) on a valid claim — subsequent gated calls
+   * (resolve, node) in the same test then see the granted scope, exactly as a
+   * real guest's follow-up requests would carry the cookie. Reset between tests
+   * by `resetMockState`. An invalid claim leaves the context untouched.
    */
   http.post('/api/share-links/claim', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { token?: string }
@@ -1025,6 +1080,7 @@ export const handlers = [
     if (link.expiresAt !== null && link.expiresAt < Date.now()) {
       return HttpResponse.json({ valid: false, folderId: null })
     }
+    mockShareLinkFolderId = link.folderId
     return HttpResponse.json({ valid: true, folderId: link.folderId })
   }),
 ] as const
