@@ -109,6 +109,10 @@ export function LegacyFolderRedirect() {
   const { id } = useParams<{ id: string }>()
   const { data: node, isLoading } = useGetNodeQuery(id ?? '', { skip: !id })
   if (!id) return <Navigate to="/" replace />
+  // The singleton root record (a root-share guest's /folder/<R-uuid> link)
+  // has no content path — it isn't a structural-storage node — so it never
+  // matches the path branch below. Its canonical URL is the app root.
+  if (node?.type === 'root') return <Navigate to="/" replace />
   if (node?.path != null) return <Navigate to={treeUrl(node.path)} replace />
   if (!isLoading && node === null) {
     return (

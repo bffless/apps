@@ -64,6 +64,13 @@ describe('URL builders', () => {
     expect(nodeUrl({ type: 'file', path: '', id: 'n2' })).toBe('/view/n2')
   })
 
+  it('nodeUrl routes a root-type node to the app root, regardless of path', () => {
+    expect(nodeUrl({ type: 'root', path: null, id: 'R' })).toBe('/')
+    // Even if a root node somehow carried a path, root still wins — there is
+    // no /tree/ URL for the singleton root record.
+    expect(nodeUrl({ type: 'root', path: 'whatever', id: 'R' })).toBe('/')
+  })
+
   it('crumbPathAt joins names after the synthetic root crumb', () => {
     const crumbs = [{ name: '~/' }, { name: 'Test' }, { name: 'Sub Folder' }]
     expect(crumbPathAt(crumbs, 0)).toBe('')

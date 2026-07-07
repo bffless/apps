@@ -120,16 +120,17 @@ describe('a root-scoped guest browses nested content', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 2b. A root-scoped guest sees a TOP-LEVEL file (parentId:'root') — Fix #1/#2
+// 2b. A root-scoped guest sees a TOP-LEVEL file (parentId:'root')
 // ---------------------------------------------------------------------------
 //
 // The headline case the whole feature is named for: a file uploaded to the
-// DEFAULT location sits directly in "My Files" (parentId === 'root'). The real
-// gate builds its chain via folderChain(...,node.parentId) === folderChain(...,'root'),
-// which used to return [] (UUID.test('root') fails) so R was never injected and
-// the top-level file was DENIED. Fix #1 seeds that walk at R so the chain is
-// [R, file] — converging with this mock (buildAncestorIds already resolved the
-// node's own parentId==='root' to R). This e2e is the regression guard.
+// DEFAULT location sits directly in "My Files" (parentId === 'root'). This
+// mock resolves that top-level parent to R in parallel with the live pipeline
+// (buildAncestorIds here, folderChain(...) there) and runs the same
+// evaluateAccess, so it exercises the guest-scoped-to-R access decision
+// end-to-end. It does NOT guard the live gate's `UUID.test('root')` regression
+// — the mock never had that bug — that guard is the regex assertions in
+// `src/lib/shareRootRules.test.ts`.
 
 describe('a root-scoped guest browses TOP-LEVEL content', () => {
   it('a guest scoped to R can getNode a top-level file (parentId root)', async () => {

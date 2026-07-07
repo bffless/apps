@@ -64,6 +64,10 @@ export function parentPath(path: string): string {
  * links never break during rollout.
  */
 export function nodeUrl(node: { type: string; path: string | null; id: string }): string {
+  // The singleton root record's canonical app URL is the root path itself —
+  // it has no content path of its own (top-level nodes are parented to the
+  // 'root' sentinel, not to this record's id).
+  if (node.type === 'root') return '/'
   if (node.type === 'folder') {
     return node.path != null ? treeUrl(node.path) : `/folder/${node.id}`
   }

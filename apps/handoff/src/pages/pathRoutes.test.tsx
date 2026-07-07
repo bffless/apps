@@ -14,7 +14,14 @@ import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { handlers, resetMockState, seedFolder, seedFile, mockCurrentUser } from '../mocks/handlers'
+import {
+  handlers,
+  resetMockState,
+  seedFolder,
+  seedFile,
+  mockCurrentUser,
+  ROOT_RECORD_ID,
+} from '../mocks/handlers'
 import { handoffApi } from '../store/handoffApi'
 import handoffReducer from '../store/handoffSlice'
 import { TreePage, BlobPage, LegacyFolderRedirect, LegacyViewRedirect } from './PathPages'
@@ -133,6 +140,17 @@ describe('path routes', () => {
     renderAt('/folder/' + b.id)
 
     await waitFor(() => expect(lastPath).toBe('/tree/Test/Sub%20Folder'))
+  })
+
+  it('redirects the legacy /folder/:id URL to / when the id is the root record', async () => {
+    // ShareLinkEntry sends a root-share guest to /folder/<R-uuid>. R has no
+    // `path` (it isn't a structural-storage node), so before this fix it fell
+    // through to <FolderView folderId={R-uuid} /> — an empty listing, since
+    // top-level nodes are parented to the string 'root', not R's id.
+    renderAt('/folder/' + ROOT_RECORD_ID)
+
+    await waitFor(() => expect(lastPath).toBe('/'))
+    expect(await screen.findByText('HOME')).toBeInTheDocument()
   })
 
   it('redirects the legacy /view/:id URL to the canonical /blob URL', async () => {
