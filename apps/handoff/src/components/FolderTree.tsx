@@ -10,9 +10,10 @@
 import { useState, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { useListNodesQuery, useGetNodeQuery } from '../store/handoffApi'
+import { useListNodesQuery, useGetNodeQuery, useGetRootMetaQuery } from '../store/handoffApi'
 import { useSession } from '../lib/session'
-import { inShareMode } from '../lib/acl'
+import { inShareMode, hasAnyoneGrant } from '../lib/acl'
+import type { Grant } from '../lib/acl'
 import { nodeUrl, pathFromPathname } from '../lib/pathUrl'
 import { FolderIcon, ChevronRightIcon } from './icons'
 import type { RootState } from '../store'
@@ -34,13 +35,33 @@ interface TreeFolderProps {
   currentPath: string | null
   /** Root link target differs (root → "/"). */
   rootId: string
+  /** This folder's own ACL grants (empty for the synthetic real-root node). */
+  grants: Grant[]
+  mode: 'inheriting' | 'restricted'
+  /** Whether this folder's parent is effectively public — seeded from `rootMeta?.public` at the tree root. */
+  parentPublic: boolean
 }
 
-function TreeFolder({ id, name, path, depth, expanded, toggle, currentPath, rootId }: TreeFolderProps) {
+function TreeFolder({
+  id,
+  name,
+  path,
+  depth,
+  expanded,
+  toggle,
+  currentPath,
+  rootId,
+  grants,
+  mode,
+  parentPublic,
+}: TreeFolderProps) {
   const isOpen = expanded.has(id)
   const { data: children, isFetching } = useListNodesQuery({ parentId: id }, { skip: !isOpen })
   const folders = (children ?? []).filter((n) => n.type === 'folder')
   const isCurrent = path != null && path === currentPath
+  // A folder is public when its parent is public and it doesn't opt out via
+  // 'restricted' mode, OR it carries its own Anyone grant regardless of parent.
+  const isPublic = (parentPublic && mode !== 'restricted') || hasAnyoneGrant(grants ?? [])
   // Show a caret if we haven't loaded yet (might have children) or we have some.
   const showCaret = !isOpen || folders.length > 0
   const to = id === rootId && rootId === 'root' ? '/' : nodeUrl({ type: 'folder', path, id })
@@ -70,7 +91,9 @@ function TreeFolder({ id, name, path, depth, expanded, toggle, currentPath, root
             isCurrent ? 'font-medium' : ''
           }`}
         >
-          <FolderIcon className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-accent-600' : 'text-folder'}`} />
+          <FolderIcon
+            className={`h-4 w-4 shrink-0 ${isCurrent || isPublic ? 'text-accent-600' : 'text-folder'}`}
+          />
           <span className="truncate">{name}</span>
         </Link>
       </div>
@@ -92,6 +115,9 @@ function TreeFolder({ id, name, path, depth, expanded, toggle, currentPath, root
               toggle={toggle}
               currentPath={currentPath}
               rootId={rootId}
+              grants={f.grants ?? []}
+              mode={f.mode}
+              parentPublic={isPublic}
             />
           ))}
           {!isFetching && folders.length === 0 && (
@@ -123,6 +149,10 @@ export function FolderTree() {
   const { data: sharedRoot } = useGetNodeQuery(rootId, { skip: rootId === 'root' })
   const rootName = rootId === 'root' ? '~/' : (sharedRoot?.name ?? 'Shared folder')
 
+  // Effective-public seed for the tree — the real root's own publicness comes
+  // from the Anyone grant on the singleton root record.
+  const { data: rootMeta } = useGetRootMetaQuery()
+
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([rootId]))
   const toggle = useCallback((id: string) => {
     setExpanded((prev) => {
@@ -146,6 +176,9 @@ export function FolderTree() {
           toggle={toggle}
           currentPath={currentPath}
           rootId={rootId}
+          grants={rootId === 'root' ? [] : (sharedRoot?.grants ?? [])}
+          mode={rootId === 'root' ? 'inheriting' : (sharedRoot?.mode ?? 'inheriting')}
+          parentPublic={rootMeta?.public ?? false}
         />
       </ul>
     </nav>

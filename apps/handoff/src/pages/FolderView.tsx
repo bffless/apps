@@ -25,6 +25,7 @@ import {
   handoffApi,
   useListNodesQuery,
   useGetNodeQuery,
+  useGetRootMetaQuery,
   useUploadFileMutation,
   useUploadSiteMutation,
   useImportFolderMutation,
@@ -48,7 +49,8 @@ import {
 import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { useSession, adminLoginUrl } from '../lib/session'
-import { evaluateAccess, inShareMode } from '../lib/acl'
+import { evaluateAccess, inShareMode, isEffectivelyPublic, childIsPublic } from '../lib/acl'
+import { rootMetaNode } from '../lib/rootNode'
 import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
@@ -70,8 +72,10 @@ import {
   SearchIcon,
   TrashIcon,
   XIcon,
+  GlobeIcon,
 } from '../components/icons'
 import type { HandoffNode } from '../lib/nodes'
+import type { FolderLink } from '../lib/acl'
 import type { Crumb } from '../lib/tree'
 import type { RootState, AppDispatch } from '../store'
 
@@ -738,6 +742,7 @@ function RowKebab({
 
 function ListingRow({
   node,
+  folderChain,
   canManage,
   copyState,
   onCopyLink,
@@ -745,6 +750,7 @@ function ListingRow({
   onDelete,
 }: {
   node: HandoffNode
+  folderChain: FolderLink[]
   canManage: boolean
   copyState: 'idle' | 'busy' | 'copied' | 'error'
   onCopyLink: () => void
@@ -752,8 +758,17 @@ function ListingRow({
   onDelete?: () => void
 }) {
   const to = nodeUrl(node)
+  // Only folder rows carry an effective-public tint — files/sites keep their
+  // existing type color (childIsPublic is meaningless for a non-folder leaf).
+  const isFolderPublic = node.type === 'folder' && childIsPublic(folderChain, node)
   const iconColor =
-    node.type === 'folder' ? 'text-folder' : node.type === 'site' ? 'text-site' : 'text-file'
+    node.type === 'folder'
+      ? isFolderPublic
+        ? 'text-accent-600'
+        : 'text-folder'
+      : node.type === 'site'
+        ? 'text-site'
+        : 'text-file'
 
   return (
     <tr className="group border-b border-border/60 transition-colors last:border-0 hover:bg-accent-bg/60">
@@ -763,7 +778,10 @@ function ListingRow({
           className="flex items-center gap-3 px-3 py-2.5 no-underline"
           aria-label={`Open ${node.name}`}
         >
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 ${iconColor}`}>
+          <span
+            data-testid={`row-icon-${node.id}`}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 ${iconColor}`}
+          >
             <NodeIcon type={node.type} name={node.name} mime={node.mime} className="h-5 w-5" />
           </span>
           <span className="min-w-0 flex-1">
@@ -856,6 +874,8 @@ export function FolderView({ folderId }: FolderViewProps) {
   )
 
   const { data: currentFolder } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
+  const { data: rootMeta } = useGetRootMetaQuery()
+  const rootNode = rootMetaNode(rootMeta)
 
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
 
@@ -868,7 +888,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   const { chain: folderChain } = buildAncestorFolderChain(
     ancestorNodesById,
     folderId,
-    null,
+    rootNode,
     isShareMode ? (shareLinkFolderId ?? undefined) : undefined,
   )
   const chainReady = folderId === 'root' || ancestorChainComplete
@@ -944,7 +964,28 @@ export function FolderView({ folderId }: FolderViewProps) {
     return 'idle'
   }
 
-  const isPrivate = (currentFolder?.grants ?? []).length === 0 && canManage
+  // Effective Public/Private badge — truthful for every viewer (not just
+  // managers), once the ancestor chain has fully resolved. buildAncestorFolderChain
+  // already includes the current folder's own FolderLink when its node is
+  // present in the ancestor map (e.g. reached via Breadcrumb navigation), so
+  // only append it here when the chain tail isn't already this folder — avoids
+  // double-appending and double-counting its grants.
+  const chainTail = folderChain[folderChain.length - 1]
+  const isPublicHere =
+    chainReady &&
+    isEffectivelyPublic(
+      currentFolder && chainTail?.id !== currentFolder.id
+        ? [
+            ...folderChain,
+            {
+              id: currentFolder.id,
+              ownerId: currentFolder.ownerId,
+              grants: currentFolder.grants,
+              mode: currentFolder.mode,
+            },
+          ]
+        : folderChain,
+    )
 
   // The current Folder's verbatim content path — the prefix every File uploaded
   // here (single file OR folder import) is stored under, so relative refs resolve
@@ -1098,11 +1139,17 @@ export function FolderView({ folderId }: FolderViewProps) {
       <div className="mb-5 mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">{pageTitle}</h1>
-          {isPrivate && (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted">
-              Private
-            </span>
-          )}
+          {chainReady &&
+            (isPublicHere ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-accent-100 px-2 py-0.5 text-xs font-medium text-accent-700">
+                <GlobeIcon className="h-3 w-3" />
+                Public
+              </span>
+            ) : (
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted">
+                Private
+              </span>
+            ))}
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
@@ -1358,6 +1405,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                 <ListingRow
                   key={node.id}
                   node={node}
+                  folderChain={folderChain}
                   canManage={canManage}
                   copyState={fileCopyStatus(node.id)}
                   onCopyLink={() => void copy.copyLink(node.id, node.name)}
