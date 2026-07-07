@@ -572,6 +572,30 @@ export const handoffApi = createApi({
     }),
 
     /**
+     * PATCH /api/node { id, feedExcluded } → { id, feedExcluded }
+     * Toggles a folder's feed-exclusion flag (#191 / ADR-0007) — a surfacing
+     * flag, not a grant, so it does NOT invalidate 'Grant'. Owner/admin only;
+     * 400 for a non-folder (root/file) target. Rides the same PATCH /api/node
+     * endpoint as setNodeMode (folders only). Never `Promise.all` this with a
+     * same-node mode/grant write — CE's data_update read-modify-writes the whole
+     * record, so concurrent same-node writes clobber each other (see #194).
+     */
+    setNodeFeedExcluded: builder.mutation<
+      { id: string; feedExcluded: boolean },
+      { id: string; feedExcluded: boolean; parentId?: string }
+    >({
+      query: ({ id, feedExcluded }) => ({
+        url: 'api/node',
+        method: 'PATCH',
+        body: { id, feedExcluded },
+      }),
+      invalidatesTags: (_result, _err, { id, parentId }) => [
+        { type: 'Node' as const, id },
+        ...(parentId ? [{ type: 'Node' as const, id: parentId }] : []),
+      ],
+    }),
+
+    /**
      * GET /api/directory?search=<q> → { users: { id: string; email: string }[] }
      */
     searchDirectory: builder.query<{ users: { id: string; email: string }[] }, { search: string }>({
@@ -840,6 +864,7 @@ export const {
   useAddGrantMutation,
   useRevokeGrantMutation,
   useSetNodeModeMutation,
+  useSetNodeFeedExcludedMutation,
   useSearchDirectoryQuery,
   useMintShareLinkMutation,
   useListShareLinksQuery,

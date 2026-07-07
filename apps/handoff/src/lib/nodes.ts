@@ -31,6 +31,12 @@ export interface HandoffNode {
   grants: Grant[]
   /** Whether this folder inherits grants from ancestors or starts a new ACL boundary. */
   mode: 'inheriting' | 'restricted'
+  /**
+   * Folder-only surfacing flag (#191 / ADR-0007): when true this folder's whole
+   * subtree is kept out of every RSS feed while staying fully browsable. Not a
+   * grant — orthogonal to access; absent/false everywhere else (files/sites/root).
+   */
+  feedExcluded?: boolean
 }
 
 /** Body sent to POST /api/nodes to register a freshly-uploaded file. */
@@ -136,7 +142,12 @@ export function toNode(raw: unknown): HandoffNode {
   const rawMode = obj['mode']
   const mode: 'inheriting' | 'restricted' = rawMode === 'restricted' ? 'restricted' : 'inheriting'
 
-  return { id, type, name, mime, size, url, storageKey, path, parentId, createdAt, ownerId, grants, mode }
+  // feedExcluded: folder surfacing flag (#191). Booleans may arrive as the
+  // string 'true' from the data table — coerce both; default false.
+  const rawFeedExcluded = obj['feedExcluded']
+  const feedExcluded = rawFeedExcluded === true || rawFeedExcluded === 'true'
+
+  return { id, type, name, mime, size, url, storageKey, path, parentId, createdAt, ownerId, grants, mode, feedExcluded }
 }
 
 /**

@@ -373,6 +373,57 @@ export function seedFile(name: string, parentId: string): HandoffNode {
   return node
 }
 
+/**
+ * Test seam: create a site node directly in mock state (mirrors a served Site
+ * upload). Unlike `seedFile`, a site carries a `url` (its served entry) so the
+ * viewer renders the site iframe rather than the "preview unavailable" card.
+ */
+export function seedSite(name: string, parentId: string): HandoffNode {
+  const id = String(++nodeCounter)
+  const ownerId = mockCurrentUser?.id ?? null
+  const raw = {
+    id,
+    type: 'site',
+    name,
+    mime: null,
+    size: null,
+    url: `/api/uploads/content/site-${id}/index.html`,
+    storageKey: `site-${id}`,
+    parentId,
+    createdAt: Date.now(),
+    ownerId,
+    grants: [],
+    mode: 'inheriting' as const,
+  }
+  const node = toNode(raw)
+  nodes.set(id, node)
+  nodeAcl.set(id, { ownerId, grants: [], mode: 'inheriting' })
+  return node
+}
+
+/**
+ * Test seam: mint a share link for `folderId` directly in mock state (mirrors
+ * POST /api/share-links, without the owner-auth round-trip). Returns the link
+ * so a test can hand its `token` to a `/blob/<path>?token=` render.
+ */
+export function seedShareLink(
+  folderId: string,
+  opts: { revoked?: boolean; expiresAt?: number | null } = {},
+): MockShareLink {
+  const token = `mock-token-${++tokenCounter}`
+  const link: MockShareLink = {
+    token,
+    folderId,
+    expiresAt: opts.expiresAt ?? null,
+    revoked: opts.revoked ?? false,
+    url: `/s/${token}`,
+    createdAt: Date.now(),
+    creatorId: mockCurrentUser?.id ?? 'user-owner',
+  }
+  shareLinks.set(token, link)
+  return link
+}
+
 const MOCK_BUCKET_PREFIX = '/__mock_bucket'
 
 function mockUploadUrl(storageKey: string): string {
@@ -775,21 +826,30 @@ export const handlers = [
 
   /**
    * PATCH /api/node
-   * Body: { id, mode: 'inheriting' | 'restricted' }
-   * Response: { id, mode }
-   * Mirrors the live `node-set-mode` pipeline (Task 3): 400 on a bad/missing
-   * id or mode, or a non-folder target (root and files rejected); 403 for
-   * anyone who isn't the folder's owner or an admin (anonymous included —
-   * there is no 401 branch, matching the real rule's `denied` step).
+   * Body: { id, mode?: 'inheriting' | 'restricted', feedExcluded?: boolean }
+   * Response: { id, mode?, feedExcluded? } — echoes only the fields updated.
+   * Mirrors the live `node-set-mode` pipeline (extended for #191): 400 on a
+   * bad/missing id, a non-folder target (root and files rejected), or a body
+   * carrying neither a valid mode nor a feedExcluded boolean; 403 for anyone
+   * who isn't the folder's owner or an admin (anonymous included — there is no
+   * 401 branch, matching the real rule's `denied` step). Each field is written
+   * independently (a mode-only PATCH never touches feedExcluded and vice versa)
+   * so field-disjoint writes don't clobber each other.
    */
   http.patch('/api/node', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { id?: string; mode?: string }
+    const body = (await request.json().catch(() => ({}))) as {
+      id?: string
+      mode?: string
+      feedExcluded?: unknown
+    }
     const id = String(body.id ?? '')
     const mode: 'inheriting' | 'restricted' | '' =
       body.mode === 'restricted' ? 'restricted' : body.mode === 'inheriting' ? 'inheriting' : ''
+    const hasFeedExcluded = typeof body.feedExcluded === 'boolean'
+    const feedExcluded = body.feedExcluded === true
     const node = id ? nodes.get(id) : undefined
     const isFolder = !!node && node.type === 'folder'
-    const badRequest = !id || !mode || !isFolder
+    const badRequest = !id || (!mode && !hasFeedExcluded) || !isFolder
 
     if (badRequest) {
       return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
@@ -803,9 +863,19 @@ export const handlers = [
       return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
     }
 
-    if (acl) acl.mode = mode
-    nodes.set(id, { ...node!, mode })
-    return HttpResponse.json({ id, mode })
+    let updated = { ...node! }
+    const resp: { id: string; mode?: string; feedExcluded?: boolean } = { id }
+    if (mode) {
+      if (acl) acl.mode = mode
+      updated = { ...updated, mode }
+      resp.mode = mode
+    }
+    if (hasFeedExcluded) {
+      updated = { ...updated, feedExcluded }
+      resp.feedExcluded = feedExcluded
+    }
+    nodes.set(id, updated)
+    return HttpResponse.json(resp)
   }),
 
   /**
@@ -993,8 +1063,12 @@ export const handlers = [
    * Body: { token }
    * Response: { valid: boolean, folderId: string | null }
    * PUBLIC — validates the token and (in production) sets a signed, folder-scoped
-   * hf_s view cookie the ACL gate accepts. The mock returns the same shape so the
-   * share-link entry flow works offline; cookie-setting is a no-op under MSW.
+   * hf_s view cookie the ACL gate accepts. There is no cookie jar under MSW, so
+   * the mock mirrors that Set-Cookie by setting the in-memory share-link viewer
+   * context (`mockShareLinkFolderId`) on a valid claim — subsequent gated calls
+   * (resolve, node) in the same test then see the granted scope, exactly as a
+   * real guest's follow-up requests would carry the cookie. Reset between tests
+   * by `resetMockState`. An invalid claim leaves the context untouched.
    */
   http.post('/api/share-links/claim', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { token?: string }
@@ -1006,6 +1080,7 @@ export const handlers = [
     if (link.expiresAt !== null && link.expiresAt < Date.now()) {
       return HttpResponse.json({ valid: false, folderId: null })
     }
+    mockShareLinkFolderId = link.folderId
     return HttpResponse.json({ valid: true, folderId: link.folderId })
   }),
 ] as const

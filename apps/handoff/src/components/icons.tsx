@@ -108,6 +108,16 @@ export const GlobeIcon = (p: IconProps) => (
   </Svg>
 )
 
+/** RSS feed indicator — used on the public "Copy RSS feed URL" affordance. */
+export const RssIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 11a5 5 0 0 1 5 5M4 6a10 10 0 0 1 10 10" />
+      <circle cx="4.5" cy="15.5" r="1.15" fill="currentColor" stroke="none" />
+    </g>
+  </Svg>
+)
+
 export const LinkIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M8.5 5.5a3.5 3.5 0 0 1 5.78-2.66l.38.38a3.5 3.5 0 0 1-.18 5.12l-1.2 1.06a.75.75 0 1 1-1-1.12l1.2-1.06a2 2 0 0 0 .1-2.93l-.38-.38A2 2 0 0 0 10 5.5a.75.75 0 0 1-1.5 0Z" />

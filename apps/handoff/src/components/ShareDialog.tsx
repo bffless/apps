@@ -5,12 +5,13 @@
  * containing folder and offers a file-direct link (ADR-0004).
  */
 
-import { useEffect, useRef } from 'react'
-import { PeopleAccess, GeneralAccess } from './ManageAccessPanel'
+import { useEffect, useRef, useState } from 'react'
+import { PeopleAccess, GeneralAccess, FeedExclusion } from './ManageAccessPanel'
 import { ShareLinksSection } from './ShareLinksSection'
-import { XIcon, ShareIcon } from './icons'
+import { XIcon, ShareIcon, RssIcon } from './icons'
 import { useGetGrantsQuery } from '../store/handoffApi'
 import { hasAnyoneGrant, isEffectivelyPublic, type FolderLink } from '../lib/acl'
+import { feedUrl } from '../lib/pathUrl'
 
 export interface ShareDialogProps {
   folderId: string
@@ -28,10 +29,23 @@ export interface ShareDialogProps {
   parentChain?: FolderLink[]
   /** This folder's own inheritance mode. Absent is treated as 'inheriting'. */
   folderMode?: 'inheriting' | 'restricted'
+  /**
+   * This folder's feed-exclusion flag (#191). Owner/admin see a toggle for it;
+   * absent is treated as false. Ignored for file targets.
+   */
+  folderFeedExcluded?: boolean
+  /** Parent folder id of the shared folder — forwarded for cache invalidation. */
+  parentId?: string
+  /**
+   * Content path of the folder being shared ('' for the root folder). When set
+   * and the folder is effectively public, the dialog offers a tokenless
+   * "Copy RSS feed URL" (#188). Absent for file targets.
+   */
+  feedPath?: string
   onClose: () => void
 }
 
-export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, folderMode, onClose }: ShareDialogProps) {
+export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, folderMode, folderFeedExcluded, parentId, feedPath, onClose }: ShareDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
 
   // RTK Query dedupes this with GeneralAccess/PeopleAccess's identical query.
@@ -85,9 +99,57 @@ export function ShareDialog({ folderId, title, nodeId, isFile, parentChain, fold
 
       <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
         <GeneralAccess folderId={folderId} parentChain={parentChain} folderMode={folderMode} />
+        {isPublic && !isFile && feedPath != null && <PublicFeedRow feedPath={feedPath} />}
+        {!isFile && (
+          <FeedExclusion folderId={folderId} feedExcluded={folderFeedExcluded} parentId={parentId} />
+        )}
         <PeopleAccess folderId={folderId} />
-        <ShareLinksSection folderId={folderId} nodeId={nodeId} fileName={isFile ? title : undefined} isPublic={isPublic} />
+        <ShareLinksSection
+          folderId={folderId}
+          nodeId={nodeId}
+          fileName={isFile ? title : undefined}
+          isPublic={isPublic}
+          feedPath={isFile ? undefined : feedPath}
+        />
       </div>
     </dialog>
+  )
+}
+
+/**
+ * PublicFeedRow — the tokenless "Copy RSS feed URL" affordance for an
+ * effectively-public folder (#188). The URL is path-based (`/feed/<path>.xml`,
+ * or `/feed.xml` for the root) and carries no token — safe to share publicly.
+ */
+function PublicFeedRow({ feedPath }: { feedPath: string }) {
+  const [copied, setCopied] = useState(false)
+  const url = `${window.location.origin}${feedUrl(feedPath)}`
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <RssIcon className="h-4 w-4 shrink-0 text-accent-600" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">RSS feed</p>
+            <p className="truncate font-mono text-xs text-muted">{url}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+        >
+          {copied ? 'Copied!' : 'Copy RSS feed URL'}
+        </button>
+      </div>
+    </div>
   )
 }

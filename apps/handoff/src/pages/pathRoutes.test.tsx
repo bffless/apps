@@ -19,12 +19,16 @@ import {
   resetMockState,
   seedFolder,
   seedFile,
+  seedSite,
+  seedShareLink,
+  setMockUser,
   mockCurrentUser,
   ROOT_RECORD_ID,
 } from '../mocks/handlers'
 import { handoffApi } from '../store/handoffApi'
 import handoffReducer from '../store/handoffSlice'
 import { TreePage, BlobPage, LegacyFolderRedirect, LegacyViewRedirect } from './PathPages'
+import { __resetSessionCache } from '../lib/session'
 
 // `useSession` (FolderView, BlobPage, ViewerBody, LegacyViewRedirect) reads the
 // reverse-proxied SuperTokens session (`/api/auth/session`) BEFORE it ever
@@ -76,6 +80,9 @@ beforeAll(() => {
 afterEach(() => {
   resetMockState()
   server.resetHandlers()
+  // Drop the module-level session cache so a guest render in one test never
+  // observes the authenticated session resolved by an earlier one.
+  __resetSessionCache()
 })
 afterAll(() => {
   globalThis.Request = RealRequest
@@ -166,5 +173,59 @@ describe('path routes', () => {
     renderAt('/tree/Nope')
 
     expect(await screen.findByText('Nothing found at this path.')).toBeInTheDocument()
+  })
+})
+
+// A feed reader's click on a private-feed item lands on /blob/<path>?token=.
+// The viewer must claim that token (like ShareLinkEntry does for /s/:token) and
+// render the File or Site for the logged-out visitor. The mock claim endpoint
+// mirrors production's Set-Cookie by granting the in-memory share-link scope, so
+// these exercise the real claim → resolve → render chain end-to-end.
+describe('/blob/<path>?token= share-token click-through (Handoff RSS)', () => {
+  it('claims the token and renders a private File for a logged-out visitor', async () => {
+    const folder = seedFolder('Private', 'root')
+    seedFile('Secret.txt', folder.id)
+    const { token } = seedShareLink(folder.id)
+
+    setMockUser(null)
+    renderAt(`/blob/Private/Secret.txt?token=${token}`)
+
+    // The plain file resolves and the viewer mounts (its "preview unavailable"
+    // card) — proving the claim granted the otherwise-private guest access.
+    expect(await screen.findByText('Preview unavailable')).toBeInTheDocument()
+  })
+
+  it('claims the token and renders a private Site for a logged-out visitor', async () => {
+    const folder = seedFolder('Private', 'root')
+    seedSite('Landing Page', folder.id)
+    const { token } = seedShareLink(folder.id)
+
+    setMockUser(null)
+    renderAt(`/blob/Private/Landing%20Page?token=${token}`)
+
+    // The site item renders its iframe (titled by the node name).
+    expect(await screen.findByTitle('Landing Page')).toBeInTheDocument()
+  })
+
+  it('shows the invalid-link page (not a crash) for a bogus/expired token', async () => {
+    const folder = seedFolder('Private', 'root')
+    seedFile('Secret.txt', folder.id)
+
+    setMockUser(null)
+    renderAt('/blob/Private/Secret.txt?token=not-a-real-token')
+
+    expect(await screen.findByText('This link is no longer valid')).toBeInTheDocument()
+  })
+
+  it('evaluates an authenticated visitor by their own identity, ignoring the token', async () => {
+    // The owner is signed in and owns the file; a token in the URL must not
+    // switch them onto the share-link path — they resolve by their real identity.
+    const folder = seedFolder('Owned', 'root')
+    seedFile('Report.txt', folder.id)
+    const { token } = seedShareLink(folder.id)
+
+    renderAt(`/blob/Owned/Report.txt?token=${token}`)
+
+    expect(await screen.findByText('Preview unavailable')).toBeInTheDocument()
   })
 })

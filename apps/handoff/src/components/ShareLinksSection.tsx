@@ -14,6 +14,7 @@ import {
 } from '../store/handoffApi'
 import type { ShareLink } from '../store/handoffApi'
 import { shareLinkCopyUrl } from '../lib/share'
+import { feedUrl } from '../lib/pathUrl'
 
 const EXPIRY_OPTIONS: { label: string; ms: number | undefined }[] = [
   { label: 'No expiry', ms: undefined },
@@ -32,9 +33,15 @@ export interface ShareLinksSectionProps {
   fileName?: string
   /** When true, renders a note that links are redundant while the folder is public. */
   isPublic?: boolean
+  /**
+   * Content path of the folder being shared ('' for the root folder). When set
+   * (a folder target, not a file), each active link gains a "Copy RSS" action
+   * yielding the tokened private feed URL `/feed/<path>.xml?token=` (#189).
+   */
+  feedPath?: string
 }
 
-export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileName, isPublic }: ShareLinksSectionProps) {
+export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileName, isPublic, feedPath }: ShareLinksSectionProps) {
   const { data: links, isLoading: loadingLinks } = useListShareLinksQuery({ folderId })
   const [mintShareLink, { isLoading: minting }] = useMintShareLinkMutation()
   const [revokeShareLink, { isLoading: revoking }] = useRevokeShareLinkMutation()
@@ -43,7 +50,12 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileNam
   const [mintError, setMintError] = useState<string | null>(null)
   const [newLink, setNewLink] = useState<ShareLink | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
+  const [copiedRssToken, setCopiedRssToken] = useState<string | null>(null)
   const [revokingToken, setRevokingToken] = useState<string | null>(null)
+
+  // A "Copy RSS" affordance only makes sense on a folder target (feedPath set),
+  // never a file-direct link — a file has no folder feed of its own.
+  const showRss = feedPath != null && !nodeId
 
   async function handleCreate() {
     setMintError(null)
@@ -77,6 +89,14 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileNam
     void navigator.clipboard.writeText(fullUrl).then(() => {
       setCopiedToken(link.token)
       setTimeout(() => setCopiedToken((t) => (t === link.token ? null : t)), 2000)
+    })
+  }
+
+  function handleCopyRss(link: ShareLink) {
+    const rssUrl = `${window.location.origin}${feedUrl(feedPath ?? '', link.token)}`
+    void navigator.clipboard.writeText(rssUrl).then(() => {
+      setCopiedRssToken(link.token)
+      setTimeout(() => setCopiedRssToken((t) => (t === link.token ? null : t)), 2000)
     })
   }
 
@@ -179,6 +199,16 @@ export function ShareLinksSection({ folderId, topDivider = true, nodeId, fileNam
               >
                 {copiedToken === link.token ? 'Copied!' : 'Copy'}
               </button>
+              {showRss && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyRss(link)}
+                  title="Copy this link's RSS feed URL"
+                  className="shrink-0 rounded-lg border border-border px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                >
+                  {copiedRssToken === link.token ? 'Copied!' : 'Copy RSS'}
+                </button>
+              )}
               <button
                 type="button"
                 disabled={revoking || revokingToken === link.token}

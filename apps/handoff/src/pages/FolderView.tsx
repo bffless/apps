@@ -37,7 +37,7 @@ import {
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
 import { buildBreadcrumb, buildAncestorFolderChain, folderContentPath } from '../lib/tree'
-import { nodeUrl } from '../lib/pathUrl'
+import { nodeUrl, feedUrl } from '../lib/pathUrl'
 import { contentSubPath } from '../lib/contentPath'
 import { formatBytes, formatDate } from '../lib/format'
 import {
@@ -54,6 +54,7 @@ import { rootMetaNode } from '../lib/rootNode'
 import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
+import { FeedAutodiscovery } from '../components/FeedAutodiscovery'
 import { Menu } from '../components/Menu'
 import { EmptyState } from '../components/EmptyState'
 import {
@@ -682,6 +683,11 @@ interface ShareTarget {
    * a row's mode is NOT the page folder's `currentFolder?.mode`).
    */
   mode?: 'inheriting' | 'restricted'
+  /**
+   * Content path of the shared folder ('' for root), for the tokenless public
+   * RSS feed URL (#188). Undefined for file targets (no folder feed offered).
+   */
+  feedPath?: string
 }
 
 function RowKebab({
@@ -1070,6 +1076,16 @@ export function FolderView({ folderId }: FolderViewProps) {
     ? (currentFolder?.mode ?? 'inheriting')
     : ((rawNodes?.find((n) => n.id === shareTarget?.folderId)?.mode ?? shareTarget?.mode) ?? 'inheriting')
 
+  // Feed-exclusion flag (#191), resolved LIVE from the listing like the mode
+  // above so the toggle reflects a just-written value. The page-folder target
+  // reads the current folder; a folder-row target reads its listing row.
+  const shareFolderFeedExcluded = isPageFolderShareTarget
+    ? currentFolder?.feedExcluded === true
+    : rawNodes?.find((n) => n.id === shareTarget?.folderId)?.feedExcluded === true
+  // Parent id of the shared folder — the page folder's own parent for the
+  // page/file-row target, else the page folder itself for a folder-row target.
+  const shareFolderParentId = isPageFolderShareTarget ? currentFolder?.parentId : folderId
+
   // The current Folder's verbatim content path — the prefix every File uploaded
   // here (single file OR folder import) is stored under, so relative refs resolve
   // on the unified content endpoint (structural storage). '' for a root upload.
@@ -1216,6 +1232,14 @@ export function FolderView({ folderId }: FolderViewProps) {
         }}
       />
 
+      {/* RSS autodiscovery — public folders only (ADR-0008); the tokenless feed
+          URL is advertised in the head so a reader finds it from the page URL.
+          Gated on the same effective-public signal as the badge, so a cut-off
+          unmounts this and removes the link. */}
+      {isPublicHere && (
+        <FeedAutodiscovery href={feedUrl(currentFolderPath)} title={`${pageTitle} — Feed`} />
+      )}
+
       <Breadcrumb folderId={folderId} onChainUpdate={handleChainUpdate} />
 
       {/* Toolbar */}
@@ -1238,7 +1262,7 @@ export function FolderView({ folderId }: FolderViewProps) {
           {canManage && (
             <button
               type="button"
-              onClick={() => setShareTarget({ folderId, title: pageTitle })}
+              onClick={() => setShareTarget({ folderId, title: pageTitle, feedPath: currentFolderPath })}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface-2"
             >
               <ShareIcon className="h-4 w-4 text-muted" />
@@ -1278,6 +1302,9 @@ export function FolderView({ folderId }: FolderViewProps) {
           isFile={shareTarget.isFile}
           parentChain={shareParentChain}
           folderMode={shareFolderMode}
+          folderFeedExcluded={shareFolderFeedExcluded}
+          parentId={shareFolderParentId}
+          feedPath={shareTarget.feedPath}
           onClose={() => setShareTarget(null)}
         />
       )}
@@ -1498,7 +1525,7 @@ export function FolderView({ folderId }: FolderViewProps) {
                   onShare={() =>
                     setShareTarget(
                       node.type === 'folder'
-                        ? { folderId: node.id, title: node.name, mode: node.mode }
+                        ? { folderId: node.id, title: node.name, mode: node.mode, feedPath: node.path ?? undefined }
                         : { folderId, title: node.name, nodeId: node.id, isFile: true },
                     )
                   }
