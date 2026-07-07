@@ -3,7 +3,7 @@
  *
  * evaluateAccess is the single decision point for access control — it takes a
  * folder chain (root → target) and a viewer, and returns the effective access
- * level. It never throws.
+ * level. It never throws. Supports the Anyone principal for public access.
  */
 
 export type AccessLevel = 'none' | 'view' | 'edit' | 'owner'
@@ -29,6 +29,14 @@ export interface Viewer {
   shareLinkFolderId?: string
 }
 
+/** Reserved Principal id representing the anonymous public (ADR-0005). */
+export const ANYONE_PRINCIPAL = 'anyone'
+
+/** Whether a grants list makes its folder public (contains the Anyone principal). */
+export function hasAnyoneGrant(grants: Grant[]): boolean {
+  return grants.some((g) => g.principalId === ANYONE_PRINCIPAL)
+}
+
 /**
  * Determine a viewer's effective access level for the target folder.
  *
@@ -52,16 +60,6 @@ export function evaluateAccess(input: {
     }
   }
 
-  // Share-link viewers (no userId): yield at most 'view', only when scoped
-  // folder id appears in the chain.
-  if (!viewer.userId && viewer.shareLinkFolderId) {
-    const inChain = folderChain.some((f) => f.id === viewer.shareLinkFolderId)
-    return inChain ? 'view' : 'none'
-  }
-
-  // No userId and no share link → none.
-  if (!viewer.userId) return 'none'
-
   // Find the deepest restricted folder — grants from above that point are dropped.
   let startIdx = 0
   for (let i = folderChain.length - 1; i >= 0; i--) {
@@ -71,11 +69,8 @@ export function evaluateAccess(input: {
     }
   }
 
-  // Evaluate grants from startIdx onward, taking the highest level.
   const levelOrder: AccessLevel[] = ['none', 'view', 'edit', 'owner']
   let best: AccessLevel = 'none'
-
-  const userId = viewer.userId
 
   function levelRank(l: AccessLevel): number {
     return levelOrder.indexOf(l)
@@ -87,12 +82,24 @@ export function evaluateAccess(input: {
     }
   }
 
+  // Grant scan — runs for every viewer, anonymous included. An Anyone grant
+  // yields at most 'view' regardless of its stored level (defense in depth;
+  // the write path also caps it).
   for (let i = startIdx; i < folderChain.length; i++) {
-    const folder = folderChain[i]
-    for (const grant of folder.grants) {
-      if (grant.principalId === userId) {
+    for (const grant of folderChain[i].grants) {
+      if (grant.principalId === ANYONE_PRINCIPAL) {
+        promote('view')
+      } else if (viewer.userId && grant.principalId === viewer.userId) {
         promote(grant.level)
       }
+    }
+  }
+
+  // Share-link viewers (guests only): scoped folder id in the FULL chain
+  // yields view — one more promotion source, not an early return.
+  if (!viewer.userId && viewer.shareLinkFolderId) {
+    if (folderChain.some((f) => f.id === viewer.shareLinkFolderId)) {
+      promote('view')
     }
   }
 

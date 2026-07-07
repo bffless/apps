@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { evaluateAccess, inShareMode } from './acl'
+import { evaluateAccess, hasAnyoneGrant, ANYONE_PRINCIPAL, inShareMode } from './acl'
 import type { FolderLink, Viewer } from './acl'
 
 // ---------------------------------------------------------------------------
@@ -228,6 +228,71 @@ describe('evaluateAccess', () => {
       viewer: viewer({ userId: 'admin-user', isAdmin: true }),
     })
     expect(result).toBe('owner')
+  })
+})
+
+const F = (over: Partial<FolderLink> = {}): FolderLink =>
+  ({ id: 'f1', ownerId: 'owner-1', grants: [], mode: 'inheriting', ...over })
+
+describe('Anyone principal', () => {
+  const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
+
+  it('anonymous viewer gets view from an Anyone grant on the target', () => {
+    expect(evaluateAccess({ folderChain: [F({ grants: [anyone] })], viewer: {} })).toBe('view')
+  })
+
+  it('anonymous viewer inherits an ancestor Anyone grant', () => {
+    const chain = [F({ id: 'p', grants: [anyone] }), F({ id: 'c' })]
+    expect(evaluateAccess({ folderChain: chain, viewer: {} })).toBe('view')
+  })
+
+  it('a Restricted descendant drops an inherited Anyone grant', () => {
+    const chain = [F({ id: 'p', grants: [anyone] }), F({ id: 'c', mode: 'restricted' })]
+    expect(evaluateAccess({ folderChain: chain, viewer: {} })).toBe('none')
+  })
+
+  it('an Anyone grant is capped at view even if stored as edit (bad data)', () => {
+    const bad = { principalId: ANYONE_PRINCIPAL, level: 'edit' as const }
+    expect(evaluateAccess({ folderChain: [F({ grants: [bad] })], viewer: {} })).toBe('view')
+  })
+
+  it('a signed-in user with no personal grant gets view from Anyone', () => {
+    expect(
+      evaluateAccess({ folderChain: [F({ grants: [anyone] })], viewer: { userId: 'u9' } }),
+    ).toBe('view')
+  })
+
+  it('a personal edit grant still wins over Anyone (highest wins)', () => {
+    const chain = [F({ grants: [anyone, { principalId: 'u9', level: 'edit' as const }] })]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u9' } })).toBe('edit')
+  })
+
+  it('a guest with an out-of-scope share link still gets view from Anyone', () => {
+    const chain = [F({ id: 'other', grants: [anyone] })]
+    expect(
+      evaluateAccess({ folderChain: chain, viewer: { shareLinkFolderId: 'not-in-chain' } }),
+    ).toBe('view')
+  })
+
+  it('share-link scoped view still works with no Anyone grant', () => {
+    const chain = [F({ id: 'scope' })]
+    expect(
+      evaluateAccess({ folderChain: chain, viewer: { shareLinkFolderId: 'scope' } }),
+    ).toBe('view')
+  })
+
+  it('anonymous with nothing stays none', () => {
+    expect(evaluateAccess({ folderChain: [F()], viewer: {} })).toBe('none')
+  })
+})
+
+describe('hasAnyoneGrant', () => {
+  it('true when the anyone principal is present', () => {
+    expect(hasAnyoneGrant([{ principalId: ANYONE_PRINCIPAL, level: 'view' }])).toBe(true)
+  })
+  it('false otherwise', () => {
+    expect(hasAnyoneGrant([{ principalId: 'u1', level: 'view' }])).toBe(false)
+    expect(hasAnyoneGrant([])).toBe(false)
   })
 })
 
