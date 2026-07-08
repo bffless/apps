@@ -24,10 +24,12 @@ requirement that shapes this design).
   rows means two durable homes that drift and must be synced; it doubles storage and fights
   Handoff's structural-storage model. The feed reads content **on demand from the bucket** at
   build time.
-- **Performance comes from caching the feed *response*, not from pre-storing content.** RSS
-  readers poll; a feed's bytes only change when a folder's files change. An HTTP cache rule on
-  `/feed/*` serves polls from cache, so the expensive path (read blobs → render) runs only on a
-  **cache miss** — amortized to ~once per TTL, not once per poll. No DB duplication.
+- **Performance comes from a cheap, bounded loop; caching is an optional enhancement, never
+  required.** The uncached path stands on its own — the loop is capped (≤50 items, `concurrency`
+  5, 5 s timeout, `maxBytes` reads), so running it cold on every request is acceptable. A
+  `Cache-Control` header lets any CDN/edge or reader client offload the origin as a *bonus*; if
+  it's absent or **purged**, requests just run the pipeline as though there were no cache. **No
+  origin-side, DB, or per-item cache is built in** — by decision, to keep this simple.
 - **Content is resolved by pipeline composition, not custom Node or sandbox JS.** A generic CE
   **loop primitive** iterates the surfaced items and, **in-process**, calls a **child pipeline**
   that fetches + renders one item's content. The child is an independently callable, testable
@@ -74,7 +76,7 @@ requirement that shapes this design).
 ### Overview
 
 ```
-PARENT   /feed/<path>.xml     [HTTP cache rule, short TTL]
+PARENT   /feed/<path>.xml     [Cache-Control header — optional perf, not required]
   1. select surfaced items            (existing fn_handler: access-filter + newest-50)
   2. foreach item → CALL child        (NEW loop primitive, in-process, per-item isolation)
   3. assemble RSS + <content:encoded> (existing fn_handler, additive)
@@ -196,15 +198,17 @@ A new pipeline in the `handoff` rule set — a **normal routed pipeline**, no ne
   parity coverage. The pure `feed.ts` takes the resolved `{ id → html }` map as an argument so it
   stays a pure function (the loop/CE I/O lives only in the pipeline).
 
-### Handoff change 7 — HTTP cache rule on `/feed/*`
+### Handoff change 7 — `Cache-Control` on `/feed/*` (optional perf enhancement)
 
-- A BFFless **cache rule** on `/feed/*` stamps `Cache-Control` (TTL **5 min**, time-based) so
-  reader polls are served from cache and the loop runs only on a miss. The rule sets *headers*;
-  the actual store is whatever **shared cache** sits in front — a CDN/edge on the live deployment,
-  plus each reader's own HTTP cache. **Origin-offload is only guaranteed when a shared cache
-  exists.** If the live deployment has none in front of `/feed/*`, add a **CE-side response cache**
-  (rendered feed XML keyed by path + token for the TTL) so the loop truly runs once per TTL
-  regardless of client. Confirm against live (open item).
+- A BFFless **cache rule** stamps `Cache-Control` on `/feed/*` (TTL **5 min**, time-based;
+  token-keyed / `private` for a token'd feed so its bytes never cross tokens). This is a **pure
+  performance enhancement, never a dependency.** Whatever honors the header — a CDN/edge, or the
+  reader's own client — offloads the origin; if nothing does, or the cache is **purged**, the
+  request **runs the pipeline exactly as if there were no cache.** There is **no origin-side
+  response cache, no DB cache, and no per-item cache** — by decision.
+- What makes the uncached path (the normal path) acceptable is the loop itself: ≤50 items, bounded
+  to `concurrency` 5 in flight, 5 s per-item timeout, `maxBytes`-capped reads — a few seconds worst
+  case — with per-item failure isolation so it always returns a valid feed.
 - **Public feeds** cache globally; **token'd private feeds** must key the cache on the `?token=`
   query param (never share a private body across tokens).
 - **Invalidation:** time-based expiry only for v1 (RSS tolerates minutes of staleness). Explicit
@@ -253,9 +257,10 @@ Each gets its own spec → plan → implementation cycle; this design is the sha
 - **Response-decoupling regression.** Lifting the socket-write out of `response_handler` touches
   every pipeline's terminal path. Mitigation: land it first, in isolation, with the invariant
   "HTTP output byte-identical to today" as an explicit test.
-- **Cache-miss latency.** A miss reads ≤50 blobs + renders. Mitigation: the bounded-concurrency
-  pool (default 5 in flight), a per-item 5 s timeout, and the short-TTL cache keeps misses rare.
-  Cap by `maxBytes` in `read_object_text`.
+- **Uncached-request cost (the normal path).** With no cache in front, *every* request runs the
+  loop (≤50 blob reads + renders) — by design, not an exception. Mitigation: the bounded-concurrency
+  pool (default 5 in flight), a 5 s per-item timeout, and `maxBytes`-capped reads keep it to a few
+  seconds worst case, with per-item isolation guaranteeing a valid feed.
 - **Triplication drift.** Live rules can silently diverge from the JSON export. Mitigation: the
   parity test + explicit post-merge MCP sync + diff-verification against live.
 - **Sanitization.** Feed HTML is derived from user content and lands in a `<content:encoded>`
@@ -267,10 +272,9 @@ Each gets its own spec → plan → implementation cycle; this design is the sha
 
 ## Open items for spec review
 
-- **Cache TTL** — **5 min** (confirmed).
+- **Cache TTL** — **5 min** on the `Cache-Control` header (confirmed).
 - **Per-item timeout** — **5 s** (confirmed; sized for a bucket download).
 - **`sanitize_html`** — **separate handler** (confirmed).
-- **Caching layer (open)** — the `/feed/*` cache rule only stamps `Cache-Control`; real
-  origin-offload depends on a shared cache in front (CDN/edge) or a CE-side response cache.
-  Confirm what the live deployment provides; if nothing shared fronts `/feed/*`, add the CE-side
-  feed cache described in change 7.
+- **Caching is optional, never required** (confirmed, resolved) — no origin/DB/per-item cache; an
+  absent or purged cache just runs the pipeline. We do **not** depend on a shared CDN, so there is
+  nothing to verify against live.
