@@ -1,4 +1,4 @@
-import { embedUrl, isEmbeddable } from '../lib/embed'
+import { embedHost, embedUrl, isEmbeddable } from '../lib/embed'
 import { itemBodyHtml, type Item } from '../lib/items'
 import { sanitizeHtml } from '../lib/sanitize'
 
@@ -110,15 +110,51 @@ export function ReadingPane({
   // Embeddable: render a REAL <iframe> in place of the sanitized-body div — a
   // deliberate bypass of the `dangerouslySetInnerHTML` sanitize path so DOMPurify
   // never sees (and can't strip) it. The reader does no markdown rendering; the
-  // Handoff embed page renders its own reading measure inside the iframe. The
-  // article is a full-height flex column and full-width (dropping the `mx-auto
-  // ${measureClass}` measure) so the `flex-1` iframe fills the pane; the viewport
-  // min-height floor guards against the flex chain failing to resolve (the classic
-  // iframe-collapse trap).
+  // Handoff embed page renders its own reading measure inside the iframe.
+  //
+  // The iframe scrolls internally rather than growing the page: auto-sizing to
+  // content height would need postMessage bubbled through *two* cross-origin
+  // iframe boundaries (Rivulet → Handoff embed page → its own srcDoc markdown
+  // frame), which isn't worth the fragility. So instead of pretending it's a
+  // normal post, we make the seam explicit: a slim "embedded from <host>" bar
+  // labels the region as a rendered-elsewhere document, so its own scrollbar
+  // reads as intentional rather than a subtly-broken page.
+  //
+  // Layout: the header keeps its reading padding; the iframe goes full-bleed to
+  // the pane's card edge (no inner `px` gap, so no box-in-box "framed iframe"
+  // look) and rounds its bottom corners to sit flush inside the card. The
+  // viewport min-height floor guards against the flex chain failing to resolve
+  // (the classic iframe-collapse trap).
   if (src) {
+    const host = embedHost(item.link)
     return (
-      <article className="flex h-full min-h-0 flex-col px-2 py-4">
-        {header}
+      <article className="flex h-full min-h-0 flex-col">
+        <div className="px-6 pt-4">{header}</div>
+        <div className="flex items-center gap-1.5 px-6 pb-2 text-xs text-slate-400 dark:text-slate-500">
+          <svg
+            aria-hidden="true"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="h-3.5 w-3.5 shrink-0"
+          >
+            <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clipRule="evenodd" />
+            <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clipRule="evenodd" />
+          </svg>
+          <span className="min-w-0 truncate">
+            Embedded document{host ? <> from <span className="font-medium">{host}</span></> : null}
+          </span>
+          {item.link && (
+            <a
+              href={item.link}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="shrink-0 underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-300"
+            >
+              Open original ↗
+            </a>
+          )}
+        </div>
         <iframe
           src={src}
           title={item.title || '(untitled)'}
@@ -126,8 +162,8 @@ export function ReadingPane({
           // can reach its session/content), not the reader's — it grants no access
           // back to Rivulet.
           sandbox="allow-scripts allow-same-origin"
-          className="w-full flex-1"
-          style={{ minHeight: 'calc(100vh - 10rem)' }}
+          className="w-full flex-1 rounded-b-xl border-0"
+          style={{ minHeight: 'calc(100vh - 12rem)' }}
         />
       </article>
     )
