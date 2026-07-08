@@ -37,11 +37,26 @@ Endpoint source of truth: the committed `bffless/handoff.proxy-rules.json`. For 
 
 ## Upload a file (prepare → PUT → register)
 
-1. `POST /api/uploads/prepare` `{filename, contentType}` → `{uploadUrl, storageKey, originalName, …}`
+1. `POST /api/uploads/prepare` `{filename, contentType, path, parentId}` → `{uploadUrl, storageKey, originalName, …}`
 2. `PUT <uploadUrl>` with `Content-Type: <type>` and the raw file bytes (direct to bucket, no key)
 3. `POST /api/nodes` `{storageKey, originalName, parentId:"root"|<folderId>, displayName, createdMs}` → `{node}`
 
-(`createdMs` is client-supplied epoch ms, e.g. `date +%s%3N`.)
+- **`path` is required** — Handoff uses a *verbatim* key strategy (structural storage), so prepare
+  needs the file's **verbatim content sub-path**: the owning folder's path + the filename. At root
+  that is just the filename (`report.md`); in a folder it is `<folder path>/<filename>`
+  (`Design Docs/Q3/report.md`). This is what `contentSubPath(folderPath, filename)` computes in
+  `apps/handoff/src/lib/contentPath.ts`. Omitting `path` fails with `400 MISSING_KEY`
+  ("expected a path string for verbatim keyStrategy").
+- **`parentId`** (`"root"` or a folder id) should match `path`'s folder. Sending it to *prepare*
+  lets an in-folder name collision be rejected **before** any bytes are minted/PUT, so an existing
+  file is never overwritten.
+- Pass the `storageKey` prepare returns to register **unchanged** (it is the full bucket key,
+  e.g. `bffless/apps/uploads/content/<path>`).
+- `createdMs` is client-supplied epoch ms, e.g. `date +%s%3N`.
+
+Verified root upload (`report.md`): prepare
+`{filename:"report.md", contentType:"text/markdown", path:"report.md", parentId:"root"}`
+→ PUT bytes to `uploadUrl` → register with the returned `storageKey`.
 
 ## Other operations
 
