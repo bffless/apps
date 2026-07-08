@@ -43,9 +43,30 @@ function runSelect(
   opts?: { isRoot?: boolean; bad?: boolean; nodes?: any[]; token?: string; link?: any },
 ) {
   const select = handlerOf(feedRule, 'select')
+  // Model reality: file/site leaves carry a storage_path (the verbatim upload
+  // key), and the feed derives the content path by stripping its uploads-content
+  // prefix — NOT from displayName. Auto-derive storage_path from the displayName
+  // chain for any leaf that doesn't set one (mirrors UI uploads, where the stored
+  // segment == displayName) so the existing assertions hold; a test that needs
+  // displayName != stored path sets storage_path explicitly.
+  const raw = (opts?.nodes ?? ALL).map((n) => ({ ...n }))
+  const byIdRaw = new Map(raw.map((n) => [n.id, n]))
+  for (const n of raw) {
+    if ((n.nodeType === 'file' || n.nodeType === 'site') && !n.storage_path) {
+      const segs: string[] = []
+      let cur: any = n
+      let g = 0
+      while (cur && cur.nodeType !== 'root' && g < 64) {
+        segs.unshift(cur.displayName)
+        cur = byIdRaw.get(cur.parentId)
+        g++
+      }
+      n.storage_path = `bffless/apps/uploads/content/${segs.join('/')}`
+    }
+  }
   // data_query rows are FROZEN in the CE sandbox — freeze here too so a handler
   // that mutates a row (e.g. stamping an id) fails in the test, not just live.
-  const nodes = (opts?.nodes ?? ALL.map((n) => ({ ...n }))).map((n) => Object.freeze({ ...n }))
+  const nodes = raw.map((n) => Object.freeze({ ...n }))
   const token = opts?.token ?? ''
   return select({
     request: { headers: { host: 'handoff.j5s.dev' } },
@@ -207,6 +228,31 @@ describe('select step — flatten + Anyone gate + render', () => {
     // Site gets its viewer link + a text/html enclosure (the reader's embed signal).
     expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Public/Portfolio</link>`)
     expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/blob/Public/Portfolio" type="text/html" length="0"/>`)
+  })
+
+  it('builds link + enclosure from storage_path, NOT displayName (title ≠ filename)', () => {
+    // A file whose human title (displayName) differs from its stored filename —
+    // e.g. uploaded via the API with a pretty title. The link + media URL MUST use
+    // the storage_path-derived path (what /api/resolve + the content serve key on)
+    // or they 404 in a reader; displayName is only the human <title>.
+    const MD = {
+      id: 'abcd0000-0000-4000-8000-0000000000cd',
+      nodeType: 'file',
+      displayName: 'Feed Content Bodies — CE Pipeline (design spec)',
+      parentId: PUB.id,
+      content_type: 'text/markdown',
+      size: 16082,
+      createdMs: 999,
+      storage_path: 'bffless/apps/uploads/content/Public/2026-07-08-design.md',
+    }
+    const xml: string = runSelect(['Public'], { nodes: [ROOT, PUB, MD] }).xml
+    // link + enclosure use the STORED path...
+    expect(xml).toContain('<link>https://handoff.j5s.dev/blob/Public/2026-07-08-design.md</link>')
+    expect(xml).toContain('<enclosure url="https://handoff.j5s.dev/api/uploads/content/Public/2026-07-08-design.md" type="text/markdown" length="16082"/>')
+    // ...while the human <title> still shows the displayName.
+    expect(xml).toContain('<title>Feed Content Bodies — CE Pipeline (design spec)</title>')
+    // The displayName must never leak into a URL.
+    expect(xml).not.toContain('/blob/Public/Feed%20Content')
   })
 
   it('404s a private (non-public) folder — tokenless feeds are public-only', () => {
