@@ -136,13 +136,16 @@ describe('renderFeedXml', () => {
     expect(xml).not.toContain('<media:')
   })
 
-  it('renders a Site item as a single link with no enclosure', () => {
+  it('renders a Site item with a text/html enclosure (so our reader embeds it inline) + a description', () => {
     const xml = renderFeedXml(
       selectFeedItems([node({ id: 'site-1', type: 'site', name: 'Portfolio', path: 'Docs/Portfolio', createdAt: 0 })]),
       ctx,
     )
     expect(xml).toContain('<link>https://handoff.j5s.dev/blob/Docs/Portfolio</link>')
-    expect(xml).not.toContain('<enclosure')
+    // text/html enclosure = the reader's embed-detection signal; url is the viewer link, length 0.
+    expect(xml).toContain('<enclosure url="https://handoff.j5s.dev/blob/Docs/Portfolio" type="text/html" length="0"/>')
+    // description kept so non-embedding readers still show a body.
+    expect(xml).toContain('<description>Portfolio</description>')
   })
 
   it('XML-escapes names', () => {
@@ -174,6 +177,9 @@ describe('renderFeedXml', () => {
     expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Docs/a.png?token=${tok}</link>`)
     expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Docs/Portfolio?token=${tok}</link>`)
     expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/r/file-1/a.png?token=${tok}" type="image/png" length="10"/>`)
+    // The Site's text/html enclosure (viewer link) carries the token too, so a
+    // private-feed reader embeds it with the same bearer.
+    expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/blob/Docs/Portfolio?token=${tok}" type="text/html" length="0"/>`)
   })
 
   it('a public feed (no token) keeps item links and enclosures tokenless', () => {

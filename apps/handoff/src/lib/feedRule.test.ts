@@ -199,13 +199,14 @@ describe('select step — flatten + Anyone gate + render', () => {
     expect(out.xml).not.toContain('<item>')
   })
 
-  it('gives File items an enclosure (mime + length) and XML-escapes names; Site items get none', () => {
+  it('gives File items a mime/length enclosure and Site items a text/html enclosure; XML-escapes names', () => {
     const xml: string = runSelect(['Public']).xml
     // Public feed: media URL is the tokenless byte-serving content endpoint.
     expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/api/uploads/content/Public/b%20%26%20c.txt" type="text/plain" length="200"/>`)
     expect(xml).toContain('<title>b &amp; c.txt</title>')
-    // Site's absolute viewer link, no enclosure for it.
+    // Site gets its viewer link + a text/html enclosure (the reader's embed signal).
     expect(xml).toContain(`<link>https://handoff.j5s.dev/blob/Public/Portfolio</link>`)
+    expect(xml).toContain(`<enclosure url="https://handoff.j5s.dev/blob/Public/Portfolio" type="text/html" length="0"/>`)
   })
 
   it('404s a private (non-public) folder — tokenless feeds are public-only', () => {

@@ -214,11 +214,20 @@ export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
         const size = humanSize(it.size)
         lines.push(`<description>${xmlEscape(size ? `${it.name} (${size})` : it.name)}</description>`)
       }
-    } else if (note) {
-      lines.push(`<description><![CDATA[${note}]]></description>`)
     } else {
-      // Site: a one-line description so the reader shows a body, not "no content".
-      lines.push(`<description>${xmlEscape(it.name)}</description>`)
+      // Site: emit a text/html enclosure so our reader (Rivulet) embeds the site
+      // inline — the reader keys embed *detection* on a text/* enclosure on a
+      // trusted origin. The mime is only a hint: the reader's consent gate keys on
+      // the link ORIGIN, not this label (a feed can't skip consent by lying about
+      // the type). The enclosure url is the site's viewer link (what the reader
+      // iframes); a served site has no byte length, so 0. The <description> stays
+      // so non-embedding readers still show a body.
+      lines.push(`<enclosure url="${xmlEscape(ctx.origin + blobUrl(it.path) + tokenQs)}" type="text/html" length="0"/>`)
+      if (note) {
+        lines.push(`<description><![CDATA[${note}]]></description>`)
+      } else {
+        lines.push(`<description>${xmlEscape(it.name)}</description>`)
+      }
     }
     lines.push('</item>')
   }
