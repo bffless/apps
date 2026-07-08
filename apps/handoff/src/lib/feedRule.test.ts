@@ -33,8 +33,8 @@ const F1 = { id: 'dddddddd-0000-4000-8000-000000000004', nodeType: 'file', displ
 const F2 = { id: 'eeeeeeee-0000-4000-8000-000000000005', nodeType: 'file', displayName: 'b & c.txt', parentId: PUB.id, content_type: 'text/plain', size: 200, createdMs: 300 }
 const SITE1 = { id: 'ffffffff-0000-4000-8000-000000000006', nodeType: 'site', displayName: 'Portfolio', parentId: PUB.id, createdMs: 200 }
 const HIDDEN = { id: '11111111-0000-4000-8000-000000000007', nodeType: 'file', displayName: 'hidden.txt', parentId: SECRET.id, content_type: 'text/plain', size: 9, createdMs: 400 }
-const FT = { id: '22222222-0000-4000-8000-000000000008', nodeType: 'file', displayName: 'deck.png', parentId: PUB.id, content_type: 'image/png', size: 50, createdMs: 500, title: 'Board Deck', description: 'see slide 4 & 5' }
-const ST = { id: '33333333-0000-4000-8000-000000000009', nodeType: 'site', displayName: 'Portfolio2', parentId: PUB.id, createdMs: 600, description: 'my work' }
+const FT = { id: '22222222-0000-4000-8000-00000000000a', nodeType: 'file', displayName: 'deck.png', parentId: PUB.id, content_type: 'image/png', size: 50, createdMs: 500, title: 'Board Deck', description: 'see slide 4 & 5' }
+const ST = { id: '33333333-0000-4000-8000-00000000000b', nodeType: 'site', displayName: 'Portfolio2', parentId: PUB.id, createdMs: 600, description: 'my work' }
 
 const ALL = [ROOT, PUB, PRIV, SECRET, F1, F2, SITE1, HIDDEN]
 
