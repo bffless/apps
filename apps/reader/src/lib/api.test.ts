@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { setFeedFolder } from './api'
+import { setFeedFolder, listItems } from './api'
 import type { Feed } from './feeds'
 
 afterEach(() => {
@@ -75,5 +75,36 @@ describe('setFeedFolder', () => {
 
     await expect(setFeedFolder({ ...feed, url: '' }, 'macro')).rejects.toThrow(/url is required/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('listItems', () => {
+  it('carries enclosureType from the /api/items response through shapeItem into the page', async () => {
+    // Raw /api/items rows are untyped JSON (Record<string, unknown>).
+    const withType: Record<string, unknown> = {
+      guid: 'g-markdown',
+      feedId: 'f1',
+      title: 'A Handoff markdown post',
+      link: 'https://handoff.example.com/p/abc',
+      enclosureType: 'text/markdown',
+    }
+    const withoutType: Record<string, unknown> = {
+      guid: 'g-plain',
+      feedId: 'f1',
+      title: 'A plain post',
+      link: 'https://example.com/p/xyz',
+      // no enclosureType key at all
+    }
+    const fetchMock = vi.fn(async () =>
+      jsonOk({ items: [withType, withoutType], total: 2, page: 1, pageSize: 20, totalPages: 1 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const page = await listItems({ kind: 'all' }, {})
+
+    // The markdown enclosureType survives the transport → shapeItem mapping (drives isEmbeddable).
+    expect(page.items[0].enclosureType).toBe('text/markdown')
+    // A missing enclosureType coerces to null via str(), not undefined/'' — proving the default carries through.
+    expect(page.items[1].enclosureType).toBeNull()
   })
 })
