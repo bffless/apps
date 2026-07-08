@@ -38,12 +38,13 @@
 **Interfaces:**
 - Produces: a `PipelineResponse` value `{ status: number; headers: Record<string,string>; body: string | Buffer }` returned by executing a pipeline. `response_handler` **populates** this value; it no longer writes to the Express `res`. The HTTP entrypoint is the only place that flushes a `PipelineResponse` to the socket. A new **in-process runner** returns the `PipelineResponse` to its caller instead of flushing (consumed by Task 2).
 - Invariant: for every existing pipeline, the bytes/status/headers written over HTTP are **identical to before this change**.
+- **Validators are edge guards.** A pipeline's validators (`auth_required`, `rate_limit`) run only on HTTP entry. `runPipelineInProcess` runs the pipeline's *steps* in the caller's already-authorized context and does **NOT** re-run validators — this is what lets a gated child (Task 7) still be invoked from an anonymous public-feed request via the loop.
 
 - [ ] **Step 1: Characterize current output (golden test).** Add a test that runs a representative existing pipeline (e.g. an existing Handoff-style `response_handler` pipeline fixture) through the HTTP path and snapshots `{status, headers, body}`. This is the "byte-identical" guard.
 - [ ] **Step 2: Run it — passes today** (establishes the golden baseline).
 - [ ] **Step 3: Introduce `PipelineResponse`.** Define the type and make the executor return it. `response_handler` writes into it (status/headers/body from its config) rather than calling `res.*`.
 - [ ] **Step 4: Split the runner.** HTTP entrypoint: execute pipeline → get `PipelineResponse` → flush to `res` (this is the ONLY socket write). Add an exported `runPipelineInProcess(ref, input, ctx): Promise<PipelineResponse>` that executes and returns without any `res`.
-- [ ] **Step 5: Run the golden test — still passes** (HTTP output unchanged). Add a direct unit test asserting `runPipelineInProcess` returns the `PipelineResponse` object and performs no socket write.
+- [ ] **Step 5: Run the golden test — still passes** (HTTP output unchanged). Add a direct unit test asserting `runPipelineInProcess` returns the `PipelineResponse` object and performs no socket write. Add a **validator-edge test:** a pipeline with an `auth_required` validator, invoked via `runPipelineInProcess` from an anonymous context, runs its steps (validator skipped); the same pipeline hit over HTTP anonymously is rejected.
 - [ ] **Step 6: Commit.** `feat(ce): decouple pipeline response from transmission (produce vs flush)`
 
 **Definition of done:** existing pipelines emit byte-identical HTTP responses; a pipeline can be executed in-process and yields a `PipelineResponse` value; no handler references `res` except the HTTP entrypoint.
@@ -58,16 +59,16 @@
 
 **Interfaces:**
 - Consumes: `runPipelineInProcess` (Task 1).
-- Produces: a handler type (proposed `loop`) with config `{ items: <expression → array>, pipeline: <child ref>, itemAs?: string (default "item"), timeoutMs?: number (default 5000), maxDepth?: number (default e.g. 4) }`. Output: an **array positionally aligned to `items`**, each slot the child's `PipelineResponse.body` parsed to JSON on 2xx, else `null`.
-- Semantics: for each element, bind `itemAs` and run the child via `runPipelineInProcess` in the current request/auth context. **Per-item isolation:** a child that throws, exceeds `timeoutMs`, or returns non-2xx → `null` slot; never aborts the loop. **Recursion guard:** track call depth in the exec context; exceeding `maxDepth` fails that item to `null` (and logs). Children may run concurrently (bounded); order of the result array follows `items`.
+- Produces: a handler type (proposed `loop`) with config `{ items: <expression → array>, pipeline: <child ref>, itemAs?: string (default "item"), concurrency?: number (default 5), timeoutMs?: number (default 5000), maxDepth?: number (default e.g. 4) }`. Output: an **array positionally aligned to `items`**, each slot the child's `PipelineResponse.body` parsed to JSON on 2xx, else `null`.
+- Semantics: for each element, bind `itemAs` and run the child via `runPipelineInProcess` in the current request/auth context. **Bounded-concurrency pool:** at most `concurrency` children in flight at once, and the next starts the instant one finishes (a sliding window — **NOT** fixed batches, which would stall each batch on its slowest item). `concurrency: 1` = fully sequential. Result-array order always follows `items`, regardless of completion order. **Per-item isolation:** a child that throws, exceeds `timeoutMs`, or returns non-2xx → `null` slot; never aborts the loop. **Recursion guard:** track call depth in the exec context; exceeding `maxDepth` fails that item to `null` (and logs).
 
-- [ ] **Step 1: Write failing tests** covering: (a) maps a child over `[a,b,c]` → `[ra,rb,rc]` in order; (b) a child that throws → that slot `null`, others intact; (c) a child that sleeps past `timeoutMs` → `null` slot; (d) a child returning status 500 → `null` slot; (e) depth beyond `maxDepth` → `null` + logged.
+- [ ] **Step 1: Write failing tests** covering: (a) maps a child over `[a,b,c]` → `[ra,rb,rc]` in order; (b) a child that throws → that slot `null`, others intact; (c) a child that sleeps past `timeoutMs` → `null` slot; (d) a child returning status 500 → `null` slot; (e) depth beyond `maxDepth` → `null` + logged; (f) **concurrency pool** — with `concurrency: 2` and instrumented children, at most 2 run at once, and one slow child does not block later items from starting in freed slots, while result order still follows `items`.
 - [ ] **Step 2: Run — fails** (handler type unknown).
 - [ ] **Step 3: Implement the handler** per the semantics above; register the type in the handler registry + admin picker/schema.
 - [ ] **Step 4: Run — passes.**
 - [ ] **Step 5: Commit.** `feat(ce): in-process loop primitive mapping a child pipeline over an array`
 
-**Definition of done:** the loop maps a child pipeline in-process with per-item isolation, a 5000 ms default timeout, and a depth guard; results array aligns to inputs with `null` for failures.
+**Definition of done:** the loop maps a child pipeline in-process under a bounded-concurrency pool (default 5), with per-item isolation, a 5000 ms default timeout, and a depth guard; results array aligns to inputs with `null` for failures.
 
 ---
 
@@ -149,16 +150,16 @@
 ### Task 7: `resolve-content` child pipeline
 
 **Files:**
-- Modify: `bffless/handoff.proxy-rules.json` (add a new pipeline rule `POST /api/internal/resolve-content`, or a nameable child pipeline the loop can reference — confirm how the loop's `pipeline` ref addresses a child in the live engine during Phase 1; expose it as a normal rule so it is also independently callable).
+- Modify: `bffless/handoff.proxy-rules.json` (add a new **normal routed pipeline** rule `POST /_internal/resolve-content` with an **`auth_required` (owner/admin) validator** — NOT a new pipeline kind. Confirm how the loop's `pipeline` ref addresses a child in the live engine during Phase 1. The feed never hits this HTTP path; it calls the pipeline in-process via the loop, entering below the edge (Task 1) so the validator is skipped and a public/anonymous feed still resolves content. The route also makes it independently callable over HTTP, owner-gated).
 - Test: `src/lib/resolveContentRule.test.ts` (assert the rule's steps/shape from the JSON, mirroring how `feedRule.test.ts` reads the JSON).
 
 **Interfaces:**
 - Consumes: CE handlers `read_object_text`, `markdown_render`, `sanitize_html` (Phase 1).
-- Produces: child pipeline with input `{ id, storageKey, mime, type }` → `response { id, html }`. Steps: `read_object_text(storageKey)` → `markdown_render(text)` *[condition: `mime === 'text/markdown'`]* → `sanitize_html(html)` → `response_handler` returning `{ id, html }`. On any step failure the loop records a `null` slot (Task 2 semantics), so the child needs no error branch. **Leave a commented seam** for the Site branch (`type === 'site'` → `read_object_text(entryKey)` → `sanitize_html`) — do NOT implement Site now.
+- Produces: a routed child pipeline (`POST /_internal/resolve-content`, `auth_required` validator) with input `{ id, storageKey, mime, type }` → `response { id, html }`. Steps: `read_object_text(storageKey)` → `markdown_render(text)` *[condition: `mime === 'text/markdown'`]* → `sanitize_html(html)` → `response_handler` returning `{ id, html }`. **The markdown→HTML transform is the `markdown_render` CE handler (Task 4), never a `function_handler`** — no markdown parsing in the sandbox. On any step failure the loop records a `null` slot (Task 2 semantics), so the child needs no error branch. **Leave a commented seam** for the Site branch (`type === 'site'` → `read_object_text(entryKey)` → `sanitize_html`) — do NOT implement Site now.
 
-- [ ] **Step 1: Write the failing structural test.** In `src/lib/resolveContentRule.test.ts`, load `handoff.proxy-rules.json`, find the `resolve-content` rule, assert: it exists; its steps include `read_object_text`, `markdown_render` (with a `text/markdown` condition), and `sanitize_html`; the terminal `response_handler` emits `id` + `html`.
+- [ ] **Step 1: Write the failing structural test.** In `src/lib/resolveContentRule.test.ts`, load `handoff.proxy-rules.json`, find the `resolve-content` rule, assert: it exists at route `POST /_internal/resolve-content` with an `auth_required` validator; its steps include `read_object_text`, `markdown_render` (with a `text/markdown` condition), and `sanitize_html`; the terminal `response_handler` emits `id` + `html`.
 - [ ] **Step 2: Run — fails** (rule absent).
-- [ ] **Step 3: Add the rule** to the `rules` array with the four steps and the markdown condition. Give it a unique `order` and `isEnabled: true`. Use the `${input.storageKey}` / `${steps.read.text}` expression forms the engine uses (confirm exact expression syntax against a sibling handler in the file).
+- [ ] **Step 3: Add the rule** to the `rules` array: route `POST /_internal/resolve-content`, an `auth_required` validator, the four steps, and the markdown condition. Give it a unique `order` and `isEnabled: true`. Use the `${input.storageKey}` / `${steps.read.text}` expression forms the engine uses (confirm exact expression syntax against a sibling handler in the file).
 - [ ] **Step 4: Validate JSON + run test.** `node -e "JSON.parse(...)"` → `ok`; `pnpm test -- src/lib/resolveContentRule.test.ts` → PASS.
 - [ ] **Step 5: Commit.** `feat(handoff): resolve-content child pipeline (markdown → safe HTML)`
 
@@ -194,7 +195,7 @@
 
 - [ ] **Step 1: Write failing parity test.** In `feedRule.test.ts`, add a fixture where the pipeline is given a resolvable markdown item and assert the pipeline XML contains the same `<content:encoded>` block the reference `renderFeedXml(..., bodies)` produces, and that with no resolvable bodies the pipeline XML is byte-identical to today.
 - [ ] **Step 2: Run — fails.**
-- [ ] **Step 3: Add the loop + fold + injection** to the `/feed/*` rule. The loop's `items` = the surfaced File items; `pipeline` = `resolve-content`; `itemAs` = `item`; `timeoutMs` 5000. Fold `[{id,html}|null]` → `{id→html}` in a `function_handler`. Extend the embedded render (the `xmlEscape`/enclosure block) to append `<content:encoded>` when the map has the id, and add `xmlns:content` to `<rss>`.
+- [ ] **Step 3: Add the loop + fold + injection** to the `/feed/*` rule. The loop's `items` = the surfaced File items; `pipeline` = `resolve-content`; `itemAs` = `item`; `concurrency` 5; `timeoutMs` 5000. Fold `[{id,html}|null]` → `{id→html}` in a `function_handler`. Extend the embedded render (the `xmlEscape`/enclosure block) to append `<content:encoded>` when the map has the id, and add `xmlns:content` to `<rss>`.
 - [ ] **Step 4: Validate JSON + run tests.** `node -e "JSON.parse(...)"` → `ok`; `pnpm test -- src/lib/feedRule.test.ts src/lib/feed.test.ts` → PASS.
 - [ ] **Step 5: Commit.** `feat(handoff): /feed/* loops resolve-content and injects content:encoded`
 
