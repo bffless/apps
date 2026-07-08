@@ -27,6 +27,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     publishedAt: '2026-07-01T00:00:00Z',
     summary: 'summary',
     content: '<p>body</p>',
+    enclosureType: null,
     read: false,
     starred: false,
     fetchedAt: 1,

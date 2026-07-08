@@ -24,6 +24,7 @@ import { TrashIcon, ChevronRightIcon } from '../components/icons'
 import { parentFolderPath } from '../lib/tree'
 import { treeUrl, parentPath } from '../lib/pathUrl'
 import { useClaimShareToken } from '../store/useClaimShareToken'
+import { useEmbedMode } from '../lib/embed'
 import { InvalidLink } from '../components/InvalidLink'
 import { toast } from '../lib/toast'
 import { shouldClaimToken } from '../lib/share'
@@ -527,6 +528,7 @@ function MediaPreview({ node, kind }: { node: HandoffNode; kind: 'video' | 'audi
 export function ViewerBody({ id }: { id: string }) {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
+  const embed = useEmbedMode()
   const { session, loading: sessionLoading } = useSession()
   const authed = session?.authenticated === true
 
@@ -588,15 +590,24 @@ export function ViewerBody({ id }: { id: string }) {
   const canEditMeta = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
 
   return (
-    <div className="flex flex-col" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
-      <ControlBar
-        node={node}
-        contentRef={contentRef}
-        canViewSource={canViewSource}
-        showSource={showSource}
-        onToggleSource={() => setShowSource((v) => !v)}
-      />
-      <NodeDetails node={node} canEdit={canEditMeta} />
+    <div
+      className={embed ? 'flex min-h-svh flex-col' : 'flex flex-col'}
+      style={embed ? undefined : { minHeight: 'calc(100vh - 3.5rem)' }}
+    >
+      {/* Embed mode (`?embed=1`) drops the surrounding chrome — control bar and
+          details block — leaving only the rendered content for inline iframing
+          in an RSS reader. The share-token claim + content renderers below are
+          untouched. */}
+      {!embed && (
+        <ControlBar
+          node={node}
+          contentRef={contentRef}
+          canViewSource={canViewSource}
+          showSource={showSource}
+          onToggleSource={() => setShowSource((v) => !v)}
+        />
+      )}
+      {!embed && <NodeDetails node={node} canEdit={canEditMeta} />}
       <div ref={contentRef} className="flex flex-1 flex-col overflow-auto">
         {sourceShown && node.url && (
           <SourceView url={node.url} />

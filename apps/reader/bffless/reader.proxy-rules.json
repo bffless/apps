@@ -36,7 +36,9 @@
         { "name": "content", "type": "text", "required": false },
         { "name": "read", "type": "boolean", "required": false },
         { "name": "starred", "type": "boolean", "required": false },
-        { "name": "fetchedAt", "type": "number", "required": false }
+        { "name": "fetchedAt", "type": "number", "required": false },
+        { "name": "enclosureType", "type": "string", "required": false },
+        { "name": "enclosureUrl", "type": "string", "required": false }
       ]
     }
   ],
@@ -462,7 +464,7 @@
             "name": "enrich",
             "handlerType": "function_handler",
             "config": {
-              "code": "function handler({ steps }) {\n  var entries = (steps && steps.parse && steps.parse.entries) || []\n  var nowMs = (steps && steps.stamp && steps.stamp.ms) || 0\n  var nowIso = new Date(nowMs).toISOString()\n  var out = []\n  for (var i = 0; i < entries.length; i++) {\n    var e = entries[i] || {}\n    var pub = e.publishedAt\n    if (pub) { var d = new Date(pub); if (isNaN(d.getTime())) pub = '' }\n    if (!pub) pub = nowIso\n    out.push({\n      source: e.source,\n      guid: e.guid,\n      title: e.title,\n      link: e.link,\n      author: e.author,\n      content: e.content,\n      summary: e.summary,\n      publishedAt: pub\n    })\n  }\n  return { entries: out }\n}\n"
+              "code": "function handler({ steps }) {\n  var entries = (steps && steps.parse && steps.parse.entries) || []\n  var nowMs = (steps && steps.stamp && steps.stamp.ms) || 0\n  var nowIso = new Date(nowMs).toISOString()\n  var out = []\n  for (var i = 0; i < entries.length; i++) {\n    var e = entries[i] || {}\n    var pub = e.publishedAt\n    if (pub) { var d = new Date(pub); if (isNaN(d.getTime())) pub = '' }\n    if (!pub) pub = nowIso\n    var encType = null\n    var encUrl = null\n    var encs = e.enclosures\n    if (encs && encs.length) {\n      for (var j = 0; j < encs.length; j++) {\n        var en = encs[j]\n        if (en && typeof en.type === 'string' && en.type.indexOf('text/') === 0) {\n          encType = en.type\n          encUrl = (en.url != null) ? en.url : null\n          break\n        }\n      }\n    }\n    out.push({\n      source: e.source,\n      guid: e.guid,\n      title: e.title,\n      link: e.link,\n      author: e.author,\n      content: e.content,\n      summary: e.summary,\n      publishedAt: pub,\n      enclosureType: encType,\n      enclosureUrl: encUrl\n    })\n  }\n  return { entries: out }\n}\n"
             }
           },
           {
@@ -481,7 +483,9 @@
                 "starred": "false",
                 "summary": "steps.item.summary",
                 "fetchedAt": "steps.stamp.ms",
-                "publishedAt": "steps.item.publishedAt"
+                "publishedAt": "steps.item.publishedAt",
+                "enclosureType": "steps.item.enclosureType",
+                "enclosureUrl": "steps.item.enclosureUrl"
               },
               "items": "steps.enrich.entries",
               "dedupKey": ["steps.item.guid", "steps.item.link"],
