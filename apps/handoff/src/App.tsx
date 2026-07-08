@@ -9,6 +9,7 @@ import { HandoffHome } from './pages/HandoffHome'
 import { TreePage, BlobPage, LegacyFolderRedirect, LegacyViewRedirect } from './pages/PathPages'
 import { ShareLinkEntry } from './pages/ShareLinkEntry'
 import { useSession, adminLoginUrl, logout } from './lib/session'
+import { useEmbedMode } from './lib/embed'
 import { useTheme } from './lib/theme'
 import { useMediaQuery } from './lib/useMediaQuery'
 import { Menu } from './components/Menu'
@@ -100,6 +101,7 @@ function AccountMenu({ email }: { email?: string }) {
 function Shell() {
   const { session, loading } = useSession()
   const { pathname } = useLocation()
+  const embed = useEmbedMode()
   const dispatch = useDispatch<AppDispatch>()
   const shareLinkFolderId = useSelector((s: RootState) => s.handoff.shareLinkFolderId)
 
@@ -137,6 +139,20 @@ function Shell() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDrawerOpen(false)
   }, [pathname])
+
+  // Embed mode (`?embed=1`): a chromeless layout for iframing a post's body
+  // inline in an RSS reader — no header, no sidebar, no mobile drawer. Just the
+  // page `<Outlet>` (the viewer, which drops its own chrome too).
+  if (embed) {
+    return (
+      <div className="flex min-h-svh flex-col bg-bg">
+        <ScrollToTop />
+        <main className="min-w-0 flex-1">
+          <Outlet />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-svh flex-col bg-bg">
