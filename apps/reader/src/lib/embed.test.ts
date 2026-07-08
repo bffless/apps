@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { embedUrl, isEmbeddable, TRUSTED_EMBED_ORIGINS } from './embed'
+import { embedHost, embedUrl, isEmbeddable, TRUSTED_EMBED_ORIGINS } from './embed'
+
+describe('embedHost', () => {
+  it('returns the bare host of a viewer link', () => {
+    expect(embedHost('https://handoff.j5s.dev/blob/Posts/x.md?token=abc')).toBe('handoff.j5s.dev')
+  })
+
+  it('returns null for null/undefined/empty/unparseable', () => {
+    expect(embedHost(null)).toBeNull()
+    expect(embedHost(undefined)).toBeNull()
+    expect(embedHost('')).toBeNull()
+    expect(embedHost('not a url')).toBeNull()
+  })
+})
 
 describe('embedUrl', () => {
   it('appends embed=1 to a bare viewer link', () => {

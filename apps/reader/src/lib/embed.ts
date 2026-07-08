@@ -40,6 +40,20 @@ export function embedUrl(link: string | null | undefined): string | null {
 }
 
 /**
+ * The bare host of a viewer `link` (e.g. `handoff.j5s.dev`), for the "embedded
+ * from <host>" label on the inline iframe. Returns `null` for a falsy or
+ * unparseable link so the caller can drop the "from …" clause entirely.
+ */
+export function embedHost(link: string | null | undefined): string | null {
+  if (!link) return null
+  try {
+    return new URL(link).host
+  } catch {
+    return null
+  }
+}
+
+/**
  * Whether an item's body can be embedded inline via the Handoff viewer. True
  * IFF the enclosure mime is exactly `text/markdown` (v1 detection) **and**
  * `link` parses to an origin in {@link TRUSTED_EMBED_ORIGINS}. Fully defensive:

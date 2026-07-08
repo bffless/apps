@@ -48,6 +48,11 @@ describe('ReadingPane', () => {
     expect(screen.queryByText('UNIQUE_INLINE_MARKER')).toBeNull()
     // Header still renders (title link).
     expect(screen.getByText('Handoff post')).toBeTruthy()
+    // The embed seam is made explicit: a source label naming the Handoff host and
+    // an "Open original" escape hatch, so the iframe's own scroll reads as an
+    // intentional embedded document rather than a subtly-broken page.
+    expect(screen.getByText('handoff.j5s.dev')).toBeTruthy()
+    expect(screen.getByText(/Open original/)).toBeTruthy()
   })
 
   it('renders the sanitized body and no iframe for a normal item', () => {

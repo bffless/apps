@@ -61,4 +61,17 @@ describe('markdownDocument', () => {
     // The stored relative src is preserved; the <base> does the resolution.
     expect(doc).toContain('src="assets/logo.png"')
   })
+
+  it('keeps Handoff’s own reading measure by default', () => {
+    const doc = markdownDocument('<p>hi</p>', null)
+    // The base rule caps the column; no measure-lifting override is appended.
+    expect(doc).toContain('.markdown-body { max-width: 48rem;')
+    expect(doc).not.toContain('max-width: none')
+  })
+
+  it('lifts the reading measure in embed mode so the host controls width', () => {
+    const doc = markdownDocument('<p>hi</p>', null, { embed: true })
+    // Override appended after the base CSS wins the cascade → content fills the frame.
+    expect(doc).toContain('max-width: none')
+  })
 })
