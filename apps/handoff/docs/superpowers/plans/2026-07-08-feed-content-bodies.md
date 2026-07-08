@@ -4,7 +4,7 @@
 
 **Goal:** Inline a post's rendered body into the Handoff RSS feed as `<content:encoded>`, sourced on demand from storage (no DB copy), via four reusable CE pipeline primitives consumed by a `resolve-content` child pipeline the feed loops over.
 
-**Architecture:** Storage stays the single source of truth; rendered HTML is a cached *response*, never materialized. CE gains a response/transmit split (so any pipeline is callable in-process), an in-process loop/`call` primitive, a `read_object_text` handler, and `markdown_render` + `sanitize_html` handlers. Handoff adds a `resolve-content` child pipeline (`{id,storageKey,mime,type}` → `{id,html}`); the `/feed/*` pipeline loops it over the ≤50 surfaced items and injects the resulting HTML additively. A `/feed/*` cache rule keeps the loop on the cache-miss path only.
+**Architecture:** Storage stays the single source of truth; rendered HTML is a cached *response*, never materialized. CE gains a response/transmit split (so any pipeline is callable in-process), an in-process loop/`call` primitive, a `read_object_text` handler, and `markdown_render` + `sanitize_html` handlers. Handoff adds a `resolve-content` child pipeline (`{id,storageKey,mime,type}` → `{id,html}`); the `/feed/*` pipeline loops it over the ≤50 surfaced items and injects the resulting HTML additively. A `Cache-Control` header on `/feed/*` is an optional performance enhancement — the loop is cheap and bounded, so it runs correctly cold on every request, with or without any cache in front.
 
 **Tech Stack:** CE — NestJS + TypeScript pipeline engine (`repos/ce/`, real Node: a markdown lib + HTML sanitizer). Handoff — React 18 + Vite + TS, Vitest, MSW mocks, BFFless proxy-rule pipelines (embedded `function_handler` JS in `bffless/handoff.proxy-rules.json`), synced to live via the `j5s-dev` MCP.
 
@@ -18,8 +18,8 @@
 - **`<content:encoded>` is purely additive.** When an item has no resolved `html`, feed output must be **byte-identical to today**. Every feed test must include a "no html → unchanged" case.
 - **Confirmed values (spec):** cache TTL **5 min** (time-based); per-item loop timeout **5000 ms**; `sanitize_html` is a **separate** handler; markdown now, Site HTML next (design the child's branch seam, don't implement Site).
 - **Sanitize, never raw.** Any HTML placed in `<content:encoded>` must pass through `sanitize_html` first.
-- **Private-feed cache key.** A token'd `/feed/*` response must be cached keyed on `?token=`; never share a private body across tokens.
-- **OPEN ITEM — resolve before finalizing Task 10/Phase-1 cache work:** the `/feed/*` cache rule only stamps `Cache-Control`; real origin-offload needs a shared cache (CDN/edge) in front of `handoff.j5s.dev`, or a CE-side response cache. **Verify what fronts `/feed/*` on the live deployment.** If nothing shared does, add a CE-side feed-response cache (rendered XML keyed by path+token for the TTL) as an extra Phase-1 task before relying on "the loop runs once per TTL."
+- **Private-feed cache key.** A token'd `/feed/*` response's `Cache-Control` must be `private`/keyed on `?token=` so no downstream (edge or client) cache serves one token's private body to another.
+- **Caching is an optional performance enhancement, never a required layer.** No origin-side response cache, no DB cache, no per-item cache. A `Cache-Control` header lets any CDN/edge or reader client offload the origin; if nothing honors it, or it's purged, the request runs the pipeline exactly as if there were no cache. The bounded loop (concurrency 5, 5 s timeout, `maxBytes`) is what makes the uncached path — the normal path — acceptable. We do **not** depend on a shared CDN, so there is nothing to verify against live.
 - After any edit to `bffless/handoff.proxy-rules.json`, verify it parses: `node -e "JSON.parse(require('fs').readFileSync('bffless/handoff.proxy-rules.json','utf8'));console.log('ok')"`.
 - Handoff commands run from `apps/handoff/`. Test cmd: `pnpm --filter handoff test` (or `pnpm test` inside `apps/handoff`).
 
@@ -201,20 +201,22 @@
 
 ---
 
-### Task 10: Cache rule on `/feed/*`
+### Task 10: `Cache-Control` on `/feed/*` (optional perf enhancement)
 
 **Files:**
 - Modify: `bffless/handoff.proxy-rules.json` (add a cache rule for `/feed/*`) — confirm whether cache rules live in this export or are set via MCP only; if MCP-only, this task is the spec/checklist and the apply happens in Task 12.
 - Test: `src/lib/feedCacheRule.test.ts` (assert the rule's TTL + token-keying if represented in the JSON).
 
 **Interfaces:**
-- Produces: `/feed/*` responses carry `Cache-Control` with `max-age=300` (5 min). Public feeds cache globally; token'd feeds MUST vary/key on `?token=` (never share a private body). **See the Global Constraints OPEN ITEM** — confirm a shared cache fronts `/feed/*` before claiming origin-offload; if none, escalate the CE-side response cache task into Phase 1.
+- Produces: `/feed/*` responses carry `Cache-Control` with `max-age=300` (5 min); a token'd feed's header is `private`/keyed on `?token=` so no downstream cache leaks a private body across tokens. **This is a pure performance enhancement, not a dependency:** whatever honors the header (CDN/edge or reader client) offloads the origin; if nothing does, or the cache is purged, the request runs the pipeline as if there were no cache. There is **no origin-side, DB, or per-item cache** — the bounded loop is the entire performance story.
 
-- [ ] **Step 1: Write failing test** asserting the cache rule for `/feed/*` exists with a 300 s TTL and token-aware keying (if the JSON models cache rules).
+- [ ] **Step 1: Write failing test** asserting the `/feed/*` cache rule exists with a 300 s TTL and token-aware keying (if the JSON models cache rules).
 - [ ] **Step 2: Run — fails.**
-- [ ] **Step 3: Add the cache rule** (or document the MCP `create_cache_rule` params in this task for Task 12 if cache rules are MCP-only).
+- [ ] **Step 3: Add the cache rule** (or document the MCP `create_cache_rule` params here for Task 12 if cache rules are MCP-only).
 - [ ] **Step 4: Validate JSON + run test.**
-- [ ] **Step 5: Commit.** `feat(handoff): cache rule for /feed/* (5 min, token-keyed)`
+- [ ] **Step 5: Commit.** `feat(handoff): optional Cache-Control on /feed/* (5 min, token-keyed)`
+
+**Definition of done:** the `/feed/*` response carries a correct `Cache-Control` header; the feed is byte-correct and returns fine with **no cache in front** (the normal path) — caching is never required for correctness.
 
 ---
 
@@ -227,7 +229,7 @@
 **Interfaces:** none.
 
 - [ ] **Step 1: Glossary.** In `CONTEXT.md`, add to the Feeds section: **Content body** — a feed item's `<content:encoded>` HTML, rendered on demand from the file's bytes in storage (never stored in the DB); markdown now, Site HTML next. Note storage is the single source of truth.
-- [ ] **Step 2: ADR-0010** recording: storage-as-sole-source-of-truth (no DB materialization → no backfill); on-demand resolution via an in-process loop + `resolve-content` child over the CE primitives; additive `<content:encoded>` degrading to today's feed; caching the response (not the content); markdown-now/Site-next.
+- [ ] **Step 2: ADR-0010** recording: storage-as-sole-source-of-truth (no DB materialization → no backfill); on-demand resolution via an in-process loop + `resolve-content` child over the CE primitives; additive `<content:encoded>` degrading to today's feed; caching as an optional response-level enhancement (never a required layer, never the content); markdown-now/Site-next.
 - [ ] **Step 3: Commit.** `docs(handoff): content-body glossary + ADR-0010`
 
 ---
@@ -239,13 +241,12 @@
 > NOT a code commit. Sandcastle does not deploy live proxy rules. Checklist for the maintainer; keep in the PR description.
 
 - [ ] **Step 1: Confirm CE is deployed** with the four new handler types (Phase 1 released) — the live feed loop depends on them.
-- [ ] **Step 2: Resolve the caching OPEN ITEM.** Check whether a shared CDN/edge fronts `handoff.j5s.dev/feed/*`. If yes → the cache rule suffices. If no → deploy the CE-side feed-response cache (Phase-1 follow-up) before relying on cache-miss-only loop execution.
-- [ ] **Step 3: Diff live vs repo.** `get_proxy_rule_set` for the live `handoff` set; compare the `/feed/*` rule and confirm `resolve-content` + the cache rule are absent.
-- [ ] **Step 4: Apply.** Create `resolve-content` (Task 7 JSON), update the `/feed/*` rule (Task 9 loop + injection), and add the `/feed/*` cache rule (Task 10 params). Fold into the shared base set (prod + preview aliases share it); do not attach a preview-only override.
-- [ ] **Step 5: Verify end-to-end.** Upload a markdown post to a public folder; fetch `https://handoff.j5s.dev/feed.xml` (or the folder feed) and confirm the item now carries `<content:encoded>` with the rendered, sanitized body; confirm a `<script>` in the source is stripped; confirm an item whose resolve fails still renders (title + enclosure, feed 200). Poll twice and confirm the cache serves the second hit.
-- [ ] **Step 6: Drift check.** Confirm the repo JSON matches what was applied; if not, reconcile and open a `chore(handoff): sync rules export with live set` PR.
+- [ ] **Step 2: Diff live vs repo.** `get_proxy_rule_set` for the live `handoff` set; compare the `/feed/*` rule and confirm `resolve-content` + the cache rule are absent.
+- [ ] **Step 3: Apply.** Create `resolve-content` (Task 7 JSON), update the `/feed/*` rule (Task 9 loop + injection), and add the `/feed/*` cache rule (Task 10 params). Fold into the shared base set (prod + preview aliases share it); do not attach a preview-only override.
+- [ ] **Step 4: Verify end-to-end.** Upload a markdown post to a public folder; fetch `https://handoff.j5s.dev/feed.xml` (or the folder feed) and confirm the item now carries `<content:encoded>` with the rendered, sanitized body; confirm a `<script>` in the source is stripped; confirm an item whose resolve fails still renders (title + enclosure, feed 200). Confirm the feed is correct with no cache in front, and that the `Cache-Control` header is present (the optional enhancement).
+- [ ] **Step 5: Drift check.** Confirm the repo JSON matches what was applied; if not, reconcile and open a `chore(handoff): sync rules export with live set` PR.
 
-**Phase 2 definition of done / verification:** `pnpm --filter handoff test` green (parity + byte-identical-when-no-bodies cases); `tsc -b` + lint clean; live feed shows a rendered, sanitized markdown body inline, degrades gracefully per item, and serves polls from cache.
+**Phase 2 definition of done / verification:** `pnpm --filter handoff test` green (parity + byte-identical-when-no-bodies cases); `tsc -b` + lint clean; live feed shows a rendered, sanitized markdown body inline, degrades gracefully per item, and is correct running cold with no cache in front (the `Cache-Control` header is a bonus, not required).
 
 ---
 
@@ -259,7 +260,7 @@
 - CE ADR for primitives → Task 6 ✓
 - Handoff change 5 (`resolve-content` child) → Task 7 ✓
 - Handoff change 6 (feed rules, all copies; `feed.ts` pure via injected map; `xmlns:content` + additive `<content:encoded>`) → Tasks 8 (reference) + 9 (port); live copy → Task 12 ✓
-- Handoff change 7 (cache rule, token-keyed, TTL 5 min) → Task 10 (+ OPEN ITEM tracked in Global Constraints & Task 12) ✓
+- Handoff change 7 (optional `Cache-Control`, token-keyed, TTL 5 min; caching never required) → Task 10 ✓
 - Backfill not required → encoded as a Global Constraint; no task, by design ✓
 - Docs (glossary + ADR) → Task 11 ✓
 - Live sync (MCP, human-gated) → Task 12 ✓
@@ -269,4 +270,4 @@
 
 **Type consistency:** `PipelineResponse {status,headers,body}` (Task 1) is returned by `runPipelineInProcess` (Task 1) and consumed by the loop (Task 2), whose result is `[{...body}|null]`. `resolve-content` I/O `{id,storageKey,mime,type}→{id,html}` (Task 7) matches the loop input built in Task 9 and the `bodies: Record<string,string>` (id→html) consumed by `renderFeedXml(items, ctx, bodies?)` in Tasks 8–9. `read_object_text→{text,bytes,mime?}`, `markdown_render→{html}`, `sanitize_html→{html}` chain consistently in Task 7.
 
-**Open item flagged:** the caching-layer question (shared cache vs CE-side response cache) is called out in Global Constraints and gated in Task 10 + Task 12 Step 2 — it must be resolved before the "loop runs once per TTL" performance claim holds.
+**Caching resolved:** caching is an optional performance enhancement only — no origin/DB/per-item cache, and no dependency on a shared CDN. The uncached path is the normal path, made acceptable by the bounded loop (concurrency 5, 5 s timeout, `maxBytes`). Nothing to verify against live.
