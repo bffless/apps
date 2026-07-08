@@ -14,7 +14,7 @@ The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the re
 | --- | --- | --- |
 | `/api/feeds` | `GET` | list subscribed feeds |
 | `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `url`) |
-| `/api/feeds/remove` | `POST` | unsubscribe (delete a feed row) |
+| `/api/feeds/remove` | `POST` | unsubscribe (delete the feed row + cascade-delete its non-starred items) |
 | `/api/feeds/folder` | `POST` | move a feed between folders (`data_update`; the insert-only add endpoint can't, #133) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
 | `/api/items/read` | `POST` | set an item's `read` flag (`data_update` by `guid`, #114) |
@@ -107,8 +107,11 @@ Two schemas back the reader (content is stored **raw** and sanitized at render �
   `lastFetchedAt`, `lastError`, `addedAt`.
 - **`reader_items`** — `guid` (dedup key), `feedId` (the owning feed's `url`, = `xml_feed_parse`
   `entry.source`), `title`, `link`, `author`, `publishedAt` (feed timestamp, ISO string), `summary`,
-  `content`, `read` (boolean), `starred` (boolean), `fetchedAt` (**`number`** — epoch-ms; ingest
-  stamps `Date.now()`, and the nightly prune filters it with a numeric `<`, so it must not be an ISO
+  `content`, `enclosureType` / `enclosureUrl` (nullable strings — the primary `text/*` enclosure's
+  mime + URL carried from the feed, so the reader can detect an embeddable post, e.g. `text/markdown`
+  from a Handoff feed; backfilled onto existing rows by the refresh upsert's `updateFields`),
+  `read` (boolean), `starred` (boolean), `fetchedAt` (**`number`** — epoch-ms; ingest stamps
+  `Date.now()`, and the nightly prune filters it with a numeric `<`, so it must not be an ISO
   string).
 
 **`schemaId` portability caveat:** the exported rules embed the reference project's `schemaId`s. When
