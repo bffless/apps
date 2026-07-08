@@ -49,15 +49,30 @@ describe('isEmbeddable', () => {
     ).toBe(true)
   })
 
-  it('is false for a trusted origin with a different enclosureType', () => {
+  it('is true for a trusted origin with text/html (a Handoff site)', () => {
+    expect(
+      isEmbeddable({
+        enclosureType: 'text/html',
+        link: 'https://handoff.j5s.dev/blob/Sites/Portfolio',
+      }),
+    ).toBe(true)
+  })
+
+  it('is false for a trusted origin with a non-embeddable enclosureType', () => {
     const link = 'https://handoff.j5s.dev/blob/Posts/x.md'
-    expect(isEmbeddable({ enclosureType: 'text/html', link })).toBe(false)
+    expect(isEmbeddable({ enclosureType: 'text/plain', link })).toBe(false)
+    expect(isEmbeddable({ enclosureType: 'application/pdf', link })).toBe(false)
     expect(isEmbeddable({ enclosureType: null, link })).toBe(false)
   })
 
-  it('is false for text/markdown from an untrusted origin (security)', () => {
+  it('is false for embeddable mimes from an untrusted origin (security)', () => {
     expect(
       isEmbeddable({ enclosureType: 'text/markdown', link: 'https://evil.com/blob/x' }),
+    ).toBe(false)
+    // The forged-mime case: a hostile feed labels a site markdown, but its own
+    // origin is untrusted, so it is not embeddable at all.
+    expect(
+      isEmbeddable({ enclosureType: 'text/html', link: 'https://evil.com/blob/x' }),
     ).toBe(false)
   })
 

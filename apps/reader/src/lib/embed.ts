@@ -23,6 +23,18 @@ import type { Item } from './items'
 export const TRUSTED_EMBED_ORIGINS: readonly string[] = ['https://handoff.j5s.dev']
 
 /**
+ * Enclosure mimes we treat as embeddable Handoff content: markdown posts and
+ * HTML sites. This is a **detection hint only** — it answers "is this an
+ * embeddable content item?", not "is it safe to auto-load". The mime is
+ * feed-supplied and therefore forgeable, so it must never gate the security
+ * decision; that is the origin allowlist ({@link TRUSTED_EMBED_ORIGINS}) plus
+ * the per-origin consent gate (see `embedConsent`). A feed lying about the mime
+ * gains nothing: the reader still iframes `link`, Handoff renders from the node
+ * (not the label), and every embed is consent-gated on the parsed origin.
+ */
+export const EMBEDDABLE_MIMES: ReadonlySet<string> = new Set(['text/markdown', 'text/html'])
+
+/**
  * Turn a viewer `link` into its embeddable form by setting `embed=1`, while
  * preserving any existing query (notably `?token=` for private posts). Returns
  * `null` when `link` is falsy or unparseable, so callers can branch on a single
@@ -55,16 +67,21 @@ export function embedHost(link: string | null | undefined): string | null {
 
 /**
  * Whether an item's body can be embedded inline via the Handoff viewer. True
- * IFF the enclosure mime is exactly `text/markdown` (v1 detection) **and**
- * `link` parses to an origin in {@link TRUSTED_EMBED_ORIGINS}. Fully defensive:
- * a null/empty/unparseable link or any other mime yields `false`. The
+ * IFF the enclosure mime is one of {@link EMBEDDABLE_MIMES} (markdown or HTML —
+ * detection only) **and** `link` parses to an origin in
+ * {@link TRUSTED_EMBED_ORIGINS} (the security gate). Fully defensive: a
+ * null/empty/unparseable link or any other mime yields `false`. The
  * `trustedOrigins` list is injectable for tests; callers normally omit it.
+ *
+ * Note: this only decides whether the reader *offers* an embed. Whether it
+ * auto-loads is a separate, origin-keyed consent decision (`embedConsent`) —
+ * the mime never influences that, since it is feed-supplied and forgeable.
  */
 export function isEmbeddable(
   item: Pick<Item, 'enclosureType' | 'link'>,
   trustedOrigins: readonly string[] = TRUSTED_EMBED_ORIGINS,
 ): boolean {
-  if (item.enclosureType !== 'text/markdown') return false
+  if (!item.enclosureType || !EMBEDDABLE_MIMES.has(item.enclosureType)) return false
   if (!item.link) return false
   try {
     const { origin } = new URL(item.link)
