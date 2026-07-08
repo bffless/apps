@@ -37,8 +37,18 @@ Handoff's app-specifics; do them once in the target project.
   not entered by you.
 - **Storage backend — a real bucket is REQUIRED (see §1 below).** ⚠️ **Handoff will not work on local
   file storage.** This is Handoff's key manual prerequisite.
-- **Response-header rules — none.** Handoff needs no extra response headers (nothing like Studio's
-  COOP/COEP), so the `install-app` skill has no header rule to add for Handoff.
+- **Response-header rules — none on a clean project.** Handoff needs no extra headers by itself.
+  **Exception — iframed content:** Handoff renders user-uploaded **Sites** (served with no `COEP`)
+  in an iframe, and exposes a chromeless **`?embed=1`** viewer mode that other apps (e.g. the reader)
+  iframe to show a post inline. If your project applies a cross-origin-isolation policy
+  (`COOP`/`COEP`) — e.g. another app on the same project uses `SharedArrayBuffer` (ffmpeg, etc.) —
+  the browser blocks those iframes with `COEP-framed resource needs COEP header`. Fix: add a
+  response-header rule matching Handoff's files (`apps/handoff/**`) with
+  `Cross-Origin-Opener-Policy: unsafe-none` + `Cross-Origin-Embedder-Policy: unsafe-none` and a
+  priority **below** the isolating rule. (Handoff itself doesn't use `SharedArrayBuffer`.) For a
+  cross-domain embedder, also allow that origin in Handoff's frame-ancestors (framePolicy `allow` +
+  `allowedOrigins`); same-registrable-domain subdomains are allowed automatically. A fresh project
+  with no isolation policy needs nothing here.
 - **Data tables + auth relay + people-picker directory** — the platform-level pieces the pipelines
   depend on; see §2–§4 below.
 
