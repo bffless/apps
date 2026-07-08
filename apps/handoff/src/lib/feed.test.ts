@@ -114,6 +114,22 @@ describe('renderFeedXml', () => {
     )
   })
 
+  it('uses path (not name) for the link + enclosure; name is only the <title>', () => {
+    // A file whose human name/title differs from its stored path (e.g. an
+    // API-set title). URLs must use `path`; `name` is display-only — else the
+    // link + media URL 404 in a reader.
+    const xml = renderFeedXml(
+      selectFeedItems([
+        node({ id: 'md-1', type: 'file', name: 'Pretty Title (v2)', path: 'Docs/2026-design.md', mime: 'text/markdown', size: 10, createdAt: 0 }),
+      ]),
+      ctx,
+    )
+    expect(xml).toContain('<link>https://handoff.j5s.dev/blob/Docs/2026-design.md</link>')
+    expect(xml).toContain('<enclosure url="https://handoff.j5s.dev/api/uploads/content/Docs/2026-design.md" type="text/markdown" length="10"/>')
+    expect(xml).toContain('<title>Pretty Title (v2)</title>')
+    expect(xml).not.toContain('Pretty%20Title')
+  })
+
   it('an image File item carries an inline <img> description + media:* thumbnail (reader view)', () => {
     const media = 'https://handoff.j5s.dev/api/uploads/content/Docs/a.png'
     const xml = renderFeedXml(
