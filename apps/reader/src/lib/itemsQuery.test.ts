@@ -109,3 +109,14 @@ describe('buildItemsQuery — oldest order with unknown total (first load)', () 
     expect(reverse).toBe(false)
   })
 })
+
+describe('buildItemsQuery — includeArchived', () => {
+  it('omits includeArchived by default', () => {
+    const { params } = buildItemsQuery({ kind: 'all' }, 1, 20, 'newest', null)
+    expect(params.has('includeArchived')).toBe(false)
+  })
+  it('appends includeArchived=true when requested', () => {
+    const { params } = buildItemsQuery({ kind: 'all' }, 1, 20, 'newest', null, true)
+    expect(params.get('includeArchived')).toBe('true')
+  })
+})
