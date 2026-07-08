@@ -360,7 +360,10 @@ function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: b
       srcDoc={result.doc}
       title={node.name}
       className="h-full w-full flex-1"
-      style={{ minHeight: 'calc(100vh - 7.5rem)' }}
+      // Kill the UA default 2px inset bevel. It's especially visible when this
+      // frame is itself embedded (the RSS reader iframes the chromeless viewer),
+      // where the bevel reads as an ugly gray top/left border on the content.
+      style={{ border: 'none', minHeight: 'calc(100vh - 7.5rem)' }}
     />
   )
 }
@@ -617,7 +620,7 @@ export function ViewerBody({ id }: { id: string }) {
             src={node.url}
             title={node.name}
             className="h-full w-full flex-1"
-            style={{ minHeight: 'calc(100vh - 7.5rem)' }}
+            style={{ border: 'none', minHeight: 'calc(100vh - 7.5rem)' }}
           />
         )}
         {kind === 'image' && node.url && (
@@ -639,7 +642,7 @@ export function ViewerBody({ id }: { id: string }) {
             src={node.url}
             title={node.name}
             className="h-full w-full flex-1"
-            style={{ minHeight: 'calc(100vh - 7.5rem)' }}
+            style={{ border: 'none', minHeight: 'calc(100vh - 7.5rem)' }}
           />
         )}
         {kind === 'site' && !node.url && (
