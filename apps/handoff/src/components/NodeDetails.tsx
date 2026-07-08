@@ -5,7 +5,7 @@
  * filename stays the node's identity; title/description only enrich the viewer
  * and the RSS feed.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { HandoffNode } from '../lib/nodes'
 import { useUpdateNodeMetaMutation } from '../store/handoffApi'
 import { toast } from '../lib/toast'
@@ -55,46 +55,68 @@ export function NodeDetails({ node, canEdit }: { node: HandoffNode; canEdit: boo
   )
 }
 
+/**
+ * Native <dialog> + showModal(), mirroring ShareDialog.tsx: focus-trapped and
+ * Escape-closable for free. Escape (and any other native close) fires the
+ * dialog's 'close' event, wired straight to `onClose`; the Cancel button and
+ * backdrop click both go through `handleClose` -> `ref.current.close()` so
+ * every path converges on that same 'close' event instead of duplicating the
+ * close logic.
+ */
 function EditDetailsDialog({ node, onClose }: { node: HandoffNode; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
   const [title, setTitle] = useState(node.title ?? '')
   const [description, setDescription] = useState(node.description ?? '')
   const [updateMeta, { isLoading }] = useUpdateNodeMetaMutation()
+
+  useEffect(() => {
+    const dlg = ref.current
+    if (dlg && !dlg.open) dlg.showModal()
+  }, [])
+
+  function handleClose() {
+    ref.current?.close()
+  }
 
   async function handleSave() {
     try {
       await updateMeta({ id: node.id, title, description, parentId: node.parentId }).unwrap()
       toast('Details saved.')
-      onClose()
+      handleClose()
     } catch {
       toast('Couldn’t save details. Please try again.', 'error')
     }
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => {
+        // Backdrop click (the dialog element itself is the click target).
+        if (e.target === ref.current) handleClose()
+      }}
       aria-label="Edit details"
-      className="fixed inset-0 flex items-center justify-center p-4"
-      style={{ zIndex: 'var(--z-modal)' }}
-      onClick={() => { if (!isLoading) onClose() }}
+      className="m-auto w-full max-w-md rounded-xl border border-border bg-surface p-0 text-ink shadow-lg backdrop:bg-black/40"
     >
-      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div
-        className="relative w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="p-6">
         <h2 className="mb-3 text-sm font-semibold text-ink">Edit details</h2>
-        <label className="block text-xs font-medium text-muted">Title</label>
+        <label htmlFor="node-details-title" className="block text-xs font-medium text-muted">
+          Title
+        </label>
         <input
+          id="node-details-title"
           value={title}
           maxLength={TITLE_MAX}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={node.name}
           className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink"
         />
-        <label className="mt-3 block text-xs font-medium text-muted">Description</label>
+        <label htmlFor="node-details-description" className="mt-3 block text-xs font-medium text-muted">
+          Description
+        </label>
         <textarea
+          id="node-details-description"
           value={description}
           maxLength={DESC_MAX}
           rows={4}
@@ -105,7 +127,7 @@ function EditDetailsDialog({ node, onClose }: { node: HandoffNode; onClose: () =
           <button
             type="button"
             disabled={isLoading}
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
           >
             Cancel
@@ -120,6 +142,6 @@ function EditDetailsDialog({ node, onClose }: { node: HandoffNode; onClose: () =
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   )
 }
