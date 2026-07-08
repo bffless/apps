@@ -1,6 +1,8 @@
 import { embedHost, embedUrl, isEmbeddable } from '../lib/embed'
+import { useEmbedConsent } from '../lib/useEmbedConsent'
 import { itemBodyHtml, type Item } from '../lib/items'
 import { sanitizeHtml } from '../lib/sanitize'
+import { EmbedConsentGate } from './EmbedConsentGate'
 
 /**
  * Right column: the reading pane. Feed HTML is stored raw and made safe **here**
@@ -37,6 +39,10 @@ export function ReadingPane({
    */
   feedNameFor?: (item: Item) => string | null
 }) {
+  // Consent gate for inline embeds. Called before the early return below so hook
+  // order stays stable across renders (item can be null).
+  const consent = useEmbedConsent()
+
   if (!item) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-16 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -48,10 +54,11 @@ export function ReadingPane({
   const clean = sanitizeHtml(itemBodyHtml(item))
   const feedName = feedNameFor?.(item) ?? null
 
-  // Embed a trusted Handoff markdown post inline. `isEmbeddable` is the security
-  // gate: it embeds only when the enclosure mime is `text/markdown` AND `link`'s
-  // origin is a known-Handoff allowlist entry — that trust boundary is what makes
-  // iframing a feed-supplied URL safe. Treat as embeddable only with a usable URL.
+  // Embed a trusted Handoff content item (markdown post or HTML site) inline.
+  // `isEmbeddable` is the *detection*+trust gate: the enclosure mime is embeddable
+  // AND `link`'s origin is a known-Handoff allowlist entry — that origin boundary
+  // is what makes iframing a feed-supplied URL safe. Treat as embeddable only with
+  // a usable URL.
   const embed = isEmbeddable(item)
   const src = embed ? embedUrl(item.link) : null
 
@@ -131,44 +138,62 @@ export function ReadingPane({
   // classic iframe-collapse trap).
   if (src) {
     const host = embedHost(item.link)
+    // Consent gate (Outlook-style): the embed is hidden until the reader allows
+    // it. Keyed on the parsed `host` — NEVER `item.enclosureType`, which is
+    // feed-supplied and forgeable (a feed could label a JS site `text/markdown`
+    // to look safe). `open` is true only once the host is always-allowed or this
+    // item was shown-once this session; otherwise we render the gate in place of
+    // the iframe. The article header shows in both states.
+    const open = !!host && (consent.isAllowed(host) || consent.isAllowedOnce(item.guid))
     return (
       <article className={`mx-auto flex h-full min-h-0 w-full flex-col px-2 py-4 ${measureClass}`}>
         {header}
-        <div className="mb-2 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-          <svg
-            aria-hidden="true"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className="h-3.5 w-3.5 shrink-0"
-          >
-            <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clipRule="evenodd" />
-            <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clipRule="evenodd" />
-          </svg>
-          <span className="min-w-0 truncate">
-            Embedded document{host ? <> from <span className="font-medium">{host}</span></> : null}
-          </span>
-          {item.link && (
-            <a
-              href={item.link}
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              className="shrink-0 underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-300"
-            >
-              Open original ↗
-            </a>
-          )}
-        </div>
-        <iframe
-          src={src}
-          title={item.title || '(untitled)'}
-          // Same-origin here is the iframe's OWN Handoff origin (so the embed page
-          // can reach its session/content), not the reader's — it grants no access
-          // back to Rivulet.
-          sandbox="allow-scripts allow-same-origin"
-          className="w-full flex-1 border-0"
-          style={{ minHeight: 'calc(100vh - 12rem)' }}
-        />
+        {open ? (
+          <>
+            <div className="mb-2 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+              <svg
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-3.5 w-3.5 shrink-0"
+              >
+                <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clipRule="evenodd" />
+              </svg>
+              <span className="min-w-0 truncate">
+                Embedded document{host ? <> from <span className="font-medium">{host}</span></> : null}
+              </span>
+              {item.link && (
+                <a
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="shrink-0 underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-300"
+                >
+                  Open original ↗
+                </a>
+              )}
+            </div>
+            <iframe
+              src={src}
+              title={item.title || '(untitled)'}
+              // Same-origin here is the iframe's OWN Handoff origin (so the embed
+              // page can reach its session/content), not the reader's — it grants
+              // no access back to Rivulet.
+              sandbox="allow-scripts allow-same-origin"
+              className="w-full flex-1 border-0"
+              style={{ minHeight: 'calc(100vh - 12rem)' }}
+            />
+          </>
+        ) : (
+          <EmbedConsentGate
+            host={host}
+            link={item.link}
+            onShowOnce={() => consent.allowOnce(item.guid)}
+            onAllowAlways={() => consent.allowAlways(host)}
+          />
+        )}
       </article>
     )
   }
