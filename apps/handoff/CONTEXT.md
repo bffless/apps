@@ -101,3 +101,15 @@ leaves produce no [[Feed Item]]s. Purely a surfacing control, **orthogonal to ac
 folder stays fully browsable and its files openable; it is neither private nor [[Restricted]]. Used
 e.g. to keep a markdown post's `assets/` images from surfacing as their own items.
 _Avoid_: Private, hidden, unlisted, restricted, muted (each implies an access or listing change)
+
+**Title**:
+An optional display-title override on a [[File]] or [[Site]]. Additive — the filename stays
+the leaf's identity (path, listings, name-uniqueness); the title only replaces the viewer
+heading and the [[Feed Item]] `<title>`, falling back to the filename when unset.
+_Avoid_: Name, rename, label
+
+**Description**:
+An optional plain-text, multi-line note on a [[File]] or [[Site]], surfaced as the
+[[Feed Item]] `<description>` body (above the inline image for an image [[File]]). Additive
+metadata; escaped into the feed, never executed.
+_Avoid_: Caption, summary, body (in access/structural contexts)

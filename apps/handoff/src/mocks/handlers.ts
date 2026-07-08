@@ -357,6 +357,8 @@ export function seedFile(name: string, parentId: string): HandoffNode {
     id,
     type: 'file',
     name,
+    title: null,
+    description: null,
     mime: null,
     size: null,
     url: null,
@@ -385,6 +387,8 @@ export function seedSite(name: string, parentId: string): HandoffNode {
     id,
     type: 'site',
     name,
+    title: null,
+    description: null,
     mime: null,
     size: null,
     url: `/api/uploads/content/site-${id}/index.html`,
@@ -631,6 +635,8 @@ export const handlers = [
       id,
       type: 'file',
       name: displayName,
+      title: null,
+      description: null,
       mime: body.storageKey ? (objects.get(body.storageKey)?.type ?? null) : null,
       size: body.storageKey ? (objects.get(body.storageKey)?.body.byteLength ?? null) : null,
       url: body.storageKey ? mockServePath(body.storageKey) : null,
@@ -876,6 +882,41 @@ export const handlers = [
     }
     nodes.set(id, updated)
     return HttpResponse.json(resp)
+  }),
+
+  /**
+   * PATCH /api/node/meta
+   * Body: { id, title?, description? } → { id, title, description }.
+   * Mirrors the live meta pipeline at the toNode seam: edit-gated over the
+   * parent-folder chain (checkAccess min 'edit'); 400 bad/missing id, non-leaf,
+   * or no editable field; 401 no credential; 403 insufficient. Writes only the
+   * provided fields; '' clears to null.
+   */
+  http.patch('/api/node/meta', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { id?: string; title?: unknown; description?: unknown }
+    const id = String(body.id ?? '')
+    const hasTitle = typeof body.title === 'string'
+    const hasDescription = typeof body.description === 'string'
+    const node = id ? nodes.get(id) : undefined
+    const isLeaf = !!node && (node.type === 'file' || node.type === 'site')
+    if (!id || (!hasTitle && !hasDescription) || !isLeaf) {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
+    }
+    const access = checkAccess(id, 'edit')
+    if (access === '401') return HttpResponse.json({ error: 'unauthorized' }, { status: 401 })
+    if (access === '403') return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+
+    let updated = { ...node! }
+    if (hasTitle) {
+      const t = String(body.title).trim()
+      updated = { ...updated, title: t ? t.slice(0, 200) : null }
+    }
+    if (hasDescription) {
+      const d = String(body.description)
+      updated = { ...updated, description: d ? d.slice(0, 2000) : null }
+    }
+    nodes.set(id, updated)
+    return HttpResponse.json({ id, title: updated.title ?? null, description: updated.description ?? null })
   }),
 
   /**

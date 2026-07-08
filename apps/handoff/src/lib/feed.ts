@@ -26,6 +26,10 @@ export interface FeedItem {
   createdAt: number
   mime: string | null
   size: number | null
+  /** Display-title override; null → use `name`. */
+  title: string | null
+  /** Plain-text note rendered into the item <description>; null → none. */
+  description: string | null
 }
 
 export interface FeedContext {
@@ -86,6 +90,8 @@ export function selectFeedItems(nodes: HandoffNode[]): FeedItem[] {
       createdAt: n.createdAt,
       mime: n.mime,
       size: n.size,
+      title: n.title,
+      description: n.description,
     }))
 }
 
@@ -115,6 +121,19 @@ function htmlAttr(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+/**
+ * Escape user plain text for an HTML/CDATA feed <description> body and turn
+ * newlines into <br>. The caller wraps the result in a <p>.
+ */
+function descHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\r\n?|\n/g, '<br>')
 }
 
 /** Human-readable byte size for a non-image item's `<description>` (''=unknown). */
@@ -172,10 +191,11 @@ export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
   }
   for (const it of items) {
     lines.push('<item>')
-    lines.push(`<title>${xmlEscape(it.name)}</title>`)
+    lines.push(`<title>${xmlEscape(it.title || it.name)}</title>`)
     lines.push(`<link>${xmlEscape(ctx.origin + blobUrl(it.path) + tokenQs)}</link>`)
     lines.push(`<guid isPermaLink="false">${xmlEscape(it.id)}</guid>`)
     lines.push(`<pubDate>${rfc822(it.createdAt)}</pubDate>`)
+    const note = it.description ? `<p>${descHtml(it.description)}</p>` : ''
     if (it.type === 'file') {
       const media = mediaUrl(it, ctx)
       const mime = it.mime ?? 'application/octet-stream'
@@ -185,13 +205,17 @@ export function renderFeedXml(items: FeedItem[], ctx: FeedContext): string {
         // Reader/article views render <description>, not <enclosure>; an inline
         // <img> gives them a body + the picture. media:* feeds thumbnail-driven
         // readers (Feedly/Inoreader/NetNewsWire).
-        lines.push(`<description><![CDATA[<p><img src="${media}" alt="${htmlAttr(it.name)}" /></p>]]></description>`)
+        lines.push(`<description><![CDATA[${note}<p><img src="${media}" alt="${htmlAttr(it.name)}" /></p>]]></description>`)
         lines.push(`<media:content url="${xmlEscape(media)}" type="${xmlEscape(mime)}" medium="image"/>`)
         lines.push(`<media:thumbnail url="${xmlEscape(media)}"/>`)
+      } else if (note) {
+        lines.push(`<description><![CDATA[${note}]]></description>`)
       } else {
         const size = humanSize(it.size)
         lines.push(`<description>${xmlEscape(size ? `${it.name} (${size})` : it.name)}</description>`)
       }
+    } else if (note) {
+      lines.push(`<description><![CDATA[${note}]]></description>`)
     } else {
       // Site: a one-line description so the reader shows a body, not "no content".
       lines.push(`<description>${xmlEscape(it.name)}</description>`)

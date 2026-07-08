@@ -13,7 +13,7 @@ function file(over: Partial<HandoffNode> = {}): HandoffNode {
   return {
     id: 'file-1', type: 'file', name: 'doc.txt', mime: null, size: null, url: null,
     storageKey: 'content/abc', path: 'abc', parentId: 'folder-1', createdAt: 0,
-    ownerId: null, grants: [], mode: 'inheriting', ...over,
+    ownerId: null, grants: [], mode: 'inheriting', title: null, description: null, ...over,
   }
 }
 
@@ -21,7 +21,7 @@ function folder(over: Partial<HandoffNode> = {}): HandoffNode {
   return {
     id: 'folder-1', type: 'folder', name: 'Folder', mime: null, size: null, url: null,
     storageKey: null, path: null, parentId: 'root', createdAt: 0,
-    ownerId: null, grants: [], mode: 'inheriting', ...over,
+    ownerId: null, grants: [], mode: 'inheriting', title: null, description: null, ...over,
   }
 }
 

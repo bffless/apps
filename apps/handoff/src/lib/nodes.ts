@@ -31,6 +31,10 @@ export interface HandoffNode {
   grants: Grant[]
   /** Whether this folder inherits grants from ancestors or starts a new ACL boundary. */
   mode: 'inheriting' | 'restricted'
+  /** Display-title override; null → fall back to the filename (`name`). */
+  title: string | null
+  /** Plain-text, multi-line note; null → none. Surfaced in the feed <description>. */
+  description: string | null
   /**
    * Folder-only surfacing flag (#191 / ADR-0007): when true this folder's whole
    * subtree is kept out of every RSS feed while staying fully browsable. Not a
@@ -147,7 +151,16 @@ export function toNode(raw: unknown): HandoffNode {
   const rawFeedExcluded = obj['feedExcluded']
   const feedExcluded = rawFeedExcluded === true || rawFeedExcluded === 'true'
 
-  return { id, type, name, mime, size, url, storageKey, path, parentId, createdAt, ownerId, grants, mode, feedExcluded }
+  // title: trimmed string, else null
+  const rawTitle = obj['title']
+  const trimmedTitle = typeof rawTitle === 'string' ? rawTitle.trim() : ''
+  const title = trimmedTitle || null
+
+  // description: string, else null
+  const rawDescription = obj['description']
+  const description = typeof rawDescription === 'string' ? rawDescription : null
+
+  return { id, type, name, mime, size, url, storageKey, path, parentId, createdAt, ownerId, grants, mode, title, description, feedExcluded }
 }
 
 /**

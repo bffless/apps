@@ -17,6 +17,8 @@ function node(partial: Partial<HandoffNode> & Pick<HandoffNode, 'id' | 'type'>):
     ownerId: partial.ownerId ?? null,
     grants: partial.grants ?? [],
     mode: partial.mode ?? 'inheriting',
+    title: partial.title ?? null,
+    description: partial.description ?? null,
     feedExcluded: partial.feedExcluded ?? false,
   }
 }
@@ -180,5 +182,47 @@ describe('renderFeedXml', () => {
       ctx,
     )
     expect(xml).not.toContain('?token=')
+  })
+})
+
+function fileNode(over: Partial<HandoffNode>): HandoffNode {
+  return {
+    id: 'id1', type: 'file', name: 'a.png', mime: 'image/png', size: 10,
+    url: null, storageKey: null, path: 'a.png', parentId: 'root', createdAt: 1,
+    ownerId: null, grants: [], mode: 'inheriting', title: null, description: null, ...over,
+  }
+}
+const ctx2 = { origin: 'https://h.test', title: 'My Files', description: 'd', folderPath: '' }
+
+describe('feed title/description', () => {
+  it('carries title/description onto items', () => {
+    const [it] = selectFeedItems([fileNode({ title: 'T', description: 'D' })])
+    expect(it.title).toBe('T')
+    expect(it.description).toBe('D')
+  })
+
+  it('item <title> uses title, falling back to filename', () => {
+    const withT = renderFeedXml(selectFeedItems([fileNode({ title: 'My Deck' })]), ctx2)
+    expect(withT).toContain('<title>My Deck</title>')
+    const noT = renderFeedXml(selectFeedItems([fileNode({ name: 'a.png' })]), ctx2)
+    expect(noT).toContain('<title>a.png</title>')
+  })
+
+  it('image description renders above the inline img, escaped, newlines to <br>', () => {
+    const xml = renderFeedXml(selectFeedItems([fileNode({ description: 'a & b\nc' })]), ctx2)
+    expect(xml).toContain('<description><![CDATA[<p>a &amp; b<br>c</p><p><img')
+    expect(xml).toContain('<media:thumbnail')
+  })
+
+  it('non-image with description uses a CDATA note; without one keeps name (size)', () => {
+    const withD = renderFeedXml(selectFeedItems([fileNode({ mime: 'text/plain', name: 'n.txt', size: 2048, description: 'note' })]), ctx2)
+    expect(withD).toContain('<description><![CDATA[<p>note</p>]]></description>')
+    const noD = renderFeedXml(selectFeedItems([fileNode({ mime: 'text/plain', name: 'n.txt', size: 2048 })]), ctx2)
+    expect(noD).toContain('<description>n.txt (2.0 KB)</description>')
+  })
+
+  it('site with description uses a CDATA note; without one keeps the name', () => {
+    const s = fileNode({ type: 'site', mime: null, name: 'Site', description: 'hello' })
+    expect(renderFeedXml(selectFeedItems([s]), ctx2)).toContain('<description><![CDATA[<p>hello</p>]]></description>')
   })
 })

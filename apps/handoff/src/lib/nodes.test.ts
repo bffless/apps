@@ -154,6 +154,26 @@ describe('toNode — null url explicitly', () => {
   })
 })
 
+describe('toNode title/description', () => {
+  it('coerces title and description from strings', () => {
+    const n = toNode({ id: 'x', type: 'file', title: 'My Deck', description: 'line1\nline2' })
+    expect(n.title).toBe('My Deck')
+    expect(n.description).toBe('line1\nline2')
+  })
+
+  it('defaults missing/blank title and missing description to null', () => {
+    expect(toNode({ id: 'x' }).title).toBeNull()
+    expect(toNode({ id: 'x' }).description).toBeNull()
+    expect(toNode({ id: 'x', title: '   ' }).title).toBeNull()
+  })
+
+  it('ignores non-string title/description', () => {
+    const n = toNode({ id: 'x', title: 42, description: { bad: true } })
+    expect(n.title).toBeNull()
+    expect(n.description).toBeNull()
+  })
+})
+
 // ---------------------------------------------------------------------------
 // toNodeList
 // ---------------------------------------------------------------------------
