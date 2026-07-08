@@ -29,6 +29,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     enclosureType: null,
     read: false,
     starred: false,
+    archived: false,
     fetchedAt: 1,
     ...overrides,
   }
