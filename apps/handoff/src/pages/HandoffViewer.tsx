@@ -19,6 +19,7 @@ import { useSession, fetchWithReauth } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
 import { ShareDialog } from '../components/ShareDialog'
+import { NodeDetails } from '../components/NodeDetails'
 import { TrashIcon, ChevronRightIcon } from '../components/icons'
 import { parentFolderPath } from '../lib/tree'
 import { treeUrl, parentPath } from '../lib/pathUrl'
@@ -542,6 +543,12 @@ export function ViewerBody({ id }: { id: string }) {
   const { data: node, isLoading, isError } = useGetNodeQuery(id, {
     skip: sessionLoading || claimPending || (needClaim && claimData?.valid === false),
   })
+  // Parent-folder lookup for the details-edit gate — same pattern as ControlBar's
+  // share/delete gates: skip for guests (unauthenticated) to avoid a discarded
+  // 401, and while `node` itself hasn't resolved yet.
+  const { data: parentNode } = useGetNodeQuery(node?.parentId ?? 'root', {
+    skip: !node || node.parentId === 'root' || !authed,
+  })
   const contentRef = useRef<HTMLDivElement>(null)
 
   // Raw-source toggle. Reset to rendered whenever the viewed item changes
@@ -577,6 +584,8 @@ export function ViewerBody({ id }: { id: string }) {
   const kind = previewFor(node)
   const canViewSource = hasViewSource(kind) && !!node.url
   const sourceShown = canViewSource && showSource
+  // Writers of the parent folder — the same gate the control bar's Delete uses.
+  const canEditMeta = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
 
   return (
     <div className="flex flex-col" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
@@ -587,6 +596,7 @@ export function ViewerBody({ id }: { id: string }) {
         showSource={showSource}
         onToggleSource={() => setShowSource((v) => !v)}
       />
+      <NodeDetails node={node} canEdit={canEditMeta} />
       <div ref={contentRef} className="flex flex-1 flex-col overflow-auto">
         {sourceShown && node.url && (
           <SourceView url={node.url} />
