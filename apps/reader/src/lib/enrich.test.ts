@@ -14,7 +14,7 @@ const rules = JSON.parse(readFileSync(rulesPath, 'utf8')) as {
   schemas: Array<{ name: string; fields: Array<{ name: string; type: string }> }>
   rules: Array<{
     pathPattern?: string
-    pipelineConfig?: { steps?: Array<{ id: string; config?: { code?: string; map?: Record<string, string> } }> }
+    pipelineConfig?: { steps?: Array<{ id: string; handlerType?: string; config?: { code?: string; map?: Record<string, string> } }> }
   }>
 }
 
@@ -166,5 +166,30 @@ describe('proxy-rules structure — schema + upsert map', () => {
     const map = findStep('/api/refresh', 'upsert').config?.map
     expect(map?.enclosureType).toBe('steps.item.enclosureType')
     expect(map?.enclosureUrl).toBe('steps.item.enclosureUrl')
+  })
+
+  it('the refresh upsert whitelists ONLY the two enclosure columns for update-on-existing (backfill)', () => {
+    // updateFields lets a re-poll backfill enclosureType/enclosureUrl onto an
+    // already-ingested row while data_upsert_many stays insert-only for every
+    // other column — so read/starred and the dedup key are preserved.
+    const config = findStep('/api/refresh', 'upsert').config as Record<string, unknown>
+    expect(config.updateFields).toEqual(['enclosureType', 'enclosureUrl'])
+  })
+})
+
+describe('proxy-rules structure — unsubscribe cascade', () => {
+  it('removing a feed cascade-deletes its non-starred items (starred spared)', () => {
+    const del = findStep('/api/feeds/remove', 'delItems')
+    expect(del.handlerType).toBe('data_delete')
+    const config = del.config as Record<string, unknown>
+    // Targets reader_items, not reader_feeds.
+    expect(config.schemaId).toBe('96a1b5e7-96f0-43a4-baa8-2e19b539d07c')
+    // Only runs once the feed row was found + removed.
+    expect(config.condition).toBe('steps.pick.found')
+    // Delete-by-query: the feed's items (feedId == the posted url) AND not starred.
+    const filters = config.filters as Record<string, { op: string; value: string }>
+    expect(filters.feedId).toEqual({ op: 'eq', value: 'request.body.url' })
+    expect(filters.starred).toEqual({ op: 'ne', value: 'true' })
+    expect(config.filterLogic).toBe('and')
   })
 })
