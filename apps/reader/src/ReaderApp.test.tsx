@@ -89,6 +89,8 @@ beforeEach(() => {
   vi.mocked(api.setItemStar).mockResolvedValue(undefined)
   vi.mocked(api.setFeedFolder).mockResolvedValue(undefined)
   vi.mocked(api.markAllRead).mockResolvedValue(0)
+  vi.mocked(api.setItemArchived).mockResolvedValue(undefined)
+  vi.mocked(api.deleteItem).mockResolvedValue(undefined)
 })
 
 const feedPath = `/feed/${encodeURIComponent(FEED_URL)}`
@@ -101,6 +103,7 @@ describe('ReaderApp — paged per-view fetch', () => {
         page: 1,
         order: 'newest',
         total: null,
+        includeArchived: false,
       }),
     )
     // The list renders the fetched page's items straight through (server-ordered).
@@ -125,6 +128,7 @@ describe('ReaderApp — paged per-view fetch', () => {
         page: 1,
         order: 'oldest',
         total: 3,
+        includeArchived: false,
       }),
     )
   })
@@ -236,7 +240,7 @@ describe('ReaderApp — out-of-range page clamp', () => {
     renderAt(`${feedPath}?page=3`)
     // The client re-issues the fetch for the clamped last page (page 1), not page 3.
     await waitFor(() =>
-      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null, includeArchived: false }),
     )
     // The valid last page renders — not the empty out-of-range page and not the
     // misleading caught-up state.
@@ -262,7 +266,7 @@ describe('ReaderApp — out-of-range page clamp', () => {
     renderAt(`${feedPath}/item/OFFPAGE?page=3`)
     // The clamp re-issues the page fetch for the last valid page (page 1).
     await waitFor(() =>
-      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null, includeArchived: false }),
     )
     // The open item survives the clamp: the article is still rendered afterwards
     // (a clamp to the bare view path would have closed it).
@@ -307,14 +311,14 @@ describe('ReaderApp — oldest-first unknown-total re-issue (#164)', () => {
 
     // Initial fetch: newest, unknown total. Records total=45 for this selection.
     await waitFor(() =>
-      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null }),
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'newest', total: null, includeArchived: false }),
     )
 
     // Toggle to oldest. total is already KNOWN here, so this is a single fetch
     // with total=45 — NOT the path under test, just the setup to make oldest active.
     fireEvent.click(await screen.findByRole('button', { name: /newest first/i }))
     await waitFor(() =>
-      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: KNOWN_TOTAL }),
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: KNOWN_TOTAL, includeArchived: false }),
     )
 
     // Refresh clears totalRef (reload()). The ensuing refetch now runs with
@@ -326,7 +330,7 @@ describe('ReaderApp — oldest-first unknown-total re-issue (#164)', () => {
 
     // The null→N re-issue: first the oldest fetch with unknown total…
     await waitFor(() =>
-      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: null }),
+      expect(api.listItems).toHaveBeenCalledWith(FEED_SEL, { page: 1, order: 'oldest', total: null, includeArchived: false }),
     )
     // …then the corrected re-issue with the now-known total. Prove it's the
     // RE-ISSUE (not the earlier toggle's oldest+45 call) by asserting an oldest
@@ -378,6 +382,20 @@ describe('ReaderApp — refetch folder page after moving a feed in/out of it (#1
     await waitFor(() => expect(api.setFeedFolder).toHaveBeenCalled())
     // No extra page fetch: the move is unrelated to the "News" view.
     expect(api.listItems).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('archived toggle', () => {
+  it('re-requests the current view with includeArchived when the toggle is turned on', async () => {
+    renderAt('/all')
+    await waitFor(() => expect(api.listItems).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: /show archived/i }))
+    await waitFor(() =>
+      expect(api.listItems).toHaveBeenCalledWith(
+        { kind: 'all' },
+        expect.objectContaining({ includeArchived: true }),
+      ),
+    )
   })
 })
 

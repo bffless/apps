@@ -19,6 +19,8 @@ export function ReadingPane({
   measureClass = 'max-w-2xl',
   onToggleRead,
   onToggleStar,
+  onToggleArchive,
+  onDelete,
   feedNameFor,
 }: {
   item: Item | null
@@ -32,6 +34,8 @@ export function ReadingPane({
   measureClass?: string
   onToggleRead?: (item: Item) => void
   onToggleStar?: (item: Item) => void
+  onToggleArchive?: (item: Item) => void
+  onDelete?: (item: Item) => void
   /**
    * Resolve the feed-name eyebrow shown above the title. Supplied only in mixed
    * views (river/all/folder/starred); omitted in a single-feed view where the
@@ -66,7 +70,7 @@ export function ReadingPane({
   // the body region below differs.
   const header = (
     <header className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
-        {(onToggleRead || onToggleStar) && (
+        {(onToggleRead || onToggleStar || onToggleArchive || onDelete) && (
           <div className="mb-2 flex justify-end gap-1">
             {onToggleStar && (
               <button
@@ -88,6 +92,25 @@ export function ReadingPane({
                 className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
               >
                 {item.read ? 'Mark unread' : 'Mark read'}
+              </button>
+            )}
+            {onToggleArchive && (
+              <button
+                type="button"
+                onClick={() => onToggleArchive(item)}
+                aria-pressed={item.archived}
+                className={item.archived ? 'text-sky-500' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}
+              >
+                {item.archived ? '🗃 Archived' : '📥 Archive'}
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(item)}
+                className="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400"
+              >
+                🗑 Delete
               </button>
             )}
           </div>
