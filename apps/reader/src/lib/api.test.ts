@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { setFeedFolder, listItems } from './api'
+import { setFeedFolder, setItemArchived, deleteItem, listItems } from './api'
 import type { Feed } from './feeds'
 
 afterEach(() => {
@@ -106,5 +106,58 @@ describe('listItems', () => {
     expect(page.items[0].enclosureType).toBe('text/markdown')
     // A missing enclosureType coerces to null via str(), not undefined/'' — proving the default carries through.
     expect(page.items[1].enclosureType).toBeNull()
+  })
+})
+
+describe('setItemArchived', () => {
+  it('POSTs guid + archived to /api/items/archive', async () => {
+    const fetchMock = vi.fn(async () => jsonOk({ ok: true, updated: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await setItemArchived('g1', true)
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/items/archive')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ guid: 'g1', archived: true })
+  })
+  it('throws before the network on an empty guid', async () => {
+    const fetchMock = vi.fn(async () => jsonOk({ ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(setItemArchived('', true)).rejects.toThrow(/guid is required/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('deleteItem', () => {
+  it('POSTs guid to /api/items/delete', async () => {
+    const fetchMock = vi.fn(async () => jsonOk({ ok: true, deleted: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await deleteItem('g1')
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/items/delete')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ guid: 'g1' })
+  })
+  it('throws before the network on an empty guid', async () => {
+    const fetchMock = vi.fn(async () => jsonOk({ ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(deleteItem('')).rejects.toThrow(/guid is required/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('listItems — includeArchived', () => {
+  it('adds includeArchived=true to the request when opted in', async () => {
+    const fetchMock = vi.fn(async () => jsonOk({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await listItems({ kind: 'all' }, { includeArchived: true })
+    const [path] = fetchMock.mock.calls[0] as unknown as [string]
+    expect(path).toContain('includeArchived=true')
+  })
+  it('omits includeArchived by default', async () => {
+    const fetchMock = vi.fn(async () => jsonOk({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await listItems({ kind: 'all' }, {})
+    const [path] = fetchMock.mock.calls[0] as unknown as [string]
+    expect(path).not.toContain('includeArchived')
   })
 })
