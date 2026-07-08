@@ -17,6 +17,8 @@ function node(partial: Partial<HandoffNode> & Pick<HandoffNode, 'id' | 'type'>):
     ownerId: partial.ownerId ?? null,
     grants: partial.grants ?? [],
     mode: partial.mode ?? 'inheriting',
+    title: partial.title ?? null,
+    description: partial.description ?? null,
     feedExcluded: partial.feedExcluded ?? false,
   }
 }

@@ -33,6 +33,8 @@ function makeFolder(
     ownerId: null,
     grants: [],
     mode: 'inheriting',
+    title: null,
+    description: null,
     ...overrides,
   }
 }
