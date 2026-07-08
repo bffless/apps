@@ -1,3 +1,4 @@
+import { embedUrl, isEmbeddable } from '../lib/embed'
 import { itemBodyHtml, type Item } from '../lib/items'
 import { sanitizeHtml } from '../lib/sanitize'
 
@@ -47,9 +48,17 @@ export function ReadingPane({
   const clean = sanitizeHtml(itemBodyHtml(item))
   const feedName = feedNameFor?.(item) ?? null
 
-  return (
-    <article className={`mx-auto px-2 py-4 ${measureClass}`}>
-      <header className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
+  // Embed a trusted Handoff markdown post inline. `isEmbeddable` is the security
+  // gate: it embeds only when the enclosure mime is `text/markdown` AND `link`'s
+  // origin is a known-Handoff allowlist entry — that trust boundary is what makes
+  // iframing a feed-supplied URL safe. Treat as embeddable only with a usable URL.
+  const embed = isEmbeddable(item)
+  const src = embed ? embedUrl(item.link) : null
+
+  // The header is byte-identical in both the embed and non-embed branches; only
+  // the body region below differs.
+  const header = (
+    <header className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
         {(onToggleRead || onToggleStar) && (
           <div className="mb-2 flex justify-end gap-1">
             {onToggleStar && (
@@ -95,7 +104,38 @@ export function ReadingPane({
           {item.author && item.publishedAt && <span> · </span>}
           {item.publishedAt && <time>{new Date(item.publishedAt).toLocaleString()}</time>}
         </p>
-      </header>
+    </header>
+  )
+
+  // Embeddable: render a REAL <iframe> in place of the sanitized-body div — a
+  // deliberate bypass of the `dangerouslySetInnerHTML` sanitize path so DOMPurify
+  // never sees (and can't strip) it. The reader does no markdown rendering; the
+  // Handoff embed page renders its own reading measure inside the iframe. The
+  // article is a full-height flex column and full-width (dropping the `mx-auto
+  // ${measureClass}` measure) so the `flex-1` iframe fills the pane; the viewport
+  // min-height floor guards against the flex chain failing to resolve (the classic
+  // iframe-collapse trap).
+  if (src) {
+    return (
+      <article className="flex h-full min-h-0 flex-col px-2 py-4">
+        {header}
+        <iframe
+          src={src}
+          title={item.title || '(untitled)'}
+          // Same-origin here is the iframe's OWN Handoff origin (so the embed page
+          // can reach its session/content), not the reader's — it grants no access
+          // back to Rivulet.
+          sandbox="allow-scripts allow-same-origin"
+          className="w-full flex-1"
+          style={{ minHeight: 'calc(100vh - 10rem)' }}
+        />
+      </article>
+    )
+  }
+
+  return (
+    <article className={`mx-auto px-2 py-4 ${measureClass}`}>
+      {header}
       {clean ? (
         <div
           className="reader-content max-w-none text-sm leading-relaxed text-slate-800 dark:text-slate-200"
