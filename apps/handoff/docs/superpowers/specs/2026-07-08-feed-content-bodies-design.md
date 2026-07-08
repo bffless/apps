@@ -104,6 +104,11 @@ Consequences:
 
 - A pipeline is **dual-mode by construction** — one pipeline, works over HTTP or as a child, with
   no `if (child)` branches in any handler. CE knows the mode from *how the pipeline was entered*.
+- **Validators are edge guards; `call` enters below the edge.** A pipeline's validators
+  (`auth_required`, `rate_limit`) run only on HTTP entry. An in-process `call` runs the child's
+  *steps* in the parent's already-authorized context and does **not** re-run them. This is what
+  lets a child be safely gated over HTTP (change 5) while the feed still calls it from an
+  anonymous public-feed request.
 - Strict improvement independent of this feature: pipelines become testable as pure functions
   with no HTTP layer.
 - This is the enabling refactor; it is small but touches the response/exec core, so it lands
@@ -114,9 +119,13 @@ Consequences:
 A new control-flow handler that maps a child pipeline over an array:
 
 - **Config:** `items` (expression → array), `pipeline` (child ref), `itemAs` (binding name),
-  and error/timeout knobs below.
-- **Execution:** for each element, invoke the child **in-process** in the current request/auth
-  context; collect results in order into an array output.
+  `concurrency` (max children in flight, **default 5**), and error/timeout knobs below.
+- **Execution:** invoke the child **in-process** per element in the current request/auth context,
+  under a **bounded-concurrency pool** — at most `concurrency` children in flight at once, and the
+  next starts the instant one finishes (a sliding window, **not** fixed batches, which would stall
+  each batch on its slowest item). Results are collected positionally into an array output.
+  `concurrency: 1` = sequential; the default 5 caps bucket load while keeping ≤50 items to ~10
+  waves on a cache miss.
 - **Per-item isolation:** a child that throws, times out, or returns non-2xx becomes a **`null`**
   slot — it never aborts the loop or the other items.
 - **Per-item timeout:** default **5000 ms** (configurable) — a bucket download can't stall the
@@ -158,14 +167,20 @@ sanitizer serves both branches rather than being duplicated inside each renderer
 
 ### Handoff change 5 — Child pipeline `resolve-content`
 
-A new pipeline in the `handoff` rule set:
+A new pipeline in the `handoff` rule set — a **normal routed pipeline**, no new pipeline kind:
 
+- **Route:** `POST /_internal/resolve-content`, with an **`auth_required` (owner/admin)
+  validator** so the HTTP path is not an open blob-reader. The feed never uses this HTTP path — it
+  calls the pipeline **in-process** via the loop, which enters below the edge (change 1), so the
+  validator is skipped and a public/anonymous feed still resolves content. The parent has already
+  access-filtered and passes only viewer-permitted `storageKey`s.
 - **Input:** `{ id, storageKey, mime, type }` (supplied per item by the loop).
 - **Steps:** `read_object_text` → (`markdown_render` if `mime === 'text/markdown'`) →
   `sanitize_html` → `response { id, html }`. Branching uses the existing step-`condition`
-  mechanism.
-- **Independently callable** (e.g. the reader app could render one post through it) — a direct
-  benefit of composition, no extra work.
+  mechanism. **The markdown→HTML transform is the `markdown_render` CE handler (change 4), not a
+  `function_handler`** — hand-rolling a parser in the sandbox is exactly what we're avoiding.
+- **Also callable standalone over HTTP** (owner-gated) — e.g. the reader app could render one post
+  through it — a direct benefit of it being an ordinary routed pipeline.
 
 ### Handoff change 6 — Feed rules (all three copies)
 
@@ -238,9 +253,9 @@ Each gets its own spec → plan → implementation cycle; this design is the sha
 - **Response-decoupling regression.** Lifting the socket-write out of `response_handler` touches
   every pipeline's terminal path. Mitigation: land it first, in isolation, with the invariant
   "HTTP output byte-identical to today" as an explicit test.
-- **Cache-miss latency.** A miss reads ≤50 blobs + renders. Mitigation: parallelize child calls,
-  per-item 2 s timeout, and the short-TTL cache keeps misses rare. Cap by `maxBytes` in
-  `read_object_text`.
+- **Cache-miss latency.** A miss reads ≤50 blobs + renders. Mitigation: the bounded-concurrency
+  pool (default 5 in flight), a per-item 5 s timeout, and the short-TTL cache keeps misses rare.
+  Cap by `maxBytes` in `read_object_text`.
 - **Triplication drift.** Live rules can silently diverge from the JSON export. Mitigation: the
   parity test + explicit post-merge MCP sync + diff-verification against live.
 - **Sanitization.** Feed HTML is derived from user content and lands in a `<content:encoded>`
