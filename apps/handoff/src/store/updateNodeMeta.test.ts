@@ -74,6 +74,21 @@ describe('updateNodeMeta', () => {
     expect((res as { error: { status?: number } }).error.status).toBe(403)
   })
 
+  it('a partial update (title only) preserves the existing description', async () => {
+    setMockUser({ id: 'owner-1', email: 'owner-1@example.com', role: 'user' })
+    const folder = seedFolder('Docs', 'root')
+    const file = seedFile('a.png', folder.id)
+    const store = makeStore()
+    await store
+      .dispatch(handoffApi.endpoints.updateNodeMeta.initiate({ id: file.id, title: 'Deck', description: 'note', parentId: folder.id }))
+      .unwrap()
+
+    const partial = await store
+      .dispatch(handoffApi.endpoints.updateNodeMeta.initiate({ id: file.id, title: 'New', parentId: folder.id }))
+      .unwrap()
+    expect(partial).toMatchObject({ id: file.id, title: 'New', description: 'note' })
+  })
+
   it('rejects a folder target (400)', async () => {
     setMockUser({ id: 'owner-1', email: 'owner-1@example.com', role: 'user' })
     const folder = seedFolder('Docs', 'root')
