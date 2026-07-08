@@ -58,7 +58,18 @@ Everything the human must configure in the BFFless admin panel that the `install
   into a fresh project these are created for you (or create them to match the **Data tables** section
   below); the exported rule set's `schemaId`s are for the reference project and are remapped on
   import.
-- **Response-header rules — none.** Rivulet needs no extra response headers.
+- **Response-header rules — none on a clean project.** Rivulet needs no extra headers by itself.
+  **Exception — inline post bodies:** Rivulet renders a Handoff markdown post's body inline by
+  iframing the Handoff viewer's chromeless `?embed=1` mode. If your project applies a
+  cross-origin-isolation policy (`COOP`/`COEP`) — e.g. because another app on the same project uses
+  `SharedArrayBuffer` (ffmpeg, etc.) — the browser blocks that iframe with
+  `COEP-framed resource needs COEP header`. Fix: add a response-header rule matching the reader's
+  files (`apps/reader/**`) with `Cross-Origin-Opener-Policy: unsafe-none` +
+  `Cross-Origin-Embedder-Policy: unsafe-none` and a priority **below** the isolating rule, so the
+  reader isn't cross-origin-isolated and can embed the viewer. (Rivulet itself doesn't use
+  `SharedArrayBuffer`.) Also ensure the Handoff instance allows your reader's origin to frame it —
+  same-registrable-domain subdomains are allowed automatically; a different domain needs the reader
+  origin in Handoff's frame-ancestors. A fresh project with no isolation policy needs nothing here.
 - **Auth relay** — the platform-level piece the gate depends on; see §1 below.
 - **Serve URL — domain mapping (private, SPA)** — see §2 below.
 
