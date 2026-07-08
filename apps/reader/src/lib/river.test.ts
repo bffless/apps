@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   setRead,
   setStarred,
+  setArchived,
+  removeItem,
   markGuidsRead,
   unreadGuids,
   selectionKey,
@@ -75,6 +77,29 @@ describe('markGuidsRead', () => {
 describe('unreadGuids', () => {
   it('returns unread guids in input order', () => {
     expect(unreadGuids(sample)).toEqual(['a1', 'b1', 'b2'])
+  })
+})
+
+describe('setArchived', () => {
+  it('sets archived on the target, leaving other rows referentially stable', () => {
+    const out = setArchived(sample, 'a1', true)
+    const a1 = out.find((i) => i.guid === 'a1')!
+    expect(a1.archived).toBe(true)
+    expect(out.find((i) => i.guid === 'b1')).toBe(sample.find((i) => i.guid === 'b1'))
+  })
+  it('is a no-op (same references) when the flag already matches or guid is unknown', () => {
+    expect(setArchived(sample, 'a1', false)).toEqual(sample)
+    expect(setArchived(sample, 'nope', true)).toEqual(sample)
+  })
+})
+
+describe('removeItem', () => {
+  it('drops the matching row and keeps the rest in order', () => {
+    const out = removeItem(sample, 'a1')
+    expect(out.map((i) => i.guid)).toEqual(['a2', 'b1', 'b2'])
+  })
+  it('returns the list unchanged when guid is unknown', () => {
+    expect(removeItem(sample, 'nope')).toEqual(sample)
   })
 })
 

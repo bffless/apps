@@ -60,6 +60,26 @@ export function setStarred(items: Item[], guid: string, starred: boolean): Item[
 }
 
 /**
+ * Set the `archived` flag on the item with `guid`, returning a new array (only
+ * the one item's identity changes). Same optimistic, non-mutating shape as
+ * {@link setStarred}. Archived items are hidden from views by default and are
+ * prune-exempt; the flag survives refresh (insert-only dedup skips the guid).
+ */
+export function setArchived(items: Item[], guid: string, archived: boolean): Item[] {
+  return items.map((item) =>
+    item.guid === guid && item.archived !== archived ? { ...item, archived } : item,
+  )
+}
+
+/**
+ * Drop the item with `guid` from the array (what a hard delete commits locally),
+ * returning a new array. An unknown guid leaves the array contents untouched.
+ */
+export function removeItem(items: Item[], guid: string): Item[] {
+  return items.filter((item) => item.guid !== guid)
+}
+
+/**
  * Mark every listed guid read in one pass — what "mark all read (this view)"
  * commits locally. Already-read items are left as-is so identities stay stable.
  */
