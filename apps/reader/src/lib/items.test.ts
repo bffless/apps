@@ -34,6 +34,12 @@ describe('shapeItem', () => {
     expect(shapeItem({ read: 1, starred: '1' }).read).toBe(true)
     expect(shapeItem({ read: 1, starred: '1' }).starred).toBe(true)
   })
+
+  it('carries enclosureType when present, null when missing/empty', () => {
+    expect(shapeItem({ enclosureType: 'text/markdown' }).enclosureType).toBe('text/markdown')
+    expect(shapeItem({}).enclosureType).toBeNull()
+    expect(shapeItem({ enclosureType: '' }).enclosureType).toBeNull()
+  })
 })
 
 describe('itemTimestamp', () => {

@@ -21,6 +21,8 @@ export type Item = {
   publishedAt: string | null
   summary: string | null
   content: string | null
+  /** Primary enclosure mime carried from the feed, used for embed detection (e.g. `text/markdown` for a Handoff post). */
+  enclosureType: string | null
   read: boolean
   starred: boolean
   fetchedAt: number | null
@@ -56,6 +58,7 @@ export function shapeItem(raw: RawItem): Item {
     publishedAt: str(raw.publishedAt),
     summary: str(raw.summary),
     content: str(raw.content),
+    enclosureType: str(raw.enclosureType),
     read: bool(raw.read),
     starred: bool(raw.starred),
     fetchedAt: num(raw.fetchedAt),
