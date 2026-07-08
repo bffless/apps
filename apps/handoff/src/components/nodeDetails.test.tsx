@@ -102,6 +102,7 @@ describe('NodeDetails', () => {
     fireEvent.click(screen.getByRole('button', { name: /edit details/i }))
 
     const dialog = screen.getByRole('dialog', { name: 'Edit details' })
+    expect(dialog).toHaveAttribute('open')
     expect(within(dialog).getByLabelText('Title')).toHaveValue('Board Deck')
     expect(within(dialog).getByLabelText('Description')).toHaveValue('the note')
   })
@@ -114,5 +115,16 @@ describe('NodeDetails', () => {
     const dialog = screen.getByRole('dialog', { name: 'Edit details' })
     expect(within(dialog).getByLabelText('Title')).toHaveValue('')
     expect(within(dialog).getByLabelText('Description')).toHaveValue('')
+  })
+
+  it('clicking Cancel closes the dialog', () => {
+    renderWith(<NodeDetails node={node({ title: 'Board Deck', description: 'the note' })} canEdit={true} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /edit details/i }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
