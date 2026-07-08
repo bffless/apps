@@ -210,6 +210,16 @@ export function ReaderApp({
   const selKey = selectionKey(selection)
   const totalRef = useRef<number | null>(null)
 
+  // Guards against two concurrent `data_update`/`data_delete`-backed writes for
+  // the SAME item guid: `data_update` is whole-record read-modify-write, so a
+  // second write that starts before the first settles can silently clobber it
+  // (e.g. double-clicking star then archive before either resolves). Each
+  // user-triggered write handler (`toggleRead`, `toggleStar`, `toggleArchive`,
+  // `deleteItemAction`) adds the guid before firing its request and removes it
+  // in both the success and failure paths; a redundant rapid second click on the
+  // same item is dropped as a no-op rather than queued.
+  const inFlightGuids = useRef<Set<string>>(new Set())
+
   // The latest location pathname, mirrored into a ref so the fetch effect's async
   // continuation can read the CURRENT path (which may have gained an `/item/:id`
   // segment mid-flight) when it needs to clamp an out-of-range `?page` — reading
@@ -234,7 +244,7 @@ export function ReaderApp({
   // page fetch reads it.
   useEffect(() => {
     totalRef.current = null
-  }, [selKey])
+  }, [selKey, showArchived])
 
   // Fetch exactly one filtered, paginated page for the current selection/page/
   // order (plus a `reloadSeq` bump after feed mutations). The returned items are
@@ -412,7 +422,11 @@ export function ReaderApp({
 
   const toggleRead = useCallback(
     (item: Item) => {
-      void persistRead(item.guid, !item.read)
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
+      void persistRead(item.guid, !item.read).finally(() => {
+        inFlightGuids.current.delete(item.guid)
+      })
     },
     [persistRead],
   )
@@ -427,6 +441,8 @@ export function ReaderApp({
   // view (it leaves on the next fetch), so the row doesn't vanish under the cursor.
   const toggleStar = useCallback(
     (item: Item) => {
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
       const next = !item.starred
       applyStar(item.guid, next)
       void api
@@ -435,6 +451,9 @@ export function ReaderApp({
         .catch((e) => {
           applyStar(item.guid, !next)
           setError(e instanceof Error ? e.message : 'Could not save starred state')
+        })
+        .finally(() => {
+          inFlightGuids.current.delete(item.guid)
         })
     },
     [applyStar, refreshCounts],
@@ -445,6 +464,8 @@ export function ReaderApp({
   // loaded snapshot until the next fetch, so it doesn't vanish under the cursor.
   const toggleArchive = useCallback(
     (item: Item) => {
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
       const next = !item.archived
       setPageData((prev) => (prev ? { ...prev, items: setArchived(prev.items, item.guid, next) } : prev))
       void api
@@ -454,6 +475,9 @@ export function ReaderApp({
           setPageData((prev) => (prev ? { ...prev, items: setArchived(prev.items, item.guid, !next) } : prev))
           setError(e instanceof Error ? e.message : 'Could not save archived state')
         })
+        .finally(() => {
+          inFlightGuids.current.delete(item.guid)
+        })
     },
     [refreshCounts],
   )
@@ -462,6 +486,8 @@ export function ReaderApp({
   // the view to restore the true server state (we can't cheaply re-insert it).
   const deleteItemAction = useCallback(
     (item: Item) => {
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
       setPageData((prev) => (prev ? { ...prev, items: removeItem(prev.items, item.guid) } : prev))
       void api
         .deleteItem(item.guid)
@@ -469,6 +495,9 @@ export function ReaderApp({
         .catch((e) => {
           setError(e instanceof Error ? e.message : 'Could not delete item')
           setReloadSeq((n) => n + 1)
+        })
+        .finally(() => {
+          inFlightGuids.current.delete(item.guid)
         })
     },
     [refreshCounts],
