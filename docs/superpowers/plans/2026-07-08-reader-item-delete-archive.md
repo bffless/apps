@@ -4,7 +4,7 @@
 
 **Goal:** Give Reader users two manual per-item actions — **Delete** (hard-remove a dead/source-deleted post) and **Archive** (hide-but-keep, revealed by a global toggle, never resurrects) — so source-deleted feed items stop lingering forever.
 
-**Architecture:** Client is a Vite SPA; the `/api/*` backend is a live BFFless proxy-rule-set (no server code). Archive is a new `archived` boolean flag on `reader_items` — hidden from views by default, and (because ingest is insert-only, deduped by `guid`) never re-inserted or un-archived by refresh. Delete is a plain `data_delete` by `guid`. Client work (pure logic + api transport) is TDD'd with Vitest; the backend rule/schema changes are precise edits to the repo's source-of-truth JSON, then applied live via the BFFless MCP and verified against `reader-preview`.
+**Architecture:** Client is a Vite SPA; the `/api/*` backend is a live BFFless proxy-rule-set (no server code). Archive is a new `archived` boolean flag on `reader_items` — hidden from views by default, and never re-inserted or un-archived by refresh: ingest dedups by `guid`, and its `data_upsert_many` `updateFields` whitelist (`enclosureType`, `enclosureUrl` only — added by #206) does **not** include `archived`, so an existing archived row keeps its flag. Delete is a plain `data_delete` by `guid`. Client work (pure logic + api transport) is TDD'd with Vitest; the backend rule/schema changes are precise edits to the repo's source-of-truth JSON, then applied live via the BFFless MCP and verified against `reader-preview`.
 
 **Tech Stack:** React 18 + Vite + TypeScript, Vitest + @testing-library/react, BFFless proxy pipelines (`data_query`/`data_update`/`data_delete`/`db_aggregate`/`function_handler`), BFFless MCP (`j5s-dev`).
 
@@ -14,7 +14,7 @@
 - **Test command (from `apps/reader/`):** `pnpm test:run` (or a single file: `pnpm test:run src/lib/items.test.ts`). Run `pnpm install` at the repo root once before the first test run (fresh worktree).
 - **`reader_items` schema id:** `96a1b5e7-96f0-43a4-baa8-2e19b539d07c`. **`reader_feeds`:** `d1216df3-9776-4de2-81b0-0343d758f83d`.
 - **Live proxy rule set id:** `e454596b-fd15-4b20-ac95-4f5612d8181c` — attached to **both** the `reader` and `reader-preview` aliases (one edit covers both; changes reach prod, so keep them additive/backward-compatible).
-- **Dedup key is `guid`.** Archive is a flag on the existing row so insert-only dedup skips it. Never add a tombstone table.
+- **Dedup key is `guid`.** Archive is a flag on the existing row; refresh's `data_upsert_many` matches it by `guid` and only refreshes its `updateFields` whitelist (`enclosureType`, `enclosureUrl` — #206), so `archived` is preserved and never resurrects. Do **not** add `archived` to that whitelist, and never add a tombstone table.
 - **Concurrency:** archive/star/read all use `data_update` (whole-record read-modify-write). Never fire two writes for the **same `guid`** in parallel (`Promise.all`) — they clobber each other. Sequence same-item writes.
 - **Backward-compatible defaults:** `archived` absent/false ⇒ current behavior. The `includeArchived` request flag defaults off. Existing endpoints keep working unchanged.
 - **Keep in sync:** every backend change lands in both the live set (via MCP) *and* `apps/reader/bffless/reader.proxy-rules.json` + `apps/reader/CONTEXT.md`.
@@ -736,7 +736,7 @@ The set `e454596b-…` serves **both** `reader` and `reader-preview`, so these c
 - `/api/items` archived filter + `includeArchived` (guid branch exempt) → Task 6 Steps 4–5; client Tasks 3–5. ✅
 - `/api/counts` exclude archived → Task 6 Step 6. ✅
 - `/api/prune` exempt archived → Task 6 Step 7. ✅
-- Refresh untouched → no task modifies `/api/refresh` (by design). ✅
+- Refresh untouched → no task modifies `/api/refresh`. Its `updateFields` whitelist (`enclosureType`/`enclosureUrl`, #206) excludes `archived`, so archived rows are preserved (never un-archived); deleted rows re-insert if still in feed, as intended. ✅
 - Client type/api/UI + same-guid concurrency guard → Tasks 1–5 (archive/delete handlers issue one write per guid; the Global Constraint documents the rule). ✅
 - Global toggle reveals archived in-place across all views → Task 5 (single `showArchived` state feeding both `listItems` calls). ✅
 - Deep-link to archived item resolves → Task 6 Step 5 leaves `pageGuid` untouched. ✅

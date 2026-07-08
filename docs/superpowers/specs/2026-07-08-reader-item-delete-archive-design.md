@@ -109,10 +109,13 @@ matching star — otherwise a read, archived, 30-day-old item would be silently 
 
 ### No change — `POST /api/refresh` (ingest)
 
-This is the payoff of the flag-not-tombstone design. `data_upsert_many` is insert-only and
-skips any `guid` that already exists, so an archived row is never re-inserted or un-archived.
-Archive sticks with zero ingest changes. (Deleted rows, having no row, *are* eligible for
-re-insert — hence the "delete may resurrect if still in feed" behavior above.)
+This is the payoff of the flag-not-tombstone design. `data_upsert_many` dedups by `guid`: a
+`guid` that already exists is not re-inserted, and its `updateFields` whitelist — since #206,
+`enclosureType`/`enclosureUrl` only — refreshes just those columns, leaving `archived` (and
+`read`/`starred`) untouched. So an archived row is never re-inserted *or* un-archived. Archive
+sticks with zero ingest changes, provided `archived` is **never** added to that `updateFields`
+whitelist. (Deleted rows, having no row, *are* eligible for re-insert — hence the "delete may
+resurrect if still in feed" behavior above.)
 
 ## Client (`apps/reader/src/`)
 
