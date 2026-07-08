@@ -110,7 +110,7 @@ export function ReadingPane({
   // Embeddable: render a REAL <iframe> in place of the sanitized-body div — a
   // deliberate bypass of the `dangerouslySetInnerHTML` sanitize path so DOMPurify
   // never sees (and can't strip) it. The reader does no markdown rendering; the
-  // Handoff embed page renders its own reading measure inside the iframe.
+  // Handoff embed page renders the raw markdown inside the iframe.
   //
   // The iframe scrolls internally rather than growing the page: auto-sizing to
   // content height would need postMessage bubbled through *two* cross-origin
@@ -120,17 +120,21 @@ export function ReadingPane({
   // labels the region as a rendered-elsewhere document, so its own scrollbar
   // reads as intentional rather than a subtly-broken page.
   //
-  // Layout: the header keeps its reading padding; the iframe goes full-bleed to
-  // the pane's card edge (no inner `px` gap, so no box-in-box "framed iframe"
-  // look) and rounds its bottom corners to sit flush inside the card. The
-  // viewport min-height floor guards against the flex chain failing to resolve
-  // (the classic iframe-collapse trap).
+  // Layout: the embed reuses the **same** `mx-auto px-2 py-4 ${measureClass}`
+  // shell as a normal post, so the header, source bar, and iframe line up with a
+  // regular article's reading measure (they were visibly misaligned when the
+  // iframe was full-bleed and Handoff imposed its own narrower measure). In embed
+  // mode Handoff drops its inner max-width so the content fills the iframe — this
+  // measure is the single source of truth. The iframe has no border and a
+  // transparent body, so it blends into the card (no box-in-box). The viewport
+  // min-height floor guards against the flex chain failing to resolve (the
+  // classic iframe-collapse trap).
   if (src) {
     const host = embedHost(item.link)
     return (
-      <article className="flex h-full min-h-0 flex-col">
-        <div className="px-6 pt-4">{header}</div>
-        <div className="flex items-center gap-1.5 px-6 pb-2 text-xs text-slate-400 dark:text-slate-500">
+      <article className={`mx-auto flex h-full min-h-0 w-full flex-col px-2 py-4 ${measureClass}`}>
+        {header}
+        <div className="mb-2 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
           <svg
             aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
@@ -162,7 +166,7 @@ export function ReadingPane({
           // can reach its session/content), not the reader's — it grants no access
           // back to Rivulet.
           sandbox="allow-scripts allow-same-origin"
-          className="w-full flex-1 rounded-b-xl border-0"
+          className="w-full flex-1 border-0"
           style={{ minHeight: 'calc(100vh - 12rem)' }}
         />
       </article>

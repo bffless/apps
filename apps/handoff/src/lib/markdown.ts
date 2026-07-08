@@ -57,6 +57,17 @@ export const MARKDOWN_IFRAME_CSS = `
 `
 
 /**
+ * Embed-mode override: when the viewer is iframed inline by another app
+ * (`?embed=1`), the embedder owns the reading measure and horizontal padding, so
+ * the content must fill the frame instead of imposing Handoff's own 48rem
+ * column. Without this the embedded body sits visibly narrower and offset from
+ * the host's normal article width. Vertical padding is kept for breathing room.
+ */
+const MARKDOWN_EMBED_CSS = `
+  .markdown-body { max-width: none; margin: 0; padding: 1rem 0 2rem; }
+`
+
+/**
  * Build the full HTML document for the viewer's Markdown iframe.
  *
  * `bodyHtml` is the already-sanitized rendered Markdown (from `renderMarkdown`);
@@ -64,14 +75,22 @@ export const MARKDOWN_IFRAME_CSS = `
  * relative reference like `assets/logo.png` resolves against the file's own
  * Folder on the content endpoint — with no rewriting of the stored Markdown.
  * When `base` is null (no known folder), the `<base>` tag is omitted.
+ *
+ * `embed` lifts Handoff's own reading measure so the host app (e.g. the RSS
+ * reader) can align the rendered body with its own article width.
  */
-export function markdownDocument(bodyHtml: string, base: string | null): string {
+export function markdownDocument(
+  bodyHtml: string,
+  base: string | null,
+  { embed = false }: { embed?: boolean } = {},
+): string {
   const baseTag = base ? `<base href="${base}">` : ''
+  const css = embed ? MARKDOWN_IFRAME_CSS + MARKDOWN_EMBED_CSS : MARKDOWN_IFRAME_CSS
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">` +
     baseTag +
-    `<style>${MARKDOWN_IFRAME_CSS}</style></head>` +
+    `<style>${css}</style></head>` +
     `<body><div class="markdown-body">${bodyHtml}</div></body></html>`
   )
 }

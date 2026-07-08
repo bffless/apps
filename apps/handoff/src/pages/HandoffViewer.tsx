@@ -331,7 +331,7 @@ type MdState = { url: string; doc: string } | null
  * injection; the iframe is same-origin/unsandboxed, consistent with how Sites
  * already render (ADR-0001).
  */
-function MarkdownPreview({ node }: { node: HandoffNode }) {
+function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: boolean }) {
   const url = node.url ?? ''
   const [result, setResult] = useState<MdState>(null)
 
@@ -341,15 +341,15 @@ function MarkdownPreview({ node }: { node: HandoffNode }) {
     fetchWithReauth(url)
       .then((r) => r.text())
       .then((text) => {
-        if (!cancelled) setResult({ url, doc: markdownDocument(renderMarkdown(text), base) })
+        if (!cancelled) setResult({ url, doc: markdownDocument(renderMarkdown(text), base, { embed }) })
       })
       .catch(() => {
         if (!cancelled) {
-          setResult({ url, doc: markdownDocument('<p>Failed to load Markdown.</p>', base) })
+          setResult({ url, doc: markdownDocument('<p>Failed to load Markdown.</p>', base, { embed }) })
         }
       })
     return () => { cancelled = true }
-  }, [url, node])
+  }, [url, node, embed])
 
   if (!result || result.url !== url) {
     return <div className="py-16 text-center text-sm text-muted">Loading…</div>
@@ -626,7 +626,7 @@ export function ViewerBody({ id }: { id: string }) {
           </div>
         )}
         {!sourceShown && kind === 'markdown' && node.url && (
-          <MarkdownPreview node={node} />
+          <MarkdownPreview node={node} embed={embed} />
         )}
         {kind === 'video' && (
           <MediaPreview node={node} kind="video" />
