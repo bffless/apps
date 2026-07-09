@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { toNode, toNodeList, buildRegisterBody } from './nodes'
+import { toNode, toNodeList, buildRegisterBody, nodeFileName } from './nodes'
 
 // ---------------------------------------------------------------------------
 // toNode
@@ -278,5 +278,30 @@ describe('buildRegisterBody', () => {
     const nested = { ...prepared, publicPath: '/api/uploads/content/Design Docs/doc.md' }
     const body = buildRegisterBody(nested, file, parentId, nowMs)
     expect(body.path).toBe('Design Docs/doc.md')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// nodeFileName
+// ---------------------------------------------------------------------------
+
+describe('nodeFileName', () => {
+  it('returns the basename of the content path, not the display title', () => {
+    expect(
+      nodeFileName({ path: '2026-07-08-design.md', name: 'Feed Content Bodies — CE Pipeline (design spec)' }),
+    ).toBe('2026-07-08-design.md')
+  })
+
+  it('takes the last segment of a nested path', () => {
+    expect(nodeFileName({ path: 'Docs/site/index.html', name: 'Landing Page' })).toBe('index.html')
+  })
+
+  it('equals name when displayName == filename (the common case)', () => {
+    expect(nodeFileName({ path: 'a.png', name: 'a.png' })).toBe('a.png')
+  })
+
+  it('falls back to name when path is null or empty', () => {
+    expect(nodeFileName({ path: null, name: 'Legacy File' })).toBe('Legacy File')
+    expect(nodeFileName({ path: '', name: 'Legacy File' })).toBe('Legacy File')
   })
 })

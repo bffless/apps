@@ -14,7 +14,7 @@ import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '..
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown, markdownDocument } from '../lib/markdown'
 import { viewerBase } from '../lib/contentPath'
-import type { HandoffNode } from '../lib/nodes'
+import { nodeFileName, type HandoffNode } from '../lib/nodes'
 import { useSession, fetchWithReauth } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
@@ -104,6 +104,12 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
     }
   }
 
+  // The breadcrumb reflects the PATH, so the trailing crumb shows the file's
+  // real name (the content-path basename), not the display title — the two can
+  // differ (e.g. an API-set title), and the title has its own home in the
+  // details block.
+  const fileName = nodeFileName(node)
+
   return (
     <div
       className="sticky top-14 flex items-center gap-2 border-b border-border bg-surface/90 px-4 py-2 backdrop-blur"
@@ -143,7 +149,7 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           </span>
         )}
         <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted/60" />
-        <span className="min-w-0 flex-1 truncate font-medium text-ink">{node.name}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-ink">{fileName}</span>
       </nav>
 
       {/* Share — owners/admins of the parent folder. Root items: disabled + explanation. */}

@@ -186,6 +186,18 @@ export function toNodeList(raw: unknown): HandoffNode[] {
 }
 
 /**
+ * The node's real file name — the basename of its verbatim content `path`, which
+ * is what the URL and storage key use. Prefer this over `name` (the display
+ * title) wherever a PATH is being shown, e.g. a breadcrumb: the two can differ
+ * (an API-set title vs the stored filename). Falls back to `name` when there is
+ * no path (legacy/rollout safety).
+ */
+export function nodeFileName(node: Pick<HandoffNode, 'path' | 'name'>): string {
+  const base = node.path ? node.path.split('/').pop() : ''
+  return base || node.name
+}
+
+/**
  * Build the request body for `POST /api/nodes` (register a freshly-uploaded
  * file). Pure function — gives a clean unit-test seam and keeps the network
  * layer thin.
