@@ -579,6 +579,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                 />
                 <FinalCutBar
                   scenes={pipe.scenes}
+                  title={pipe.description?.title ?? ''}
                   finalCutUrl={pipe.finalCutUrl}
                   saving={pipe.savingFinalCut}
                   onSave={pipe.saveFinalCut}
