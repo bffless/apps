@@ -61,7 +61,7 @@ describe('toThumbnailPrompt', () => {
 })
 
 describe('thumbnailFileName', () => {
-  it('snake_cases the title and appends .jpg', () => {
+  it('hyphenates the title and appends .jpg', () => {
     expect(thumbnailFileName('Overview of Onboarding Rules')).toBe('overview-of-onboarding-rules.jpg')
   })
   it('collapses punctuation/whitespace runs and trims edges', () => {
