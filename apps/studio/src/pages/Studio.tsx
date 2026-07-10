@@ -10,9 +10,8 @@ import { PreviewPlayer } from '../components/Studio/PreviewPlayer'
 import { PipelineBoard } from '../components/Studio/PipelineBoard'
 import { ContactSheetPreview } from '../components/Studio/ContactSheetPreview'
 import { effectiveCuts } from '../lib/refiner'
-import { cutEditorInputs } from '../lib/editorInputs'
+import { cutEditorInputs, sceneFilmstrip } from '../lib/editorInputs'
 import { sceneAtTime } from '../lib/scenes'
-import { buildFilmstrip } from '../lib/filmstrip'
 import type { CutSpan } from '../lib/transcriptGrid'
 import { SceneList } from '../components/Studio/SceneList'
 import { SceneTabs } from '../components/Studio/SceneTabs'
@@ -267,12 +266,14 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   )
 
   // Time-aligned frames for the cut editor's filmstrip gutter (story 03e),
-  // reusing the already-captured contact sheets as sprites. The per-scene refiner
-  // sheets come first (denser, so they win on overlap), then the whole-clip prep
-  // sheets fill everywhere else.
+  // reusing the already-captured contact sheets as sprites. Scoped to the
+  // SELECTED scene and its source's local timeline — like every other editor
+  // input — because the prep sheets are stamped with GLOBAL time and scenes on
+  // different sources overlap numerically, so one flat index would show another
+  // source's frame on a row.
   const filmstrip = useMemo(
-    () => buildFilmstrip([...pipe.scenes.flatMap((s) => s.sheets ?? []), ...pipe.contactSheets]),
-    [pipe.scenes, pipe.contactSheets],
+    () => sceneFilmstrip(pipe.sources, selected, pipe.contactSheets),
+    [pipe.sources, selected, pipe.contactSheets],
   )
 
   // Dropped footage spans for the selected scene (refiner's cuts, else
@@ -736,8 +737,8 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     open={previewOpen}
                     onClose={() => setPreviewOpen(false)}
                     scene={selected}
-                    sheets={pipe.contactSheets}
-                    audioUrl={pipe.audioUrl ?? undefined}
+                    frames={filmstrip}
+                    audioUrl={editor.originalAudioUrl}
                   />
                 )}
                 {/* The export step lives on its own now (the final stitch +

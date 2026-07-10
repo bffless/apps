@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { Scene } from './scenes'
+import type { ContactSheet } from './frames'
 import type { TWord } from './transcriptGrid'
-import { cutEditorInputs, type EditorSourceLike } from './editorInputs'
+import { cutEditorInputs, sceneFilmstrip, type EditorSourceLike } from './editorInputs'
 
 function scene(over: Partial<Scene> = {}): Scene {
   return {
@@ -147,5 +148,76 @@ describe('cutEditorInputs · whole-project readout (duration + projectCuts)', ()
   it('a scene with an unknown source keeps its cuts un-offset rather than dropping them', () => {
     const s = scene({ id: 'd', sourceId: 'gone', start: 0, end: 60, refined: { cuts: [{ start: 1, end: 2 }], source: 'ai' } })
     expect(cutEditorInputs(sources, [s], null).projectCuts).toEqual([{ start: 1, end: 2 }])
+  })
+})
+
+/** A contact sheet sampled at `times`, tagged by `url` so a frame's origin is
+ *  identifiable. Geometry mirrors `composeContactSheet`. */
+function sheet(url: string, times: number[]): ContactSheet {
+  const cols = 3
+  const rows = Math.ceil(times.length / cols)
+  return {
+    dataUrl: '',
+    url,
+    width: cols * 160 + (cols + 1) * 2,
+    height: rows * 90 + (rows + 1) * 2,
+    cols,
+    rows,
+    cellWidth: 160,
+    cellHeight: 90,
+    gap: 2,
+    count: times.length,
+    times,
+    interval: 1,
+    bytes: 0,
+    index: 0,
+    total: 1,
+  }
+}
+
+// The prep sheets are stamped with GLOBAL times (story 09c). On the fixture the
+// sources span src-1 [0, 340), src-2 [340, 700), src-3 [700, 1500).
+const prep = [sheet('prep.png', [10, 350, 715, 1115, 1400])]
+
+describe('sceneFilmstrip', () => {
+  it('remaps the prep sheets global→local and drops every other source’s frames', () => {
+    const got = sceneFilmstrip(sources, lateScene, prep)
+    // src-3 starts at 700 globally: 715 → 15, 1115 → 415, 1400 → 700. The
+    // frames sampled inside src-1 (10) and src-2 (350) are not this source's.
+    expect(got.map((f) => f.time)).toEqual([15, 415, 700])
+  })
+
+  it('never shows a colliding source’s frame on a row (the numeric-time bug)', () => {
+    // A src-3 scene whose local 10s row collides with the src-1 prep frame at
+    // global 10s. Before scoping, that row resolved to src-1's frame.
+    const s = scene({ id: 'collide', sourceId: 'src-3', start: 0, end: 60 })
+    expect(sceneFilmstrip(sources, s, prep).map((f) => f.time)).toEqual([15, 415, 700])
+  })
+
+  it('keeps the scene’s own dense sheets in source-local time, ahead of a prep frame at the same time', () => {
+    const s = scene({ id: 'dense', sourceId: 'src-3', start: 0, end: 60, sheets: [sheet('scene.png', [0, 15, 30])] })
+    const got = sceneFilmstrip(sources, s, prep)
+    expect(got.map((f) => [f.time, f.url])).toEqual([
+      [0, 'scene.png'],
+      [15, 'scene.png'], // the denser scene frame wins the tie with prep's 715
+      [15, 'prep.png'],
+      [30, 'scene.png'],
+      [415, 'prep.png'],
+      [700, 'prep.png'],
+    ])
+  })
+
+  it('is empty with no selection', () => {
+    expect(sceneFilmstrip(sources, null, prep)).toEqual([])
+  })
+
+  it('treats prep times as already-local when the project has no sources (pre-09 project)', () => {
+    const s = scene({ id: 'legacy', sourceId: 'source-1', start: 0, end: 60 })
+    expect(sceneFilmstrip([], s, prep).map((f) => f.time)).toEqual([10, 350, 715, 1115, 1400])
+  })
+
+  it('treats prep times as already-local when the scene’s source is unknown', () => {
+    const orphan = scene({ id: 'orphan', sourceId: 'gone' })
+    expect(sceneFilmstrip(sources, orphan, prep).map((f) => f.time)).toEqual([10, 350, 715, 1115, 1400])
   })
 })
