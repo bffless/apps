@@ -106,18 +106,43 @@ describe('planFolderImport — html detection', () => {
   })
 })
 
-describe('planFolderImport — common top-dir strip (folder-drop wrapping)', () => {
-  it('strips a single shared top dir so contents land at the root', () => {
+describe('planFolderImport — the dropped folder is preserved (issue: contents were dumped)', () => {
+  it('keeps the shared top dir, creating it inside the current folder', () => {
     const plan = planFolderImport([
       { relPath: 'mynotes/index.html' },
       { relPath: 'mynotes/sub/a.md' },
       { relPath: 'mynotes/sub/b.md' },
     ])
-    // 'mynotes/' stripped → root index.html present, only 'sub' nested.
+    // 'mynotes' is created here; its contents are children of it.
+    expect(plan.dirs).toEqual(['mynotes', 'mynotes/sub'])
+    expect(plan.files).toContainEqual({
+      relPath: 'mynotes/index.html',
+      dir: 'mynotes',
+      name: 'index.html',
+    })
+    expect(plan.files).toContainEqual({ relPath: 'mynotes/sub/a.md', dir: 'mynotes/sub', name: 'a.md' })
+  })
+
+  it('carries each input item (e.g. its File) through onto the planned file', () => {
+    const file = new File(['x'], 'a.md')
+    const plan = planFolderImport([{ relPath: 'mynotes/a.md', file }])
+    expect(plan.files[0]!.file).toBe(file)
+  })
+
+  it('still flags the wrapper folder’s index.html as a site root (drives the Site offer)', () => {
+    // The Site offer strips the wrapper — `mynotes/index.html` IS the site root —
+    // even though the folder-tree import keeps `mynotes` as a real folder.
+    const plan = planFolderImport([
+      { relPath: 'mynotes/index.html' },
+      { relPath: 'mynotes/style.css' },
+    ])
+    expect(plan.hasHtml).toBe(true)
     expect(plan.rootIndexHtml).toBe(true)
-    expect(plan.dirs).toEqual(['sub'])
-    expect(plan.files).toContainEqual({ relPath: 'index.html', dir: '', name: 'index.html' })
-    expect(plan.files).toContainEqual({ relPath: 'sub/a.md', dir: 'sub', name: 'a.md' })
+  })
+
+  it('leaves multi-top drops alone (nothing shared to preserve)', () => {
+    const plan = planFolderImport([{ relPath: 'a/one.md' }, { relPath: 'b/two.md' }])
+    expect(plan.dirs).toEqual(['a', 'b'])
   })
 })
 
