@@ -17,10 +17,12 @@
  */
 
 import type { Scene } from './scenes'
+import type { ContactSheet } from './frames'
 import type { TWord, CutSpan } from './transcriptGrid'
 import type { DeadSpan } from './deadSpace'
 import { sceneWordsLookup } from './describe'
-import { sourceForScene, totalDuration, localToGlobal } from './sources'
+import { sourceForScene, totalDuration, localToGlobal, globalToLocal } from './sources'
+import { buildFilmstrip, type FilmFrame } from './filmstrip'
 import { effectiveCuts } from './refiner'
 
 /** The slice's `VideoSource`, reduced to what the editor derivations read. */
@@ -73,4 +75,42 @@ export function cutEditorInputs(
     duration: totalDuration(ordered),
     projectCuts,
   }
+}
+
+/**
+ * The filmstrip gutter's frames for the SELECTED scene, on that scene's own
+ * source-local timeline — the one the editor's rows are numbered in.
+ *
+ * Two sheet families feed it, timed differently: a scene's own refiner sheets are
+ * sampled in its source's LOCAL seconds, while the whole-project prep sheets are
+ * stamped with GLOBAL concatenated time (story 09c). Flattening both into one
+ * numeric index (as the page used to) mixes timelines — scenes on different
+ * sources overlap numerically, so a row could resolve to a frame sampled from
+ * another source's video. So: take this scene's own sheets as they are, then
+ * route each prep frame back through `globalToLocal` and keep only the ones that
+ * landed in this scene's source.
+ *
+ * The scene's dense frames come first, so a tie at the same second resolves to
+ * them (the sort is stable) — the same "denser sheets win" rule `buildFilmstrip`
+ * has always documented, now within one timeline. A project with no sources at
+ * all (pre-story-09) or a scene whose source is gone has no global timeline to
+ * unmap, so its prep times are already local and pass through untouched.
+ */
+export function sceneFilmstrip(
+  sources: Pick<EditorSourceLike, 'id' | 'order' | 'duration'>[],
+  selected: Scene | null,
+  prepSheets: ContactSheet[],
+): FilmFrame[] {
+  if (!selected) return []
+  const ordered = [...sources].sort((a, b) => a.order - b.order)
+  const known = ordered.some((s) => s.id === selected.sourceId)
+
+  const prep = buildFilmstrip(prepSheets).flatMap((frame) => {
+    if (!known) return [frame]
+    const local = globalToLocal(ordered, frame.time)
+    if (!local || local.sourceId !== selected.sourceId) return []
+    return [{ ...frame, time: local.localTime }]
+  })
+
+  return [...buildFilmstrip(selected.sheets ?? []), ...prep].sort((a, b) => a.time - b.time)
 }
