@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Scene } from '../../lib/scenes'
 import { assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { useSignedBytes } from './useSignedBytes'
-import { useSignDownloadQuery } from '../../store/studioApi'
+import { useSignDownloadQuery, useSignAttachmentQuery } from '../../store/studioApi'
+import { finalCutFileName } from '../../lib/slug'
 import { skipToken } from '@reduxjs/toolkit/query'
 
 type Props = {
   scenes: Scene[]
+  /** The video's recommended title — the download's filename comes from this. */
+  title: string
   /** The saved final cut's serve path (persisted) — survives reload. */
   finalCutUrl: string | null
   /** True while the stitched final cut is uploading. */
@@ -22,7 +25,7 @@ type Props = {
  * no memory, so it never approaches the OOM the old whole-film pass hit. Enabled
  * only once every scene has been assembled & saved.
  */
-export function FinalCutBar({ scenes, finalCutUrl, saving, onSave }: Props) {
+export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Props) {
   // Serve-path-aware fetch: each assembled scene is tens of MB — sign them to
   // the bucket instead of streaming every one through the BFFless backend.
   const fetchBytes = useSignedBytes()
@@ -48,13 +51,19 @@ export function FinalCutBar({ scenes, finalCutUrl, saving, onSave }: Props) {
   const pending = scenes.filter((s) => !s.assembledUrl)
 
   const savedCurrent = !!resultBlob && savedBlob === resultBlob
-  // Playback of the SAVED final cut signs the serve path to a direct bucket
-  // URL (the whole video — the biggest MP4 we serve — must never stream
-  // through file_serve). The download link keeps the serve path: `download`
-  // is ignored on cross-origin URLs, so signing it would cost the filename.
+  // Both playback and download read the SAVED cut straight from the bucket — the
+  // whole video is the biggest MP4 we serve and must never stream through
+  // file_serve (bffless/ce#317). They need DIFFERENT signatures: playback must
+  // render inline, the download must be `attachment` so the browser saves it
+  // under `downloadName` (an `<a download>` is ignored cross-origin).
+  const downloadName = finalCutFileName(title)
   const { data: signedFinal } = useSignDownloadQuery(finalCutUrl ?? skipToken)
+  const { data: signedAttachment } = useSignAttachmentQuery(
+    finalCutUrl ? { url: finalCutUrl, filename: downloadName } : skipToken,
+  )
   const playbackSrc = resultUrl ?? (finalCutUrl ? (signedFinal?.url ?? null) : null)
-  const downloadHref = resultUrl ?? finalCutUrl
+  // `resultUrl` is a same-origin blob: URL, where the `download` attr DOES apply.
+  const downloadHref = resultUrl ?? (finalCutUrl ? (signedAttachment?.url ?? null) : null)
 
   const run = useCallback(async () => {
     if (running || !allAssembled) return
@@ -130,7 +139,7 @@ export function FinalCutBar({ scenes, finalCutUrl, saving, onSave }: Props) {
         {savedCurrent && <span className="text-[12.5px] text-ink-soft">✓ Saved</span>}
 
         {downloadHref && !running && (
-          <a className="pill-ghost" href={downloadHref} download="studio-final-cut.mp4">
+          <a className="pill-ghost" href={downloadHref} download={downloadName}>
             Download MP4
           </a>
         )}
