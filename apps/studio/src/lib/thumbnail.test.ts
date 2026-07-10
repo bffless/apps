@@ -62,10 +62,10 @@ describe('toThumbnailPrompt', () => {
 
 describe('thumbnailFileName', () => {
   it('snake_cases the title and appends .jpg', () => {
-    expect(thumbnailFileName('Overview of Onboarding Rules')).toBe('overview_of_onboarding_rules.jpg')
+    expect(thumbnailFileName('Overview of Onboarding Rules')).toBe('overview-of-onboarding-rules.jpg')
   })
   it('collapses punctuation/whitespace runs and trims edges', () => {
-    expect(thumbnailFileName('  My Great Video!! (2026) ')).toBe('my_great_video_2026.jpg')
+    expect(thumbnailFileName('  My Great Video!! (2026) ')).toBe('my-great-video-2026.jpg')
   })
   it('falls back to "thumbnail" for an empty or punctuation-only title', () => {
     expect(thumbnailFileName('')).toBe('thumbnail.jpg')
