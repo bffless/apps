@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Scene } from '../../lib/scenes'
 import { assembleFinalCutBlob } from '../../lib/export/assembleScene'
+import { finalCutFileName } from '../../lib/export/fileName'
 import { useSignedBytes } from './useSignedBytes'
 import { useSignDownloadQuery } from '../../store/studioApi'
 import { skipToken } from '@reduxjs/toolkit/query'
 
 type Props = {
   scenes: Scene[]
+  /** The video's title — the download is named from its slug. */
+  title: string
   /** The saved final cut's serve path (persisted) — survives reload. */
   finalCutUrl: string | null
   /** True while the stitched final cut is uploading. */
@@ -22,7 +25,7 @@ type Props = {
  * no memory, so it never approaches the OOM the old whole-film pass hit. Enabled
  * only once every scene has been assembled & saved.
  */
-export function FinalCutBar({ scenes, finalCutUrl, saving, onSave }: Props) {
+export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Props) {
   // Serve-path-aware fetch: each assembled scene is tens of MB — sign them to
   // the bucket instead of streaming every one through the BFFless backend.
   const fetchBytes = useSignedBytes()
@@ -55,6 +58,7 @@ export function FinalCutBar({ scenes, finalCutUrl, saving, onSave }: Props) {
   const { data: signedFinal } = useSignDownloadQuery(finalCutUrl ?? skipToken)
   const playbackSrc = resultUrl ?? (finalCutUrl ? (signedFinal?.url ?? null) : null)
   const downloadHref = resultUrl ?? finalCutUrl
+  const downloadName = finalCutFileName(title)
 
   const run = useCallback(async () => {
     if (running || !allAssembled) return
@@ -130,7 +134,7 @@ export function FinalCutBar({ scenes, finalCutUrl, saving, onSave }: Props) {
         {savedCurrent && <span className="text-[12.5px] text-ink-soft">✓ Saved</span>}
 
         {downloadHref && !running && (
-          <a className="pill-ghost" href={downloadHref} download="studio-final-cut.mp4">
+          <a className="pill-ghost" href={downloadHref} download={downloadName}>
             Download MP4
           </a>
         )}
