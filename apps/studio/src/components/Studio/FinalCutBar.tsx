@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Scene } from '../../lib/scenes'
 import { assembleFinalCutBlob } from '../../lib/export/assembleScene'
+import { finalCutFileName } from '../../lib/export/fileName'
 import { useSignedBytes } from './useSignedBytes'
 import { useSignDownloadQuery, useSignAttachmentQuery } from '../../store/studioApi'
-import { finalCutFileName } from '../../lib/slug'
 import { skipToken } from '@reduxjs/toolkit/query'
 
 type Props = {
   scenes: Scene[]
-  /** The video's recommended title — the download's filename comes from this. */
+  /** The video's title — the download is named from its slug. */
   title: string
   /** The saved final cut's serve path (persisted) — survives reload. */
   finalCutUrl: string | null

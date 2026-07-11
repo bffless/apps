@@ -17,6 +17,7 @@ import type { Scene } from './scenes'
 import type { VideoDescription } from './describe'
 import { videoScript, type SceneWords } from './describe'
 import { globalToLocal, type SourceLike } from './sources'
+import { kebabSlug } from './slug'
 
 /** One scene's heading + the words spoken in it, the outline the live `/api/blog`
  *  rule seeds the post's sections from (it may merge/rename for flow). */
@@ -299,11 +300,7 @@ export function blogReframeFileName(time: number): string {
  * when the title is empty or punctuation-only.
  */
 export function blogSlug(title: string): string {
-  const slug = str(title)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug || 'post'
+  return kebabSlug(str(title)) || 'post'
 }
 
 // ---- Download bundle (issue #71) ------------------------------------------

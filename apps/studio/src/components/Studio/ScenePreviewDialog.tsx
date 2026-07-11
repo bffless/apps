@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Scene } from '../../lib/scenes'
-import type { ContactSheet } from '../../lib/frames'
 import { effectiveCuts } from '../../lib/refiner'
 import { planScene } from '../../lib/export/assemble'
 import { sourceTimeAt, outputTimeAt, nextKeptSource } from '../../lib/export/preview'
-import { buildFilmstrip, frameAt, spriteStyle } from '../../lib/filmstrip'
+import { frameAt, spriteStyle, type FilmFrame } from '../../lib/filmstrip'
 import { claimPlayback } from './clipPlayer'
 
 type Props = {
   open: boolean
   onClose: () => void
   scene: Scene
-  /** The whole-clip prep contact sheets; the scene's own denser sheets win inside it. */
-  sheets: ContactSheet[]
+  /** The scene's filmstrip on its source's LOCAL timeline (`sceneFilmstrip`) —
+   *  the same frames the cut editor's gutter draws, flipped in sync here. */
+  frames: FilmFrame[]
   /** Serve path of the whole-talk extracted WAV — the preview's soundtrack.
    *  Omit (restored session without audio) and the flipbook previews silent. */
   audioUrl?: string
@@ -32,7 +32,7 @@ const fmtTime = (s: number) => {
  * contact-sheet frames flipped in sync. No ffmpeg, nothing rendered, nothing
  * persisted; edit → preview → edit for free.
  */
-export function ScenePreviewDialog({ open, onClose, scene, sheets, audioUrl }: Props) {
+export function ScenePreviewDialog({ open, onClose, scene, frames, audioUrl }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -58,11 +58,6 @@ export function ScenePreviewDialog({ open, onClose, scene, sheets, audioUrl }: P
     () => planScene({ cuts: effectiveCuts(scene), start: scene.start, end: scene.end }),
     [scene],
   )
-  const frames = useMemo(
-    () => buildFilmstrip([...(scene.sheets ?? []), ...sheets]),
-    [scene.sheets, sheets],
-  )
-
   // The playhead in OUTPUT time, derived from the audio element's source-time
   // clock. `playing` mirrors the element's state for the button label.
   const [now, setNow] = useState(0)

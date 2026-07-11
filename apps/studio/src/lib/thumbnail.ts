@@ -13,10 +13,6 @@
 import type { Scene } from './scenes'
 import { videoScript, type SceneWords } from './describe'
 
-// Lives in `slug.ts` now, alongside `finalCutFileName` — one slug rule for every
-// download name. Re-exported so existing importers keep their import path.
-export { thumbnailFileName } from './slug'
-
 /** POSTed to `/api/thumbnail/draft`: everything the prompt-drafting handler needs. */
 export type ThumbnailDraftRequest = {
   /** The video's recommended title. */
@@ -57,6 +53,21 @@ export function buildThumbnailDraftRequest(
 export function toThumbnailPrompt(raw: unknown): ThumbnailPrompt {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   return { prompt: str(o.prompt) }
+}
+
+/**
+ * A snake_cased download filename derived from the video title, e.g.
+ * "Overview of Onboarding Rules" → "overview_of_onboarding_rules.jpg".
+ * Collapses any run of non-alphanumeric characters to a single underscore and
+ * trims leading/trailing ones; falls back to "thumbnail" when the title is
+ * empty or punctuation-only.
+ */
+export function thumbnailFileName(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return `${slug || 'thumbnail'}.jpg`
 }
 
 /** Coerce the render step's raw reply into `{ imageUrl }`; never throws. */

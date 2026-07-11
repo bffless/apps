@@ -55,10 +55,11 @@ type Props = {
   /** Contact-sheet frames (story 03e) for the time-aligned filmstrip gutter down
    *  the left of the editor. Empty ⇒ no gutter (e.g. before thumbnails exist). */
   frames?: FilmFrame[]
-  /** The source clip's real length, in seconds. The grid is floored to this so
-   *  trailing footage with no speech (e.g. the talk ends at 0:50 on a 0:53 clip)
-   *  still renders editable rows — otherwise the grid stops at the last word and
-   *  that footage can't be seen or cut. */
+  /** The footage's real length, in seconds — ALL sources on a multi-video
+   *  project, paired with `projectCuts` on the same global timeline. The grid is
+   *  floored to this so trailing footage with no speech (e.g. the talk ends at
+   *  0:50 on a 0:53 clip) still renders editable rows — otherwise the grid stops
+   *  at the last word and that footage can't be seen or cut. */
   duration?: number
   /** Restrict the editor to one scene's window on the absolute timeline (story
    *  03c "per-scene scope"): rows before `windowStart` (floored to the line) and
@@ -68,17 +69,19 @@ type Props = {
    *  show the whole talk. */
   windowStart?: number
   windowEnd?: number
-  /** The whole-source extracted audio (16 kHz WAV). When set, each timestamp
+  /** The scene's own source's extracted audio (16 kHz WAV — the source `words`
+   *  and the window are timed against). When set, each timestamp
    *  becomes a play button: click it to play the FINAL CUT from that second —
    *  the kept spans only, skipping every red cut span (story 13d) — through the
    *  scene's `windowEnd`, with the lit row tracking the playhead across the
    *  skips. Modifier-click plays the raw source straight through cuts. Omit
    *  (prep previews) to keep the gutter read-only. */
   originalAudioUrl?: string
-  /** Every scene's effective cuts — the WHOLE project's, not just this scene's —
-   *  for the header's live duration readout (`final cut 4:32 · source 12:10`,
-   *  story 13d): pure arithmetic, `duration` minus the cut footage. Omit to
-   *  hide the readout. */
+  /** Every scene's effective cuts — the WHOLE project's, not just this scene's,
+   *  lifted onto ONE global timeline (multi-source scene times collide
+   *  numerically otherwise) — for the header's live duration readout
+   *  (`final cut 4:32 · source 12:10`, story 13d): pure arithmetic, `duration`
+   *  minus the cut footage. Omit to hide the readout. */
   projectCuts?: CutSpan[]
   /** The Build page's `<video>`, so stitched playback carries the picture too:
    *  while the transport plays, the video is muted (the WAV stays the

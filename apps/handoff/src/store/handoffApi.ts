@@ -18,7 +18,6 @@ import { toNode, toNodeList, buildRegisterBody } from '../lib/nodes'
 import { encodePath } from '../lib/pathUrl'
 import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
-import { planSiteUpload } from '../lib/site'
 import { planFolderImport } from '../lib/folderImport'
 import { contentSubPath } from '../lib/contentPath'
 import type { Grant } from '../lib/acl'
@@ -407,9 +406,8 @@ export const handoffApi = createApi({
     >({
       async queryFn({ items, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
         try {
-          // Normalise once (carries the File through) so file lookup uses the
-          // same paths planFolderImport derives its dirs/files from.
-          const fileByPath = new Map(planSiteUpload(items).files.map((it) => [it.relPath, it.file]))
+          // planFolderImport carries each item's File through onto its planned
+          // file, so the upload always uses the path the plan created folders for.
           const plan = planFolderImport(items)
 
           // relDir -> folderId; '' is the starting folder we import into.
@@ -439,11 +437,7 @@ export const handoffApi = createApi({
           let filesUploaded = 0
 
           await runPool(plan.files, 4, async (f) => {
-            const file = fileByPath.get(f.relPath)
-            if (!file) {
-              failures.push({ relPath: f.relPath, error: 'File data missing for path.' })
-              return
-            }
+            const { file } = f
             const targetId = dirToId[f.dir] ?? parentId
             try {
               // Verbatim structural key = owning-Folder path + the file's

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { Scene } from '../../lib/scenes'
 import type { ContactSheet } from '../../lib/frames'
+import { buildFilmstrip } from '../../lib/filmstrip'
 import { ScenePreviewDialog } from './ScenePreviewDialog'
 
 // jsdom lacks showModal/close — polyfill them as ContactDialog.test.tsx does;
@@ -69,7 +70,7 @@ describe('ScenePreviewDialog (cut-first, ADR-0003)', () => {
         open
         onClose={() => {}}
         scene={scene()}
-        sheets={[sheet([0, 5])]}
+        frames={buildFilmstrip([sheet([0, 5])])}
         audioUrl="blob:audio"
       />,
     )
@@ -83,7 +84,7 @@ describe('ScenePreviewDialog (cut-first, ADR-0003)', () => {
         open
         onClose={() => {}}
         scene={scene()}
-        sheets={[]}
+        frames={[]}
         audioUrl="blob:audio"
       />,
     )
@@ -99,14 +100,14 @@ describe('ScenePreviewDialog (cut-first, ADR-0003)', () => {
   it('disables Play when everything is cut', () => {
     const allCut = scene({ refined: { source: 'manual', cuts: [{ start: 0, end: 10 }] } })
     render(
-      <ScenePreviewDialog open onClose={() => {}} scene={allCut} sheets={[]} audioUrl="blob:audio" />,
+      <ScenePreviewDialog open onClose={() => {}} scene={allCut} frames={[]} audioUrl="blob:audio" />,
     )
     expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled()
     expect(screen.getByText(/Everything in this scene is cut/)).toBeInTheDocument()
   })
 
   it('disables Play (frames only) when there is no extracted audio', () => {
-    render(<ScenePreviewDialog open onClose={() => {}} scene={scene()} sheets={[]} />)
+    render(<ScenePreviewDialog open onClose={() => {}} scene={scene()} frames={[]} />)
     expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled()
     expect(screen.getByText(/No extracted audio/)).toBeInTheDocument()
   })
@@ -114,7 +115,7 @@ describe('ScenePreviewDialog (cut-first, ADR-0003)', () => {
   it('close button calls onClose', () => {
     const onClose = vi.fn()
     render(
-      <ScenePreviewDialog open onClose={onClose} scene={scene()} sheets={[]} audioUrl="blob:audio" />,
+      <ScenePreviewDialog open onClose={onClose} scene={scene()} frames={[]} audioUrl="blob:audio" />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Close preview' }))
     expect(onClose).toHaveBeenCalled()

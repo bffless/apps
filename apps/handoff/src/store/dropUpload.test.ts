@@ -4,7 +4,8 @@
  * Drives the REAL drop pipeline the dropzone uses: a mocked OS `DataTransfer`
  * (FileSystem entries with paged `readEntries`) → `filesFromDataTransfer` →
  * `importFolder` mutation, against the same MSW `/api/*` boundary the browser
- * worker uses. Asserts the dropped folder is recreated under the target parent.
+ * worker uses. Asserts the dropped folder is recreated *as a folder* under the
+ * target parent, with its contents as children (not dumped into the parent).
  *
  * Native drag-and-drop can't be faithfully driven in jsdom, so the OS layer
  * (DataTransfer / FileSystemEntry) is mocked; everything downstream is real.
@@ -128,12 +129,17 @@ describe('drag-drop folder → importFolder', () => {
     expect(result.data!.failures).toEqual([])
     expect(result.data!.filesUploaded).toBe(2)
 
-    // The common top dir ('notes') is stripped by planFolderImport, so the
-    // tree lands directly under root: a 'chapters' folder + 'readme.md'.
+    // The dropped folder itself is recreated under the target parent — its
+    // contents are children of it, not dumped loose into root.
     const root = await listFolder('root')
-    const chapters = root.find((n) => n.type === 'folder' && n.name === 'chapters')
+    expect(root.map((n) => n.name)).toEqual(['notes'])
+    const notes = root.find((n) => n.type === 'folder' && n.name === 'notes')
+    expect(notes).toBeDefined()
+
+    const inNotes = await listFolder(notes!.id)
+    const chapters = inNotes.find((n) => n.type === 'folder' && n.name === 'chapters')
     expect(chapters).toBeDefined()
-    expect(root.find((n) => n.type === 'file' && n.name === 'readme.md')).toBeDefined()
+    expect(inNotes.find((n) => n.type === 'file' && n.name === 'readme.md')).toBeDefined()
 
     const inChapters = await listFolder(chapters!.id)
     expect(inChapters.map((n) => n.name)).toEqual(['one.md'])

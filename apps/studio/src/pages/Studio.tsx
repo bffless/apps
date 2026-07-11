@@ -10,8 +10,8 @@ import { PreviewPlayer } from '../components/Studio/PreviewPlayer'
 import { PipelineBoard } from '../components/Studio/PipelineBoard'
 import { ContactSheetPreview } from '../components/Studio/ContactSheetPreview'
 import { effectiveCuts } from '../lib/refiner'
+import { cutEditorInputs, sceneFilmstrip } from '../lib/editorInputs'
 import { sceneAtTime } from '../lib/scenes'
-import { buildFilmstrip } from '../lib/filmstrip'
 import type { CutSpan } from '../lib/transcriptGrid'
 import { SceneList } from '../components/Studio/SceneList'
 import { SceneTabs } from '../components/Studio/SceneTabs'
@@ -252,26 +252,28 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   const { data: signedClip } = useSignDownloadQuery(selected?.clipUrl ?? skipToken)
   const clipSrc = selected?.clipUrl ? (signedClip?.url ?? null) : null
 
-  // The diff viewer is scoped to the SELECTED scene only (story 03c "per-scene
-  // scope"): every input below is derived from `selected`, not flatMapped across
-  // the whole talk, and the grid is windowed to `[selected.start, selected.end]`.
-  // The Original pane's words are the slice of the full transcript that overlaps
-  // the scene's window (timestamps stay absolute, so scene 2 reads from 1:44).
-  const sceneWords = useMemo(
-    () =>
-      selected
-        ? pipe.words.filter((w) => w.start < selected.end && w.end > selected.start)
-        : [],
-    [pipe.words, selected],
+  // The cut editor is scoped to the SELECTED scene only (story 03c "per-scene
+  // scope"), and every scene-scoped input — words, audio, silence map — must
+  // come from the scene's OWN source: scene times are per-source (story 09), so
+  // the legacy top-level fields (which mirror only the primary source) blanked
+  // chapters whose window lies past the primary's last word and silently showed
+  // the primary's words under every other source's chapters. One pure, tested
+  // derivation; the grid stays windowed to `[selected.start, selected.end]` in
+  // that source's local time.
+  const editor = useMemo(
+    () => cutEditorInputs(pipe.sources, pipe.scenes, selected),
+    [pipe.sources, pipe.scenes, selected],
   )
 
   // Time-aligned frames for the cut editor's filmstrip gutter (story 03e),
-  // reusing the already-captured contact sheets as sprites. The per-scene refiner
-  // sheets come first (denser, so they win on overlap), then the whole-clip prep
-  // sheets fill everywhere else.
+  // reusing the already-captured contact sheets as sprites. Scoped to the
+  // SELECTED scene and its source's local timeline — like every other editor
+  // input — because the prep sheets are stamped with GLOBAL time and scenes on
+  // different sources overlap numerically, so one flat index would show another
+  // source's frame on a row.
   const filmstrip = useMemo(
-    () => buildFilmstrip([...pipe.scenes.flatMap((s) => s.sheets ?? []), ...pipe.contactSheets]),
-    [pipe.scenes, pipe.contactSheets],
+    () => sceneFilmstrip(pipe.sources, selected, pipe.contactSheets),
+    [pipe.sources, selected, pipe.contactSheets],
   )
 
   // Dropped footage spans for the selected scene (refiner's cuts, else
@@ -281,9 +283,9 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
     [selected],
   )
 
-  // EVERY scene's effective cuts, for the editor header's live duration readout
-  // (story 13d) — the final cut is the whole source minus all of these.
-  const projectCuts = useMemo(() => pipe.scenes.flatMap((s) => effectiveCuts(s)), [pipe.scenes])
+  // EVERY scene's effective cuts — lifted onto the global timeline by
+  // `cutEditorInputs` — for the editor header's live duration readout (story
+  // 13d): the final cut is ALL footage minus all of these.
 
   // Hand the Build page's <video> to the cut editor so stitched playback drives
   // the picture too. A sliced scene clip's own timeline starts at scene.start;
@@ -292,16 +294,16 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   const videoOffset = clipSrc && selected ? selected.start : 0
   const videoSync = useMemo(() => ({ ref: videoRef, offset: videoOffset }), [videoOffset])
 
-  // A cut hand-edit on the grid. The grid hands us a span on the whole-talk
-  // timeline; route it to whichever scene owns its start, clamped to that scene
-  // by `editSceneCut`. (A drag that crosses a scene boundary edits only the
-  // start scene — fine, scenes are built one at a time.)
+  // A cut hand-edit on the grid. The editor is windowed to the SELECTED scene,
+  // so the drag belongs to it by construction — route it there directly and let
+  // `editSceneCut` clamp it. (Looking the owner up by time is wrong here: scene
+  // times are per-source, so scenes on different sources overlap numerically
+  // and a time lookup can land the edit on another source's scene.)
   const onEditCut = useCallback(
     (span: CutSpan, op: 'add' | 'remove') => {
-      const owner = sceneAtTime(pipe.scenes, span.start)
-      if (owner) pipe.editSceneCut(owner.id, span, op)
+      if (selected) pipe.editSceneCut(selected.id, span, op)
     },
-    [pipe],
+    [pipe, selected],
   )
 
   // Auto-trim dead space (story 13e): the tool's derived cuts land on the
@@ -697,22 +699,22 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     panel above is the whole story; show a quiet hint in the
                     editor's place. Reverting a refinement re-locks it. */}
                 {selected &&
-                  pipe.words.length > 0 &&
+                  editor.transcribed &&
                   (selected.refined ? (
                   <CutEditor
-                    words={sceneWords}
+                    words={editor.words}
                     cuts={cutSpans}
                     onEditCut={onEditCut}
                     onAutoTrim={onAutoTrim}
                     onSearch={onSearch}
                     frames={filmstrip}
-                    duration={duration}
+                    duration={editor.duration}
                     windowStart={selected.start}
                     windowEnd={selected.end}
-                    originalAudioUrl={pipe.audioUrl ?? undefined}
-                    projectCuts={projectCuts}
+                    originalAudioUrl={editor.originalAudioUrl}
+                    projectCuts={editor.projectCuts}
                     video={videoSync}
-                    deadSpace={pipe.deadSpace ?? undefined}
+                    deadSpace={editor.deadSpace}
                   />
                   ) : (
                     <DiffLockedHint />
@@ -735,8 +737,8 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     open={previewOpen}
                     onClose={() => setPreviewOpen(false)}
                     scene={selected}
-                    sheets={pipe.contactSheets}
-                    audioUrl={pipe.audioUrl ?? undefined}
+                    frames={filmstrip}
+                    audioUrl={editor.originalAudioUrl}
                   />
                 )}
                 {/* The export step lives on its own now (the final stitch +
