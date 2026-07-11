@@ -129,10 +129,25 @@ const studioHandlers = [
   // Sign a serve path for direct bucket reads (mirrors `/api/uploads/sign`,
   // which mints a presigned GCS download URL so big objects never stream through
   // the serve pipeline). The mock has no bucket — objects serve from the
-  // in-memory store via the route below — so signing is identity.
+  // in-memory store via the route below — so signing is identity UNLESS the
+  // caller passes `filename` (the `signAttachment` query), in which case it
+  // returns a bucket-like cross-origin URL carrying a Content-Disposition so a
+  // component test can assert both the cross-origin-ness and the download name.
   http.post('/api/uploads/sign', async ({ request }) => {
-    const { url } = (await request.json().catch(() => ({}))) as { url?: string }
+    const { url, filename } = (await request.json().catch(() => ({}))) as {
+      url?: string
+      filename?: string
+    }
     if (!url) return new HttpResponse(null, { status: 400 })
+    if (filename) {
+      const signed = new URL(`https://bucket.example.com${url}`)
+      signed.searchParams.set('X-Goog-Signature', 'mock')
+      signed.searchParams.set(
+        'response-content-disposition',
+        `attachment; filename="${filename}"`,
+      )
+      return HttpResponse.json({ url: signed.toString(), expiresIn: 3600 })
+    }
     return HttpResponse.json({ url, expiresIn: 3600 })
   }),
 

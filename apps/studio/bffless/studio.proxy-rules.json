@@ -1869,7 +1869,7 @@
             "id": "resolvePath",
             "name": "resolvePath",
             "config": {
-              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var url = typeof body.url === 'string' ? body.url : ''\n\n  // Only serve paths under /api/uploads/ may be signed, and never with\n  // traversal segments — everything else resolves to an empty storagePath,\n  // which makes the sign step fail closed.\n  var key = url.replace(/^\\/+/, '')\n  var ok = key.indexOf('api/uploads/') === 0 && key.indexOf('..') === -1\n  key = ok ? key.replace(/^api\\/uploads\\//, '') : ''\n\n  // Split off any query string; the storage key is the bare path. Project\n  // prefix comes from the deployment context so an import into any project\n  // signs <owner>/<repo>/uploads/... (no hard-coded project name).\n  key = key.split('?')[0]\n  var storagePath = key ? deployment.owner + '/' + deployment.repo + '/uploads/' + key : ''\n\n  return {\n    url: url,\n    storagePath: storagePath,\n  }\n}\n"
+              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var url = typeof body.url === 'string' ? body.url : ''\n\n  // Only serve paths under /api/uploads/ may be signed, and never with\n  // traversal segments — everything else resolves to an empty storagePath,\n  // which makes the sign step fail closed.\n  var key = url.replace(/^\\/+/, '')\n  var ok = key.indexOf('api/uploads/') === 0 && key.indexOf('..') === -1\n  key = ok ? key.replace(/^api\\/uploads\\//, '') : ''\n\n  // Split off any query string; the storage key is the bare path. Project\n  // prefix comes from the deployment context so an import into any project\n  // signs <owner>/<repo>/uploads/... (no hard-coded project name).\n  key = key.split('?')[0]\n  var storagePath = key ? deployment.owner + '/' + deployment.repo + '/uploads/' + key : ''\n\n  // Optional download filename. Basename only, conservative charset — the\n  // backend sanitizes again, this is defense in depth. Empty means \"no\n  // Content-Disposition\", which is what every non-download caller sends.\n  var name = typeof body.filename === 'string' ? body.filename : ''\n  name = name.split('/').pop().split('\\\\').pop()\n  name = name.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 120)\n\n  return {\n    url: url,\n    storagePath: storagePath,\n    filename: name,\n  }\n}\n"
             },
             "handlerType": "function_handler"
           },
@@ -1878,6 +1878,7 @@
             "name": "sign",
             "config": {
               "path": "steps.resolvePath.storagePath",
+              "filename": "steps.resolvePath.filename",
               "expiresIn": 3600
             },
             "handlerType": "signed_url"

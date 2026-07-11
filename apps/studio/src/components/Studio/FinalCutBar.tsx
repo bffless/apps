@@ -3,7 +3,7 @@ import type { Scene } from '../../lib/scenes'
 import { assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { finalCutFileName } from '../../lib/export/fileName'
 import { useSignedBytes } from './useSignedBytes'
-import { useSignDownloadQuery } from '../../store/studioApi'
+import { useSignDownloadQuery, useSignAttachmentQuery } from '../../store/studioApi'
 import { skipToken } from '@reduxjs/toolkit/query'
 
 type Props = {
@@ -51,14 +51,19 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
   const pending = scenes.filter((s) => !s.assembledUrl)
 
   const savedCurrent = !!resultBlob && savedBlob === resultBlob
-  // Playback of the SAVED final cut signs the serve path to a direct bucket
-  // URL (the whole video — the biggest MP4 we serve — must never stream
-  // through file_serve). The download link keeps the serve path: `download`
-  // is ignored on cross-origin URLs, so signing it would cost the filename.
-  const { data: signedFinal } = useSignDownloadQuery(finalCutUrl ?? skipToken)
-  const playbackSrc = resultUrl ?? (finalCutUrl ? (signedFinal?.url ?? null) : null)
-  const downloadHref = resultUrl ?? finalCutUrl
+  // Both playback and download read the SAVED cut straight from the bucket — the
+  // whole video is the biggest MP4 we serve and must never stream through
+  // file_serve (bffless/ce#317). They need DIFFERENT signatures: playback must
+  // render inline, the download must be `attachment` so the browser saves it
+  // under `downloadName` (an `<a download>` is ignored cross-origin).
   const downloadName = finalCutFileName(title)
+  const { data: signedFinal } = useSignDownloadQuery(finalCutUrl ?? skipToken)
+  const { data: signedAttachment } = useSignAttachmentQuery(
+    finalCutUrl ? { url: finalCutUrl, filename: downloadName } : skipToken,
+  )
+  const playbackSrc = resultUrl ?? (finalCutUrl ? (signedFinal?.url ?? null) : null)
+  // `resultUrl` is a same-origin blob: URL, where the `download` attr DOES apply.
+  const downloadHref = resultUrl ?? (finalCutUrl ? (signedAttachment?.url ?? null) : null)
 
   const run = useCallback(async () => {
     if (running || !allAssembled) return
