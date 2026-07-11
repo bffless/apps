@@ -20,6 +20,8 @@
  * dev — restored in story 07's billing gate.
  */
 
+import { fetchWithReauth } from './auth'
+
 /** The `/api/uploads/sign` response — read flexibly like RegisterResponse. */
 type SignResponse = {
   url?: string
@@ -102,7 +104,7 @@ type RegisterResponse = {
 export async function presignedUpload(file: File, basePath: string, projectId: string): Promise<string> {
   if (!projectId) throw new Error('presignedUpload: projectId is required')
 
-  const prepRes = await fetch(`${basePath}/prepare`, {
+  const prepRes = await fetchWithReauth(`${basePath}/prepare`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -122,7 +124,7 @@ export async function presignedUpload(file: File, basePath: string, projectId: s
   })
   if (!putRes.ok) throw new Error(`Bucket upload failed (${putRes.status})`)
 
-  const regRes = await fetch(`${basePath}/register`, {
+  const regRes = await fetchWithReauth(`${basePath}/register`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
