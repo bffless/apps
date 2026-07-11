@@ -139,3 +139,41 @@ describe('viewer "Open in new tab"', () => {
     expect(open).toHaveAttribute('href', '/api/uploads/content/Posts/Report.pdf')
   })
 })
+
+/** Read the srcdoc of the markdown iframe the viewer rendered. */
+async function markdownSrcDoc(name: string): Promise<string> {
+  const frame = await screen.findByTitle(name)
+  return frame.getAttribute('srcdoc') ?? ''
+}
+
+describe('embed-mode rendering keys off being framed, not ?embed=1', () => {
+  it('keeps Handoff’s reading measure and targets the tab when NOT framed', async () => {
+    const folder = seedFolder('Posts', 'root')
+    seedMarkdown('Post.md', folder.id, '[next](other.md)')
+
+    renderApp('/blob/Posts/Post.md?embed=1')
+
+    const doc = await markdownSrcDoc('Post.md')
+    expect(doc).toContain('.markdown-body { max-width: 48rem;')
+    expect(doc).not.toContain('max-width: none')
+    expect(doc).toContain('target="_top"')
+  })
+
+  it('lifts the measure and opens internal links in a new tab when framed', async () => {
+    const realTop = window.top
+    Object.defineProperty(window, 'top', { configurable: true, value: {} as Window })
+    try {
+      const folder = seedFolder('Posts', 'root')
+      seedMarkdown('Post.md', folder.id, '[next](other.md)')
+
+      renderApp('/blob/Posts/Post.md?embed=1')
+
+      const doc = await markdownSrcDoc('Post.md')
+      expect(doc).toContain('max-width: none')
+      expect(doc).toContain('target="_blank"')
+      expect(doc).not.toContain('target="_top"')
+    } finally {
+      Object.defineProperty(window, 'top', { configurable: true, value: realTop })
+    }
+  })
+})
