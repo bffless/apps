@@ -22,7 +22,7 @@ import { ShareDialog } from '../components/ShareDialog'
 import { NodeDetails } from '../components/NodeDetails'
 import { TrashIcon, ChevronRightIcon } from '../components/icons'
 import { parentFolderPath } from '../lib/tree'
-import { treeUrl, parentPath } from '../lib/pathUrl'
+import { treeUrl, parentPath, blobUrl } from '../lib/pathUrl'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { useEmbedMode } from '../lib/embed'
 import { InvalidLink } from '../components/InvalidLink'
@@ -80,6 +80,13 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
   const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
   const backTo = backTarget(node)
+
+  // "Open" must not point at the raw bytes for Markdown: the content endpoint
+  // serves it as text/markdown, which browsers download instead of rendering —
+  // making the button a second Download. Send the new tab to the chromeless
+  // viewer, which shows the *rendered* document at a shareable URL.
+  const openUrl =
+    previewFor(node) === 'markdown' && node.path ? `${blobUrl(node.path)}?embed=1` : node.url
 
   const [shareOpen, setShareOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -204,9 +211,9 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       )}
 
       {/* Open in new tab */}
-      {node.url && (
+      {openUrl && (
         <a
-          href={node.url}
+          href={openUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
