@@ -139,7 +139,19 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
         {savedCurrent && <span className="text-[12.5px] text-ink-soft">✓ Saved</span>}
 
         {downloadHref && !running && (
-          <a className="pill-ghost" href={downloadHref} download={downloadName}>
+          // `target="_blank"` is load-bearing, not cosmetic: the saved cut's href is a
+          // cross-origin bucket URL, so `download` is ignored and the click becomes a real
+          // top-level navigation — which aborts every in-flight request on the page
+          // (NS_BINDING_ABORTED), including the project autosave. Giving it its own
+          // browsing context keeps the navigation off this page; the bucket answers with
+          // `Content-Disposition: attachment`, so it downloads and the tab never appears.
+          <a
+            className="pill-ghost"
+            href={downloadHref}
+            download={downloadName}
+            target="_blank"
+            rel="noopener"
+          >
             Download MP4
           </a>
         )}
