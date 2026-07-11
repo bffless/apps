@@ -572,10 +572,17 @@ function NewFolderInline({
     }
   }
 
+  // Prefer the pipeline's own `{ error }` body (e.g. the 409 sibling-name
+  // collision) over an opaque status code.
+  const pipelineError =
+    error && typeof (error as { data?: { error?: unknown } }).data?.error === 'string'
+      ? ((error as { data: { error: string } }).data.error)
+      : null
   const errorMsg = error
-    ? 'error' in error
-      ? (error as { error: string }).error
-      : `Failed (${(error as { status: string | number }).status})`
+    ? pipelineError ??
+      ('error' in error
+        ? (error as { error: string }).error
+        : `Failed (${(error as { status: string | number }).status})`)
     : null
 
   return (
