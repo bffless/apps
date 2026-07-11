@@ -29,20 +29,16 @@ export const nodes = new Map<string, HandoffNode>()
 
 /**
  * In-Folder name uniqueness (structural storage, Slice 4). Mirrors the pipeline
- * guard so mock == real: a name identifies content within a Folder, so a File
- * or Site whose name equals an existing sibling in the same Folder is rejected
- * (409), never overwritten. Any sibling type counts, and only within the same
- * `parentId` — the same name in a different Folder is fine.
+ * guard so mock == real: a name identifies content within a Folder, so a node
+ * whose name equals an existing sibling in the same Folder is rejected (409),
+ * never overwritten. Any sibling type counts, across ALL owners — root
+ * included: verbatim keys give every level a single shared path namespace, so
+ * a name collision is a storage-key collision regardless of who owns the
+ * sibling (issue #225). The same name in a different Folder is fine.
  */
-function siblingNameExists(parentId: string, name: string, ownerId: string | null): boolean {
-  // 'root' is a shared virtual bucket (each user's Home), so it is scoped by
-  // owner; a real Folder (UUID parentId) collides across any owner (a shared-
-  // folder editor must not overwrite the owner's file). Mirrors the pipeline guard.
-  const isRoot = parentId === 'root'
+function siblingNameExists(parentId: string, name: string): boolean {
   for (const n of nodes.values()) {
-    if (n.parentId !== parentId || n.name !== name) continue
-    if (isRoot && n.ownerId !== ownerId) continue
-    return true
+    if (n.parentId === parentId && n.name === name) return true
   }
   return false
 }
@@ -566,7 +562,7 @@ export const handlers = [
     const filename = body.filename ?? 'upload'
     // Reject before minting a URL when the target Folder already has a sibling
     // by this name — so the existing file's bytes are never overwritten.
-    if (body.parentId && siblingNameExists(body.parentId, filename, mockCurrentUser?.id ?? null)) {
+    if (body.parentId && siblingNameExists(body.parentId, filename)) {
       return HttpResponse.json(
         { error: 'An item with that name already exists in this folder. Rename it and try again.' },
         { status: 409 },
@@ -623,7 +619,7 @@ export const handlers = [
     const displayName = body.displayName ?? body.originalName ?? 'Untitled'
     const parentId = body.parentId ?? 'root'
     // In-Folder name uniqueness — backstop the prepare-time guard (Slice 4).
-    if (siblingNameExists(parentId, displayName, mockCurrentUser?.id ?? null)) {
+    if (siblingNameExists(parentId, displayName)) {
       return HttpResponse.json(
         { error: 'An item with that name already exists in this folder. Rename it and try again.' },
         { status: 409 },
@@ -663,6 +659,14 @@ export const handlers = [
       parentId?: string
       name?: string
       createdMs?: number
+    }
+    // In-Folder name uniqueness — a folder is a path segment under verbatim
+    // keys, so it collides with ANY same-named sibling (issue #225).
+    if (body.parentId && body.name && siblingNameExists(body.parentId, body.name)) {
+      return HttpResponse.json(
+        { error: 'An item with that name already exists in this folder. Rename it and try again.' },
+        { status: 409 },
+      )
     }
     const id = String(++nodeCounter)
     const ownerId = mockCurrentUser?.id ?? null
@@ -970,7 +974,7 @@ export const handlers = [
     const siteName = body.name ?? 'Untitled Site'
     const siteParentId = body.parentId ?? 'root'
     // In-Folder name uniqueness — a Site collides just like a File (Slice 4).
-    if (siblingNameExists(siteParentId, siteName, mockCurrentUser?.id ?? null)) {
+    if (siblingNameExists(siteParentId, siteName)) {
       return HttpResponse.json(
         { error: 'An item with that name already exists in this folder. Rename it and try again.' },
         { status: 409 },
