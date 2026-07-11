@@ -1,0 +1,36 @@
+targetUrl: pipeline
+order: 9
+pipeline:
+  name: Prune old items (retention)
+  steps:
+    - id: cutoff
+      name: cutoff
+      handler: function_handler
+      code: ./cutoff.fn.js
+    - id: del
+      name: del
+      handler: data_delete
+      config:
+        filters:
+          read:
+            op: eq
+            value: "true"
+          starred:
+            op: ne
+            value: "true"
+          fetchedAt:
+            op: lt
+            value: steps.cutoff.ms
+        schemaId: $schema:reader_items
+        filterLogic: and
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"pruned":{{steps.del.count}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: "Retention (#119): cutoff = now - 30d (epoch ms) -> data_delete(reader_items) delete-by-query where read=true AND starred!=true AND fetchedAt < cutoff -> respond { pruned: count }. Starred/unread rows never match (exempt by construction). Fired nightly by a pipeline_schedule as system context. No auth_required validator: the reader alias is private (edge-gated), so this is protected at the site level, and the CE scheduler runs it with NO user — auth_required would reject a userless system run."

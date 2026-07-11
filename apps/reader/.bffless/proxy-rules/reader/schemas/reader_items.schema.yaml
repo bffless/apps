@@ -1,0 +1,42 @@
+id: 96a1b5e7-96f0-43a4-baa8-2e19b539d07c
+name: reader_items
+fields:
+  - name: guid
+    type: string
+    required: true
+  - name: feedId
+    type: string
+    required: true
+  - name: title
+    type: string
+    required: false
+  - name: link
+    type: string
+    required: false
+  - name: author
+    type: string
+    required: false
+  - name: publishedAt
+    type: string
+    required: false
+  - name: summary
+    type: text
+    required: false
+  - name: content
+    type: text
+    required: false
+  - name: read
+    type: boolean
+    required: false
+  - name: starred
+    type: boolean
+    required: false
+  - name: fetchedAt
+    type: number
+    required: false
+  - name: enclosureType
+    type: string
+    required: false
+  - name: enclosureUrl
+    type: string
+    required: false

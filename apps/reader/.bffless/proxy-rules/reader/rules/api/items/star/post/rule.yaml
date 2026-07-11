@@ -1,0 +1,58 @@
+targetUrl: pipeline
+order: 7
+pipeline:
+  name: Set item star state
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          guid:
+            op: eq
+            value: steps.prep.guid
+        pageSize: 1
+        schemaId: $schema:reader_items
+        condition: steps.prep.hasGuid
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        fields:
+          starred: steps.prep.starred
+        recordId: steps.pick.recordId
+        schemaId: $schema:reader_items
+        condition: steps.pick.found
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true,"updated":{{steps.pick.found}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.hasGuid
+        contentType: application/json
+    - id: respondNoGuid
+      name: respondNoGuid
+      handler: response_handler
+      config:
+        body: '{"error":"guid is required"}'
+        status: 400
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.noGuid
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "Set an item's starred flag: POST { guid, starred } -> prep coerces guid/starred -> query finds the reader_items row by guid -> pick recordId -> data_update writes { starred } (conditional) -> respond { ok, updated }. Starred items are prune-exempt (retention #119). The /api/items/read twin (bffless/apps#115)."

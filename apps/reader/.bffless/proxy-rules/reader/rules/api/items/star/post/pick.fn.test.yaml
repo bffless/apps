@@ -1,0 +1,14 @@
+handler: ./pick.fn.js
+cases:
+  - name: extracts recordId when the guid query found a row
+    data: { steps: { query: [{ recordId: "rec_123", guid: "abc", starred: false }] } }
+    expect: { result: { recordId: "rec_123", found: true } }
+  - name: falls back to id when recordId is absent
+    data: { steps: { query: [{ id: 42, guid: "abc" }] } }
+    expect: { result: { recordId: "42", found: true } }
+  - name: not found when the guid query returned no rows
+    data: { steps: { query: [] } }
+    expect: { result: { recordId: "", found: false } }
+  - name: not found when the query step never ran (condition false, no guid)
+    data: { steps: {} }
+    expect: { result: { recordId: "", found: false } }

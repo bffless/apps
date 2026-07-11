@@ -1,0 +1,25 @@
+targetUrl: pipeline
+order: 2
+pipeline:
+  name: List feeds
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        limit: 500
+        schemaId: $schema:reader_feeds
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"feeds":{{{steps.query}}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "List subscribed feeds: data_query(reader_feeds) -> respond { feeds: [...] }. auth_required."

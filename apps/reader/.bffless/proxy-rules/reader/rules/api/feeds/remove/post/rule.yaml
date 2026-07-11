@@ -1,0 +1,53 @@
+targetUrl: pipeline
+pipeline:
+  name: Remove feed
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          url:
+            op: eq
+            value: request.body.url
+        pageSize: 1
+        schemaId: $schema:reader_feeds
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: del
+      name: del
+      handler: data_delete
+      config:
+        recordId: steps.pick.recordId
+        schemaId: $schema:reader_feeds
+        condition: steps.pick.found
+    - id: delItems
+      name: delItems
+      handler: data_delete
+      config:
+        filters:
+          feedId:
+            op: eq
+            value: request.body.url
+          starred:
+            op: ne
+            value: "true"
+        filterLogic: and
+        schemaId: $schema:reader_items
+        condition: steps.pick.found
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true,"removed":{{steps.pick.found}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "Unsubscribe: POST { url } -> data_query by url -> pick recordId -> data_delete(reader_feeds) -> cascade data_delete(reader_items) for the feed's non-starred items (feedId == url; starred posts are spared so intentionally-saved items survive). auth_required. bffless/apps."

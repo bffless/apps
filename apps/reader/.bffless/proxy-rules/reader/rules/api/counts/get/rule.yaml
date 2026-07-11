@@ -1,0 +1,58 @@
+targetUrl: pipeline
+order: 11
+pipeline:
+  name: Counts
+  steps:
+    - id: unread
+      name: unread
+      handler: db_aggregate
+      config:
+        filters:
+          read:
+            op: eq
+            value: "false"
+        groupBy: feedId
+        schemaId: $schema:reader_items
+        operation: count
+    - id: starred
+      name: starred
+      handler: db_aggregate
+      config:
+        filters:
+          starred:
+            op: eq
+            value: "true"
+        schemaId: $schema:reader_items
+        operation: count
+    - id: unreadStarred
+      name: unreadStarred
+      handler: db_aggregate
+      config:
+        filters:
+          read:
+            op: eq
+            value: "false"
+          starred:
+            op: eq
+            value: "true"
+        filterLogic: and
+        schemaId: $schema:reader_items
+        operation: count
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape.json}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "Sidebar badge counts: grouped unread-per-feed (db_aggregate count groupBy feedId, read=false) + starred total. Respond { unreadByFeed: {feedId: n}, starred: n }. auth_required (allowApiKey)."
