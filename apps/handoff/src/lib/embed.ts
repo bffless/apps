@@ -17,3 +17,17 @@ export function useEmbedMode(): boolean {
   const [searchParams] = useSearchParams()
   return searchParams.get('embed') === '1'
 }
+
+/**
+ * True when this document is really inside an iframe.
+ *
+ * `?embed=1` means "no app chrome", which is what a HOST app iframing a doc
+ * wants — and also what "Open in new tab" wants for a Markdown file. The two
+ * part ways on the CONTENT: an embedded doc lets the host own the reading
+ * measure and must never navigate the host away, while a standalone tab keeps
+ * Handoff's measure and owns its own window. So the chrome half of embed mode
+ * keys off the query param and the rendering half keys off this.
+ */
+export function isFramed(): boolean {
+  return window.self !== window.top
+}

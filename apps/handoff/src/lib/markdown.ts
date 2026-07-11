@@ -1,5 +1,6 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { CONTENT_PREFIX } from './contentPath'
 
 marked.use({ gfm: true })
 
@@ -68,6 +69,68 @@ const MARKDOWN_EMBED_CSS = `
 `
 
 /**
+ * Retarget the anchors of a rendered Markdown document for iframe display.
+ *
+ * The doc renders in a same-origin iframe whose `<base href>` is the file's own
+ * Folder on the content endpoint, so by default EVERY link navigates the frame:
+ * an external link loads a site that (like github.com) usually refuses to be
+ * framed, and a relative link to a sibling doc resolves to the raw content URL,
+ * which the browser downloads instead of rendering. Both are fixed here rather
+ * than by rewriting the stored Markdown.
+ *
+ * Runs on the already-sanitized HTML (after DOMPurify), so it cannot reintroduce
+ * anything sanitization stripped, and DOMPurify's attribute allow-list cannot
+ * strip the `target`/`rel` added here.
+ *
+ * `embed` (the doc is inside a HOST app's iframe) turns the top-window target
+ * into a new tab: `_top` would navigate the *host* away, which is worse than the
+ * bug being fixed.
+ */
+export function retargetLinks(
+  bodyHtml: string,
+  base: string | null,
+  { embed = false }: { embed?: boolean } = {},
+): string {
+  const origin = window.location.origin
+  const baseUrl = new URL(base ?? '/', origin)
+  const topTarget = embed ? '_blank' : '_top'
+
+  const doc = new DOMParser().parseFromString(bodyHtml, 'text/html')
+
+  for (const a of doc.querySelectorAll('a[href]')) {
+    const href = a.getAttribute('href') ?? ''
+    if (href.startsWith('#')) continue // in-document anchor — scroll the frame
+
+    let resolved: URL
+    try {
+      resolved = new URL(href, baseUrl)
+    } catch {
+      continue // unparseable — leave exactly as authored
+    }
+    // mailto:, tel:, … — the browser hands these off without navigating the frame.
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue
+
+    if (resolved.origin !== origin) {
+      a.setAttribute('target', '_blank')
+      a.setAttribute('rel', 'noopener noreferrer')
+      continue
+    }
+
+    // Same origin: a content-endpoint link is a Handoff node — send it to that
+    // node's viewer page instead of its raw bytes. The two URLs differ only by
+    // prefix, so the per-segment encoding carries over untouched.
+    if (resolved.pathname.startsWith(CONTENT_PREFIX)) {
+      const rest = resolved.pathname.slice(CONTENT_PREFIX.length)
+      a.setAttribute('href', `/blob/${rest}${resolved.search}${resolved.hash}`)
+    }
+    a.setAttribute('target', topTarget)
+    if (topTarget === '_blank') a.setAttribute('rel', 'noopener noreferrer')
+  }
+
+  return doc.body.innerHTML
+}
+
+/**
  * Build the full HTML document for the viewer's Markdown iframe.
  *
  * `bodyHtml` is the already-sanitized rendered Markdown (from `renderMarkdown`);
@@ -76,8 +139,13 @@ const MARKDOWN_EMBED_CSS = `
  * Folder on the content endpoint — with no rewriting of the stored Markdown.
  * When `base` is null (no known folder), the `<base>` tag is omitted.
  *
+ * Anchors are retargeted by `retargetLinks` so they escape the frame correctly:
+ * an external link opens in a new tab, and a link to a sibling file opens that
+ * file's `/blob/` viewer page instead of downloading its bytes.
+ *
  * `embed` lifts Handoff's own reading measure so the host app (e.g. the RSS
- * reader) can align the rendered body with its own article width.
+ * reader) can align the rendered body with its own article width, and keeps
+ * internal links off `_top` so they can never navigate that host away.
  */
 export function markdownDocument(
   bodyHtml: string,
@@ -86,11 +154,12 @@ export function markdownDocument(
 ): string {
   const baseTag = base ? `<base href="${base}">` : ''
   const css = embed ? MARKDOWN_IFRAME_CSS + MARKDOWN_EMBED_CSS : MARKDOWN_IFRAME_CSS
+  const body = retargetLinks(bodyHtml, base, { embed })
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">` +
     baseTag +
     `<style>${css}</style></head>` +
-    `<body><div class="markdown-body">${bodyHtml}</div></body></html>`
+    `<body><div class="markdown-body">${body}</div></body></html>`
   )
 }
