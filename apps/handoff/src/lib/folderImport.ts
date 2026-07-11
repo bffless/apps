@@ -10,31 +10,32 @@
  *   - `files`: each file paired with its owning relative dir and display name.
  *   - `hasHtml` / `rootIndexHtml`: drive the "Import as Site?" offer in the UI.
  *
- * Normalisation is delegated to `planSiteUpload` (strip `./`, drop junk, strip a
- * single common top dir) so Site planning and tree planning agree on paths — a
- * folder dropped with its wrapper directory imports its *contents*, matching the
- * Site upload behaviour.
+ * Paths are normalised by `normaliseFiles` (strip `./`, drop junk) but the
+ * dropped folder's own directory is KEPT: importing `mynotes/` into the folder
+ * you're viewing recreates `mynotes` there, with its contents as children —
+ * not dumped loose into the current folder (issue: folder upload lost its
+ * wrapper). Site upload still strips that wrapper, because a site's root *is*
+ * its wrapper's contents; `rootIndexHtml` is therefore read off the Site view.
  */
 
-import { planSiteUpload } from './site'
+import { normaliseFiles, planSiteUpload } from './site'
 
-export interface FolderImportFile {
-  /** Normalised relative path of the file (e.g. `sub/a.md`). */
-  relPath: string
+/** A planned file: the original input item, plus its owning dir and display name. */
+export type FolderImportFile<T extends { relPath: string } = { relPath: string }> = T & {
   /** Relative dir that owns the file (`''` = the import root / starting folder). */
   dir: string
   /** Display name of the file (the last path segment). */
   name: string
 }
 
-export interface FolderImportPlan {
+export interface FolderImportPlan<T extends { relPath: string } = { relPath: string }> {
   /** Unique relative dir paths to create, parent-before-child order. */
   dirs: string[]
   /** Each file plus its owning relative dir + display name. */
-  files: FolderImportFile[]
+  files: FolderImportFile<T>[]
   /** Does any `.html`/`.htm` file exist? Drives the Site offer. */
   hasHtml: boolean
-  /** Is there a root `index.html`? Default-suggests Site. */
+  /** Is there a root `index.html` once the Site wrapper is stripped? Default-suggests Site. */
   rootIndexHtml: boolean
 }
 
@@ -49,15 +50,16 @@ function splitPath(relPath: string): { dir: string; name: string } {
 
 /**
  * Produce a FolderImportPlan from a list of inputs (each with at least a
- * `relPath`). Pure — same normalised paths as `planSiteUpload`.
+ * `relPath`). Pure. Each input item is carried through onto its planned file, so
+ * callers keep whatever they attached to it (the `File` to upload).
  */
-export function planFolderImport(inputs: { relPath: string }[]): FolderImportPlan {
-  // Reuse planSiteUpload's normalisation (./-strip, junk-drop, common-top strip).
-  const { files: normalised } = planSiteUpload(inputs)
+export function planFolderImport<T extends { relPath: string }>(inputs: T[]): FolderImportPlan<T> {
+  // Normalise (./-strip, junk-drop) but keep the dropped folder's own dir.
+  const normalised = normaliseFiles(inputs)
 
-  const files: FolderImportFile[] = normalised.map(({ relPath }) => {
-    const { dir, name } = splitPath(relPath)
-    return { relPath, dir, name }
+  const files: FolderImportFile<T>[] = normalised.map((item) => {
+    const { dir, name } = splitPath(item.relPath)
+    return { ...item, dir, name }
   })
 
   // Collect every distinct ancestor dir across the files.
@@ -80,7 +82,9 @@ export function planFolderImport(inputs: { relPath: string }[]): FolderImportPla
   })
 
   const hasHtml = files.some((f) => HTML_RE.test(f.relPath))
-  const rootIndexHtml = files.some((f) => f.relPath === 'index.html')
+  // Site semantics: the wrapper dir a Site upload would strip is not part of the
+  // site's root, so `mynotes/index.html` still counts as a root index.html here.
+  const rootIndexHtml = planSiteUpload(inputs).files.some((f) => f.relPath === 'index.html')
 
   return { dirs, files, hasHtml, rootIndexHtml }
 }

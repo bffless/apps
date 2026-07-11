@@ -211,6 +211,21 @@ export const studioApi = createApi({
       keepUnusedDataFor: 45 * 60,
     }),
 
+    // Sign a persisted serve path into a direct bucket URL that FORCES a download
+    // under `filename`. Separate from `signDownload` because that URL feeds
+    // <video> playback and ffmpeg reads, which must not be `attachment`.
+    // Needed because `<a download>` is ignored on cross-origin URLs, so the name
+    // can only arrive as a Content-Disposition header signed into the URL.
+    signAttachment: builder.query<{ url: string }, { url: string; filename: string }>({
+      query: (body) => ({
+        url: 'api/uploads/sign',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (raw: unknown) => ({ url: toSignedUrl(raw) }),
+      keepUnusedDataFor: 45 * 60,
+    }),
+
     // Delete all bucket objects for a project (story 11c): wipes
     // uploads/projects/<id>/ and returns { deleted, prefix }. Best-effort —
     // the caller removes the project from local state regardless of outcome.
@@ -272,6 +287,7 @@ export const {
   useLazyGetStudioJobQuery,
   useSignDownloadQuery,
   useLazySignDownloadQuery,
+  useSignAttachmentQuery,
   useSearchTranscriptMutation,
   useDescribeMutation,
   useBlogStartMutation,

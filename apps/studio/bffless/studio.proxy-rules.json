@@ -557,7 +557,7 @@
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Transcribe an already-uploaded WAV with word-level timestamps. Mints a presigned GCS download URL for the audio (already in the bucket) and hands it to Replicate WhisperX (align_output:true), then flattens segments to { words: [{text,start,end}], text }. No validators yet \u2014 auth_required + rate_limit deferred to story 07 (mirrors the upload rules), so local unauthenticated dev works."
+      "description": "Transcribe an already-uploaded WAV with word-level timestamps. Mints a presigned GCS download URL for the audio (already in the bucket) and hands it to Replicate WhisperX (align_output:true), then flattens segments to { words: [{text,start,end}], text }. No validators yet — auth_required + rate_limit deferred to story 07 (mirrors the upload rules), so local unauthenticated dev works."
     },
     {
       "pathPattern": "/api/uploads/thumbnails/prepare",
@@ -1134,7 +1134,7 @@
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Voice clone (story 04) \u2014 ENABLED. Resolves the uploaded WAV sample's storage path \u2192 signs it \u2192 minimax/voice-cloning (voice_file only, matches the model's canonical example) \u2192 extracts the voice_id \u2192 returns { voiceId }. \u26a0\ufe0f COSTS $3 PER CALL. To disable again: set sign+clone isEnabled:false and point respond at {{steps.prep.voiceId}} (preset stub). auth_required + rate_limit deferred to story 07. Needs the project Replicate token."
+      "description": "Voice clone (story 04) — ENABLED. Resolves the uploaded WAV sample's storage path → signs it → minimax/voice-cloning (voice_file only, matches the model's canonical example) → extracts the voice_id → returns { voiceId }. ⚠️ COSTS $3 PER CALL. To disable again: set sign+clone isEnabled:false and point respond at {{steps.prep.voiceId}} (preset stub). auth_required + rate_limit deferred to story 07. Needs the project Replicate token."
     },
     {
       "pathPattern": "/api/voice/say",
@@ -1189,7 +1189,7 @@
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Voice say (story 04) \u2014 LIVE TTS via minimax/speech-2.8-turbo. Speaks request.body.text in request.body.voiceId (preset or cloned id) and returns { audioUrl, durationSeconds }. Used for the short post-selection preview sample (cheap). Needs the project Replicate API token. auth_required + rate_limit deferred to story 07."
+      "description": "Voice say (story 04) — LIVE TTS via minimax/speech-2.8-turbo. Speaks request.body.text in request.body.voiceId (preset or cloned id) and returns { audioUrl, durationSeconds }. Used for the short post-selection preview sample (cheap). Needs the project Replicate API token. auth_required + rate_limit deferred to story 07."
     },
     {
       "pathPattern": "/api/refine-scene",
@@ -1579,7 +1579,7 @@
           }
         ],
         "validators": [],
-        "description": "Mint a presigned PUT URL so the browser uploads the assembled final-cut MP4 straight to the bucket (bypasses the 1MB proxy cap) \u2014 story 05."
+        "description": "Mint a presigned PUT URL so the browser uploads the assembled final-cut MP4 straight to the bucket (bypasses the 1MB proxy cap) — story 05."
       },
       "isEnabled": true,
       "debugEnabled": false,
@@ -1720,7 +1720,7 @@
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Studio job poll (story 03f Part 0): read a studio_jobs row by id \u2192 { status, kind, result, error }. Cache-Control: no-store so polls never read a stale pending. No validators yet (auth_required + rate_limit deferred to story 07, mirrors the other studio rules)."
+      "description": "Studio job poll (story 03f Part 0): read a studio_jobs row by id → { status, kind, result, error }. Cache-Control: no-store so polls never read a stale pending. No validators yet (auth_required + rate_limit deferred to story 07, mirrors the other studio rules)."
     },
     {
       "pathPattern": "/api/uploads/scene-clip/prepare",
@@ -1881,7 +1881,7 @@
             "id": "resolvePath",
             "name": "resolvePath",
             "config": {
-              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var url = typeof body.url === 'string' ? body.url : ''\n\n  // Only serve paths under /api/uploads/ may be signed, and never with\n  // traversal segments \u2014 everything else resolves to an empty storagePath,\n  // which makes the sign step fail closed.\n  var key = url.replace(/^\\/+/, '')\n  var ok = key.indexOf('api/uploads/') === 0 && key.indexOf('..') === -1\n  key = ok ? key.replace(/^api\\/uploads\\//, '') : ''\n\n  // Split off any query string; the storage key is the bare path. Project\n  // prefix comes from the deployment context so an import into any project\n  // signs <owner>/<repo>/uploads/... (no hard-coded project name).\n  key = key.split('?')[0]\n  var storagePath = key ? deployment.owner + '/' + deployment.repo + '/uploads/' + key : ''\n\n  return {\n    url: url,\n    storagePath: storagePath,\n  }\n}\n"
+              "code": "function handler({ request, deployment }) {\n  var body = (request && request.body) || {}\n  var url = typeof body.url === 'string' ? body.url : ''\n\n  // Only serve paths under /api/uploads/ may be signed, and never with\n  // traversal segments — everything else resolves to an empty storagePath,\n  // which makes the sign step fail closed.\n  var key = url.replace(/^\\/+/, '')\n  var ok = key.indexOf('api/uploads/') === 0 && key.indexOf('..') === -1\n  key = ok ? key.replace(/^api\\/uploads\\//, '') : ''\n\n  // Split off any query string; the storage key is the bare path. Project\n  // prefix comes from the deployment context so an import into any project\n  // signs <owner>/<repo>/uploads/... (no hard-coded project name).\n  key = key.split('?')[0]\n  var storagePath = key ? deployment.owner + '/' + deployment.repo + '/uploads/' + key : ''\n\n  // Optional download filename. Basename only, conservative charset — the\n  // backend sanitizes again, this is defense in depth. Empty means \"no\n  // Content-Disposition\", which is what every non-download caller sends.\n  var name = typeof body.filename === 'string' ? body.filename : ''\n  name = name.split('/').pop().split('\\\\').pop()\n  name = name.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 120)\n\n  return {\n    url: url,\n    storagePath: storagePath,\n    filename: name,\n  }\n}\n"
             },
             "handlerType": "function_handler"
           },
@@ -1890,6 +1890,7 @@
             "name": "sign",
             "config": {
               "path": "steps.resolvePath.storagePath",
+              "filename": "steps.resolvePath.filename",
               "expiresIn": 3600
             },
             "handlerType": "signed_url"
@@ -1977,7 +1978,7 @@
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Transcript search (story 08): find-by-meaning over the timestamped transcript. SYNC (text-only Gemini, no images \u2014 returns in seconds, no jobs flow): prep builds the system+prompt from {query, transcript, duration}, search runs google/gemini-3.1-pro, parse clamps every span into [0,duration] / drops slivers / sorts / caps 20, respond returns { results } in the exact MSW-mock shape. No validators yet (auth_required + rate_limit deferred to story 07)."
+      "description": "Transcript search (story 08): find-by-meaning over the timestamped transcript. SYNC (text-only Gemini, no images — returns in seconds, no jobs flow): prep builds the system+prompt from {query, transcript, duration}, search runs google/gemini-3.1-pro, parse clamps every span into [0,duration] / drops slivers / sorts / caps 20, respond returns { results } in the exact MSW-mock shape. No validators yet (auth_required + rate_limit deferred to story 07)."
     },
     {
       "pathPattern": "/api/projects/save",
@@ -2468,7 +2469,7 @@
               "temperature": 0.7,
               "messageField": "{{steps.prep.message}}",
               "responseMode": "message",
-              "systemPrompt": "You write a single image-generation prompt for `google/nano-banana` that becomes a YouTube video's final thumbnail.\n\nYou have the `image-prompts` skill \u2014 load it with the load_skill tool before writing. It defines the prompt anatomy, the named house styles (retro-blueprint / modern-dev-tool / editorial-print), how to route a style from the video's content type, the text/color/negatives rules, and examples. Follow it exactly; don't invent your own format.\n\nThe user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script \u2014 your evidence for what the video is about and which house style fits), and NOTES (the creator's optional free-text wishes). When NOTES are present they override style routing and defaults \u2014 honor them.\n\nRoute the house style from the content type per the skill. Write the exact headline text yourself (5 words max) \u2014 never a placeholder. Apply the skill's color caps and always include the negatives list.\n\nReturn ONLY the finished prompt itself as plain text \u2014 the full multi-section prompt, ready to paste. Do NOT wrap it in JSON, do NOT surround it with quotes, do NOT use markdown code fences, and add no commentary before or after.",
+              "systemPrompt": "You write a single image-generation prompt for `google/nano-banana` that becomes a YouTube video's final thumbnail.\n\nYou have the `image-prompts` skill — load it with the load_skill tool before writing. It defines the prompt anatomy, the named house styles (retro-blueprint / modern-dev-tool / editorial-print), how to route a style from the video's content type, the text/color/negatives rules, and examples. Follow it exactly; don't invent your own format.\n\nThe user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is about and which house style fits), and NOTES (the creator's optional free-text wishes). When NOTES are present they override style routing and defaults — honor them.\n\nRoute the house style from the content type per the skill. Write the exact headline text yourself (5 words max) — never a placeholder. Apply the skill's color caps and always include the negatives list.\n\nReturn ONLY the finished prompt itself as plain text — the full multi-section prompt, ready to paste. Do NOT wrap it in JSON, do NOT surround it with quotes, do NOT use markdown code fences, and add no commentary before or after.",
               "maxHistoryMessages": 50
             },
             "handlerType": "ai_handler"
@@ -2498,7 +2499,7 @@
       },
       "isEnabled": true,
       "debugEnabled": false,
-      "description": "Studio thumbnail: draft a nano-banana image prompt via ai_handler (loads the image-prompts skill \u2014 enable Skills + JSON response format in the console UI). Returns { prompt }. Story 06."
+      "description": "Studio thumbnail: draft a nano-banana image prompt via ai_handler (loads the image-prompts skill — enable Skills + JSON response format in the console UI). Returns { prompt }. Story 06."
     },
     {
       "pathPattern": "/api/thumbnail/render",

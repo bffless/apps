@@ -4,11 +4,27 @@
  * Cut-first: there is one source clip and one flat list of `cuts[]` (footage
  * spans to drop). The render is simply the **kept spans of the clip, in order,
  * with the clip's own audio** — no narration clips, no silence fill, nothing
- * mixed. Video and audio are trimmed with the exact same spans, so they stay in
- * sync by construction.
+ * mixed.
  *
  * The one polish step: a ~10 ms audio fade on each kept piece's edges, so the
  * hard joins between discontinuous source spans don't click.
+ *
+ * **Two things keep the lips on the words.** Trimming video and audio with the same
+ * span is necessary but *not* sufficient — the streams don't cut on the same grid:
+ *
+ *  1. `trim` can only begin on a whole frame, so the first surviving frame sits up
+ *     to `1/fps` after the requested cut, while `atrim` is sample-exact. Rebasing
+ *     each stream to its own first sample (`setpts=PTS-STARTPTS`) throws that gap
+ *     away on the video side only, so the picture jumps ahead of the sound by up to
+ *     a frame at EVERY cut. Both streams therefore rebase to the same origin — the
+ *     cut boundary itself (`PTS-start/TB`) — which preserves the offset.
+ *  2. `setpts` clears the frame rate on the filter link. With nothing to inherit,
+ *     ffmpeg falls back to its built-in 25 fps default and drops/duplicates frames
+ *     to match: 1 frame in 6 of a 30 fps source, over half of a 60 fps screen
+ *     recording. `-fps_mode passthrough` keeps every frame on its own timestamp.
+ *
+ * Together these hold A/V to ~1 ms across a 26-piece cut; before, the video landed
+ * on a 40 ms grid. `./slice.ts` had the identical pair of bugs.
  *
  * This module is **pure** (no ffmpeg import) and unit-tested. ffmpeg.wasm is a
  * dumb executor of the command this builds — see `./ffmpeg.ts`.
@@ -106,16 +122,17 @@ export function buildFfmpegCommand(
 
   plan.video.forEach((v, i) => {
     const len = v.end - v.start
-    parts.push(`[0:v]trim=${secs(v.start)}:${secs(v.end)},setpts=PTS-STARTPTS[v${i}]`)
+    // `PTS-start/TB`, NOT `PTS-STARTPTS`: one shared origin for both streams, so the
+    // video's whole-frame snapping can't shift the picture against the sound.
+    const origin = `PTS-${secs(v.start)}/TB`
+    parts.push(`[0:v]trim=${secs(v.start)}:${secs(v.end)},setpts=${origin}[v${i}]`)
     // Fades measure from the rebased (asetpts) piece start; the out-fade anchors
     // at the piece's own end, clamped so a tiny piece never fades before 0.
     const fadeOut = Math.max(0, len - FADE)
     const fade = polish
       ? `,afade=t=in:st=0:d=${secs(FADE)},afade=t=out:st=${secs(fadeOut)}:d=${secs(FADE)}`
       : ''
-    parts.push(
-      `[0:a]atrim=${secs(v.start)}:${secs(v.end)},asetpts=PTS-STARTPTS${fade}[a${i}]`,
-    )
+    parts.push(`[0:a]atrim=${secs(v.start)}:${secs(v.end)},asetpts=${origin}${fade}[a${i}]`)
   })
   const labels = plan.video.map((_, i) => `[v${i}][a${i}]`).join('')
   parts.push(`${labels}concat=n=${plan.video.length}:v=1:a=1[vout][aout]`)
@@ -130,6 +147,10 @@ export function buildFfmpegCommand(
     '[vout]',
     '-map',
     '[aout]',
+    // Keep the source's frames/timestamps; without this `setpts` leaves the frame rate
+    // unknown and ffmpeg resamples to its 25 fps default. See the module docstring.
+    '-fps_mode',
+    'passthrough',
     '-c:v',
     'libx264',
     '-preset',

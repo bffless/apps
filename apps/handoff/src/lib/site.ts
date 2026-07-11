@@ -56,6 +56,21 @@ function topDir(p: string): string {
 }
 
 /**
+ * Normalise a list of inputs — backslashes → `/`, `./` stripped, junk entries
+ * dropped — WITHOUT stripping the common top dir. Each original item is returned
+ * with its `relPath` replaced by the normalised path.
+ *
+ * `planSiteUpload` strips the wrapper dir on top of this (a site's root is its
+ * wrapper's *contents*); `planFolderImport` does not (a dropped folder is
+ * recreated as a real folder). Both share this step so their paths agree.
+ */
+export function normaliseFiles<T extends { relPath: string }>(inputs: T[]): T[] {
+  return inputs
+    .map((item) => ({ ...item, relPath: normalisePath(item.relPath) }))
+    .filter(({ relPath }) => !isJunkPath(relPath))
+}
+
+/**
  * Given a list of inputs (each with at least a `relPath`), produce a SitePlan:
  *   - files: original items with `relPath` replaced by the normalised path,
  *            junk entries dropped — no string re-pairing needed at the call site
