@@ -552,6 +552,15 @@ export const handlers = [
     return HttpResponse.json({ authenticated: true, user: state.user })
   }),
 
+  // The refresh Studio actually uses on a primary-domain subdomain: SuperTokens'
+  // own route, reached through the `/api/auth/*` proxy rule. `/_bffless/auth/refresh`
+  // below is the cross-origin-custom-domain fallback and is never hit in practice here.
+  http.post('/api/auth/session/refresh', () => {
+    const state = readMockAuth()
+    if (!state.enabled) return passthrough()
+    return new HttpResponse(null, { status: state.authenticated ? 200 : 401 })
+  }),
+
   http.post('/_bffless/auth/refresh', () => {
     const state = readMockAuth()
     if (!state.enabled) return passthrough()

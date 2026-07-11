@@ -12,6 +12,8 @@
  */
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
+import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
+import { attemptRefresh } from '../lib/auth'
 import { presignedUpload, toSignedUrl } from '../lib/upload'
 import type { TranscriptWord } from './studioSlice'
 import type { DirectorRequest, DirectorScene } from '../lib/director'
@@ -56,9 +58,34 @@ export type StudioJob = {
   /** The system instruction sent with it (story 03m). */
   system?: string | null
 }
+const rawBaseQuery = fetchBaseQuery({ baseUrl: '/', credentials: 'include' })
+
+/**
+ * On a 401 (expired SuperTokens access token) run the shared single-flight
+ * refresh and retry the request once. The refresh is shared with
+ * `fetchWithReauth` so the whole app issues exactly one refresh per expiry — the
+ * refresh token rotates, so concurrent refreshes would race (see `attemptRefresh`).
+ *
+ * This is what keeps a long auto-build alive: the run outlives the access token,
+ * every `/api/*` call starts answering `401 {"message":"try refresh token"}`, and
+ * without this the poll loop and uploads die mid-run with that message surfaced
+ * verbatim in the UI.
+ */
+const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
+  args,
+  api,
+  extraOptions,
+) => {
+  let result = await rawBaseQuery(args, api, extraOptions)
+  if (result.error?.status === 401 && (await attemptRefresh())) {
+    result = await rawBaseQuery(args, api, extraOptions)
+  }
+  return result
+}
+
 export const studioApi = createApi({
   reducerPath: 'studioApi',
-  baseQuery: fetchBaseQuery({ baseUrl: '/', credentials: 'include' }),
+  baseQuery: baseQueryWithReauth,
   endpoints: (builder) => ({
     // Transcription (story 02; async since story 10e). ENQUEUE-ONLY: returns a
     // { jobId } to poll on — WhisperX (and, when `diarize`, the slow pyannote

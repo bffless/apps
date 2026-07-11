@@ -5,6 +5,7 @@
  * the same decoded PCM the waveform and the dead-space measurement read from.
  */
 
+import { fetchWithReauth } from './auth'
 import { measureDeadSpace, rmsPerSlice, type DeadSpan } from './deadSpace'
 
 /** Decode `file`'s audio, downmix to mono, and resample to `targetRate`. */
@@ -76,7 +77,7 @@ export async function sliceManyAudioWav(
   targetRate = 16000,
 ): Promise<Blob[]> {
   if (!spans.length) return []
-  const res = await fetch(url, { credentials: 'include' })
+  const res = await fetchWithReauth(url)
   if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
   const blob = await res.blob()
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
@@ -95,7 +96,7 @@ export async function sliceManyAudioWav(
  * raw PCM is dropped immediately, only the tiny peak array is kept.
  */
 export async function peaksFromUrl(url: string): Promise<number[]> {
-  const res = await fetch(url, { credentials: 'include' })
+  const res = await fetchWithReauth(url)
   if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
   const blob = await res.blob()
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
@@ -109,7 +110,7 @@ export async function peaksFromUrl(url: string): Promise<number[]> {
  * fetch + decode-once shape as `peaksFromUrl`; only the small spans are kept.
  */
 export async function deadSpaceFromUrl(url: string): Promise<DeadSpan[]> {
-  const res = await fetch(url, { credentials: 'include' })
+  const res = await fetchWithReauth(url)
   if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
   const blob = await res.blob()
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
@@ -126,7 +127,7 @@ export async function deadSpaceFromUrl(url: string): Promise<DeadSpan[]> {
  * for free.
  */
 export async function rmsFromUrl(url: string): Promise<number[]> {
-  const res = await fetch(url, { credentials: 'include' })
+  const res = await fetchWithReauth(url)
   if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
   const blob = await res.blob()
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
