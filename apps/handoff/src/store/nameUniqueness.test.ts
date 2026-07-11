@@ -8,13 +8,16 @@
  *   - a File/Site whose name duplicates an existing sibling is rejected (no new
  *     node, a clear error) — never overwritten;
  *   - the same name is accepted in a different Folder;
- *   - a folder-import's own internal structure is not falsely flagged.
+ *   - a folder-import's own internal structure is not falsely flagged;
+ *   - a Folder whose name duplicates ANY existing sibling is rejected, across
+ *     owners too — verbatim keys make a path collision a storage-key collision
+ *     (issue #225).
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
 import { configureStore } from '@reduxjs/toolkit'
 import { setupServer } from 'msw/node'
-import { handlers, resetMockState } from '../mocks/handlers'
+import { handlers, resetMockState, setMockUser } from '../mocks/handlers'
 import { handoffApi } from './handoffApi'
 import { toNodeList } from '../lib/nodes'
 import type { HandoffNode } from '../lib/nodes'
@@ -114,6 +117,82 @@ describe('in-Folder name uniqueness — Site uploads', () => {
     expect('error' in dup).toBe(true)
     const err = (dup as { error: { error?: string } }).error
     expect(err.error?.toLowerCase()).toContain('already exists')
+  })
+})
+
+describe('in-Folder name uniqueness — folder creation (issue #225)', () => {
+  function mkFolder(dispatch: Dispatch, name: string, parentId = 'root') {
+    return dispatch(handoffApi.endpoints.createFolder.initiate({ parentId, name }))
+  }
+
+  it('rejects a folder whose name duplicates an existing sibling folder', async () => {
+    const store = makeStore()
+    expect('data' in (await mkFolder(store.dispatch, 'plans'))).toBe(true)
+
+    const dup = await mkFolder(store.dispatch, 'plans')
+    expect('error' in dup).toBe(true)
+    const err = (dup as { error: { status?: number; data?: { error?: string } } }).error
+    expect(err.status).toBe(409)
+    expect(err.data?.error?.toLowerCase()).toContain('already exists')
+
+    const siblings = (await listFolder('root')).filter((n) => n.name === 'plans')
+    expect(siblings).toHaveLength(1)
+  })
+
+  it('rejects a folder whose name duplicates a sibling File', async () => {
+    const store = makeStore()
+    expect('data' in (await upload(store.dispatch, 'notes', 'root'))).toBe(true)
+
+    const dup = await mkFolder(store.dispatch, 'notes')
+    expect('error' in dup).toBe(true)
+    expect((dup as { error: { status?: number } }).error.status).toBe(409)
+  })
+
+  it('accepts the same folder name under a different parent', async () => {
+    const store = makeStore()
+    const a = await mkFolder(store.dispatch, 'A')
+    const aId = (a as { data: HandoffNode }).data.id
+    expect('data' in (await mkFolder(store.dispatch, 'plans'))).toBe(true)
+    expect('data' in (await mkFolder(store.dispatch, 'plans', aId))).toBe(true)
+  })
+
+  it('rejects a duplicate sibling name across owners at root (verbatim keys collide)', async () => {
+    const store = makeStore()
+    setMockUser({ id: 'user-a', email: 'a@example.com' })
+    expect('data' in (await mkFolder(store.dispatch, 'plans'))).toBe(true)
+
+    setMockUser({ id: 'user-b', email: 'b@example.com' })
+    const dup = await mkFolder(makeStore().dispatch, 'plans')
+    expect('error' in dup).toBe(true)
+    expect((dup as { error: { status?: number } }).error.status).toBe(409)
+  })
+})
+
+describe('cross-owner File collision at root (issue #225)', () => {
+  it('rejects a File upload whose name duplicates another owner\'s root sibling', async () => {
+    setMockUser({ id: 'user-a', email: 'a@example.com' })
+    expect('data' in (await upload(makeStore().dispatch, 'logo.png', 'root'))).toBe(true)
+
+    setMockUser({ id: 'user-b', email: 'b@example.com' })
+    const dup = await upload(makeStore().dispatch, 'logo.png', 'root')
+    expect('error' in dup).toBe(true)
+    const err = (dup as { error: { error?: string } }).error
+    expect(err.error?.toLowerCase()).toContain('already exists')
+  })
+})
+
+describe('root listing without parentId (issue #225)', () => {
+  it('GET /api/nodes with no parentId param lists root nodes', async () => {
+    const store = makeStore()
+    const created = await store.dispatch(
+      handoffApi.endpoints.createFolder.initiate({ parentId: 'root', name: 'plans' }),
+    )
+    expect('data' in created).toBe(true)
+
+    const res = await fetch('/api/nodes')
+    expect(res.status).toBe(200)
+    const names = toNodeList(await res.json()).map((n) => n.name)
+    expect(names).toContain('plans')
   })
 })
 

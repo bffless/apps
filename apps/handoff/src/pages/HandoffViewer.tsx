@@ -22,9 +22,9 @@ import { ShareDialog } from '../components/ShareDialog'
 import { NodeDetails } from '../components/NodeDetails'
 import { TrashIcon, ChevronRightIcon } from '../components/icons'
 import { parentFolderPath } from '../lib/tree'
-import { treeUrl, parentPath } from '../lib/pathUrl'
+import { treeUrl, parentPath, blobUrl } from '../lib/pathUrl'
 import { useClaimShareToken } from '../store/useClaimShareToken'
-import { useEmbedMode } from '../lib/embed'
+import { useEmbedMode, isFramed } from '../lib/embed'
 import { InvalidLink } from '../components/InvalidLink'
 import { toast } from '../lib/toast'
 import { shouldClaimToken } from '../lib/share'
@@ -80,6 +80,13 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
   const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
   const backTo = backTarget(node)
+
+  // "Open" must not point at the raw bytes for Markdown: the content endpoint
+  // serves it as text/markdown, which browsers download instead of rendering —
+  // making the button a second Download. Send the new tab to the chromeless
+  // viewer, which shows the *rendered* document at a shareable URL.
+  const openUrl =
+    previewFor(node) === 'markdown' && node.path ? `${blobUrl(node.path)}?embed=1` : node.url
 
   const [shareOpen, setShareOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -204,9 +211,9 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       )}
 
       {/* Open in new tab */}
-      {node.url && (
+      {openUrl && (
         <a
-          href={node.url}
+          href={openUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
@@ -336,6 +343,11 @@ type MdState = { url: string; doc: string } | null
  * Markdown. Sanitization (DOMPurify, in `renderMarkdown`) is retained before
  * injection; the iframe is same-origin/unsandboxed, consistent with how Sites
  * already render (ADR-0001).
+ *
+ * The `embed` prop suppresses app chrome (`?embed=1`), which "Open in new tab"
+ * also uses for a standalone Markdown tab. The *rendering* half of embed mode —
+ * handing the reading measure and the link target to a host — applies only when
+ * the viewer is really inside an iframe (`isFramed`, src/lib/embed.ts).
  */
 function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: boolean }) {
   const url = node.url ?? ''
@@ -344,14 +356,20 @@ function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: b
   useEffect(() => {
     let cancelled = false
     const base = viewerBase(node)
+    const framed = embed && isFramed()
     fetchWithReauth(url)
       .then((r) => r.text())
       .then((text) => {
-        if (!cancelled) setResult({ url, doc: markdownDocument(renderMarkdown(text), base, { embed }) })
+        if (!cancelled) {
+          setResult({ url, doc: markdownDocument(renderMarkdown(text), base, { embed: framed }) })
+        }
       })
       .catch(() => {
         if (!cancelled) {
-          setResult({ url, doc: markdownDocument('<p>Failed to load Markdown.</p>', base, { embed }) })
+          setResult({
+            url,
+            doc: markdownDocument('<p>Failed to load Markdown.</p>', base, { embed: framed }),
+          })
         }
       })
     return () => { cancelled = true }
