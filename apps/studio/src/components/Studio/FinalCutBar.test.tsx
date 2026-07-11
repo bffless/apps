@@ -64,4 +64,14 @@ describe('FinalCutBar download', () => {
     const disposition = new URL(href).searchParams.get('response-content-disposition')
     expect(disposition).toBe('attachment; filename="custom-ai-content-pipeline.mp4"')
   })
+
+  // The href is cross-origin, so the click is a real navigation. Without its own
+  // browsing context it tears down every in-flight request on the page — the project
+  // autosave died with NS_BINDING_ABORTED. Losing `target` would silently regress that.
+  it('opens the cross-origin download in its own context so it cannot abort page requests', () => {
+    render(<FinalCutBar {...baseProps} />)
+    const link = screen.getByRole('link', { name: /download mp4/i })
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener')
+  })
 })
