@@ -1,5 +1,7 @@
 {
-  "apiUrl": "https://j5s.dev",
+  "apiUrl": "https://admin.j5s.dev",
   "project": "bffless/apps",
-  "ruleSets": ["apps/*/.bffless/proxy-rules/*"]
+  "ruleSets": [
+    "apps/*/.bffless/proxy-rules/*"
+  ]
 }

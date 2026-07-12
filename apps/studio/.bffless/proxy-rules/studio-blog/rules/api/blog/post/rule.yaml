@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 52
 pipeline:
   name: Blog writer (async enqueue + poll)
-  description: "Story 69: live /api/blog, a sibling of the master director. Enqueue a studio_jobs row (kind 'blog') and return { jobId } immediately; the slow multimodal Gemini call + parse run in postSteps and write the row to done/error."
+  description: "Story 69 + Claude toggle: async enqueue+poll /api/blog. Two interchangeable writer steps in postSteps — `blog` (replicate google/gemini-3.1-pro) and `blogClaude` (anthropic ai_handler claude-opus-4-6, contact sheets as image attachments). Enable exactly ONE; parse reads whichever ran (prefers blogClaude.content, else blog output). Both share the same prompt/system from prep and the same studio_jobs row."
   steps:
     - id: prep
       name: prep
@@ -126,6 +126,26 @@ pipeline:
           system_instruction: steps.prep.system
         model: google/gemini-3.1-pro
         timeout: 280000
+      isEnabled: false
+    - id: blogClaude
+      name: blogClaude
+      handler: ai_handler
+      config:
+        model: claude-opus-4-6
+        skills:
+          mode: selected
+          enabled:
+            - bffless-docs
+        timeout: 280000
+        provider: anthropic
+        maxTokens: 64000
+        attachments:
+          - type: image
+            source: steps.collect.images
+        temperature: 0.6
+        messageField: steps.prep.prompt
+        systemPrompt: "{{steps.prep.system}}"
+      isEnabled: true
     - id: parse
       name: parse
       handler: function_handler
