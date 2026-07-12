@@ -69,7 +69,7 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: studio-preview
-          proxy-rule-set-names: studio
+          proxy-rule-set-names: studio,studio-blog
           description: 'Studio preview for PR #${{ github.event.pull_request.number }}'
           summary-title: Studio Preview
           pr-comment: true

@@ -8,6 +8,10 @@ on:
       - '.github/workflows/cleanup-preview-reader.yml'
 permissions:
   contents: read
+
+concurrency:
+  group: cleanup-preview-reader-${{ github.event.pull_request.number }}
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
@@ -24,7 +28,8 @@ jobs:
           echo "alias delete: HTTP $code"   # 204 deleted, 404 never existed — both fine
           [ "$code" = "204" ] || [ "$code" = "404" ] || exit 1
           # 2. Resolve project id, then the rule set id by name, then delete it.
-          project_id=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/projects" | jq -r '.[] | select(.owner=="bffless" and .name=="apps") | .id')
+          project_id=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/projects/bffless/apps" | jq -r '.id')
+          if [ -z "$project_id" ] || [ "$project_id" = "null" ]; then echo "could not resolve project bffless/apps"; exit 1; fi
           set_id=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/proxy-rule-sets/project/$project_id" | jq -r --arg n "reader-pr-$N" '.ruleSets[] | select(.name==$n) | .id')
           if [ -z "$set_id" ]; then echo "rule set reader-pr-$N not found — nothing to delete"; exit 0; fi
           curl -sf -X DELETE -H "X-API-Key: $KEY" "$URL/api/proxy-rule-sets/$set_id" > /dev/null
