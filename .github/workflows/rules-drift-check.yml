@@ -1,0 +1,23 @@
+name: Proxy Rules Drift Check
+# `bffless rules diff` exits 0 in sync / 1 drift / 2 error — the job fails on drift so
+# the team notices manual dashboard edits to git-managed sets. Requires CE >= 0.2.0.
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Diff authored rule sets against live
+        env:
+          BFFLESS_API_URL: ${{ vars.BFFLESS_URL }}
+          BFFLESS_API_KEY: ${{ secrets.BFFLESS_API_KEY }}
+        run: |
+          set -o pipefail
+          npx --yes bffless@^0.1.0 rules diff 2>&1 | tee "$GITHUB_STEP_SUMMARY"
