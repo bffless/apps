@@ -94,8 +94,8 @@ Ordered so the app ships green at every step:
 6. **13f — Director/refiner contract.** New prompts + `toScenes`/`toRefined` coercion
    (tiling enforced, briefs, cuts-only refiner, dead space in the refiner request); MSW
    fixtures updated to the same shape. ⚠️ After merge, update the **live proxy rules**
-   on the `studio` set via MCP (sandcastle doesn't deploy them) and re-export
-   `bffless/studio.proxy-rules.json`.
+   on the `studio` set via MCP (sandcastle doesn't deploy them) and update the source under
+   `.bffless/proxy-rules/studio/` to match.
 7. **13g — Lifecycle polish.** *Built* = pipeline ran + signed off; auto-build board
    repurposed to the per-scene pipeline batch; stale voice gating removed from
    assemble; stories/README "where we are" updated.

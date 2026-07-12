@@ -10,8 +10,13 @@ admin-panel steps are surfaced to the reader for every app**. This convention is
 
 Every `apps/<app>/` **must ship**:
 
-1. **`apps/<app>/bffless/<app>.proxy-rules.json`** — the app's exported proxy rule set (its backend
-   pipelines). No secrets baked in — credentials are referenced by name or via the project's auth
+1. Its backend pipelines, as **either**:
+   - **`apps/<app>/bffless/<app>.proxy-rules.json`** — a raw exported proxy rule set, or
+   - **`apps/<app>/.bffless/proxy-rules/<set>/`** — an **authored** rule set (`ruleset.yaml` + a
+     `rules/` file per route + schemas), which CI syncs to the project on deploy via
+     `bffless/deploy-proxy-rules` (check drift with `npx bffless rules diff`).
+
+   No secrets baked in either way — credentials are referenced by name or via the project's auth
    relay.
 2. **`apps/<app>/bffless/README.md`** — with the two required sections below.
 
@@ -39,6 +44,6 @@ the transcript; Handoff: upload a file → see it served back.
 ## Enforcement
 
 `scripts/check-app-conventions.mjs` fails a PR that introduces (or keeps) an `apps/<app>/` directory
-missing either file, or whose README lacks either required section heading. The headings are matched
+missing both backend shapes or the README, or whose README lacks either required section heading. The headings are matched
 by wording (any heading level, case-insensitive), so a level change is fine but the section must be
 present. Run `pnpm apps:check` locally to reproduce CI.

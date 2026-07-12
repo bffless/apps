@@ -37,11 +37,11 @@ maintainers' project. Re-register it against your own domain first. (See `GETTIN
 Per-app facts (do not hard-code app specifics beyond this table — read the app's
 `bffless/README.md` for the authoritative connection/secret list):
 
-| app | rule-set export | default alias | response-header rule | background schedules |
+| app | rule-set source | default alias | response-header rule | background schedules |
 | --- | --- | --- | --- | --- |
-| `studio` | `apps/studio/bffless/studio.proxy-rules.json` | `studio` | COOP/COEP cross-origin isolation (see below) — **required** | none |
-| `handoff` | `apps/handoff/bffless/handoff.proxy-rules.json` | `handoff` | none | none |
-| `reader` | `apps/reader/bffless/reader.proxy-rules.json` | `reader` | none | two — `/api/refresh` every 15 min + `/api/prune` nightly 03:17 UTC (see step 4) |
+| `studio` | **authored** — `apps/studio/.bffless/proxy-rules/studio/` + `.../studio-blog/`; build with `npx bffless rules build <dir> -o <file>` | `studio` | COOP/COEP cross-origin isolation (see below) — **required** | none |
+| `handoff` | **raw export** — `apps/handoff/bffless/handoff.proxy-rules.json` | `handoff` | none | none |
+| `reader` | **authored** — `apps/reader/.bffless/proxy-rules/reader/`; build with `npx bffless rules build <dir> -o <file>` | `reader` | none | two — `/api/refresh` every 15 min + `/api/prune` nightly 03:17 UTC (see step 4) |
 
 > **Reader's alias attach is also done by its deploy workflow.** `deploy-reader.yml`
 > passes `proxy-rule-set-name: reader`, so the first deploy attaches the set to the
@@ -52,17 +52,25 @@ Per-app facts (do not hard-code app specifics beyond this table — read the app
 
 ### 1. Import the rule set
 
-Read `apps/<app>/bffless/<app>.proxy-rules.json` (the committed export — no secrets
-baked in). Recreate it in your project via the MCP:
+Get the rule-set JSON (no secrets baked in either shape):
 
-- `create_proxy_rule_set` named `<app>` in `repository`.
-- For each rule in the export, `create_proxy_rule` into that set, copying its
-  `pipelineConfig` / handler `code` **verbatim** and reusing the schema IDs the export
-  lists (e.g. `studio_jobs`, `studio_source`, `handoff_nodes`) — do **not** invent
+- **`studio` / `reader` (authored source):** build it from
+  `apps/<app>/.bffless/proxy-rules/<set>/` with
+  `npx bffless rules build apps/<app>/.bffless/proxy-rules/<set> -o /tmp/<set>.proxy-rules.json`.
+  Studio has **two** sets to build (`studio`, `studio-blog`); Reader has one (`reader`).
+- **`handoff` (raw export):** read `apps/handoff/bffless/handoff.proxy-rules.json` as
+  committed — no build step.
+
+Then recreate it in your project via the MCP:
+
+- `create_proxy_rule_set` named `<app>` (or `<set>`, for Studio's two sets) in `repository`.
+- For each rule in the JSON, `create_proxy_rule` into that set, copying its
+  `pipelineConfig` / handler `code` **verbatim** and reusing the schema IDs it lists
+  (e.g. `studio_jobs`, `studio_source`, `handoff_nodes`) — do **not** invent
   schemas. IDs are remapped on import; that is expected.
 
-If the MCP exposes a rule-set *import* call that takes the exported JSON directly, use
-it — the result must be the same set of rules attached under the `<app>` set.
+If the MCP exposes a rule-set *import* call that takes the JSON directly, use it — the
+result must be the same set of rules attached under the `<app>` set.
 
 ### 2. Attach the rule set to the app's alias
 

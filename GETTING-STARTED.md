@@ -32,8 +32,9 @@ external connections/AI tokens, secrets, **storage backend requirements**, respo
 a **"First-success checkpoint"** section. The spine points at those two sections instead of baking any
 one app's specifics into itself.
 
-> **This is a hard convention, enforced in CI.** Every app ships
-> `apps/<app>/bffless/<app>.proxy-rules.json` (its exported backend) and
+> **This is a hard convention, enforced in CI.** Every app ships its backend — either the raw
+> `apps/<app>/bffless/<app>.proxy-rules.json` export, or an **authored** rule set under
+> `apps/<app>/.bffless/proxy-rules/<set>/` that CI syncs to the project on deploy — plus
 > `apps/<app>/bffless/README.md` with those two sections — that's what lets this one guide install any
 > app, including any future one, without a rewrite. The rule and its CI check are documented in
 > [`docs/app-pipelines-convention.md`](docs/app-pipelines-convention.md) (run `pnpm apps:check`
@@ -158,16 +159,22 @@ either here — follow the README so you always get the current one):
 
 ## 5. Import the app's backend and attach it to the alias
 
-The app has no app server: its `/api/*` is a **BFFless proxy rule set** exported to
-`apps/<app>/bffless/<app>.proxy-rules.json`. Editing that file does nothing on its own — the rules only
-serve once they're imported into your project and attached to the `<app>` alias.
+The app has no app server: its `/api/*` is a **BFFless proxy rule set**. Studio and Reader **author**
+theirs under `apps/<app>/.bffless/proxy-rules/<set>/` (this repo's own deploys sync it to the
+`bffless/apps` project via CI); Handoff still ships a **raw export** at
+`apps/handoff/bffless/handoff.proxy-rules.json`. Either way, editing the source does nothing on its
+own for *your* project — the rules only serve once they reach your project and are attached to the
+`<app>` alias.
 
 ### Recommended: run the `install-app` skill
 
 With the MCP registered against **your** instance (step 3), run the repo-local **`install-app`** skill
 for your `<app>` (`studio`, `handoff`, or `reader`). It automates everything reachable by MCP:
 
-1. imports `apps/<app>/bffless/<app>.proxy-rules.json` (creates the `<app>` rule set + rules),
+1. gets the rule-set JSON — building it from the authored source
+   (`npx bffless rules build apps/<app>/.bffless/proxy-rules/<set> -o …`) for Studio/Reader, or reading
+   the raw `apps/<app>/bffless/<app>.proxy-rules.json` export for Handoff — and imports it (creates the
+   `<app>` rule set + rules),
 2. attaches it to the **`<app>` alias** alongside any existing sets,
 3. creates any required response-header rule (e.g. Studio's COOP/COEP; **Handoff and Reader need
    none**),
@@ -187,12 +194,19 @@ If you'd rather not use the skill, do it manually — the full, app-specific det
 alias, `schemaId` remapping, any response-header rule) is in your app's
 `apps/<app>/bffless/README.md` (from the [Pick your app](#pick-your-app) table):
 
-1. **Import** `apps/<app>/bffless/<app>.proxy-rules.json` — via the dashboard
-   (**Proxy Rules → Import**) or by asking Claude with the MCP connected. This creates the `<app>` rule
-   set and its rules (IDs are remapped on import).
-2. **Attach** the `<app>` rule set to the **`<app>` alias** (the alias your deploy uploads to).
+1. **Get the import JSON.**
+   - **Studio / Reader (authored source):** build it —
+     `npx bffless rules build apps/<app>/.bffless/proxy-rules/<set> -o /tmp/<set>.proxy-rules.json`
+     (Studio has **two** sets to build, `studio` and `studio-blog`; Reader has one, `reader`).
+   - **Handoff (raw export):** use `apps/handoff/bffless/handoff.proxy-rules.json` as committed — no
+     build step.
+2. **Import** the JSON — via the dashboard (**Proxy Rules → Import**), by asking Claude with the MCP
+   connected, or (Studio/Reader only) `npx bffless rules push apps/<app>/.bffless/proxy-rules/<set>` to
+   push straight to your project and skip the manual build/import round-trip. This creates the `<app>`
+   rule set and its rules (IDs are remapped on import).
+3. **Attach** the `<app>` rule set to the **`<app>` alias** (the alias your deploy uploads to).
    `/api/*` only serves on aliases the rule set is attached to.
-3. **Apply any app-specific extras** the README calls out — e.g. Studio's COOP/COEP response-header
+4. **Apply any app-specific extras** the README calls out — e.g. Studio's COOP/COEP response-header
    rule (needed for `ffmpeg.wasm` threading), Handoff's `schemaId` remap to your own data tables, or
    Reader's **two pipeline schedules** (auto-refresh + prune) plus its **private + SPA** domain
    mapping. **Handoff and Reader need no response-header rule.**

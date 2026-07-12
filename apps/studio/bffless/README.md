@@ -4,24 +4,41 @@ Studio has no app server. Its `/api/*` endpoints are a **BFFless proxy rule set*
 presigned uploads, file serving, Replicate calls, data tables, signed URLs). To run Studio against
 your own BFFless project you import that rule set and attach it to the alias serving the app.
 
-Studio's backend is **two sibling rule sets**, both exported here (format `bffless-proxy-rule-set`
-v1, **no secrets** — credentials are referenced by name (`secrets.HF_TOKEN`) or use the project's
-configured provider tokens):
+Studio's backend is **two sibling rule sets**, both **authored** under
+[`apps/studio/.bffless/proxy-rules/`](../.bffless/proxy-rules/) (`ruleset.yaml` + a `rules/` file per
+route + schemas) — that's the source of truth, not a committed JSON export. **No secrets** —
+credentials are referenced by name (`secrets.HF_TOKEN`) or use the project's configured provider
+tokens:
 
-- [`studio.proxy-rules.json`](studio.proxy-rules.json) — the main `studio` set (40 rules): uploads,
+- [`studio/`](../.bffless/proxy-rules/studio/) — the main `studio` set (40 rules): uploads,
   transcribe, director, refiner, voice, thumbnail, projects/jobs.
-- [`studio-blog.proxy-rules.json`](studio-blog.proxy-rules.json) — the `studio-blog` set (4 rules):
-  the companion blog-post writer (`POST /api/blog`) + blog image uploads
+- [`studio-blog/`](../.bffless/proxy-rules/studio-blog/) — the `studio-blog` set (4 rules): the
+  companion blog-post writer (`POST /api/blog`) + blog image uploads
   (`/api/uploads/blog/{prepare,register,*}`).
 
 ## Import
 
+On this repo's own deploys, CI syncs both authored sets straight to the `bffless/apps` project via
+`bffless/deploy-proxy-rules` — nothing to import by hand. Check for local drift any time with
+`npx bffless rules diff`.
+
+**Installing into your own project** (your fork's CI isn't wired to your instance yet, or you're doing
+a one-off import): build the import JSON from the authored source, one set at a time:
+
+```bash
+npx bffless rules build apps/studio/.bffless/proxy-rules/studio -o /tmp/studio.proxy-rules.json
+npx bffless rules build apps/studio/.bffless/proxy-rules/studio-blog -o /tmp/studio-blog.proxy-rules.json
+```
+
 **Dashboard:** BFFless project → Proxy Rules → **Import** → upload `studio.proxy-rules.json`, then
 repeat for `studio-blog.proxy-rules.json`.
 
-**Claude / MCP:** ask Claude (with the BFFless MCP connected) to import
-`apps/studio/bffless/studio.proxy-rules.json` and `studio-blog.proxy-rules.json` into your project.
-It creates the `studio` and `studio-blog` rule sets and all their rules (IDs are remapped on import).
+**CLI:** `npx bffless rules push apps/studio/.bffless/proxy-rules/studio` (and again for
+`studio-blog`) pushes straight to your project, skipping the manual build/import round-trip.
+
+**Claude / MCP:** ask Claude (with the BFFless MCP connected) to import both built JSON files into
+your project. It creates the `studio` and `studio-blog` rule sets and all their rules (IDs are
+remapped on import).
 
 After import, **attach BOTH rule sets to the alias** your deploy uploads to (e.g. the `studio`
 alias / `studio.<your-domain>`) — aliases accept multiple rule sets and merge their rules. `/api/*`
@@ -117,8 +134,8 @@ function handler({ request, deployment }) {
 ```
 
 So an import into `you/your-app` writes to `you/your-app/uploads/…` automatically — no per-project
-edits. **If you re-export from your own project, keep this pattern** (don't let it bake in your
-project name). `deployment.owner`/`deployment.repo` are listed in the step editor's *Available
+edits. **If you customize these functions in your own project, keep this pattern** (don't let it bake
+in your project name). `deployment.owner`/`deployment.repo` are listed in the step editor's *Available
 Variables*; if a transcribe or thumbnail call 404s on a `storage.googleapis.com/.../uploads/` GET,
 confirm the function received `deployment` (not a template-only value).
 
@@ -128,6 +145,6 @@ confirm the function received `deployment` (not a template-only value).
   (deferred to story 07) so unauthenticated local dev works. Add them before exposing a paid/public
   deployment.
 - **Voice cloning costs ~$3/call** (`/api/voice/clone`). It's enabled in this export.
-- Re-export from the BFFless dashboard (Proxy Rules → Export) after changing rules — whichever set
-  changed (`studio` or `studio-blog`) — and commit the updated JSON here so the giveaway stays
-  current.
+- Edit the rule files under `apps/studio/.bffless/proxy-rules/<set>/` directly — whichever set changed
+  (`studio` or `studio-blog`) — and commit. CI syncs the change to the project on deploy
+  (`bffless/deploy-proxy-rules`); check for drift with `npx bffless rules diff`.
