@@ -52,7 +52,9 @@ npx bffless rules build apps/reader/.bffless/proxy-rules/reader -o /tmp/reader.p
 **Dashboard:** BFFless project → Proxy Rules → **Import** → upload the built JSON.
 
 **CLI:** `npx bffless rules push apps/reader/.bffless/proxy-rules/reader` pushes straight to your
-project, skipping the manual build/import round-trip.
+project, skipping the manual build/import round-trip. (The repo's committed `.bffless/config.json`
+targets the upstream demo instance — point the push at your own with `--api-url <your-instance>
+--project <owner/name>` and your `BFFLESS_API_KEY`.)
 
 **Claude / MCP:** ask Claude (with the BFFless MCP connected) to import the built JSON into your
 project. It creates the `reader` rule set and its rules (IDs are remapped on import).

@@ -44,6 +44,6 @@ the transcript; Handoff: upload a file → see it served back.
 ## Enforcement
 
 `scripts/check-app-conventions.mjs` fails a PR that introduces (or keeps) an `apps/<app>/` directory
-missing both backend shapes or the README, or whose README lacks either required section heading. The headings are matched
-by wording (any heading level, case-insensitive), so a level change is fine but the section must be
-present. Run `pnpm apps:check` locally to reproduce CI.
+missing both backend shapes or the README, or whose README lacks either required section heading.
+The headings are matched by wording (any heading level, case-insensitive), so a level change is fine
+but the section must be present. Run `pnpm apps:check` locally to reproduce CI.

@@ -202,8 +202,10 @@ alias, `schemaId` remapping, any response-header rule) is in your app's
      build step.
 2. **Import** the JSON — via the dashboard (**Proxy Rules → Import**), by asking Claude with the MCP
    connected, or (Studio/Reader only) `npx bffless rules push apps/<app>/.bffless/proxy-rules/<set>` to
-   push straight to your project and skip the manual build/import round-trip. This creates the `<app>`
-   rule set and its rules (IDs are remapped on import).
+   push straight to your project and skip the manual build/import round-trip. (The repo's committed
+   `.bffless/config.json` targets the upstream demo instance — point the push at your own with
+   `--api-url <your-instance> --project <owner/name>` and your `BFFLESS_API_KEY`.) This creates the
+   `<app>` rule set and its rules (IDs are remapped on import).
 3. **Attach** the `<app>` rule set to the **`<app>` alias** (the alias your deploy uploads to).
    `/api/*` only serves on aliases the rule set is attached to.
 4. **Apply any app-specific extras** the README calls out — e.g. Studio's COOP/COEP response-header

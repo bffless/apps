@@ -34,7 +34,9 @@ npx bffless rules build apps/studio/.bffless/proxy-rules/studio-blog -o /tmp/stu
 repeat for `studio-blog.proxy-rules.json`.
 
 **CLI:** `npx bffless rules push apps/studio/.bffless/proxy-rules/studio` (and again for
-`studio-blog`) pushes straight to your project, skipping the manual build/import round-trip.
+`studio-blog`) pushes straight to your project, skipping the manual build/import round-trip. (The
+repo's committed `.bffless/config.json` targets the upstream demo instance — point the push at your
+own with `--api-url <your-instance> --project <owner/name>` and your `BFFLESS_API_KEY`.)
 
 **Claude / MCP:** ask Claude (with the BFFless MCP connected) to import both built JSON files into
 your project. It creates the `studio` and `studio-blog` rule sets and all their rules (IDs are
