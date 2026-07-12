@@ -109,6 +109,9 @@ In your fork's **Settings → Secrets and variables → Actions**:
 
 - **Variable** `BFFLESS_URL` — your self-hosted instance URL.
 - **Secret** `BFFLESS_API_KEY` — an API key from your instance.
+- **Variable** `BFFLESS_PROJECT` — your project as `owner/name`. The committed `.bffless/config.json`
+  targets the upstream demo project, so forkers must set this repo variable to their own project or
+  the rules-sync/dry-run/drift-check steps will target the wrong one.
 
 These are what each app's `deploy-<app>.yml` workflow uses to authenticate and pick its deploy target.
 See the top three rows of the [variables checklist](#variables-checklist).

@@ -7,7 +7,10 @@ name: Preview Reader on BFFless
 # one fixed origin, so minting a fresh alias per PR is cheap. cleanup-preview-reader.yml
 # tears both down when the PR closes. workflow_dispatch (manual runs, not tied to
 # a PR) falls back to the shared `reader-preview` alias and the base `reader` rule
-# set, same as before this per-PR flow existed.
+# set, same as before this per-PR flow existed — but it only deploys + attaches;
+# the rules-sync step below is gated to `pull_request` so a manual dispatch run
+# (empty name-suffix) never pushes the checked-out branch's rules onto the LIVE
+# `reader` set.
 on:
   pull_request:
     paths:
@@ -57,12 +60,18 @@ jobs:
             echo "set-name=reader" >> "$GITHUB_OUTPUT"
           fi
 
+      # PR-only: on workflow_dispatch, ids.outputs.suffix is empty, so this would
+      # otherwise sync straight onto the LIVE `reader` set instead of a per-PR one.
       - name: Sync PR preview proxy rules
+        if: github.event_name == 'pull_request'
         uses: bffless/deploy-proxy-rules@v1
         with:
           path: apps/reader/.bffless/proxy-rules/reader
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
           name-suffix: ${{ steps.ids.outputs.suffix }}
           summary-title: Reader Preview Proxy Rules
           pr-comment: true

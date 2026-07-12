@@ -50,6 +50,9 @@ jobs:
           path: apps/reader/.bffless/proxy-rules/reader
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
           summary-title: Reader Proxy Rules
 
       - name: Deploy to BFFless

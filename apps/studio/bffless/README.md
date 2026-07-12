@@ -98,7 +98,7 @@ Also:
 The export's `/api/*` proxy rules are the backend, but Studio's **Export** step assembles video with
 multithreaded `ffmpeg.wasm`, which needs `SharedArrayBuffer` — i.e. the page must be
 **cross-origin isolated**. That comes from a **response-header rule** (separate from the proxy rule
-set, so it is *not* in `studio.proxy-rules.json`). Without it, `getFFmpeg()` silently falls back to
+set, so it is not part of the `studio` rule set source). Without it, `getFFmpeg()` silently falls back to
 the single-threaded core (slower, 2 GiB cap) — you'll see `ffmpeg core: single-threaded` in the
 console.
 
