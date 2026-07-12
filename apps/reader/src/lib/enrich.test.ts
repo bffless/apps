@@ -24,7 +24,9 @@ const removeRule = parse(readFileSync(resolve(setRoot, 'rules/api/feeds/remove/p
   pipeline?: { steps?: Array<{ id: string; handler?: string; config?: Record<string, unknown> }> }
 }
 
-function findStep(rule: { pipeline?: { steps?: Array<{ id: string; [k: string]: unknown }> } }, stepId: string) {
+type PipelineStep = { id: string; handler?: string; code?: string; config?: Record<string, unknown> }
+
+function findStep(rule: { pipeline?: { steps?: PipelineStep[] } }, stepId: string) {
   const step = rule.pipeline?.steps?.find((s) => s.id === stepId)
   if (!step) throw new Error(`step not found: ${stepId}`)
   return step
