@@ -4,8 +4,10 @@ Rivulet (the RSS/Atom reader) has no app server. Its `/api/*` endpoints are a **
 set**. To run Rivulet against your own BFFless project you import that rule set and attach it to the
 alias serving the app.
 
-[`reader.proxy-rules.json`](reader.proxy-rules.json) is the exported rule set (format
-`bffless-proxy-rule-set` v2). It contains **no secrets**.
+Rivulet's rule set is **authored** under
+[`apps/reader/.bffless/proxy-rules/reader/`](../.bffless/proxy-rules/reader/) (`ruleset.yaml` + a
+`rules/` file per route + schemas) — that's the source of truth, not a committed JSON export. It
+contains **no secrets**.
 
 The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the reading pipelines
 (11 rules total, `order` 0–10):
@@ -35,11 +37,27 @@ see **Background schedules** below.
 
 ## Import
 
-**Dashboard:** BFFless project → Proxy Rules → **Import** → upload `reader.proxy-rules.json`.
+On this repo's own deploys, CI syncs the authored set straight to the `bffless/apps` project via
+`bffless/deploy-proxy-rules` — nothing to import by hand. Check for local drift any time with
+`npx bffless rules diff`.
 
-**Claude / MCP:** ask Claude (with the BFFless MCP connected) to import
-`apps/reader/bffless/reader.proxy-rules.json` into your project. It creates the `reader` rule set and
-its rules (IDs are remapped on import).
+**Installing into your own project** (your fork's CI isn't wired to your instance yet, or you're doing
+a one-off import): build the import JSON from the authored source, then import it same as any exported
+rule set:
+
+```bash
+npx bffless rules build apps/reader/.bffless/proxy-rules/reader -o /tmp/reader.proxy-rules.json
+```
+
+**Dashboard:** BFFless project → Proxy Rules → **Import** → upload the built JSON.
+
+**CLI:** `npx bffless rules push apps/reader/.bffless/proxy-rules/reader` pushes straight to your
+project, skipping the manual build/import round-trip. (The repo's committed `.bffless/config.json`
+targets the upstream demo instance — point the push at your own with `--api-url <your-instance>
+--project <owner/name>` and your `BFFLESS_API_KEY`.)
+
+**Claude / MCP:** ask Claude (with the BFFless MCP connected) to import the built JSON into your
+project. It creates the `reader` rule set and its rules (IDs are remapped on import).
 
 After import, **attach the `reader` rule set to the alias** your deploy uploads to (e.g. the `reader`
 alias / `reader.<your-domain>`). `/api/*` only serves on aliases the rule set is attached to.
@@ -182,7 +200,8 @@ Rivulet's core reading path is live.
 
 ## Notes
 
-- Re-export from the BFFless dashboard (Proxy Rules → Export) after changing rules, and commit the
-  updated JSON here so the giveaway stays current. When you add or remove endpoints, also update the
+- Edit the rule files under [`apps/reader/.bffless/proxy-rules/reader/`](../.bffless/proxy-rules/reader/)
+  directly and commit — CI syncs the change to the project on deploy (`bffless/deploy-proxy-rules`);
+  check for drift with `npx bffless rules diff`. When you add or remove endpoints, also update the
   endpoint table at the top of this README and the **Data tables** section so they stay in sync with
-  the export.
+  the authored source.

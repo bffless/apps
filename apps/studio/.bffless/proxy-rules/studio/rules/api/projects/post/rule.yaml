@@ -1,0 +1,33 @@
+targetUrl: pipeline
+order: 48
+pipeline:
+  name: Create studio project
+  steps:
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        fields:
+          data: request.body.data
+          name: request.body.name
+          phase: request.body.phase
+          createdMs: request.body.createdAt
+          projectId: request.body.id
+          updatedMs: request.body.updatedAt
+          thumbnailUrl: request.body.thumbnailUrl
+        schemaId: $schema:studio_projects
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: Create a studio_projects record (story 11d). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_create writes client id into projectId, and client createdAt/updatedAt into createdMs/updatedMs (renamed to avoid collision with the DB row's own created_at/updated_at columns that data_query flattens to top level) -> shape echoes the record mapping createdMs/updatedMs back to createdAt/updatedAt -> response. No validators yet (deferred to story 07).

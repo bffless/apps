@@ -1,0 +1,14 @@
+targetUrl: pipeline
+order: 1
+pipeline:
+  name: Serve studio per-project uploads
+  description: Serve files from projects/<id>/... nested subDirs
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: projects
+      isEnabled: true
+  validators: []
+description: Serve files from per-project nested subDirs (projects/&lt;id&gt;/...)

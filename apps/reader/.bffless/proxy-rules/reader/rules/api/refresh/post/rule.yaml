@@ -1,0 +1,75 @@
+targetUrl: pipeline
+order: 5
+timeout: 120000
+pipeline:
+  name: Refresh feeds (ingest)
+  steps:
+    - id: feeds
+      name: feeds
+      handler: data_query
+      config:
+        limit: 500
+        schemaId: $schema:reader_feeds
+    - id: urls
+      name: urls
+      handler: function_handler
+      code: ./urls.fn.js
+    - id: parse
+      name: parse
+      handler: xml_feed_parse
+      config:
+        urls: steps.urls.urls
+        condition: steps.urls.count
+        timeoutMs: 20000
+        concurrency: 8
+    - id: stamp
+      name: stamp
+      handler: function_handler
+      code: ./stamp.fn.js
+    - id: enrich
+      name: enrich
+      handler: function_handler
+      code: ./enrich.fn.js
+    - id: upsert
+      name: upsert
+      handler: data_upsert_many
+      config:
+        map:
+          guid: steps.item.guid
+          link: steps.item.link
+          read: "false"
+          title: steps.item.title
+          author: steps.item.author
+          feedId: steps.item.source
+          content: steps.item.content
+          starred: "false"
+          summary: steps.item.summary
+          fetchedAt: steps.stamp.ms
+          publishedAt: steps.item.publishedAt
+          enclosureType: steps.item.enclosureType
+          enclosureUrl: steps.item.enclosureUrl
+        items: steps.enrich.entries
+        dedupKey:
+          - steps.item.guid
+          - steps.item.link
+        schemaId: $schema:reader_items
+        condition: steps.urls.count
+        dedupField: guid
+        updateFields:
+          - enclosureType
+          - enclosureUrl
+    - id: summary
+      name: summary
+      handler: function_handler
+      code: ./summary.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"inserted":{{steps.summary.inserted}},"skipped":{{steps.summary.skipped}},"errors":{{steps.summary.errors}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: "Ingest: data_query(reader_feeds) -> urls -> xml_feed_parse -> stamp(now ms) -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link; fetchedAt=epoch ms, read/starred=false so items are prune-filterable; updateFields=[enclosureType,enclosureUrl] backfills those two columns onto already-ingested rows on re-poll while preserving read/starred and everything else — insert-only otherwise) -> respond { inserted, skipped, errors }. feedId = entry.source. No auth_required validator: the reader alias is private (edge-gated login), so /api/* is protected at the site level, and the CE scheduler fires this as a system run with NO user — auth_required (which needs context.user) would reject it. #119."

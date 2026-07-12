@@ -12,8 +12,10 @@ just Claude Code. The output lives in the *app's* repo; this generator is platfo
 
 ## Inputs
 
-1. **Rule set** — prefer the committed export `<app>.proxy-rules.json` in the app repo; else
-   fetch live with `get_proxy_rule_set` via the BFFless MCP.
+1. **Rule set** — prefer the committed export `<app>.proxy-rules.json` when the app ships one
+   (e.g. Handoff); else build it from the authored layout
+   (`npx bffless rules build apps/<app>/.bffless/proxy-rules/<set> -o /tmp/<set>.json`, e.g.
+   Studio/Reader), or fetch live with `get_proxy_rule_set` via the BFFless MCP.
 2. **App repo context** — the API client (e.g. `src/store/*Api.ts`) and any `CONTEXT.md`
    glossary, for accurate names, request bodies, and multi-step flows.
 

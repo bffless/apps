@@ -106,7 +106,8 @@ Flow (a new `BlogCard` + orchestration in `useScenePipeline.ts`):
   assets); the captured bytes never enter the slice.
 - **Presigned direct-to-bucket** for the frame uploads; never stream image bodies through the
   pipeline (1 MB nginx cap).
-- After changing rules in the dashboard, **re-export** `bffless/studio.proxy-rules.json`.
+- After changing rules, edit the source under `.bffless/proxy-rules/studio/` and commit — CI syncs it
+  to the project on deploy.
 - One stage per PR; `build`, `lint`, `test:run` pass.
 
 ## Open / deferred

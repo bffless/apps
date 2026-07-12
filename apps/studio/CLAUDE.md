@@ -28,13 +28,14 @@ Don't re-derive the design from chat history or git log.
 
 ## Backend (`/api/*`)
 
-There is no app server. The `/api/*` endpoints are two sibling BFFless proxy rule sets, exported to
-`bffless/studio.proxy-rules.json` (39 rules, the main set) and `bffless/studio-blog.proxy-rules.json`
-(4 rules, the companion blog writer + blog image uploads) so a forker can import them into their own
-project (attach BOTH to the app's alias) — see
+There is no app server. The `/api/*` endpoints are two sibling BFFless proxy rule sets, **authored**
+under `.bffless/proxy-rules/studio/` (40 rules, the main set) and `.bffless/proxy-rules/studio-blog/`
+(4 rules, the companion blog writer + blog image uploads) so a forker can build + import them into
+their own project (attach BOTH to the app's alias) — see
 `bffless/README.md` for import steps + prerequisites (storage, Replicate/Anthropic tokens,
 `HF_TOKEN`). Locally, unhandled `/api/*` falls through the Vite proxy to `j5s.dev`. After changing
-rules in the dashboard, re-export and commit the updated JSON.
+rules, edit the source under `.bffless/proxy-rules/<set>/` and commit — CI syncs it to the project on
+deploy; check for drift with `npx bffless rules diff`.
 
 ## The locked pipeline
 

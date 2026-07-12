@@ -1,0 +1,13 @@
+targetUrl: pipeline
+order: 6
+pipeline:
+  name: Serve studio_audio
+  description: Serve files from the audio subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: audio
+  validators: []
+description: Serve files from studio audio (Range-aware) so Replicate can fetch the WAV

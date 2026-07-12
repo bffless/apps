@@ -1,0 +1,47 @@
+pathPattern: /api/projects/delete
+targetUrl: pipeline
+order: 47
+pipeline:
+  name: Delete project (bucket prefix + record)
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: delete
+      name: delete
+      handler: file_delete
+      config:
+        prefix: "{{steps.prep.prefix}}"
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          projectId:
+            op: eq
+            value: steps.prep.projectId
+        pageSize: 1
+        schemaId: $schema:studio_projects
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: deleteRecord
+      name: deleteRecord
+      handler: data_delete
+      config:
+        recordId: steps.pick.recordId
+        schemaId: $schema:studio_projects
+        condition: steps.pick.found
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{ "ok": true, "deleted": {{steps.delete.deleted}}, "prefix": "{{steps.prep.prefix}}", "recordDeleted": {{steps.pick.found}} }'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: "Delete a project: bucket prefix + studio_projects record (story 11c Part B + 11d Task 3). POST { projectId } -> prep builds prefix 'projects/<id>/' -> file_delete wipes every bucket object under it -> data_query (filter by projectId) -> pick extracts the row's recordId (data_delete needs a recordId, not a filter; tolerant if no record exists) -> data_delete by recordId (conditional on found) -> response { ok, deleted, prefix, recordDeleted }. No validators yet (deferred to story 07)."

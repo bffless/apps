@@ -1,0 +1,28 @@
+targetUrl: pipeline
+order: 3
+pipeline:
+  name: Register studio_source upload
+  description: Verify the bucket object and write the studio_source record (finalize step of the direct-to-bucket flow).
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/source
+        schemaId: $schema:studio_source
+        storageKey: request.body.storageKey
+        maxFileSize: 2147483648
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - video/*
+      isEnabled: true
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+      isEnabled: true
+  validators: []
+description: "Register: finalize a direct-to-bucket studio source upload into studio_source"

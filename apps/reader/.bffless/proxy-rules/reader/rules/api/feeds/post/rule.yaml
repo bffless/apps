@@ -1,0 +1,49 @@
+targetUrl: pipeline
+order: 3
+pipeline:
+  name: Add feed (upsert, dedup by url)
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: upsert
+      name: upsert
+      handler: data_upsert_many
+      config:
+        map:
+          url: steps.item.url
+          title: steps.item.title
+          folder: steps.item.folder
+          addedAt: steps.item.addedAt
+          siteUrl: steps.item.siteUrl
+        items: steps.prep.feeds
+        dedupKey: steps.item.url
+        schemaId: $schema:reader_feeds
+        condition: steps.prep.hasUrl
+        dedupField: url
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true,"inserted":{{steps.upsert.inserted}},"skipped":{{steps.upsert.skipped}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.hasUrl
+        contentType: application/json
+    - id: respondNoUrl
+      name: respondNoUrl
+      handler: response_handler
+      config:
+        body: '{"error":"url is required"}'
+        status: 400
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.noUrl
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "Add a feed by URL: prep builds a 1-element array -> data_upsert_many(reader_feeds, dedupField url) -> respond { ok, inserted, skipped } (or 400). auth_required."

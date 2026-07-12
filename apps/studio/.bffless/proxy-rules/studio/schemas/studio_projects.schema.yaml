@@ -1,0 +1,24 @@
+id: fce8c450-879d-4bab-8bd7-a4d1e8eb7674
+name: studio_projects
+fields:
+  - name: projectId
+    type: string
+    required: true
+  - name: name
+    type: string
+    required: false
+  - name: createdMs
+    type: number
+    required: false
+  - name: updatedMs
+    type: number
+    required: false
+  - name: phase
+    type: string
+    required: false
+  - name: thumbnailUrl
+    type: string
+    required: false
+  - name: data
+    type: text
+    required: false

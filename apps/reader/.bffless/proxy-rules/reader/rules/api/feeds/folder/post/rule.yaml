@@ -1,0 +1,58 @@
+targetUrl: pipeline
+order: 10
+pipeline:
+  name: Set feed folder
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          url:
+            op: eq
+            value: steps.prep.url
+        pageSize: 1
+        schemaId: $schema:reader_feeds
+        condition: steps.prep.hasUrl
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        fields:
+          folder: steps.prep.folder
+        recordId: steps.pick.recordId
+        schemaId: $schema:reader_feeds
+        condition: steps.pick.found
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true,"updated":{{steps.pick.found}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.hasUrl
+        contentType: application/json
+    - id: respondNoUrl
+      name: respondNoUrl
+      handler: response_handler
+      config:
+        body: '{"error":"url is required"}'
+        status: 400
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.noUrl
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "Move a feed between folders: POST { url, folder } -> prep coerces url + normalizes folder (empty -> null) -> query finds the reader_feeds row by url -> pick recordId -> data_update writes { folder } only (conditional) -> respond { ok, updated }. The add endpoint's data_upsert_many is insert-only (ce#407) so it can't change an existing feed's folder; this is the update twin, mirroring /api/items/read. auth_required (allowApiKey). bffless/apps#133."

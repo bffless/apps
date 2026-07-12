@@ -1,0 +1,38 @@
+targetUrl: pipeline
+order: 51
+timeout: 120000
+pipeline:
+  name: thumbnail-render
+  description: Render a YouTube thumbnail with google/nano-banana from the edited prompt; store to projects/<id>/youtube-thumbnail; return { imageUrl } serve path (re-signed client-side via /api/uploads/sign).
+  steps:
+    - id: generate
+      name: generate
+      handler: replicate
+      config:
+        input:
+          prompt: request.body.prompt
+          aspect_ratio: "'16:9'"
+        model: google/nano-banana-2
+        timeout: 110000
+    - id: pickUrl
+      name: pickUrl
+      handler: function_handler
+      code: ./pickUrl.fn.js
+    - id: store
+      name: store
+      handler: file_upload_handler
+      config:
+        subDir: projects/{{request.body.projectId}}/youtube-thumbnail
+        schemaId: $schema:youtube_thumbnail
+        sourceUrl: steps.pickUrl.url
+        allowedMimeTypes:
+          - image/*
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"imageUrl": "{{steps.store.url}}"}'
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Studio thumbnail: render the (edited) prompt with google/nano-banana, store to the bucket under the project, return { imageUrl } serve path. Needs the project Replicate token. Story 06."

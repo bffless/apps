@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 40
+pipeline:
+  name: Studio job poll
+  description: "Read a studio_jobs row by id for the FE poll loop (story 03f Part 0). 03m: also returns the stored prompt + system instruction for the FE prompt disclosure (null on pre-03m rows)."
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.query.id
+        schemaId: $schema:studio_jobs
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+description: "Studio job poll (story 03f Part 0): read a studio_jobs row by id → { status, kind, result, error }. Cache-Control: no-store so polls never read a stale pending. No validators yet (auth_required + rate_limit deferred to story 07, mirrors the other studio rules)."

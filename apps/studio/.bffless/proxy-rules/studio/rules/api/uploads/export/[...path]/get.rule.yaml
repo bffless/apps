@@ -1,0 +1,13 @@
+targetUrl: pipeline
+order: 22
+pipeline:
+  name: Serve studio export
+  description: Serve files from the export subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: export
+  validators: []
+description: Serve files from studio export (Range-aware) so the browser can play/download the saved final cut after reload.

@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 4
+pipeline:
+  name: Prepare studio_audio upload
+  description: Mint a presigned PUT URL so the browser uploads the extracted WAV straight to the bucket (bypasses the 1MB proxy cap), so transcription can hand Replicate an audio URL.
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/audio
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 2147483648
+        allowedMimeTypes:
+          - audio/*
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Prepare: mint presigned PUT URL for direct-to-bucket studio audio (WAV) upload"

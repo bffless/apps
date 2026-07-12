@@ -1,0 +1,35 @@
+targetUrl: pipeline
+order: 46
+timeout: 120000
+pipeline:
+  name: Export description (sync Gemini)
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: describe
+      name: describe
+      handler: replicate
+      config:
+        input:
+          prompt: steps.prep.prompt
+          temperature: 0.3
+          thinking_level: "'low'"
+          max_output_tokens: 2000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.1-pro
+        timeout: 110000
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.parse.descriptionJson}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Export description (sync Gemini): final kept script + director synopsis -> { title, summary }. Mirrors search-transcript."

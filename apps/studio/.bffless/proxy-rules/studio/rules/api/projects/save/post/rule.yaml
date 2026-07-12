@@ -1,0 +1,73 @@
+targetUrl: pipeline
+order: 45
+pipeline:
+  name: Save studio project
+  description: Upsert a studio_projects record (story 11d Task 2; upsert as of error-handling fix). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick computes flags WITHOUT throwing (hasId/noId/exists/missing + recordId) so a missing row no longer 500s -> update (condition steps.pick.exists) writes by recordId, OR insert (condition steps.pick.missing) data_creates the row from the same payload (self-heals projects whose server row was never created) -> shape returns the meta+data from whichever ran -> respond (condition hasId) 200, or respondNoId (condition noId) 400. No validators yet.
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          projectId:
+            op: eq
+            value: request.body.id
+        pageSize: 1
+        schemaId: $schema:studio_projects
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        fields:
+          data: request.body.data
+          name: request.body.name
+          phase: request.body.phase
+          updatedMs: request.body.updatedAt
+          thumbnailUrl: request.body.thumbnailUrl
+        recordId: steps.pick.recordId
+        schemaId: $schema:studio_projects
+        condition: steps.pick.exists
+    - id: insert
+      name: insert
+      handler: data_create
+      config:
+        fields:
+          data: request.body.data
+          name: request.body.name
+          phase: request.body.phase
+          createdMs: request.body.createdAt
+          projectId: request.body.id
+          updatedMs: request.body.updatedAt
+          thumbnailUrl: request.body.thumbnailUrl
+        schemaId: $schema:studio_projects
+        condition: steps.pick.missing
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        condition: steps.pick.hasId
+        contentType: application/json
+    - id: respondNoId
+      name: respondNoId
+      handler: response_handler
+      config:
+        body: '{"error":"id is required to save a project"}'
+        status: 400
+        headers:
+          Cache-Control: no-store
+        condition: steps.pick.noId
+        contentType: application/json
+  validators: []
+description: Update a studio_projects record (story 11d Task 2). POST { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } -> data_query (filter by projectId) finds the row -> pick extracts the row's real primary recordId (data_update needs a recordId, not a filter) -> data_update writes name, updatedMs, phase, thumbnailUrl, data by recordId -> shape returns the updated meta+data mapping createdMs/updatedMs back to createdAt/updatedAt. No validators yet (deferred to story 07).

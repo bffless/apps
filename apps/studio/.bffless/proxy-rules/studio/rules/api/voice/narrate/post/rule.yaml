@@ -1,0 +1,37 @@
+targetUrl: pipeline
+order: 18
+timeout: 120000
+pipeline:
+  name: Scene narration (persisted TTS)
+  description: Speak the narration in the chosen voice and store the mp3 in the bucket.
+  steps:
+    - id: tts
+      name: tts
+      handler: replicate
+      config:
+        input:
+          text: request.body.text
+          voice_id: request.body.voiceId
+        model: minimax/speech-2.8-turbo
+    - id: pickUrl
+      name: pickUrl
+      handler: function_handler
+      code: ./pickUrl.fn.js
+    - id: store
+      name: store
+      handler: file_upload_handler
+      config:
+        subDir: projects/{{request.body.projectId}}/narration
+        schemaId: $schema:studio_source
+        sourceUrl: steps.pickUrl.url
+        allowedMimeTypes:
+          - audio/*
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"audioUrl": "{{steps.store.url}}"}'
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Scene narration TTS (story 03c): text + saved voiceId -> minimax/speech-2.8-turbo (mp3) -> PERSIST the mp3 to the bucket (narration/ subDir) so it survives reload and can be assembled later (story 05) -> { audioUrl } (a durable /api/uploads/narration/... serve path). Unlike /api/voice/say (ephemeral replicate URL, used for the short preview), this stores the clip. Client measures real duration off the served file. Needs the project Replicate token. auth_required + rate_limit deferred to story 07."

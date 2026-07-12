@@ -1,0 +1,2 @@
+name: studio-blog
+description: "Companion blog post endpoints for Studio (issues #66/#68-72): POST /api/blog (Gemini blog writer, async) + blog image uploads (/api/uploads/blog/{prepare,register,*}). Split into its own set; attach alongside the main `studio` set (591dab6e) on the studio + studio-preview aliases. Reuses studio_jobs (46f5eef6) + studio_source (862a1fd2) schemas."

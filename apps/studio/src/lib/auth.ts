@@ -10,7 +10,7 @@
  *
  * So we do what the admin portal's SuperTokens SDK does — POST the SuperTokens
  * refresh endpoint directly. That reaches the CE backend via the `/api/auth/*`
- * proxy rule in `bffless/studio.proxy-rules.json` (forwardCookies: ON), which
+ * proxy rule authored in `.bffless/proxy-rules/studio/` (forwardCookies: ON), which
  * forwards the path-scoped `sRefreshToken` and relays the rotated `Set-Cookie`
  * headers back, minting a fresh `sAccessToken`.
  *

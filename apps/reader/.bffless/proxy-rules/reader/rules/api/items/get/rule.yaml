@@ -1,0 +1,173 @@
+targetUrl: pipeline
+order: 4
+pipeline:
+  name: List items
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: folderFeeds
+      name: folderFeeds
+      handler: data_query
+      config:
+        limit: 500
+        schemaId: $schema:reader_feeds
+        condition: steps.prep.hasFolder
+    - id: folderUrls
+      name: folderUrls
+      handler: function_handler
+      code: ./folderUrls.fn.js
+      config:
+        condition: steps.prep.hasFolder
+    - id: countAll
+      name: countAll
+      handler: db_aggregate
+      config:
+        schemaId: $schema:reader_items
+        condition: steps.prep.isAll
+        operation: count
+    - id: pageAll
+      name: pageAll
+      handler: data_query
+      config:
+        limit: steps.prep.limit
+        offset: steps.prep.offset
+        orderBy:
+          field: publishedAt
+          direction: desc
+        schemaId: $schema:reader_items
+        condition: steps.prep.isAll
+    - id: countRiver
+      name: countRiver
+      handler: db_aggregate
+      config:
+        filters:
+          read:
+            op: eq
+            value: "false"
+        schemaId: $schema:reader_items
+        condition: steps.prep.isRiver
+        operation: count
+    - id: pageRiver
+      name: pageRiver
+      handler: data_query
+      config:
+        limit: steps.prep.limit
+        offset: steps.prep.offset
+        filters:
+          read:
+            op: eq
+            value: "false"
+        orderBy:
+          field: publishedAt
+          direction: desc
+        schemaId: $schema:reader_items
+        condition: steps.prep.isRiver
+    - id: countStarred
+      name: countStarred
+      handler: db_aggregate
+      config:
+        filters:
+          starred:
+            op: eq
+            value: "true"
+        schemaId: $schema:reader_items
+        condition: steps.prep.isStarred
+        operation: count
+    - id: pageStarred
+      name: pageStarred
+      handler: data_query
+      config:
+        limit: steps.prep.limit
+        offset: steps.prep.offset
+        filters:
+          starred:
+            op: eq
+            value: "true"
+        orderBy:
+          field: publishedAt
+          direction: desc
+        schemaId: $schema:reader_items
+        condition: steps.prep.isStarred
+    - id: countFeed
+      name: countFeed
+      handler: db_aggregate
+      config:
+        filters:
+          feedId:
+            op: eq
+            value: steps.prep.feedId
+        schemaId: $schema:reader_items
+        condition: steps.prep.isFeed
+        operation: count
+    - id: pageFeed
+      name: pageFeed
+      handler: data_query
+      config:
+        limit: steps.prep.limit
+        offset: steps.prep.offset
+        filters:
+          feedId:
+            op: eq
+            value: steps.prep.feedId
+        orderBy:
+          field: publishedAt
+          direction: desc
+        schemaId: $schema:reader_items
+        condition: steps.prep.isFeed
+    - id: countFolder
+      name: countFolder
+      handler: db_aggregate
+      config:
+        filters:
+          feedId:
+            op: in
+            value: steps.folderUrls.urls
+        schemaId: $schema:reader_items
+        condition: steps.prep.isFolder
+        operation: count
+    - id: pageFolder
+      name: pageFolder
+      handler: data_query
+      config:
+        limit: steps.prep.limit
+        offset: steps.prep.offset
+        filters:
+          feedId:
+            op: in
+            value: steps.folderUrls.urls
+        orderBy:
+          field: publishedAt
+          direction: desc
+        schemaId: $schema:reader_items
+        condition: steps.prep.isFolder
+    - id: pageGuid
+      name: pageGuid
+      handler: data_query
+      config:
+        limit: 2
+        filters:
+          guid:
+            op: eq
+            value: steps.prep.guid
+        schemaId: $schema:reader_items
+        condition: steps.prep.hasGuid
+    - id: assemble
+      name: assemble
+      handler: function_handler
+      code: ./assemble.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"items":{{{steps.assemble.items}}},"total":{{steps.assemble.total}},"page":{{steps.assemble.page}},"pageSize":{{steps.assemble.pageSize}},"totalPages":{{steps.assemble.totalPages}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "List items: view (all|river|starred|feed|folder) + page/limit, ordered by publishedAt desc, with a matching total count. Single-item guid branch (?guid=…) short-circuits view branches and returns just that row. Legacy no-param call returns the full set. Folder uses the CE `in` operator over the folder's feed URLs. auth_required (allowApiKey)."

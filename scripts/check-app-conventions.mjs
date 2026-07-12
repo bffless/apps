@@ -5,7 +5,8 @@
 // per-app manual admin-panel steps are always surfaced to the reader.
 //
 // For each apps/<app>/ directory this fails (exit 1) unless ALL hold:
-//   1. apps/<app>/bffless/<app>.proxy-rules.json exists (the exported backend);
+//   1. its backend is shipped as EITHER the raw apps/<app>/bffless/<app>.proxy-rules.json
+//      export OR an authored set at apps/<app>/.bffless/proxy-rules/*/ruleset.yaml;
 //   2. apps/<app>/bffless/README.md exists;
 //   3. that README contains a "Manual setup (admin panel)" heading;
 //   4. that README contains a "First-success checkpoint" heading.
@@ -34,14 +35,25 @@ function listAppDirs() {
     .sort()
 }
 
+// An authored set passes if at least one apps/<app>/.bffless/proxy-rules/<set>/
+// directory has a ruleset.yaml (readdirSync, not fs.globSync — this runs on
+// plain Node 20 in CI).
+function hasAuthoredSet(app) {
+  const root = join(appsDir, app, '.bffless', 'proxy-rules')
+  if (!existsSync(root)) return false
+  return readdirSync(root).some((d) => existsSync(join(root, d, 'ruleset.yaml')))
+}
+
 function checkApp(app) {
   const errors = []
   const bfflessDir = join(appsDir, app, 'bffless')
   const rulesRel = `apps/${app}/bffless/${app}.proxy-rules.json`
+  const authoredRel = `apps/${app}/.bffless/proxy-rules/*/ruleset.yaml`
   const readmeRel = `apps/${app}/bffless/README.md`
 
-  if (!existsSync(join(appsDir, app, 'bffless', `${app}.proxy-rules.json`))) {
-    errors.push(`missing ${rulesRel} (exported proxy rule set)`)
+  const hasRawExport = existsSync(join(appsDir, app, 'bffless', `${app}.proxy-rules.json`))
+  if (!hasRawExport && !hasAuthoredSet(app)) {
+    errors.push(`missing backend: neither ${rulesRel} (raw export) nor ${authoredRel} (authored set) exists`)
   }
 
   const readmePath = join(bfflessDir, 'README.md')
@@ -82,7 +94,8 @@ function main() {
   if (failures.length > 0) {
     console.error(
       `\nApp-pipelines convention check failed (${failures.length} problem(s)).\n` +
-        'Every apps/<app>/ must ship apps/<app>/bffless/<app>.proxy-rules.json and\n' +
+        'Every apps/<app>/ must ship its backend as EITHER apps/<app>/bffless/<app>.proxy-rules.json\n' +
+        '(raw export) OR apps/<app>/.bffless/proxy-rules/<set>/ruleset.yaml (authored set), plus\n' +
         'apps/<app>/bffless/README.md with a "Manual setup (admin panel)" and a\n' +
         '"First-success checkpoint" section. See docs/app-pipelines-convention.md.',
     )

@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 21
+pipeline:
+  name: Register studio export upload
+  description: Verify the bucket object and write the upload record (finalize step of the direct-to-bucket export flow). Reuses the studio_source schema; the export/ subDir distinguishes records.
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/export
+        schemaId: $schema:studio_source
+        storageKey: request.body.storageKey
+        maxFileSize: 2147483648
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - video/*
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Register: finalize a direct-to-bucket studio export upload into studio_source (export/ subDir). auth_required deferred to story 07."

@@ -1,0 +1,4 @@
+targetUrl: http://localhost:3000/api/auth
+order: 0
+forwardCookies: true
+description: Reverse-proxy SuperTokens auth endpoints to the CE backend so this subdomain app can refresh the sAccessToken session. forwardCookies carries the sRefreshToken cookie. NOT the /_bffless/auth relay (D11).

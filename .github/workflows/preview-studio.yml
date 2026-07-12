@@ -8,7 +8,11 @@ name: Preview Studio on BFFless
 # GCS bucket CORS entry AND its own proxy-rule-set wiring. studio-preview is
 # already CORS-allowlisted and carries the studio proxy rule set, so /api/* works;
 # the project-wide cross-origin-isolation header rule is inherited so the Export
-# step's multithreaded ffmpeg.wasm runs.
+# step's multithreaded ffmpeg.wasm runs. (Reader now demonstrates the per-PR flow
+# in preview-reader.yml — it has no GCS-bucket CORS entry pinning it to one origin,
+# so a fresh alias per PR is cheap there. Studio doesn't have that luxury.) Rule
+# changes are still reviewable per PR via the dry-run report below, without
+# touching the live studio rule set.
 on:
   pull_request:
     paths:
@@ -45,6 +49,22 @@ jobs:
       - name: Build
         run: pnpm --filter studio build
 
+      - name: Proxy rules change report (dry run)
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: |
+            apps/studio/.bffless/proxy-rules/studio
+            apps/studio/.bffless/proxy-rules/studio-blog
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
+          dry-run: true
+          summary-title: Studio Proxy Rules (dry run)
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy preview to BFFless
         uses: bffless/upload-artifact@v1
         with:
@@ -52,12 +72,7 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: studio-preview
-          # Attach the studio backend (/api/*) to the preview alias. Uses the
-          # singular (legacy) input on purpose: the plural proxy-rule-set-names is
-          # serialized as a CSV string by upload-artifact@v1, which the API rejects
-          # ("proxyRuleSetNames must be an array"). The singular goes through as a
-          # plain string and resolves the same rule set.
-          proxy-rule-set-name: studio
+          proxy-rule-set-names: studio,studio-blog
           description: 'Studio preview for PR #${{ github.event.pull_request.number }}'
           summary-title: Studio Preview
           pr-comment: true
@@ -65,13 +80,15 @@ jobs:
 
       # AI skills (e.g. image-prompts, loaded by the /api/thumbnail/draft ai_handler).
       # Runtime resolves the skill against the serving deployment, so the preview
-      # build needs its own skills upload — mirrors the production deploy. base-path
-      # pins the served prefix to .bffless (source lives under apps/studio/.bffless).
+      # build needs its own skills upload — mirrors the production deploy. Scoped to
+      # the skills/ subdir (not all of .bffless, which also holds the proxy-rules/**
+      # sources) — base-path pins the served prefix to .bffless/skills so served
+      # URLs are unchanged.
       - name: Upload AI skills to BFFless
         uses: bffless/upload-artifact@v1
         with:
-          path: apps/studio/.bffless
-          base-path: .bffless
+          path: apps/studio/.bffless/skills
+          base-path: .bffless/skills
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: studio-preview

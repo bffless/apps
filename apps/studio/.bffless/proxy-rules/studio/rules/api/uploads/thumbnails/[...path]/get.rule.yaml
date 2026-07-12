@@ -1,0 +1,13 @@
+targetUrl: pipeline
+order: 10
+pipeline:
+  name: Serve studio thumbnails
+  description: Serve files from the thumbnails subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: thumbnails
+  validators: []
+description: Serve files from studio thumbnails (Range-aware) so the director can fetch the contact sheets

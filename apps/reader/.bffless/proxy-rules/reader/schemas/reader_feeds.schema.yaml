@@ -1,0 +1,27 @@
+id: d1216df3-9776-4de2-81b0-0343d758f83d
+name: reader_feeds
+fields:
+  - name: url
+    type: string
+    required: true
+  - name: title
+    type: string
+    required: false
+  - name: siteUrl
+    type: string
+    required: false
+  - name: folder
+    type: string
+    required: false
+  - name: iconUrl
+    type: string
+    required: false
+  - name: lastFetchedAt
+    type: number
+    required: false
+  - name: lastError
+    type: string
+    required: false
+  - name: addedAt
+    type: number
+    required: false

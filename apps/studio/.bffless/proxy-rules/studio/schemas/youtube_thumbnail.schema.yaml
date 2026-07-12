@@ -1,0 +1,24 @@
+id: 4e859125-7eba-4e2a-b282-a9dbd9e47098
+name: youtube_thumbnail
+fields:
+  - name: filename
+    type: string
+    required: true
+  - name: storage_path
+    type: string
+    required: true
+  - name: content_type
+    type: string
+    required: true
+  - name: size
+    type: number
+    required: true
+  - name: url
+    type: string
+    required: true
+  - name: sub_dir
+    type: string
+    required: true
+  - name: original_name
+    type: string
+    required: true

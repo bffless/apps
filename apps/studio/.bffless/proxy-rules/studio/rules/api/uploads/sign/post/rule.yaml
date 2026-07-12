@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 44
+pipeline:
+  name: Sign upload download URL
+  description: Resolve an /api/uploads/... serve path to its bucket storage key and mint a presigned download URL
+  steps:
+    - id: resolvePath
+      name: resolvePath
+      handler: function_handler
+      code: ./resolvePath.fn.js
+    - id: sign
+      name: sign
+      handler: signed_url
+      config:
+        path: steps.resolvePath.storagePath
+        filename: steps.resolvePath.filename
+        expiresIn: 3600
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"url":"{{{steps.sign.url}}}","expiresIn":3600}'
+        status: 200
+        contentType: application/json
+  validators: []
+description: Mint a presigned GCS download URL for an uploaded studio object so the browser reads large files (source video) straight from the bucket instead of streaming them through file_serve (504/OOM on big files).
