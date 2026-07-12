@@ -1,0 +1,154 @@
+targetUrl: pipeline
+order: 11
+pipeline:
+  name: Master director (async enqueue + poll)
+  description: "Story 03f Part 0: enqueue a studio_jobs row and return { jobId } immediately; the slow Gemini call + parse run in postSteps and write the row to done/error. The FE polls /api/studio/job. 03m: createJob also stores the stitched prompt + system instruction on the row so the FE prompt disclosure can fetch them. 13f (ADR-0003, cut-first): the contract is { synopsis, scenes:[{ title, start, end, brief, cuts }] } - scenes TILE the recording (prep prompts for it; parse snaps gaps shut: first 0, each start = previous end, last end = duration), brief is the director's cutting brief for the scene refiner (parse tolerates a legacy refinePrompt key), and no transcript/script/voicing is requested or emitted."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'scenes'"
+          prompt: steps.prep.prompt
+          status: "'pending'"
+          system: steps.prep.system
+          request: request.body
+        schemaId: $schema:studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+    - id: sign0
+      name: sign0
+      handler: signed_url
+      config:
+        path: steps.prep.path0
+        condition: steps.prep.path0
+        expiresIn: 3600
+    - id: sign1
+      name: sign1
+      handler: signed_url
+      config:
+        path: steps.prep.path1
+        condition: steps.prep.path1
+        expiresIn: 3600
+    - id: sign2
+      name: sign2
+      handler: signed_url
+      config:
+        path: steps.prep.path2
+        condition: steps.prep.path2
+        expiresIn: 3600
+    - id: sign3
+      name: sign3
+      handler: signed_url
+      config:
+        path: steps.prep.path3
+        condition: steps.prep.path3
+        expiresIn: 3600
+    - id: sign4
+      name: sign4
+      handler: signed_url
+      config:
+        path: steps.prep.path4
+        condition: steps.prep.path4
+        expiresIn: 3600
+    - id: sign5
+      name: sign5
+      handler: signed_url
+      config:
+        path: steps.prep.path5
+        condition: steps.prep.path5
+        expiresIn: 3600
+    - id: sign6
+      name: sign6
+      handler: signed_url
+      config:
+        path: steps.prep.path6
+        condition: steps.prep.path6
+        expiresIn: 3600
+    - id: sign7
+      name: sign7
+      handler: signed_url
+      config:
+        path: steps.prep.path7
+        condition: steps.prep.path7
+        expiresIn: 3600
+    - id: sign8
+      name: sign8
+      handler: signed_url
+      config:
+        path: steps.prep.path8
+        condition: steps.prep.path8
+        expiresIn: 3600
+    - id: sign9
+      name: sign9
+      handler: signed_url
+      config:
+        path: steps.prep.path9
+        condition: steps.prep.path9
+        expiresIn: 3600
+    - id: collect
+      name: collect
+      handler: function_handler
+      code: ./collect.fn.js
+    - id: director
+      name: director
+      handler: replicate
+      config:
+        input:
+          images: steps.collect.images
+          prompt: steps.prep.prompt
+          temperature: 0.6
+          thinking_level: "'medium'"
+          max_output_tokens: 64000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.1-pro
+        timeout: 280000
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.parse.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.parse.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.parse.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.parse.notOk
+  validators: []
+description: "Master director (story 03; async fire-and-poll as of 03f Part 0; cut-first contract as of 13f / ADR-0003). ENQUEUE-ONLY response path: prep builds the prompt/system + signed-sheet paths, createJob inserts a studio_jobs row, respond returns { jobId, status:'pending' } immediately. The slow Gemini 3.1 Pro call + parse run in postSteps (replicate step timeout 280s, off the response path) and write the row to { status:'done', result:{synopsis,scenes} } or { status:'error', error }. 13f: scenes are { title, start, end, brief, cuts } and TILE the recording (first 0, each start = previous end, last end = duration; parse enforces it) - the brief is the cutting brief handed to /api/refine-scene; no draftText/transcript/voicing. FE polls GET /api/studio/job. No validators yet (auth_required + rate_limit deferred to story 07)."

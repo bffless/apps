@@ -1,0 +1,24 @@
+id: 46f5eef6-cabe-48cf-95f8-05c9b94de2a7
+name: studio_jobs
+fields:
+  - name: kind
+    type: string
+    required: true
+  - name: status
+    type: string
+    required: true
+  - name: request
+    type: json
+    required: false
+  - name: result
+    type: json
+    required: false
+  - name: error
+    type: string
+    required: false
+  - name: prompt
+    type: text
+    required: false
+  - name: system
+    type: text
+    required: false

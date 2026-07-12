@@ -1,0 +1,13 @@
+targetUrl: pipeline
+order: 14
+pipeline:
+  name: Serve studio voice
+  description: Serve files from the voice subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: voice
+  validators: []
+description: Serve files from studio voice (Range-aware) so Replicate can fetch the clone sample when cloning is enabled.

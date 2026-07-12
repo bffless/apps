@@ -1,0 +1,25 @@
+targetUrl: pipeline
+pipeline:
+  name: Register studio thumbnails upload
+  description: Verify the bucket object and write the upload record (finalize step of the direct-to-bucket thumbnail flow). Reuses the studio_source schema; the thumbnails/ subDir distinguishes records.
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/thumbnails
+        schemaId: $schema:studio_source
+        storageKey: request.body.storageKey
+        maxFileSize: 10485760
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - image/*
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Register: finalize a direct-to-bucket studio thumbnail upload into studio_source"

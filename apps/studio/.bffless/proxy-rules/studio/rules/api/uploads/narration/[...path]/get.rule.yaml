@@ -1,0 +1,13 @@
+targetUrl: pipeline
+order: 19
+pipeline:
+  name: Serve studio narration
+  description: Serve files from the narration subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: narration
+  validators: []
+description: Serve files from studio narration (Range-aware) so the browser can play the generated scene narration mp3s.

@@ -1,0 +1,36 @@
+targetUrl: pipeline
+order: 45
+timeout: 120000
+pipeline:
+  name: Transcript search (sync Gemini)
+  description: "Story 08: query + timedTranscript lines -> Gemini 3.1 Pro -> strict-JSON {results:[{start,end,snippet,reason}]} with server-side clamping mirroring the client's toSearchHits."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: search
+      name: search
+      handler: replicate
+      config:
+        input:
+          prompt: steps.prep.prompt
+          temperature: 0.2
+          thinking_level: "'low'"
+          max_output_tokens: 8000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.1-pro
+        timeout: 110000
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{ "results": {{{steps.parse.resultsJson}}} }'
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Transcript search (story 08): find-by-meaning over the timestamped transcript. SYNC (text-only Gemini, no images — returns in seconds, no jobs flow): prep builds the system+prompt from {query, transcript, duration}, search runs google/gemini-3.1-pro, parse clamps every span into [0,duration] / drops slivers / sorts / caps 20, respond returns { results } in the exact MSW-mock shape. No validators yet (auth_required + rate_limit deferred to story 07)."

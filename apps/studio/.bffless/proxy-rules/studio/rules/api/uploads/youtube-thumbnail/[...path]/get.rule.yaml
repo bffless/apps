@@ -1,0 +1,13 @@
+order: 1
+pipeline:
+  name: Serve youtube_thumbnail
+  description: Serve files from youtube_thumbnail
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: youtube-thumbnail
+      isEnabled: true
+  validators: []
+description: Serve files from youtube_thumbnail

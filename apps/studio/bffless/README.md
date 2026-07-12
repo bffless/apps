@@ -8,7 +8,7 @@ Studio's backend is **two sibling rule sets**, both exported here (format `bffle
 v1, **no secrets** — credentials are referenced by name (`secrets.HF_TOKEN`) or use the project's
 configured provider tokens):
 
-- [`studio.proxy-rules.json`](studio.proxy-rules.json) — the main `studio` set (39 rules): uploads,
+- [`studio.proxy-rules.json`](studio.proxy-rules.json) — the main `studio` set (40 rules): uploads,
   transcribe, director, refiner, voice, thumbnail, projects/jobs.
 - [`studio-blog.proxy-rules.json`](studio-blog.proxy-rules.json) — the `studio-blog` set (4 rules):
   the companion blog-post writer (`POST /api/blog`) + blog image uploads

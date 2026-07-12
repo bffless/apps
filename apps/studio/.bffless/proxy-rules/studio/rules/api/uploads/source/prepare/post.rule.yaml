@@ -1,0 +1,28 @@
+targetUrl: ""
+order: 2
+pipeline:
+  name: Prepare studio_source upload
+  description: Mint a presigned PUT URL so the browser uploads the source clip straight to the bucket (bypasses the 1MB proxy cap).
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/source
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 2147483648
+        allowedMimeTypes:
+          - video/*
+      isEnabled: true
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+      isEnabled: true
+  validators: []
+description: "Prepare: mint presigned PUT URL for direct-to-bucket studio source upload"

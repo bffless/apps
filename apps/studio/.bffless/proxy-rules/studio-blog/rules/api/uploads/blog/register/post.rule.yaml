@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 54
+pipeline:
+  name: Register studio blog upload
+  description: "Verify the bucket object and write the upload record (finalize step of the direct-to-bucket blog frame flow). Reuses the studio_source schema; the blog/ subDir distinguishes records (issue #70)."
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/blog
+        schemaId: $schema:studio_source
+        storageKey: request.body.storageKey
+        maxFileSize: 10485760
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - image/*
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Register: finalize a direct-to-bucket studio blog image upload into studio_source"

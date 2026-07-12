@@ -1,0 +1,28 @@
+targetUrl: pipeline
+order: 41
+pipeline:
+  name: Prepare studio_scene_clip upload
+  description: Presigned PUT URL for a per-scene clip (story 03g).
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/scene-clip
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 2147483648
+        allowedMimeTypes:
+          - video/*
+      isEnabled: true
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+      isEnabled: true
+  validators: []
+description: Mint a presigned PUT URL so the browser uploads a per-scene clip straight to the bucket (story 03g; bypasses the 1MB proxy cap).

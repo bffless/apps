@@ -1,0 +1,28 @@
+targetUrl: pipeline
+order: 42
+pipeline:
+  name: Register studio_scene_clip upload
+  description: Finalize a per-scene clip direct-to-bucket upload (story 03g).
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/scene-clip
+        schemaId: $schema:studio_source
+        storageKey: request.body.storageKey
+        maxFileSize: 2147483648
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - video/*
+      isEnabled: true
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+      isEnabled: true
+  validators: []
+description: Verify the bucket object and write the upload record for a per-scene clip (story 03g; finalize step of the direct-to-bucket flow).

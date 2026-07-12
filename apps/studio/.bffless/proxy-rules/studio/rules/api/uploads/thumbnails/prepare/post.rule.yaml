@@ -1,0 +1,25 @@
+targetUrl: pipeline
+pipeline:
+  name: Prepare studio thumbnails upload
+  description: Mint a presigned PUT URL so the browser uploads each director contact sheet straight to the bucket (image/*), so story 03 can hand the director real image URLs.
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/thumbnails
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 10485760
+        allowedMimeTypes:
+          - image/*
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Prepare: mint presigned PUT URL for direct-to-bucket studio thumbnail (contact-sheet) upload"

@@ -1,0 +1,31 @@
+pathPattern: /api/projects/get
+targetUrl: pipeline
+order: 49
+pipeline:
+  name: Get studio project
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          projectId:
+            op: eq
+            value: request.query.id
+        pageSize: 1
+        schemaId: $schema:studio_projects
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: Get one studio_projects record by our project id (story 11d). GET /api/projects/get?id=<projectId> -> data_query FILTERED by projectId -> shape picks the first match, JSON-parses data, and maps createdMs/updatedMs back to createdAt/updatedAt (renamed fields avoid the DB row created_at/updated_at collision) -> response { id, name, createdAt, updatedAt, phase, thumbnailUrl, data } (null/empty when not found). No validators yet (deferred to story 07).

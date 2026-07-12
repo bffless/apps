@@ -1,0 +1,14 @@
+targetUrl: pipeline
+order: 43
+pipeline:
+  name: Serve studio_scene_clip
+  description: Serve files from studio scene-clip subdir (story 03g).
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: scene-clip
+      isEnabled: true
+  validators: []
+description: Serve per-scene clip files from the scene-clip bucket subdir (story 03g).

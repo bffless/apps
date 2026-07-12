@@ -1,0 +1,154 @@
+targetUrl: pipeline
+order: 52
+pipeline:
+  name: Blog writer (async enqueue + poll)
+  description: "Story 69: live /api/blog, a sibling of the master director. Enqueue a studio_jobs row (kind 'blog') and return { jobId } immediately; the slow multimodal Gemini call + parse run in postSteps and write the row to done/error."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'blog'"
+          prompt: steps.prep.prompt
+          status: "'pending'"
+          system: steps.prep.system
+          request: request.body
+        schemaId: $schema:studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+    - id: sign0
+      name: sign0
+      handler: signed_url
+      config:
+        path: steps.prep.path0
+        condition: steps.prep.path0
+        expiresIn: 3600
+    - id: sign1
+      name: sign1
+      handler: signed_url
+      config:
+        path: steps.prep.path1
+        condition: steps.prep.path1
+        expiresIn: 3600
+    - id: sign2
+      name: sign2
+      handler: signed_url
+      config:
+        path: steps.prep.path2
+        condition: steps.prep.path2
+        expiresIn: 3600
+    - id: sign3
+      name: sign3
+      handler: signed_url
+      config:
+        path: steps.prep.path3
+        condition: steps.prep.path3
+        expiresIn: 3600
+    - id: sign4
+      name: sign4
+      handler: signed_url
+      config:
+        path: steps.prep.path4
+        condition: steps.prep.path4
+        expiresIn: 3600
+    - id: sign5
+      name: sign5
+      handler: signed_url
+      config:
+        path: steps.prep.path5
+        condition: steps.prep.path5
+        expiresIn: 3600
+    - id: sign6
+      name: sign6
+      handler: signed_url
+      config:
+        path: steps.prep.path6
+        condition: steps.prep.path6
+        expiresIn: 3600
+    - id: sign7
+      name: sign7
+      handler: signed_url
+      config:
+        path: steps.prep.path7
+        condition: steps.prep.path7
+        expiresIn: 3600
+    - id: sign8
+      name: sign8
+      handler: signed_url
+      config:
+        path: steps.prep.path8
+        condition: steps.prep.path8
+        expiresIn: 3600
+    - id: sign9
+      name: sign9
+      handler: signed_url
+      config:
+        path: steps.prep.path9
+        condition: steps.prep.path9
+        expiresIn: 3600
+    - id: collect
+      name: collect
+      handler: function_handler
+      code: ./collect.fn.js
+    - id: blog
+      name: blog
+      handler: replicate
+      config:
+        input:
+          images: steps.collect.images
+          prompt: steps.prep.prompt
+          temperature: 0.6
+          thinking_level: "'medium'"
+          max_output_tokens: 64000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.1-pro
+        timeout: 280000
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.parse.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.parse.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.parse.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.parse.notOk
+  validators: []
+description: "Blog writer (story 69; async fire-and-poll, modeled on /api/scenes). ENQUEUE-ONLY response path: prep builds the prompt/system + signed contact-sheet paths, createJob inserts a studio_jobs row (kind 'blog'), respond returns { jobId, status:'pending' }. The multimodal Gemini 3.1 Pro call + parse run in postSteps and write the row to done/error. FE polls GET /api/studio/job."

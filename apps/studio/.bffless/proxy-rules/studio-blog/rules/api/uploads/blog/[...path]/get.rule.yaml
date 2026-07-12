@@ -1,0 +1,13 @@
+targetUrl: pipeline
+order: 55
+pipeline:
+  name: Serve studio blog images
+  description: Serve files from the blog subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: blog
+  validators: []
+description: Serve files from studio blog (Range-aware) so the read-only preview can fetch the inline frames

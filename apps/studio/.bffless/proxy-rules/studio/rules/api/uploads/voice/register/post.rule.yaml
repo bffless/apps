@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 13
+pipeline:
+  name: Register studio voice upload
+  description: Verify the bucket object and write the upload record (finalize step of the direct-to-bucket voice flow). Reuses the studio_source schema; the voice/ subDir distinguishes records.
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/voice
+        schemaId: $schema:studio_source
+        storageKey: request.body.storageKey
+        maxFileSize: 2147483648
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - audio/*
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Register: finalize a direct-to-bucket studio voice upload into studio_source (voice/ subDir). auth_required deferred to story 07."

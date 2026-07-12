@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 46
+pipeline:
+  name: List studio projects
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        pageSize: 500
+        schemaId: $schema:studio_projects
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape.projects}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: List all studio_projects records (story 11d Task 1). GET /api/projects -> data_query lists all rows (no filter) -> shape builds an ARRAY of metas { id(=projectId), name, createdAt(=createdMs), updatedAt(=updatedMs), phase, thumbnailUrl }, dropping the heavy data field -> response. No validators yet (deferred to story 07).

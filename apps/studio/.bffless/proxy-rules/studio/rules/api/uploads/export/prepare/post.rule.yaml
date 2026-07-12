@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 20
+pipeline:
+  name: Prepare studio export upload
+  description: Mint a presigned PUT URL so the browser uploads the assembled final-cut MP4 straight to the bucket (bypasses the 1MB proxy cap) — story 05.
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/export
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 2147483648
+        allowedMimeTypes:
+          - video/*
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Prepare: mint presigned PUT URL for direct-to-bucket studio export (final cut MP4) upload. Mirrors source/voice (video/*). auth_required deferred to story 07."

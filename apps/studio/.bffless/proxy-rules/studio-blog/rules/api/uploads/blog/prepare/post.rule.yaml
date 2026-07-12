@@ -1,0 +1,26 @@
+targetUrl: pipeline
+order: 53
+pipeline:
+  name: Prepare studio blog upload
+  description: "Mint a presigned PUT URL so the browser uploads each re-captured blog frame straight to the bucket (image/*) under the blog/ subDir (issue #70)."
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: projects/{{request.body.projectId}}/blog
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 10485760
+        allowedMimeTypes:
+          - image/*
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators: []
+description: "Prepare: mint presigned PUT URL for direct-to-bucket studio blog image (re-captured frame) upload"

@@ -1,0 +1,28 @@
+targetUrl: pipeline
+order: 16
+timeout: 120000
+pipeline:
+  name: Voice say (TTS preview)
+  description: text + voiceId -> minimax/speech-2.8-turbo -> { audioUrl, durationSeconds }.
+  steps:
+    - id: tts
+      name: tts
+      handler: replicate
+      config:
+        input:
+          text: request.body.text
+          voice_id: request.body.voiceId
+        model: minimax/speech-2.8-turbo
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"audioUrl": "{{steps.pick.audioUrl}}", "durationSeconds": {{steps.pick.durationSeconds}}}'
+        status: 200
+        contentType: application/json
+  validators: []
+description: Voice say (story 04) — LIVE TTS via minimax/speech-2.8-turbo. Speaks request.body.text in request.body.voiceId (preset or cloned id) and returns { audioUrl, durationSeconds }. Used for the short post-selection preview sample (cheap). Needs the project Replicate API token. auth_required + rate_limit deferred to story 07.

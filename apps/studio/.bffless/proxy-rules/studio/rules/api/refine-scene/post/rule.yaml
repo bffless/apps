@@ -1,0 +1,162 @@
+targetUrl: pipeline
+order: 17
+pipeline:
+  name: Per-scene refiner (async enqueue + poll)
+  description: "Per-scene refiner (story 03c; async fire-and-poll 03f Part 0; hears the scene audio 03k; creator prompts 03l; word timings 03p; cut-first contract 13f / ADR-0003). The scene ships as its ORIGINAL footage minus cuts - no narration, no segments. prep builds the prompt from the per-word WORD TIMINGS (request.body.wordTimings), the MEASURED DEAD SPACE lines (request.body.deadSpace, story 13c - true silence from the waveform), the director's CUTTING BRIEF (request.body.brief), and the creator's direction/directorDirection - each optional section included only when non-empty, so pre-13f clients still work. The prompt requires cut edges to snap into silence (never mid-word), biases toward keeping footage, and allows an EMPTY cuts answer. ENQUEUE-ONLY response path: prep also signs sheet + audio paths (request.audioUrl REQUIRED - prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. Gemini refine + parse run in postSteps (replicate timeout 280s). 13f parse: coerces { cuts } only (clamped to the scene span, sorted; empty is valid); errors only when no readable cuts key came back. Writes the row to { status:'done', result:{cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'refine'"
+          prompt: steps.prep.prompt
+          status: "'pending'"
+          system: steps.prep.system
+          request: request.body
+        schemaId: $schema:studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+    - id: sign0
+      name: sign0
+      handler: signed_url
+      config:
+        path: steps.prep.path0
+        condition: steps.prep.path0
+        expiresIn: 3600
+    - id: sign1
+      name: sign1
+      handler: signed_url
+      config:
+        path: steps.prep.path1
+        condition: steps.prep.path1
+        expiresIn: 3600
+    - id: sign2
+      name: sign2
+      handler: signed_url
+      config:
+        path: steps.prep.path2
+        condition: steps.prep.path2
+        expiresIn: 3600
+    - id: sign3
+      name: sign3
+      handler: signed_url
+      config:
+        path: steps.prep.path3
+        condition: steps.prep.path3
+        expiresIn: 3600
+    - id: sign4
+      name: sign4
+      handler: signed_url
+      config:
+        path: steps.prep.path4
+        condition: steps.prep.path4
+        expiresIn: 3600
+    - id: sign5
+      name: sign5
+      handler: signed_url
+      config:
+        path: steps.prep.path5
+        condition: steps.prep.path5
+        expiresIn: 3600
+    - id: sign6
+      name: sign6
+      handler: signed_url
+      config:
+        path: steps.prep.path6
+        condition: steps.prep.path6
+        expiresIn: 3600
+    - id: sign7
+      name: sign7
+      handler: signed_url
+      config:
+        path: steps.prep.path7
+        condition: steps.prep.path7
+        expiresIn: 3600
+    - id: sign8
+      name: sign8
+      handler: signed_url
+      config:
+        path: steps.prep.path8
+        condition: steps.prep.path8
+        expiresIn: 3600
+    - id: sign9
+      name: sign9
+      handler: signed_url
+      config:
+        path: steps.prep.path9
+        condition: steps.prep.path9
+        expiresIn: 3600
+    - id: signAudio
+      name: signAudio
+      handler: signed_url
+      config:
+        path: steps.prep.audioPath
+        expiresIn: 3600
+    - id: collect
+      name: collect
+      handler: function_handler
+      code: ./collect.fn.js
+    - id: refiner
+      name: refiner
+      handler: replicate
+      config:
+        input:
+          audio: steps.signAudio.url
+          images: steps.collect.images
+          prompt: steps.prep.prompt
+          temperature: 0.5
+          thinking_level: "'low'"
+          max_output_tokens: 64000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.5-flash
+        timeout: 280000
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.parse.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.parse.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.parse.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.parse.notOk
+  validators: []
+debugEnabled: true
+description: "Per-scene refiner (story 03c; async fire-and-poll as of 03f Part 0; hears the scene audio as of 03k; creator prompts as of 03l; cut-first contract as of 13f / ADR-0003). ENQUEUE-ONLY response path: prep builds the prompt/system + signed-sheet paths + the scene-audio path (request.audioUrl REQUIRED - prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. The Gemini refine + parse run in postSteps (replicate step timeout 280s): sign0-9 sign the sheets, signAudio signs the scene's cut soundtrack and feeds Gemini's audio input. 13f: the request adds the director's cutting brief (body.brief) and the measured dead-space lines (body.deadSpace); the output contract is { cuts } ONLY - the prompt forbids segments/narration, requires cut edges snapped into silence (never mid-word), and allows an empty cuts answer; parse clamps + sorts the cuts and treats a missing cuts key (not an empty one) as the only error. Writes the row to { status:'done', result:{cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."

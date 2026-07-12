@@ -1,0 +1,14 @@
+targetUrl: ""
+order: 1
+pipeline:
+  name: Serve studio_source
+  description: Serve files from studio_source
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: source
+      isEnabled: true
+  validators: []
+description: Serve files from studio_source

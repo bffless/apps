@@ -1,0 +1,51 @@
+targetUrl: ""
+order: 50
+timeout: 120000
+pipeline:
+  name: thumbnail-draft
+  description: Draft a YouTube-thumbnail nano-banana prompt from title/description/script + notes. The ai_handler loads the image-prompts skill (Skills + JSON response-format are set in the console UI). Returns { prompt }.
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: draft
+      name: draft
+      handler: ai_handler
+      config:
+        mode: completion
+        model: claude-sonnet-4-6
+        skills:
+          mode: selected
+          enabled:
+            - image-prompts
+        provider: anthropic
+        maxTokens: 4096
+        temperature: 0.7
+        messageField: "{{steps.prep.message}}"
+        responseMode: message
+        systemPrompt: |-
+          You write a single image-generation prompt for `google/nano-banana` that becomes a YouTube video's final thumbnail.
+
+          You have the `image-prompts` skill — load it with the load_skill tool before writing. It defines the prompt anatomy, the named house styles (retro-blueprint / modern-dev-tool / editorial-print), how to route a style from the video's content type, the text/color/negatives rules, and examples. Follow it exactly; don't invent your own format.
+
+          The user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is about and which house style fits), and NOTES (the creator's optional free-text wishes). When NOTES are present they override style routing and defaults — honor them.
+
+          Route the house style from the content type per the skill. Write the exact headline text yourself (5 words max) — never a placeholder. Apply the skill's color caps and always include the negatives list.
+
+          Return ONLY the finished prompt itself as plain text — the full multi-section prompt, ready to paste. Do NOT wrap it in JSON, do NOT surround it with quotes, do NOT use markdown code fences, and add no commentary before or after.
+        maxHistoryMessages: 50
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.parse.promptJson}}}"
+        status: 200
+        contentType: application/json
+  postSteps: []
+  validators: []
+description: "Studio thumbnail: draft a nano-banana image prompt via ai_handler (loads the image-prompts skill — enable Skills + JSON response format in the console UI). Returns { prompt }. Story 06."

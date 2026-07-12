@@ -1,0 +1,44 @@
+targetUrl: ""
+order: 15
+timeout: 120000
+pipeline:
+  name: Voice clone (minimax/voice-cloning)
+  description: Resolve the uploaded WAV's storage path, sign it, run minimax/voice-cloning, and return { voiceId, previewUrl }. Costs $3 per call.
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: sign
+      name: sign
+      handler: signed_url
+      config:
+        path: steps.prep.storagePath
+        expiresIn: 3600
+      isEnabled: true
+    - id: clone
+      name: clone
+      handler: replicate
+      config:
+        input:
+          model: "'speech-02-turbo'"
+          accuracy: 0.7
+          voice_file: steps.sign.url
+          need_noise_reduction: false
+          need_volume_normalization: false
+        model: minimax/voice-cloning
+      isEnabled: true
+    - id: pickVoice
+      name: pickVoice
+      handler: function_handler
+      code: ./pickVoice.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"voiceId": "{{steps.pickVoice.voiceId}}", "previewUrl": "{{steps.pickVoice.previewUrl}}"}'
+        status: 200
+        contentType: application/json
+  postSteps: []
+  validators: []
+description: "Voice clone (story 04) — ENABLED. Resolves the uploaded WAV sample's storage path → signs it → minimax/voice-cloning (voice_file only, matches the model's canonical example) → extracts the voice_id → returns { voiceId }. ⚠️ COSTS $3 PER CALL. To disable again: set sign+clone isEnabled:false and point respond at {{steps.prep.voiceId}} (preset stub). auth_required + rate_limit deferred to story 07. Needs the project Replicate token."
