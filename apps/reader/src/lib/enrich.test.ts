@@ -172,6 +172,11 @@ describe('proxy-rules structure — schema + upsert map', () => {
     const config = findStep(refreshRule, 'upsert').config as Record<string, unknown>
     expect(config.updateFields).toEqual(['enclosureType', 'enclosureUrl'])
   })
+
+  it('manifest wires the enrich step to enrich.fn.js', () => {
+    const enrichStep = findStep(refreshRule, 'enrich')
+    expect(enrichStep.code).toBe('./enrich.fn.js')
+  })
 })
 
 describe('proxy-rules structure — unsubscribe cascade', () => {
