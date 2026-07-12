@@ -1,12 +1,13 @@
 name: Preview Reader on BFFless
 
-# PR previews for Reader. Any PR that touches apps/reader (or this file) builds
-# the app and deploys it to the shared `reader-preview` alias, then comments the
-# URL on the PR. The alias is reused — the newest PR build wins — so this is best
-# for one preview at a time. We deliberately reuse one stable alias rather than
-# minting a per-PR alias: each new alias is a new origin that would need its own
-# proxy-rule-set wiring. reader-preview already carries the reader proxy rule set,
-# so /api/* (feeds, items, refresh, auth reverse-proxy) just works.
+# PR previews for Reader. Each PR gets its own preview: a per-PR proxy rule set
+# (reader-pr-<N>) synced from the authored layout with a pr-<N> name suffix, and
+# a per-PR alias (reader-pr-<N>) that the rule set is attached to. Concurrent PRs
+# don't collide — unlike Studio, Reader has no GCS-bucket CORS entry tying it to
+# one fixed origin, so minting a fresh alias per PR is cheap. cleanup-preview-reader.yml
+# tears both down when the PR closes. workflow_dispatch (manual runs, not tied to
+# a PR) falls back to the shared `reader-preview` alias and the base `reader` rule
+# set, same as before this per-PR flow existed.
 on:
   pull_request:
     paths:
@@ -43,19 +44,38 @@ jobs:
       - name: Build
         run: pnpm --filter reader build
 
+      - name: Compute preview identifiers
+        id: ids
+        run: |
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            echo "suffix=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "alias=reader-pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "set-name=reader-pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "alias=reader-preview" >> "$GITHUB_OUTPUT"
+            echo "set-name=reader" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync PR preview proxy rules
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: apps/reader/.bffless/proxy-rules/reader
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          name-suffix: ${{ steps.ids.outputs.suffix }}
+          summary-title: Reader Preview Proxy Rules
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy preview to BFFless
         uses: bffless/upload-artifact@v1
         with:
           path: apps/reader/dist
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
-          alias: reader-preview
-          # Attach the reader backend (/api/*) to the preview alias. Uses the
-          # singular (legacy) input on purpose: the plural proxy-rule-set-names is
-          # serialized as a CSV string by upload-artifact@v1, which the API rejects
-          # ("proxyRuleSetNames must be an array"). The singular goes through as a
-          # plain string and resolves the same rule set.
-          proxy-rule-set-name: reader
+          alias: ${{ steps.ids.outputs.alias }}
+          proxy-rule-set-names: ${{ steps.ids.outputs.set-name }}
           description: 'Reader preview for PR #${{ github.event.pull_request.number }}'
           summary-title: Reader Preview
           pr-comment: true

@@ -1,0 +1,31 @@
+name: Cleanup Reader PR Preview
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - 'apps/reader/**'
+      - '.github/workflows/preview-reader.yml'
+      - '.github/workflows/cleanup-preview-reader.yml'
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete preview alias and rule set
+        env:
+          URL: ${{ vars.BFFLESS_URL }}
+          KEY: ${{ secrets.BFFLESS_API_KEY }}
+          N: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # 1. Alias first — the rule set 409s on delete while attached.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "X-API-Key: $KEY" "$URL/api/repo/bffless/apps/aliases/reader-pr-$N")
+          echo "alias delete: HTTP $code"   # 204 deleted, 404 never existed — both fine
+          [ "$code" = "204" ] || [ "$code" = "404" ] || exit 1
+          # 2. Resolve project id, then the rule set id by name, then delete it.
+          project_id=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/projects" | jq -r '.[] | select(.owner=="bffless" and .name=="apps") | .id')
+          set_id=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/proxy-rule-sets/project/$project_id" | jq -r --arg n "reader-pr-$N" '.ruleSets[] | select(.name==$n) | .id')
+          if [ -z "$set_id" ]; then echo "rule set reader-pr-$N not found — nothing to delete"; exit 0; fi
+          curl -sf -X DELETE -H "X-API-Key: $KEY" "$URL/api/proxy-rule-sets/$set_id" > /dev/null
+          echo "deleted rule set reader-pr-$N ($set_id)"
