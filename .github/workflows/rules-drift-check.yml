@@ -23,4 +23,4 @@ jobs:
           BFFLESS_PROJECT: ${{ vars.BFFLESS_PROJECT }}
         run: |
           set -o pipefail
-          npx --yes bffless@^0.1.0 rules diff ${BFFLESS_PROJECT:+--project "$BFFLESS_PROJECT"} 2>&1 | tee "$GITHUB_STEP_SUMMARY"
+          npx --yes bffless@^0.2.0 rules diff ${BFFLESS_PROJECT:+--project "$BFFLESS_PROJECT"} 2>&1 | tee "$GITHUB_STEP_SUMMARY"
