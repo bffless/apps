@@ -39,6 +39,17 @@ jobs:
       - name: Run unit tests
         run: pnpm --filter studio test:run
 
+      # Requires CE >= 0.2.0 on the instance.
+      - name: Sync proxy rules to BFFless
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: |
+            apps/studio/.bffless/proxy-rules/studio
+            apps/studio/.bffless/proxy-rules/studio-blog
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          summary-title: Studio Proxy Rules
+
       - name: Deploy to BFFless
         uses: bffless/upload-artifact@v1
         with:
@@ -46,6 +57,7 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: studio
+          proxy-rule-set-names: studio,studio-blog
 
       # AI skills (e.g. image-prompts, loaded by the /api/thumbnail/draft ai_handler).
       # base-path pins the served prefix to .bffless since the source lives under

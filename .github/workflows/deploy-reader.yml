@@ -43,6 +43,15 @@ jobs:
       - name: Run unit tests
         run: pnpm --filter reader test:run
 
+      # Requires CE >= 0.2.0 on the instance.
+      - name: Sync proxy rules to BFFless
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: apps/reader/.bffless/proxy-rules/reader
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          summary-title: Reader Proxy Rules
+
       - name: Deploy to BFFless
         uses: bffless/upload-artifact@v1
         with:
@@ -51,7 +60,5 @@ jobs:
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: reader
           # Attach the Rivulet backend (auth reverse-proxy; feed/item/refresh
-          # rules land with later stories). Use the SINGULAR input: the action
-          # sends `proxy-rule-set-names` (plural) as a comma-joined string, which
-          # the deployments API rejects (`proxyRuleSetNames must be an array`).
-          proxy-rule-set-name: reader
+          # rules land with later stories).
+          proxy-rule-set-names: reader
