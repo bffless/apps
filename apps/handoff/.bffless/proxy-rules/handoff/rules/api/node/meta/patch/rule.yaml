@@ -1,0 +1,94 @@
+targetUrl: pipeline
+order: 30
+pipeline:
+  name: node-set-meta
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.body.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.idOk
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: saveTitle
+      name: saveTitle
+      handler: data_update
+      config:
+        fields:
+          title: steps.pre.title
+        recordId: steps.pre.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.gate.doSaveTitle
+    - id: saveDescription
+      name: saveDescription
+      handler: data_update
+      config:
+        fields:
+          description: steps.pre.description
+        recordId: steps.pre.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.gate.doSaveDescription
+    - id: final
+      name: final
+      handler: data_query
+      config:
+        recordId: steps.pre.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.gate.doSave
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: "{{{steps.shape.body}}}"
+        status: 200
+        condition: steps.gate.doSave
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"error":"invalid request"}'
+        status: 400
+        condition: steps.gate.badRequest
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Set a File/Site's display title + description; edit on the parent folder required

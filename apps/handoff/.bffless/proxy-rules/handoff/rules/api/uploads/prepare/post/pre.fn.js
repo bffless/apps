@@ -1,0 +1,1 @@
+function handler({ request }) { var b = (request && request.body) || {}; var pid = (b.parentId != null) ? String(b.parentId) : ''; var name = (b.filename != null) ? String(b.filename) : ''; return { parentId: pid, name: name, check: pid !== '' && name !== '' }; }

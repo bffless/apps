@@ -1,0 +1,2 @@
+name: handoff-rss-feed
+description: "Handoff RSS epic (PRD #185): public folder feeds (/feed/*, /feed.xml) and later private-feed token support. Preview-only until the epic is promoted."

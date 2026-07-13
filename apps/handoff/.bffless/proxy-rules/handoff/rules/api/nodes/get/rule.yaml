@@ -1,0 +1,68 @@
+targetUrl: pipeline
+order: 4
+pipeline:
+  name: Handoff list nodes
+  description: "List nodes whose parentId matches the query — gated by per-folder ACL (ADR-0002). Requires view+ on a non-root parent; children are filtered to those the viewer can access (private by default at root). The query consumes steps.pre.parentId so a bare GET /api/nodes (no ?parentId) lists root (issue #225)."
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.js
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          parentId:
+            op: eq
+            value: steps.pre.parentId
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+        condition: steps.gate.allow
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+      config:
+        condition: steps.gate.allow
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{"nodes": {{{steps.shape.nodes}}}, "root": {{{steps.shape.rootMeta}}}}'
+        status: 200
+        condition: steps.gate.allow
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: List nodes — a Site's url is its stored content URL (structural storage)

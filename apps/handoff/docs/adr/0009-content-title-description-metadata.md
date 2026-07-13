@@ -29,15 +29,17 @@ fields are independent and user-facing UX does not combine them in a single form
 **Feed logic: duplication and parity.** `src/lib/feed.ts` (`selectFeedItems` / `renderFeedXml`) is
 the **reference implementation** — pure functions, unit-testable, not itself in the request path.
 The platform has no app server, so the live feed runs from **two embedded pipeline `select`
-handlers** inside `bffless/handoff.proxy-rules.json`: one in the `/feed.xml` rule, one in the
-`/feed/*` rule. Both are hand-written **ports** of `feed.ts`'s logic into the pipeline's
-`function_handler` JS, and are byte-identical to each other. That makes three in-repo copies —
-the reference plus two ports — that must stay behaviorally equivalent; `src/lib/feedRule.test.ts`
-loads and executes the two embedded handlers directly from the exported JSON and pins their output
-against the same fixtures, so a port that drifts from the reference (or from its sibling) fails
-the test. (The live BFFless rule set that actually serves traffic is synced from this JSON
-separately, post-merge — a merged change to the exported JSON still needs that sync step before
-readers see it.)
+handlers** in the `handoff-rss-feed` rule set: `rules/feed.xml/any/select.fn.js` and
+`rules/feed/[...path]/any/select.fn.js` under `.bffless/proxy-rules/handoff-rss-feed/`. Both are
+hand-written **ports** of `feed.ts`'s logic into the pipeline's `function_handler` JS, and are
+byte-identical to each other. That makes three in-repo copies — the reference plus two ports — that
+must stay behaviorally equivalent; `src/lib/feedRule.test.ts` compiles the rule set and executes the
+two embedded handlers directly, pinning their output against the same fixtures, so a port that drifts
+from the reference (or from its sibling) fails the test.
+
+> Updated by bffless/apps#231: the ports used to live inside the `handoff.proxy-rules.json` export
+> and had to be synced to the live rule set by hand, post-merge. They're now `.fn.js` files that CI
+> pushes on merge (`deploy-handoff.yml`), so a merged change reaches readers without a manual step.
 
 **Why.** Feed items previously looked bare in readers — a filename and a byte count, no context
 for what the item actually was. This feature lets an author set a **Title** and **Description**

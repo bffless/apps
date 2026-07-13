@@ -7,8 +7,18 @@ name: Preview Handoff on BFFless
 # minting a per-PR alias: each new alias is a new origin that would need its own
 # GCS bucket CORS entry (Handoff's presigned uploads go browser→bucket directly)
 # AND its own proxy-rule-set wiring. handoff-preview is already CORS-allowlisted
-# and carries the handoff proxy rule set, so /api/* (presigned uploads, node tree,
+# and carries the handoff proxy rule sets, so /api/* (presigned uploads, node tree,
 # serving, ACL, grants, share links) just works.
+#
+# FRONTEND ONLY — this workflow deliberately does NOT sync proxy rules (bffless/apps#231).
+# Reader mints a per-PR alias + a `pr-N`-suffixed rule set, but Handoff can't: the
+# per-PR alias is ruled out by the bucket-CORS constraint above, and `handoff-preview`
+# is attached to the SAME `handoff` + `handoff-rss-feed` sets that serve production.
+# So a sync here — with no name-suffix — would push a PR branch's rules straight onto
+# the live production backend. A PR that changes rules previews its frontend against
+# the CURRENT live rules; the rule change goes live on merge, via deploy-handoff.yml.
+# To iterate on rules before merge, use a suffixed set locally:
+#   npx bffless rules dev apps/handoff/.bffless/proxy-rules/handoff --push --name-suffix pr-<N>
 on:
   pull_request:
     paths:
@@ -52,8 +62,10 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: handoff-preview
-          # Attach the Handoff backend (/api/*) to the preview alias.
-          proxy-rule-set-names: handoff
+          # Attach the Handoff backend (/api/*) + the public folder feeds to the preview
+          # alias — the same two sets production runs. Both are named explicitly so the
+          # attachment is restated on every run rather than relying on prior state.
+          proxy-rule-set-names: handoff,handoff-rss-feed
           description: 'Handoff preview for PR #${{ github.event.pull_request.number }}'
           summary-title: Handoff Preview
           pr-comment: true

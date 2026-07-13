@@ -1,0 +1,64 @@
+targetUrl: pipeline
+order: 6
+pipeline:
+  name: Handoff sign GET
+  description: Presigned GET for direct bucket playback (video/audio) — gated by per-folder ACL (ADR-0002). Resolves the file node by storage_path and requires view+ access (or admin); no cookie fallback since this mints a bucket URL.
+  steps:
+    - id: nodeByKey
+      name: nodeByKey
+      handler: data_query
+      config:
+        filters:
+          storage_path:
+            op: eq
+            value: request.body.path
+        pageSize: 1
+        schemaId: $schema:handoff_nodes
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: sign
+      name: sign
+      handler: signed_url
+      config:
+        path: request.body.path
+        condition: steps.gate.allow
+        expiresIn: 3600
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{"signed": {{{steps.sign}}}}'
+        status: 200
+        condition: steps.gate.allow
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Mint a short-lived presigned GET URL for a content object (video/audio direct play)

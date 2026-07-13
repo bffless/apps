@@ -43,6 +43,23 @@ jobs:
       - name: Run unit tests
         run: pnpm --filter handoff test:run
 
+      # Sync BEFORE the upload, so the build never goes live against rules that
+      # don't exist yet. Requires CE >= 0.2.0 on the instance.
+      - name: Sync proxy rules to BFFless
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          # Handoff's backend is two sets on one alias: the app API, and the public
+          # folder feeds (kept separate so the feeds can be attached on their own).
+          path: |
+            apps/handoff/.bffless/proxy-rules/handoff
+            apps/handoff/.bffless/proxy-rules/handoff-rss-feed
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
+          summary-title: Handoff Proxy Rules
+
       - name: Deploy to BFFless
         uses: bffless/upload-artifact@v1
         with:
@@ -51,5 +68,5 @@ jobs:
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: handoff
           # Attach the Handoff backend (presigned uploads, node tree, serving,
-          # ACL, grants, share links).
-          proxy-rule-set-names: handoff
+          # ACL, grants, share links) + the public folder feeds.
+          proxy-rule-set-names: handoff,handoff-rss-feed

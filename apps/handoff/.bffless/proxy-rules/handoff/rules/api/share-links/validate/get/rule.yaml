@@ -1,0 +1,28 @@
+targetUrl: pipeline
+order: 15
+pipeline:
+  name: Handoff validate share link
+  steps:
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: link
+      name: link
+      handler: data_query
+      config:
+        recordId: steps.parse.token
+        schemaId: $schema:handoff_share_links
+        condition: steps.parse.hasToken
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: resp
+      name: resp
+      handler: response_handler
+      config:
+        body: "{{{steps.shape.result}}}"
+        status: 200
+        contentType: application/json
+description: Validate a share-link token (public)

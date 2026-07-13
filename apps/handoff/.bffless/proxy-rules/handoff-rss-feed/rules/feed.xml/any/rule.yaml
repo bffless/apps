@@ -1,0 +1,60 @@
+methods:
+  - GET
+  - HEAD
+targetUrl: pipeline
+stripPrefix: false
+order: 33
+pipeline:
+  name: Public folder RSS feed
+  description: Resolve /feed/<path>.xml (or /feed.xml for root) to a folder, flatten its publicly-viewable subtree to leaves, and emit RSS 2.0 (application/rss+xml). Evaluates access as the Anyone principal so private descendants are excluded; a private feed passes a Share Link ?token= (ADR-0008), evaluated as that share-link viewer so the folder + subtree surface with the token threaded into every item link and enclosure (#189).
+  steps:
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: allNodes
+      name: allNodes
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+              - file
+              - site
+        pageSize: 1000
+        schemaId: $schema:handoff_nodes
+    - id: link
+      name: link
+      handler: data_query
+      config:
+        recordId: steps.parse.token
+        schemaId: $schema:handoff_share_links
+        condition: steps.parse.hasToken
+    - id: select
+      name: select
+      handler: function_handler
+      code: ./select.fn.js
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: "{{{steps.select.xml}}}"
+        status: 200
+        headers:
+          Cache-Control: public, max-age=120
+        condition: steps.select.found
+        contentType: application/rss+xml
+    - id: notfound
+      name: notfound
+      handler: response_handler
+      config:
+        body: Not found
+        status: 404
+        headers:
+          Cache-Control: no-store
+        condition: steps.select.notfound
+        contentType: text/plain
+description: "Public folder RSS feed (Handoff RSS spine #188): root /feed.xml"

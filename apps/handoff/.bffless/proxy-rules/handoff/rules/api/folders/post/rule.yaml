@@ -1,0 +1,61 @@
+targetUrl: pipeline
+order: 7
+pipeline:
+  name: Handoff create folder
+  description: Create a folder node and return the shaped Node — rejects (409) a name that duplicates an existing sibling in the target Folder (in-Folder uniqueness)
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.js
+    - id: sibling
+      name: sibling
+      handler: data_query
+      config:
+        filters:
+          parentId:
+            op: eq
+            value: request.body.parentId
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.check
+    - id: guard
+      name: guard
+      handler: function_handler
+      code: ./guard.fn.js
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        fields:
+          mode: "'inheriting'"
+          ownerId: user.id
+          nodeType: "'folder'"
+          parentId: request.body.parentId
+          createdMs: request.body.createdMs
+          displayName: request.body.name
+        schemaId: $schema:handoff_nodes
+        condition: steps.guard.ok
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+      config:
+        condition: steps.guard.ok
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{"node": {{{steps.shape.node}}}}'
+        status: 200
+        condition: steps.guard.ok
+        contentType: application/json
+    - id: conflict
+      name: conflict
+      handler: response_handler
+      config:
+        body: '{"error":"An item with that name already exists in this folder. Rename it and try again."}'
+        status: 409
+        condition: steps.guard.collision
+        contentType: application/json
+description: "Create a folder node under a parent — rejects (409) duplicate sibling names across owners (issue #225)"

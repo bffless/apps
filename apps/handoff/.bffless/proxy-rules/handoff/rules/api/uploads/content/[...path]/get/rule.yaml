@@ -1,0 +1,77 @@
+order: 1
+pipeline:
+  name: Serve handoff_nodes
+  description: Serve content with per-folder ACL gate (ADR-0002). Resolves a File node by its exact storage_path, or a Site-internal asset by the deepest Site node whose storage_path prefixes the request key (structural storage); evaluates access over the owning folder chain and serves the object by its exact key. 404 when the path resolves to neither a node nor a Site.
+  steps:
+    - id: parsePath
+      name: parsePath
+      handler: function_handler
+      code: ./parsePath.fn.js
+    - id: nodeByKey
+      name: nodeByKey
+      handler: data_query
+      config:
+        filters:
+          storage_path:
+            op: eq
+            value: steps.parsePath.fullKey
+        pageSize: 1
+        schemaId: $schema:handoff_nodes
+        condition: steps.parsePath.hasKey
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: allSites
+      name: allSites
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: eq
+            value: site
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        key: content/{{steps.parsePath.rest}}
+        condition: steps.gate.allow
+    - id: deny404
+      name: deny404
+      handler: response_handler
+      config:
+        body: '{"error":"not found"}'
+        status: 404
+        condition: steps.gate.deny404
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Serve files + Site assets via unified path-passthrough content endpoint (structural storage)

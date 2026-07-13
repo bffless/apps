@@ -1,0 +1,46 @@
+function handler({ user, request, steps, utils }) { var UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/; function readCookie(name){ var raw=(request&&request.headers&&request.headers.cookie)||''; if(Object.prototype.toString.call(raw)==='[object Array]')raw=raw[0]||''; raw=String(raw); var parts=raw.split(';'); for(var i=0;i<parts.length;i++){var kv=parts[i];var p=kv.indexOf('=');if(p<0)continue;var k=kv.slice(0,p).replace(/^\s+|\s+$/g,'');if(k===name)return decodeURIComponent(kv.slice(p+1));} return ''; } function vtok(tok){ if(!tok)return null; var d=tok.lastIndexOf('.'); if(d<1)return null; var body=tok.slice(0,d); var sig=tok.slice(d+1); if(!body||!sig)return null; if(!utils.verify(body,sig))return null; var o=null; try{o=JSON.parse(utils.base64urlDecode(body));}catch(e){return null;} if(!o||typeof o!=='object')return null; if(typeof o.exp!=='number'||Date.now()>o.exp)return null; return o; } function rank(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;} function evalAccess(ch,vw){ if(vw.isAdmin)return 'owner'; if(vw.userId){for(var i=0;i<ch.length;i++){if(ch[i].ownerId===vw.userId)return 'owner';}} var s=0;for(var k=ch.length-1;k>=0;k--){if(ch[k].mode==='restricted'){s=k;break;}} var best='none';for(var d=s;d<ch.length;d++){var gs=ch[d].grants||[];for(var e=0;e<gs.length;e++){var g=gs[e]||{};if(g.principalId==='anyone'){if(rank('view')>rank(best))best='view';}else if(vw.userId&&g.principalId===vw.userId&&rank(g.level)>rank(best))best=g.level;}} if(!vw.userId&&vw.shareLinkFolderId){var inC=false;for(var j=0;j<ch.length;j++){if(ch[j].id===vw.shareLinkFolderId){inC=true;break;}}if(inC&&rank('view')>rank(best))best='view';} return best; } function folderChain(folders,startId){ var byId={};var rootId='';for(var a=0;a<folders.length;a++){var f=folders[a]||{};var id=f.id||f.recordId||f.record_id;if(id){byId[id]=f;if(f.nodeType==='root')rootId=id;}} var rev=[];var cur=(String(startId||'')==='root'&&rootId)?rootId:String(startId||'');var g=0; while(cur&&UUID.test(cur)&&byId[cur]&&g<64){var n=byId[cur];var gr=n.grantsJson;if(typeof gr==='string'){try{gr=JSON.parse(gr);}catch(e){gr=[];}}if(!gr||Object.prototype.toString.call(gr)!=='[object Array]')gr=[];rev.push({id:cur,ownerId:n.ownerId||null,grants:gr,mode:n.mode==='restricted'?'restricted':'inheriting'});cur=(n.parentId==='root'&&rootId)?rootId:(n.parentId||'');g++;} var ch=[];for(var b=rev.length-1;b>=0;b--)ch.push(rev[b]);return ch; } 
+  var uid=(user&&user.id)||null;
+  var isAdmin=!!user&&user.role==='admin';
+  var stok=vtok(readCookie('hf_s'));
+  var shareFolderId=(stok&&stok.s)?String(stok.s):'';
+  var ftok=vtok(readCookie('hf_f'));
+  var viewer;
+  if(uid)viewer={userId:uid,isAdmin:isAdmin};
+  else if(shareFolderId)viewer={shareLinkFolderId:shareFolderId};
+  else viewer={};
+  var folders=(steps&&steps.allFolders)||[];
+  var node=(steps&&steps.query)||null;
+  if(node&&typeof node==='object'){ var hasId=node.id||node.recordId||node.record_id; if(!hasId)node=null; } else { node=null; }
+  var allow=false; var level='none';
+  var nodeType=''; var isFile=false; var isFolder=false; var isSite=false; var storageKey='';
+  if(node){
+    var nid=node.id||node.recordId||node.record_id;
+    nodeType=node.nodeType||'file';
+    isFile=nodeType==='file'; isFolder=nodeType==='folder'; isSite=nodeType==='site';
+    var ch;
+    if(isFolder){ ch=folderChain(folders,nid); }
+    else { ch=folderChain(folders,node.parentId); ch.push({id:nid,ownerId:node.ownerId||null,grants:[],mode:'inheriting'}); }
+    level=evalAccess(ch,viewer);
+    allow=rank(level)>=2;
+    var sp=String(node.storage_path||'');
+    var um=sp.indexOf('/uploads/');
+    storageKey=(um>=0)?sp.slice(um+9):'';
+  }
+  var kids=(steps&&steps.children)||[];
+  var childCount=(Object.prototype.toString.call(kids)==='[object Array]')?kids.length:0;
+  var hasChildren=childCount>0;
+  var guardBlocked=(isFolder&&hasChildren)||nodeType==='root';
+  var hasCred=!!uid||!!shareFolderId||!!ftok;
+  var deny401=!allow&&!hasCred;
+  var deny403=!allow&&hasCred;
+  var doPurge=allow&&isFile&&!!storageKey;
+  var sitePrefix=(isSite&&storageKey)?(storageKey+'/'):'';
+  var doPurgeSite=allow&&isSite&&!!sitePrefix;
+  var doDelete=allow&&!guardBlocked;
+  return {
+    allow:allow, deny401:deny401, deny403:deny403, level:level,
+    isFile:isFile, isFolder:isFolder, isSite:isSite, storageKey:storageKey,
+    childCount:childCount, hasChildren:hasChildren, guardBlocked:guardBlocked,
+    doPurge:doPurge, doPurgeSite:doPurgeSite, sitePrefix:sitePrefix, doDelete:doDelete
+  };
+}

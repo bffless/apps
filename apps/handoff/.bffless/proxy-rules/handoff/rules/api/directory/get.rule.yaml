@@ -1,0 +1,4 @@
+targetUrl: http://localhost:3000/api/users/directory
+order: 10
+forwardCookies: true
+description: "People-picker autocomplete. Forwards GET /api/directory?search=&limit= to the CE backend's member-accessible GET /api/users/directory (returns { users: [{id,email}] }; search required, results capped, disabled users excluded). forwardCookies carries the SuperTokens session so the requester is authenticated as themselves — no admin API key is borrowed. Requires CE >= the release that adds /api/users/directory (member-accessible, non-admin)."

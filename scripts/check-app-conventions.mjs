@@ -5,11 +5,15 @@
 // per-app manual admin-panel steps are always surfaced to the reader.
 //
 // For each apps/<app>/ directory this fails (exit 1) unless ALL hold:
-//   1. its backend is shipped as EITHER the raw apps/<app>/bffless/<app>.proxy-rules.json
-//      export OR an authored set at apps/<app>/.bffless/proxy-rules/*/ruleset.yaml;
+//   1. its backend is shipped as an authored set at apps/<app>/.bffless/proxy-rules/*/ruleset.yaml;
 //   2. apps/<app>/bffless/README.md exists;
 //   3. that README contains a "Manual setup (admin panel)" heading;
 //   4. that README contains a "First-success checkpoint" heading.
+//
+// A raw apps/<app>/bffless/<app>.proxy-rules.json export used to satisfy (1). That form is retired
+// (bffless/apps#231 converted Handoff, the last app on it), so a lingering export is now an ERROR
+// rather than an alternative — otherwise an app could quietly regress to a hand-patched JSON blob
+// that no test or `rules diff` covers. See docs/app-pipelines-convention.md.
 //
 // Run: node scripts/check-app-conventions.mjs   (pnpm apps:check)
 
@@ -51,9 +55,17 @@ function checkApp(app) {
   const authoredRel = `apps/${app}/.bffless/proxy-rules/*/ruleset.yaml`
   const readmeRel = `apps/${app}/bffless/README.md`
 
-  const hasRawExport = existsSync(join(appsDir, app, 'bffless', `${app}.proxy-rules.json`))
-  if (!hasRawExport && !hasAuthoredSet(app)) {
-    errors.push(`missing backend: neither ${rulesRel} (raw export) nor ${authoredRel} (authored set) exists`)
+  if (!hasAuthoredSet(app)) {
+    errors.push(`missing backend: no authored rule set at ${authoredRel}`)
+  }
+
+  // The retired raw-export form. Fail loudly rather than ignoring it, so a re-introduced export
+  // can't sit alongside the authored set as a second, un-synced source of truth.
+  if (existsSync(join(appsDir, app, 'bffless', `${app}.proxy-rules.json`))) {
+    errors.push(
+      `${rulesRel} is a raw proxy-rules export — that form is retired; author the set under ` +
+        `${authoredRel} instead (docs/app-pipelines-convention.md)`,
+    )
   }
 
   const readmePath = join(bfflessDir, 'README.md')
@@ -94,9 +106,9 @@ function main() {
   if (failures.length > 0) {
     console.error(
       `\nApp-pipelines convention check failed (${failures.length} problem(s)).\n` +
-        'Every apps/<app>/ must ship its backend as EITHER apps/<app>/bffless/<app>.proxy-rules.json\n' +
-        '(raw export) OR apps/<app>/.bffless/proxy-rules/<set>/ruleset.yaml (authored set), plus\n' +
-        'apps/<app>/bffless/README.md with a "Manual setup (admin panel)" and a\n' +
+        'Every apps/<app>/ must ship its backend as an authored rule set at\n' +
+        'apps/<app>/.bffless/proxy-rules/<set>/ruleset.yaml (raw *.proxy-rules.json exports are\n' +
+        'retired), plus apps/<app>/bffless/README.md with a "Manual setup (admin panel)" and a\n' +
         '"First-success checkpoint" section. See docs/app-pipelines-convention.md.',
     )
     process.exit(1)

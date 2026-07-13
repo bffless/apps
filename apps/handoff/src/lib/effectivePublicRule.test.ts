@@ -8,11 +8,9 @@
  * against fixtures.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
 const nodesGetRule = proxy.rules.find((r) => r.pathPattern === '/api/nodes' && r.method === 'GET')!
 const shapeStep = nodesGetRule.pipelineConfig.steps.find((s: any) => s.id === 'shape')

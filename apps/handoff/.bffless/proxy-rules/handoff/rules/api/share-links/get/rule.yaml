@@ -1,0 +1,51 @@
+targetUrl: pipeline
+order: 17
+pipeline:
+  name: Handoff list share links
+  steps:
+    - id: resolveRootPre
+      name: resolveRootPre
+      handler: function_handler
+      code: ./resolveRootPre.fn.js
+    - id: rootRecord
+      name: rootRecord
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: eq
+            value: root
+        pageSize: 1
+        schemaId: $schema:handoff_nodes
+        condition: steps.resolveRootPre.isRoot
+    - id: resolveRootShape
+      name: resolveRootShape
+      handler: function_handler
+      code: ./resolveRootShape.fn.js
+    - id: rows
+      name: rows
+      handler: data_query
+      config:
+        filters:
+          folderId:
+            op: eq
+            value: steps.resolveRootShape.effectiveFolderId
+        pageSize: 200
+        schemaId: $schema:handoff_share_links
+        condition: steps.resolveRootShape.effectiveFolderId
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: resp
+      name: resp
+      handler: response_handler
+      config:
+        body: '{"links": {{{steps.shape.links}}}}'
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: List a folder's active share links

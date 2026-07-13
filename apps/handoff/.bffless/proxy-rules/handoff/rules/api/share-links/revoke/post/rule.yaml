@@ -1,0 +1,45 @@
+targetUrl: pipeline
+order: 16
+pipeline:
+  name: Handoff revoke share link
+  steps:
+    - id: link
+      name: link
+      handler: data_query
+      config:
+        recordId: request.body.token
+        schemaId: $schema:handoff_share_links
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+    - id: save
+      name: save
+      handler: data_update
+      config:
+        fields:
+          revoked: "true"
+        recordId: request.body.token
+        schemaId: $schema:handoff_share_links
+        condition: steps.check.allowed
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"token":"{{request.body.token}}","revoked":true}'
+        status: 200
+        condition: steps.check.allowed
+        contentType: application/json
+    - id: denied
+      name: denied
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.check.denied
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: Revoke a share link (creator/admin)

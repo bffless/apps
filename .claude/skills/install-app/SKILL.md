@@ -40,7 +40,7 @@ Per-app facts (do not hard-code app specifics beyond this table — read the app
 | app | rule-set source | default alias | response-header rule | background schedules |
 | --- | --- | --- | --- | --- |
 | `studio` | **authored** — `apps/studio/.bffless/proxy-rules/studio/` + `.../studio-blog/`; build with `npx bffless rules build <dir> -o <file>` | `studio` | COOP/COEP cross-origin isolation (see below) — **required** | none |
-| `handoff` | **raw export** — `apps/handoff/bffless/handoff.proxy-rules.json` | `handoff` | none | none |
+| `handoff` | **authored** — `apps/handoff/.bffless/proxy-rules/handoff/` + `.../handoff-rss-feed/`; build with `npx bffless rules build <dir> -o <file>` | `handoff` | none | none |
 | `reader` | **authored** — `apps/reader/.bffless/proxy-rules/reader/`; build with `npx bffless rules build <dir> -o <file>` | `reader` | none | two — `/api/refresh` every 15 min + `/api/prune` nightly 03:17 UTC (see step 4) |
 
 > **Reader's alias attach is also done by its deploy workflow.** `deploy-reader.yml`
@@ -52,18 +52,17 @@ Per-app facts (do not hard-code app specifics beyond this table — read the app
 
 ### 1. Import the rule set
 
-Get the rule-set JSON (no secrets baked in either shape):
+Every app authors its rules; build the JSON from the authored source (no secrets baked in):
 
-- **`studio` / `reader` (authored source):** build it from
-  `apps/<app>/.bffless/proxy-rules/<set>/` with
-  `npx bffless rules build apps/<app>/.bffless/proxy-rules/<set> -o /tmp/<set>.proxy-rules.json`.
-  Studio has **two** sets to build (`studio`, `studio-blog`); Reader has one (`reader`).
-- **`handoff` (raw export):** read `apps/handoff/bffless/handoff.proxy-rules.json` as
-  committed — no build step.
+`npx bffless rules build apps/<app>/.bffless/proxy-rules/<set> -o /tmp/<set>.proxy-rules.json`
+
+Build **every** set the app ships — Studio has two (`studio`, `studio-blog`), Handoff has
+two (`handoff`, `handoff-rss-feed`), Reader has one (`reader`).
 
 Then recreate it in your project via the MCP:
 
-- `create_proxy_rule_set` named `<app>` (or `<set>`, for Studio's two sets) in `repository`.
+- `create_proxy_rule_set` named `<set>` in `repository` — once per set the app ships
+  (Studio: `studio` + `studio-blog`; Handoff: `handoff` + `handoff-rss-feed`).
 - For each rule in the JSON, `create_proxy_rule` into that set, copying its
   `pipelineConfig` / handler `code` **verbatim** and reusing the schema IDs it lists
   (e.g. `studio_jobs`, `studio_source`, `handoff_nodes`) — do **not** invent
@@ -72,13 +71,15 @@ Then recreate it in your project via the MCP:
 If the MCP exposes a rule-set *import* call that takes the JSON directly, use it — the
 result must be the same set of rules attached under the `<app>` set.
 
-### 2. Attach the rule set to the app's alias
+### 2. Attach the rule set(s) to the app's alias
 
-`/api/*` only serves on aliases the rule set is attached to.
+`/api/*` only serves on aliases the rule set is attached to. Attach **every** set the app
+ships — for Studio and Handoff that's two, and missing the second one leaves part of the
+app 404ing (Handoff's `/feed/*`, Studio's blog endpoints).
 
 - `list_aliases(repository)` → find the `<app>` alias and its current
   `proxyRuleSetIds`.
-- `update_alias(repository, alias: "<app>", proxyRuleSetIds: [...existing, <newSet>])`
+- `update_alias(repository, alias: "<app>", proxyRuleSetIds: [...existing, ...newSets])`
   — attach **alongside** any existing sets; don't clobber them.
 
 ### 3. Create required response-header rules

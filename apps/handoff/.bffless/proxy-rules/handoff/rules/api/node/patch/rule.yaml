@@ -1,0 +1,63 @@
+targetUrl: pipeline
+order: 31
+pipeline:
+  name: node-set-mode
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.js
+    - id: folder
+      name: folder
+      handler: data_query
+      config:
+        recordId: steps.pre.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.valid
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+    - id: saveMode
+      name: saveMode
+      handler: data_update
+      config:
+        fields:
+          mode: steps.pre.mode
+        recordId: steps.pre.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.check.saveMode
+    - id: saveFeedExcluded
+      name: saveFeedExcluded
+      handler: data_update
+      config:
+        fields:
+          feedExcluded: steps.pre.feedExcluded
+        recordId: steps.pre.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.check.saveFeedExcluded
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"id": "{{steps.pre.id}}", "mode": "{{steps.pre.mode}}"}'
+        status: 200
+        condition: steps.check.allowed
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"error":"invalid request"}'
+        status: 400
+        condition: steps.check.badRequest
+        contentType: application/json
+    - id: denied
+      name: denied
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.check.denied
+        contentType: application/json
+description: Set a folder's inheritance mode (inheriting|restricted); owner/admin only

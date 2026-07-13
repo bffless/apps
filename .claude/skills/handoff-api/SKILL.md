@@ -32,8 +32,10 @@ step (below) is the one exception — it is presigned and takes no key.
 
 ## Discovery
 
-Endpoint source of truth: the committed `bffless/handoff.proxy-rules.json`. For live state,
-`get_proxy_rule_set` via the BFFless MCP.
+Endpoint source of truth: the authored rules under `.bffless/proxy-rules/` — `handoff/` (the
+`/api/*` app backend) and `handoff-rss-feed/` (the public `/feed/*` feeds). Each route is a
+`rules/**/rule.yaml` whose path mirrors the URL. For live state, `get_proxy_rule_set` via the
+BFFless MCP.
 
 ## Upload a file (prepare → PUT → register)
 

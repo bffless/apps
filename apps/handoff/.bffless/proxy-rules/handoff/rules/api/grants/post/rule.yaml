@@ -1,0 +1,85 @@
+targetUrl: pipeline
+order: 11
+pipeline:
+  name: Handoff add grant
+  steps:
+    - id: resolveRootPre
+      name: resolveRootPre
+      handler: function_handler
+      code: ./resolveRootPre.fn.js
+    - id: rootRecord
+      name: rootRecord
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: eq
+            value: root
+        pageSize: 1
+        schemaId: $schema:handoff_nodes
+        condition: steps.resolveRootPre.isRoot
+    - id: rootGate
+      name: rootGate
+      handler: function_handler
+      code: ./rootGate.fn.js
+      config:
+        condition: steps.resolveRootPre.isRoot
+    - id: rootCreate
+      name: rootCreate
+      handler: data_create
+      config:
+        fields:
+          mode: inheriting
+          ownerId: user.id
+          nodeType: root
+          parentId: ""
+          createdMs: now()
+          grantsJson: "[]"
+          displayName: My Files
+        schemaId: $schema:handoff_nodes
+        condition: steps.rootGate.shouldCreate
+    - id: resolveRootShape
+      name: resolveRootShape
+      handler: function_handler
+      code: ./resolveRootShape.fn.js
+    - id: folder
+      name: folder
+      handler: data_query
+      config:
+        recordId: steps.resolveRootShape.effectiveFolderId
+        schemaId: $schema:handoff_nodes
+        condition: steps.resolveRootShape.effectiveFolderId
+    - id: merge
+      name: merge
+      handler: function_handler
+      code: ./merge.fn.js
+    - id: save
+      name: save
+      handler: data_update
+      config:
+        fields:
+          grantsJson: steps.merge.grants
+        recordId: steps.resolveRootShape.effectiveFolderId
+        schemaId: $schema:handoff_nodes
+        condition: steps.merge.canSave
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"grants": {{{steps.merge.grants}}}}'
+        status: 200
+        condition: steps.merge.allowed
+        contentType: application/json
+    - id: denied
+      name: denied
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.merge.denied
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: Add/update a grant on a folder (owner/admin only)

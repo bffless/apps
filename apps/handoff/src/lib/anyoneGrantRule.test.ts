@@ -6,13 +6,11 @@
  * against the same matrix as the canonical src/lib/acl.ts implementation.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 import { evaluateAccess, ANYONE_PRINCIPAL } from './acl'
 import type { FolderLink, Viewer, AccessLevel } from './acl'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
 function evalAccessCopies(): string[] {
   const out: string[] = []

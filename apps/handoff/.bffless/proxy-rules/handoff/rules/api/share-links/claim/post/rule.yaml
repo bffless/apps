@@ -1,0 +1,40 @@
+targetUrl: pipeline
+order: 18
+pipeline:
+  name: Handoff claim share link
+  description: Validate a share-link token and issue a signed hf_s share cookie (View-only, folder-scoped).
+  steps:
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: link
+      name: link
+      handler: data_query
+      config:
+        recordId: steps.parse.token
+        schemaId: $schema:handoff_share_links
+        condition: steps.parse.hasToken
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"valid": true, "folderId": "{{steps.check.folderId}}"}'
+        status: 200
+        headers:
+          Set-Cookie: "{{steps.check.setCookie}}"
+        condition: steps.check.valid
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"valid": false, "folderId": null}'
+        status: 200
+        condition: steps.check.invalid
+        contentType: application/json
+description: Claim a share-link token (public) — validates the token and sets a signed folder-scoped hf_s view cookie the ACL gate accepts (ADR-0002).
