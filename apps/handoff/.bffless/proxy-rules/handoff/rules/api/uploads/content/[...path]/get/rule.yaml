@@ -50,6 +50,14 @@ pipeline:
       config:
         key: content/{{steps.parsePath.rest}}
         condition: steps.gate.allow
+    - id: deny400
+      name: deny400
+      handler: response_handler
+      config:
+        body: '{"error":"bad request"}'
+        status: 400
+        condition: steps.gate.deny400
+        contentType: application/json
     - id: deny404
       name: deny404
       handler: response_handler

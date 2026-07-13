@@ -22,7 +22,7 @@ interface SignedToken {
 interface GateSteps {
   allFolders?: NodeRow[];
   allSites?: NodeRow[];
-  parsePath?: { fullKey?: string };
+  parsePath?: { fullKey?: string; bad?: boolean };
   nodeByKey?: NodeRow[];
 }
 
@@ -77,6 +77,24 @@ export default function handler({ user, request, steps, utils }: HandlerContext)
   else viewer = {};
 
   const s = (steps || {}) as GateSteps;
+
+  // A traversal segment (`.`/`..`) never resolves to a real key: parsePath refuses it and the
+  // request is malformed, not merely unauthorized or missing. 400 here — and hold every other
+  // verdict false — so exactly one response step fires (CE keeps the LAST response step that
+  // runs, so overlapping deny conditions would silently pick a status by step order). See #238.
+  if (s.parsePath && s.parsePath.bad) {
+    return {
+      allow: false,
+      deny400: true,
+      deny401: false,
+      deny403: false,
+      deny404: false,
+      level: 'none' as AccessLevel,
+      hasNode: false,
+      resolved: false,
+    };
+  }
+
   const folders: NodeRow[] = s.allFolders || [];
   const sitesList: NodeRow[] = s.allSites || [];
   const fullKey = (s.parsePath && s.parsePath.fullKey) || '';
@@ -126,6 +144,7 @@ export default function handler({ user, request, steps, utils }: HandlerContext)
 
   return {
     allow: allow,
+    deny400: false,
     deny401: deny401,
     deny403: deny403,
     deny404: notFound,
