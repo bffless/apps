@@ -9,6 +9,8 @@ import {
   isSceneComplete,
   sceneStepStatuses,
   sceneRunStatus,
+  isHaltStale,
+  assembleInputsKey,
   type AutoBuildRun,
 } from './autoBuild'
 
@@ -172,5 +174,69 @@ describe('sceneRunStatus', () => {
       sceneRunStatus(scene({ id: 'x' }), { status: 'halted', currentSceneId: 'x', currentStepId: 'cut', error: 'e' }),
     ).toBe('error')
     expect(sceneRunStatus(scene({ id: 'x' }), idle)).toBe('pending')
+  })
+})
+
+describe('isHaltStale', () => {
+  const halted = (over: Partial<AutoBuildRun> = {}): AutoBuildRun => ({
+    status: 'halted',
+    currentSceneId: 's1',
+    currentStepId: 'assemble',
+    error: 'Failed to fetch',
+    ...over,
+  })
+
+  it('is false while the halted step is still not done', () => {
+    expect(isHaltStale([scene()], halted(), null)).toBe(false)
+  })
+
+  it('is true once the halted step’s durable output exists (issue #220)', () => {
+    // The producer assembled + saved the scene by hand after the run halted on
+    // its `assemble` step: the halt now points at work that IS done.
+    const saved = scene({ assembledUrl: 'saved.mp4', status: 'built' })
+    expect(isHaltStale([saved], halted(), null)).toBe(true)
+  })
+
+  it('is true when the scene was marked built by hand', () => {
+    expect(isHaltStale([scene({ status: 'built' })], halted({ currentStepId: 'cut' }), null)).toBe(true)
+  })
+
+  it('is true once a halted final stitch has a saved final cut', () => {
+    const run = halted({ currentSceneId: null, currentStepId: 'stitch' })
+    expect(isHaltStale([scene()], run, null)).toBe(false)
+    expect(isHaltStale([scene()], run, 'final.mp4')).toBe(true)
+  })
+
+  it('is false for any run that is not halted', () => {
+    const saved = scene({ assembledUrl: 'saved.mp4', status: 'built' })
+    expect(isHaltStale([saved], halted({ status: 'paused' }), null)).toBe(false)
+    expect(isHaltStale([saved], halted({ status: 'running' }), null)).toBe(false)
+  })
+
+  it('is false when the pointed scene is gone', () => {
+    expect(isHaltStale([], halted(), null)).toBe(false)
+  })
+})
+
+describe('assembleInputsKey', () => {
+  it('is stable for the same clip + cuts', () => {
+    const s = scene({ clipUrl: 'clip.mp4', cuts: [{ start: 1, end: 2 }] })
+    expect(assembleInputsKey(s)).toBe(assembleInputsKey({ ...s }))
+  })
+
+  it('changes when the cut clip is re-sliced', () => {
+    const a = scene({ clipUrl: 'clip.mp4', cuts: [{ start: 1, end: 2 }] })
+    const b = scene({ clipUrl: 'clip-2.mp4', cuts: [{ start: 1, end: 2 }] })
+    expect(assembleInputsKey(a)).not.toBe(assembleInputsKey(b))
+  })
+
+  it('changes when the effective cuts are edited — so a cached render is dropped', () => {
+    const base = scene({ clipUrl: 'clip.mp4', cuts: [{ start: 1, end: 2 }] })
+    const refined = scene({
+      clipUrl: 'clip.mp4',
+      cuts: [{ start: 1, end: 2 }],
+      refined: { cuts: [{ start: 3, end: 4 }], source: 'manual' },
+    })
+    expect(assembleInputsKey(base)).not.toBe(assembleInputsKey(refined))
   })
 })

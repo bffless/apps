@@ -10,6 +10,7 @@
  */
 
 import type { Scene } from './scenes'
+import { effectiveCuts } from './refiner'
 
 /**
  * The patch to stamp onto any edit that changes a scene's **assemble inputs** —
@@ -101,6 +102,48 @@ export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoS
     AutoStepId,
     AutoStepStatus
   >
+}
+
+/**
+ * Is this halt pointing at work that has since been done?
+ *
+ * A halt is a claim about ONE step: "`currentStepId` on `currentSceneId` failed".
+ * Like every other Auto Build reading, that claim is only as durable as the scene
+ * state underneath it — and the producer can satisfy the step by hand (assemble +
+ * save the scene from `SceneAssembleBar`, cut it, mark it built). Once they have,
+ * the halt describes nothing: the run is simply stopped, and the board should say
+ * `⏸ Paused` rather than keep flying `✗ Halted` and a stale network error over a
+ * scene that now reads `✓ built` (issue #220). The runner clears it on sight.
+ *
+ * This is the derived-state rule the module doc promises, applied to the run
+ * pointer too — no second source of truth, not even for failure.
+ */
+export function isHaltStale(
+  scenes: Scene[],
+  run: AutoBuildRun,
+  finalCutUrl: string | null,
+): boolean {
+  if (run.status !== 'halted') return false
+  // The final stitch has no scene — its durable output is the saved final cut,
+  // which FinalCutBar can produce by hand just like a scene's.
+  if (run.currentStepId === 'stitch') return !!finalCutUrl
+  const scene = scenes.find((s) => s.id === run.currentSceneId)
+  if (!scene) return false
+  if (scene.status === 'built') return true
+  const step = AUTO_STEPS.find((s) => s.id === run.currentStepId)
+  return !!step && step.isDone(scene)
+}
+
+/**
+ * A fingerprint of everything `assembleSceneBlob` reads to render this scene: its
+ * cut clip and its effective cuts. Two scenes with the same key render to the same
+ * MP4, so a render cached under this key stays valid — and any edit that would
+ * make it stale (a re-slice, a refine, a hand-edited cut) changes the key, which is
+ * what lets the runner reuse a render after a failed SAVE without ever uploading
+ * bytes that no longer match the timeline.
+ */
+export function assembleInputsKey(scene: Scene): string {
+  return JSON.stringify([scene.clipUrl ?? null, effectiveCuts(scene)])
 }
 
 /** Rolled-up status for a scene row in the dashboard. */

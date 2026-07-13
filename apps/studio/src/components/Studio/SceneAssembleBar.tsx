@@ -142,6 +142,13 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
             {plan.video.length} kept span{plan.video.length === 1 ? '' : 's'}
           </span>
           {scene.assembledUrl && !resultBlob && <span className="text-ink">✓ assembled</span>}
+          {/* A render lives only in this tab's memory until it's uploaded. Say so
+              plainly: the preview and the Download link below work either way, so
+              without this a scene whose save FAILED looks exactly like a saved one
+              — which is how a failed save got mistaken for a fixed scene (#220). */}
+          {resultBlob && !savedCurrent && !running && (
+            <span className="text-terracotta-ink">● not saved</span>
+          )}
         </div>
       )}
 
@@ -203,7 +210,15 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
       )}
 
       {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-terracotta-ink">{error}</p>}
-      {saveError && <p className="mt-3 text-[13px] text-terracotta-ink">Couldn’t save: {saveError}</p>}
+      {saveError && (
+        <div className="mt-3 border-l-2 border-terracotta bg-terracotta/5 p-3 text-[13px] text-terracotta-ink">
+          <p className="whitespace-pre-wrap">Couldn’t save: {saveError}</p>
+          <p className="mt-1 text-ink-soft">
+            The render is still here — press <span className="text-ink">Save this scene</span> to
+            retry the upload. Nothing is re-rendered.
+          </p>
+        </div>
+      )}
 
       {playbackSrc && !running && (
         <div className="mt-4">

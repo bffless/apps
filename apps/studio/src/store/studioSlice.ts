@@ -558,6 +558,15 @@ const studioSlice = createSlice({
       w.autoBuild.status = 'halted'
       w.autoBuild.error = action.payload
     },
+    /** Drop a halt whose step has since been done by hand (`isHaltStale`), leaving
+     *  the run paused and resumable. The pointer stays put — every board reading
+     *  derives from the scene, which now says `done`. */
+    clearAutoHalt(state) {
+      const w = active(state); if (!w) return
+      if (w.autoBuild.status !== 'halted') return
+      w.autoBuild.status = 'paused'
+      w.autoBuild.error = null
+    },
     /** The run finished every scene (and the final stitch). */
     completeAutoBuild(state) {
       const w = active(state); if (!w) return
@@ -633,6 +642,7 @@ export const {
   resumeAutoBuild,
   stopAutoBuild,
   haltAutoBuild,
+  clearAutoHalt,
   completeAutoBuild,
   setAutoPointer,
   hydrateProject,
