@@ -25,9 +25,9 @@ You are an autonomous coding agent working in the `bffless-apps` monorepo (apps:
 
 ## Domain knowledge
 
-This repo ships project skills under `.claude/skills/` — including the **bffless** skills, named `bffless` (overview) plus `bffless-<topic>`: `bffless-proxy-rules`, `bffless-pipelines`, `bffless-chat`, `bffless-authentication`, `bffless-repository`, `bffless-use-bff-state`, `bffless-upload-artifact`, …. The apps have **no server**: each app's `/api/*` is a BFFless **proxy rule set**. Handoff ships a raw export at `apps/handoff/bffless/handoff.proxy-rules.json`; Studio **authors** its rules under `apps/studio/.bffless/proxy-rules/<set>/` (`ruleset.yaml` + a `rules/` file per route), synced to the project on deploy via CI. Before changing anything that touches data, uploads, auth, or `/api/*`, read the relevant `bffless-*` skill so you use the platform correctly.
+This repo ships project skills under `.claude/skills/` — including the **bffless** skills, named `bffless` (overview) plus `bffless-<topic>`: `bffless-proxy-rules`, `bffless-pipelines`, `bffless-chat`, `bffless-authentication`, `bffless-repository`, `bffless-use-bff-state`, `bffless-upload-artifact`, …. The apps have **no server**: each app's `/api/*` is a BFFless **proxy rule set**. Every app **authors** its rules under `apps/<app>/.bffless/proxy-rules/<set>/` (`ruleset.yaml` + a `rules/` file per route + handler bodies as real `.fn.js` files), synced to the project on deploy via CI. Some apps ship two sets — Studio (`studio`, `studio-blog`) and Handoff (`handoff`, `handoff-rss-feed`). Before changing anything that touches data, uploads, auth, or `/api/*`, read the relevant `bffless-*` skill so you use the platform correctly.
 
-**Critical:** editing the rule source — Handoff's exported `handoff.proxy-rules.json`, or Studio's authored `.bffless/proxy-rules/<set>/` — does **NOT** by itself make the rules live on the `bffless/apps` project. New/changed `/api/*` rules only work once they exist on the BFFless project and are attached to the alias serving the app. That deploy is step 9 below; skipping it ships a frontend that 404s on its own API.
+**Critical:** editing the rule source under `.bffless/proxy-rules/<set>/` does **NOT** by itself make the rules live on the `bffless/apps` project. New/changed `/api/*` rules only work once they exist on the BFFless project and are attached to the alias serving the app. That deploy is step 9 below; skipping it ships a frontend that 404s on its own API.
 
 ## Workflow
 
@@ -37,7 +37,7 @@ This repo ships project skills under `.claude/skills/` — including the **bffle
    - `git switch -c sandcastle/issue-<N>-<short-slug> FETCH_HEAD`
 3. **Explore** — read the issue carefully, pull in any referenced PRD, and read the relevant source files and tests before writing code. Consult the bffless skills when the work touches the platform.
 4. **Plan** — decide the smallest change that resolves the issue.
-5. **Execute** — use Red → Green → Refactor: write a failing test first, then the implementation to pass it. Keep the change minimal; no commented-out code or leftover TODOs. If you add/change `/api/*`, update the rule source too — Handoff: re-export or hand-edit `apps/handoff/bffless/handoff.proxy-rules.json`; Studio: edit the authored files under `apps/studio/.bffless/proxy-rules/<set>/` — so it matches what you deploy in step 9.
+5. **Execute** — use Red → Green → Refactor: write a failing test first, then the implementation to pass it. Keep the change minimal; no commented-out code or leftover TODOs. If you add/change `/api/*`, update the rule source too — edit the authored files under `apps/<app>/.bffless/proxy-rules/<set>/` (validate with `npx bffless rules validate <dir>`) — so it matches what you deploy in step 9.
 6. **Verify** — run the relevant app's checks and fix any failures before continuing (pnpm workspace):
    - Handoff: `pnpm handoff:lint && pnpm handoff:test && pnpm handoff:build`
    - Studio: `pnpm studio:lint && pnpm studio:test && pnpm studio:build`
@@ -91,7 +91,7 @@ When the epic's stories are all landed and validated on the preview URL:
 
 1. Review and **merge the master PR** into `main`.
 2. **Promote the proxy rules to production:** attach the epic's rule set to the production alias (e.g. `update_alias(repository='bffless/apps', alias='studio', proxyRuleSetIds=[...existing, <epicSet>])`), then `curl` the production path to confirm it routes. (Or recreate the rules in the main production set.)
-3. Reconcile the rule source with what's deployed: Handoff — re-export `apps/handoff/bffless/handoff.proxy-rules.json` if it drifted; Studio — update the authored files under `apps/studio/.bffless/proxy-rules/<set>/` (check drift with `npx bffless rules diff`).
+3. Reconcile the rule source with what's deployed: update the authored files under `apps/<app>/.bffless/proxy-rules/<set>/` and check drift with `npx bffless rules diff`.
 
 # Done
 

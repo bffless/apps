@@ -1,27 +1,56 @@
-# Handoff backend — BFFless proxy rule set
+# Handoff backend — BFFless proxy rule sets
 
-Handoff has no app server. Its `/api/*` endpoints are a **BFFless proxy rule set** (handler chains:
+Handoff has no app server. Its `/api/*` endpoints are **BFFless proxy rule sets** (handler chains:
 presigned uploads, node tree, content serving, signed URLs, per-folder grants, share links). To run
-Handoff against your own BFFless project you import that rule set and attach it to the alias serving
+Handoff against your own BFFless project you push those rule sets and attach them to the alias serving
 the app.
 
-[`handoff.proxy-rules.json`](handoff.proxy-rules.json) is the exported rule set (23 rules, format
-`bffless-proxy-rule-set` v2). It contains **no secrets** — credentials are referenced by name or use
-the project's configured auth relay. The view pipelines carry the live per-folder ACL gate (see
-**ACL enforcement** below); the signed-cookie HMAC uses CE's server-side `utils.sign` key, which the
-sandbox never sees.
+The rules are **authored as code** under [`../.bffless/proxy-rules/`](../.bffless/proxy-rules/) —
+`ruleset.yaml` per set, one manifest per route, and every handler body a real `.fn.js` file you can
+read, lint, and test. Handoff ships **two** sets:
 
-## Import
+| Set | Rules | What it serves |
+| --- | --- | --- |
+| `handoff` | 23 | The app API — `/api/*` plus the `/r/*` raw-file redirect |
+| `handoff-rss-feed` | 2 | The public folder feeds — `/feed/*` and `/feed.xml` |
 
-**Dashboard:** BFFless project → Proxy Rules → **Import** → upload `handoff.proxy-rules.json`.
+They're separate because the feeds are independently attachable (a project can serve the app without
+exposing feeds), but both must be attached for a complete install. Neither contains **secrets** —
+credentials are referenced by name or use the project's configured auth relay. The view pipelines
+carry the live per-folder ACL gate (see **ACL enforcement** below); the signed-cookie HMAC uses CE's
+server-side `utils.sign` key, which the sandbox never sees.
 
-**Claude / MCP:** ask Claude (with the BFFless MCP connected) to import
-`apps/handoff/bffless/handoff.proxy-rules.json` into your project. It creates the `handoff` rule set
-and all 23 rules (IDs are remapped on import).
+> Handoff used to ship a single 3,500-line `handoff.proxy-rules.json` export, edited by hand and via
+> one-off `patch-*.mjs` scripts. That's gone (bffless/apps#231) — the authored files are now the source
+> of truth, and this repo's CI syncs them to the live project on every merge.
 
-After import, **attach the `handoff` rule set to the alias** your deploy uploads to (e.g. the
-`handoff` alias / `handoff.<your-domain>`). `/api/*` only serves on aliases the rule set is attached
-to.
+## Push
+
+**CLI (recommended).** Pushes straight to your project, creating the sets and rules:
+
+```bash
+npx bffless rules push apps/handoff/.bffless/proxy-rules/handoff --api-url <your-instance> --project <owner/name>
+npx bffless rules push apps/handoff/.bffless/proxy-rules/handoff-rss-feed --api-url <your-instance> --project <owner/name>
+```
+
+with your `BFFLESS_API_KEY` in the environment. (The repo's committed `.bffless/config.json` targets
+the upstream demo instance, hence the explicit `--api-url` / `--project`.) Push is **idempotent** — run
+it again after any rule change.
+
+**Dashboard.** Build the export JSON first, then upload it under Proxy Rules → **Import**:
+
+```bash
+npx bffless rules build apps/handoff/.bffless/proxy-rules/handoff -o /tmp/handoff.proxy-rules.json
+```
+
+Prefer the CLI: `push` resolves data tables **by name** against your project, while a dashboard import
+carries the source project's table ids (see **Data tables** below).
+
+**Claude / MCP:** ask Claude (with the BFFless MCP connected) to install Handoff — the repo-local
+`install-app` skill does the build + import + attach for you.
+
+After pushing, **attach both rule sets to the alias** your deploy uploads to (e.g. the `handoff` alias
+/ `handoff.<your-domain>`). `/api/*` only serves on aliases the rule set is attached to.
 
 ## Manual setup (admin panel)
 
@@ -171,28 +200,21 @@ end. If the file serves back, Handoff's backend is live.
 - A **`PRESIGNED_NOT_SUPPORTED`** on upload means the project is still on local file storage — switch
   to a real bucket backend (see [Manual setup → §1](#1-storage-backend-bucket--required-not-local-file-storage)).
 
-## schemaId portability caveat
+## Data-table ids are resolved by name (no more remapping)
 
-The exported rule set references `schemaId` values tied to the **source project's** data tables:
+The authored rules reference data tables **by name** (`handoff_nodes`, `handoff_share_links`), not by
+UUID — the names live in [`schemas/`](../.bffless/proxy-rules/handoff/schemas/) alongside the field
+definitions. `bffless rules push` resolves each name against **your** project on the way in: it reuses
+a table you already have, or creates one from the schema file if you don't, and rewires every rule's
+`schemaId` to your table's id.
 
-- `1c5d4802-596e-4f50-a08f-c41fb8f9fab0` — `handoff_nodes`
-- `ace1febf-4b3d-4a11-a5f8-22a056dd9afa` — `handoff_share_links`
+So the old chore — importing, then hand-editing the `schemaId` on all thirteen rules that touch a
+table because the export carried the *source* project's UUIDs — is gone. Create the two tables as
+described in [Manual setup → §2](#2-data-tables) (so `handoff_nodes` gets its upload columns and the
+Uploads tab works), then push: it will match them by name.
 
-When you import the rule set into a **different BFFless project**, these IDs will not match your new
-tables. You have two options:
-
-1. **Update the rule set after import:** In the BFFless dashboard open each rule that references a
-   `schemaId` (register node, list nodes, get node, create folder, register site, serve site, add
-   grant, revoke grant, list grants, mint share link, validate share link, revoke share link, list
-   share links) and replace the `schemaId` with the id of your own `handoff_nodes` or
-   `handoff_share_links` table. The table id appears in the URL when you open the table in the
-   dashboard.
-
-2. **Re-create via Claude + MCP:** ask Claude to import the rule set and then update all
-   `schemaId` references to match your tables. This is faster for a fresh project.
-
-After updating `schemaId` values, re-export and commit the updated JSON so future forks of your
-project get the correct ids.
+⚠️ **This only applies to `rules push`.** A **dashboard import** of a built JSON still carries the ids
+baked into the export at build time, so it needs the manual remap. Push instead.
 
 ## ACL enforcement (LIVE)
 
@@ -244,8 +266,9 @@ branches, so the grant can never escalate. Share links are unchanged and remain 
 mechanism for private folders. The root record (`nodeType: 'root'`, ADR root-sharing) makes
 whole-site public just an `anyone` grant on root. The canonical semantics live in
 `src/lib/acl.ts` (`ANYONE_PRINCIPAL`); `src/lib/anyoneGrantRule.test.ts` holds the structural
-guards and the embedded↔TS port-equivalence matrix, and `scripts/patch-anyone-eval.mjs` /
-`scripts/patch-anyone-cap.mjs` are the repeatable patches that produced the rule bodies.
+guards and the embedded↔TS port-equivalence matrix. The `evalAccess` copies are now plain `.fn.js`
+files under `../.bffless/proxy-rules/handoff/rules/`, edited directly — the `patch-anyone-*.mjs`
+scripts that used to rewrite them inside the JSON blob are retired (bffless/apps#231).
 
 **Delete is WRITE-gated** (`DELETE /api/node?id=<uuid>`): the same ACL gate, but the allow test
 requires **write** (`rank(level) >= 2` — `edit`/`owner`, admin bypass; view-only and share-link
@@ -288,16 +311,34 @@ An import into `you/your-app` writes to `you/your-app/uploads/content/…` autom
 per-project edits. `deployment.owner`/`deployment.repo` are listed in the step editor's *Available
 Variables*; if a presigned upload 404s on a bucket path, confirm the function received `deployment`.
 
+## Changing the rules
+
+Edit the authored files under [`../.bffless/proxy-rules/<set>/`](../.bffless/proxy-rules/) — **not**
+the live dashboard. A dashboard edit to a git-managed set is allowed but not sticky: the next CI sync
+overwrites it, and the nightly `rules diff` drift check will flag it in the meantime.
+
+```bash
+npx bffless rules validate apps/handoff/.bffless/proxy-rules/handoff   # lint manifests + handlers
+npx bffless rules test     apps/handoff/.bffless/proxy-rules/handoff   # run *.fn.test.yaml fixtures
+pnpm --filter handoff test:run                                          # the rule guards in src/**
+npx bffless rules diff     apps/handoff/.bffless/proxy-rules/handoff   # local vs live
+```
+
+Merging to `main` syncs both sets to the live project (`.github/workflows/deploy-handoff.yml`) — no
+manual export/import step. Handoff's PR previews are **frontend-only** and run against the *current
+live* rules; to try a rule change before merge, push it to a throwaway suffixed set:
+`npx bffless rules dev apps/handoff/.bffless/proxy-rules/handoff --push --name-suffix pr-<N>`.
+
+The rule guards in `src/lib/*Rule.test.ts` compile these files with the real `buildRuleSet` compiler
+and execute the embedded handlers, so a broken handler fails `pnpm test` — not production.
+
 ## Notes
 
-- Re-export from the BFFless dashboard (Proxy Rules → Export) after changing rules, and commit the
-  updated JSON here so the giveaway stays current.
-- The `POST /api/uploads/content` rule (direct `file_upload_handler`) is intentionally **excluded**
-  from this export — Handoff uses the presigned prepare+register flow for all file uploads.
-- **Numeric config values must be JSON numbers, not strings.** The `presigned_upload` / `signed_url`
+- The `POST /api/uploads/content` rule (direct `file_upload_handler`) is intentionally **absent** —
+  Handoff uses the presigned prepare+register flow for all file uploads.
+- **Numeric config values must be YAML numbers, not strings.** The `presigned_upload` / `signed_url`
   / `register_upload` steps carry `expiresIn` and `maxFileSize`. On the **AWS S3** backend these are
   passed straight to the SDK signer, which rejects a string with
-  `expires should be of type "number"` (`PRESIGNED_URL_FAILED`). MinIO happens to tolerate strings,
-  so an export from a MinIO project can look fine yet break on S3. This file uses numbers
-  (`"expiresIn": 3600`, not `"3600"`); keep it that way after any re-export so the rule set works on
-  every bucket backend.
+  `expires should be of type "number"` (`PRESIGNED_URL_FAILED`). MinIO happens to tolerate strings, so
+  a rule set that works on MinIO can still break on S3. Keep them unquoted (`expiresIn: 3600`, not
+  `expiresIn: '3600'`) so the rule set works on every bucket backend.

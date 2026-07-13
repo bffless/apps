@@ -1,0 +1,2 @@
+name: handoff
+description: Handoff app backend — uploads (presigned), node tree, ACL-gated serving, grants, share links.

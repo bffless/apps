@@ -1,5 +1,4 @@
 // @vitest-environment node
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Structural guard for the /api/directory people-picker proxy rule.
  *
@@ -11,11 +10,9 @@
  * member-accessible user directory, carrying the session cookie (no admin key).
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
 const rule = proxy.rules.find((r) => r.pathPattern === '/api/directory')
 

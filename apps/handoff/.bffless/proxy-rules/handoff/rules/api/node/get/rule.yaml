@@ -1,0 +1,62 @@
+targetUrl: pipeline
+order: 5
+pipeline:
+  name: Handoff get node
+  description: Return one node by id, shaped — gated by per-folder ACL (ADR-0002).
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.query.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.idOk
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{"node": {{{steps.shape.node}}}}'
+        status: 200
+        condition: steps.gate.allow
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Get node — a Site's url is its stored content URL (structural storage)

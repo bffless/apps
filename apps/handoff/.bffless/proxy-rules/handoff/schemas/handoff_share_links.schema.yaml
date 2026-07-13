@@ -1,0 +1,18 @@
+id: ace1febf-4b3d-4a11-a5f8-22a056dd9afa
+name: handoff_share_links
+fields:
+  - name: folderId
+    type: string
+    required: true
+  - name: expiresMs
+    type: number
+    required: false
+  - name: revoked
+    type: boolean
+    required: false
+  - name: createdBy
+    type: string
+    required: false
+  - name: createdMs
+    type: number
+    required: false

@@ -10,14 +10,19 @@ admin-panel steps are surfaced to the reader for every app**. This convention is
 
 Every `apps/<app>/` **must ship**:
 
-1. Its backend pipelines, as **either**:
-   - **`apps/<app>/bffless/<app>.proxy-rules.json`** — a raw exported proxy rule set, or
-   - **`apps/<app>/.bffless/proxy-rules/<set>/`** — an **authored** rule set (`ruleset.yaml` + a
-     `rules/` file per route + schemas), which CI syncs to the project on deploy via
-     `bffless/deploy-proxy-rules` (check drift with `npx bffless rules diff`).
+1. Its backend pipelines, as an **authored** rule set at **`apps/<app>/.bffless/proxy-rules/<set>/`**
+   (`ruleset.yaml` + a `rules/` file per route + schemas + handler bodies as real `.fn.js` files),
+   which CI syncs to the project on deploy via `bffless/deploy-proxy-rules` (check drift with
+   `npx bffless rules diff`). An app may ship more than one set — Studio has `studio` +
+   `studio-blog`, Handoff has `handoff` + `handoff-rss-feed`.
 
-   No secrets baked in either way — credentials are referenced by name or via the project's auth
-   relay.
+   No secrets baked in — credentials are referenced by name or via the project's auth relay.
+
+   > Apps used to be allowed to ship a raw `apps/<app>/bffless/<app>.proxy-rules.json` export
+   > instead. That form is **retired** (Handoff, the last one, converted in bffless/apps#231): a
+   > 3,500-line JSON blob can't be reviewed, linted, or tested, and editing it meant writing
+   > one-off `patch-*.mjs` scripts against string anchors. Authored rules are code — diffable in a
+   > PR, and CI syncs them so the repo and the live project can't silently diverge.
 2. **`apps/<app>/bffless/README.md`** — with the two required sections below.
 
 ### Required README section: "Manual setup (admin panel)"
@@ -33,7 +38,7 @@ Everything the human must configure in the BFFless admin panel that the `install
 - **Storage backend requirements** — state explicitly if the app won't work on local file storage.
   E.g. **Handoff requires a real bucket backend (S3/GCS/Spaces/MinIO), not local file storage**;
   Studio needs a default bucket for uploads.
-- **Response-header rules** — any headers not in the proxy-rules JSON. E.g. Studio's COOP/COEP for
+- **Response-header rules** — any headers not carried by the rule set. E.g. Studio's COOP/COEP for
   `ffmpeg.wasm` threading. Handoff: none.
 
 ### Required README section: "First-success checkpoint"

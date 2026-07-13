@@ -8,13 +8,11 @@
  * pins the flatten + Anyone-gate + RSS render behaviour.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 
 const NODES_SCHEMA = '1c5d4802-596e-4f50-a08f-c41fb8f9fab0'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
 const feedRule = proxy.rules.find((r) => r.pathPattern === '/feed/*')
 const rootRule = proxy.rules.find((r) => r.pathPattern === '/feed.xml')

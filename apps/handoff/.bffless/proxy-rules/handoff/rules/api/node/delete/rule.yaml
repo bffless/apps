@@ -1,0 +1,96 @@
+targetUrl: pipeline
+order: 8
+pipeline:
+  name: Handoff delete node
+  description: Hard-delete one node by id — write-gated (edit/owner) per-folder ACL (ADR-0002). Purges the stored object for files (key mode) and a Site's assets under its content path prefix (prefix mode, trailing slash so a sibling site sharing a name-prefix is untouched); refuses a non-empty folder with 409. Client recurses for subtree delete.
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.query.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.idOk
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: children
+      name: children
+      handler: data_query
+      config:
+        filters:
+          parentId:
+            op: eq
+            value: request.query.id
+        pageSize: 1
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.idOk
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: guardNonEmpty
+      name: guardNonEmpty
+      handler: response_handler
+      config:
+        body: '{"error":"folder_not_empty"}'
+        status: 409
+        condition: steps.gate.guardBlocked
+        contentType: application/json
+    - id: purgeObject
+      name: purgeObject
+      handler: file_delete
+      config:
+        key: "{{steps.gate.storageKey}}"
+        condition: steps.gate.doPurge
+    - id: purgeSiteAssets
+      name: purgeSiteAssets
+      handler: file_delete
+      config:
+        prefix: "{{steps.gate.sitePrefix}}"
+        condition: steps.gate.doPurgeSite
+    - id: del
+      name: del
+      handler: data_delete
+      config:
+        recordId: request.query.id
+        schemaId: $schema:handoff_nodes
+        condition: steps.gate.doDelete
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{"deleted":true,"id":"{{request.query.id}}"}'
+        status: 200
+        condition: steps.gate.doDelete
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Delete node — files purged (key), Site assets purged by content prefix (structural storage)

@@ -1,0 +1,51 @@
+id: 1c5d4802-596e-4f50-a08f-c41fb8f9fab0
+name: handoff_nodes
+fields:
+  - name: filename
+    type: string
+    required: false
+  - name: storage_path
+    type: string
+    required: false
+  - name: content_type
+    type: string
+    required: false
+  - name: size
+    type: number
+    required: false
+  - name: url
+    type: string
+    required: false
+  - name: sub_dir
+    type: string
+    required: false
+  - name: original_name
+    type: string
+    required: false
+  - name: parentId
+    type: string
+    required: true
+  - name: nodeType
+    type: string
+    required: true
+  - name: displayName
+    type: string
+    required: true
+  - name: ownerId
+    type: string
+    required: false
+  - name: siteEntry
+    type: string
+    required: false
+  - name: manifest
+    type: json
+    required: false
+  - name: grantsJson
+    type: json
+    required: false
+  - name: mode
+    type: string
+    required: false
+  - name: createdMs
+    type: number
+    required: false

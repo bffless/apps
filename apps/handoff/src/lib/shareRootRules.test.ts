@@ -4,21 +4,20 @@
  * Structural guard for the resolve-root splice into the mint & grants pipelines.
  *
  * Sharing/granting the synthetic "root" folder used to 500: pipelines ran a
- * data_query with recordId='root' against a UUID column. The fix splices the
- * resolve-root group (_fragments/resolve-root.json) into the four share/grant
- * rules so 'root' resolves to the singleton root record's UUID, and gates root
- * creation/sharing to admins only (root = the entire instance top-level).
+ * data_query with recordId='root' against a UUID column. The fix puts the
+ * resolve-root step group into each share/grant rule so 'root' resolves to the
+ * singleton root record's UUID, and gates root creation/sharing to admins only
+ * (root = the entire instance top-level). See resolveRootFragment.test.ts, which
+ * pins that group's shape and that its copies stay identical across the rules.
  *
  * These assertions pin the wired shape: resolveRootShape.effectiveFolderId feeds
  * every id-keyed step, those steps are conditioned so a null id (non-admin root)
  * skips the query instead of 500ing, and the admin gate is present on rootCreate.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
 const EFFECTIVE = 'steps.resolveRootShape.effectiveFolderId'
 
@@ -173,13 +172,17 @@ describe('no pipeline step uses a compound condition (BFFless evaluates simple p
   })
 })
 
-describe('patched proxy-rules JSON', () => {
-  it('still parses', () => {
-    const raw = readFileSync(
-      new URL('../../bffless/handoff.proxy-rules.json', import.meta.url),
-      'utf8',
-    )
-    expect(() => JSON.parse(raw)).not.toThrow()
+describe('authored rule sets', () => {
+  // Replaces the old "the patched proxy-rules JSON still parses" guard: the rules are
+  // no longer a hand-patched JSON blob but files compiled by `buildRuleSet` — the same
+  // compiler `bffless rules push` runs — so a malformed manifest or handler now fails
+  // the compile in loadProxyRules() and takes every test in this file with it.
+  // What still needs asserting is that BOTH sets are in the merged view: the feeds live
+  // in `handoff-rss-feed`, a second set attached to the same alias, and a lookup that
+  // silently missed it would make the feed guards below vacuous.
+  it('merges the handoff and handoff-rss-feed sets', () => {
+    expect(proxy.rules.some((r) => r.pathPattern === '/api/nodes')).toBe(true)
+    expect(proxy.rules.some((r) => r.pathPattern === '/feed.xml')).toBe(true)
   })
 })
 

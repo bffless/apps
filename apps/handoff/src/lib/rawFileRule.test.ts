@@ -6,11 +6,9 @@
  * rule is present and wired the way the spec requires.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
 const rule = proxy.rules.find((r) => r.pathPattern === '/r/*')
 

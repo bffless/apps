@@ -1,0 +1,69 @@
+targetUrl: pipeline
+pipeline:
+  name: Resolve content path
+  description: Decode /api/resolve/<path>, match a file/site by exact storage_path else a folder by name-walk, gate via the folder chain, return the node (with path) or 401/403/404.
+  steps:
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: nodeByKey
+      name: nodeByKey
+      handler: data_query
+      config:
+        filters:
+          storage_path:
+            op: eq
+            value: steps.parse.fullKey
+        pageSize: 1
+        schemaId: $schema:handoff_nodes
+        condition: steps.parse.hasPath
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"node": {{{steps.gate.node}}}}'
+        status: 200
+        condition: steps.gate.allow
+        contentType: application/json
+    - id: deny404
+      name: deny404
+      handler: response_handler
+      config:
+        body: '{"error":"not found"}'
+        status: 404
+        condition: steps.gate.deny404
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Resolve a content path (/tree //blob deep link) to its node under the standard ACL gate (path-URLs spec 2026-07-06). Same chain evaluation as the content serve rule; works for owners, nested grantees, and share visitors.

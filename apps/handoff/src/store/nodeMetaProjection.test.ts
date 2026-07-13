@@ -1,13 +1,12 @@
 // @vitest-environment node
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { findRule, loadProxyRules } from '../test/proxyRules'
 
-const proxy = JSON.parse(readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8')) as { rules: any[] }
+const proxy = await loadProxyRules()
 
 function shapeSource(method: string, path: string): string {
-  const rule = proxy.rules.find((r) => r.pathPattern === path && r.method === method)
-  const step = rule.pipelineConfig.steps.find((s: any) => s.id === 'shape')
+  const rule = findRule(proxy.rules, path, method)
+  const step = rule.pipelineConfig.steps.find((s: { id: string }) => s.id === 'shape')
   return step.config.code
 }
 

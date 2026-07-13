@@ -20,15 +20,15 @@
  * See docs/superpowers/specs/2026-07-05-structural-content-storage-design.md.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { loadProxyRules } from '../test/proxyRules'
 
 const NODES_SCHEMA = '1c5d4802-596e-4f50-a08f-c41fb8f9fab0'
 
-const proxy = JSON.parse(
-  readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8'),
-) as { rules: Array<Record<string, any>> }
+const proxy = await loadProxyRules()
 
-const raw = readFileSync(new URL('../../bffless/handoff.proxy-rules.json', import.meta.url), 'utf8')
+// Serialized backend — lets the retired-route guard below scan every rule's
+// paths, step config, and embedded handler source in one pass.
+const raw = JSON.stringify(proxy.rules)
 
 const registerSite = proxy.rules.find((r) => r.pathPattern === '/api/sites' && r.method === 'POST')
 const serve = proxy.rules.find((r) => r.pathPattern === '/api/uploads/content/*')
