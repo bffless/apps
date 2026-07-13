@@ -1,5 +1,5 @@
 targetUrl: pipeline
-order: 45
+order: 26
 timeout: 120000
 pipeline:
   name: Transcript search (sync Gemini)

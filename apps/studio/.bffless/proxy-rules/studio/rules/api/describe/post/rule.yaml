@@ -1,5 +1,5 @@
 targetUrl: pipeline
-order: 46
+order: 27
 timeout: 120000
 pipeline:
   name: Export description (sync Gemini)

@@ -1,4 +1,4 @@
-order: 1
+order: 25
 pipeline:
   name: Serve youtube_thumbnail
   description: Serve files from youtube_thumbnail
