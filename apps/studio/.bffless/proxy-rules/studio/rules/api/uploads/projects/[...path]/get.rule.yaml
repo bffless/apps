@@ -1,5 +1,5 @@
 targetUrl: pipeline
-order: 1
+order: 24
 pipeline:
   name: Serve studio per-project uploads
   description: Serve files from projects/<id>/... nested subDirs
