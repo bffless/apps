@@ -16,8 +16,17 @@
  * extracted audio (`/api/uploads/audio`); `basePath` selects the route.
  *
  * NOTE: the bucket must allow PUT from the site origin (CORS) or the browser
- * blocks step 2. auth_required is temporarily off on the studio routes for local
- * dev — restored in story 07's billing gate.
+ * blocks step 2. The studio upload routes require auth — an unauthenticated
+ * `POST ${basePath}/prepare` returns 401; `fetchWithReauth` refreshes the
+ * session on a 401 before retrying.
+ *
+ * Step 2 is a single-shot `PUT` of the whole file over one TCP stream. Scene
+ * clips come out of ffmpeg.wasm at hundreds of megabytes, and a flaky uplink
+ * can reset that stream mid-flight (Firefox: `NS_ERROR_NET_RESET`, 0 B
+ * transferred) — which surfaces as a raw "NetworkError" that reads like CORS.
+ * We retry the PUT on a transport reset, **re-minting the URL each attempt** so
+ * a long upload plus retries can't outlive the 3600s signature and 403. An HTTP
+ * status (403 signature, 413 too big) is deterministic, so it fails fast.
  */
 
 import { fetchWithReauth } from './auth'
@@ -87,6 +96,39 @@ type PrepareResponse = {
   originalName?: string
 }
 
+/** A minted presigned PUT target — a prepare response with its URL validated. */
+type MintedUpload = PrepareResponse & { uploadUrl: string; storageKey: string }
+
+/** Tuning knobs for the bucket PUT retry; defaulted, overridden in tests. */
+export type PresignedUploadOptions = {
+  /** Max PUT attempts, each re-minting the URL, before giving up. Default 3. */
+  maxPutAttempts?: number
+  /** Delay before the next attempt, given the 1-based attempt that just failed. */
+  backoff?: (attempt: number) => Promise<void>
+}
+
+const DEFAULT_MAX_PUT_ATTEMPTS = 3
+
+/** Exponential backoff: 250ms, 500ms, 1s, … before re-minting and re-PUTting. */
+const defaultBackoff = (attempt: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)))
+
+/** Mint a fresh presigned PUT URL via `${basePath}/prepare`. */
+async function mintUploadUrl(basePath: string, file: File, projectId: string): Promise<MintedUpload> {
+  const prepRes = await fetchWithReauth(`${basePath}/prepare`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, projectId }),
+  })
+  if (!prepRes.ok) throw new Error(`Upload prepare failed (${prepRes.status})`)
+  const prep = (await prepRes.json()) as PrepareResponse
+  if (!prep.uploadUrl || !prep.storageKey) {
+    throw new Error('Prepare response missing uploadUrl/storageKey')
+  }
+  return prep as MintedUpload
+}
+
 /** The register response — the upload record, read flexibly like ContactDialog. */
 type RegisterResponse = {
   url?: string
@@ -101,28 +143,47 @@ type RegisterResponse = {
  * (`uploads/projects/<projectId>/<type>/...`). Throws with a descriptive
  * message if any step fails.
  */
-export async function presignedUpload(file: File, basePath: string, projectId: string): Promise<string> {
+export async function presignedUpload(
+  file: File,
+  basePath: string,
+  projectId: string,
+  options: PresignedUploadOptions = {},
+): Promise<string> {
   if (!projectId) throw new Error('presignedUpload: projectId is required')
 
-  const prepRes = await fetchWithReauth(`${basePath}/prepare`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: file.name, projectId }),
-  })
-  if (!prepRes.ok) throw new Error(`Upload prepare failed (${prepRes.status})`)
-  const prep = (await prepRes.json()) as PrepareResponse
-  if (!prep.uploadUrl || !prep.storageKey) {
-    throw new Error('Prepare response missing uploadUrl/storageKey')
-  }
+  const maxPutAttempts = options.maxPutAttempts ?? DEFAULT_MAX_PUT_ATTEMPTS
+  const backoff = options.backoff ?? defaultBackoff
 
-  // Direct PUT to the bucket. No `credentials` — presigned bucket URL.
-  const putRes = await fetch(prep.uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  })
-  if (!putRes.ok) throw new Error(`Bucket upload failed (${putRes.status})`)
+  // Mint a URL and PUT the bytes straight to the bucket (no `credentials` — it's
+  // a presigned URL). A transport reset rejects out of `fetch` itself; retry it
+  // with a freshly minted URL. An HTTP status is deterministic — fail fast.
+  let prep: MintedUpload | undefined
+  let lastResetError: unknown
+  for (let attempt = 1; attempt <= maxPutAttempts; attempt++) {
+    const minted = await mintUploadUrl(basePath, file, projectId)
+    let putRes: Response
+    try {
+      putRes = await fetch(minted.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      })
+    } catch (err) {
+      // fetch rejected — a connection reset, not an HTTP status. Retryable.
+      lastResetError = err
+      if (attempt < maxPutAttempts) await backoff(attempt)
+      continue
+    }
+    if (!putRes.ok) throw new Error(`Bucket upload failed (${putRes.status})`)
+    prep = minted
+    break
+  }
+  if (!prep) {
+    // Rethrow the raw NetworkError as a clear message so it stops reading as CORS.
+    throw new Error(`Bucket upload failed: connection reset after ${maxPutAttempts} attempts`, {
+      cause: lastResetError,
+    })
+  }
 
   const regRes = await fetchWithReauth(`${basePath}/register`, {
     method: 'POST',

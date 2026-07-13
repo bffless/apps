@@ -164,6 +164,66 @@ describe('presignedUpload', () => {
       /missing url/,
     )
   })
+
+  it('retries the bucket PUT on a network reset, re-minting the URL, then succeeds', async () => {
+    const fetchMock = vi
+      .fn()
+      // attempt 1: prepare ok, then the PUT connection resets (fetch rejects).
+      .mockResolvedValueOnce(ok({ uploadUrl: 'https://bucket/put-1', storageKey: 'source/clip.mp4' }))
+      .mockRejectedValueOnce(new TypeError('NetworkError when attempting to fetch resource.'))
+      // attempt 2: URL re-minted, PUT succeeds, then register.
+      .mockResolvedValueOnce(ok({ uploadUrl: 'https://bucket/put-2', storageKey: 'source/clip.mp4' }))
+      .mockResolvedValueOnce(ok({}))
+      .mockResolvedValueOnce(ok({ url: 'https://cdn/source/clip.mp4' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const url = await presignedUpload(file, '/api/uploads/source', 'proj-1', {
+      backoff: () => Promise.resolve(),
+    })
+    expect(url).toBe('https://cdn/source/clip.mp4')
+    // prepare was called twice — each attempt mints a fresh URL — and the retry
+    // PUT hit the freshly minted URL, not the dead one.
+    const prepareCalls = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/prepare'))
+    expect(prepareCalls).toHaveLength(2)
+    expect(fetchMock.mock.calls[3][0]).toBe('https://bucket/put-2')
+  })
+
+  it('rethrows a reset that survives every retry as a clear message, not the raw NetworkError', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/prepare')) {
+        return ok({ uploadUrl: 'https://bucket/put', storageKey: 'k' })
+      }
+      // Every PUT resets.
+      throw new TypeError('NetworkError when attempting to fetch resource.')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      presignedUpload(file, '/api/uploads/source', 'proj-1', {
+        maxPutAttempts: 2,
+        backoff: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow(/connection reset after 2 attempts/)
+  })
+
+  it('does not retry on an HTTP error status — a 4xx is deterministic, fail fast', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/prepare')) {
+        return ok({ uploadUrl: 'https://bucket/put', storageKey: 'k' })
+      }
+      return fail(403)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      presignedUpload(file, '/api/uploads/source', 'proj-1', {
+        maxPutAttempts: 3,
+        backoff: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow(/Bucket upload failed \(403\)/)
+    // One prepare + one PUT — a 4xx is not re-minted or re-PUT.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('toSignedUrl', () => {
