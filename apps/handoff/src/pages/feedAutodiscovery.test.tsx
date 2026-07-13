@@ -6,7 +6,7 @@
  * provider/MSW/BasedRequest harness as `folderBadge.test.tsx`.
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
@@ -101,11 +101,16 @@ describe('RSS feed autodiscovery', () => {
 
     // Badge confirms the folder resolved as effectively public…
     expect(await screen.findByText('Public')).toBeInTheDocument()
-    // …and the head carries the tokenless root feed link.
-    const link = feedLink()
-    expect(link).not.toBeNull()
-    expect(link?.getAttribute('href')).toBe(feedUrl(''))
-    expect(link?.getAttribute('href')).not.toContain('token')
+
+    // …and the head carries the tokenless root feed link. Waited for, not read synchronously:
+    // the badge is rendered output, but the link is appended by a useEffect in
+    // <FeedAutodiscovery>. Passive effects flush asynchronously AFTER commit, while findByText
+    // resolves off the MutationObserver the instant the badge node lands — so a synchronous read
+    // here races the effect and fails intermittently (it did, on main). Wait for the thing being
+    // asserted, like the sub-folder and unmount cases below already do.
+    await waitFor(() => expect(feedLink()).not.toBeNull())
+    expect(feedLink()?.getAttribute('href')).toBe(feedUrl(''))
+    expect(feedLink()?.getAttribute('href')).not.toContain('token')
   })
 
   it('advertises NO feed for a private folder (no token leak)', async () => {
@@ -115,6 +120,12 @@ describe('RSS feed autodiscovery', () => {
 
     // Once the badge says Private, the head must not carry an autodiscovery link.
     expect(await screen.findByText('Private')).toBeInTheDocument()
+
+    // Flush passive effects before asserting the ABSENCE. Without this the assertion could pass
+    // for the wrong reason — simply by running before <FeedAutodiscovery>'s effect would have
+    // appended anything — which is the same race that made the public case flaky, except here it
+    // hides a failure instead of causing one. After the flush, "no link" means no link.
+    await act(async () => {})
     expect(feedLink()).toBeNull()
   })
 
