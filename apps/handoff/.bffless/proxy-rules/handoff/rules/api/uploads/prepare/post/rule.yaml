@@ -7,7 +7,7 @@ pipeline:
     - id: pre
       name: pre
       handler: function_handler
-      code: ./pre.fn.js
+      code: ./pre.fn.ts
     - id: sibling
       name: sibling
       handler: data_query
@@ -22,7 +22,7 @@ pipeline:
     - id: guard
       name: guard
       handler: function_handler
-      code: ./guard.fn.js
+      code: ./guard.fn.ts
     - id: presigned
       name: presigned
       handler: presigned_upload

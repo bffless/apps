@@ -58,9 +58,27 @@ export function findRule(rules: ProxyRule[], pathPattern: string, method?: strin
   return rule
 }
 
-/** Compile a pipeline step's embedded handler into a callable — the same JS CE executes. */
+/**
+ * Compile embedded handler source into a callable — the same JS CE executes.
+ *
+ * This mirrors the runtime's contract (`function-runner.service.ts`, and the `bffless/harness`
+ * runner): evaluate the source as statements, then pick up the resulting top-level `handler`.
+ * It deliberately does NOT do `return (<code>)`, which only works when the source happens to be a
+ * bare function expression. A `.fn.ts` handler compiles to an esbuild IIFE followed by
+ * `var handler = __bfflessHandler.default || __bfflessHandler.handler`, and wrapping THAT in
+ * `return (...)` is a syntax error. Evaluating-then-reading `handler` handles both forms.
+ */
+export function compileHandler(code: string): (ctx: any) => any {
+  const fn = new Function(`${code}\n;return typeof handler === 'function' ? handler : undefined;`)()
+  if (typeof fn !== 'function') {
+    throw new Error('handler source did not define a top-level `handler` function')
+  }
+  return fn as (ctx: any) => any
+}
+
+/** Compile a pipeline step's embedded handler into a callable. */
 export function handlerOf(rule: ProxyRule, stepId: string): (ctx: any) => any {
   const step = rule.pipelineConfig?.steps?.find((s: any) => s.id === stepId)
   if (!step) throw new Error(`no step "${stepId}" on ${rule.method ?? 'ANY'} ${rule.pathPattern}`)
-  return new Function(`return (${step.config.code})`)() as (ctx: any) => any
+  return compileHandler(step.config.code)
 }

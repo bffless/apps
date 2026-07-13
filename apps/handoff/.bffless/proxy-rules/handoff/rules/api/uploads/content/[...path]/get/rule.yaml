@@ -6,7 +6,7 @@ pipeline:
     - id: parsePath
       name: parsePath
       handler: function_handler
-      code: ./parsePath.fn.js
+      code: ./parsePath.fn.ts
     - id: nodeByKey
       name: nodeByKey
       handler: data_query
@@ -43,7 +43,7 @@ pipeline:
     - id: gate
       name: gate
       handler: function_handler
-      code: ./gate.fn.js
+      code: ./gate.fn.ts
     - id: serve
       name: serve
       handler: file_serve_handler

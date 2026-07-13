@@ -1,1 +1,0 @@
-function handler({ request }) { var pid = String((request && request.query && request.query.parentId) || 'root'); if (!pid) pid = 'root'; var isRoot = pid === 'root'; var ok = isRoot || /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(pid); return { parentId: pid, isRoot: isRoot, parentOk: ok }; }

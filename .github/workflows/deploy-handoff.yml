@@ -43,6 +43,12 @@ jobs:
       - name: Run unit tests
         run: pnpm --filter handoff test:run
 
+      # The rule handlers are .fn.ts, but the rule compiler bundles them with esbuild, which only
+      # STRIPS types — it never checks them. Without this step a genuine type error would sail
+      # through the sync and into production. Runs before the sync, so it can stop it.
+      - name: Typecheck proxy-rule handlers
+        run: pnpm --filter handoff typecheck:rules
+
       # Sync BEFORE the upload, so the build never goes live against rules that
       # don't exist yet. Requires CE >= 0.2.0 on the instance.
       - name: Sync proxy rules to BFFless

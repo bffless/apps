@@ -1,1 +1,0 @@
-function handler({ request }) { var b = (request && request.body) || {}; var token = String(b.token || ''); var isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(token); return { token: token, hasToken: isUuid }; }

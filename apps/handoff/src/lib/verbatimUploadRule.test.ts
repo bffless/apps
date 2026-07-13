@@ -17,7 +17,7 @@
  * See docs/superpowers/specs/2026-07-05-structural-content-storage-design.md.
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, compileHandler } from '../test/proxyRules'
 
 const NODES_SCHEMA = '1c5d4802-596e-4f50-a08f-c41fb8f9fab0'
 
@@ -87,7 +87,7 @@ describe('unified content serve rule (GET /api/uploads/content/*) — path passt
     // The browser percent-encodes the path; storage_path holds the decoded
     // verbatim key. Run the real embedded handler to pin the decode.
     const parse = serve!.pipelineConfig.steps.find((s: any) => s.id === 'parsePath')
-    const handler = new Function(`return (${parse.config.code})`)() as (ctx: any) => {
+    const handler = compileHandler(parse.config.code) as (ctx: any) => {
       rest: string
       fullKey: string
       hasKey: boolean

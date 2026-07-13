@@ -20,15 +20,11 @@
  * See docs/superpowers/specs/2026-07-05-structural-content-storage-design.md.
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, handlerOf } from '../test/proxyRules'
 
 const NODES_SCHEMA = '1c5d4802-596e-4f50-a08f-c41fb8f9fab0'
 
 const proxy = await loadProxyRules()
-
-// Serialized backend — lets the retired-route guard below scan every rule's
-// paths, step config, and embedded handler source in one pass.
-const raw = JSON.stringify(proxy.rules)
 
 const registerSite = proxy.rules.find((r) => r.pathPattern === '/api/sites' && r.method === 'POST')
 const serve = proxy.rules.find((r) => r.pathPattern === '/api/uploads/content/*')
@@ -41,8 +37,31 @@ describe('the dedicated Sites serve route is retired', () => {
     expect(siteServe).toBeUndefined()
   })
 
-  it('no rule references a /api/sites/<id>/ serve path anywhere', () => {
-    expect(raw).not.toContain('/api/sites/')
+  it('no rule serves under /api/sites/<id>/ — POST /api/sites is the only Sites route left', () => {
+    // (1) Routing: nothing under /api/sites/ is routed at all. The registrar is the exact path.
+    const sitePaths = proxy.rules
+      .map((r) => r.pathPattern)
+      .filter((p) => p === '/api/sites' || p.startsWith('/api/sites/'))
+    expect(sitePaths).toEqual(['/api/sites'])
+
+    // (2) Config: no target URL, template, or step config names the retired route either.
+    // Handler CODE is deliberately excluded — esbuild prefixes each bundled module with a
+    // `// <source path>` comment, so the registrar's own bundle contains the literal text
+    // "rules/api/sites/post/build.fn.ts". That substring is a build artifact of where the
+    // file lives, not a resurrected route; scanning raw bundle text for it is a false positive.
+    const config = JSON.stringify(proxy.rules, (k, v) => (k === 'code' ? undefined : v))
+    expect(config).not.toContain('/api/sites/')
+
+    // (3) Runtime: the registrar builds the Site's URL under the unified content endpoint.
+    // This is the assertion that would actually catch a Sites-serve URL coming back to life.
+    const build = handlerOf(registerSite!, 'build')
+    const out = build({
+      request: { body: { path: 'proto', entry: 'index.html' } },
+      deployment: { owner: 'bffless', repo: 'apps' },
+    })
+    expect(out.url).toBe('/api/uploads/content/proto/index.html')
+    expect(out.storagePrefix).toBe('bffless/apps/uploads/content/proto')
+    expect(JSON.stringify(out)).not.toContain('/api/sites/')
   })
 })
 
@@ -86,12 +105,59 @@ describe('the unified content serve authorizes Site-internal assets by path pref
   })
 
   it('resolves an asset with no node by the deepest Site whose storage_path prefixes the key', () => {
-    const gate = serve!.pipelineConfig.steps.find((s: any) => s.id === 'gate')
-    const code = gate.config.code as string
-    expect(code).toContain('allSites')
-    expect(code).toContain('storage_path')
-    // Prefix match on the full request key (either exact or a `<prefix>/` child).
-    expect(code).toContain("fullKey===sp||fullKey.indexOf(sp+'/')===0")
+    // A Site is ONE node but many objects (index.html, assets/…), so a site-internal asset has
+    // no node row of its own: the gate authorizes it by the Site whose storage_path is the
+    // LONGEST prefix of the key. Two nested sites with different owners make that observable —
+    // if the shallower one won, `alice` would be let in and `bob` refused. Exactly inverted.
+    const gate = handlerOf(serve!, 'gate')
+    const utils = { verify: () => false, base64urlDecode: (v: string) => v }
+
+    const outer = {
+      id: '00000000-0000-4000-8000-0000000000a1',
+      nodeType: 'site',
+      parentId: 'root',
+      ownerId: 'alice',
+      storage_path: 'bffless/apps/uploads/content/proto',
+    }
+    const inner = {
+      id: '00000000-0000-4000-8000-0000000000b2',
+      nodeType: 'site',
+      parentId: 'root',
+      ownerId: 'bob',
+      storage_path: 'bffless/apps/uploads/content/proto/docs',
+    }
+
+    const run = (userId: string | null, fullKey: string, allSites = [outer, inner]) =>
+      gate({
+        user: userId ? { id: userId } : null,
+        request: { headers: {} },
+        utils,
+        steps: { allFolders: [], allSites, parsePath: { fullKey }, nodeByKey: [] },
+      })
+
+    const asset = 'bffless/apps/uploads/content/proto/docs/assets/app.js'
+
+    // The deepest Site (bob's) owns the asset: bob is let in, alice — who owns only the
+    // shallower enclosing Site — is not.
+    expect(run('bob', asset)).toMatchObject({ allow: true, level: 'owner', hasNode: false, resolved: true })
+    expect(run('alice', asset)).toMatchObject({ allow: false, deny403: true, deny404: false })
+
+    // Longest prefix, not first match: the answer must not depend on query order.
+    expect(run('bob', asset, [inner, outer])).toMatchObject({ allow: true, level: 'owner' })
+    expect(run('alice', asset, [inner, outer])).toMatchObject({ allow: false, deny403: true })
+
+    // The Site's own entry key (an exact storage_path match, not a child) resolves too.
+    expect(run('bob', 'bffless/apps/uploads/content/proto/docs')).toMatchObject({ allow: true, resolved: true })
+    // …and the outer Site still owns everything outside the nested one.
+    expect(run('alice', 'bffless/apps/uploads/content/proto/index.html')).toMatchObject({ allow: true })
+
+    // A sibling key that merely shares a name-prefix ("proto2") belongs to NO site -> 404,
+    // never the "proto" site's access.
+    expect(run('alice', 'bffless/apps/uploads/content/proto2/index.html')).toMatchObject({
+      allow: false,
+      resolved: false,
+      deny404: true,
+    })
   })
 
   it('404s a path that resolves to neither a node nor a Site', () => {

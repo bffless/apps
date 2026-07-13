@@ -55,6 +55,11 @@ jobs:
       - name: Build
         run: pnpm --filter handoff build
 
+      # esbuild strips types from the .fn.ts rule handlers without checking them, so this is the
+      # only thing standing between a type error and production. Cheap — run it on every PR.
+      - name: Typecheck proxy-rule handlers
+        run: pnpm --filter handoff typecheck:rules
+
       - name: Deploy preview to BFFless
         uses: bffless/upload-artifact@v1
         with:

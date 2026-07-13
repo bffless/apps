@@ -1,1 +1,0 @@
-function handler({ request, user }) { var b=(request&&request.body)||{}; var q=(request&&request.query)||{}; var fid=String(b.folderId||q.folderId||''); var isRoot=fid==='root'; var isAdmin=!!user&&user.role==='admin'; return { folderId: fid, isRoot: isRoot, isAdmin: isAdmin }; }

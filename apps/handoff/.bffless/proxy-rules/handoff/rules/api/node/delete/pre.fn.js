@@ -1,1 +1,0 @@
-function handler({ request }) { var id = String((request && request.query && request.query.id) || ''); var ok = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id); return { id: id, idOk: ok }; }

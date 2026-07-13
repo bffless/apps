@@ -29,7 +29,7 @@ pipeline:
     - id: gate
       name: gate
       handler: function_handler
-      code: ./gate.fn.js
+      code: ./gate.fn.ts
     - id: sign
       name: sign
       handler: signed_url

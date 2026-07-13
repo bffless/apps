@@ -1,0 +1,26 @@
+{
+  // Typechecks the proxy-rule handlers (`proxy-rules/<set>/**/*.fn.ts` + their `_shared/` modules).
+  //
+  // The rule compiler bundles a `.fn.ts` with esbuild, which only STRIPS types — it never checks
+  // them. So without this project the handlers would be TypeScript in name only: a genuine type
+  // error would sail through `rules build`, `rules push`, and straight into production. `pnpm
+  // typecheck:rules` (wired into CI ahead of the rule sync) is what actually makes the types load-
+  // bearing.
+  //
+  // Separate from tsconfig.app.json because these files are not part of the React app: they run in
+  // the BFFless pipeline sandbox, which has no DOM and no Node built-ins.
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["proxy-rules/**/*.ts"]
+}

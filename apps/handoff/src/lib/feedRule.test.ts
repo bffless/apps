@@ -8,7 +8,7 @@
  * pins the flatten + Anyone-gate + RSS render behaviour.
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, compileHandler } from '../test/proxyRules'
 
 const NODES_SCHEMA = '1c5d4802-596e-4f50-a08f-c41fb8f9fab0'
 
@@ -19,7 +19,7 @@ const rootRule = proxy.rules.find((r) => r.pathPattern === '/feed.xml')
 
 function handlerOf(rule: any, stepId: string): (ctx: any) => any {
   const step = rule.pipelineConfig.steps.find((s: any) => s.id === stepId)
-  return new Function(`return (${step.config.code})`)() as (ctx: any) => any
+  return compileHandler(step.config.code) as (ctx: any) => any
 }
 
 // --- Mock node rows (raw data-table shape the handlers read) --------------

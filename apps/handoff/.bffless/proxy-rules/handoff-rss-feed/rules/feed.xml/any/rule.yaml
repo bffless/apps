@@ -11,7 +11,7 @@ pipeline:
     - id: parse
       name: parse
       handler: function_handler
-      code: ./parse.fn.js
+      code: ../../../_shared/parse.fn.ts
     - id: allNodes
       name: allNodes
       handler: data_query
@@ -36,7 +36,7 @@ pipeline:
     - id: select
       name: select
       handler: function_handler
-      code: ./select.fn.js
+      code: ../../../_shared/select.fn.ts
     - id: ok
       name: ok
       handler: response_handler

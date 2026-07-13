@@ -12,7 +12,7 @@ pipeline:
     - id: check
       name: check
       handler: function_handler
-      code: ./check.fn.js
+      code: ./check.fn.ts
     - id: save
       name: save
       handler: data_update

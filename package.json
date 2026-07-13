@@ -14,6 +14,7 @@
     "handoff:dev": "pnpm --filter handoff dev",
     "handoff:build": "pnpm --filter handoff build",
     "handoff:lint": "pnpm --filter handoff lint",
+    "handoff:typecheck:rules": "pnpm --filter handoff typecheck:rules",
     "handoff:test": "pnpm --filter handoff test:run",
     "reader:dev": "pnpm --filter reader dev",
     "reader:build": "pnpm --filter reader build",

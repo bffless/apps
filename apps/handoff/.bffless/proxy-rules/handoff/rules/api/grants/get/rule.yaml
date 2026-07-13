@@ -6,7 +6,7 @@ pipeline:
     - id: resolveRootPre
       name: resolveRootPre
       handler: function_handler
-      code: ./resolveRootPre.fn.js
+      code: ../../../../_shared/resolveRootPre.fn.ts
     - id: rootRecord
       name: rootRecord
       handler: data_query
@@ -21,7 +21,7 @@ pipeline:
     - id: resolveRootShape
       name: resolveRootShape
       handler: function_handler
-      code: ./resolveRootShape.fn.js
+      code: ../../../../_shared/resolveRootShape.fn.ts
     - id: folder
       name: folder
       handler: data_query
@@ -32,7 +32,7 @@ pipeline:
     - id: shape
       name: shape
       handler: function_handler
-      code: ./shape.fn.js
+      code: ./shape.fn.ts
     - id: response
       name: response
       handler: response_handler

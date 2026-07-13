@@ -15,7 +15,9 @@
  * skips the query instead of 500ing, and the admin gate is present on rootCreate.
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, compileHandler } from '../test/proxyRules'
+import { evalAccess, folderChain } from '../../.bffless/proxy-rules/handoff/_shared/acl'
+import type { NodeRow } from '../../.bffless/proxy-rules/handoff/_shared/acl'
 
 const proxy = await loadProxyRules()
 
@@ -187,19 +189,26 @@ describe('authored rule sets', () => {
 })
 
 /**
- * Structural guard for Task 5: the ACL gates must resolve the 'root' sentinel
- * into the folder chain. Every embedded `folderChain` walks parentId upward; it
- * used to stop at the 'root' sentinel, so the singleton root record R was never
- * in the chain and a root-scoped share visitor / root grantee was never matched.
+ * Task 5: the ACL gates must resolve the 'root' sentinel into the folder chain.
  *
- * The patch makes each folderChain (a) capture R's id while building `byId`
- * (`f.nodeType==='root'`) and (b) resolve `parentId==='root'` → that id so R
- * becomes chain[0]; and widens each chain-feeding query (allFolders / folders)
- * from nodeType eq 'folder' to in ['folder','root'] so R is actually fetched.
+ * `folderChain` walks parentId upward; it used to stop at the 'root' sentinel, so the
+ * singleton root record R was never in the chain and a root-scoped share visitor / root
+ * grantee was never matched. It now (a) captures R's id while indexing the rows and
+ * (b) resolves BOTH a `parentId === 'root'` and a `startId === 'root'` to that id, so R
+ * becomes chain[0] — the latter matters because a node sitting directly in "My Files"
+ * (the DEFAULT upload target) has the sentinel as its parent. The chain-feeding queries
+ * (allFolders / folders) are widened from nodeType eq 'folder' to in ['folder','root'] so
+ * R is actually fetched.
  *
- * folderPath (the human breadcrumb walk) must NOT gain root — prepending R
- * ("My Files") would corrupt every displayed path — so its distinct
- * `cur=byId[cur].parentId||''` line must stay untouched.
+ * The walk lives in ONE module now (`.bffless/proxy-rules/handoff/_shared/acl.ts`, inlined
+ * into each handler bundle by esbuild), so these run the real function rather than pattern-
+ * matching eleven minified copies of it. `aclSharedModule.test.ts` pins the per-set copies
+ * together; `has exactly 11 embedded folderChain functions` below pins that every gate still
+ * carries it.
+ *
+ * folderPath (the human breadcrumb walk) must NOT gain root — prepending R ("My Files")
+ * would corrupt every displayed path — so it is asserted, through the real shape handlers,
+ * to still stop at the sentinel.
  */
 describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
   // Every step's embedded handler code across all rules.
@@ -213,10 +222,41 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
   }
 
   const chainCodes = allCode.filter((c) => c.includes('function folderChain'))
-  // Tolerant of optional spaces around === and && (sandbox code is minified, but
-  // the assertion should not be brittle to whitespace).
-  const CAPTURE = /nodeType\s*===\s*'root'/
-  const SENTINEL = /===\s*'root'\s*&&\s*rootId/
+
+  const ROOT = '00000000-0000-4000-8000-0000000000a1'
+  const DOCS = '00000000-0000-4000-8000-0000000000b2'
+  const SUB = '00000000-0000-4000-8000-0000000000c3'
+  const FILE = '00000000-0000-4000-8000-0000000000f4'
+
+  // The singleton root record R — the only row with no parent at all.
+  const rootRow = (grants: unknown[] = []): NodeRow => ({
+    id: ROOT,
+    nodeType: 'root',
+    ownerId: 'alice',
+    grantsJson: JSON.stringify(grants),
+    mode: 'inheriting',
+    displayName: 'My Files',
+  })
+  // A top-level folder: its parent is the SENTINEL, not R's uuid — that is the whole point.
+  const docsRow: NodeRow = {
+    id: DOCS,
+    nodeType: 'folder',
+    parentId: 'root',
+    ownerId: 'alice',
+    grantsJson: '[]',
+    mode: 'inheriting',
+    displayName: 'Docs',
+  }
+  const subRow: NodeRow = {
+    id: SUB,
+    nodeType: 'folder',
+    parentId: DOCS,
+    ownerId: 'alice',
+    grantsJson: '[]',
+    mode: 'inheriting',
+    displayName: 'Reports',
+    createdMs: 1000,
+  }
 
   it('has exactly 11 embedded folderChain functions', () => {
     // 8 original + the two feed select handlers (#188) + the PATCH
@@ -224,39 +264,68 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     expect(chainCodes.length).toBe(11)
   })
 
-  it('every folderChain captures the root record id and resolves the root sentinel', () => {
-    for (const c of chainCodes) {
-      expect(c, 'folderChain captures nodeType root -> rootId').toMatch(CAPTURE)
-      expect(c, "folderChain resolves parentId==='root' -> rootId").toMatch(SENTINEL)
-    }
+  it('resolves the root sentinel to R, so a root-scoped grant matches a nested node', () => {
+    const folders = [rootRow([{ principalId: 'bob', level: 'view' }]), docsRow, subRow]
+
+    // The walk crosses the sentinel: R is chain[0], not a chain that stops at Docs.
+    expect(folderChain(folders, SUB).map((n) => n.id)).toEqual([ROOT, DOCS, SUB])
+
+    // Which is what makes a grant scoped to root actually reach a node inside it. Were the
+    // sentinel left unresolved the chain would start at Docs and bob would get 'none'.
+    expect(evalAccess(folderChain(folders, SUB), { userId: 'bob' })).toBe('view')
+    expect(evalAccess(folderChain(folders, DOCS), { userId: 'bob' })).toBe('view')
+    // Control: no root grant -> no access (so the assertion above is about the grant, not admin/owner).
+    expect(evalAccess(folderChain([rootRow(), docsRow, subRow], SUB), { userId: 'bob' })).toBe('none')
   })
 
-  // Fix #1: a node sitting directly in "My Files" has parentId==='root' (the
-  // sentinel), so the gate calls folderChain(...,'root'). The walk's UUID.test
-  // fails on 'root' and returns [] — R is never injected, so top-level FILES and
-  // SITES (the DEFAULT upload target) are missed by a root share/grant. The fix
-  // seeds the walk at R when startId is the sentinel.
-  const SEED = /var rev=\[\];var cur=\(String\(startId\|\|''\)\s*===\s*'root'\s*&&\s*rootId\)\?rootId:String\(startId\|\|''\)/
+  // Fix #1: a node sitting directly in "My Files" has parentId==='root' (the sentinel), so the
+  // gate calls folderChain(..., 'root'). The walk used to UUID-test 'root', fail, and return [] —
+  // R never entered the chain, so top-level FILES and SITES (the DEFAULT upload target) were missed
+  // by a root share/grant. The walk now seeds at R when startId is the sentinel.
+  it('seeds the walk at R when startId is the root sentinel (Fix #1)', () => {
+    const folders = [rootRow([{ principalId: 'bob', level: 'view' }]), docsRow]
 
-  it('every folderChain seeds the walk at R when startId is the root sentinel (Fix #1)', () => {
-    for (const c of chainCodes) {
-      expect(c, 'folderChain seeds startId===root -> rootId').toMatch(SEED)
-    }
-    // Belt-and-braces: exactly 11 seeded bodies across the whole document.
-    const seeded = allCode.filter((c) => SEED.test(c))
-    expect(seeded.length).toBe(11)
+    expect(folderChain(folders, 'root').map((n) => n.id)).toEqual([ROOT])
+    // A root share link matches a top-level node: the linked folder id (R) is in the chain.
+    expect(evalAccess(folderChain(folders, 'root'), { shareLinkFolderId: ROOT })).toBe('view')
+    expect(evalAccess(folderChain(folders, 'root'), { userId: 'bob' })).toBe('view')
   })
 
-  it('leaves the two folderPath breadcrumb seeds plain (no root, Fix #1)', () => {
-    // folderPath must NOT gain root — its seed uses a distinct `var names=[]`
-    // form and must remain the plain `String(startId||'')`.
-    const pathSeeds = allCode.filter((c) => c.includes("var names=[]; var cur=String(startId||'')"))
-    expect(pathSeeds.length).toBe(2)
-    for (const c of pathSeeds) {
-      expect(c, 'folderPath seed stays plain (no rootId)').not.toMatch(
-        /var names=\[\]; var cur=\(String\(startId\|\|''\)\s*===\s*'root'/,
-      )
-    }
+  it('a root grant reaches a top-level FILE through the real content gate (Fix #1, end to end)', () => {
+    // The shared walk is inlined into each handler bundle — prove a live gate gets the benefit,
+    // not just the module in isolation. bob holds view on root only; the file hangs off the
+    // sentinel. Without the seed the chain is just [file] and bob is refused (403).
+    const gate = compileHandler(step(rule('GET', '/api/uploads/content/*'), 'gate').config.code)
+    const fullKey = 'bffless/apps/uploads/content/a.txt'
+    const out = gate({
+      user: { id: 'bob' },
+      request: { headers: {} },
+      utils: { verify: () => false, base64urlDecode: (v: string) => v },
+      steps: {
+        allFolders: [rootRow([{ principalId: 'bob', level: 'view' }])],
+        allSites: [],
+        parsePath: { fullKey },
+        nodeByKey: [{ id: FILE, nodeType: 'file', parentId: 'root', ownerId: 'alice', storage_path: fullKey }],
+      },
+    })
+    expect(out).toMatchObject({ allow: true, level: 'view', deny403: false, deny404: false })
+  })
+
+  it('leaves the folderPath breadcrumb walk untouched (no root prepended to paths)', () => {
+    // The two shape handlers carry folderPath alongside folderChain. Only folderChain gains
+    // root: a folder's displayed path must stay 'Docs/Reports', never 'My Files/Docs/Reports'.
+    const listShape = compileHandler(step(rule('GET', '/api/nodes'), 'shape').config.code)
+    const getShape = compileHandler(step(rule('GET', '/api/node'), 'shape').config.code)
+    const allFolders = [rootRow(), docsRow, subRow]
+
+    const listed = listShape({
+      steps: { allFolders, query: [subRow], gate: { viewer: { isAdmin: true } } },
+    })
+    expect(listed.nodes).toHaveLength(1)
+    expect(listed.nodes[0].path).toBe('Docs/Reports')
+
+    const got = getShape({ steps: { allFolders, query: subRow } })
+    expect(got.node.path).toBe('Docs/Reports')
   })
 
   it('widens every chain-feeding query (allFolders / folders) to nodeType in [folder, root]', () => {
@@ -292,13 +361,6 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     expect(seen).toBeGreaterThan(0)
   })
 
-  it('leaves the folderPath breadcrumb walk untouched (no root prepended to paths)', () => {
-    // The GET /api/nodes shape step carries both folderChain (ACL) and folderPath
-    // (breadcrumb). Only folderChain gains root; folderPath still walks parentId
-    // via its distinct `cur=byId[cur].parentId||''` line.
-    const shape = step(rule('GET', '/api/nodes'), 'shape')
-    expect(shape.config.code).toContain("cur=byId[cur].parentId||''")
-  })
 })
 
 /**
@@ -309,10 +371,38 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
  * grant/link scoped to it. The guard must also block nodeType==='root'.
  */
 describe('Fix #4 — the root marker is non-deletable', () => {
+  const gate = compileHandler(step(rule('DELETE', '/api/node'), 'gate').config.code)
+  const ROOT = '00000000-0000-4000-8000-0000000000a1'
+  const utils = { verify: () => false, base64urlDecode: (v: string) => v }
+
+  // An ADMIN — the only caller who could plausibly hold write on the root marker, and so the
+  // only one the guard has to stop. `guardBlocked` is what drives the 409 response_handler;
+  // `doDelete` is what drives the data_delete.
+  const runDelete = (node: Record<string, any>) =>
+    gate({
+      user: { id: 'admin-1', role: 'admin' },
+      request: { headers: {} },
+      utils,
+      steps: { allFolders: [node], query: node, children: [] },
+    })
+
   it("the DELETE /api/node gate blocks deletion when nodeType==='root'", () => {
-    const gate = step(rule('DELETE', '/api/node'), 'gate')
-    expect(gate.config.code).toMatch(
-      /var guardBlocked=\(isFolder&&hasChildren\)\|\|nodeType===['"]root['"];/,
-    )
+    const out = runDelete({ id: ROOT, nodeType: 'root', parentId: null, ownerId: 'alice', grantsJson: '[]' })
+    expect(out.allow).toBe(true) // an admin does hold write — the block is the guard, not the ACL
+    expect(out.guardBlocked).toBe(true)
+    expect(out.doDelete).toBe(false)
+  })
+
+  it('still deletes an empty folder (the guard is scoped to root + non-empty folders)', () => {
+    const empty = {
+      id: '00000000-0000-4000-8000-0000000000b2',
+      nodeType: 'folder',
+      parentId: 'root',
+      ownerId: 'alice',
+      grantsJson: '[]',
+    }
+    const out = runDelete(empty)
+    expect(out.guardBlocked).toBe(false)
+    expect(out.doDelete).toBe(true)
   })
 })

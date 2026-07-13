@@ -6,7 +6,7 @@ pipeline:
     - id: pre
       name: pre
       handler: function_handler
-      code: ./pre.fn.js
+      code: ./pre.fn.ts
     - id: folder
       name: folder
       handler: data_query
@@ -17,7 +17,7 @@ pipeline:
     - id: check
       name: check
       handler: function_handler
-      code: ./check.fn.js
+      code: ./check.fn.ts
     - id: saveMode
       name: saveMode
       handler: data_update
