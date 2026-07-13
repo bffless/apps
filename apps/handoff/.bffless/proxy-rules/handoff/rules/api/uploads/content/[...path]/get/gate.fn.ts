@@ -68,8 +68,6 @@ export default function handler({ user, request, steps, utils }: HandlerContext)
 
   const stok = verifyToken(utils, readCookie(request, 'hf_s'));
   const shareFolderId = stok && stok.s ? String(stok.s) : '';
-  // NOTE: unlike the other gates, `hf_f` is NOT part of `hasCred` here — a folder token alone
-  // does not turn a 401 into a 403 on content. (The original computed it and never used it.)
 
   let viewer: Viewer;
   if (uid) viewer = { userId: uid, isAdmin: isAdmin };

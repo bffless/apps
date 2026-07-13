@@ -226,9 +226,11 @@ active: only the node's `ownerId` or a project admin can add, revoke, or list gr
 **Share links** (`/api/share-links/*`) are live — owners/admins can mint folder-scoped view
 tokens that self-expire and can be revoked.
 
-**Full view-path enforcement is now LIVE** (ADR-0002). All five view pipelines —
-`GET /api/uploads/content/*` (serve-content), `GET /api/sites/*` (serve-site), `POST /api/sign`,
-`GET /api/nodes` (list), and `GET /api/node` (getNode) — run a per-request ACL gate before serving:
+**Full view-path enforcement is now LIVE** (ADR-0002). The view pipelines —
+`GET /api/uploads/content/*` (serve-content), `POST /api/sign`, `GET /api/nodes` (list), and
+`GET /api/node` (getNode) — run a per-request ACL gate before serving. (A Site is *served* through
+`GET /api/uploads/content/*` like any other stored object, not by a separate serve-site pipeline;
+`POST /api/sites` only builds one.) The gate:
 
 1. **Authenticate** the BFFless session (optional auth — a session yields `user`; anonymous and
    share-link visitors pass through to the in-pipeline check).
@@ -238,12 +240,16 @@ tokens that self-expire and can be revoked.
    no parent folder).
 3. **Evaluate** with a `function_handler` that ports `src/lib/acl.ts` `evaluateAccess` verbatim
    (admin/owner short-circuit, inherited grants, highest-wins, restricted boundary, share-link cap).
-4. **Allow → serve; deny → 403** (authenticated) or **401** (no session and no valid cookie).
-5. **Signed folder cookie** (the ADR-0002 optimisation): on the first allowed **site** entry,
-   serve-site sets a short-lived `hf_f` cookie — `base64url(payload).hmacSig` where the HMAC is CE's
-   `utils.sign` (server-key HMAC-SHA256, hex) — scoped to the site's folder. Site asset sub-requests
-   (which have no node record) are authorised by that cookie without re-walking. TTL is short
-   (~5 min), so revocation lags by at most the TTL.
+4. **Allow → serve; deny → 403** (authenticated or holding a valid `hf_s` share cookie) or **401**
+   (no credential at all).
+5. **Site assets are re-walked, not cookie-authorised.** A content key with no node record of its own
+   lives inside a Site's storage prefix: the gate picks the Site whose `storage_path` is the longest
+   prefix of the key and evaluates *that* Site's folder chain. This happens on **every** asset
+   request — there is no fast-path cookie.
+
+   > ADR-0002 originally proposed a short-lived signed `hf_f` folder cookie to skip the re-walk. **It
+   > was never built** (bffless/apps #237) — nothing ever set it. The re-walk is stricter anyway: a
+   > revoked grant takes effect on the next request rather than lagging by the cookie TTL.
 
 **Share-link visitors:** `POST /api/share-links/claim` (public) validates a token and sets a signed,
 folder-scoped `hf_s` view cookie (View-only, ~30 min TTL). The frontend `ShareLinkEntry` (`/s/:token`)

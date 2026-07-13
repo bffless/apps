@@ -80,9 +80,6 @@ export default function handler({ user, request, steps, utils }: HandlerContext)
 
   const stok = verifyToken(utils, readCookie(request, 'hf_s'));
   const shareFolderId = stok && stok.s ? String(stok.s) : '';
-  // `hf_f` grants nothing on its own — it only counts as "the caller presented a credential",
-  // which is what decides 401 vs 403 below.
-  const ftok = verifyToken(utils, readCookie(request, 'hf_f'));
 
   let viewer: Viewer;
   if (uid) viewer = { userId: uid, isAdmin: isAdmin };
@@ -134,7 +131,7 @@ export default function handler({ user, request, steps, utils }: HandlerContext)
   const hasChildren = childCount > 0;
   const guardBlocked = (isFolder && hasChildren) || nodeType === 'root';
 
-  const hasCred = !!uid || !!shareFolderId || !!ftok;
+  const hasCred = !!uid || !!shareFolderId;
   const deny401 = !allow && !hasCred;
   const deny403 = !allow && hasCred;
 
