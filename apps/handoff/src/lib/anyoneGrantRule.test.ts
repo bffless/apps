@@ -2,62 +2,92 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Structural guard + port-equivalence for the Anyone principal (ADR-0005).
- * Extracts the REAL embedded evalAccess from the proxy rules and runs it
- * against the same matrix as the canonical src/lib/acl.ts implementation.
+ *
+ * Runs the REAL `evalAccess` that gates live requests against the same matrix as the canonical
+ * `src/lib/acl.ts` implementation, so the two can't drift apart.
+ *
+ * This used to brace-match the `evalAccess` source back out of each handler's code string and eval
+ * it, because the function was pasted — minified — into ten separate handlers, and the thing most
+ * worth checking was that all ten copies were identical and none had missed the Anyone update.
+ * There is one shared module now (`_shared/acl.ts`, imported by every gate and inlined per-bundle
+ * by esbuild), so "all copies agree" is true by construction and the test imports the module
+ * directly instead — no extraction, no eval, and it exercises the actual shipped function.
+ *
+ * Two risks the module doesn't remove, covered below:
+ *  - a gate that quietly stops using it (checked structurally, against the compiled bundles);
+ *  - the per-set copies of the module drifting (checked in aclSharedModule.test.ts).
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, compileHandler } from '../test/proxyRules'
 import { evaluateAccess, ANYONE_PRINCIPAL } from './acl'
 import type { FolderLink, Viewer, AccessLevel } from './acl'
+import { evalAccess } from '../../.bffless/proxy-rules/handoff/_shared/acl'
+import type { ChainNode } from '../../.bffless/proxy-rules/handoff/_shared/acl'
 
 const proxy = await loadProxyRules()
 
-function evalAccessCopies(): string[] {
-  const out: string[] = []
-  for (const r of proxy.rules) {
-    for (const s of r.pipelineConfig?.steps ?? []) {
-      const code: string = s.config?.code ?? ''
-      const i = code.indexOf('function evalAccess')
-      if (i < 0) continue
-      let depth = 0
-      let j = code.indexOf('{', i)
-      for (; j < code.length; j++) {
-        if (code[j] === '{') depth++
-        else if (code[j] === '}') {
-          depth--
-          if (depth === 0) break
-        }
-      }
-      out.push(code.slice(i, j + 1))
-    }
-  }
-  return out
+/**
+ * The ten steps that must evaluate access through the shared module. If one stops importing it —
+ * hand-rolling its own check, or losing the Anyone principal — that's the regression this catches.
+ * Named explicitly rather than discovered, so DELETING a gate's ACL check fails the test too.
+ *
+ * This is the same set the old "exactly 10 identical copies" assertion counted.
+ */
+const EVAL_ACCESS_STEPS: Array<[path: string, method: string, step: string]> = [
+  ['/api/uploads/content/*', 'GET', 'gate'],
+  ['/api/nodes', 'GET', 'gate'],
+  ['/api/nodes', 'GET', 'shape'], // filters children to what the viewer may see
+  ['/api/node', 'GET', 'gate'],
+  ['/api/node', 'DELETE', 'gate'],
+  ['/api/node/meta', 'PATCH', 'gate'],
+  ['/api/sign', 'POST', 'gate'],
+  ['/api/resolve/*', 'GET', 'gate'],
+  ['/feed/*', 'GET', 'select'],
+  ['/feed.xml', 'GET', 'select'],
+]
+
+function stepCode(path: string, method: string, stepId: string): string {
+  const rule = proxy.rules.find(
+    (r) => r.pathPattern === path && (r.method === method || (r.methods ?? []).includes(method)),
+  )
+  expect(rule, `no rule for ${method} ${path}`).toBeTruthy()
+  const step = rule!.pipelineConfig?.steps?.find((s: any) => s.id === stepId)
+  expect(step, `${method} ${path} has no "${stepId}" step`).toBeTruthy()
+  return step!.config?.code ?? ''
 }
 
-describe('embedded evalAccess copies (structural)', () => {
-  const copies = evalAccessCopies()
-
-  it('there are exactly 10 copies and they are identical', () => {
-    // 7 original + the two /feed/* + /feed.xml select handlers (#188) + the
-    // PATCH /api/node/meta gate (Task 5), each a verbatim copy of the
-    // canonical evalAccess.
-    expect(copies.length).toBe(10)
-    expect(new Set(copies).size).toBe(1)
+describe('every access gate ships the shared evalAccess (structural)', () => {
+  it('covers ten steps — the full set that evaluates access', () => {
+    expect(EVAL_ACCESS_STEPS).toHaveLength(10)
   })
 
-  it('every copy matches the anyone principal and never short-circuits guests', () => {
-    for (const c of copies) {
-      expect(c).toContain("principalId==='anyone'")
-      expect(c).not.toContain("if(!vw.userId)return 'none';")
-    }
+  for (const [path, method, stepId] of EVAL_ACCESS_STEPS) {
+    it(`${method} ${path} :: ${stepId}`, () => {
+      // esbuild inlines the shared module into each bundle, preserving names.
+      const code = stepCode(path, method, stepId)
+      expect(code, 'step does not inline evalAccess').toContain('evalAccess')
+      expect(code, 'step does not know about the Anyone principal').toContain(ANYONE_PRINCIPAL)
+    })
+  }
+})
+
+describe('/r/* is token-scoped, NOT Anyone-evaluated', () => {
+  // The raw-file redirect is the media route a PRIVATE feed hands out (#189 / ADR-0008). It
+  // deliberately does not run evalAccess: access is the share-link token plus folder scope, so a
+  // tokenless /r/* is denied outright rather than falling through to the public 'anyone' grant.
+  // Wiring evalAccess in here would make every Anyone-granted file reachable at /r/<id>/<slug>
+  // with no token — so this asserts the ABSENCE, not the presence.
+  it('walks the folder chain to scope the token, and never consults Anyone', () => {
+    const code = stepCode('/r/*', 'GET', 'check')
+    expect(code, '/r/* must still scope the token to a folder chain').toContain('folderChain')
+    expect(code, '/r/* must NOT evaluate the Anyone principal').not.toContain('evalAccess')
   })
 })
 
 describe('embedded evalAccess ≡ evaluateAccess (port equivalence)', () => {
-  const body = evalAccessCopies()[0]
-  const embedded = new Function(
-    `var rank=function(l){return l==='owner'?3:l==='edit'?2:l==='view'?1:0;}; return (${body})`,
-  )() as (ch: FolderLink[], vw: Viewer) => AccessLevel
+  // The real module the gates import — not a copy, not a re-implementation.
+  const embedded = (chain: FolderLink[], viewer: Viewer): AccessLevel =>
+    evalAccess(chain as unknown as ChainNode[], viewer) as AccessLevel
 
   const anyone = { principalId: ANYONE_PRINCIPAL, level: 'view' as const }
   const F = (over: Partial<FolderLink> = {}): FolderLink =>
@@ -133,12 +163,15 @@ describe('grants merge caps the Anyone principal at view', () => {
   const mergeStep = grantsPost.pipelineConfig.steps.find((s: any) => s.id === 'merge')
   const mergeCode: string = mergeStep.config.code
 
-  it('contains the cap', () => {
-    expect(mergeCode).toContain("pid === 'anyone'")
+  // Structural sanity only — the cap is a security control, so the two behavioral cases below are
+  // what actually pin it. (Asserting on an exact expression would just track whatever the handler
+  // happens to name its local; the write-side behaviour is the contract.)
+  it('references the Anyone principal', () => {
+    expect(mergeCode).toContain(ANYONE_PRINCIPAL)
   })
 
   it('behaviorally: an edit-level anyone request is stored as view', () => {
-    const handler = new Function(`return (${mergeCode})`)() as (ctx: any) => any
+    const handler = compileHandler(mergeCode) as (ctx: any) => any
     const out = handler({
       user: { id: 'owner-1', role: 'admin' },
       request: { body: { folderId: 'f1', principalId: 'anyone', level: 'edit' } },
@@ -152,7 +185,7 @@ describe('grants merge caps the Anyone principal at view', () => {
   })
 
   it('behaviorally: replacing an existing anyone grant with stale principalEmail still nulls it', () => {
-    const handler = new Function(`return (${mergeCode})`)() as (ctx: any) => any
+    const handler = compileHandler(mergeCode) as (ctx: any) => any
     const out = handler({
       user: { id: 'owner-1', role: 'admin' },
       request: { body: { folderId: 'f1', principalId: 'anyone', level: 'edit' } },

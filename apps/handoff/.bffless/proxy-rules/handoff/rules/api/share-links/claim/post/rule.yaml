@@ -7,7 +7,7 @@ pipeline:
     - id: parse
       name: parse
       handler: function_handler
-      code: ./parse.fn.js
+      code: ./parse.fn.ts
     - id: link
       name: link
       handler: data_query
@@ -18,7 +18,7 @@ pipeline:
     - id: check
       name: check
       handler: function_handler
-      code: ./check.fn.js
+      code: ./check.fn.ts
     - id: ok
       name: ok
       handler: response_handler

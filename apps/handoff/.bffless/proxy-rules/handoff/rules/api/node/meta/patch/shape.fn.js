@@ -1,1 +1,0 @@
-function handler({ steps }) { var r=(steps&&steps.final)||{}; if(r==null||typeof r!=='object')r={}; var id=(steps&&steps.pre&&steps.pre.id)||''; var t=(r.title!=null&&String(r.title)!=='')?String(r.title):null; var de=(r.description!=null&&String(r.description)!=='')?String(r.description):null; return { body: JSON.stringify({ id:id, title:t, description:de }) }; }

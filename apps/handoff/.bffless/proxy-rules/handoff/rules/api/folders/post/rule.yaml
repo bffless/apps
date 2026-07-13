@@ -7,7 +7,7 @@ pipeline:
     - id: pre
       name: pre
       handler: function_handler
-      code: ./pre.fn.js
+      code: ./pre.fn.ts
     - id: sibling
       name: sibling
       handler: data_query
@@ -22,7 +22,7 @@ pipeline:
     - id: guard
       name: guard
       handler: function_handler
-      code: ./guard.fn.js
+      code: ./guard.fn.ts
     - id: create
       name: create
       handler: data_create
@@ -39,7 +39,7 @@ pipeline:
     - id: shape
       name: shape
       handler: function_handler
-      code: ./shape.fn.js
+      code: ./shape.fn.ts
       config:
         condition: steps.guard.ok
     - id: response

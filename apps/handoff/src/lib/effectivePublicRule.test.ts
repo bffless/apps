@@ -8,7 +8,7 @@
  * against fixtures.
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, compileHandler } from '../test/proxyRules'
 
 const proxy = await loadProxyRules()
 
@@ -24,16 +24,24 @@ describe('GET /api/nodes response carries root {id, public} meta (structural)', 
     )
   })
 
-  it('shape step returns rootMeta alongside nodes', () => {
-    expect(shapeCode).toContain('rootMeta')
-    expect(shapeCode.trim().endsWith('return { nodes: out, rootMeta: { id: rootId, public: rootPublic } }; }')).toBe(
-      true,
-    )
+  it('shape step returns rootMeta alongside nodes — exactly the keys the body interpolates', () => {
+    // The response body is a template: every `{{{steps.shape.X}}}` it renders must be a key the
+    // handler actually returns, or that slot interpolates to nothing and the rule ships malformed
+    // JSON. Assert the contract from both ends rather than pattern-matching the handler's source.
+    const body: string = responseStep.config.body
+    const referenced = [...body.matchAll(/\{\{\{steps\.shape\.([A-Za-z0-9_]+)\}\}\}/g)].map((m) => m[1])
+    expect(referenced).toEqual(['nodes', 'rootMeta'])
+
+    const out = compileHandler(shapeCode)({
+      steps: { allFolders: [], query: [], gate: { viewer: {} } },
+    })
+    expect(Object.keys(out).sort()).toEqual([...referenced].sort())
+    expect(Object.keys(out.rootMeta).sort()).toEqual(['id', 'public'])
   })
 })
 
 describe('GET /api/nodes shape handler (behavioral)', () => {
-  const handler = new Function(`return (${shapeCode})`)() as (ctx: {
+  const handler = compileHandler(shapeCode) as (ctx: {
     steps: {
       allFolders: any[]
       query: any[]
@@ -149,7 +157,7 @@ describe('PATCH /api/node pre + check handlers (behavioral)', () => {
   const preCode: string = rule.pipelineConfig.steps.find((s: any) => s.id === 'pre').config.code
   const checkCode: string = rule.pipelineConfig.steps.find((s: any) => s.id === 'check').config.code
 
-  const pre = new Function(`return (${preCode})`)() as (ctx: {
+  const pre = compileHandler(preCode) as (ctx: {
     request: { body: Record<string, unknown> }
     user: { id: string; role?: string } | null
   }) => {
@@ -163,7 +171,7 @@ describe('PATCH /api/node pre + check handlers (behavioral)', () => {
     uid: string | null
   }
 
-  const check = new Function(`return (${checkCode})`)() as (ctx: {
+  const check = compileHandler(checkCode) as (ctx: {
     steps: { pre: any; folder: any }
   }) => { allowed: boolean; badRequest: boolean; denied: boolean; saveMode: boolean; saveFeedExcluded: boolean }
 

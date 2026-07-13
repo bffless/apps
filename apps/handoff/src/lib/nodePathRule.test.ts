@@ -7,7 +7,7 @@
  * spec, 2026-07-06). Runs the real embedded handlers.
  */
 import { describe, it, expect } from 'vitest'
-import { loadProxyRules } from '../test/proxyRules'
+import { loadProxyRules, compileHandler } from '../test/proxyRules'
 
 const proxy = await loadProxyRules()
 
@@ -16,7 +16,7 @@ const nodeRule = proxy.rules.find((r) => r.pathPattern === '/api/node' && r.meth
 
 function handlerOf(rule: Record<string, any>, stepId: string): (ctx: any) => any {
   const step = rule.pipelineConfig.steps.find((s: any) => s.id === stepId)
-  return new Function(`return (${step.config.code})`)() as (ctx: any) => any
+  return compileHandler(step.config.code) as (ctx: any) => any
 }
 
 // Two nested folders + one file, as flattened data_query rows.

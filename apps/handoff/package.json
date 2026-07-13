@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint . .bffless",
+    "typecheck:rules": "tsc -p .bffless/tsconfig.json",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
