@@ -51,20 +51,25 @@ jobs:
 
       # Sync BEFORE the upload, so the build never goes live against rules that
       # don't exist yet. Requires CE >= 0.2.0 on the instance.
+      #
+      # Deliberately NOT `bffless/deploy-proxy-rules@v1` here, unlike deploy-reader/deploy-studio:
+      # that action ncc-bundles `bffless@^0.1.0`, whose compiler predates .fn.ts handlers and
+      # rejects Handoff's rules outright ("code must be a relative path ending in .js"). Handoff
+      # authors its handlers in TypeScript, which needs bffless >= 0.2.0, so we invoke the CLI
+      # directly — same approach the drift-check workflow already takes. Once the action ships a
+      # 0.2.x-based release (bffless/deploy-proxy-rules#2), this can go back to `uses:`.
       - name: Sync proxy rules to BFFless
-        uses: bffless/deploy-proxy-rules@v1
-        with:
-          # Handoff's backend is two sets on one alias: the app API, and the public
-          # folder feeds (kept separate so the feeds can be attached on their own).
-          path: |
-            apps/handoff/.bffless/proxy-rules/handoff
-            apps/handoff/.bffless/proxy-rules/handoff-rss-feed
-          api-url: ${{ vars.BFFLESS_URL }}
-          api-key: ${{ secrets.BFFLESS_API_KEY }}
-          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+        env:
+          BFFLESS_API_URL: ${{ vars.BFFLESS_URL }}
+          BFFLESS_API_KEY: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → falls back to .bffless/config.json's `bffless/apps`;
           # forkers set this repo var to target their own project.
-          project: ${{ vars.BFFLESS_PROJECT }}
-          summary-title: Handoff Proxy Rules
+          BFFLESS_PROJECT: ${{ vars.BFFLESS_PROJECT }}
+        # Handoff's backend is two sets on one alias: the app API, and the public folder feeds
+        # (kept separate so the feeds can be attached on their own).
+        run: |
+          set -o pipefail
+          npx --yes bffless@^0.2.0 rules push apps/handoff/.bffless/proxy-rules/handoff apps/handoff/.bffless/proxy-rules/handoff-rss-feed ${BFFLESS_PROJECT:+--project "$BFFLESS_PROJECT"} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy to BFFless
         uses: bffless/upload-artifact@v1
