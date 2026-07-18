@@ -18,7 +18,7 @@ pipeline:
       handler: data_update
       config:
         fields:
-          revoked: "true"
+          revoked: true
         recordId: request.body.token
         schemaId: $schema:handoff_share_links
         condition: steps.check.allowed

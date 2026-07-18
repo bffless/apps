@@ -29,7 +29,7 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
         schemaId: $schema:reader_items
         condition: steps.prep.isAllOrRiver
     - id: updStarred
@@ -41,10 +41,10 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           starred:
             op: eq
-            value: "true"
+            value: true
         schemaId: $schema:reader_items
         condition: steps.prep.isStarred
         filterLogic: and
@@ -57,7 +57,7 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           feedId:
             op: eq
             value: steps.prep.feedId
@@ -73,7 +73,7 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           feedId:
             op: in
             value: steps.folderUrls.urls

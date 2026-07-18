@@ -14,16 +14,16 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "true"
+            value: true
           starred:
             op: ne
-            value: "true"
+            value: true
           fetchedAt:
             op: lt
             value: steps.cutoff.ms
           archived:
             op: ne
-            value: "true"
+            value: true
         schemaId: $schema:reader_items
         filterLogic: and
     - id: respond

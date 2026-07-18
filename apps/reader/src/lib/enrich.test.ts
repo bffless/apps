@@ -221,7 +221,9 @@ describe('proxy-rules structure — `ne`-filtered flags must be written at inges
   })
 
   it('stamps archived=false on ingest', () => {
-    expect(upsertMap?.archived).toBe('false')
+    // Unquoted in YAML: the evaluator passes a real boolean straight through, and a
+    // filter stringifies it, so both positions behave exactly as the old "false" did.
+    expect(upsertMap?.archived).toBe(false)
   })
 })
 
@@ -237,7 +239,7 @@ describe('proxy-rules structure — unsubscribe cascade', () => {
     // Delete-by-query: the feed's items (feedId == the posted url) AND not starred.
     const filters = config.filters as Record<string, { op: string; value: string }>
     expect(filters.feedId).toEqual({ op: 'eq', value: 'request.body.url' })
-    expect(filters.starred).toEqual({ op: 'ne', value: 'true' })
+    expect(filters.starred).toEqual({ op: 'ne', value: true })
     expect(config.filterLogic).toBe('and')
   })
 })

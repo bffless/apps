@@ -53,7 +53,7 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           archived:
             op: ne
             value: steps.prep.archivedNe
@@ -70,7 +70,7 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           archived:
             op: ne
             value: steps.prep.archivedNe
@@ -87,7 +87,7 @@ pipeline:
         filters:
           starred:
             op: eq
-            value: "true"
+            value: true
           archived:
             op: ne
             value: steps.prep.archivedNe
@@ -104,7 +104,7 @@ pipeline:
         filters:
           starred:
             op: eq
-            value: "true"
+            value: true
           archived:
             op: ne
             value: steps.prep.archivedNe

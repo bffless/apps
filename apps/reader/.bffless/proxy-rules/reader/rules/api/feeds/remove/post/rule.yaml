@@ -33,7 +33,7 @@ pipeline:
             value: request.body.url
           starred:
             op: ne
-            value: "true"
+            value: true
         filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.pick.found
