@@ -25,6 +25,7 @@ export type Item = {
   enclosureType: string | null
   read: boolean
   starred: boolean
+  archived: boolean
   fetchedAt: number | null
 }
 
@@ -61,6 +62,7 @@ export function shapeItem(raw: RawItem): Item {
     enclosureType: str(raw.enclosureType),
     read: bool(raw.read),
     starred: bool(raw.starred),
+    archived: bool(raw.archived),
     fetchedAt: num(raw.fetchedAt),
   }
 }

@@ -25,6 +25,8 @@ export function ItemList({
   selectedGuid,
   onSelect,
   onToggleStar,
+  onToggleArchive,
+  onDelete,
   onScrolledPast,
   scrollRootRef,
   feedNameFor,
@@ -41,6 +43,8 @@ export function ItemList({
   selectedGuid: string | null
   onSelect: (item: Item) => void
   onToggleStar?: (item: Item) => void
+  onToggleArchive?: (item: Item) => void
+  onDelete?: (item: Item) => void
   onScrolledPast?: (item: Item) => void
   /** Scroll container to root the mark-read observer at; window/viewport when omitted. */
   scrollRootRef?: RefObject<HTMLElement | null>
@@ -107,21 +111,56 @@ export function ItemList({
             else rows.current.delete(item.guid)
           }}
         >
-          {onToggleStar && (
-            <button
-              type="button"
-              onClick={() => onToggleStar(item)}
-              aria-pressed={item.starred}
-              aria-label={item.starred ? 'Unstar' : 'Star'}
-              title={item.starred ? 'Unstar' : 'Star'}
-              className={`absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded px-1 text-base leading-none transition-opacity ${
-                item.starred
-                  ? 'text-amber-500 opacity-100'
-                  : 'text-slate-300 opacity-0 hover:text-amber-500 focus:opacity-100 group-hover:opacity-100 dark:text-slate-600'
-              }`}
-            >
-              {item.starred ? '★' : '☆'}
-            </button>
+          {(onToggleStar || onToggleArchive || onDelete) && (
+            // Overlay row icons live in one absolutely-positioned flex strip (not
+            // each button self-positioned) so star/archive/delete stack without
+            // colliding — same hover-reveal treatment as the original star-only
+            // button (visible when active, or on row hover/focus).
+            <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5">
+              {onToggleStar && (
+                <button
+                  type="button"
+                  onClick={() => onToggleStar(item)}
+                  aria-pressed={item.starred}
+                  aria-label={item.starred ? 'Unstar' : 'Star'}
+                  title={item.starred ? 'Unstar' : 'Star'}
+                  className={`rounded px-1 text-base leading-none transition-opacity ${
+                    item.starred
+                      ? 'text-amber-500 opacity-100'
+                      : 'text-slate-300 opacity-0 hover:text-amber-500 focus:opacity-100 group-hover:opacity-100 dark:text-slate-600'
+                  }`}
+                >
+                  {item.starred ? '★' : '☆'}
+                </button>
+              )}
+              {onToggleArchive && (
+                <button
+                  type="button"
+                  onClick={() => onToggleArchive(item)}
+                  aria-pressed={item.archived}
+                  aria-label={item.archived ? 'Unarchive' : 'Archive'}
+                  title={item.archived ? 'Unarchive' : 'Archive'}
+                  className={`rounded px-1 text-base leading-none transition-opacity ${
+                    item.archived
+                      ? 'text-sky-500 opacity-100'
+                      : 'text-slate-300 opacity-0 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100 dark:text-slate-600 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {item.archived ? '🗃' : '📥'}
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(item)}
+                  aria-label="Delete"
+                  title="Delete"
+                  className="rounded px-1 text-base leading-none text-slate-300 opacity-0 transition-opacity hover:text-red-600 focus:opacity-100 group-hover:opacity-100 dark:text-slate-600 dark:hover:text-red-400"
+                >
+                  🗑
+                </button>
+              )}
+            </div>
           )}
           <button
             type="button"
@@ -133,7 +172,7 @@ export function ItemList({
             // focus, so a native focus ring would strand on the last *clicked* row
             // while the selection moved on. `focus:outline-none` drops that stray
             // ring; the state-driven ring is the single, always-correct indicator.
-            className={`flex w-full items-start gap-2 py-3 pl-3 pr-8 text-left transition-colors focus:outline-none hover:bg-slate-50 dark:hover:bg-slate-800/60 ${
+            className={`flex w-full items-start gap-2 py-3 pl-3 pr-20 text-left transition-colors focus:outline-none hover:bg-slate-50 dark:hover:bg-slate-800/60 ${
               item.guid === selectedGuid
                 ? 'bg-blue-50 ring-2 ring-inset ring-blue-500 dark:bg-blue-950/40 dark:ring-blue-500'
                 : ''

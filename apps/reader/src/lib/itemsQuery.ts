@@ -40,6 +40,7 @@ export function buildItemsQuery(
   limit: number,
   order: SortOrder,
   total: number | null,
+  includeArchived = false,
 ): ItemsQuery {
   let serverPage = page
   let reverse = false
@@ -62,6 +63,8 @@ export function buildItemsQuery(
   if (sel.kind === 'folder') params.set('folder', sel.name)
   params.set('page', String(serverPage))
   params.set('limit', String(limit))
+
+  if (includeArchived) params.set('includeArchived', 'true')
 
   return { params, reverse }
 }

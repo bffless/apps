@@ -152,11 +152,18 @@ export type ItemsPage = { items: Item[]; total: number; page: number; pageSize: 
 /** Fetch one filtered, paginated page for a selection (see lib/itemsQuery). */
 export async function listItems(
   sel: Selection,
-  opts: { page?: number; limit?: number; order?: SortOrder; total?: number | null } = {},
+  opts: { page?: number; limit?: number; order?: SortOrder; total?: number | null; includeArchived?: boolean } = {},
 ): Promise<ItemsPage> {
   const page = opts.page ?? 1
   const limit = opts.limit ?? PAGE_SIZE
-  const { params, reverse } = buildItemsQuery(sel, page, limit, opts.order ?? 'newest', opts.total ?? null)
+  const { params, reverse } = buildItemsQuery(
+    sel,
+    page,
+    limit,
+    opts.order ?? 'newest',
+    opts.total ?? null,
+    opts.includeArchived ?? false,
+  )
   const body = await readJson(await fetchWithReauth(`/api/items?${params.toString()}`))
   const b = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}) as Record<string, unknown>
   const num = (v: unknown, d: number) => (typeof v === 'number' && !Number.isNaN(v) ? v : d)
@@ -243,6 +250,41 @@ export async function setItemStar(guid: string, starred: boolean): Promise<void>
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ guid, starred }),
+    }),
+  )
+}
+
+/**
+ * Persist an item's `archived` flag via `data_update` (looked up by `guid`) — the
+ * `/api/items/archive` twin of {@link setItemStar}. Archived items are hidden
+ * from views by default and are prune-exempt; the flag survives refresh
+ * (insert-only dedup skips the existing guid). Fire-and-confirm: resolves on
+ * success, throws on failure so the caller can revert an optimistic update.
+ */
+export async function setItemArchived(guid: string, archived: boolean): Promise<void> {
+  if (!guid) throw new Error('guid is required')
+  await readJson(
+    await fetchWithReauth('/api/items/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guid, archived }),
+    }),
+  )
+}
+
+/**
+ * Hard-delete an item by `guid` via `/api/items/delete` (`data_delete`). For
+ * cleaning up dead/source-deleted posts — removes the row entirely (star
+ * included). A still-live feed item may re-appear on the next refresh; that is
+ * not delete's purpose. Throws on failure so the caller can revert.
+ */
+export async function deleteItem(guid: string): Promise<void> {
+  if (!guid) throw new Error('guid is required')
+  await readJson(
+    await fetchWithReauth('/api/items/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guid }),
     }),
   )
 }

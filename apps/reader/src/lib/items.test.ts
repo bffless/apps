@@ -40,6 +40,16 @@ describe('shapeItem', () => {
     expect(shapeItem({}).enclosureType).toBeNull()
     expect(shapeItem({ enclosureType: '' }).enclosureType).toBeNull()
   })
+
+  it('reads the archived flag (legacy encodings included)', () => {
+    expect(shapeItem({ guid: 'g', feedId: 'f', archived: true }).archived).toBe(true)
+    expect(shapeItem({ guid: 'g', feedId: 'f', archived: 'true' }).archived).toBe(true)
+    expect(shapeItem({ guid: 'g', feedId: 'f', archived: 1 }).archived).toBe(true)
+  })
+
+  it('defaults archived to false when absent', () => {
+    expect(shapeItem({ guid: 'g', feedId: 'f' }).archived).toBe(false)
+  })
 })
 
 describe('itemTimestamp', () => {

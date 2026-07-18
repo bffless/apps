@@ -5,6 +5,7 @@ function handler({ request }) {
   var view = (typeof q.view === 'string') ? q.view : ''
   var feedId = (typeof q.feedId === 'string') ? q.feedId : ''
   var folder = (typeof q.folder === 'string') ? q.folder : ''
+  var includeArchived = (q.includeArchived === 'true' || q.includeArchived === '1' || q.includeArchived === true)
   var page = parseInt(q.page, 10)
   if (isNaN(page) || page < 1) page = 1
   var hasPage = (typeof q.page !== 'undefined' && q.page !== '')
@@ -19,6 +20,9 @@ function handler({ request }) {
     guid: guid, hasGuid: hasGuid,
     view: view, feedId: feedId, folder: folder,
     page: page, limit: limit, offset: offset, order: order, legacy: legacy,
+    // `ne` against a sentinel no row can hold ('__never__') is a pass-through filter:
+    // it keeps every branch's filter shape identical whether or not archived rows show.
+    archivedNe: includeArchived ? '__never__' : 'true',
     isAll: view === 'all' && !hasGuid, isRiver: view === 'river' && !hasGuid, isStarred: view === 'starred' && !hasGuid,
     isFeed: view === 'feed' && !hasGuid, isFolder: view === 'folder' && !hasGuid, hasFolder: view === 'folder' && !hasGuid
   }

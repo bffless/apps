@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
@@ -178,6 +178,50 @@ describe('proxy-rules structure — schema + upsert map', () => {
   it('manifest wires the enrich step to enrich.fn.js', () => {
     const enrichStep = findStep(refreshRule, 'enrich')
     expect(enrichStep.code).toBe('./enrich.fn.js')
+  })
+})
+
+describe('proxy-rules structure — `ne`-filtered flags must be written at ingest', () => {
+  // CE compiles a `ne` filter to a bare SQL `!=` against `data->>'field'`, so a row
+  // whose JSONB lacks the key yields NULL and is EXCLUDED rather than kept. Any flag
+  // we filter with `ne` must therefore be stamped explicitly by the ingest map —
+  // leaving it absent hides every pre-existing row. This bit us on `archived`, which
+  // filtered /api/items, /api/counts and /api/prune while nothing ever wrote it.
+  const ruleFiles = readdirSync(resolve(setRoot, 'rules'), { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('rule.yaml') || f.endsWith('.rule.yaml'))
+    .map((f) => resolve(setRoot, 'rules', f))
+
+  const upsertMap = findStep(refreshRule, 'upsert').config?.map as Record<string, string>
+
+  // Fields the reader filters with `ne` against the reader_items table, collected
+  // from every authored rule rather than hard-coded, so a new one is covered on sight.
+  const neFiltered = new Set<string>()
+  for (const file of ruleFiles) {
+    const rule = parse(readFileSync(file, 'utf8')) as { pipeline?: { steps?: PipelineStep[] } }
+    for (const step of rule.pipeline?.steps ?? []) {
+      const config = step.config as Record<string, unknown> | undefined
+      if (config?.schemaId !== '$schema:reader_items') continue
+      const filters = config.filters as Record<string, { op?: string }> | undefined
+      for (const [field, filter] of Object.entries(filters ?? {})) {
+        if (filter?.op === 'ne') neFiltered.add(field)
+      }
+    }
+  }
+
+  it('collects the `ne`-filtered item flags from the authored rules', () => {
+    // Guards the scan itself — an empty set would make the assertion below vacuous.
+    expect(neFiltered).toContain('archived')
+    expect(neFiltered).toContain('starred')
+  })
+
+  it('ingest stamps every `ne`-filtered flag, so no row is missing the key', () => {
+    for (const field of neFiltered) {
+      expect(upsertMap?.[field], `${field} is \`ne\`-filtered but never written by the refresh upsert map`).toBeDefined()
+    }
+  })
+
+  it('stamps archived=false on ingest', () => {
+    expect(upsertMap?.archived).toBe('false')
   })
 })
 

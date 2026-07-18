@@ -44,7 +44,9 @@ import {
 } from './lib/route'
 import {
   markGuidsRead,
+  removeItem,
   selectionKey,
+  setArchived,
   setRead,
   setStarred,
   unreadGuids,
@@ -85,6 +87,7 @@ export function ReaderApp({
   const [counts, setCounts] = useState<Counts>({ unreadByFeed: {}, starred: 0, unreadStarred: 0 })
   const [reloadSeq, setReloadSeq] = useState(0)
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
+  const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -207,6 +210,16 @@ export function ReaderApp({
   const selKey = selectionKey(selection)
   const totalRef = useRef<number | null>(null)
 
+  // Guards against two concurrent `data_update`/`data_delete`-backed writes for
+  // the SAME item guid: `data_update` is whole-record read-modify-write, so a
+  // second write that starts before the first settles can silently clobber it
+  // (e.g. double-clicking star then archive before either resolves). Each
+  // user-triggered write handler (`toggleRead`, `toggleStar`, `toggleArchive`,
+  // `deleteItemAction`) adds the guid before firing its request and removes it
+  // in both the success and failure paths; a redundant rapid second click on the
+  // same item is dropped as a no-op rather than queued.
+  const inFlightGuids = useRef<Set<string>>(new Set())
+
   // The latest location pathname, mirrored into a ref so the fetch effect's async
   // continuation can read the CURRENT path (which may have gained an `/item/:id`
   // segment mid-flight) when it needs to clamp an out-of-range `?page` — reading
@@ -231,7 +244,7 @@ export function ReaderApp({
   // page fetch reads it.
   useEffect(() => {
     totalRef.current = null
-  }, [selKey])
+  }, [selKey, showArchived])
 
   // Fetch exactly one filtered, paginated page for the current selection/page/
   // order (plus a `reloadSeq` bump after feed mutations). The returned items are
@@ -249,12 +262,14 @@ export function ReaderApp({
           page,
           order: sortOrder,
           total: totalRef.current,
+          includeArchived: showArchived,
         })
         if (!cancelled && sortOrder === 'oldest' && totalRef.current === null && result.total > 0) {
           const corrected = await api.listItems(selection, {
             page,
             order: sortOrder,
             total: result.total,
+            includeArchived: showArchived,
           })
           if (!cancelled) result = corrected
         }
@@ -287,7 +302,7 @@ export function ReaderApp({
     return () => {
       cancelled = true
     }
-  }, [selection, page, sortOrder, reloadSeq])
+  }, [selection, page, sortOrder, reloadSeq, showArchived])
 
   // Reload the current page after a feed mutation (add/import/refresh/remove):
   // bump the fetch effect's key and refetch the badge counts. Mirrors the
@@ -407,7 +422,11 @@ export function ReaderApp({
 
   const toggleRead = useCallback(
     (item: Item) => {
-      void persistRead(item.guid, !item.read)
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
+      void persistRead(item.guid, !item.read).finally(() => {
+        inFlightGuids.current.delete(item.guid)
+      })
     },
     [persistRead],
   )
@@ -422,6 +441,8 @@ export function ReaderApp({
   // view (it leaves on the next fetch), so the row doesn't vanish under the cursor.
   const toggleStar = useCallback(
     (item: Item) => {
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
       const next = !item.starred
       applyStar(item.guid, next)
       void api
@@ -431,8 +452,55 @@ export function ReaderApp({
           applyStar(item.guid, !next)
           setError(e instanceof Error ? e.message : 'Could not save starred state')
         })
+        .finally(() => {
+          inFlightGuids.current.delete(item.guid)
+        })
     },
     [applyStar, refreshCounts],
+  )
+
+  // Archive mirrors star: optimistic flag flip, persist, refetch counts, revert
+  // on failure. In the default (archived-hidden) view the row stays in the
+  // loaded snapshot until the next fetch, so it doesn't vanish under the cursor.
+  const toggleArchive = useCallback(
+    (item: Item) => {
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
+      const next = !item.archived
+      setPageData((prev) => (prev ? { ...prev, items: setArchived(prev.items, item.guid, next) } : prev))
+      void api
+        .setItemArchived(item.guid, next)
+        .then(() => refreshCounts())
+        .catch((e) => {
+          setPageData((prev) => (prev ? { ...prev, items: setArchived(prev.items, item.guid, !next) } : prev))
+          setError(e instanceof Error ? e.message : 'Could not save archived state')
+        })
+        .finally(() => {
+          inFlightGuids.current.delete(item.guid)
+        })
+    },
+    [refreshCounts],
+  )
+
+  // Hard delete: drop the row optimistically, then persist. On failure, reload
+  // the view to restore the true server state (we can't cheaply re-insert it).
+  const deleteItemAction = useCallback(
+    (item: Item) => {
+      if (inFlightGuids.current.has(item.guid)) return
+      inFlightGuids.current.add(item.guid)
+      setPageData((prev) => (prev ? { ...prev, items: removeItem(prev.items, item.guid) } : prev))
+      void api
+        .deleteItem(item.guid)
+        .then(() => refreshCounts())
+        .catch((e) => {
+          setError(e instanceof Error ? e.message : 'Could not delete item')
+          setReloadSeq((n) => n + 1)
+        })
+        .finally(() => {
+          inFlightGuids.current.delete(item.guid)
+        })
+    },
+    [refreshCounts],
   )
 
   // Mark the entire view read server-side via `api.markAllRead` — not just the
@@ -707,6 +775,18 @@ export function ReaderApp({
     </button>
   )
 
+  const showArchivedButton = (
+    <button
+      type="button"
+      onClick={() => setShowArchived((v) => !v)}
+      aria-pressed={showArchived}
+      title="Show archived items"
+      className="rounded px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+    >
+      {showArchived ? 'Hide archived' : 'Show archived'}
+    </button>
+  )
+
   const markAllButton = viewHasUnread && (
     <button
       type="button"
@@ -739,6 +819,7 @@ export function ReaderApp({
   const listToolbar = visible.length > 0 && (
     <div className="flex items-center border-b border-slate-100 px-3 py-1.5 dark:border-slate-800">
       {sortButton}
+      {showArchivedButton}
       {markAllButton}
     </div>
   )
@@ -791,6 +872,7 @@ export function ReaderApp({
                   <div className="flex items-center gap-1 border-b border-slate-100 px-2 py-1.5 dark:border-slate-800">
                     {sidebarToggleButton}
                     {visible.length > 0 && sortButton}
+                    {visible.length > 0 && showArchivedButton}
                     {markAllButton}
                   </div>
                   <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -801,6 +883,8 @@ export function ReaderApp({
                       selectedGuid={selectedGuid}
                       onSelect={openItem}
                       onToggleStar={toggleStar}
+                      onToggleArchive={toggleArchive}
+                      onDelete={deleteItemAction}
                       onScrolledPast={markScrolledPast}
                       scrollRootRef={listScrollRef}
                       feedNameFor={feedNameFor}
@@ -825,6 +909,8 @@ export function ReaderApp({
                     measureClass={measureClass}
                     onToggleRead={toggleRead}
                     onToggleStar={toggleStar}
+                    onToggleArchive={toggleArchive}
+                    onDelete={deleteItemAction}
                     feedNameFor={feedNameFor}
                   />
                 </section>
@@ -864,6 +950,8 @@ export function ReaderApp({
               measureClass={measureClass}
               onToggleRead={toggleRead}
               onToggleStar={toggleStar}
+              onToggleArchive={toggleArchive}
+              onDelete={deleteItemAction}
               feedNameFor={feedNameFor}
             />
           </section>
@@ -880,6 +968,8 @@ export function ReaderApp({
               selectedGuid={selectedGuid}
               onSelect={openItemMobile}
               onToggleStar={toggleStar}
+              onToggleArchive={toggleArchive}
+              onDelete={deleteItemAction}
               onScrolledPast={markScrolledPast}
               feedNameFor={feedNameFor}
             />
