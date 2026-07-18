@@ -24,6 +24,10 @@ pipeline:
       name: countAll
       handler: db_aggregate
       config:
+        filters:
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
         schemaId: $schema:reader_items
         condition: steps.prep.isAll
         operation: count
@@ -33,6 +37,10 @@ pipeline:
       config:
         limit: steps.prep.limit
         offset: steps.prep.offset
+        filters:
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
         orderBy:
           field: publishedAt
           direction: desc
@@ -46,6 +54,10 @@ pipeline:
           read:
             op: eq
             value: "false"
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isRiver
         operation: count
@@ -59,9 +71,13 @@ pipeline:
           read:
             op: eq
             value: "false"
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
         orderBy:
           field: publishedAt
           direction: desc
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isRiver
     - id: countStarred
@@ -72,6 +88,10 @@ pipeline:
           starred:
             op: eq
             value: "true"
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isStarred
         operation: count
@@ -85,9 +105,13 @@ pipeline:
           starred:
             op: eq
             value: "true"
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
         orderBy:
           field: publishedAt
           direction: desc
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isStarred
     - id: countFeed
@@ -98,6 +122,10 @@ pipeline:
           feedId:
             op: eq
             value: steps.prep.feedId
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isFeed
         operation: count
@@ -111,9 +139,13 @@ pipeline:
           feedId:
             op: eq
             value: steps.prep.feedId
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
         orderBy:
           field: publishedAt
           direction: desc
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isFeed
     - id: countFolder
@@ -124,6 +156,10 @@ pipeline:
           feedId:
             op: in
             value: steps.folderUrls.urls
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isFolder
         operation: count
@@ -137,9 +173,13 @@ pipeline:
           feedId:
             op: in
             value: steps.folderUrls.urls
+          archived:
+            op: ne
+            value: steps.prep.archivedNe
         orderBy:
           field: publishedAt
           direction: desc
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isFolder
     - id: pageGuid

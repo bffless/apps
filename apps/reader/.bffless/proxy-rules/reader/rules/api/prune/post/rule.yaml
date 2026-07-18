@@ -21,6 +21,9 @@ pipeline:
           fetchedAt:
             op: lt
             value: steps.cutoff.ms
+          archived:
+            op: ne
+            value: "true"
         schemaId: $schema:reader_items
         filterLogic: and
     - id: respond

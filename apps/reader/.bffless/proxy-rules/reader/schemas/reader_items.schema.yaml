@@ -31,6 +31,9 @@ fields:
   - name: starred
     type: boolean
     required: false
+  - name: archived
+    type: boolean
+    required: false
   - name: fetchedAt
     type: number
     required: false

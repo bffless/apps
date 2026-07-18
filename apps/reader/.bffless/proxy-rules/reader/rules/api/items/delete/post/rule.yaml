@@ -1,0 +1,44 @@
+targetUrl: pipeline
+order: 14
+pipeline:
+  name: Delete item
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: del
+      name: del
+      handler: data_delete
+      config:
+        filters:
+          guid:
+            op: eq
+            value: steps.prep.guid
+        schemaId: $schema:reader_items
+        condition: steps.prep.hasGuid
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true,"deleted":{{steps.del.count}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.hasGuid
+        contentType: application/json
+    - id: respondNoGuid
+      name: respondNoGuid
+      handler: response_handler
+      config:
+        body: '{"error":"guid is required"}'
+        status: 400
+        headers:
+          Cache-Control: no-store
+        condition: steps.prep.noGuid
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        allowApiKey: true
+description: "Hard-delete an item: POST { guid } -> prep coerces guid -> data_delete(reader_items) by filter guid=guid -> respond { ok, deleted:count }. For cleaning up dead/source-deleted posts. Removes the row entirely (star included); a still-in-feed item may re-insert on the next refresh. auth_required (allowApiKey)."
