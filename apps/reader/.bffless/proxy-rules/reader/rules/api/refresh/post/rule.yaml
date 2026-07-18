@@ -38,6 +38,7 @@ pipeline:
           guid: steps.item.guid
           link: steps.item.link
           read: "false"
+          archived: "false"
           title: steps.item.title
           author: steps.item.author
           feedId: steps.item.source
@@ -72,4 +73,4 @@ pipeline:
           Cache-Control: no-store
         contentType: application/json
   validators: []
-description: "Ingest: data_query(reader_feeds) -> urls -> xml_feed_parse -> stamp(now ms) -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link; fetchedAt=epoch ms, read/starred=false so items are prune-filterable; updateFields=[enclosureType,enclosureUrl] backfills those two columns onto already-ingested rows on re-poll while preserving read/starred and everything else — insert-only otherwise) -> respond { inserted, skipped, errors }. feedId = entry.source. No auth_required validator: the reader alias is private (edge-gated login), so /api/* is protected at the site level, and the CE scheduler fires this as a system run with NO user — auth_required (which needs context.user) would reject it. #119."
+description: "Ingest: data_query(reader_feeds) -> urls -> xml_feed_parse -> stamp(now ms) -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link; fetchedAt=epoch ms, read/starred/archived=false so items are prune-filterable and visible — CE compiles the `ne` filter to a bare SQL `!=`, so a row whose JSONB lacks the key is NULL and gets excluded by `archived ne true`; the flag must be written explicitly, never left absent; updateFields=[enclosureType,enclosureUrl] backfills those two columns onto already-ingested rows on re-poll while preserving read/starred and everything else — insert-only otherwise) -> respond { inserted, skipped, errors }. feedId = entry.source. No auth_required validator: the reader alias is private (edge-gated login), so /api/* is protected at the site level, and the CE scheduler fires this as a system run with NO user — auth_required (which needs context.user) would reject it. #119."
