@@ -10,10 +10,10 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           archived:
             op: ne
-            value: "true"
+            value: true
         groupBy: feedId
         filterLogic: and
         schemaId: $schema:reader_items
@@ -25,10 +25,10 @@ pipeline:
         filters:
           starred:
             op: eq
-            value: "true"
+            value: true
           archived:
             op: ne
-            value: "true"
+            value: true
         filterLogic: and
         schemaId: $schema:reader_items
         operation: count
@@ -39,13 +39,13 @@ pipeline:
         filters:
           read:
             op: eq
-            value: "false"
+            value: false
           starred:
             op: eq
-            value: "true"
+            value: true
           archived:
             op: ne
-            value: "true"
+            value: true
         filterLogic: and
         schemaId: $schema:reader_items
         operation: count

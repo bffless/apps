@@ -37,13 +37,13 @@ pipeline:
         map:
           guid: steps.item.guid
           link: steps.item.link
-          read: "false"
-          archived: "false"
+          read: false
+          archived: false
           title: steps.item.title
           author: steps.item.author
           feedId: steps.item.source
           content: steps.item.content
-          starred: "false"
+          starred: false
           summary: steps.item.summary
           fetchedAt: steps.stamp.ms
           publishedAt: steps.item.publishedAt
