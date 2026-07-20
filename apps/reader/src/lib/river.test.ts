@@ -3,6 +3,7 @@ import {
   setRead,
   setStarred,
   setArchived,
+  visibleItems,
   removeItem,
   markGuidsRead,
   unreadGuids,
@@ -90,6 +91,26 @@ describe('setArchived', () => {
   it('is a no-op (same references) when the flag already matches or guid is unknown', () => {
     expect(setArchived(sample, 'a1', false)).toEqual(sample)
     expect(setArchived(sample, 'nope', true)).toEqual(sample)
+  })
+})
+
+describe('visibleItems', () => {
+  const withArchived: Item[] = [
+    sample[0],
+    { ...sample[1], archived: true },
+    sample[2],
+    { ...sample[3], archived: true },
+  ]
+
+  it('hides archived rows in the default view', () => {
+    expect(visibleItems(withArchived, false).map((i) => i.guid)).toEqual(['a1', 'b1'])
+  })
+  it('keeps archived rows when showing archived', () => {
+    expect(visibleItems(withArchived, true)).toEqual(withArchived)
+  })
+  it('leaves an all-unarchived list untouched in both modes', () => {
+    expect(visibleItems(sample, false)).toEqual(sample)
+    expect(visibleItems(sample, true)).toEqual(sample)
   })
 })
 

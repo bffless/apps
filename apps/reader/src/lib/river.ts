@@ -72,6 +72,18 @@ export function setArchived(items: Item[], guid: string, archived: boolean): Ite
 }
 
 /**
+ * The rows a view actually renders. Archived items are hidden unless the view
+ * asked for them, which is what makes an optimistic {@link setArchived} flip
+ * take the row out of the list right away — the server's `includeArchived`
+ * filter only applies to the *next* fetch, so without this the row would linger
+ * in the loaded snapshot until a nav or reload. Applies in both directions:
+ * un-archiving from the "Show archived" view drops the row just the same.
+ */
+export function visibleItems(items: Item[], showArchived: boolean): Item[] {
+  return showArchived ? items : items.filter((item) => !item.archived)
+}
+
+/**
  * Drop the item with `guid` from the array (what a hard delete commits locally),
  * returning a new array. An unknown guid leaves the array contents untouched.
  */
