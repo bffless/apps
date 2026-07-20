@@ -50,6 +50,7 @@ import {
   setRead,
   setStarred,
   unreadGuids,
+  visibleItems,
   type Selection,
 } from './lib/river'
 
@@ -334,7 +335,13 @@ export function ReaderApp({
   // The loaded page's items — already server-ordered (and reversed for
   // oldest-first by `api.listItems`), so they're rendered straight through with
   // no client-side sort. Optimistic read/star writes patch this array in place.
-  const visible = useMemo(() => pageData?.items ?? [], [pageData])
+  // Archived rows are filtered here so an optimistic archive flip leaves the
+  // list immediately rather than waiting for the next fetch's server-side
+  // `includeArchived` filter.
+  const visible = useMemo(
+    () => visibleItems(pageData?.items ?? [], showArchived),
+    [pageData, showArchived],
+  )
 
   // The river's total-unread badge is the sum of the per-feed unread counts.
   const riverTotal = useMemo(
@@ -460,8 +467,9 @@ export function ReaderApp({
   )
 
   // Archive mirrors star: optimistic flag flip, persist, refetch counts, revert
-  // on failure. In the default (archived-hidden) view the row stays in the
-  // loaded snapshot until the next fetch, so it doesn't vanish under the cursor.
+  // on failure. Unlike star, the flip also takes the row out of the rendered
+  // list (see `visible`) — archive means "get this out of my view" — and the
+  // revert puts it back.
   const toggleArchive = useCallback(
     (item: Item) => {
       if (inFlightGuids.current.has(item.guid)) return
