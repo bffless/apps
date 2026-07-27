@@ -10,6 +10,7 @@ on:
     paths:
       - '.claude/skills/**'
       - '.agents/skills/**'
+      - 'plugins/**'
       - 'scripts/sync-skills.mjs'
       - 'skills-lock.json'
       - '.github/workflows/skills-parity.yml'
