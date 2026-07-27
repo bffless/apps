@@ -28,7 +28,8 @@ import { rootMetaNode } from '../lib/rootNode'
 import { ShareDialog } from '../components/ShareDialog'
 import { AncestorNodes } from '../components/AncestorNodes'
 import { NodeDetails } from '../components/NodeDetails'
-import { TrashIcon, ChevronRightIcon, GlobeIcon } from '../components/icons'
+import { Menu } from '../components/Menu'
+import { TrashIcon, ChevronRightIcon, GlobeIcon, KebabIcon } from '../components/icons'
 import { parentFolderPath, buildAncestorFolderChain } from '../lib/tree'
 import { treeUrl, parentPath, blobUrl } from '../lib/pathUrl'
 import { useClaimShareToken } from '../store/useClaimShareToken'
@@ -207,8 +208,10 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         >
           ~/
         </Link>
+        {/* Parent crumb yields to the filename on narrow screens — `~/ › file`
+            is the mobile chain; Back already covers the parent hop. */}
         {!isRoot && parentNode && (
-          <span className="flex min-w-0 items-center gap-1">
+          <span className="hidden min-w-0 items-center gap-1 sm:flex">
             <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted/60" />
             <Link
               to={backTo}
@@ -221,6 +224,10 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted/60" />
         <span className="min-w-0 flex-1 truncate font-medium text-ink">{fileName}</span>
       </nav>
+
+      {/* Title/description live in a popover off the bar (not a chrome row of
+          their own) — writers of the parent folder can edit, same gate as Delete. */}
+      <NodeDetails key={node.id} node={node} canEdit={canDelete} />
 
       {/* Renderless ancestor walk feeding the badge + Share dialog chain. */}
       {authed && !isRoot && (
@@ -286,12 +293,12 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <button
           type="button"
           onClick={onToggleSource}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+          className="hidden items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink sm:inline-flex"
           title={showSource ? 'View rendered' : 'View source'}
           aria-pressed={showSource}
         >
           <CodeIcon />
-          <span className="hidden sm:inline">{showSource ? 'View rendered' : 'View source'}</span>
+          {showSource ? 'View rendered' : 'View source'}
         </button>
       )}
 
@@ -301,14 +308,14 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
           href={openUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+          className="hidden items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink sm:inline-flex"
           title="Open in new tab"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clipRule="evenodd" />
             <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clipRule="evenodd" />
           </svg>
-          <span className="hidden sm:inline">Open</span>
+          Open
         </a>
       )}
 
@@ -316,13 +323,13 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
       <button
         type="button"
         onClick={handleFullscreen}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+        className="hidden items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink sm:inline-flex"
         title="Fullscreen"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
           <path d="M13.28 7.78a.75.75 0 0 0-1.06-1.06l-1.97 1.97V5.75a.75.75 0 0 0-1.5 0v4.5a.75.75 0 0 0 .75.75h4.5a.75.75 0 0 0 0-1.5h-2.94l1.97-1.97ZM6.72 12.22a.75.75 0 0 0 1.06 1.06l1.97-1.97v2.94a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.94l-1.97 1.97Z" />
         </svg>
-        <span className="hidden sm:inline">Fullscreen</span>
+        Fullscreen
       </button>
 
       {/* Download — not shown for sites (use Open-in-new-tab instead) */}
@@ -330,14 +337,14 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <a
           href={node.url}
           download={node.name}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+          className="hidden items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink sm:inline-flex"
           title="Download"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
             <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
           </svg>
-          <span className="hidden sm:inline">Download</span>
+          Download
         </a>
       )}
 
@@ -346,13 +353,60 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted transition-colors hover:bg-danger-bg hover:text-danger"
+          className="hidden items-center gap-1 rounded px-2 py-1 text-sm text-muted transition-colors hover:bg-danger-bg hover:text-danger sm:inline-flex"
           title="Delete"
         >
           <TrashIcon className="h-4 w-4" />
-          <span className="hidden sm:inline">Delete</span>
+          Delete
         </button>
       )}
+
+      {/* Overflow menu (narrow screens only): the secondary actions above are
+          hidden below `sm` and collapse into this kebab, so the bar stays one
+          uncropped row instead of clipping off the right edge. */}
+      <span className="sm:hidden">
+        <Menu
+          label="More actions"
+          align="end"
+          items={[
+            ...(canViewSource
+              ? [{ label: showSource ? 'View rendered' : 'View source', onSelect: onToggleSource }]
+              : []),
+            ...(openUrl
+              ? [{ label: 'Open in new tab', onSelect: () => window.open(openUrl, '_blank', 'noopener,noreferrer') }]
+              : []),
+            { label: 'Fullscreen', onSelect: handleFullscreen },
+            ...(node.url && node.type !== 'site'
+              ? [{
+                  label: 'Download',
+                  onSelect: () => {
+                    const a = document.createElement('a')
+                    a.href = node.url as string
+                    a.download = node.name
+                    a.click()
+                  },
+                }]
+              : []),
+            ...(canDelete
+              ? ['separator' as const, { label: 'Delete', danger: true, onSelect: () => setConfirmOpen(true) }]
+              : []),
+          ]}
+          trigger={({ ref, onClick, onKeyDown, ...aria }) => (
+            <button
+              type="button"
+              ref={ref as React.Ref<HTMLButtonElement>}
+              onClick={onClick}
+              onKeyDown={onKeyDown}
+              {...aria}
+              aria-label="More actions"
+              title="More actions"
+              className="inline-flex items-center rounded px-2 py-1 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <KebabIcon className="h-4 w-4" />
+            </button>
+          )}
+        />
+      </span>
 
       {confirmOpen && (
         <div
@@ -472,7 +526,9 @@ function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: b
       // Kill the UA default 2px inset bevel. It's especially visible when this
       // frame is itself embedded (the RSS reader iframes the chromeless viewer),
       // where the bevel reads as an ugly gray top/left border on the content.
-      style={{ border: 'none', minHeight: 'calc(100vh - 7.5rem)' }}
+      // The min-height only applies in embed mode, where the layout isn't
+      // viewport-locked and the frame must claim its own height.
+      style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
     />
   )
 }
@@ -657,12 +713,6 @@ export function ViewerBody({ id }: { id: string }) {
   const { data: node, isLoading, isError } = useGetNodeQuery(id, {
     skip: sessionLoading || claimPending || (needClaim && claimData?.valid === false),
   })
-  // Parent-folder lookup for the details-edit gate — same pattern as ControlBar's
-  // share/delete gates: skip for guests (unauthenticated) to avoid a discarded
-  // 401, and while `node` itself hasn't resolved yet.
-  const { data: parentNode } = useGetNodeQuery(node?.parentId ?? 'root', {
-    skip: !node || node.parentId === 'root' || !authed,
-  })
   const contentRef = useRef<HTMLDivElement>(null)
 
   // Raw-source toggle. Reset to rendered whenever the viewed item changes
@@ -698,18 +748,19 @@ export function ViewerBody({ id }: { id: string }) {
   const kind = previewFor(node)
   const canViewSource = hasViewSource(kind) && !!node.url
   const sourceShown = canViewSource && showSource
-  // Writers of the parent folder — the same gate the control bar's Delete uses.
-  const canEditMeta = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
 
   return (
     <div
-      className={embed ? 'flex min-h-svh flex-col' : 'flex flex-col'}
-      style={embed ? undefined : { minHeight: 'calc(100vh - 3.5rem)' }}
+      // Non-embed: lock the viewer to exactly the viewport below the app header
+      // (3.5rem + its 1px border), so the page itself never scrolls — the
+      // content region below is the single scroll context (no outer-scroll/
+      // iframe-scroll fight).
+      className={embed ? 'flex min-h-svh flex-col' : 'flex h-[calc(100svh-3.5rem-1px)] flex-col'}
     >
-      {/* Embed mode (`?embed=1`) drops the surrounding chrome — control bar and
-          details block — leaving only the rendered content for inline iframing
-          in an RSS reader. The share-token claim + content renderers below are
-          untouched. */}
+      {/* Embed mode (`?embed=1`) drops the surrounding chrome — the control bar
+          with its details popover — leaving only the rendered content for inline
+          iframing in an RSS reader. The share-token claim + content renderers
+          below are untouched. */}
       {!embed && (
         <ControlBar
           node={node}
@@ -719,8 +770,7 @@ export function ViewerBody({ id }: { id: string }) {
           onToggleSource={() => setShowSource((v) => !v)}
         />
       )}
-      {!embed && <NodeDetails node={node} canEdit={canEditMeta} />}
-      <div ref={contentRef} className="flex flex-1 flex-col overflow-auto">
+      <div ref={contentRef} className="flex min-h-0 flex-1 flex-col overflow-auto">
         {sourceShown && node.url && (
           <SourceView url={node.url} />
         )}
@@ -729,7 +779,7 @@ export function ViewerBody({ id }: { id: string }) {
             src={node.url}
             title={node.name}
             className="h-full w-full flex-1"
-            style={{ border: 'none', minHeight: 'calc(100vh - 7.5rem)' }}
+            style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
           />
         )}
         {kind === 'image' && node.url && (
@@ -751,7 +801,7 @@ export function ViewerBody({ id }: { id: string }) {
             src={node.url}
             title={node.name}
             className="h-full w-full flex-1"
-            style={{ border: 'none', minHeight: 'calc(100vh - 7.5rem)' }}
+            style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
           />
         )}
         {kind === 'site' && !node.url && (

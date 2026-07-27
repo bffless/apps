@@ -1,57 +1,118 @@
 /**
- * Details block for the file/site viewer: shows the node's display Title
- * (falling back to its filename) + Description, and — for writers — an
- * "Edit details" dialog that PATCHes /api/node/meta. Additive metadata: the
- * filename stays the node's identity; title/description only enrich the viewer
- * and the RSS feed.
+ * Details affordance for the file/site viewer: a compact control-bar trigger
+ * opening a popover with the node's display Title (falling back to its
+ * filename) + Description, and — for writers — an "Edit details" dialog that
+ * PATCHes /api/node/meta. Lives in the control bar (not its own chrome row) so
+ * the viewer keeps a single, slim header above the content. Additive metadata:
+ * the filename stays the node's identity; title/description only enrich the
+ * viewer and the RSS feed.
  */
 import { useEffect, useRef, useState } from 'react'
 import type { HandoffNode } from '../lib/nodes'
 import { useUpdateNodeMetaMutation } from '../store/handoffApi'
 import { toast } from '../lib/toast'
+import { InfoIcon } from './icons'
 
 const TITLE_MAX = 200
 const DESC_MAX = 2000
 
 export function NodeDetails({ node, canEdit }: { node: HandoffNode; canEdit: boolean }) {
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const hasMeta = !!node.title || !!node.description
+
+  // Outside click / Escape close the popover (the edit dialog manages itself).
+  useEffect(() => {
+    if (!open) return
+    function onDocMouseDown(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
   if (!hasMeta && !canEdit) return null
 
   return (
-    <div className="border-b border-border bg-surface px-4 py-3">
-      {hasMeta ? (
-        <>
-          <div className="flex items-start justify-between gap-3">
-            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-ink">
-              {node.title || node.name}
-            </h1>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="shrink-0 rounded px-2 py-1 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-ink"
-              >
-                Edit details
-              </button>
-            )}
-          </div>
-          {node.title && <p className="mt-0.5 text-xs text-muted">{node.name}</p>}
-          {node.description && (
-            <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{node.description}</p>
-          )}
-        </>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="text-sm text-muted transition-colors hover:text-ink"
+    <span ref={wrapRef} className="relative flex shrink-0">
+      <button
+        type="button"
+        ref={triggerRef}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="Details"
+        className={[
+          'inline-flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors hover:bg-surface-2 hover:text-ink',
+          open ? 'bg-surface-2 text-ink' : 'text-muted',
+        ].join(' ')}
+      >
+        <InfoIcon className="h-4 w-4" />
+        <span className="hidden sm:inline">Details</span>
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Details"
+          className="menu-pop absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface p-4 shadow-md"
+          style={{ zIndex: 'var(--z-dropdown)' }}
         >
-          + Add title &amp; description
-        </button>
+          {hasMeta ? (
+            <>
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="min-w-0 flex-1 break-words text-sm font-semibold text-ink">
+                  {node.title || node.name}
+                </h2>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false)
+                      setEditing(true)
+                    }}
+                    className="-mr-1 -mt-0.5 shrink-0 rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                  >
+                    Edit details
+                  </button>
+                )}
+              </div>
+              {node.title && <p className="mt-0.5 break-words text-xs text-muted">{node.name}</p>}
+              {node.description && (
+                <p className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-ink">
+                  {node.description}
+                </p>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setEditing(true)
+              }}
+              className="text-sm text-muted transition-colors hover:text-ink"
+            >
+              + Add title &amp; description
+            </button>
+          )}
+        </div>
       )}
-      {open && <EditDetailsDialog node={node} onClose={() => setOpen(false)} />}
-    </div>
+
+      {editing && <EditDetailsDialog node={node} onClose={() => setEditing(false)} />}
+    </span>
   )
 }
 
