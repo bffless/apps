@@ -8,9 +8,14 @@
  * content region based on `previewFor(node)`.
  */
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useGetNodeQuery, useGetSignedUrlQuery, useDeleteNodeMutation } from '../store/handoffApi'
+import {
+  useGetNodeQuery,
+  useGetRootMetaQuery,
+  useGetSignedUrlQuery,
+  useDeleteNodeMutation,
+} from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown, markdownDocument } from '../lib/markdown'
 import { viewerBase } from '../lib/contentPath'
@@ -18,10 +23,13 @@ import { nodeFileName, type HandoffNode } from '../lib/nodes'
 import { useSession, fetchWithReauth } from '../lib/session'
 import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
+import { childIsPublic, type FolderLink } from '../lib/acl'
+import { rootMetaNode } from '../lib/rootNode'
 import { ShareDialog } from '../components/ShareDialog'
+import { AncestorNodes } from '../components/AncestorNodes'
 import { NodeDetails } from '../components/NodeDetails'
-import { TrashIcon, ChevronRightIcon } from '../components/icons'
-import { parentFolderPath } from '../lib/tree'
+import { TrashIcon, ChevronRightIcon, GlobeIcon } from '../components/icons'
+import { parentFolderPath, buildAncestorFolderChain } from '../lib/tree'
 import { treeUrl, parentPath, blobUrl } from '../lib/pathUrl'
 import { useClaimShareToken } from '../store/useClaimShareToken'
 import { useEmbedMode, isFramed } from '../lib/embed'
@@ -72,14 +80,69 @@ function ShareIcon() {
 function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSource }: ControlBarProps) {
   const navigate = useNavigate()
   const { session } = useSession()
+  const authed = session?.authenticated === true
 
   const isRoot = node.parentId === 'root'
   // Look up the parent folder to read its ownerId for the share gate.
   // Skip for guests (unauthenticated) to avoid a discarded 401 on the parent fetch.
-  const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !(session?.authenticated) })
+  const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !authed })
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
   const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
   const backTo = backTarget(node)
+
+  // Root → parent ancestor chain — powers the effective-visibility badge
+  // (#254) and ShareDialog's `parentChain`/`folderMode` (#253), which the
+  // dialog needs to see publicness inherited from an ancestor folder. Guests
+  // skip resolution entirely (same 401-avoidance as the parentNode fetch
+  // above); they get no badge — whatever they're viewing, they can access.
+  const [ancestorNodesById, setAncestorNodesById] = useState<Record<string, HandoffNode>>({})
+  const [ancestorChainComplete, setAncestorChainComplete] = useState(isRoot)
+  // Reset the walk when navigating to a file in a different folder
+  // (adjust-state-during-render, same pattern as ViewerBody's showSource).
+  const [prevParentId, setPrevParentId] = useState(node.parentId)
+  if (node.parentId !== prevParentId) {
+    setPrevParentId(node.parentId)
+    setAncestorNodesById({})
+    setAncestorChainComplete(node.parentId === 'root')
+  }
+  const handleChainUpdate = useCallback(
+    (nodesById: Record<string, HandoffNode>, complete: boolean) => {
+      setAncestorNodesById(nodesById)
+      setAncestorChainComplete(complete)
+    },
+    [],
+  )
+  const { data: rootMeta, isLoading: rootMetaLoading } = useGetRootMetaQuery(undefined, {
+    skip: !authed,
+  })
+  const rootNode = rootMetaNode(rootMeta)
+
+  const { chain } = buildAncestorFolderChain(ancestorNodesById, node.parentId, rootNode)
+  const chainTail = chain[chain.length - 1]
+  // Live chain tail (see AncestorNodes): the walker's map is first-write-wins,
+  // but `parentNode` above DOES refetch when the Share dialog mutates the
+  // parent's grants/mode — swap it in so badge and dialog track those live.
+  const liveChain: FolderLink[] =
+    parentNode && chainTail?.id === parentNode.id
+      ? [
+          ...chain.slice(0, -1),
+          {
+            id: parentNode.id,
+            ownerId: parentNode.ownerId,
+            grants: parentNode.grants,
+            mode: parentNode.mode,
+          },
+        ]
+      : chain
+  const chainReady = isRoot || ancestorChainComplete
+  // No "Private" flash while the chain / rootMeta are still loading (same
+  // guard as FolderView's publicReady) — render nothing until both resolve.
+  const publicReady = authed && chainReady && !rootMetaLoading
+  const isNodePublic = publicReady && childIsPublic(liveChain, node)
+  // ShareDialog's parentChain contract: root → the TARGET folder's parent,
+  // the target's own link EXCLUDED (its own grants come from the live grants
+  // query inside the dialog). The target is the file's containing folder.
+  const dialogParentChain = chainTail?.id === node.parentId ? liveChain.slice(0, -1) : liveChain
 
   // "Open" must not point at the raw bytes for Markdown: the content endpoint
   // serves it as text/markdown, which browsers download instead of rendering —
@@ -159,6 +222,26 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         <span className="min-w-0 flex-1 truncate font-medium text-ink">{fileName}</span>
       </nav>
 
+      {/* Renderless ancestor walk feeding the badge + Share dialog chain. */}
+      {authed && !isRoot && (
+        <AncestorNodes key={node.parentId} folderId={node.parentId} onUpdate={handleChainUpdate} />
+      )}
+
+      {/* Effective Public/Private badge (#254) — same treatment as the folder
+          header's, truthful once the chain resolves ("Public" or "Private",
+          never a loading flash of either). */}
+      {publicReady &&
+        (isNodePublic ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-100 px-2 py-0.5 text-xs font-medium text-accent-700">
+            <GlobeIcon className="h-3 w-3" />
+            Public
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted">
+            Private
+          </span>
+        ))}
+
       {/* Share — owners/admins of the parent folder. Root items: disabled + explanation. */}
       {isRoot ? (
         session?.authenticated ? (
@@ -190,6 +273,8 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
               title={node.name}
               nodeId={node.id}
               isFile
+              parentChain={dialogParentChain}
+              folderMode={parentNode?.mode ?? 'inheriting'}
               onClose={() => setShareOpen(false)}
             />
           )}

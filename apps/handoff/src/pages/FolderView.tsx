@@ -54,6 +54,7 @@ import { rootMetaNode } from '../lib/rootNode'
 import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
 import { ShareDialog } from '../components/ShareDialog'
+import { AncestorNodes } from '../components/AncestorNodes'
 import { FeedAutodiscovery } from '../components/FeedAutodiscovery'
 import { Menu } from '../components/Menu'
 import { EmptyState } from '../components/EmptyState'
@@ -81,73 +82,9 @@ import type { Crumb } from '../lib/tree'
 import type { RootState, AppDispatch } from '../store'
 
 // ---------------------------------------------------------------------------
-// Ancestor resolution (unchanged logic) — drives breadcrumb AND ACL eval.
+// Ancestor resolution — drives breadcrumb AND ACL eval. The renderless walker
+// lives in components/AncestorNodes.tsx, shared with the file viewer (#253).
 // ---------------------------------------------------------------------------
-
-function AncestorNodeResolver({
-  folderId,
-  onResolved,
-}: {
-  folderId: string
-  onResolved: (node: HandoffNode) => void
-}) {
-  const { data: node } = useGetNodeQuery(folderId, { skip: folderId === 'root' })
-  useEffect(() => {
-    if (node) onResolved(node)
-  }, [node, onResolved])
-  return null
-}
-
-function AncestorNodesInner({
-  folderId,
-  onUpdate,
-}: {
-  folderId: string
-  onUpdate: (nodesById: Record<string, HandoffNode>, complete: boolean) => void
-}) {
-  const [nodesById, setNodesById] = useState<Record<string, HandoffNode>>({})
-  const [toResolve, setToResolve] = useState<string[]>(folderId !== 'root' ? [folderId] : [])
-  const visitedRef = useRef<Set<string>>(new Set(folderId !== 'root' ? [folderId] : []))
-
-  const handleResolved = useCallback((node: HandoffNode) => {
-    setNodesById((prev) => {
-      if (prev[node.id]) return prev
-      const next = { ...prev, [node.id]: node }
-      if (node.parentId !== 'root' && !visitedRef.current.has(node.parentId)) {
-        visitedRef.current.add(node.parentId)
-        setToResolve((q) => [...q, node.parentId])
-      }
-      return next
-    })
-  }, [])
-
-  const complete =
-    folderId === 'root' ||
-    (() => {
-      let cur = folderId
-      let hops = 0
-      while (cur !== 'root' && hops < 64) {
-        const n = nodesById[cur]
-        if (!n) return false
-        cur = n.parentId
-        hops++
-      }
-      return cur === 'root'
-    })()
-
-  useEffect(() => {
-    onUpdate(nodesById, complete)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodesById, complete])
-
-  return (
-    <>
-      {toResolve.map((id) => (
-        <AncestorNodeResolver key={id} folderId={id} onResolved={handleResolved} />
-      ))}
-    </>
-  )
-}
 
 interface BreadcrumbProps {
   folderId: string
@@ -169,7 +106,7 @@ function BreadcrumbInner({ folderId, onChainUpdate }: BreadcrumbProps) {
 
   return (
     <>
-      <AncestorNodesInner key={folderId} folderId={folderId} onUpdate={handleUpdate} />
+      <AncestorNodes key={folderId} folderId={folderId} onUpdate={handleUpdate} />
       <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted">
         {crumbs.map((crumb: Crumb, i: number) => {
           const isLast = i === crumbs.length - 1
@@ -1002,7 +939,7 @@ export function FolderView({ folderId }: FolderViewProps) {
   const publicReady = chainReady && !rootMetaLoading
   const chainTail = folderChain[folderChain.length - 1]
 
-  // Live chain tail (Important finding fix): `AncestorNodesInner.handleResolved`
+  // Live chain tail (Important finding fix): `AncestorNodes.handleResolved`
   // is first-write-wins (`if (prev[node.id]) return prev`) — once the CURRENT
   // folder's own node has landed in the ancestor map (e.g. via the initial
   // Breadcrumb walk), a later setNodeMode/addGrant/revokeGrant on that same
