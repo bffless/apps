@@ -8,6 +8,19 @@ project.
 > live deployment of the app of your choice — Studio transcribing a screen recording, or Handoff
 > serving back a file — via one app-agnostic spine. The thinnest complete end-to-end path.
 
+## Agent skills
+
+This repo publishes agent skills for the apps as the `bffless-apps` collection
+(currently: `handoff-api` — drive a Handoff deployment's API as an agent).
+Install into your own project either way:
+
+    npx skills add bffless/apps            # skills CLI (any harness)
+
+or add this repo as a Claude Code plugin marketplace and install the
+`bffless-apps` plugin. Canonical skill sources live under
+`plugins/bffless-apps/skills/`; the copies in `.claude/skills/` and
+`.agents/skills/` are generated mirrors (`pnpm skills:sync`).
+
 ## Apps
 
 | App | Path | What it is |
