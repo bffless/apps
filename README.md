@@ -14,12 +14,24 @@ This repo publishes agent skills for the apps as the `bffless-apps` collection
 (currently: `handoff-api` — drive a Handoff deployment's API as an agent).
 Install into your own project either way:
 
-    npx skills add bffless/apps            # skills CLI (any harness)
+    npx skills add bffless/apps --skill handoff-api   # skills CLI (any harness)
 
-or add this repo as a Claude Code plugin marketplace and install the
-`bffless-apps` plugin. Canonical skill sources live under
-`plugins/bffless-apps/skills/`; the copies in `.claude/skills/` and
-`.agents/skills/` are generated mirrors (`pnpm skills:sync`).
+(plain `npx skills add bffless/apps` installs every skill in this repo,
+including the repo-private `install-app` skill, which isn't meant for
+consumers — scope the install with `--skill handoff-api`)
+
+or in Claude Code, add this repo as a plugin marketplace and install the
+`bffless-apps` plugin:
+
+    /plugin marketplace add bffless/apps
+    /plugin install bffless-apps@bffless-apps-plugins
+
+Canonical skill sources live under `plugins/bffless-apps/skills/`; the skills
+CLI serves consumers from the generated `.agents/skills/` mirror
+(`pnpm skills:sync`). Only *published* skills (currently `handoff-api`) get
+mirrored into both `.claude/skills/` and `.agents/skills/` this way —
+authored, repo-private skills like `install-app` stay canonical in
+`.claude/skills/` and are mirrored only into `.agents/skills/`.
 
 ## Apps
 

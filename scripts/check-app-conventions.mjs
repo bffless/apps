@@ -24,6 +24,29 @@ import { dirname, join } from 'node:path'
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const appsDir = join(repoRoot, 'apps')
 
+// The marketplace listing's metadata.version must match the plugin it points at, or a
+// consumer installing via `/plugin marketplace add` sees a stale version label.
+function checkMarketplaceVersion() {
+  const marketplacePath = join(repoRoot, '.claude-plugin', 'marketplace.json')
+  const pluginPath = join(repoRoot, 'plugins', 'bffless-apps', '.claude-plugin', 'plugin.json')
+
+  if (!existsSync(marketplacePath)) return [`missing .claude-plugin/marketplace.json`]
+  if (!existsSync(pluginPath)) return [`missing plugins/bffless-apps/.claude-plugin/plugin.json`]
+
+  const marketplace = JSON.parse(readFileSync(marketplacePath, 'utf8'))
+  const plugin = JSON.parse(readFileSync(pluginPath, 'utf8'))
+  const marketplaceVersion = marketplace.metadata?.version
+  const pluginVersion = plugin.version
+
+  if (marketplaceVersion !== pluginVersion) {
+    return [
+      `.claude-plugin/marketplace.json metadata.version (${marketplaceVersion}) does not match ` +
+        `plugins/bffless-apps/.claude-plugin/plugin.json version (${pluginVersion}) — bump them together`,
+    ]
+  }
+  return []
+}
+
 // Required README headings. Matched as a markdown heading line (any level),
 // case-insensitive, so a heading rename that keeps the wording still passes.
 const REQUIRED_SECTIONS = [
@@ -100,6 +123,17 @@ function main() {
         console.log(`    - ${err}`)
         failures.push(`${app}: ${err}`)
       }
+    }
+  }
+
+  const marketplaceErrors = checkMarketplaceVersion()
+  if (marketplaceErrors.length === 0) {
+    console.log(`✓ marketplace.json version matches plugin.json`)
+  } else {
+    console.log(`✗ marketplace.json version`)
+    for (const err of marketplaceErrors) {
+      console.log(`    - ${err}`)
+      failures.push(err)
     }
   }
 

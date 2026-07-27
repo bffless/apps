@@ -40,14 +40,28 @@ async function vendoredSkillNames() {
   }
 }
 
-// Published skills = directories under plugins/bffless-apps/skills/.
+// Published skills = directories under plugins/bffless-apps/skills/. A name
+// that collides with a vendored skill (a skills-lock.json key) would silently
+// clobber vendored content when mirrored below, so fail loudly instead.
 async function publishedSkills() {
+  let entries
   try {
-    const entries = await fs.readdir(PLUGIN_DIR, { withFileTypes: true })
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort()
+    entries = await fs.readdir(PLUGIN_DIR, { withFileTypes: true })
   } catch {
     return []
   }
+  const names = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort()
+  const vendored = await vendoredSkillNames()
+  const collisions = names.filter((name) => vendored.has(name))
+  if (collisions.length > 0) {
+    console.error(
+      `skill name collision: ${collisions.join(', ')} ${collisions.length === 1 ? 'is' : 'are'} both ` +
+        'published (plugins/bffless-apps/skills/) and vendored (skills-lock.json) — ' +
+        'mirroring would clobber the vendored copy. Rename one side.',
+    )
+    process.exit(1)
+  }
+  return names
 }
 
 // Authored skills = real dirs under .claude/skills not vendored and not published

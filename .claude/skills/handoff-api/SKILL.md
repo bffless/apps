@@ -19,6 +19,9 @@ Resolve the deployment's base URL, in order:
    handoff.example.com").
 
 Examples below use `$HANDOFF_BASE_URL` (e.g. `https://handoff.example.com`).
+If the base URL came from the user rather than an already-set env var, export
+it (`export HANDOFF_BASE_URL=https://handoff.example.com`) so the examples
+below run verbatim.
 
 ## Auth (send a BFFless API key as X-API-Key)
 
@@ -32,16 +35,23 @@ deployment, sent as the `X-API-Key` header. Source it in order:
 2. **The `bffless` CLI credential store** (requires `bffless` >= 0.3.1; filled
    by a one-time human `bffless login` per machine + instance):
 
-       curl -H "X-API-Key: $(npx bffless auth token)" "$HANDOFF_BASE_URL/api/nodes"
+       npx bffless auth token   # run standalone first — see below before embedding it in curl
 
    Inside a cloned Handoff repo, `auth token` resolves the instance from
    `.bffless/config.json` automatically; elsewhere pass
    `--api-url https://admin.example.com` (the BFFless admin URL, not the
-   Handoff URL).
+   Handoff URL). A fresh fork's committed `.bffless/config.json` still points
+   at the upstream demo instance — check that its `apiUrl` is *your* instance
+   before trusting the auto-resolve, and pass `--api-url` explicitly if not.
 
-If neither yields a key, stop and tell the user to run `npx bffless login`
-(or export `BFFLESS_API_KEY`). Do not hunt for keys in agent-runtime config
-files.
+`$(npx bffless auth token)` substitutes to an **empty string** on failure (the
+error goes to stderr, not stdout), so a failed lookup silently becomes
+`X-API-Key: ` rather than a visible error. Run `npx bffless auth token` on its
+own first; only once it exits 0 and prints a key, embed it:
+`curl -H "X-API-Key: $(npx bffless auth token)" "$HANDOFF_BASE_URL/api/nodes"`.
+If it exits non-zero, or neither this nor `BFFLESS_API_KEY` yields a key, stop
+and tell the user to run `npx bffless login` (or export `BFFLESS_API_KEY`). Do
+not hunt for keys in agent-runtime config files.
 
 The key authenticates as its owner, so content you create is owned by that
 user (the same as uploading in the browser). The PUT-to-bucket step (below) is
