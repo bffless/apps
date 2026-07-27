@@ -29,7 +29,7 @@ deployment, sent as the `X-API-Key` header. Source it in order:
 
        curl -H "X-API-Key: $BFFLESS_API_KEY" "$HANDOFF_BASE_URL/api/nodes"
 
-2. **The `bffless` CLI credential store** (requires `bffless` >= 0.4.0; filled
+2. **The `bffless` CLI credential store** (requires `bffless` >= 0.3.1; filled
    by a one-time human `bffless login` per machine + instance):
 
        curl -H "X-API-Key: $(npx bffless auth token)" "$HANDOFF_BASE_URL/api/nodes"
