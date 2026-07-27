@@ -1,10 +1,11 @@
 /**
- * NodeDetails: the viewer's details block (Task 6) — Title (falling back to
- * filename) + Description in the read view, and the writer-only Edit/Add
- * affordance opening a native <dialog>. The dialog's actual PATCH
- * /api/node/meta wiring is exercised at the store level in
- * ../store/updateNodeMeta.test.ts (Task 5); this file covers the
- * presentational read/write-gate behavior plus the dialog opening prefilled.
+ * NodeDetails: the viewer's details affordance — a control-bar "Details"
+ * trigger opening a popover with Title (falling back to filename) +
+ * Description, and the writer-only Edit/Add affordance opening a native
+ * <dialog>. The dialog's actual PATCH /api/node/meta wiring is exercised at
+ * the store level in ../store/updateNodeMeta.test.ts (Task 5); this file
+ * covers the presentational read/write-gate behavior plus the dialog opening
+ * prefilled.
  *
  * Same store-construction pattern as ../components/generalAccess.test.tsx —
  * no MSW here since none of these cases trigger a save (no network calls).
@@ -66,9 +67,14 @@ function renderWith(ui: React.ReactElement) {
   return render(<Provider store={makeStore()}>{ui}</Provider>)
 }
 
+function openPopover() {
+  fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+}
+
 describe('NodeDetails', () => {
-  it('shows the set title as the heading, plus the filename subline and the description', () => {
+  it('opening the popover shows the set title as the heading, plus the filename subline and the description', () => {
     renderWith(<NodeDetails node={node({ title: 'Board Deck', description: 'x' })} canEdit={false} />)
+    openPopover()
     expect(screen.getByRole('heading', { name: 'Board Deck' })).toBeInTheDocument()
     expect(screen.getByText('a.png')).toBeInTheDocument()
     expect(screen.getByText('x')).toBeInTheDocument()
@@ -76,8 +82,18 @@ describe('NodeDetails', () => {
 
   it('falls back to the filename heading when no title is set, and still shows the description', () => {
     renderWith(<NodeDetails node={node({ title: null, description: 'some note' })} canEdit={false} />)
+    openPopover()
     expect(screen.getByRole('heading', { name: 'a.png' })).toBeInTheDocument()
     expect(screen.getByText('some note')).toBeInTheDocument()
+  })
+
+  it('the popover is closed until the trigger is clicked, and Escape closes it again', () => {
+    renderWith(<NodeDetails node={node({ title: 'Board Deck' })} canEdit={false} />)
+    expect(screen.queryByRole('dialog', { name: 'Details' })).not.toBeInTheDocument()
+    openPopover()
+    expect(screen.getByRole('dialog', { name: 'Details' })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Details' })).not.toBeInTheDocument()
   })
 
   it('a non-editor with no metadata renders nothing', () => {
@@ -85,24 +101,28 @@ describe('NodeDetails', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('an editor with no metadata sees "+ Add title & description" instead of the heading', () => {
+  it('an editor with no metadata sees "+ Add title & description" in the popover instead of the heading', () => {
     renderWith(<NodeDetails node={node({ title: null, description: null })} canEdit={true} />)
+    openPopover()
     expect(screen.getByRole('button', { name: /add title/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading')).not.toBeInTheDocument()
   })
 
   it('an editor sees an Edit control when metadata is set', () => {
     renderWith(<NodeDetails node={node({ title: 'T' })} canEdit={true} />)
+    openPopover()
     expect(screen.getByRole('button', { name: /edit details/i })).toBeInTheDocument()
   })
 
-  it('clicking Edit details opens the dialog prefilled from the node', () => {
+  it('clicking Edit details closes the popover and opens the dialog prefilled from the node', () => {
     renderWith(<NodeDetails node={node({ title: 'Board Deck', description: 'the note' })} canEdit={true} />)
 
+    openPopover()
     fireEvent.click(screen.getByRole('button', { name: /edit details/i }))
 
     const dialog = screen.getByRole('dialog', { name: 'Edit details' })
     expect(dialog).toHaveAttribute('open')
+    expect(screen.queryByRole('dialog', { name: 'Details' })).not.toBeInTheDocument()
     expect(within(dialog).getByLabelText('Title')).toHaveValue('Board Deck')
     expect(within(dialog).getByLabelText('Description')).toHaveValue('the note')
   })
@@ -110,6 +130,7 @@ describe('NodeDetails', () => {
   it('clicking "+ Add title & description" opens the dialog empty', () => {
     renderWith(<NodeDetails node={node({ title: null, description: null })} canEdit={true} />)
 
+    openPopover()
     fireEvent.click(screen.getByRole('button', { name: /add title/i }))
 
     const dialog = screen.getByRole('dialog', { name: 'Edit details' })
@@ -120,6 +141,7 @@ describe('NodeDetails', () => {
   it('clicking Cancel closes the dialog', () => {
     renderWith(<NodeDetails node={node({ title: 'Board Deck', description: 'the note' })} canEdit={true} />)
 
+    openPopover()
     fireEvent.click(screen.getByRole('button', { name: /edit details/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
 
