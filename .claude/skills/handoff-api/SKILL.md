@@ -99,6 +99,32 @@ Verified root upload (`report.md`): prepare
 - Read a file back: `POST /api/sign` `{path:<storageKey>}` → `{signed:{url,…}}`
 - Share a folder: `POST /api/share-links` `{folderId, expiresMs?}` → share link
 - Delete: `DELETE /api/node?id=<uuid>` → `{id}` (refuses a non-empty folder with 409)
+- Set a File/Site's display title + description (feed-surfaced metadata):
+  `PATCH /api/node/meta` `{id, title?, description?}` → `{id, title, description}`
+  (needs edit on the parent folder; at least one field required, empty string
+  clears it)
+- Set a folder's sharing mode or feed exclusion: `PATCH /api/node`
+  `{id, mode?: "inheriting"|"restricted", feedExcluded?: boolean}` → `{id, mode}`
+  (owner/admin only; at least one field required; 400 invalid, 403 forbidden).
+  `inheriting` folders take their ancestors' grants; `restricted` cuts off
+  inheritance so access is re-derived from the folder's own grants.
+
+## Permissions (grants)
+
+Per-folder access control — the mechanism behind "content is private-by-default".
+In all three calls `folderId` is a folder UUID or the literal `root` (the
+caller's "My Files" root).
+
+- List: `GET /api/grants?folderId=<id|root>` → `{grants:[{principalId, principalEmail, level}]}`
+- Add/update: `POST /api/grants` `{folderId, principalId, principalEmail?, level: "view"|"edit"}`
+  → `{grants:[…]}` — upserts by `principalId`; folder owner or admin only (403 otherwise)
+- Revoke: `POST /api/grants/revoke` `{folderId, principalId}` → `{grants:[…]}`
+  (owner/admin only)
+
+The reserved principal `anyone` is what "Public" means: granting it makes the
+folder world-viewable. It is always capped at `level: "view"` (the server
+silently downgrades `edit`) and carries no email — publicness can never
+escalate to edit.
 
 ## Gotchas
 
