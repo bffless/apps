@@ -1,6 +1,6 @@
 {
   "name": "bffless-apps",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Agent skills for the BFFless give-away apps \u2014 currently: drive a Handoff deployment's API as an agent",
   "author": {
     "name": "BFFless"

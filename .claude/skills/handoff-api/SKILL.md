@@ -92,6 +92,57 @@ Verified root upload (`report.md`): prepare
 `{filename:"report.md", contentType:"text/markdown", path:"report.md", parentId:"root"}`
 → PUT bytes to `uploadUrl` → register with the returned `storageKey`.
 
+## Upload renderable HTML (a Site, not a File)
+
+**Registering HTML through `POST /api/nodes` gives a node that never renders.**
+The viewer picks its preview from the node *type*, not the mime: `previewFor()`
+(`apps/handoff/src/lib/preview.ts`) returns `'site'` only for `type: 'site'`,
+and a `text/html` File falls through every branch to `'download'` — the
+"Preview unavailable" card. HTML has to be registered as a **Site**:
+
+1. Choose the Site's `name`. It is both the display name and a **path
+   segment**, so keep it URL-clean (`ce-v0.2.18-release-review`, not
+   `report`). Its content prefix is `contentSubPath(<owning folder path>,
+   <name>)` — at root just `<name>`, in a folder `<folder path>/<name>`.
+2. For every asset: `POST /api/uploads/prepare`
+   `{filename, contentType, path: "<prefix>/<relPath>"}` → `PUT` the bytes.
+   Send **no `parentId`** — a Site's assets are bucket objects, not nodes, so
+   there is nothing to collide with.
+3. `POST /api/sites` `{parentId, name, entry, path: "<prefix>", createdMs}` →
+   `{node}` with `type: "site"` and `url` =
+   `/api/uploads/content/<path>/<entry>`.
+
+- `entry` is the index document, default `index.html`. The UI's
+  `planSiteUpload()` (`apps/handoff/src/lib/site.ts`) picks it the same way:
+  root `index.html` if present, else the single `*.html`, else it asks.
+- **A lone HTML file can be a Site** — no folder drop needed. Upload it as
+  `<prefix>/index.html` and register the Site. This is the API equivalent of
+  the UI's "Import as Site" prompt.
+- Keep the pretty name out of the path: set a human title with
+  `PATCH /api/node/meta` (below) and let `name` stay URL-safe.
+- **There is no rename**: `name` and `path` are fixed at creation. To rename,
+  re-upload under the new prefix, register a new Site, then delete the old
+  node.
+- Assets referenced relatively (`assets/app.css`, `../img/x.png`) resolve
+  because the whole bundle is stored verbatim under the prefix on the same
+  `/api/uploads/content/*` origin (ADR-0001).
+- **The entry document must declare `<meta charset="utf-8">`.** Content is
+  served as bare `content-type: text/html` — the charset param is dropped even
+  if the object was stored with one — so a document without the meta tag falls
+  back to windows-1252 and any non-ASCII byte turns to mojibake (`·` → `Â·`).
+  Inside the viewer it looks *fine*, because an iframe with no declared charset
+  inherits the parent page's UTF-8; the corruption only appears when the
+  content URL is opened directly. Check the file (a fragment saved without a
+  `<head>` usually lacks it) and prepend
+  `<!DOCTYPE html>\n<meta charset="utf-8">` before uploading.
+
+Verified in-folder Site (`reports/ce-v0.2.18-release-review`, single file):
+prepare `{filename:"index.html", contentType:"text/html",
+path:"reports/ce-v0.2.18-release-review/index.html"}` → PUT → `POST /api/sites`
+`{parentId:<reports id>, name:"ce-v0.2.18-release-review", entry:"index.html",
+path:"reports/ce-v0.2.18-release-review"}` → renders at
+`/blob/reports/ce-v0.2.18-release-review`.
+
 ## Other operations
 
 - List a folder: `GET /api/nodes?parentId=<id>` → `{nodes:[…]}` (omit param for root)
@@ -133,3 +184,6 @@ escalate to edit.
 - The PUT step is unauthenticated and goes straight to the bucket — do not add
   the key.
 - Delete is write-gated and single-node; delete children before parents.
+- A `text/html` upload registered via `POST /api/nodes` shows "Preview
+  unavailable" — that is the type, not a broken file. Use `POST /api/sites`
+  (above).
