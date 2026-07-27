@@ -1,0 +1,18 @@
+{
+  "name": "bffless-apps-plugins",
+  "owner": {
+    "name": "BFFless"
+  },
+  "metadata": {
+    "description": "Agent skills for the BFFless give-away apps (Handoff, Reader, Studio)",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "bffless-apps",
+      "source": "./plugins/bffless-apps",
+      "description": "Skills for apps built on BFFless — currently: drive a Handoff deployment's API as an agent",
+      "category": "apps"
+    }
+  ]
+}

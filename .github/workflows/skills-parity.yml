@@ -1,15 +1,18 @@
 name: Skills parity
 
-# Repo-local *authored* skills (e.g. install-app, handoff-api) are committed to
-# both .claude/skills/ and .agents/skills/ as real, byte-identical files, so a
-# fork gets them in whichever harness layout it uses. This check fails a PR if
-# the two copies drift — run `pnpm skills:sync` (or `node scripts/sync-skills.mjs`)
-# and commit the result to fix.
+# Repo-local *published* skills (canonical under plugins/bffless-apps/skills/,
+# e.g. handoff-api) and *authored* skills (repo-private, canonical under
+# .claude/skills/, e.g. install-app) are mirrored into .claude/skills/ and/or
+# .agents/skills/ as real, byte-identical files, so a fork gets them in
+# whichever harness layout it uses. This check fails a PR if any mirror copy
+# drifts from its canonical source — run `pnpm skills:sync` (or
+# `node scripts/sync-skills.mjs`) and commit the result to fix.
 on:
   pull_request:
     paths:
       - '.claude/skills/**'
       - '.agents/skills/**'
+      - 'plugins/**'
       - 'scripts/sync-skills.mjs'
       - 'skills-lock.json'
       - '.github/workflows/skills-parity.yml'
@@ -29,5 +32,5 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Check authored-skill copies are in sync
+      - name: Check published + authored skill copies are in sync
         run: node scripts/sync-skills.mjs --check

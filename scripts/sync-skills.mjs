@@ -1,20 +1,23 @@
 #!/usr/bin/env node
-// Dual-home repo-local *authored* skills into both harness directories.
+// Dual-home repo-local skills into both harness directories.
 //
-// Vendored skills (tracked in skills-lock.json) are fanned out by the `skills`
-// CLI — in `.claude/skills/` they are symlinks into `.agents/skills/`. Authored
-// skills (NOT in the lock: e.g. `install-app`, `handoff-api`) have no such
-// tooling, so a symlink would be fragile across checkouts/Windows. Instead we
-// keep the canonical copy under `.claude/skills/<name>/` and mirror it into
-// `.agents/skills/<name>/` as real, byte-identical files — whatever is committed
-// is what a fork gets, in both harness layouts.
+// Three categories:
+//  - vendored  (keys of skills-lock.json): fanned out by the `skills` CLI — in
+//    `.claude/skills/` they are symlinks into `.agents/skills/`. Not our job here.
+//  - published (canonical under plugins/bffless-apps/skills/): the public
+//    collection third parties install (skills CLI / Claude plugin marketplace).
+//    Mirrored into BOTH `.claude/skills/<name>/` and `.agents/skills/<name>/` as
+//    real, byte-identical files so in-repo agents see them without the plugin.
+//  - authored  (real dirs under `.claude/skills/`, not vendored, not published):
+//    repo-private skills (e.g. install-app). Canonical in `.claude/skills/`,
+//    mirrored into `.agents/skills/<name>/`.
 //
-//   node scripts/sync-skills.mjs          # write the `.agents` copies
+//   node scripts/sync-skills.mjs          # write the mirror copies
 //   node scripts/sync-skills.mjs --check  # verify parity, exit 1 on drift
 //
-// The set of authored skills is derived, not hard-coded: any real (non-symlink)
-// directory under `.claude/skills/` whose name is not a key in skills-lock.json.
-// Drop a new authored skill in `.claude/skills/` and it is picked up here.
+// The sets are derived, not hard-coded: drop a skill directory into
+// `plugins/bffless-apps/skills/` (published) or `.claude/skills/` (authored)
+// and it is picked up here.
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -23,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const CLAUDE_DIR = path.join(repoRoot, '.claude', 'skills')
 const AGENTS_DIR = path.join(repoRoot, '.agents', 'skills')
+const PLUGIN_DIR = path.join(repoRoot, 'plugins', 'bffless-apps', 'skills')
 const LOCK_FILE = path.join(repoRoot, 'skills-lock.json')
 
 const check = process.argv.includes('--check')
@@ -36,12 +40,38 @@ async function vendoredSkillNames() {
   }
 }
 
-// Authored skills = real dirs under .claude/skills not in the lock (and not symlinks).
-async function authoredSkills() {
+// Published skills = directories under plugins/bffless-apps/skills/. A name
+// that collides with a vendored skill (a skills-lock.json key) would silently
+// clobber vendored content when mirrored below, so fail loudly instead.
+async function publishedSkills() {
+  let entries
+  try {
+    entries = await fs.readdir(PLUGIN_DIR, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const names = entries.filter((e) => e.isDirectory()).map((e) => e.name).sort()
   const vendored = await vendoredSkillNames()
+  const collisions = names.filter((name) => vendored.has(name))
+  if (collisions.length > 0) {
+    console.error(
+      `skill name collision: ${collisions.join(', ')} ${collisions.length === 1 ? 'is' : 'are'} both ` +
+        'published (plugins/bffless-apps/skills/) and vendored (skills-lock.json) — ' +
+        'mirroring would clobber the vendored copy. Rename one side.',
+    )
+    process.exit(1)
+  }
+  return names
+}
+
+// Authored skills = real dirs under .claude/skills not vendored and not published
+// (published mirrors land in .claude/skills too — the plugin copy is canonical).
+async function authoredSkills(published) {
+  const vendored = await vendoredSkillNames()
+  const publishedSet = new Set(published)
   const entries = await fs.readdir(CLAUDE_DIR, { withFileTypes: true })
   return entries
-    .filter((e) => e.isDirectory() && !e.isSymbolicLink() && !vendored.has(e.name))
+    .filter((e) => e.isDirectory() && !e.isSymbolicLink() && !vendored.has(e.name) && !publishedSet.has(e.name))
     .map((e) => e.name)
     .sort()
 }
@@ -73,57 +103,69 @@ async function exists(p) {
 
 const drift = []
 
-async function syncSkill(name) {
-  const src = path.join(CLAUDE_DIR, name)
-  const dst = path.join(AGENTS_DIR, name)
+// Mirror one skill from its canonical `src` dir into each of `dstDirs`
+// (byte-identical real files; in write mode removals propagate).
+async function mirrorSkill(name, src, dstDirs) {
   const srcFiles = await listFiles(src)
+  const srcLabel = path.relative(repoRoot, src)
 
-  if (check) {
-    if (!(await exists(dst))) {
-      drift.push(`missing: .agents/skills/${name} (canonical exists in .claude/skills)`)
-      return
-    }
-    const dstFiles = await listFiles(dst)
-    const srcSet = new Set(srcFiles)
-    const dstSet = new Set(dstFiles)
-    for (const f of dstFiles) {
-      if (!srcSet.has(f)) drift.push(`extra:   .agents/skills/${name}/${f} (not in canonical)`)
-    }
-    for (const f of srcFiles) {
-      if (!dstSet.has(f)) {
-        drift.push(`missing: .agents/skills/${name}/${f}`)
+  for (const dst of dstDirs) {
+    const dstLabel = path.relative(repoRoot, dst)
+
+    if (check) {
+      if (!(await exists(dst))) {
+        drift.push(`missing: ${dstLabel} (canonical exists in ${srcLabel})`)
         continue
       }
-      const a = await fs.readFile(path.join(src, f))
-      const b = await fs.readFile(path.join(dst, f))
-      if (!a.equals(b)) drift.push(`differs: ${name}/${f}`)
+      const dstFiles = await listFiles(dst)
+      const srcSet = new Set(srcFiles)
+      const dstSet = new Set(dstFiles)
+      for (const f of dstFiles) {
+        if (!srcSet.has(f)) drift.push(`extra:   ${dstLabel}/${f} (not in canonical ${srcLabel})`)
+      }
+      for (const f of srcFiles) {
+        if (!dstSet.has(f)) {
+          drift.push(`missing: ${dstLabel}/${f}`)
+          continue
+        }
+        const a = await fs.readFile(path.join(src, f))
+        const b = await fs.readFile(path.join(dst, f))
+        if (!a.equals(b)) drift.push(`differs: ${dstLabel}/${f} (canonical: ${srcLabel})`)
+      }
+      continue
     }
-    return
-  }
 
-  // Write mode: mirror canonical → .agents (fresh, so removals propagate).
-  await fs.rm(dst, { recursive: true, force: true })
-  for (const f of srcFiles) {
-    const to = path.join(dst, f)
-    await fs.mkdir(path.dirname(to), { recursive: true })
-    await fs.copyFile(path.join(src, f), to)
+    // Write mode: mirror canonical → dst (fresh, so removals propagate).
+    await fs.rm(dst, { recursive: true, force: true })
+    for (const f of srcFiles) {
+      const to = path.join(dst, f)
+      await fs.mkdir(path.dirname(to), { recursive: true })
+      await fs.copyFile(path.join(src, f), to)
+    }
+    console.log(`synced ${name}: ${srcFiles.length} file(s) → ${dstLabel}/`)
   }
-  console.log(`synced ${name}: ${srcFiles.length} file(s) → .agents/skills/${name}/`)
 }
 
-const names = await authoredSkills()
-if (names.length === 0) {
-  console.error('no authored skills found under .claude/skills/')
+const published = await publishedSkills()
+const authored = await authoredSkills(published)
+if (published.length + authored.length === 0) {
+  console.error('no published or authored skills found')
   process.exit(1)
 }
-for (const name of names) await syncSkill(name)
+
+for (const name of published) {
+  await mirrorSkill(name, path.join(PLUGIN_DIR, name), [path.join(CLAUDE_DIR, name), path.join(AGENTS_DIR, name)])
+}
+for (const name of authored) {
+  await mirrorSkill(name, path.join(CLAUDE_DIR, name), [path.join(AGENTS_DIR, name)])
+}
 
 if (check) {
   if (drift.length > 0) {
-    console.error('skills parity check FAILED — .claude and .agents copies drifted:')
+    console.error('skills parity check FAILED — mirror copies drifted from canonical:')
     for (const d of drift) console.error('  ' + d)
     console.error('\nRun `pnpm skills:sync` and commit the result.')
     process.exit(1)
   }
-  console.log(`skills parity OK (${names.join(', ')})`)
+  console.log(`skills parity OK (published: ${published.join(', ') || 'none'}; authored: ${authored.join(', ') || 'none'})`)
 }
