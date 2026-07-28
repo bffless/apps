@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 17
 pipeline:
   name: Per-scene refiner (async enqueue + poll)
-  description: "Per-scene refiner (story 03c; async fire-and-poll 03f Part 0; hears the scene audio 03k; creator prompts 03l; word timings 03p; cut-first contract 13f / ADR-0003). The scene ships as its ORIGINAL footage minus cuts - no narration, no segments. prep builds the prompt from the per-word WORD TIMINGS (request.body.wordTimings), the MEASURED DEAD SPACE lines (request.body.deadSpace, story 13c - true silence from the waveform), the director's CUTTING BRIEF (request.body.brief), and the creator's direction/directorDirection - each optional section included only when non-empty, so pre-13f clients still work. The prompt requires cut edges to snap into silence (never mid-word), biases toward keeping footage, and allows an EMPTY cuts answer. ENQUEUE-ONLY response path: prep also signs sheet + audio paths (request.audioUrl REQUIRED - prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. Gemini refine + parse run in postSteps (replicate timeout 280s). 13f parse: coerces { cuts } only (clamped to the scene span, sorted; empty is valid); errors only when no readable cuts key came back. Writes the row to { status:'done', result:{cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
+  description: "Per-scene refiner (story 03c; async fire-and-poll 03f Part 0; hears the scene audio 03k; creator prompts 03l; word timings 03p; cut-first contract 13f / ADR-0003). The scene ships as its ORIGINAL footage minus cuts - no narration, no segments. prep builds the prompt from the per-word WORD TIMINGS (request.body.wordTimings), the MEASURED DEAD SPACE lines (request.body.deadSpace, story 13c - true silence from the waveform), the director's CUTTING BRIEF (request.body.brief), and the creator's direction/directorDirection - each optional section included only when non-empty, so pre-13f clients still work. The prompt requires cut edges to snap into silence (never mid-word), biases toward keeping footage, and allows an EMPTY cuts answer. ENQUEUE-ONLY response path: prep also signs sheet + audio paths (request.audioUrl REQUIRED - prep throws without it), createJob inserts a studio_jobs row (kind=refine), respond returns { jobId, status:'pending' }. Gemini refine + parse run in postSteps (replicate timeout 280s). DEAF FALLBACK: `refiner` hears the scene audio, but when the provider's audio input is unavailable that call dies in ~1s regardless of file size/model/scene length; audioFallbackCheck detects the dropped output and `refinerNoAudio` re-runs the identical request minus the audio (still dense sheets + word timings + measured dead space), so a broken audio path degrades the refine instead of failing it. parse prefers the with-audio result and errors only when BOTH came back empty. 13f parse: coerces { cuts } only (clamped to the scene span, sorted; empty is valid); errors only when no readable cuts key came back. Writes the row to { status:'done', result:{cuts} } or { status:'error', error }. FE polls GET /api/studio/job. No validators yet (deferred to story 07)."
   steps:
     - id: prep
       name: prep
@@ -133,6 +133,24 @@ pipeline:
           system_instruction: steps.prep.system
         model: google/gemini-3.5-flash
         timeout: 280000
+    - id: audioFallbackCheck
+      name: audioFallbackCheck
+      handler: function_handler
+      code: ./fallback.fn.js
+    - id: refinerNoAudio
+      name: refinerNoAudio
+      handler: replicate
+      config:
+        input:
+          images: steps.collect.images
+          prompt: steps.prep.prompt
+          temperature: 0.5
+          thinking_level: "'low'"
+          max_output_tokens: 64000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.5-flash
+        timeout: 280000
+        condition: steps.audioFallbackCheck.needsFallback
     - id: parse
       name: parse
       handler: function_handler
