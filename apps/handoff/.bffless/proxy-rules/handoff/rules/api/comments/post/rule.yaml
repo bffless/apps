@@ -1,0 +1,96 @@
+targetUrl: pipeline
+order: 21
+pipeline:
+  name: Handoff create comment
+  description: Create a comment root or reply — requires a session user (401 for share-cookie/anon) AND view+ on the node (spec §7).
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.ts
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.body.nodeId
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.ok
+    - id: parentComment
+      name: parentComment
+      handler: data_query
+      config:
+        recordId: request.body.parentId
+        schemaId: $schema:handoff_comments
+        condition: steps.pre.isReply
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.ts
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        fields:
+          nodeId: request.body.nodeId
+          parentId: steps.pre.parentIdValue
+          authorId: user.id
+          authorName: steps.gate.authorName
+          body: steps.pre.bodyValue
+          anchorJson: steps.pre.anchorValue
+          resolved: false
+          deleted: false
+          reactionsJson: '"{}"'
+          createdMs: now()
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.allow
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.ts
+      config:
+        condition: steps.gate.allow
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"comment": {{{steps.shape.comment}}}}'
+        status: 200
+        condition: steps.gate.allow
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"error":"invalid request"}'
+        status: 400
+        condition: steps.gate.badRequest
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Create a margin comment or reply (spec 2026-07-28)
