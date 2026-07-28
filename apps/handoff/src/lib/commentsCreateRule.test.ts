@@ -30,6 +30,20 @@ it('rule exists', () => {
   expect(rule).toBeDefined()
 })
 
+it('data steps are pinned to the compiler-resolved schema ids', () => {
+  // Same precedent as commentsListRule.test.ts:44 — `$schema:` refs resolve to the schema's
+  // id in the export (uuidv5 for handoff_comments, since its manifest carries no `id:`; the
+  // literal `id:` handoff_nodes already declares for the others).
+  const nodesSchema = proxy.schemas.find((s) => s.name === 'handoff_nodes')
+  const commentsSchema = proxy.schemas.find((s) => s.name === 'handoff_comments')
+  expect(nodesSchema).toBeDefined()
+  expect(commentsSchema).toBeDefined()
+  expect(step('query').config.schemaId).toBe(nodesSchema!.id)
+  expect(step('allFolders').config.schemaId).toBe(nodesSchema!.id)
+  expect(step('parentComment').config.schemaId).toBe(commentsSchema!.id)
+  expect(step('create').config.schemaId).toBe(commentsSchema!.id)
+})
+
 describe('gate', () => {
   const gate = compileHandler(step('gate').config.code)
   const goodPre = {
