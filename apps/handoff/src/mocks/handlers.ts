@@ -1383,8 +1383,9 @@ export const handlers = [
    * Response: { id, soft }
    * Author-only (v1: not even an admin may moderate-delete) — mirrors
    * comments/delete/{pre,gate}.fn.ts. A root comment with >=1 reply is
-   * soft-deleted (husk keeps anchorJson so the reply keeps its position); a
-   * reply, or a childless root, is hard-deleted.
+   * soft-deleted (husk keeps only id/nodeId/parentId/deleted/createdMs — no
+   * anchorJson, so the client can't place it and lists it under
+   * "Unanchored" instead); a reply, or a childless root, is hard-deleted.
    */
   http.delete('/api/comments', ({ request }) => {
     const id = new URL(request.url).searchParams.get('id') ?? ''

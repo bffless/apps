@@ -156,10 +156,10 @@ the same way it resolves any table by name (see **Data-table ids are resolved by
 | `authorId` | text | BFFless user id, server-stamped only |
 | `authorName` | text | display snapshot (email) |
 | `body` | text | comment text |
-| `anchorJson` | text | anchor (roots only) — text quote or image pin |
+| `anchorJson` | json | anchor (roots only) — text quote or image pin |
 | `resolved` | boolean | roots only |
 | `resolvedBy` / `resolvedMs` | text / integer | audit trail |
-| `reactionsJson` | text | `{ "👍": ["<userId>", …] }` |
+| `reactionsJson` | json | `{ "👍": ["<userId>", …] }` |
 | `deleted` | boolean | soft-delete marker for roots that have replies |
 | `createdMs` / `updatedMs` | integer | server-set |
 

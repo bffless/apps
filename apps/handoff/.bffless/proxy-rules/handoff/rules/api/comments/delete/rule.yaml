@@ -4,8 +4,9 @@ pipeline:
   name: Handoff delete comment
   description: >-
     Delete a margin comment — author-only (v1 policy: not even an admin may moderate-delete).
-    A root with >=1 reply is soft-deleted (husk keeps anchorJson so replies retain their
-    position); a reply, or a childless root, is hard-deleted (spec 2026-07-28).
+    A root with >=1 reply is soft-deleted (husk keeps id/nodeId/parentId/deleted/createdMs
+    only — GET drops anchorJson, so the thread surfaces under "Unanchored" client-side); a
+    reply, or a childless root, is hard-deleted (spec 2026-07-28).
   steps:
     - id: pre
       name: pre
@@ -20,6 +21,10 @@ pipeline:
         condition: steps.pre.idOk
     - id: replies
       name: replies
+      # Probes for existing replies before gate/hardDelete run. A reply created between this
+      # probe and the hard delete is orphaned (parentId points at nothing); orphans are
+      # invisible client-side since threadsFor drops replies without a live root. Accepted
+      # TOCTOU window, not handled.
       handler: data_query
       config:
         filters:
