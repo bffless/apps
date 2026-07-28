@@ -1,0 +1,41 @@
+name: handoff_comments
+fields:
+  - name: nodeId
+    type: string
+    required: true
+  - name: parentId
+    type: string
+    required: false
+  - name: authorId
+    type: string
+    required: true
+  - name: authorName
+    type: string
+    required: false
+  - name: body
+    type: string
+    required: false
+  - name: anchorJson
+    type: json
+    required: false
+  - name: resolved
+    type: boolean
+    required: false
+  - name: resolvedBy
+    type: string
+    required: false
+  - name: resolvedMs
+    type: number
+    required: false
+  - name: reactionsJson
+    type: json
+    required: false
+  - name: deleted
+    type: boolean
+    required: false
+  - name: createdMs
+    type: number
+    required: false
+  - name: updatedMs
+    type: number
+    required: false
