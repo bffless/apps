@@ -5,20 +5,19 @@ name: Preview Handoff on BFFless
 # URL on the PR. The alias is reused — the newest PR build wins — so this is best
 # for one preview at a time. We deliberately reuse one stable alias rather than
 # minting a per-PR alias: each new alias is a new origin that would need its own
-# GCS bucket CORS entry (Handoff's presigned uploads go browser→bucket directly)
-# AND its own proxy-rule-set wiring. handoff-preview is already CORS-allowlisted
-# and carries the handoff proxy rule sets, so /api/* (presigned uploads, node tree,
-# serving, ACL, grants, share links) just works.
+# GCS bucket CORS entry (Handoff's presigned uploads go browser→bucket directly).
 #
-# FRONTEND ONLY — this workflow deliberately does NOT sync proxy rules (bffless/apps#231).
-# Reader mints a per-PR alias + a `pr-N`-suffixed rule set, but Handoff can't: the
-# per-PR alias is ruled out by the bucket-CORS constraint above, and `handoff-preview`
-# is attached to the SAME `handoff` + `handoff-rss-feed` sets that serve production.
-# So a sync here — with no name-suffix — would push a PR branch's rules straight onto
-# the live production backend. A PR that changes rules previews its frontend against
-# the CURRENT live rules; the rule change goes live on merge, via deploy-handoff.yml.
-# To iterate on rules before merge, use a suffixed set locally:
-#   npx bffless rules dev apps/handoff/.bffless/proxy-rules/handoff --push --name-suffix pr-<N>
+# RULES: on a pull_request run, the branch's rule sets are synced with a pr-<N>
+# name suffix (handoff-pr-<N> / handoff-rss-feed-pr-<N> — never the bare names,
+# so a PR can NEVER push rules onto the live production sets) and attached to the
+# preview alias. The preview therefore exercises the PR's OWN backend routes —
+# rule-changing PRs preview correctly (bffless/apps#258 previously 404'd its new
+# routes because this workflow attached the production sets). Mirrors Reader's
+# per-PR-set flow (preview-reader.yml); only the alias stays shared, for the
+# bucket-CORS reason above. Suffixed sets accumulate per PR — delete them (and
+# detach) when the PR closes, until a cleanup workflow exists for Handoff.
+# workflow_dispatch (no PR number) skips the sync and attaches the production
+# sets, same as before this flow existed.
 on:
   pull_request:
     paths:
@@ -60,6 +59,36 @@ jobs:
       - name: Typecheck proxy-rule handlers
         run: pnpm --filter handoff typecheck:rules
 
+      - name: Compute preview identifiers
+        id: ids
+        run: |
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            echo "suffix=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "set-names=handoff-pr-${{ github.event.pull_request.number }},handoff-rss-feed-pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "set-names=handoff,handoff-rss-feed" >> "$GITHUB_OUTPUT"
+          fi
+
+      # PR-only: on workflow_dispatch, ids.outputs.suffix is empty, so this would
+      # otherwise sync straight onto the LIVE handoff sets instead of per-PR ones.
+      - name: Sync PR preview proxy rules
+        if: github.event_name == 'pull_request'
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: |
+            apps/handoff/.bffless/proxy-rules/handoff
+            apps/handoff/.bffless/proxy-rules/handoff-rss-feed
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
+          name-suffix: ${{ steps.ids.outputs.suffix }}
+          summary-title: Handoff Preview Proxy Rules
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy preview to BFFless
         uses: bffless/upload-artifact@v1
         with:
@@ -67,10 +96,9 @@ jobs:
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_API_KEY }}
           alias: handoff-preview
-          # Attach the Handoff backend (/api/*) + the public folder feeds to the preview
-          # alias — the same two sets production runs. Both are named explicitly so the
-          # attachment is restated on every run rather than relying on prior state.
-          proxy-rule-set-names: handoff,handoff-rss-feed
+          # PR runs attach the pr-<N> suffixed sets synced above; manual dispatch
+          # runs attach the production sets (no branch rules were synced).
+          proxy-rule-set-names: ${{ steps.ids.outputs.set-names }}
           description: 'Handoff preview for PR #${{ github.event.pull_request.number }}'
           summary-title: Handoff Preview
           pr-comment: true
