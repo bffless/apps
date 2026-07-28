@@ -31,7 +31,7 @@ import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
 import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
 import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
 import { buildSliceCommand } from '../../lib/export/slice'
-import { slice as ffmpegSlice } from '../../lib/export/ffmpeg'
+import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
 import {
   captureFramesAt,
   captureSceneContactSheet,
@@ -1231,11 +1231,18 @@ export function useScenePipeline() {
         if (!src.sourceUrl) throw new Error('No source clip available to cut from.')
         // Direct bucket read — no `credentials`, it's a presigned URL, and
         // sending cookies cross-origin would fail the CORS check.
-        const source = new Uint8Array(await (await fetch(await signFor(src.sourceUrl))).arrayBuffer())
+        //
+        // `.blob()`, NOT `.arrayBuffer()`: a Blob can be backed by disk, while an
+        // ArrayBuffer must be one contiguous allocation the browser has to hold
+        // whole. A 1.37 GB source died here in Firefox ("Content-Length header of
+        // network response exceeds response Body") while a 739 MB one was fine.
+        // `slice()` mounts this Blob instead of copying it into the wasm heap.
+        const source = await (await fetch(await signFor(src.sourceUrl))).blob()
 
         const command = buildSliceCommand({
           start: scene.start,
           end: scene.end,
+          source: sliceSourcePath(),
           output: `scene-${scene.index}.mp4`,
         })
         const blob = await ffmpegSlice({ source, command })

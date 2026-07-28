@@ -162,9 +162,21 @@ export async function assemble({
   }
 }
 
+/** Where `slice()` mounts the source Blob inside the wasm FS. */
+export const SLICE_MOUNT = '/src'
+
+/**
+ * The in-FS path a slice command must name as its input. Callers pass this to
+ * `buildSliceCommand({ source })` so the argv points at the MOUNTED blob rather
+ * than a copy staged with `writeFile`.
+ */
+export function sliceSourcePath(name = 'source.mp4'): string {
+  return `${SLICE_MOUNT}/${name}`
+}
+
 export type SliceAssets = {
-  /** The source video bytes (written as the command's input). */
-  source: Uint8Array
+  /** The source video as a Blob — MOUNTED, never copied (see `slice()`). */
+  source: Blob
   command: import('./slice').SliceCommand
   /** 0–1 encode progress from ffmpeg's `progress` event. */
   onProgress?: (progress: number) => void
@@ -173,10 +185,23 @@ export type SliceAssets = {
 }
 
 /**
- * Cut one scene's clip out of the source (story 03g). Stage the source into the
- * wasm FS, exec the trim argv `./slice.ts` produced, read back the clip, clean up.
- * Returns the scene clip as a Blob. Throws with ffmpeg's last log lines on failure.
- * A single short re-encode (per scene), not the whole-timeline assemble.
+ * Cut one scene's clip out of the source (story 03g). Exec the trim argv
+ * `./slice.ts` produced, read back the clip, clean up. Returns the scene clip as
+ * a Blob. Throws with ffmpeg's last log lines on failure. A single short
+ * re-encode (per scene), not the whole-timeline assemble.
+ *
+ * **The source is MOUNTED (WORKERFS), not written.** `writeFile` would take the
+ * whole file as one contiguous `Uint8Array` and copy it AGAIN into the wasm
+ * heap — two full copies of a file that only grows with recording length. A
+ * 739 MB source survived that; a 1.37 GB one did not, failing in Firefox at the
+ * fetch with "Content-Length header of network response exceeds response Body"
+ * before ffmpeg ever ran. WORKERFS reads the Blob lazily through the browser,
+ * so neither copy happens and `-ss`'s fast seek only pulls the bytes it needs —
+ * which is the whole point when the cut is 19 minutes out of 64.
+ *
+ * The mount point must exist before `FS.mount`, hence the `createDir`; both it
+ * and the mount are torn down in `finally` so a failed slice can't leave the FS
+ * holding a reference to the Blob.
  */
 export async function slice({ source, command, onProgress, onLog }: SliceAssets): Promise<Blob> {
   const ff = await getFFmpeg()
@@ -193,10 +218,16 @@ export async function slice({ source, command, onProgress, onLog }: SliceAssets)
   ff.on('log', onLogEvent)
   ff.on('progress', onProgressEvent)
 
+  // The blob is mounted under its basename, so the argv's input path must be the
+  // one `sliceSourcePath()` builds.
+  const name = command.source.slice(command.source.lastIndexOf('/') + 1)
   const written: string[] = []
+  let mounted = false
   try {
-    await ff.writeFile(command.source, source)
-    written.push(command.source)
+    await ff.createDir(SLICE_MOUNT).catch(() => {}) // may already exist from a prior slice
+    const { FFFSType } = await import('@ffmpeg/ffmpeg')
+    await ff.mount(FFFSType.WORKERFS, { blobs: [{ name, data: source }] }, SLICE_MOUNT)
+    mounted = true
 
     const code = await ff.exec(command.args)
     if (code !== 0) {
@@ -211,6 +242,9 @@ export async function slice({ source, command, onProgress, onLog }: SliceAssets)
     ff.off('log', onLogEvent)
     ff.off('progress', onProgressEvent)
     for (const name of written) await ff.deleteFile(name).catch(() => {})
+    // Unmount BEFORE removing the dir, and never let cleanup mask a real error.
+    if (mounted) await ff.unmount(SLICE_MOUNT).catch(() => {})
+    await ff.deleteDir(SLICE_MOUNT).catch(() => {})
   }
 }
 
