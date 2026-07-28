@@ -11,6 +11,7 @@ import { PipelineBoard } from '../components/Studio/PipelineBoard'
 import { ContactSheetPreview } from '../components/Studio/ContactSheetPreview'
 import { effectiveCuts } from '../lib/refiner'
 import { cutEditorInputs, sceneFilmstrip } from '../lib/editorInputs'
+import { previewSourceFor } from '../lib/sources'
 import { sceneAtTime } from '../lib/scenes'
 import type { CutSpan } from '../lib/transcriptGrid'
 import { SceneList } from '../components/Studio/SceneList'
@@ -111,14 +112,24 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   const directorDone =
     pipe.stages.find((s) => s.id === 'director')?.status === 'done' && pipe.scenes.length > 0
   const hasSource = !!file || hasPersisted || pipe.sources.length > 0
-  // What the <video> plays: the local object URL when present, else the persisted
-  // source SIGNED into a direct bucket URL — the raw serve path must never be a
-  // media src (streaming ~280 MB through file_serve 504s/OOMs the backend).
-  // Null only before anything is loaded / while the signature is in flight.
+  // What the <video> falls back to when the selected scene has no cut clip yet:
+  // that scene's OWN source, SIGNED into a direct bucket URL — the raw serve path
+  // must never be a media src (streaming ~280 MB through file_serve 504s/OOMs the
+  // backend). Scene times are per-source (story 09), so resolving this from the
+  // project's legacy top-level `sourceUrl` — which mirrors only the FIRST source —
+  // played the first file's footage under a second-file chapter, seeked to a local
+  // time that means something else there. Same rule the words/audio/filmstrip
+  // derivations already follow (#215, #219); the <video> was the last holdout.
+  // Falls back to the top-level field for pre-story-09 projects with no sources.
+  const selected = pipe.scenes.find((s) => s.id === pipe.selectedId) ?? null
+  const preview = previewSourceFor(pipe.sources, selected, pipe.sourceUrl)
+  // The just-attached File is only the right picture when it IS this scene's
+  // source — otherwise it's another chapter's video and must not win.
+  const localIsPreviewSource = !!file && (!preview.fileName || preview.fileName === file.name)
   const { data: signedSource } = useSignDownloadQuery(
-    !url && pipe.sourceUrl ? pipe.sourceUrl : skipToken,
+    !localIsPreviewSource && preview.url ? preview.url : skipToken,
   )
-  const previewSrc = url ?? signedSource?.url ?? null
+  const previewSrc = (localIsPreviewSource ? url : null) ?? signedSource?.url ?? null
   const [signSourceUrl] = useLazySignDownloadQuery()
 
   const onLoaded = useCallback((d: number) => dispatch(setDuration(d)), [dispatch])
@@ -242,8 +253,6 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   function onBoardAction() {
     void runStep()
   }
-
-  const selected = pipe.scenes.find((s) => s.id === pipe.selectedId) ?? null
 
   // The selected scene's cut clip, SIGNED into a direct bucket URL — same rule
   // as the source above: a big MP4 must never stream through file_serve (it

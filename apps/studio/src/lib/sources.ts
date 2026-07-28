@@ -69,3 +69,37 @@ export function sourceForScene<T extends { id: string }>(
 ): T | null {
   return sources.find((s) => s.id === scene.sourceId) ?? null
 }
+
+/** A source, reduced to what the Build preview needs to pick a video. */
+export type PreviewSourceLike = {
+  id: string
+  fileName?: string
+  sourceUrl?: string | null
+}
+
+/**
+ * What the Build `<video>` should fall back to for the SELECTED scene while that
+ * scene has no cut clip of its own (story 03g) — its OWN source, never the
+ * project's legacy top-level `sourceUrl`.
+ *
+ * Scene `start`/`end` are LOCAL to the scene's source (story 09), and the legacy
+ * field mirrors only the FIRST source, so pairing them played the first file's
+ * footage under a second-file chapter and seeked it to a local time that means
+ * something else there — the picture and the metadata disagreed. Same rule the
+ * words / audio / dead-space / filmstrip derivations already follow (#215, #219).
+ *
+ * `fileName` comes back so the caller can tell whether the in-memory attached
+ * File IS this source (and may be shown as a local object URL) or belongs to a
+ * different chapter (and must not win over the scene's own source).
+ *
+ * `fallbackUrl` covers pre-story-09 projects that have scenes but no `sources`.
+ */
+export function previewSourceFor<T extends PreviewSourceLike>(
+  sources: T[],
+  scene: { sourceId: string } | null,
+  fallbackUrl: string | null,
+): { url: string | null; fileName: string | null } {
+  const source = scene ? sourceForScene(sources, scene) : null
+  if (!source) return { url: fallbackUrl, fileName: null }
+  return { url: source.sourceUrl ?? fallbackUrl, fileName: source.fileName ?? null }
+}
