@@ -109,7 +109,8 @@ MCP — see the BFFless storage docs for exact variables, IAM/permissions, and C
 
 ### 2. Data tables
 
-Two data tables are required. Create them in the BFFless dashboard → Data → New Table:
+Three data tables are required. The first two need manual creation in the BFFless dashboard →
+Data → New Table (below); the third, `handoff_comments`, does not — see its entry.
 
 **`handoff_nodes`** — stores files, folders, and sites in the node tree.
 
@@ -140,6 +141,27 @@ Create a new table with these columns:
 | `revoked` | boolean | set to `true` to invalidate |
 | `createdBy` | text | BFFless user id of the creator |
 | `createdMs` | integer | creation timestamp (ms) |
+
+**`handoff_comments`** — stores comment threads, replies, and reactions anchored to a node
+(margin comments, ADR-0010). Unlike the two tables above, this one needs **no manual creation**:
+it's a plain table with no upload-schema step, so `npx bffless rules push` creates it by name from
+the checked-in
+[`schemas/handoff_comments.schema.yaml`](../.bffless/proxy-rules/handoff/schemas/handoff_comments.schema.yaml)
+the same way it resolves any table by name (see **Data-table ids are resolved by name** below).
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `nodeId` | text | document node UUID this thread/reply belongs to |
+| `parentId` | text | null = thread root; else id of the root this replies to |
+| `authorId` | text | BFFless user id, server-stamped only |
+| `authorName` | text | display snapshot (email) |
+| `body` | text | comment text |
+| `anchorJson` | text | anchor (roots only) — text quote or image pin |
+| `resolved` | boolean | roots only |
+| `resolvedBy` / `resolvedMs` | text / integer | audit trail |
+| `reactionsJson` | text | `{ "👍": ["<userId>", …] }` |
+| `deleted` | boolean | soft-delete marker for roots that have replies |
+| `createdMs` / `updatedMs` | integer | server-set |
 
 ### 3. People-picker directory (CE version requirement)
 

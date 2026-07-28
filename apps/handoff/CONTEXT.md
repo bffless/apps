@@ -74,6 +74,35 @@ A folder's inheritance mode. `Inheriting` (default) takes all parent [[Grant]]s 
 bit per folder; there are no negative/deny grants.
 _Avoid_: Private/public, break-inheritance
 
+## Comments
+
+**Comment**:
+A single user-authored entry attached to a [[File]] or [[Site]] node: either the root of a
+[[Thread]] (carries an [[Anchor]]) or a reply to one (carries no anchor of its own). Anyone with at
+least `View` access to the node — signed in, or via a valid [[Share Link]] cookie — can read it;
+writing (create, reply, react, [[Resolve]]) additionally requires a BFFless session, and only the
+author may edit or delete their own comment's body.
+_Avoid_: annotation, note, feedback
+
+**Thread**:
+A root [[Comment]] and its replies, flat — replies point back to the root, never to each other. The
+root carries the [[Anchor]]; a thread is [[Resolve]]d or reopened as a unit, on the root.
+_Avoid_: conversation, discussion
+
+**Anchor**:
+The position in a document a [[Thread]]'s root [[Comment]] refers to: a text quote (with
+surrounding prefix/suffix for disambiguation) for Markdown/[[Site]] content, or an `(x, y)` pin
+fraction for an image [[File]]. Anchors are re-resolved client-side against the live content on
+every load — fuzzy-matched if the exact quote moved — and are never rewritten in storage; a thread
+whose anchor no longer resolves surfaces separately instead of disappearing. See `docs/adr/0010`.
+_Avoid_: highlight, selection (the runtime rendering of an anchor, not the stored anchor itself)
+
+**Resolve**:
+Marking a [[Thread]] closed — hidden from the default view behind a "show resolved" toggle, but not
+deleted. Any commenter with access to the thread can resolve or reopen it (unlike editing a
+[[Comment]]'s body, this is not author-restricted); the action is audited (who, when).
+_Avoid_: close, archive, delete
+
 ## Feeds
 
 **Feed**:
