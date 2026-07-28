@@ -83,12 +83,18 @@ export interface CommentLayerProps {
   canWrite: boolean
 }
 
-/** Roots carrying a text anchor, in bridge order. */
+/**
+ * Roots carrying a text anchor, in bridge order. Deleted-root husks are
+ * included here — `threadsFor` already drops any husk with zero surviving
+ * replies, so a husk reaching this point by definition still has replies to
+ * anchor, and must place at its original spot rather than fall into
+ * "Unanchored".
+ */
 function textAnchorsOf(threads: CommentThread[]): { id: string; anchor: CommentAnchorText }[] {
   const out: { id: string; anchor: CommentAnchorText }[] = []
   for (const t of threads) {
     const a = t.root.anchor
-    if (a?.type === 'text' && !t.root.deleted) out.push({ id: t.root.id, anchor: a })
+    if (a?.type === 'text') out.push({ id: t.root.id, anchor: a })
   }
   return out
 }
@@ -288,12 +294,15 @@ export function CommentLayer({
   // --- Positions fed to the gutter -----------------------------------------
 
   /** Every placed pin — including resolved ones, so their cards still align
-      when "Show resolved" is on rather than falling into Unanchored. */
+      when "Show resolved" is on rather than falling into Unanchored. Deleted
+      husks are included too: `threadsFor` already drops husks with no
+      surviving replies, so one reaching here must anchor at its original
+      spot rather than fall into "Unanchored". */
   const pinned = useMemo(() => {
     const out: { id: string; pin: CommentAnchorPin; resolved: boolean }[] = []
     for (const t of threads) {
       const a = t.root.anchor
-      if (a?.type === 'pin' && !t.root.deleted) {
+      if (a?.type === 'pin') {
         out.push({ id: t.root.id, pin: a, resolved: t.root.resolved })
       }
     }

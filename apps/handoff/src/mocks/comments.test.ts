@@ -170,10 +170,14 @@ describe('comments: PATCH', () => {
 // ---------------------------------------------------------------------------
 
 describe('comments: DELETE', () => {
-  it('deleting a root with a reply leaves a husk visible via GET', async () => {
+  it('deleting a root with a reply leaves a husk visible via GET, still anchored', async () => {
     const { fileId } = seedTarget()
 
-    const rootRes = await postComment({ nodeId: fileId, body: 'root comment' })
+    const rootRes = await postComment({
+      nodeId: fileId,
+      body: 'root comment',
+      anchor: { type: 'pin', x: 0.5, y: 0.5 },
+    })
     const { comment: root } = (await rootRes.json()) as { comment: { id: string } }
     const replyRes = await postComment({ nodeId: fileId, body: 'a reply', parentId: root.id })
     expect(replyRes.status).toBe(200)
@@ -189,6 +193,9 @@ describe('comments: DELETE', () => {
     expect(husk).toBeDefined()
     expect(husk?.deleted).toBe(true)
     expect(husk?.body).toBe('')
+    // The husk keeps its original anchor — it still places on the canvas
+    // instead of falling into "Unanchored".
+    expect(husk?.anchor).toEqual({ type: 'pin', x: 0.5, y: 0.5 })
     // The reply survives, still anchored to the husked root.
     expect(listed.some((c) => c.parentId === root.id)).toBe(true)
   })

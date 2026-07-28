@@ -227,8 +227,11 @@ function rootSortKey(c: HandoffComment): number {
  * Group a flat comment list into threads: each non-reply comment (`parentId
  * === null`) becomes a root, with its replies (`parentId === root.id`)
  * attached and sorted by `createdMs`. A reply whose root is missing from the
- * list is dropped. Roots are sorted by anchor position (`rootSortKey`) then
- * `createdMs`.
+ * list is dropped. A soft-deleted root ("husk") with zero surviving replies
+ * is dropped entirely — it is an orphan with nothing left to show and no
+ * live affordance can target it. A soft-deleted root that still has replies
+ * is kept, so the replies (and the "Comment deleted" placeholder) survive.
+ * Roots are sorted by anchor position (`rootSortKey`) then `createdMs`.
  */
 export function threadsFor(comments: HandoffComment[]): CommentThread[] {
   const roots = comments.filter((c) => c.parentId === null)
@@ -243,10 +246,12 @@ export function threadsFor(comments: HandoffComment[]): CommentThread[] {
     }
   }
 
-  const threads: CommentThread[] = roots.map((root) => ({
-    root,
-    replies: (repliesByParent.get(root.id) ?? []).slice().sort((a, b) => a.createdMs - b.createdMs),
-  }))
+  const threads: CommentThread[] = roots
+    .filter((root) => !root.deleted || (repliesByParent.get(root.id)?.length ?? 0) > 0)
+    .map((root) => ({
+      root,
+      replies: (repliesByParent.get(root.id) ?? []).slice().sort((a, b) => a.createdMs - b.createdMs),
+    }))
 
   threads.sort((a, b) => {
     const keyDiff = rootSortKey(a.root) - rootSortKey(b.root)

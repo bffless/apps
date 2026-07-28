@@ -74,17 +74,23 @@ describe('gate', () => {
 
 describe('shape', () => {
   const shape = compileHandler(step('shape').config.code)
-  it('passes live comments through and strips soft-deleted roots to husks', () => {
+  it('passes live comments through and strips soft-deleted roots to husks (keeping anchorJson)', () => {
     const out = shape({
       steps: {
         comments: [
           { id: 'c1', nodeId: FILE, parentId: '', authorId: 'u1', authorName: 'a@b', body: 'hi', createdMs: 1 },
-          { id: 'c2', nodeId: FILE, parentId: '', authorId: 'u2', authorName: 'x@y', body: 'secret', deleted: true, createdMs: 2 },
+          {
+            id: 'c2', nodeId: FILE, parentId: '', authorId: 'u2', authorName: 'x@y', body: 'secret',
+            deleted: true, createdMs: 2, anchorJson: '{"type":"pin","x":0.5,"y":0.5}',
+          },
         ],
       },
     } as any)
     const list = JSON.parse(out.comments)
     expect(list[0].body).toBe('hi')
-    expect(list[1]).toEqual({ id: 'c2', nodeId: FILE, parentId: '', deleted: true, createdMs: 2 })
+    expect(list[1]).toEqual({
+      id: 'c2', nodeId: FILE, parentId: '', deleted: true, createdMs: 2,
+      anchorJson: '{"type":"pin","x":0.5,"y":0.5}',
+    })
   })
 })

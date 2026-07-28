@@ -84,4 +84,19 @@ describe('threadsFor', () => {
     ])
     expect(threads.map((t) => t.root.id)).toEqual(['txt', 'pin', 'none'])
   })
+
+  it('drops a soft-deleted root with no surviving replies (orphan husk)', () => {
+    const threads = threadsFor([mk('deadroot', { deleted: true })])
+    expect(threads).toEqual([])
+  })
+
+  it('keeps a soft-deleted root that still has surviving replies', () => {
+    const list = [
+      mk('deadroot', { deleted: true }),
+      mk('rep1', { parentId: 'deadroot', createdMs: 5 }),
+    ]
+    const threads = threadsFor(list)
+    expect(threads.map((t) => t.root.id)).toEqual(['deadroot'])
+    expect(threads[0].replies.map((r) => r.id)).toEqual(['rep1'])
+  })
 })

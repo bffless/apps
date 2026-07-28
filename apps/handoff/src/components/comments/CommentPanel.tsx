@@ -225,7 +225,7 @@ export function CommentPanel({
               <h2 className="pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                 Unanchored
               </h2>
-              <ul className="space-y-2">
+              <ul className="list-none space-y-2 pl-0">
                 {unanchored.map((t) => (
                   <li key={t.root.id}>
                     <CommentCard

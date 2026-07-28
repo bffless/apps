@@ -239,7 +239,14 @@ function anchorStringForCreate(raw: unknown): string | null {
 /** Shape a stored comment for the wire — husk for a soft-deleted root, full row otherwise. Mirrors `comments/get/shape.fn.ts`. */
 function shapeComment(c: MockComment): Record<string, unknown> {
   if (c.deleted) {
-    return { id: c.id, nodeId: c.nodeId, parentId: c.parentId, deleted: true, createdMs: c.createdMs }
+    return {
+      id: c.id,
+      nodeId: c.nodeId,
+      parentId: c.parentId,
+      deleted: true,
+      createdMs: c.createdMs,
+      anchorJson: c.anchorJson,
+    }
   }
   return {
     id: c.id,
@@ -1383,9 +1390,11 @@ export const handlers = [
    * Response: { id, soft }
    * Author-only (v1: not even an admin may moderate-delete) — mirrors
    * comments/delete/{pre,gate}.fn.ts. A root comment with >=1 reply is
-   * soft-deleted (husk keeps only id/nodeId/parentId/deleted/createdMs — no
-   * anchorJson, so the client can't place it and lists it under
-   * "Unanchored" instead); a reply, or a childless root, is hard-deleted.
+   * soft-deleted (husk keeps id/nodeId/parentId/deleted/createdMs/anchorJson
+   * — only body/authorName are cleared — so it still anchors at its original
+   * spot instead of listing under "Unanchored"); a reply, or a childless
+   * root, is hard-deleted. An orphan husk (no surviving replies) is filtered
+   * out client-side entirely by `threadsFor`.
    */
   http.delete('/api/comments', ({ request }) => {
     const id = new URL(request.url).searchParams.get('id') ?? ''

@@ -4,9 +4,10 @@ pipeline:
   name: Handoff delete comment
   description: >-
     Delete a margin comment — author-only (v1 policy: not even an admin may moderate-delete).
-    A root with >=1 reply is soft-deleted (husk keeps id/nodeId/parentId/deleted/createdMs
-    only — GET drops anchorJson, so the thread surfaces under "Unanchored" client-side); a
-    reply, or a childless root, is hard-deleted (spec 2026-07-28).
+    A root with >=1 reply is soft-deleted (husk keeps id/nodeId/parentId/deleted/createdMs/
+    anchorJson — GET only strips body/authorName/reactions, so the thread stays anchored at
+    its original spot client-side instead of listing under "Unanchored"); a reply, or a
+    childless root, is hard-deleted (spec 2026-07-28).
   steps:
     - id: pre
       name: pre

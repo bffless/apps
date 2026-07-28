@@ -202,12 +202,40 @@ describe('CommentPanel', () => {
 
     expect(within(screen.getByTestId('gutter-card-c1')).getByText(/\(edited\)/)).toBeInTheDocument()
 
+    // A position was supplied for the husk (c2), so it renders in the
+    // ANCHORED canvas — `gutter-card-*` is only used there — and never in
+    // the "Unanchored" rail. A husk with surviving replies must keep its
+    // original anchor rather than fall into Unanchored.
     const husk = screen.getByTestId('gutter-card-c2')
+    expect(screen.queryByTestId('unanchored-section')).not.toBeInTheDocument()
     expect(within(husk).getByText('Comment deleted')).toBeInTheDocument()
     // The husk keeps its replies — that is the whole point of the soft delete.
     expect(within(husk).getByText('orphan reply')).toBeInTheDocument()
-    // …and offers no author actions of its own.
+    // …and strips every affordance from the deleted root itself: no author
+    // menu, no Resolve/Re-open, no reply composer at the card's bottom.
     expect(within(husk).queryByRole('button', { name: 'Comment actions' })).not.toBeInTheDocument()
+    expect(within(husk).queryByRole('button', { name: /^resolve$/i })).not.toBeInTheDocument()
+    expect(within(husk).queryByRole('button', { name: /^re-open$/i })).not.toBeInTheDocument()
+    expect(within(husk).queryByPlaceholderText(/reply/i)).not.toBeInTheDocument()
+  })
+
+  it('never lists a husk-with-replies in "Unanchored" even when nothing else is anchored', () => {
+    renderPanel({
+      threads: [
+        thread({ id: 'c2', body: '', deleted: true, reactions: { '👍': ['someone'] } }, [
+          comment({ id: 'r1', parentId: 'c2', body: 'surviving reply', reactions: { '🎉': ['someone'] } }),
+        ]),
+      ],
+      positions: new Map([['c2', 400]]),
+    })
+
+    const husk = screen.getByTestId('gutter-card-c2')
+    expect(screen.queryByTestId('unanchored-section')).not.toBeInTheDocument()
+    // The husk itself offers no reaction affordance (its own reactions are
+    // hidden along with everything else)…
+    expect(within(husk).queryByRole('button', { name: /👍/ })).not.toBeInTheDocument()
+    // …but the surviving reply keeps its own.
+    expect(within(husk).getByRole('button', { name: /🎉/ })).toBeInTheDocument()
   })
 
   it('offers the ⋯ Edit/Delete menu only on your own comment', async () => {

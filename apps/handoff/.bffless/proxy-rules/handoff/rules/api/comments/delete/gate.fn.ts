@@ -7,10 +7,11 @@
  *
  * A root comment that already has ≥1 reply is soft-deleted (`doSoft`): the row survives as a
  * husk (`deleted: true`, `body`/`authorName` cleared) so `parentId` stays resolvable for the
- * replies. The husk carries only `id`/`nodeId`/`parentId`/`deleted`/`createdMs` — GET drops
- * `anchorJson`, so the client can't place the thread on the canvas and lists it under
- * "Unanchored" instead (spec-compliant). A reply, or a childless root, is hard-deleted
- * (`doHard`).
+ * replies. The husk carries only `id`/`nodeId`/`parentId`/`deleted`/`createdMs`/`anchorJson` —
+ * GET keeps `anchorJson` (only `body`/`authorName`/reactions are stripped), so a husk with
+ * surviving replies still anchors at its original document position instead of falling into
+ * "Unanchored" (an orphan husk with zero replies is filtered out client-side entirely — see
+ * `threadsFor`). A reply, or a childless root, is hard-deleted (`doHard`).
  *
  * TOCTOU note: the `replies` step probes for existing replies before this gate runs and before
  * `hardDelete`/`softDelete` execute. A reply created in that window on a comment this gate

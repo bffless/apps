@@ -105,7 +105,8 @@ export function CommentCard({ thread, active, canWrite, onActivate, nodeId }: Co
         canWrite={canWrite}
         userId={userId}
         trailing={
-          canWrite && (
+          canWrite &&
+          !root.deleted && (
             <button
               type="button"
               onClick={toggleResolved}
@@ -133,7 +134,7 @@ export function CommentCard({ thread, active, canWrite, onActivate, nodeId }: Co
         </ul>
       )}
 
-      {canWrite && (
+      {canWrite && !root.deleted && (
         <CommentComposer
           onSubmit={postReply}
           busy={replying}

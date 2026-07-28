@@ -1,7 +1,9 @@
 /**
  * Shape the comment listing. Soft-deleted roots (kept so their replies
- * survive) go out as husks: id/nodeId/parentId/deleted/createdMs only — no
- * body, author, anchor, or reactions leak after deletion.
+ * survive) go out as husks: id/nodeId/parentId/deleted/createdMs/anchorJson
+ * only — no body, author, or reactions leak after deletion. `anchorJson`
+ * is kept (not stripped) so a husk with surviving replies still anchors at
+ * its original document position instead of falling into "Unanchored".
  */
 import type { HandlerContext } from 'bffless/handlers';
 
@@ -17,7 +19,10 @@ export default function handler({ steps }: HandlerContext) {
     if (!id) continue;
     const isDeleted = r.deleted === true || r.deleted === 'true';
     if (isDeleted) {
-      out.push({ id: id, nodeId: r.nodeId, parentId: r.parentId || '', deleted: true, createdMs: r.createdMs });
+      out.push({
+        id: id, nodeId: r.nodeId, parentId: r.parentId || '',
+        deleted: true, createdMs: r.createdMs, anchorJson: r.anchorJson || null,
+      });
       continue;
     }
     out.push({
