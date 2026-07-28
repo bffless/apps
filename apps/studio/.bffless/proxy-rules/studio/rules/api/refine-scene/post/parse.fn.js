@@ -3,11 +3,19 @@ function handler({ steps }) {
     return (typeof v === 'number' && isFinite(v)) ? v : 0
   }
 
-  var d = (steps && steps.refiner) || {}
+  // Prefer the refiner that HEARD the scene; fall back to the deaf re-run that
+  // `refinerNoAudio` performs when the provider's audio input is unavailable
+  // (see fallback.fn.js). Only when BOTH produced nothing is this a real error.
+  function got(st) {
+    return st && (st.status != null || st.output != null)
+  }
+  var withAudio = (steps && steps.refiner) || {}
+  var deaf = (steps && steps.refinerNoAudio) || {}
+  var d = got(withAudio) ? withAudio : deaf
 
   // Replicate/Gemini call failed (model overloaded, timeout, API error): the
   // executor drops a failed post-step's output, so steps.refiner is empty here.
-  if (!d || (d.status == null && d.output == null)) {
+  if (!got(d)) {
     return { ok: false, notOk: true, error: 'The AI model did not return a result for this scene - it may be temporarily overloaded, or the scene may be too long. Please try refining again.', data: { cuts: [] } }
   }
 
