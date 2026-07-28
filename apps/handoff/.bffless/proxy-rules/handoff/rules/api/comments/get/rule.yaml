@@ -1,0 +1,83 @@
+targetUrl: pipeline
+order: 20
+pipeline:
+  name: Handoff list comments
+  description: List comments for a node — read-gated (view+) per-folder ACL incl. hf_s share-cookie visitors (spec §7).
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.ts
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.query.nodeId
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.idOk
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.ts
+    - id: comments
+      name: comments
+      handler: data_query
+      config:
+        filters:
+          nodeId:
+            op: eq
+            value: request.query.nodeId
+        pageSize: 500
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.allow
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.ts
+      config:
+        condition: steps.gate.allow
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"comments": {{{steps.shape.comments}}}}'
+        status: 200
+        condition: steps.gate.allow
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"error":"invalid request"}'
+        status: 400
+        condition: steps.gate.badRequest
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: List comments for a node (margin comments, spec 2026-07-28)

@@ -1,0 +1,116 @@
+targetUrl: pipeline
+order: 22
+pipeline:
+  name: Handoff edit comment
+  description: Edit / resolve / reopen / react on a comment — requires a session user (401 for share-cookie/anon) AND view+ access on the node (spec §7); edit is author-only, resolve/reopen roots-only.
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.ts
+    - id: comment
+      name: comment
+      handler: data_query
+      config:
+        recordId: request.body.id
+        schemaId: $schema:handoff_comments
+        condition: steps.pre.idOk
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: steps.comment.nodeId
+        schemaId: $schema:handoff_nodes
+        condition: steps.pre.idOk
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.ts
+    - id: editUpdate
+      name: editUpdate
+      handler: data_update
+      config:
+        fields:
+          body: steps.gate.newBody
+          updatedMs: steps.gate.nowMs
+        recordId: request.body.id
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.doEdit
+    - id: resolveUpdate
+      name: resolveUpdate
+      handler: data_update
+      config:
+        fields:
+          resolved: steps.gate.newResolved
+          resolvedBy: steps.gate.resolvedBy
+          resolvedMs: steps.gate.nowMs
+        recordId: request.body.id
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.doResolve
+    - id: reactUpdate
+      name: reactUpdate
+      handler: data_update
+      config:
+        fields:
+          reactionsJson: steps.gate.newReactionsJson
+        recordId: request.body.id
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.doReact
+    - id: final
+      name: final
+      handler: data_query
+      config:
+        recordId: request.body.id
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.okFlag
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.ts
+      config:
+        condition: steps.gate.okFlag
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"comment": {{{steps.shape.comment}}}}'
+        status: 200
+        condition: steps.gate.okFlag
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"error":"invalid request"}'
+        status: 400
+        condition: steps.gate.badRequest
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Edit, resolve/reopen, and react to margin comments (spec 2026-07-28)

@@ -1,0 +1,92 @@
+targetUrl: pipeline
+order: 23
+pipeline:
+  name: Handoff delete comment
+  description: >-
+    Delete a margin comment — author-only (v1 policy: not even an admin may moderate-delete).
+    A root with >=1 reply is soft-deleted (husk keeps id/nodeId/parentId/deleted/createdMs/
+    anchorJson — GET only strips body/authorName/reactions, so the thread stays anchored at
+    its original spot client-side instead of listing under "Unanchored"); a reply, or a
+    childless root, is hard-deleted (spec 2026-07-28).
+  steps:
+    - id: pre
+      name: pre
+      handler: function_handler
+      code: ./pre.fn.ts
+    - id: comment
+      name: comment
+      handler: data_query
+      config:
+        recordId: request.query.id
+        schemaId: $schema:handoff_comments
+        condition: steps.pre.idOk
+    - id: replies
+      name: replies
+      # Probes for existing replies before gate/hardDelete run. A reply created between this
+      # probe and the hard delete is orphaned (parentId points at nothing); orphans are
+      # invisible client-side since threadsFor drops replies without a live root. Accepted
+      # TOCTOU window, not handled.
+      handler: data_query
+      config:
+        filters:
+          parentId:
+            op: eq
+            value: request.query.id
+        pageSize: 1
+        schemaId: $schema:handoff_comments
+        condition: steps.pre.idOk
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.ts
+    - id: softDelete
+      name: softDelete
+      handler: data_update
+      config:
+        fields:
+          deleted: true
+          body: ""
+          authorName: ""
+        recordId: request.query.id
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.doSoft
+    - id: hardDelete
+      name: hardDelete
+      handler: data_delete
+      config:
+        recordId: request.query.id
+        schemaId: $schema:handoff_comments
+        condition: steps.gate.doHard
+    - id: ok
+      name: ok
+      handler: response_handler
+      config:
+        body: '{"id":"{{steps.pre.id}}","soft":{{steps.gate.softFlag}}}'
+        status: 200
+        condition: steps.gate.okFlag
+        contentType: application/json
+    - id: bad
+      name: bad
+      handler: response_handler
+      config:
+        body: '{"error":"invalid request"}'
+        status: 400
+        condition: steps.gate.badRequest
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.gate.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.gate.deny403
+        contentType: application/json
+description: Delete a margin comment (spec 2026-07-28)

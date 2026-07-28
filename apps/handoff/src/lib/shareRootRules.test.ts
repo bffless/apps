@@ -203,8 +203,9 @@ describe('authored rule sets', () => {
  * The walk lives in ONE module now (`.bffless/proxy-rules/handoff/_shared/acl.ts`, inlined
  * into each handler bundle by esbuild), so these run the real function rather than pattern-
  * matching eleven minified copies of it. `aclSharedModule.test.ts` pins the per-set copies
- * together; `has exactly 11 embedded folderChain functions` below pins that every gate still
- * carries it.
+ * together; `has exactly 14 embedded folderChain functions` below pins that every gate still
+ * carries it. The margin-comments gates (GET/POST/PATCH /api/comments, spec 2026-07-28) joined
+ * the set, bumping the copy count and the widened-query count below.
  *
  * folderPath (the human breadcrumb walk) must NOT gain root — prepending R ("My Files")
  * would corrupt every displayed path — so it is asserted, through the real shape handlers,
@@ -258,10 +259,11 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     createdMs: 1000,
   }
 
-  it('has exactly 11 embedded folderChain functions', () => {
+  it('has exactly 14 embedded folderChain functions', () => {
     // 8 original + the two feed select handlers (#188) + the PATCH
-    // /api/node/meta gate (Task 5), each a verbatim copy.
-    expect(chainCodes.length).toBe(11)
+    // /api/node/meta gate (Task 5) + the GET/POST/PATCH /api/comments gates
+    // (margin comments), each a verbatim copy.
+    expect(chainCodes.length).toBe(14)
   })
 
   it('resolves the root sentinel to R, so a root-scoped grant matches a nested node', () => {
@@ -343,7 +345,8 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
         }
       }
     }
-    expect(widened.length).toBe(8)
+    // 8 original + the GET/POST/PATCH /api/comments gates' allFolders queries.
+    expect(widened.length).toBe(11)
   })
 
   it('leaves allSites (nodeType site) queries unchanged', () => {
