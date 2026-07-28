@@ -3,6 +3,20 @@ import { attachCommentBridge, createDocBridge } from './commentDocBridge'
 import type { BridgeCallbacks, BridgeWindow, CommentDocBridge } from './commentDocBridge'
 import type { CommentAnchorText } from './comments'
 
+// Count real calls into the resolution path (pass-through wrapper, no behaviour change)
+// so the per-generation memoization can be pinned.
+const hoisted = vi.hoisted(() => ({ resolveCalls: 0 }))
+vi.mock('./commentAnchors', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./commentAnchors')>()
+  return {
+    ...actual,
+    resolveTextAnchor: (text: string, anchor: CommentAnchorText) => {
+      hoisted.resolveCalls++
+      return actual.resolveTextAnchor(text, anchor)
+    },
+  }
+})
+
 const HTML =
   '<p id="p1">The quick brown fox jumps over the lazy dog.</p>' +
   '<p id="p2">Second paragraph with more words.</p>'
@@ -56,6 +70,7 @@ function attach(doc: Document, win: BridgeWindow, cb: BridgeCallbacks) {
 }
 
 beforeEach(() => {
+  hoisted.resolveCalls = 0
   document.body.innerHTML = HTML
   Object.defineProperty(document.documentElement, 'scrollTop', {
     value: 40, configurable: true, writable: true,
@@ -281,6 +296,48 @@ describe('createDocBridge mutation handling', () => {
 
     expect(cb.onGeometry.mock.calls.at(-1)![0].unresolved).toEqual([])
     expect(cb.onGeometry.mock.calls.at(-1)![0].positions).toEqual([{ id: 'late', y: 140 }])
+  })
+})
+
+describe('createDocBridge memoization', () => {
+  it('resolves each anchor once per index generation, and again after a mutation', async () => {
+    vi.useFakeTimers()
+    const { win } = makeWin({ requestAnimationFrame: undefined })
+    const cb = makeCallbacks()
+    const bridge = attach(document, win, cb)
+
+    bridge.setAnchors([{ id: 'a', anchor: anchorA }, { id: 'dead', anchor: anchorDead }])
+    vi.advanceTimersByTime(20)
+    expect(hoisted.resolveCalls).toBe(2) // one per anchor
+
+    // Scrolling cannot move a document-space y: no re-resolution, but still a report.
+    document.dispatchEvent(new Event('scroll'))
+    vi.advanceTimersByTime(20)
+    document.dispatchEvent(new Event('scroll'))
+    vi.advanceTimersByTime(20)
+    expect(hoisted.resolveCalls).toBe(2)
+    expect(cb.onGeometry.mock.calls.length).toBeGreaterThanOrEqual(3)
+
+    // A DOM mutation starts a new generation — anchors must be resolved again.
+    document.body.appendChild(document.createElement('p'))
+    await Promise.resolve()
+    vi.advanceTimersByTime(300)
+    expect(hoisted.resolveCalls).toBe(4)
+  })
+
+  it('re-resolves when setAnchors supplies a new anchor for a known id', () => {
+    const { win, flush } = makeWin()
+    const cb = makeCallbacks()
+    const bridge = attach(document, win, cb)
+
+    bridge.setAnchors([{ id: 'a', anchor: anchorA }])
+    flush()
+    expect(hoisted.resolveCalls).toBe(1)
+
+    bridge.setAnchors([{ id: 'a', anchor: { ...anchorA, quote: 'lazy dog' } }])
+    flush()
+    expect(hoisted.resolveCalls).toBe(2)
+    expect(cb.onGeometry.mock.calls.at(-1)![0].unresolved).toEqual([])
   })
 })
 

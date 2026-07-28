@@ -105,6 +105,16 @@ export function createDocBridge(
   let index: TextIndex | null = null
   let detached = false
 
+  /**
+   * Bumped whenever the text index is thrown away (a DOM mutation). Resolution
+   * results are memoized per (id, generation): scrolling cannot change a
+   * document-space y, so re-running `resolveTextAnchor` on every frame is pure
+   * waste — and for an unresolved anchor it is the *expensive* fuzzy path,
+   * which allocates a normalized copy of the whole document text each time.
+   */
+  let generation = 0
+  const spans = new Map<string, { gen: number; span: { start: number; end: number } | null }>()
+
   let frame: number | null = null
   let frameIsTimeout = false
   let mutationTimer: ReturnType<typeof setTimeout> | null = null
@@ -116,11 +126,19 @@ export function createDocBridge(
     return index
   }
 
-  function rangeFor(anchor: CommentAnchorText): Range | null {
-    const idx = getIndex()
-    const span = resolveTextAnchor(idx.text, anchor)
+  /** Memoized resolution for the current index generation. */
+  function spanFor(id: string, anchor: CommentAnchorText) {
+    const hit = spans.get(id)
+    if (hit && hit.gen === generation) return hit.span
+    const span = resolveTextAnchor(getIndex().text, anchor)
+    spans.set(id, { gen: generation, span })
+    return span
+  }
+
+  function rangeFor(id: string, anchor: CommentAnchorText): Range | null {
+    const span = spanFor(id, anchor)
     if (!span) return null
-    return rangeFromSpan(idx, span.start, span.end, doc)
+    return rangeFromSpan(getIndex(), span.start, span.end, doc)
   }
 
   function scrollTopOf(): number {
@@ -166,7 +184,7 @@ export function createDocBridge(
     let activeRange: Range | null = null
 
     for (const { id, anchor } of entries) {
-      const range = rangeFor(anchor)
+      const range = rangeFor(id, anchor)
       if (!range) {
         unresolved.push(id)
         continue
@@ -261,6 +279,8 @@ export function createDocBridge(
         mutationTimer = setTimeout(() => {
           mutationTimer = null
           index = null // the Site's JS changed the DOM: re-anchor best-effort
+          generation++
+          spans.clear()
           schedule()
         }, MUTATION_DEBOUNCE_MS)
       })
@@ -275,6 +295,7 @@ export function createDocBridge(
   return {
     setAnchors(next) {
       entries = next
+      spans.clear() // an id may now carry a different anchor object
       schedule()
     },
     setActive(id) {
@@ -284,7 +305,7 @@ export function createDocBridge(
     scrollToAnchor(id) {
       const entry = entries.find((e) => e.id === id)
       if (!entry) return
-      const range = rangeFor(entry.anchor)
+      const range = rangeFor(entry.id, entry.anchor)
       range?.startContainer.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     },
     clearSelection() {
