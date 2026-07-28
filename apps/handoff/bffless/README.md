@@ -11,7 +11,7 @@ read, lint, and test. Handoff ships **two** sets:
 
 | Set | Rules | What it serves |
 | --- | --- | --- |
-| `handoff` | 23 | The app API — `/api/*` plus the `/r/*` raw-file redirect |
+| `handoff` | 27 | The app API — `/api/*` plus the `/r/*` raw-file redirect |
 | `handoff-rss-feed` | 2 | The public folder feeds — `/feed/*` and `/feed.xml` |
 
 They're separate because the feeds are independently attachable (a project can serve the app without
