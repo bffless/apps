@@ -118,10 +118,16 @@ export function CommentCard({ thread, active, canWrite, onActivate, nodeId }: Co
       />
 
       {replies.length > 0 && (
-        <ul className="mt-3 space-y-3 border-l border-border pl-3">
+        <ul className="mt-3 list-none space-y-3 border-t border-border pl-0 pt-3">
           {replies.map((reply) => (
-            <li key={reply.id}>
-              <CommentBody comment={reply} nodeId={nodeId} canWrite={canWrite} userId={userId} />
+            <li key={reply.id} className="ml-2 border-l-2 border-border pl-3">
+              <CommentBody
+                comment={reply}
+                nodeId={nodeId}
+                canWrite={canWrite}
+                userId={userId}
+                isReply
+              />
             </li>
           ))}
         </ul>
@@ -149,12 +155,15 @@ function CommentBody({
   canWrite,
   userId,
   trailing,
+  isReply = false,
 }: {
   comment: HandoffComment
   nodeId: string
   canWrite: boolean
   userId: string | null
   trailing?: React.ReactNode
+  /** Replies read visually subordinate to the root comment: quieter author line. */
+  isReply?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [patchComment, { isLoading: patching }] = usePatchCommentMutation()
@@ -194,7 +203,12 @@ function CommentBody({
     <div>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-ink">
+          <p
+            className={[
+              'truncate text-xs',
+              isReply ? 'font-medium text-muted' : 'font-semibold text-ink',
+            ].join(' ')}
+          >
             {comment.authorName || 'Someone'}
           </p>
           <p className="text-xs text-muted">
