@@ -10,8 +10,8 @@
  * thread lands in the panel's "Unanchored" rail; that is the point of the
  * fallback and exactly what a reader sees before geometry arrives.
  */
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { describe, it, expect, beforeAll, afterEach, afterAll, vi } from 'vitest'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
@@ -32,6 +32,7 @@ import {
   type MockComment,
 } from '../../mocks/handlers'
 import { ANYONE_PRINCIPAL } from '../../lib/acl'
+import { CommentLayer } from './CommentLayer'
 import { handoffApi } from '../../store/handoffApi'
 import handoffReducer from '../../store/handoffSlice'
 import App from '../../App'
@@ -204,6 +205,64 @@ describe('viewer comment layer', () => {
     expect(await screen.findByText('Preview unavailable')).toBeInTheDocument()
 
     expect(commentsButton()).toBeNull()
+  })
+
+  /**
+   * The bridge's attach budget is for a document that is still *loading* — not
+   * for an iframe that doesn't exist yet. `MarkdownPreview` renders "Loading…"
+   * (no iframe at all) until its fetch resolves, so a slow fetch must not burn
+   * the budget: that would leave the gutter permanently unanchored with no
+   * recovery, since the `load` listener is only registered once the element
+   * exists. Attachment is observed through the bridge's own footprint — the
+   * `<style data-hf-comments>` it injects into the inner document, which only
+   * `detach()` removes.
+   */
+  it('waits for a slow iframe instead of burning the attach budget', async () => {
+    const folder = seedFolder('Posts', 'root')
+    const { id: nodeId } = seedMarkdown('Post.md', folder.id)
+    const node = nodes.get(nodeId)!
+
+    const iframeRef = { current: null } as React.RefObject<HTMLIFrameElement | null>
+    const imgRef = { current: null } as React.RefObject<HTMLImageElement | null>
+
+    vi.useFakeTimers()
+    try {
+      const { unmount } = render(
+        <Provider store={makeStore()}>
+          <CommentLayer
+            node={node}
+            kind="markdown"
+            iframeRef={iframeRef}
+            imgRef={imgRef}
+            open
+            canWrite={false}
+          />
+        </Provider>,
+      )
+
+      // Well past the 20 × 150ms attach budget, with no iframe in sight.
+      await act(async () => {
+        vi.advanceTimersByTime(5000)
+      })
+
+      // The fetch finally resolves and MarkdownPreview mounts its iframe.
+      const iframe = document.createElement('iframe')
+      document.body.appendChild(iframe)
+      iframeRef.current = iframe
+      await act(async () => {
+        fireEvent.load(iframe)
+        vi.advanceTimersByTime(1000)
+      })
+
+      expect(iframe.contentDocument?.querySelector('[data-hf-comments]')).not.toBeNull()
+
+      // ...and teardown still undoes it (only detach() removes the style).
+      unmount()
+      expect(iframe.contentDocument?.querySelector('[data-hf-comments]')).toBeNull()
+      iframe.remove()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('offers no Comments button in embed mode', async () => {

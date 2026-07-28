@@ -52,9 +52,15 @@ export type CommentKind = 'markdown' | 'site' | 'image'
 /** Teammates' comments land within this long — cheap enough for one document. */
 const POLL_MS = 20000
 
-/** Attachment retries while the inner document is still coming up. */
+/** Attachment retries while the inner *document* is still coming up. */
 const ATTACH_RETRY_MS = 150
 const MAX_ATTACH_ATTEMPTS = 20
+/**
+ * Separate, far more generous budget for waiting on the iframe *element* to
+ * exist at all — `MarkdownPreview` renders nothing but "Loading…" until its
+ * fetch resolves, and a slow fetch must not eat the attach budget (~60s).
+ */
+const MAX_WAIT_TICKS = 400
 
 /** Approximate bubble size, used only to keep it clamped inside the iframe. */
 const BUBBLE_H = 32
@@ -147,6 +153,7 @@ export function CommentLayer({
     if (!usesBridge) return
     let cancelled = false
     let attempts = 0
+    let waits = 0
     let timer: ReturnType<typeof setTimeout> | null = null
     let listening: HTMLIFrameElement | null = null
 
@@ -164,19 +171,30 @@ export function CommentLayer({
       timer = null
       if (cancelled || bridgeRef.current) return
       const iframe = iframeRef.current
-      if (iframe && listening !== iframe) {
+      if (!iframe) {
+        // There is nothing to attach to yet — MarkdownPreview renders only
+        // "Loading…" until its fetch resolves. Keep polling cheaply (a ref
+        // read) on the *wait* budget: spending attach attempts here would let
+        // a slow fetch defeat the bridge for the whole session, and the load
+        // listener below would never get registered either.
+        if (++waits < MAX_WAIT_TICKS) schedule(ATTACH_RETRY_MS)
+        return
+      }
+      if (listening !== iframe) {
         listening?.removeEventListener('load', onLoad)
         iframe.addEventListener('load', onLoad)
         listening = iframe
+        // First sight of this element: the attach budget starts here.
+        attempts = 0
       }
-      const bridge = iframe ? attachCommentBridge(iframe, { onGeometry, onSelection }) : null
+      const bridge = attachCommentBridge(iframe, { onGeometry, onSelection })
       if (bridge) {
         bridgeRef.current = bridge
         setBridgeGen((g) => g + 1)
         return
       }
-      // Still loading (or the iframe hasn't mounted yet — MarkdownPreview only
-      // renders it once the fetch resolves). Try again, but never forever.
+      // The element exists but its document is still loading. Retry, but never
+      // forever — the `load` listener is registered now and will re-drive us.
       if (++attempts < MAX_ATTACH_ATTEMPTS) schedule(ATTACH_RETRY_MS)
     }
 
@@ -185,6 +203,7 @@ export function CommentLayer({
       drop()
       setGeometry(null)
       attempts = 0
+      waits = 0
       schedule(0)
     }
 
