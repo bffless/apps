@@ -15,6 +15,7 @@ import {
   useGetRootMetaQuery,
   useGetSignedUrlQuery,
   useDeleteNodeMutation,
+  useListCommentsQuery,
 } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown, markdownDocument } from '../lib/markdown'
@@ -25,6 +26,8 @@ import { canShareParentFolder } from '../lib/shareGate'
 import { canDeleteNode } from '../lib/deleteGate'
 import { childIsPublic, type FolderLink } from '../lib/acl'
 import { rootMetaNode } from '../lib/rootNode'
+import { canComment } from '../lib/commentGate'
+import { CommentLayer } from '../components/comments/CommentLayer'
 import { ShareDialog } from '../components/ShareDialog'
 import { AncestorNodes } from '../components/AncestorNodes'
 import { NodeDetails } from '../components/NodeDetails'
@@ -50,6 +53,13 @@ interface ControlBarProps {
   /** True when the content region is currently showing raw source. */
   showSource: boolean
   onToggleSource: () => void
+  /** Whether the comment gutter is open. Null when this view can't be commented on. */
+  commentsOpen: boolean
+  onToggleComments: () => void
+  /** Open (unresolved, undeleted) threads — badged on the button. */
+  commentCount: number
+  /** False for non-commentable kinds and the raw-source view: no button at all. */
+  commentable: boolean
 }
 
 /**
@@ -70,6 +80,14 @@ function CodeIcon() {
   )
 }
 
+function ChatBubbleIcon() {
+  return (
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+      <path fillRule="evenodd" d="M10 2c-4.418 0-8 2.91-8 6.5 0 1.98 1.09 3.75 2.807 4.94-.09.98-.42 1.9-.96 2.66a.4.4 0 0 0 .36.63c1.46-.16 2.8-.7 3.9-1.5.6.11 1.24.17 1.893.17 4.418 0 8-2.91 8-6.5S14.418 2 10 2Z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
 function ShareIcon() {
   return (
     <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -78,7 +96,17 @@ function ShareIcon() {
   )
 }
 
-function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSource }: ControlBarProps) {
+function ControlBar({
+  node,
+  contentRef,
+  canViewSource,
+  showSource,
+  onToggleSource,
+  commentsOpen,
+  onToggleComments,
+  commentCount,
+  commentable,
+}: ControlBarProps) {
   const navigate = useNavigate()
   const { session } = useSession()
   const authed = session?.authenticated === true
@@ -302,6 +330,31 @@ function ControlBar({ node, contentRef, canViewSource, showSource, onToggleSourc
         </button>
       )}
 
+      {/* Comments — only for kinds the gutter can anchor into (spec §5). Stays
+          on the bar at every width (icon-only below `sm`, like Share) rather
+          than folding into the overflow menu: it is a stateful toggle whose
+          unread badge is the point, and a kebab would hide the count. */}
+      {commentable && (
+        <button
+          type="button"
+          onClick={onToggleComments}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted no-underline transition-colors hover:bg-surface-2 hover:text-ink"
+          title="Comments"
+          aria-pressed={commentsOpen}
+        >
+          <ChatBubbleIcon />
+          <span className="hidden sm:inline">Comments</span>
+          {commentCount > 0 && (
+            <span
+              data-testid="comment-count-badge"
+              className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-600 px-1 text-[10px] font-semibold leading-none text-white"
+            >
+              {commentCount}
+            </span>
+          )}
+        </button>
+      )}
+
       {/* Open in new tab */}
       {openUrl && (
         <a
@@ -488,7 +541,16 @@ type MdState = { url: string; doc: string } | null
  * handing the reading measure and the link target to a host — applies only when
  * the viewer is really inside an iframe (`isFramed`, src/lib/embed.ts).
  */
-function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: boolean }) {
+function MarkdownPreview({
+  node,
+  embed = false,
+  iframeRef,
+}: {
+  node: HandoffNode
+  embed?: boolean
+  /** Handed to the comment bridge, which reads the (same-origin) inner document. */
+  iframeRef?: React.RefObject<HTMLIFrameElement | null>
+}) {
   const url = node.url ?? ''
   const [result, setResult] = useState<MdState>(null)
 
@@ -520,6 +582,7 @@ function MarkdownPreview({ node, embed = false }: { node: HandoffNode; embed?: b
 
   return (
     <iframe
+      ref={iframeRef}
       srcDoc={result.doc}
       title={node.name}
       className="h-full w-full flex-1"
@@ -713,7 +776,23 @@ export function ViewerBody({ id }: { id: string }) {
   const { data: node, isLoading, isError } = useGetNodeQuery(id, {
     skip: sessionLoading || claimPending || (needClaim && claimData?.valid === false),
   })
+  // Parent-folder lookup for the comment write gate — same pattern (and the
+  // same RTK Query cache entry, so no extra request) as ControlBar's
+  // share/delete gates: skip for guests to avoid a discarded 401, and while
+  // `node` itself hasn't resolved yet.
+  const { data: parentNode } = useGetNodeQuery(node?.parentId ?? 'root', {
+    skip: !node || node.parentId === 'root' || !authed,
+  })
   const contentRef = useRef<HTMLDivElement>(null)
+  // Handed to CommentLayer: the bridge reads the iframe's same-origin document,
+  // and the pin overlay measures the rendered image.
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
+  // The image's positioned wrapper — the pin overlay is portalled into it, so
+  // its box-local coordinates land on the picture.
+  const [pinHost, setPinHost] = useState<HTMLDivElement | null>(null)
+  const [imageNatural, setImageNatural] = useState<{ width: number; height: number } | null>(null)
+  const [commentsOpen, setCommentsOpen] = useState(false)
 
   // Raw-source toggle. Reset to rendered whenever the viewed item changes
   // (adjust-state-during-render pattern, so opening a new item starts rendered).
@@ -723,7 +802,25 @@ export function ViewerBody({ id }: { id: string }) {
   if (id !== prevId) {
     setPrevId(id)
     setShowSource(false)
+    setCommentsOpen(false)
+    setImageNatural(null)
   }
+
+  // Comment affordances. Derived before the early returns below so the count
+  // query keeps a stable hook position; every branch is inert without a node.
+  const kind = node ? previewFor(node) : null
+  const canViewSource = !!node && !!kind && hasViewSource(kind) && !!node.url
+  const sourceShown = canViewSource && showSource
+  // Raw source has no anchorable rendering, and `?embed=1` is chromeless.
+  const commentKind =
+    !sourceShown && (kind === 'markdown' || kind === 'site' || kind === 'image') ? kind : null
+  const { data: allComments } = useListCommentsQuery(
+    { nodeId: node?.id ?? '' },
+    { skip: !node || !commentKind || embed },
+  )
+  const commentCount = (allComments ?? []).filter(
+    (c) => c.parentId === null && !c.resolved && !c.deleted,
+  ).length
 
   if (sessionLoading || claimPending) {
     return <div className="py-16 text-center text-sm text-muted">Loading…</div>
@@ -745,9 +842,9 @@ export function ViewerBody({ id }: { id: string }) {
     )
   }
 
-  const kind = previewFor(node)
-  const canViewSource = hasViewSource(kind) && !!node.url
-  const sourceShown = canViewSource && showSource
+  // Anyone who can *see* the node may comment on it, once signed in (Task 8).
+  const canWrite = canComment({ session, node, parentNode: parentNode ?? undefined })
+  const showGutter = !!commentKind && commentsOpen && !embed
 
   return (
     <div
@@ -768,47 +865,104 @@ export function ViewerBody({ id }: { id: string }) {
           canViewSource={canViewSource}
           showSource={showSource}
           onToggleSource={() => setShowSource((v) => !v)}
+          commentsOpen={commentsOpen}
+          onToggleComments={() => setCommentsOpen((v) => !v)}
+          commentCount={commentCount}
+          commentable={!!commentKind}
         />
       )}
-      <div ref={contentRef} className="flex min-h-0 flex-1 flex-col overflow-auto">
-        {sourceShown && node.url && (
-          <SourceView url={node.url} />
-        )}
-        {kind === 'pdf' && node.url && (
-          <iframe
-            src={node.url}
-            title={node.name}
-            className="h-full w-full flex-1"
-            style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
+      {/* Content row. The gutter is a sibling of the content *inside*
+          `contentRef`, so Fullscreen takes the comments along with the
+          document (spec §5). The renderers keep their own column, which stays
+          full-width whenever the gutter is closed. Both columns are bounded by
+          the viewport-locked shell above, so the document's own scroll (the
+          iframe's, for markdown/site) stays the single scroll context and the
+          gutter tracks it by transform. */}
+      <div ref={contentRef} className="flex min-h-0 flex-1 flex-row overflow-auto">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {sourceShown && node.url && (
+            <SourceView url={node.url} />
+          )}
+          {kind === 'pdf' && node.url && (
+            <iframe
+              src={node.url}
+              title={node.name}
+              className="h-full w-full flex-1"
+              style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
+            />
+          )}
+          {kind === 'image' && node.url && (
+            <div className="flex flex-1 items-center justify-center p-8">
+              {/* The wrapper is the pin overlay's coordinate space, so it has to
+                  be the image's own box. Sizing it to the natural dimensions
+                  (capped by the same max-* the <img> used to carry) reproduces
+                  the previous layout exactly — including never upscaling a small
+                  image — while `object-contain` letterboxes inside it, which is
+                  the geometry `renderedImageRect` resolves. */}
+              <div
+                ref={setPinHost}
+                className="relative max-h-full max-w-full"
+                style={
+                  imageNatural
+                    ? { width: imageNatural.width, height: imageNatural.height }
+                    : undefined
+                }
+              >
+                <img
+                  ref={imgRef}
+                  src={node.url}
+                  alt={node.name}
+                  onLoad={(e) =>
+                    setImageNatural({
+                      width: e.currentTarget.naturalWidth,
+                      height: e.currentTarget.naturalHeight,
+                    })
+                  }
+                  className={
+                    imageNatural
+                      ? 'h-full w-full object-contain'
+                      : 'max-h-full max-w-full object-contain'
+                  }
+                />
+              </div>
+            </div>
+          )}
+          {!sourceShown && kind === 'markdown' && node.url && (
+            <MarkdownPreview node={node} embed={embed} iframeRef={iframeRef} />
+          )}
+          {kind === 'video' && (
+            <MediaPreview node={node} kind="video" />
+          )}
+          {kind === 'audio' && (
+            <MediaPreview node={node} kind="audio" />
+          )}
+          {!sourceShown && kind === 'site' && node.url && (
+            <iframe
+              ref={iframeRef}
+              src={node.url}
+              title={node.name}
+              className="h-full w-full flex-1"
+              style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
+            />
+          )}
+          {kind === 'site' && !node.url && (
+            <PreviewUnavailable node={node} />
+          )}
+          {kind === 'download' && (
+            <PreviewUnavailable node={node} />
+          )}
+        </div>
+
+        {showGutter && commentKind && (
+          <CommentLayer
+            node={node}
+            kind={commentKind}
+            iframeRef={iframeRef}
+            imgRef={imgRef}
+            pinHost={pinHost}
+            open
+            canWrite={canWrite}
           />
-        )}
-        {kind === 'image' && node.url && (
-          <div className="flex flex-1 items-center justify-center p-8">
-            <img src={node.url} alt={node.name} className="max-h-full max-w-full object-contain" />
-          </div>
-        )}
-        {!sourceShown && kind === 'markdown' && node.url && (
-          <MarkdownPreview node={node} embed={embed} />
-        )}
-        {kind === 'video' && (
-          <MediaPreview node={node} kind="video" />
-        )}
-        {kind === 'audio' && (
-          <MediaPreview node={node} kind="audio" />
-        )}
-        {!sourceShown && kind === 'site' && node.url && (
-          <iframe
-            src={node.url}
-            title={node.name}
-            className="h-full w-full flex-1"
-            style={{ border: 'none', ...(embed ? { minHeight: 'calc(100vh - 7.5rem)' } : null) }}
-          />
-        )}
-        {kind === 'site' && !node.url && (
-          <PreviewUnavailable node={node} />
-        )}
-        {kind === 'download' && (
-          <PreviewUnavailable node={node} />
         )}
       </div>
     </div>

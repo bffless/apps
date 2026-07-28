@@ -42,7 +42,12 @@ export interface CommentPanelProps {
   onActivate: (id: string | null) => void
   canWrite: boolean
   draft: { anchorY: number; anchor: CommentAnchor } | null
-  onDraftDone: () => void
+  /**
+   * Called when the draft card closes — with the new comment's id after a
+   * successful post (so the caller can make it the active thread), and with
+   * nothing when the composer was cancelled.
+   */
+  onDraftDone: (createdId?: string) => void
 }
 
 export function CommentPanel({
@@ -138,8 +143,8 @@ export function CommentPanel({
   async function postDraft(body: string) {
     if (!draft) return
     try {
-      await addComment({ nodeId, body, anchor: draft.anchor }).unwrap()
-      onDraftDone()
+      const created = await addComment({ nodeId, body, anchor: draft.anchor }).unwrap()
+      onDraftDone(created.id)
     } catch (err) {
       toast('Couldn’t post the comment. Please try again.', 'error')
       // Rethrow so the draft composer keeps the typed text for a retry.
@@ -192,7 +197,9 @@ export function CommentPanel({
                     onSubmit={postDraft}
                     busy={posting}
                     placeholder="Add a comment…"
-                    onCancel={onDraftDone}
+                    /* Wrapped: a cancel carries no created id (and the raw
+                       handler would receive the click event as one). */
+                    onCancel={() => onDraftDone()}
                     autoFocus
                   />
                 ) : (
