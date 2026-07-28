@@ -36,6 +36,23 @@ describe('toComment', () => {
     expect(toComment({ id: 'c', anchorJson: { type: 'blob' } }).anchor).toBeNull()
     expect(toComment({ id: 'c', anchorJson: { type: 'pin', x: 2, y: 0 } }).anchor).toBeNull()
   })
+
+  it('coerces ISO-8601 timestamp strings (ce#562: CE now() writes ISO into number-typed fields)', () => {
+    const created = '2026-07-28T10:32:44.333Z'
+    const updated = '2026-07-28T11:00:00.000Z'
+    const resolved = '2026-07-28T12:00:00.000Z'
+    const c = toComment({ id: 'c', createdMs: created, updatedMs: updated, resolvedMs: resolved })
+    expect(c.createdMs).toBe(Date.parse(created))
+    expect(c.updatedMs).toBe(Date.parse(updated))
+    expect(c.resolvedMs).toBe(Date.parse(resolved))
+  })
+
+  it('garbage timestamp strings still fall back to safe defaults', () => {
+    const c = toComment({ id: 'c', createdMs: 'not-a-date', updatedMs: 'nope', resolvedMs: 'nope' })
+    expect(c.createdMs).toBe(0)
+    expect(c.updatedMs).toBeNull()
+    expect(c.resolvedMs).toBeNull()
+  })
 })
 
 describe('toCommentList', () => {

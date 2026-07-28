@@ -146,5 +146,6 @@ export default function handler({ user, request, steps, utils }: HandlerContext)
     deny403: deny403,
     authorName: String(email || ''),
     level: level,
+    nowMs: Date.now(),
   };
 }

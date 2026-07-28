@@ -52,7 +52,7 @@ pipeline:
           resolved: false
           deleted: false
           reactionsJson: '"{}"'
-          createdMs: now()
+          createdMs: steps.gate.nowMs
         schemaId: $schema:handoff_comments
         condition: steps.gate.allow
     - id: shape

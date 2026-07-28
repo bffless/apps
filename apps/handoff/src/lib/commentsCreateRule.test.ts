@@ -68,6 +68,10 @@ describe('gate', () => {
     expect(r.allow).toBe(true)
     expect(r.authorName).toBe('bob@x.y')
   })
+  it('gate stamps nowMs as an epoch-ms number (ce#562: CE now() writes ISO strings)', () => {
+    const r = run({ user: { id: 'bob', email: 'bob@x.y' } })
+    expect(typeof r.nowMs).toBe('number')
+  })
   it('share-cookie visitor CANNOT write → 401', () => {
     const r = run({ cookie: `hf_s=${token({ s: FOLDER, exp: Date.now() + 60000 })}` })
     expect(r.allow).toBe(false); expect(r.deny401).toBe(true)
@@ -94,7 +98,7 @@ describe('gate', () => {
     const create = step('create')
     expect(create.config.condition).toBe('steps.gate.allow')
     expect(create.config.fields.authorId).toBe('user.id')
-    expect(create.config.fields.createdMs).toBe('now()')
+    expect(create.config.fields.createdMs).toBe('steps.gate.nowMs')
     expect(create.config.fields.authorName).toBe('steps.gate.authorName')
     expect(create.config.fields.reactionsJson).toBe('"{}"')
   })

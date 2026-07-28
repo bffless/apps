@@ -78,6 +78,27 @@ function parseAnchor(raw: unknown): CommentAnchor | null {
   return null
 }
 
+/**
+ * Coerce a raw timestamp field to epoch milliseconds. Numbers (or numeric
+ * strings) pass through `Number(...)`. If that isn't finite and `raw` is a
+ * string, fall back to `Date.parse(...)` — CE's `now()` expression can write
+ * an ISO-8601 string (e.g. "2026-07-28T10:32:44.333Z") into a number-typed
+ * field (ce#562), which would otherwise coerce to NaN. Returns `fallback`
+ * (never throws) if neither produces a finite number.
+ */
+function parseTimestamp(raw: unknown, fallback: number): number
+function parseTimestamp(raw: unknown, fallback: null): number | null
+function parseTimestamp(raw: unknown, fallback: number | null): number | null {
+  if (raw == null) return fallback
+  const n = Number(raw)
+  if (Number.isFinite(n)) return n
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
 function parseReactions(raw: unknown): Record<string, string[]> {
   let v: unknown = raw
   if (typeof v === 'string') {
@@ -139,10 +160,8 @@ export function toComment(raw: unknown): HandoffComment {
   const rawResolvedBy = obj['resolvedBy']
   const resolvedBy = typeof rawResolvedBy === 'string' ? rawResolvedBy : null
 
-  // resolvedMs: finite number or null
-  const rawResolvedMs = obj['resolvedMs']
-  const resolvedMsNum = rawResolvedMs == null ? NaN : Number(rawResolvedMs)
-  const resolvedMs = Number.isFinite(resolvedMsNum) ? resolvedMsNum : null
+  // resolvedMs: finite number or null (ISO-8601 strings fall back through Date.parse, ce#562)
+  const resolvedMs = parseTimestamp(obj['resolvedMs'], null)
 
   // reactions: parsed from reactionsJson (string or already-parsed object)
   const reactions = parseReactions(obj['reactionsJson'])
@@ -151,15 +170,11 @@ export function toComment(raw: unknown): HandoffComment {
   const rawDeleted = obj['deleted']
   const deleted = rawDeleted === true || rawDeleted === 'true'
 
-  // createdMs: finite number or 0
-  const rawCreatedMs = obj['createdMs']
-  const createdMsNum = rawCreatedMs == null ? NaN : Number(rawCreatedMs)
-  const createdMs = Number.isFinite(createdMsNum) ? createdMsNum : 0
+  // createdMs: finite number or 0 (ISO-8601 strings fall back through Date.parse, ce#562)
+  const createdMs = parseTimestamp(obj['createdMs'], 0)
 
-  // updatedMs: finite number or null
-  const rawUpdatedMs = obj['updatedMs']
-  const updatedMsNum = rawUpdatedMs == null ? NaN : Number(rawUpdatedMs)
-  const updatedMs = Number.isFinite(updatedMsNum) ? updatedMsNum : null
+  // updatedMs: finite number or null (ISO-8601 strings fall back through Date.parse, ce#562)
+  const updatedMs = parseTimestamp(obj['updatedMs'], null)
 
   return {
     id,
