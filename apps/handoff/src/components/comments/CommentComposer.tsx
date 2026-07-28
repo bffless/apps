@@ -2,13 +2,21 @@
  * The one text-entry control the comment gutter uses — for a new thread (draft
  * card), a reply, and an in-place edit. Auto-growing textarea + a Post button,
  * with Cmd/Ctrl+Enter as the keyboard commit so a comment never costs a mouse
- * trip. Submitting is the caller's business: this owns only the draft text and
- * clears it once `onSubmit` has been handed the trimmed body.
+ * trip. Submitting is the caller's business: this owns only the draft text.
+ *
+ * The text is cleared **only once `onSubmit` has resolved**. An `onSubmit` that
+ * rejects leaves the box exactly as the user left it, so a failed POST/PATCH is
+ * a retry rather than the silent loss of everything they typed — which for the
+ * edit flow would destroy both the new text *and* the hidden original.
  */
 import { useState } from 'react'
 
 export interface CommentComposerProps {
-  onSubmit: (body: string) => void
+  /**
+   * Commit handler. Async handlers must **reject** on failure — a resolved
+   * promise (or a plain `void` return) is read as success and clears the box.
+   */
+  onSubmit: (body: string) => void | Promise<unknown>
   busy: boolean
   placeholder: string
   autoFocus?: boolean
@@ -32,9 +40,15 @@ export function CommentComposer({
   const [value, setValue] = useState(initialValue)
   const trimmed = value.trim()
 
-  function submit() {
+  async function submit() {
     if (!trimmed || busy) return
-    onSubmit(trimmed)
+    try {
+      await onSubmit(trimmed)
+    } catch {
+      // The caller has already surfaced the failure (toast); keep the text so
+      // the user can retry instead of retyping.
+      return
+    }
     setValue('')
   }
 

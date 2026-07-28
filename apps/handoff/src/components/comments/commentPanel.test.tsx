@@ -15,7 +15,7 @@
  * cards read `useSession()` for the "is this mine?" affordances.
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
 import { http, HttpResponse } from 'msw'
@@ -259,6 +259,84 @@ describe('CommentPanel', () => {
     fireEvent.click(mine)
     await screen.findByRole('button', { name: '👍 1' })
     expect(seen).toContainEqual({ id: 'c1', op: 'react', emoji: '👍' })
+  })
+
+  // A failed write must never eat what the user typed — for the edit flow it
+  // would destroy the new text *and* the original body the editor is covering.
+  describe('composers keep their text when the submit fails', () => {
+    /** Record every POST /api/comments and answer with `status`. */
+    function stubPost(status: number) {
+      const seen: unknown[] = []
+      server.use(
+        http.post('/api/comments', async ({ request }) => {
+          seen.push(await request.json())
+          if (status >= 400) return new HttpResponse(null, { status })
+          return HttpResponse.json({
+            comment: { id: 'new1', nodeId: 'n1', parentId: 'c1', body: 'sent' },
+          })
+        }),
+      )
+      return seen
+    }
+
+    it('a failed reply leaves the typed text in the composer', async () => {
+      const seen = stubPost(500)
+      renderPanel({
+        threads: [thread({ id: 'c1', body: 'anchored one' })],
+        positions: new Map([['c1', 100]]),
+      })
+
+      const box = screen.getByPlaceholderText('Reply…')
+      fireEvent.change(box, { target: { value: 'my precious draft' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+
+      await waitFor(() => expect(seen).toHaveLength(1))
+      expect(box).toHaveValue('my precious draft')
+    })
+
+    it('a successful reply still clears the composer', async () => {
+      const seen = stubPost(200)
+      renderPanel({
+        threads: [thread({ id: 'c1', body: 'anchored one' })],
+        positions: new Map([['c1', 100]]),
+      })
+
+      const box = screen.getByPlaceholderText('Reply…')
+      fireEvent.change(box, { target: { value: 'shipped' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+
+      await waitFor(() => expect(seen).toHaveLength(1))
+      await waitFor(() => expect(box).toHaveValue(''))
+    })
+
+    it('a failed edit keeps the editor open with the edited text', async () => {
+      const seen: unknown[] = []
+      server.use(
+        http.patch('/api/comments', async ({ request }) => {
+          seen.push(await request.json())
+          return new HttpResponse(null, { status: 500 })
+        }),
+      )
+      renderPanel({
+        threads: [thread({ id: 'c1', body: 'the original', authorId: 'user-owner' })],
+        positions: new Map([['c1', 100]]),
+      })
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Comment actions' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }))
+
+      const box = screen.getByPlaceholderText('Edit comment…')
+      expect(box).toHaveValue('the original')
+      fireEvent.change(box, { target: { value: 'the revision' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(seen).toHaveLength(1))
+      // Neither version is lost: the edit is still in the box, and Cancel still
+      // restores the original body underneath.
+      expect(box).toHaveValue('the revision')
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.getByText('the original')).toBeInTheDocument()
+    })
   })
 
   it('renders a draft composer card at the draft anchor', () => {

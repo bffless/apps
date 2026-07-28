@@ -78,8 +78,10 @@ export function CommentCard({ thread, active, canWrite, onActivate, nodeId }: Co
   async function postReply(body: string) {
     try {
       await addComment({ nodeId, body, parentId: root.id }).unwrap()
-    } catch {
+    } catch (err) {
       toast('Couldn’t post the reply. Please try again.', 'error')
+      // Rethrow so the composer keeps the typed text for a retry.
+      throw err
     }
   }
 
@@ -163,8 +165,11 @@ function CommentBody({
     try {
       await patchComment({ id: comment.id, nodeId, op: 'edit', body }).unwrap()
       setEditing(false)
-    } catch {
+    } catch (err) {
       toast('Couldn’t save the edit. Please try again.', 'error')
+      // Rethrow so the composer keeps the edited text — closing the editor here
+      // would lose both the new text and the original body it is covering.
+      throw err
     }
   }
 

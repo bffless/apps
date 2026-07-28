@@ -140,8 +140,10 @@ export function CommentPanel({
     try {
       await addComment({ nodeId, body, anchor: draft.anchor }).unwrap()
       onDraftDone()
-    } catch {
+    } catch (err) {
       toast('Couldn’t post the comment. Please try again.', 'error')
+      // Rethrow so the draft composer keeps the typed text for a retry.
+      throw err
     }
   }
 
