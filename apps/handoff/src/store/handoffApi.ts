@@ -22,8 +22,10 @@ import { planFolderImport } from '../lib/folderImport'
 import { contentSubPath } from '../lib/contentPath'
 import type { Grant } from '../lib/acl'
 import type { RootMeta } from '../lib/rootNode'
+import { toComment, toCommentList } from '../lib/comments'
+import type { HandoffComment, CommentAnchor } from '../lib/comments'
 
-export type { HandoffNode, PreparedUpload, RegisterBody, Grant, RootMeta }
+export type { HandoffNode, PreparedUpload, RegisterBody, Grant, RootMeta, HandoffComment, CommentAnchor }
 
 // ---------------------------------------------------------------------------
 // Share-link types
@@ -154,7 +156,7 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
 export const handoffApi = createApi({
   reducerPath: 'handoffApi',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Node', 'Grant', 'ShareLink'],
+  tagTypes: ['Node', 'Grant', 'ShareLink', 'Comment'],
   endpoints: (builder) => ({
     /**
      * GET /api/nodes?parentId=… → { nodes: HandoffNode[] }
@@ -616,6 +618,75 @@ export const handoffApi = createApi({
       ],
     }),
 
+    // -----------------------------------------------------------------------
+    // Comment endpoints
+    // -----------------------------------------------------------------------
+
+    /**
+     * GET /api/comments?nodeId=… → { comments: [...] } (view-gated; share-cookie ok).
+     * Polled while the comment panel is open (pollingInterval at the hook call site)
+     * so teammates' comments arrive without a refresh.
+     */
+    listComments: builder.query<HandoffComment[], { nodeId: string }>({
+      query: ({ nodeId }) => `api/comments?nodeId=${encodeURIComponent(nodeId)}`,
+      transformResponse: toCommentList,
+      providesTags: (_r, _e, { nodeId }) => [{ type: 'Comment' as const, id: `LIST:${nodeId}` }],
+    }),
+
+    /** POST /api/comments — create a root (anchor) or reply (parentId). Session+view. */
+    addComment: builder.mutation<
+      HandoffComment,
+      { nodeId: string; body: string; parentId?: string; anchor?: CommentAnchor }
+    >({
+      query: ({ nodeId, body, parentId, anchor }) => ({
+        url: 'api/comments',
+        method: 'POST',
+        body: { nodeId, body, ...(parentId ? { parentId } : {}), ...(anchor ? { anchor } : {}) },
+      }),
+      transformResponse: (r) => toComment((r as { comment?: unknown }).comment),
+      invalidatesTags: (_r, _e, { nodeId }) => [{ type: 'Comment' as const, id: `LIST:${nodeId}` }],
+    }),
+
+    /**
+     * PATCH /api/comments { id, op, … }. Optimistic for snappy react/resolve/edit;
+     * rolled back on failure (RTK undo). Single isolated write per comment record.
+     */
+    patchComment: builder.mutation<
+      HandoffComment,
+      { id: string; nodeId: string; op: 'edit' | 'resolve' | 'reopen' | 'react'; body?: string; emoji?: string; userId?: string }
+    >({
+      query: ({ id, op, body, emoji }) => ({
+        url: 'api/comments',
+        method: 'PATCH',
+        body: { id, op, ...(body !== undefined ? { body } : {}), ...(emoji ? { emoji } : {}) },
+      }),
+      transformResponse: (r) => toComment((r as { comment?: unknown }).comment),
+      async onQueryStarted({ id, nodeId, op, body, emoji, userId }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          handoffApi.util.updateQueryData('listComments', { nodeId }, (draft) => {
+            const c = draft.find((x) => x.id === id)
+            if (!c) return
+            if (op === 'edit' && body !== undefined) { c.body = body; c.updatedMs = Date.now() }
+            if (op === 'resolve') c.resolved = true
+            if (op === 'reopen') c.resolved = false
+            if (op === 'react' && emoji && userId) {
+              const cur = c.reactions[emoji] ?? []
+              c.reactions[emoji] = cur.includes(userId) ? cur.filter((u) => u !== userId) : [...cur, userId]
+              if (!c.reactions[emoji].length) delete c.reactions[emoji]
+            }
+          }),
+        )
+        try { await queryFulfilled } catch { patch.undo() }
+      },
+      invalidatesTags: (_r, _e, { nodeId }) => [{ type: 'Comment' as const, id: `LIST:${nodeId}` }],
+    }),
+
+    /** DELETE /api/comments?id=… — author only; server decides soft vs hard. */
+    deleteComment: builder.mutation<{ id: string }, { id: string; nodeId: string }>({
+      query: ({ id }) => ({ url: `api/comments?id=${encodeURIComponent(id)}`, method: 'DELETE' }),
+      invalidatesTags: (_r, _e, { nodeId }) => [{ type: 'Comment' as const, id: `LIST:${nodeId}` }],
+    }),
+
     /**
      * GET /api/directory?search=<q> → { users: { id: string; email: string }[] }
      */
@@ -893,4 +964,8 @@ export const {
   useRevokeShareLinkMutation,
   useValidateShareLinkQuery,
   useClaimShareLinkMutation,
+  useListCommentsQuery,
+  useAddCommentMutation,
+  usePatchCommentMutation,
+  useDeleteCommentMutation,
 } = handoffApi

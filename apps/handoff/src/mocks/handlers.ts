@@ -157,6 +157,7 @@ export function resetMockState(): void {
   nodeAcl.clear()
   grants.clear()
   shareLinks.clear()
+  comments.clear()
   nodeCounter = 0
   tokenCounter = 0
   mockCurrentUser = { id: 'user-owner', email: 'owner@example.com', role: 'admin' }
@@ -174,6 +175,88 @@ export function setMockGrants(folderId: string, g: Grant[]): void {
   grants.set(folderId, g)
   const acl = nodeAcl.get(folderId)
   if (acl) acl.grants = g
+}
+
+// ---------------------------------------------------------------------------
+// Comments in-memory store
+// ---------------------------------------------------------------------------
+
+/** A stored margin-comment record. Mirrors the `handoff_comments` schema. */
+export interface MockComment {
+  id: string
+  nodeId: string
+  /** '' for a thread root; the root comment's id for a reply. */
+  parentId: string
+  authorId: string
+  authorName: string
+  body: string
+  anchorJson: string | null
+  resolved: boolean
+  resolvedBy: string | null
+  resolvedMs: number | null
+  reactionsJson: string
+  deleted: boolean
+  createdMs: number
+  updatedMs: number | null
+}
+
+/** Stored comment records, keyed by id. Mirrors handoff_comments. */
+export const comments = new Map<string, MockComment>()
+
+const MAX_COMMENT_BODY = 5000
+const MAX_EMOJI = 16
+
+/**
+ * Validate + normalise a raw `anchor` payload into its stored JSON string, or
+ * `null` when absent/malformed. Mirrors `anchorString()` in
+ * `comments/post/pre.fn.ts`.
+ */
+function anchorStringForCreate(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  if (o.type === 'text') {
+    const start = Number(o.start)
+    const end = Number(o.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) return null
+    return JSON.stringify({
+      type: 'text',
+      quote: String(o.quote ?? '').slice(0, 1000),
+      prefix: String(o.prefix ?? '').slice(0, 64),
+      suffix: String(o.suffix ?? '').slice(0, 64),
+      start,
+      end,
+    })
+  }
+  if (o.type === 'pin') {
+    const x = Number(o.x)
+    const y = Number(o.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null
+    return JSON.stringify({ type: 'pin', x, y })
+  }
+  return null
+}
+
+/** Shape a stored comment for the wire — husk for a soft-deleted root, full row otherwise. Mirrors `comments/get/shape.fn.ts`. */
+function shapeComment(c: MockComment): Record<string, unknown> {
+  if (c.deleted) {
+    return { id: c.id, nodeId: c.nodeId, parentId: c.parentId, deleted: true, createdMs: c.createdMs }
+  }
+  return {
+    id: c.id,
+    nodeId: c.nodeId,
+    parentId: c.parentId,
+    authorId: c.authorId,
+    authorName: c.authorName,
+    body: c.body,
+    anchorJson: c.anchorJson,
+    resolved: c.resolved,
+    resolvedBy: c.resolvedBy,
+    resolvedMs: c.resolvedMs,
+    reactionsJson: c.reactionsJson,
+    deleted: false,
+    createdMs: c.createdMs,
+    updatedMs: c.updatedMs,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1127,5 +1210,208 @@ export const handlers = [
     }
     mockShareLinkFolderId = link.folderId
     return HttpResponse.json({ valid: true, folderId: link.folderId })
+  }),
+
+  // ---------------------------------------------------------------------------
+  // Comments handlers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * GET /api/comments?nodeId=…
+   * Response: { comments: (Row | husk)[] }
+   * Read-gated (view+) per-folder ACL, share-cookie visitors included — mirrors
+   * comments/get/{gate,shape}.fn.ts via `checkAccess` (the same helper every
+   * other read route uses). Soft-deleted roots go out as husks.
+   */
+  http.get('/api/comments', ({ request }) => {
+    const nodeId = new URL(request.url).searchParams.get('nodeId') ?? ''
+    if (!nodeId || !nodes.has(nodeId)) {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
+    }
+
+    const access = checkAccess(nodeId, 'view')
+    if (access === '401') return HttpResponse.json({ error: 'unauthorized' }, { status: 401 })
+    if (access === '403') return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+
+    const rows = [...comments.values()].filter((c) => c.nodeId === nodeId).map(shapeComment)
+    return HttpResponse.json({ comments: rows })
+  }),
+
+  /**
+   * POST /api/comments
+   * Body: { nodeId, body, parentId?, anchor? }
+   * Response: { comment: Row }
+   * Mirrors comments/post/{pre,gate,shape}.fn.ts: a share-cookie visitor alone
+   * is never enough to write (spec §7) — a session `mockCurrentUser` is
+   * mandatory in addition to view+ access on the node, checked in that order
+   * (matching the gate's uid-first deny401/deny403 split).
+   */
+  http.post('/api/comments', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      nodeId?: unknown
+      body?: unknown
+      parentId?: unknown
+      anchor?: unknown
+    }
+    const nodeId = String(body.nodeId ?? '')
+    const parentId = body.parentId == null ? '' : String(body.parentId)
+    const bodyText = typeof body.body === 'string' ? body.body : ''
+    const trimmed = bodyText.trim()
+    const isReply = parentId !== ''
+
+    const nodeOk = !!nodeId && nodes.has(nodeId)
+    const bodyOk = trimmed.length > 0 && trimmed.length <= MAX_COMMENT_BODY
+
+    let replyOk = true
+    if (isReply) {
+      const parent = comments.get(parentId)
+      replyOk = !!parent && !parent.deleted && parent.parentId === '' && parent.nodeId === nodeId
+    }
+
+    if (!nodeOk || !bodyOk || !replyOk) {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
+    }
+
+    // WRITE rule (spec §7): a session user id is mandatory — hf_s alone never writes.
+    if (!mockCurrentUser) return HttpResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+    const access = checkAccess(nodeId, 'view')
+    if (access !== 'ok') {
+      // uid is present here, so an insufficient level is always 403 (deny403).
+      return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+
+    const record: MockComment = {
+      id: crypto.randomUUID(),
+      nodeId,
+      parentId,
+      authorId: mockCurrentUser.id,
+      authorName: mockCurrentUser.email,
+      body: trimmed,
+      anchorJson: isReply ? null : anchorStringForCreate(body.anchor),
+      resolved: false,
+      resolvedBy: null,
+      resolvedMs: null,
+      reactionsJson: '{}',
+      deleted: false,
+      createdMs: Date.now(),
+      updatedMs: null,
+    }
+    comments.set(record.id, record)
+    return HttpResponse.json({ comment: shapeComment(record) })
+  }),
+
+  /**
+   * PATCH /api/comments
+   * Body: { id, op: 'edit'|'resolve'|'reopen'|'react', body?, emoji? }
+   * Response: { comment: Row }
+   * Same op table + auth posture as comments/patch/{pre,gate,shape}.fn.ts:
+   * session + view+ required for every op; `edit` additionally author-only;
+   * `resolve`/`reopen` root-only (targeting a reply is a 400, not a 403);
+   * `react` toggles the caller's id into/out of `reactionsJson[emoji]`.
+   */
+  http.patch('/api/comments', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      id?: unknown
+      op?: unknown
+      body?: unknown
+      emoji?: unknown
+    }
+    const id = String(body.id ?? '')
+    const op = String(body.op ?? '')
+    const OPS = ['edit', 'resolve', 'reopen', 'react'] as const
+    const opOk = (OPS as readonly string[]).includes(op)
+
+    const bodyRaw = typeof body.body === 'string' ? body.body : ''
+    const newBody = bodyRaw.trim()
+    const bodyOk = newBody.length > 0 && newBody.length <= MAX_COMMENT_BODY
+
+    const emoji = typeof body.emoji === 'string' ? body.emoji : ''
+    const emojiOk = emoji.length > 0 && emoji.length <= MAX_EMOJI
+
+    const comment = id ? comments.get(id) : undefined
+    const isRoot = !!comment && comment.parentId === ''
+    const opFieldOk =
+      opOk &&
+      (op !== 'edit' || bodyOk) &&
+      (op !== 'react' || emojiOk) &&
+      ((op !== 'resolve' && op !== 'reopen') || isRoot)
+
+    const badRequest = !id || !comment || comment.deleted || !opFieldOk
+    if (badRequest) {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
+    }
+
+    if (!mockCurrentUser) return HttpResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+    const c = comment as MockComment
+    const access = checkAccess(c.nodeId, 'view')
+    const isAuthor = c.authorId === mockCurrentUser.id
+    const permitted = access === 'ok' && (op !== 'edit' || isAuthor)
+    if (!permitted) {
+      return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+
+    const now = Date.now()
+    if (op === 'edit') {
+      c.body = newBody
+      c.updatedMs = now
+    } else if (op === 'resolve' || op === 'reopen') {
+      c.resolved = op === 'resolve'
+      c.resolvedBy = mockCurrentUser.id
+      c.resolvedMs = now
+    } else if (op === 'react') {
+      let reactions: Record<string, string[]>
+      try {
+        reactions = (JSON.parse(c.reactionsJson) as Record<string, string[]>) || {}
+      } catch {
+        reactions = {}
+      }
+      const uid = mockCurrentUser.id
+      const cur = Array.isArray(reactions[emoji]) ? reactions[emoji] : []
+      const next = cur.includes(uid) ? cur.filter((u) => u !== uid) : [...cur, uid]
+      if (next.length) reactions[emoji] = next
+      else delete reactions[emoji]
+      c.reactionsJson = JSON.stringify(reactions)
+    }
+
+    return HttpResponse.json({ comment: shapeComment(c) })
+  }),
+
+  /**
+   * DELETE /api/comments?id=…
+   * Response: { id, soft }
+   * Author-only (v1: not even an admin may moderate-delete) — mirrors
+   * comments/delete/{pre,gate}.fn.ts. A root comment with >=1 reply is
+   * soft-deleted (husk keeps anchorJson so the reply keeps its position); a
+   * reply, or a childless root, is hard-deleted.
+   */
+  http.delete('/api/comments', ({ request }) => {
+    const id = new URL(request.url).searchParams.get('id') ?? ''
+    const comment = id ? comments.get(id) : undefined
+    const badRequest = !id || !comment || comment.deleted
+    if (badRequest) {
+      return HttpResponse.json({ error: 'invalid request' }, { status: 400 })
+    }
+
+    if (!mockCurrentUser) return HttpResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+    const c = comment as MockComment
+    const isAuthor = c.authorId === mockCurrentUser.id
+    if (!isAuthor) return HttpResponse.json({ error: 'forbidden' }, { status: 403 })
+
+    const isRoot = c.parentId === ''
+    const hasReplies = [...comments.values()].some((r) => r.parentId === id)
+    const doSoft = isRoot && hasReplies
+
+    if (doSoft) {
+      c.deleted = true
+      c.body = ''
+      c.authorName = ''
+    } else {
+      comments.delete(id)
+    }
+
+    return HttpResponse.json({ id, soft: doSoft })
   }),
 ] as const
