@@ -29,6 +29,8 @@ import {
 } from '../../lib/refiner'
 import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
 import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
+import { createBlobCache } from '../../lib/blobCache'
+import { fetchWithReauth } from '../../lib/auth'
 import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
 import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
@@ -248,6 +250,42 @@ export function useScenePipeline() {
       return signed
     },
     [signReq],
+  )
+
+  // Session-scoped media caches, keyed by the PERSISTED serve path (stable across
+  // signings — `signFor` only mints the time-limited URL). Before these, every
+  // per-scene Build step pulled the whole recording back from the bucket — the
+  // cut, then the dense sheets, ~2 full downloads of an hour-long source per
+  // scene — and each scene's soundtrack re-fetched the whole-clip WAV. Now each
+  // source and each WAV downloads once per session, shared by every scene (and
+  // the blog frame captures). Blobs are disk-backed by the browser, so a multi-GB
+  // source costs blob storage, not JS heap — the same property the slice mount
+  // relies on. A replaced source gets a new serve path, so it can never hit a
+  // stale entry.
+  const sourceBlobs = useMemo(
+    () =>
+      createBlobCache(async (url) => {
+        // Direct bucket read — no `credentials`, it's a presigned URL, and
+        // sending cookies cross-origin would fail the CORS check. `.blob()`, NOT
+        // `.arrayBuffer()`: a Blob can be disk-backed, while an ArrayBuffer must
+        // be one contiguous allocation (a 1.37 GB source died that way in
+        // Firefox while a 739 MB one was fine).
+        const res = await fetch(await signFor(url))
+        if (!res.ok) throw new Error(`Couldn't load source video (${res.status})`)
+        return res.blob()
+      }),
+    [signFor],
+  )
+  const audioBlobs = useMemo(
+    () =>
+      createBlobCache(async (url) => {
+        // The whole-clip WAV serves same-origin, so it needs the session cookie
+        // (and the mid-build token refresh) — unlike the signed source reads.
+        const res = await fetchWithReauth(url)
+        if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
+        return res.blob()
+      }),
+    [],
   )
 
   // Transient UI state — not persisted.
@@ -524,7 +562,7 @@ export function useScenePipeline() {
       for (const [sourceId, caps] of bySource) {
         const src = sources.find((s) => s.id === sourceId)
         if (!src?.sourceUrl) continue
-        const objectUrl = URL.createObjectURL(await (await fetch(await signFor(src.sourceUrl))).blob())
+        const objectUrl = URL.createObjectURL(await sourceBlobs.get(src.sourceUrl))
         try {
           // A high cap height: `captureFramesAt` never upscales past the source, so
           // this yields a clean full-resolution frame. JPEG q0.9 — a hero image, not
@@ -556,7 +594,7 @@ export function useScenePipeline() {
       // it came from and can be re-framed later (issue #91).
       return { markdown: rewriteFrameTokens(markdown, urlByTime), frames: blogImageRefs(captures, urlByTime) }
     },
-    [sources, signFor, uploadReq],
+    [sources, sourceBlobs, uploadReq],
   )
 
   // ---- Re-framing a blog image to a nearby moment (issue #91) --------------
@@ -564,8 +602,8 @@ export function useScenePipeline() {
   // The producer can nudge a bad AI-picked frame (mid-blink, a weird face) to a
   // sibling timestamp: a filmstrip of nearby frames, then a one-click swap. The
   // source clip is decoded to a same-origin blob (a `<video crossOrigin>` read of
-  // the signed GCS URL fails CORS) — the same path materialise/director use — and
-  // cached here so a run of edits on one clip re-downloads it once, not per frame.
+  // the signed GCS URL fails CORS). The bytes come from the session blob cache;
+  // this ref only holds the one live object URL (which needs explicit revoking).
   const blogClipRef = useRef<{ sourceId: string; objectUrl: string } | null>(null)
   const blogClipUrl = useCallback(
     async (sourceId: string): Promise<string | null> => {
@@ -573,12 +611,12 @@ export function useScenePipeline() {
       if (cached?.sourceId === sourceId) return cached.objectUrl
       const src = sources.find((s) => s.id === sourceId)
       if (!src?.sourceUrl) return null
-      const objectUrl = URL.createObjectURL(await (await fetch(await signFor(src.sourceUrl))).blob())
+      const objectUrl = URL.createObjectURL(await sourceBlobs.get(src.sourceUrl))
       if (cached) URL.revokeObjectURL(cached.objectUrl)
       blogClipRef.current = { sourceId, objectUrl }
       return objectUrl
     },
-    [sources, signFor],
+    [sources, sourceBlobs],
   )
   // Free the cached clip blob when the pipeline unmounts (project close / reload).
   useEffect(
@@ -1071,11 +1109,11 @@ export function useScenePipeline() {
       // bucket URL directly. A `<video crossOrigin>` media read against the GCS
       // object fails CORS (the element's range/preflight isn't satisfied even
       // though GET from this origin is allowed), whereas a plain `fetch` of the
-      // bytes is fine. Pull the scene's own source bytes back through the signed
-      // URL and wrap them in a blob URL so capture stays same-origin.
+      // bytes is fine. The source bytes come from the session blob cache — shared
+      // with the cut step, so this never re-downloads the recording.
       let objectUrl: string | null = null
       try {
-        const source = await (await fetch(await signFor(src.sourceUrl))).blob()
+        const source = await sourceBlobs.get(src.sourceUrl)
         objectUrl = URL.createObjectURL(source)
         const sheets = await captureSceneContactSheet(objectUrl, scene.start, scene.end)
         const uploaded: ContactSheet[] = []
@@ -1096,7 +1134,7 @@ export function useScenePipeline() {
         setSheetingId(null)
       }
     },
-    [sheetingId, refiningId, scenes, sources, signFor, uploadReq, patchScene],
+    [sheetingId, refiningId, scenes, sources, sourceBlobs, uploadReq, patchScene],
   )
 
   // Button 2: hand the scene's word timings + the director's cutting brief +
@@ -1211,13 +1249,14 @@ export function useScenePipeline() {
   )
 
   // Cut this scene into its own video clip + soundtrack (story 03g + 03k, build
-  // step 0). The raw source is the immutable source of truth — every scene
-  // re-reads it: prefer the in-memory `file` (no refetch), else pull the persisted
-  // source serve URL back. We trim `[start, end]` frame-accurately in ffmpeg.wasm
-  // and slice the same span from the talk WAV, upload both (kind `scene-clip` /
-  // `audio`, SEQUENTIALLY — the keep-alive 502 lesson), and persist both serve
-  // paths in ONE patch, so the scene gets both resources or neither and a reload
-  // resumes with the cut done. Re-cutting overwrites both.
+  // step 0). The raw source is the immutable source of truth — every scene reads
+  // the same bytes through the session blob cache, so the recording downloads
+  // once per session, not once per cut. We trim `[start, end]` frame-accurately
+  // in ffmpeg.wasm and slice the same span from the talk WAV (also cached),
+  // upload both (kind `scene-clip` / `audio`, SEQUENTIALLY — the keep-alive 502
+  // lesson), and persist both serve paths in ONE patch, so the scene gets both
+  // resources or neither and a reload resumes with the cut done. Re-cutting
+  // overwrites both.
   const sliceScene = useCallback(
     async (sceneId: string) => {
       if (slicingId) return
@@ -1229,15 +1268,8 @@ export function useScenePipeline() {
       try {
         if (!src.audioUrl) throw new Error('No extracted audio to cut the scene soundtrack from.')
         if (!src.sourceUrl) throw new Error('No source clip available to cut from.')
-        // Direct bucket read — no `credentials`, it's a presigned URL, and
-        // sending cookies cross-origin would fail the CORS check.
-        //
-        // `.blob()`, NOT `.arrayBuffer()`: a Blob can be backed by disk, while an
-        // ArrayBuffer must be one contiguous allocation the browser has to hold
-        // whole. A 1.37 GB source died here in Firefox ("Content-Length header of
-        // network response exceeds response Body") while a 739 MB one was fine.
         // `slice()` mounts this Blob instead of copying it into the wasm heap.
-        const source = await (await fetch(await signFor(src.sourceUrl))).blob()
+        const source = await sourceBlobs.get(src.sourceUrl)
 
         const command = buildSliceCommand({
           start: scene.start,
@@ -1248,7 +1280,7 @@ export function useScenePipeline() {
         const blob = await ffmpegSlice({ source, command })
         const clip = new File([blob], `scene-${scene.index}.mp4`, { type: 'video/mp4' })
         const { url } = await uploadReq({ file: clip, kind: 'scene-clip' }).unwrap()
-        const wav = await sliceAudioWav(src.audioUrl, scene.start, scene.end)
+        const wav = await sliceAudioWav(await audioBlobs.get(src.audioUrl), scene.start, scene.end)
         const audioFile = new File([wav], `scene-${scene.index}-audio.wav`, { type: 'audio/wav' })
         const { url: clipAudioUrl } = await uploadReq({ file: audioFile, kind: 'audio' }).unwrap()
         patchSceneEdit(sceneId, { clipUrl: url, clipAudioUrl })
@@ -1258,7 +1290,7 @@ export function useScenePipeline() {
         setSlicingId(null)
       }
     },
-    [slicingId, scenes, sources, signFor, uploadReq, patchSceneEdit],
+    [slicingId, scenes, sources, sourceBlobs, audioBlobs, uploadReq, patchSceneEdit],
   )
 
   // Throw out the refinement and revert to the director's first pass.

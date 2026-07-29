@@ -57,29 +57,36 @@ export async function extractAudio(
  * straight into it. Clamps the range to the decoded audio.
  */
 export async function sliceAudioWav(
-  url: string,
+  source: string | Blob,
   start: number,
   end: number,
   targetRate = 16000,
 ): Promise<Blob> {
-  const [blob] = await sliceManyAudioWav(url, [{ start, end }], targetRate)
+  const [blob] = await sliceManyAudioWav(source, [{ start, end }], targetRate)
   return blob
 }
 
 /**
  * The batch form (story 03j auto-adopt): fetch + decode the whole-clip audio
  * ONCE and slice every span from the same PCM — N segments cost one decode, not
- * N. Returns the WAVs in span order.
+ * N. Returns the WAVs in span order. `source` can be a serve URL or a Blob a
+ * caller already holds (e.g. the Build phase's session blob cache), so repeat
+ * slices don't re-download the whole-clip WAV.
  */
 export async function sliceManyAudioWav(
-  url: string,
+  source: string | Blob,
   spans: { start: number; end: number }[],
   targetRate = 16000,
 ): Promise<Blob[]> {
   if (!spans.length) return []
-  const res = await fetchWithReauth(url)
-  if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
-  const blob = await res.blob()
+  let blob: Blob
+  if (typeof source === 'string') {
+    const res = await fetchWithReauth(source)
+    if (!res.ok) throw new Error(`Couldn't load audio (${res.status})`)
+    blob = await res.blob()
+  } else {
+    blob = source
+  }
   const file = new File([blob], 'audio.wav', { type: blob.type || 'audio/wav' })
   const samples = await decodeToMono(file, targetRate)
   return spans.map(({ start, end }) => {
