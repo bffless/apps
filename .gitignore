@@ -26,6 +26,9 @@ screenshots
 # editor / OS
 .DS_Store
 .claude/settings.local.json
+# git worktrees created by agent sessions — never commit (one was once
+# committed as a stray gitlink, breaking clones with a phantom submodule)
+.claude/worktrees/
 
 # MCP config written per-run inside the Sandcastle sandbox — never commit.
 # It is regenerated each run, would auto-load into a cloner's Claude Code against
