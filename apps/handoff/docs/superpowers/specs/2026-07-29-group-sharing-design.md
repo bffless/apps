@@ -65,6 +65,20 @@ Sibling of the existing member-accessible `GET /api/users/directory`
 - **Never returns member lists or emails.** Group management (CRUD,
   membership) remains admin-only and untouched.
 
+### 1c. `GET /api/user-groups/mine` (member-accessible)
+
+The client mirror of the gate's `user.groups`: Handoff's UI computes
+`canWrite`/`canManage` by running `evaluateAccess` client-side
+(`FolderView.tsx`), so the browser must know the session user's own
+memberships or group-granted users see wrong affordances.
+
+- **Auth:** any authenticated session (same guard shape as 1b).
+- **Response:** `{ groups: [{ id, name }] }` — **strict memberships only**
+  (`user_group_members`), NOT the existing `listUserGroups` which also
+  includes groups the user *created*. Creator ≠ member: creators are
+  admins and already short-circuit to owner. The gate (1a) uses the same
+  strict-membership query, so client and server always agree.
+
 ### CE testing
 
 - Unit: context builder attaches correct `groups` for session and
@@ -119,6 +133,12 @@ interface Grant {
 - New plain proxy rule `GET /api/groups` →
   `http://localhost:3000/api/user-groups/directory`,
   `forwardCookies: true` — exact sibling of the `/api/directory` rule.
+- New plain proxy rule `GET /api/me/groups` →
+  `http://localhost:3000/api/user-groups/mine`, `forwardCookies: true`.
+  The client fetches it once per session (RTK Query) and threads the ids
+  into `viewer.groupIds` at every client-side `evaluateAccess` call site
+  (`FolderView`, delete gate, comment gate). Fetch failure or 404 (old
+  CE) ⇒ `groupIds` undefined ⇒ exactly today's behavior.
 
 ### 2d. UI (ShareDialog / ManageAccessPanel)
 
