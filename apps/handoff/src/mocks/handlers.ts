@@ -613,14 +613,17 @@ export const handlers = [
     const existing = grants.get(folderId) ?? []
     const isAnyone = body.principalId === ANYONE_PRINCIPAL
     const existingGrant = existing.find((g) => g.principalId === body.principalId)
+    // Mirror merge.fn.ts: the body-declared type/name are only ever 'group'/named when the
+    // body itself says 'group' — a name never rides in on a type that isn't 'group'. On update,
+    // fall back to the stored (sanitized) type/name only when the body didn't provide them.
+    const bodyType: Grant['principalType'] = body.principalType === 'group' ? 'group' : undefined
+    const bodyName = bodyType === 'group' && body.principalName ? body.principalName : null
     const principalType: Grant['principalType'] = isAnyone
       ? undefined
-      : body.principalType === 'group'
-        ? 'group'
-        : existingGrant?.principalType
+      : bodyType || (existingGrant?.principalType === 'group' ? 'group' : undefined)
     const principalName = isAnyone
       ? null
-      : (body.principalName ?? existingGrant?.principalName ?? null)
+      : (bodyName ?? existingGrant?.principalName ?? null)
     const newGrant: Grant = {
       principalId: body.principalId ?? '',
       principalEmail: isAnyone ? null : (body.principalEmail ?? existingGrant?.principalEmail ?? null),

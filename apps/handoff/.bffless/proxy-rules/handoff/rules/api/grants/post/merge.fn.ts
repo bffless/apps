@@ -89,7 +89,7 @@ export default function handler({ user, request, steps }: HandlerContext) {
       out.push({
         principalId: pid,
         principalEmail: pid === 'anyone' ? null : email || g.principalEmail || null,
-        principalType: pid === 'anyone' ? undefined : ptype || g.principalType,
+        principalType: pid === 'anyone' ? undefined : ptype || (g.principalType === 'group' ? 'group' : undefined),
         principalName: pid === 'anyone' ? null : pname || g.principalName || null,
         level: level,
       });

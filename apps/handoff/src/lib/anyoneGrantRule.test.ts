@@ -353,4 +353,52 @@ describe('grants API round-trips group principal metadata (Task 4)', () => {
       },
     ])
   })
+
+  it('sanitizes a garbage stored principalType on update when the body omits it', () => {
+    const out = merge(
+      { folderId: 'f1', principalId: 'group-1', level: 'view' },
+      {
+        id: 'f1',
+        ownerId: 'owner-1',
+        grantsJson: JSON.stringify([
+          {
+            principalId: 'group-1',
+            principalEmail: null,
+            principalType: 'admin',
+            principalName: 'Design',
+            level: 'edit',
+          },
+        ]),
+      },
+    )
+    expect(out.grants[0].principalType).toBeUndefined()
+  })
+
+  it('a new principalName in the body wins over the stored name on update', () => {
+    const out = merge(
+      { folderId: 'f1', principalId: 'group-1', principalType: 'group', principalName: 'Engineering', level: 'view' },
+      {
+        id: 'f1',
+        ownerId: 'owner-1',
+        grantsJson: JSON.stringify([
+          {
+            principalId: 'group-1',
+            principalEmail: null,
+            principalType: 'group',
+            principalName: 'Design',
+            level: 'edit',
+          },
+        ]),
+      },
+    )
+    expect(out.grants).toEqual([
+      {
+        principalId: 'group-1',
+        principalEmail: null,
+        principalType: 'group',
+        principalName: 'Engineering',
+        level: 'view',
+      },
+    ])
+  })
 })
