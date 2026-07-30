@@ -61,11 +61,23 @@ export const nodeAcl = new Map<string, { ownerId: string | null; grants: Grant[]
 export const grants = new Map<string, Grant[]>()
 
 /** The currently logged-in mock user (null = unauthenticated). */
-export let mockCurrentUser: { id: string; email: string; role?: string } | null = {
+export let mockCurrentUser: { id: string; email: string; role?: string; groups?: string[] } | null = {
   id: 'user-owner',
   email: 'owner@example.com',
   role: 'admin',
 }
+
+/**
+ * Fixture group directory (group-sharing plan, Task 7). Backs both
+ * `GET /api/groups` (the share-dialog picker — all groups, search-filterable)
+ * and `GET /api/me/groups` (the session user's own memberships, filtered by
+ * `mockCurrentUser.groups`), so component tests can mirror the server's
+ * group-aware ACL without hitting the network.
+ */
+export const FAKE_GROUPS: { id: string; name: string; memberCount: number }[] = [
+  { id: 'group-eng', name: 'Engineering', memberCount: 3 },
+  { id: 'group-design', name: 'Design', memberCount: 2 },
+]
 
 // ---------------------------------------------------------------------------
 // Share-link in-memory store
@@ -166,7 +178,9 @@ export function resetMockState(): void {
 }
 
 /** Set the current mock user (or null for unauthenticated). */
-export function setMockUser(user: { id: string; email: string; role?: string } | null): void {
+export function setMockUser(
+  user: { id: string; email: string; role?: string; groups?: string[] } | null,
+): void {
   mockCurrentUser = user
 }
 
@@ -379,7 +393,11 @@ function checkAccess(nodeId: string, minLevel: AccessLevel = 'view'): 'ok' | '40
   }
 
   const viewer = mockCurrentUser
-    ? { userId: mockCurrentUser.id, isAdmin: mockCurrentUser.role === 'admin' }
+    ? {
+        userId: mockCurrentUser.id,
+        isAdmin: mockCurrentUser.role === 'admin',
+        groupIds: mockCurrentUser.groups,
+      }
     : {}
 
   const level = evaluateAccess({ folderChain, viewer })
@@ -566,8 +584,14 @@ export const handlers = [
 
   /**
    * POST /api/grants
-   * Body: { folderId, principalId, principalEmail?, level }
+   * Body: { folderId, principalId, principalEmail?, principalType?, principalName?, level }
    * Response: { grants: Grant[] }
+   *
+   * `principalType`/`principalName` mirror the real `merge.fn.ts` (group
+   * grants, spec 2026-07-29): only `'group'` is ever stored as a type —
+   * anything else sanitizes to absent — updating an existing grant preserves
+   * its stored type/name when the request omits them, and the `anyone`
+   * principal is always capped (no type, no name, view-only).
    */
   http.post('/api/grants', async ({ request }) => {
     if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
@@ -575,6 +599,8 @@ export const handlers = [
       folderId?: string
       principalId?: string
       principalEmail?: string
+      principalType?: string
+      principalName?: string
       level?: 'view' | 'edit'
     }
     const folderId = resolveFolderId(body.folderId ?? '')
@@ -586,9 +612,20 @@ export const handlers = [
     }
     const existing = grants.get(folderId) ?? []
     const isAnyone = body.principalId === ANYONE_PRINCIPAL
+    const existingGrant = existing.find((g) => g.principalId === body.principalId)
+    const principalType: Grant['principalType'] = isAnyone
+      ? undefined
+      : body.principalType === 'group'
+        ? 'group'
+        : existingGrant?.principalType
+    const principalName = isAnyone
+      ? null
+      : (body.principalName ?? existingGrant?.principalName ?? null)
     const newGrant: Grant = {
       principalId: body.principalId ?? '',
-      principalEmail: isAnyone ? null : (body.principalEmail ?? null),
+      principalEmail: isAnyone ? null : (body.principalEmail ?? existingGrant?.principalEmail ?? null),
+      principalType,
+      principalName,
       level: isAnyone ? 'view' : (body.level ?? 'view'),
     }
     // Replace if already exists, otherwise append
@@ -635,6 +672,33 @@ export const handlers = [
     const q = (new URL(request.url).searchParams.get('search') ?? '').toLowerCase()
     const users = FAKE_DIRECTORY.filter((u) => u.email.includes(q))
     return HttpResponse.json({ users })
+  }),
+
+  /**
+   * GET /api/groups?search=<q>
+   * Group picker for the share dialog. Response: { groups: { id, name, memberCount }[] }.
+   * Blank search lists all fixture groups.
+   */
+  http.get('/api/groups', ({ request }) => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const q = (new URL(request.url).searchParams.get('search') ?? '').toLowerCase()
+    const groups = FAKE_GROUPS.filter((g) => g.name.toLowerCase().includes(q))
+    return HttpResponse.json({ groups })
+  }),
+
+  /**
+   * GET /api/me/groups
+   * The session user's own group memberships, driven by `mockCurrentUser.groups`.
+   * Response: { groups: { id, name }[] }.
+   */
+  http.get('/api/me/groups', () => {
+    if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
+    const memberIds = mockCurrentUser.groups ?? []
+    const groups = FAKE_GROUPS.filter((g) => memberIds.includes(g.id)).map((g) => ({
+      id: g.id,
+      name: g.name,
+    }))
+    return HttpResponse.json({ groups })
   }),
 
   /**

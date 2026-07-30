@@ -21,8 +21,14 @@ export function canComment(input: {
   node: HandoffNode
   /** The node.parentId folder, or undefined while loading / for root items. */
   parentNode: HandoffNode | undefined
+  /**
+   * Group ids the viewer belongs to (from `useMyGroupsQuery`). `undefined`
+   * while loading / on 404 / old CE ⇒ no group promotion — exactly today's
+   * behavior, upgrading once the query lands.
+   */
+  groupIds?: string[]
 }): boolean {
-  const { session, node, parentNode } = input
+  const { session, node, parentNode, groupIds } = input
   if (!session || !session.authenticated) return false
 
   const folderChain: FolderLink[] = []
@@ -45,7 +51,7 @@ export function canComment(input: {
 
   const level = evaluateAccess({
     folderChain,
-    viewer: { userId: session.user.id, isAdmin: session.user.role === 'admin' },
+    viewer: { userId: session.user.id, isAdmin: session.user.role === 'admin', groupIds },
   })
   return level !== 'none'
 }

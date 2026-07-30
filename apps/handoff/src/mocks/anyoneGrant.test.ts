@@ -86,7 +86,11 @@ describe('anonymous public browsing', () => {
     const grants = (await (await fetch(`/api/grants?folderId=${pub.id}`)).json()) as {
       grants: Array<{ principalId: string; level: string }>
     }
-    expect(grants.grants).toEqual([{ principalId: ANYONE_PRINCIPAL, principalEmail: null, level: 'view' }])
+    // The Anyone principal is always capped — no type, no name (mirrors the
+    // real merge.fn.ts, group grants spec 2026-07-29).
+    expect(grants.grants).toEqual([
+      { principalId: ANYONE_PRINCIPAL, principalEmail: null, principalName: null, level: 'view' },
+    ])
 
     setMockUser(null)
     expect((await fetch(`/api/nodes?parentId=${pub.id}`)).status).toBe(200)

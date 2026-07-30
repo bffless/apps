@@ -55,4 +55,26 @@ describe('canDeleteNode', () => {
     expect(canDeleteNode({ session: authed('dave'), node: rootFile, parentNode: undefined })).toBe(true)
     expect(canDeleteNode({ session: authed('eve'), node: rootFile, parentNode: undefined })).toBe(false)
   })
+
+  it('allows an edit-granted group member but denies a non-member', () => {
+    const parent = folder({ grants: [{ principalId: 'group-eng', principalType: 'group', level: 'edit' }] })
+    expect(
+      canDeleteNode({ session: authed('carol'), node: file(), parentNode: parent, groupIds: ['group-eng'] }),
+    ).toBe(true)
+    expect(
+      canDeleteNode({ session: authed('carol'), node: file(), parentNode: parent, groupIds: ['group-design'] }),
+    ).toBe(false)
+  })
+
+  it('a view-only group grant does not unlock delete', () => {
+    const parent = folder({ grants: [{ principalId: 'group-eng', principalType: 'group', level: 'view' }] })
+    expect(
+      canDeleteNode({ session: authed('carol'), node: file(), parentNode: parent, groupIds: ['group-eng'] }),
+    ).toBe(false)
+  })
+
+  it('undefined groupIds is exactly today\'s behavior — no group promotion', () => {
+    const parent = folder({ grants: [{ principalId: 'group-eng', principalType: 'group', level: 'edit' }] })
+    expect(canDeleteNode({ session: authed('carol'), node: file(), parentNode: parent })).toBe(false)
+  })
 })

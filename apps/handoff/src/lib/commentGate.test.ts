@@ -52,4 +52,19 @@ describe('canComment', () => {
   it('allows an admin regardless of grants', () => {
     expect(canComment({ session: authed('admin', 'admin'), node: file(), parentNode: folder() })).toBe(true)
   })
+
+  it('allows a view-granted group member but denies a non-member', () => {
+    const parent = folder({ grants: [{ principalId: 'group-eng', principalType: 'group', level: 'view' }] })
+    expect(
+      canComment({ session: authed('carol'), node: file(), parentNode: parent, groupIds: ['group-eng'] }),
+    ).toBe(true)
+    expect(
+      canComment({ session: authed('carol'), node: file(), parentNode: parent, groupIds: ['group-design'] }),
+    ).toBe(false)
+  })
+
+  it('undefined groupIds is exactly today\'s behavior — no group promotion', () => {
+    const parent = folder({ grants: [{ principalId: 'group-eng', principalType: 'group', level: 'view' }] })
+    expect(canComment({ session: authed('carol'), node: file(), parentNode: parent })).toBe(false)
+  })
 })

@@ -33,6 +33,7 @@ import {
   useListShareLinksQuery,
   useDeleteNodeMutation,
   useDeleteSubtreeMutation,
+  useMyGroupsQuery,
 } from '../store/handoffApi'
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
@@ -842,6 +843,14 @@ export function FolderView({ folderId }: FolderViewProps) {
 
   const { session, loading: sessionLoading } = useSession()
 
+  // The session user's own group memberships, so this client-side evaluateAccess
+  // mirror can compute the same canWrite/canManage a group-granted user gets from
+  // the server gate. Skipped when unauthenticated — share-mode guests never get
+  // groupIds. `undefined` while loading / on 404 / old CE is exactly today's
+  // affordances; it upgrades in place once the query lands.
+  const { data: myGroupsData } = useMyGroupsQuery(undefined, { skip: !session?.authenticated })
+  const myGroupIds = myGroupsData?.groups.map((g) => g.id)
+
   // Share-mode is for guests only — an authenticated user is always evaluated by
   // their real identity, even if a stale shareLinkFolderId lingers in localStorage.
   const isShareMode = inShareMode({ authenticated: !!session?.authenticated, shareLinkFolderId })
@@ -861,6 +870,7 @@ export function FolderView({ folderId }: FolderViewProps) {
       : {
           userId: session?.authenticated ? session.user.id : undefined,
           isAdmin: session?.authenticated && session.user.role === 'admin',
+          groupIds: myGroupIds,
         },
   })
 
