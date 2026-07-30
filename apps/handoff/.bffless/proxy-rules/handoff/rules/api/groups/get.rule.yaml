@@ -1,0 +1,4 @@
+targetUrl: http://localhost:3000/api/user-groups/directory
+order: 10
+forwardCookies: true
+description: "Group picker for the share dialog. Forwards GET /api/groups?search=&limit= to the CE backend's member-accessible GET /api/user-groups/directory (returns { groups: [{id,name,memberCount}] }; blank search lists all, capped; never member lists/emails). forwardCookies carries the SuperTokens session — no admin key is borrowed. Requires CE >= the release that adds the member-accessible group directory; on older CE this 404s and the UI hides the Groups section."
