@@ -312,6 +312,15 @@ interface PrincipalSearchProps {
   isFetching: boolean
   /** True once a search has run (debounced query met the length threshold). */
   shouldSearch: boolean
+  /**
+   * True while focus-to-browse is active: an empty query, focused, with the
+   * groups feature available (no 404) — shows the capped group list under a
+   * "Groups" header so operators can find a group without typing its name
+   * (#267). People never populate here — blank people search stays
+   * intentionally empty — so this always renders as a groups-only section,
+   * unlike the flat/no-header single-source case for a typed search.
+   */
+  browsingGroups: boolean
 }
 
 function PrincipalSearch({
@@ -327,9 +336,11 @@ function PrincipalSearch({
   groups,
   isFetching,
   shouldSearch,
+  browsingGroups,
 }: PrincipalSearchProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const open = shouldSearch && !dismissed
+  const searchActive = shouldSearch || browsingGroups
+  const open = searchActive && !dismissed
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -353,8 +364,11 @@ function PrincipalSearch({
 
   // Section headers only when BOTH sources have results; a single source
   // (people-only — including the no-groups-feature/404 case, or groups-only)
-  // renders as today's flat list with no header.
-  const showSectionHeaders = users.length > 0 && groups.length > 0
+  // renders as today's flat list with no header. The one exception is
+  // focus-to-browse: it's groups-only by construction (people never fetch on
+  // a blank query), but the "Groups" header still shows so it doesn't read
+  // as an unlabeled list of unfamiliar names (#267).
+  const showSectionHeaders = browsingGroups || (users.length > 0 && groups.length > 0)
 
   return (
     <div ref={containerRef} className="relative flex-1">
@@ -364,7 +378,7 @@ function PrincipalSearch({
         onChange={(e) => onQueryChange(e.target.value)}
         onFocus={onFocus}
         disabled={disabled}
-        placeholder="Search people by email…"
+        placeholder="Search people or groups…"
         className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink transition-colors focus:border-accent-500 focus:outline-none disabled:opacity-50"
       />
       {isFetching && (
@@ -427,9 +441,9 @@ function PrincipalSearch({
           )}
         </div>
       )}
-      {open && !isFetching && shouldSearch && users.length === 0 && groups.length === 0 && (
+      {open && !isFetching && searchActive && users.length === 0 && groups.length === 0 && (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted shadow-md">
-          No people found
+          No results found
         </div>
       )}
     </div>
@@ -466,6 +480,13 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [dismissed, setDismissed] = useState(false)
+  // Set once the box has been focused; combined with an empty debounced
+  // query this drives focus-to-browse (#267) — showing the capped group
+  // list so operators can find a group without knowing its name. It's never
+  // reset back to false: once the user has focused the box, refocusing it
+  // (even after dismissing via outside-click or selecting a result) should
+  // resume browsing rather than requiring a "first" focus again.
+  const [everFocused, setEverFocused] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -480,23 +501,35 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
   }, [query])
 
   const handleDismiss = useCallback(() => setDismissed(true), [])
-  const handleFocus = useCallback(() => setDismissed(false), [])
+  const handleFocus = useCallback(() => {
+    setDismissed(false)
+    setEverFocused(true)
+  }, [])
 
   const shouldSearch = debouncedQuery.length >= 2
+  // Focus-to-browse: an empty query, once focused. People are intentionally
+  // never fetched here — blank people search stays empty by design — so
+  // this only ever drives the groups fetch/section.
+  const browsingGroupsQuery = everFocused && debouncedQuery.length === 0
 
   const { data: dirData, isFetching: dirFetching } = useSearchDirectoryQuery(
     { search: debouncedQuery },
     { skip: !shouldSearch },
   )
-  // Same shouldSearch/skip as the people search above, kept consistent on
-  // purpose — see PrincipalSearch. A 404 (old CE without the groups feature)
-  // is treated as "no groups feature": the section is suppressed and people
-  // search is unaffected.
+  // Groups additionally fetch during focus-to-browse (blank query), unlike
+  // people above — the backend's searchGroups deliberately supports
+  // blank-search-lists-all (capped) for exactly this (#267). A 404 (old CE
+  // without the groups feature) is treated as "no groups feature": the
+  // section is suppressed — for both a typed search and browse mode — and
+  // people search is unaffected.
   const { data: groupsData, error: groupsError, isFetching: groupsFetching } = useSearchGroupsQuery(
     { search: debouncedQuery },
-    { skip: !shouldSearch },
+    { skip: !(shouldSearch || browsingGroupsQuery) },
   )
   const groupsUnavailable = (groupsError as { status?: number } | undefined)?.status === 404
+  // Only actually "browsing" once we know the groups feature exists — a 404
+  // must show no browse list at all, not an empty "No results found" box.
+  const browsingGroups = browsingGroupsQuery && !groupsUnavailable
 
   const userResults = dirData?.users ?? []
   const groupResults = groupsUnavailable ? [] : (groupsData?.groups ?? [])
@@ -572,7 +605,7 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
 
   return (
     <div>
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">People</p>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">People & groups</p>
       <div className="mb-2 flex items-center gap-2">
         <PrincipalSearch
           onSelectUser={handleSelectUser}
@@ -583,6 +616,7 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
           dismissed={dismissed}
           onDismiss={handleDismiss}
           onFocus={handleFocus}
+          browsingGroups={browsingGroups}
           users={userResults}
           groups={groupResults}
           isFetching={dirFetching || groupsFetching}
