@@ -4,6 +4,12 @@
  * group rows in the access list render the snapshot name + a live member
  * count; everything degrades to today's people-only UI when `/api/groups`
  * 404s (old CE). Same store-construction + MSW pattern as generalAccess.test.tsx.
+ *
+ * Also covers #267 (share-dialog discoverability): the placeholder/copy
+ * updates, and the focus-to-browse affordance that lists groups on an empty
+ * query (people search stays type-to-search; blank people search is by
+ * design empty), so operators can find a group to share to without knowing
+ * its name in advance.
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
@@ -77,7 +83,7 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
     )
     renderPanel(folder.id)
 
-    fireEvent.change(screen.getByPlaceholderText('Search people by email…'), { target: { value: 'en' } })
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'en' } })
 
     const results = await findResults()
     expect(within(results).getByText('alice@example.com')).toBeInTheDocument()
@@ -98,7 +104,7 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
     )
     renderPanel(folder.id)
 
-    fireEvent.change(screen.getByPlaceholderText('Search people by email…'), { target: { value: 'al' } })
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'al' } })
 
     const results = await findResults()
     expect(within(results).getByText('alice@example.com')).toBeInTheDocument()
@@ -117,7 +123,7 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
     )
     renderPanel(folder.id)
 
-    fireEvent.change(screen.getByPlaceholderText('Search people by email…'), { target: { value: 'eng' } })
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'eng' } })
     const option = await screen.findByRole('button', { name: /Engineering/ })
     fireEvent.mouseDown(option)
 
@@ -177,7 +183,7 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
     // Search brings group-eng into the current searchGroups data — count appears
     // on the grant row (scoped to grants-list — the picker dropdown shows its
     // own "3 members" text for the same group at the same time).
-    fireEvent.change(screen.getByPlaceholderText('Search people by email…'), { target: { value: 'eng' } })
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'eng' } })
     expect(await within(grantsList).findByText(/3 members/)).toBeInTheDocument()
   })
 
@@ -193,7 +199,7 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
     )
     renderPanel(folder.id)
 
-    fireEvent.change(screen.getByPlaceholderText('Search people by email…'), { target: { value: 'gh' } })
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'gh' } })
 
     expect(await screen.findByText('Old Team')).toBeInTheDocument()
     expect(screen.queryByText(/members/)).not.toBeInTheDocument()
@@ -210,7 +216,7 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
     )
     renderPanel(folder.id)
 
-    fireEvent.change(screen.getByPlaceholderText('Search people by email…'), { target: { value: 'al' } })
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'al' } })
 
     const results = await findResults()
     expect(within(results).getByText('alice@example.com')).toBeInTheDocument()
@@ -229,5 +235,87 @@ describe('PeopleAccess — two-section picker (People / Groups)', () => {
 
     expect(await screen.findByText('Engineering')).toBeInTheDocument()
     expect(screen.queryByText(/members/)).not.toBeInTheDocument()
+  })
+})
+
+describe('PeopleAccess — #267 share-dialog discoverability (focus-to-browse groups)', () => {
+  it('uses the "Search people or groups…" placeholder and the "People & groups" section label', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    renderPanel(folder.id)
+
+    expect(await screen.findByPlaceholderText('Search people or groups…')).toBeInTheDocument()
+    expect(screen.getByText('People & groups')).toBeInTheDocument()
+  })
+
+  it('shows "No results found" (not "No people found") when a typed search matches nothing', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    server.use(
+      http.get('/api/directory', () => HttpResponse.json({ users: [] })),
+      http.get('/api/groups', () => HttpResponse.json({ groups: [] })),
+    )
+    renderPanel(folder.id)
+
+    fireEvent.change(screen.getByPlaceholderText('Search people or groups…'), { target: { value: 'zzz' } })
+
+    expect(await screen.findByText('No results found')).toBeInTheDocument()
+    expect(screen.queryByText('No people found')).not.toBeInTheDocument()
+  })
+
+  it('focusing the search box with an empty query browses the (capped) group list under a "Groups" header', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    // Default FAKE_GROUPS fixture (Engineering, Design) — no typed query, so
+    // /api/directory (people) must never be hit: a blank people search is
+    // intentionally empty and isn't fetched at all in browse mode.
+    server.use(
+      http.get('/api/directory', () => {
+        throw new Error('people search must not fire on an empty, browse-mode query')
+      }),
+    )
+    renderPanel(folder.id)
+
+    fireEvent.focus(screen.getByPlaceholderText('Search people or groups…'))
+
+    const results = await findResults()
+    expect(within(results).getByText('Groups')).toBeInTheDocument()
+    expect(within(results).getByText('Engineering')).toBeInTheDocument()
+    expect(within(results).getByText('Design')).toBeInTheDocument()
+    expect(within(results).queryByText('People')).not.toBeInTheDocument()
+  })
+
+  it('selecting a group from the browse list adds it exactly like a searched selection', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    renderPanel(folder.id)
+
+    fireEvent.focus(screen.getByPlaceholderText('Search people or groups…'))
+    const option = await screen.findByRole('button', { name: /Engineering/ })
+    fireEvent.mouseDown(option)
+
+    // Same proof pattern as the typed-search selection test: the real
+    // /api/grants handler only stamps principalType:'group' + principalName
+    // when the POST body carries them, so a group icon + name in the
+    // resulting grant row proves { principalId: 'group-eng',
+    // principalType: 'group', principalName: 'Engineering', level: 'view' }.
+    const grantsList = await screen.findByTestId('grants-list')
+    expect(within(grantsList).getByTestId('grant-icon-group-eng')).toBeInTheDocument()
+    expect(within(grantsList).getByText('Engineering')).toBeInTheDocument()
+  })
+
+  it('404 from /api/groups suppresses the browse list too — focusing an empty query shows nothing', async () => {
+    setMockUser(OWNER)
+    const folder = seedFolder('Docs', 'root')
+    server.use(http.get('/api/groups', () => new HttpResponse(null, { status: 404 })))
+    renderPanel(folder.id)
+
+    fireEvent.focus(screen.getByPlaceholderText('Search people or groups…'))
+
+    // Give the (skipped/404ing) queries a tick to settle, then assert no
+    // dropdown ever appears — there's nothing to browse pre-groups-feature
+    // and blank people search is intentionally not fetched.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByTestId('principal-results')).not.toBeInTheDocument()
   })
 })

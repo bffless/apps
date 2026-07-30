@@ -5,7 +5,7 @@
  * The directory autocomplete (DirectorySearch in ManageAccessPanel) calls
  * GET /api/directory?search=<q>. That path must be a real proxy rule — without
  * it the request falls through to the SPA index.html (200 text/html), the query
- * parses zero users, and the picker shows "No people found" with no way to add
+ * parses zero users, and the picker shows "No results found" with no way to add
  * anyone. This asserts the rule exists and forwards to the CE backend's
  * member-accessible user directory, carrying the session cookie (no admin key).
  */
