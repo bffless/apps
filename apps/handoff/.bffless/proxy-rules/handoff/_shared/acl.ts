@@ -40,6 +40,8 @@ export interface ChainNode {
 export interface Viewer {
   userId?: string | null;
   isAdmin?: boolean;
+  /** Group ids the viewer belongs to — from the pipeline context's user.groups. */
+  groupIds?: string[] | null;
   shareLinkFolderId?: string | null;
 }
 
@@ -159,6 +161,13 @@ export function evalAccess(chain: ChainNode[], viewer: Viewer): AccessLevel {
       if (grant.principalId === ANYONE_PRINCIPAL) {
         if (rank('view') > rank(best)) best = 'view';
       } else if (viewer.userId && grant.principalId === viewer.userId && rank(grant.level) > rank(best)) {
+        best = grant.level as AccessLevel;
+      } else if (
+        viewer.groupIds &&
+        grant.principalId &&
+        viewer.groupIds.indexOf(grant.principalId) !== -1 &&
+        rank(grant.level) > rank(best)
+      ) {
         best = grant.level as AccessLevel;
       }
     }

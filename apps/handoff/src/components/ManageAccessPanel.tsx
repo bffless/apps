@@ -5,17 +5,18 @@
  * folder access is managed). Folder-level by design — grants attach to folders.
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   useGetGrantsQuery,
   useAddGrantMutation,
   useRevokeGrantMutation,
   useSearchDirectoryQuery,
+  useSearchGroupsQuery,
   useSetNodeModeMutation,
   useSetNodeFeedExcludedMutation,
 } from '../store/handoffApi'
 import { ANYONE_PRINCIPAL, hasAnyoneGrant, isEffectivelyPublic, type FolderLink } from '../lib/acl'
-import { GlobeIcon, RssIcon } from './icons'
+import { GlobeIcon, RssIcon, UsersIcon } from './icons'
 
 // ---------------------------------------------------------------------------
 // Level badge
@@ -279,63 +280,89 @@ function MakePrivateConfirmDialog({
 }
 
 // ---------------------------------------------------------------------------
-// DirectorySearch — debounced autocomplete
+// PrincipalSearch — debounced two-section (People / Groups) autocomplete
 // ---------------------------------------------------------------------------
 
-interface DirectorySearchProps {
-  onSelect: (user: { id: string; email: string }) => void
-  disabled: boolean
+/** A group row as returned by `searchGroups` (share-dialog group picker). */
+export interface GroupOption {
+  id: string
+  name: string
+  memberCount: number
 }
 
-function DirectorySearch({ onSelect, disabled }: DirectorySearchProps) {
-  const [query, setQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [dismissed, setDismissed] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+/** "3 members" / "1 member" — used on group rows in both the picker and the access list. */
+function formatMemberCount(n: number): string {
+  return `${n} member${n === 1 ? '' : 's'}`
+}
+
+interface PrincipalSearchProps {
+  onSelectUser: (user: { id: string; email: string }) => void
+  onSelectGroup: (group: GroupOption) => void
+  disabled: boolean
+  /** Debounce + text-query + open/dismiss state, all owned by the parent
+   * (`PeopleAccess`) so the fetched groups can double as the live
+   * member-count lookup for the access list below (never snapshotted). */
+  query: string
+  onQueryChange: (query: string) => void
+  dismissed: boolean
+  onDismiss: () => void
+  onFocus: () => void
+  users: { id: string; email: string }[]
+  groups: GroupOption[]
+  isFetching: boolean
+  /** True once a search has run (debounced query met the length threshold). */
+  shouldSearch: boolean
+}
+
+function PrincipalSearch({
+  onSelectUser,
+  onSelectGroup,
+  disabled,
+  query,
+  onQueryChange,
+  dismissed,
+  onDismiss,
+  onFocus,
+  users,
+  groups,
+  isFetching,
+  shouldSearch,
+}: PrincipalSearchProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      setDebouncedQuery(query)
-      setDismissed(false)
-    }, 300)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [query])
-
-  const shouldSearch = debouncedQuery.length >= 2
   const open = shouldSearch && !dismissed
-
-  const { data, isFetching } = useSearchDirectoryQuery({ search: debouncedQuery }, { skip: !shouldSearch })
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setDismissed(true)
+        onDismiss()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [onDismiss])
 
-  function handleSelect(user: { id: string; email: string }) {
-    onSelect(user)
-    setQuery('')
-    setDebouncedQuery('')
-    setDismissed(true)
+  function handleSelectUser(user: { id: string; email: string }) {
+    onSelectUser(user)
+    onDismiss()
   }
 
-  const users = data?.users ?? []
+  function handleSelectGroup(group: GroupOption) {
+    onSelectGroup(group)
+    onDismiss()
+  }
+
+  // Section headers only when BOTH sources have results; a single source
+  // (people-only — including the no-groups-feature/404 case, or groups-only)
+  // renders as today's flat list with no header.
+  const showSectionHeaders = users.length > 0 && groups.length > 0
 
   return (
     <div ref={containerRef} className="relative flex-1">
       <input
         type="text"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => setDismissed(false)}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onFocus={onFocus}
         disabled={disabled}
         placeholder="Search people by email…"
         className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink transition-colors focus:border-accent-500 focus:outline-none disabled:opacity-50"
@@ -345,25 +372,62 @@ function DirectorySearch({ onSelect, disabled }: DirectorySearchProps) {
           <Spinner />
         </div>
       )}
-      {open && users.length > 0 && (
-        <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-md">
-          {users.map((u) => (
-            <li key={u.id}>
-              <button
-                type="button"
-                className="w-full px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-accent-bg"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  handleSelect(u)
-                }}
-              >
-                {u.email}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {open && (users.length > 0 || groups.length > 0) && (
+        <div
+          data-testid="principal-results"
+          className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-md"
+        >
+          {users.length > 0 && (
+            <div>
+              {showSectionHeaders && (
+                <p className="px-3 pt-2 text-xs font-medium uppercase tracking-wide text-muted">People</p>
+              )}
+              <ul>
+                {users.map((u) => (
+                  <li key={u.id}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-accent-bg"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        handleSelectUser(u)
+                      }}
+                    >
+                      {u.email}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {groups.length > 0 && (
+            <div>
+              {showSectionHeaders && (
+                <p className="px-3 pt-2 text-xs font-medium uppercase tracking-wide text-muted">Groups</p>
+              )}
+              <ul>
+                {groups.map((g) => (
+                  <li key={g.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-accent-bg"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        handleSelectGroup(g)
+                      }}
+                    >
+                      <UsersIcon className="h-4 w-4 shrink-0 text-muted" />
+                      <span className="min-w-0 flex-1 truncate">{g.name}</span>
+                      <span className="shrink-0 text-xs text-muted">{formatMemberCount(g.memberCount)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
-      {open && !isFetching && shouldSearch && users.length === 0 && (
+      {open && !isFetching && shouldSearch && users.length === 0 && groups.length === 0 && (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-muted shadow-md">
           No people found
         </div>
@@ -392,13 +456,65 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
   const [revoking, setRevoking] = useState<string | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
 
+  // Debounce + text-query + dropdown-dismiss state for the combined
+  // People/Groups picker, owned here (not in a self-contained child) so the
+  // fetched `searchGroups` data can double as the live member-count lookup
+  // for the access list below — the count is never snapshotted onto the
+  // grant itself. `dismissed` resets inside the same debounce timeout that
+  // lands a new search term, so a fresh result set always re-opens the
+  // dropdown (matches the original DirectorySearch behavior).
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [dismissed, setDismissed] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(query)
+      setDismissed(false)
+    }, 300)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [query])
+
+  const handleDismiss = useCallback(() => setDismissed(true), [])
+  const handleFocus = useCallback(() => setDismissed(false), [])
+
+  const shouldSearch = debouncedQuery.length >= 2
+
+  const { data: dirData, isFetching: dirFetching } = useSearchDirectoryQuery(
+    { search: debouncedQuery },
+    { skip: !shouldSearch },
+  )
+  // Same shouldSearch/skip as the people search above, kept consistent on
+  // purpose — see PrincipalSearch. A 404 (old CE without the groups feature)
+  // is treated as "no groups feature": the section is suppressed and people
+  // search is unaffected.
+  const { data: groupsData, error: groupsError, isFetching: groupsFetching } = useSearchGroupsQuery(
+    { search: debouncedQuery },
+    { skip: !shouldSearch },
+  )
+  const groupsUnavailable = (groupsError as { status?: number } | undefined)?.status === 404
+
+  const userResults = dirData?.users ?? []
+  const groupResults = groupsUnavailable ? [] : (groupsData?.groups ?? [])
+  const groupsById = new Map(groupResults.map((g) => [g.id, g] as const))
+
   const grants = (data?.grants ?? []).filter((g) => g.principalId !== ANYONE_PRINCIPAL)
 
   const accessErrorStatus = isError ? (error as { status?: number }).status : undefined
   const accessError =
     accessErrorStatus === 403 ? 'You do not have permission to manage access for this folder.' : null
 
-  async function handleAdd(user: { id: string; email: string }) {
+  function resetSearch() {
+    setQuery('')
+    setDebouncedQuery('')
+    setDismissed(true)
+  }
+
+  async function handleAddUser(user: { id: string; email: string }) {
     setAddError(null)
     const result = await addGrant({
       folderId,
@@ -410,6 +526,31 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
       const status = (result.error as { status?: number }).status
       setAddError(status === 403 ? 'You do not have permission to add grants.' : 'Failed to add access. Please try again.')
     }
+  }
+
+  async function handleAddGroup(group: GroupOption) {
+    setAddError(null)
+    const result = await addGrant({
+      folderId,
+      principalId: group.id,
+      principalType: 'group',
+      principalName: group.name,
+      level: 'view',
+    })
+    if ('error' in result) {
+      const status = (result.error as { status?: number }).status
+      setAddError(status === 403 ? 'You do not have permission to add grants.' : 'Failed to add access. Please try again.')
+    }
+  }
+
+  function handleSelectUser(user: { id: string; email: string }) {
+    void handleAddUser(user)
+    resetSearch()
+  }
+
+  function handleSelectGroup(group: GroupOption) {
+    void handleAddGroup(group)
+    resetSearch()
   }
 
   async function handleRevoke(principalId: string) {
@@ -433,7 +574,20 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
     <div>
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">People</p>
       <div className="mb-2 flex items-center gap-2">
-        <DirectorySearch onSelect={handleAdd} disabled={adding} />
+        <PrincipalSearch
+          onSelectUser={handleSelectUser}
+          onSelectGroup={handleSelectGroup}
+          disabled={adding}
+          query={query}
+          onQueryChange={setQuery}
+          dismissed={dismissed}
+          onDismiss={handleDismiss}
+          onFocus={handleFocus}
+          users={userResults}
+          groups={groupResults}
+          isFetching={dirFetching || groupsFetching}
+          shouldSearch={shouldSearch}
+        />
         {adding && <Spinner />}
       </div>
       {addError && <p className="mb-2 text-xs text-danger">{addError}</p>}
@@ -441,26 +595,39 @@ export function PeopleAccess({ folderId }: { folderId: string }) {
       {isLoading && <div className="py-3 text-center text-sm text-muted">Loading…</div>}
 
       {!isLoading && grants.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
-          {grants.map((grant) => (
-            <li
-              key={grant.principalId}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
-            >
-              <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                {grant.principalEmail ?? grant.principalId}
-              </span>
-              <LevelBadge level={grant.level} />
-              <button
-                type="button"
-                disabled={revoking === grant.principalId}
-                onClick={() => handleRevoke(grant.principalId)}
-                className="shrink-0 rounded-lg border border-border px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-danger disabled:opacity-50"
+        <ul data-testid="grants-list" className="flex flex-col gap-1.5">
+          {grants.map((grant) => {
+            const isGroup = grant.principalType === 'group'
+            const label = isGroup ? (grant.principalName ?? grant.principalId) : (grant.principalEmail ?? grant.principalId)
+            const liveGroup = isGroup ? groupsById.get(grant.principalId) : undefined
+            return (
+              <li
+                key={grant.principalId}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
               >
-                {revoking === grant.principalId ? 'Revoking…' : 'Revoke'}
-              </button>
-            </li>
-          ))}
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  {isGroup && (
+                    <span data-testid={`grant-icon-${grant.principalId}`}>
+                      <UsersIcon className="h-4 w-4 shrink-0 text-muted" />
+                    </span>
+                  )}
+                  <span className="min-w-0 truncate text-sm text-ink">
+                    {label}
+                    {liveGroup && <span className="text-muted"> · {formatMemberCount(liveGroup.memberCount)}</span>}
+                  </span>
+                </span>
+                <LevelBadge level={grant.level} />
+                <button
+                  type="button"
+                  disabled={revoking === grant.principalId}
+                  onClick={() => handleRevoke(grant.principalId)}
+                  className="shrink-0 rounded-lg border border-border px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-danger disabled:opacity-50"
+                >
+                  {revoking === grant.principalId ? 'Revoking…' : 'Revoke'}
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
 

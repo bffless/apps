@@ -16,6 +16,7 @@ import {
   useGetSignedUrlQuery,
   useDeleteNodeMutation,
   useListCommentsQuery,
+  useMyGroupsQuery,
 } from '../store/handoffApi'
 import { previewFor, hasViewSource } from '../lib/preview'
 import { renderMarkdown, markdownDocument } from '../lib/markdown'
@@ -111,12 +112,18 @@ function ControlBar({
   const { session } = useSession()
   const authed = session?.authenticated === true
 
+  // The session user's own group memberships, mirroring the server's group-aware
+  // gate. Skipped for guests; `undefined` while loading / on 404 / old CE is
+  // exactly today's affordances, upgrading in place once the query lands.
+  const { data: myGroupsData } = useMyGroupsQuery(undefined, { skip: !authed })
+  const myGroupIds = myGroupsData?.groups.map((g) => g.id)
+
   const isRoot = node.parentId === 'root'
   // Look up the parent folder to read its ownerId for the share gate.
   // Skip for guests (unauthenticated) to avoid a discarded 401 on the parent fetch.
   const { data: parentNode } = useGetNodeQuery(node.parentId, { skip: isRoot || !authed })
   const canShare = canShareParentFolder({ session, parentNode: parentNode ?? undefined })
-  const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined })
+  const canDelete = canDeleteNode({ session, node, parentNode: parentNode ?? undefined, groupIds: myGroupIds })
   const backTo = backTarget(node)
 
   // Root → parent ancestor chain — powers the effective-visibility badge
@@ -783,6 +790,11 @@ export function ViewerBody({ id }: { id: string }) {
   const { data: parentNode } = useGetNodeQuery(node?.parentId ?? 'root', {
     skip: !node || node.parentId === 'root' || !authed,
   })
+  // The session user's own group memberships for the comment write gate —
+  // same skip/undefined-while-loading contract as ControlBar's. Declared
+  // before the early returns below to keep hook order stable.
+  const { data: myGroupsData } = useMyGroupsQuery(undefined, { skip: !authed })
+  const myGroupIds = myGroupsData?.groups.map((g) => g.id)
   const contentRef = useRef<HTMLDivElement>(null)
   // Handed to CommentLayer: the bridge reads the iframe's same-origin document,
   // and the pin overlay measures the rendered image.
@@ -843,7 +855,7 @@ export function ViewerBody({ id }: { id: string }) {
   }
 
   // Anyone who can *see* the node may comment on it, once signed in (Task 8).
-  const canWrite = canComment({ session, node, parentNode: parentNode ?? undefined })
+  const canWrite = canComment({ session, node, parentNode: parentNode ?? undefined, groupIds: myGroupIds })
   const showGutter = !!commentKind && commentsOpen && !embed
 
   return (

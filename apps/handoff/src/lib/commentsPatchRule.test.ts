@@ -131,6 +131,25 @@ describe('gate', () => {
     }
   })
 
+  it('member of a granted group resolves a root', () => {
+    const r = run({
+      user: { id: 'carol', groups: ['group-1'] },
+      pre: resolvePre,
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+    })
+    expect(r.doResolve).toBe(true)
+  })
+
+  it('non-member of the granted group → 403', () => {
+    const r = run({
+      user: { id: 'carol', groups: ['group-2'] },
+      pre: resolvePre,
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+    })
+    expect(r.doResolve).toBe(false)
+    expect(r.deny403).toBe(true)
+  })
+
   it('exactly one do* flag true per op', () => {
     const cases: Array<[any, string]> = [
       [editPre, 'bob'],

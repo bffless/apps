@@ -1,0 +1,4 @@
+targetUrl: http://localhost:3000/api/user-groups/mine
+order: 10
+forwardCookies: true
+description: "The session user's own group memberships (strict), so the client-side evaluateAccess mirror can compute the same canWrite/canManage a group-granted user gets from the server gate. Returns { groups: [{id,name}] }. Requires the same CE release as /api/groups; 404 on older CE degrades to no group awareness client-side."

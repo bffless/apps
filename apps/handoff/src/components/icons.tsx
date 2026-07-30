@@ -108,6 +108,14 @@ export const GlobeIcon = (p: IconProps) => (
   </Svg>
 )
 
+/** Group principal indicator — used on group grant rows in the share dialog. */
+export const UsersIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M7 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+    <path d="M1.5 16.25c0-2.9 2.46-5.25 5.5-5.25s5.5 2.35 5.5 5.25a.75.75 0 0 1-.75.75h-9.5a.75.75 0 0 1-.75-.75ZM13.75 12.02c1.9.55 3.25 2.14 3.25 4.02a.75.75 0 0 1-.02.19c-.06.3-.33.52-.65.52h-1.83a.75.75 0 0 1-.75-.72c-.05-1.5-.65-2.86-1.63-3.9.53-.2 1.08-.25 1.63-.11Z" />
+  </Svg>
+)
+
 /** Info indicator — the viewer's Details popover trigger. */
 export const InfoIcon = (p: IconProps) => (
   <Svg {...p}>

@@ -166,16 +166,31 @@ Per-folder access control — the mechanism behind "content is private-by-defaul
 In all three calls `folderId` is a folder UUID or the literal `root` (the
 caller's "My Files" root).
 
-- List: `GET /api/grants?folderId=<id|root>` → `{grants:[{principalId, principalEmail, level}]}`
-- Add/update: `POST /api/grants` `{folderId, principalId, principalEmail?, level: "view"|"edit"}`
+- List: `GET /api/grants?folderId=<id|root>` → `{grants:[{principalId, principalEmail?, principalType?, principalName?, level}]}`
+- Add/update: `POST /api/grants` `{folderId, principalId, principalEmail?, principalType?, principalName?, level: "view"|"edit"}`
   → `{grants:[…]}` — upserts by `principalId`; folder owner or admin only (403 otherwise)
 - Revoke: `POST /api/grants/revoke` `{folderId, principalId}` → `{grants:[…]}`
   (owner/admin only)
 
+**User grants**: a traditional per-user grant with `principalId` and
+`principalEmail`. The email identifies the user.
+
+**Group grants**: set `principalType: "group"` and `principalName` (the group's
+display name, a snapshot at grant time). A group grant matches any *member* of
+that CE User Group. The `principalName` is informational; membership is
+authoritative and evaluated live per request — removing a user from the group
+revokes their access on the next request. Requires the CE release that ships
+member-accessible group endpoints; on older CE, group endpoints 404 and group
+features degrade gracefully.
+
 The reserved principal `anyone` is what "Public" means: granting it makes the
 folder world-viewable. It is always capped at `level: "view"` (the server
-silently downgrades `edit`) and carries no email — publicness can never
-escalate to edit.
+silently downgrades `edit`), carries no email, and never has a `principalType`
+or `principalName` — publicness can never escalate to edit.
+
+**Group management**:
+- Discover groups: `GET /api/groups?search=<query>&limit=<n>` → `{groups:[{id, name, memberCount}]}` (member-accessible picker; blank search lists all up to limit). Used to build a group-selector UI.
+- Own memberships: `GET /api/me/groups` → `{groups:[{id, name}]}` (the groups this user belongs to). Both endpoints require the CE release shipping member-accessible group endpoints; 404 on older CE versions.
 
 ## Gotchas
 

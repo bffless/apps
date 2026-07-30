@@ -94,6 +94,21 @@ describe('gate', () => {
     expect(run({ user: { id: 'bob' }, pre: replyPre, parentComment: { ...rootOk, parentId: ROOT_COMMENT } }).badRequest).toBe(true)
     expect(run({ user: { id: 'bob' }, pre: replyPre, parentComment: { ...rootOk, deleted: true } }).badRequest).toBe(true)
   })
+  it('member of a granted group may comment', () => {
+    const r = run({
+      user: { id: 'carol', groups: ['group-1'] },
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+    })
+    expect(r.allow).toBe(true)
+  })
+  it('non-member of the granted group → 403', () => {
+    const r = run({
+      user: { id: 'carol', groups: ['group-2'] },
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+    })
+    expect(r.allow).toBe(false)
+    expect(r.deny403).toBe(true)
+  })
   it('create step stamps server-owned fields', () => {
     const create = step('create')
     expect(create.config.condition).toBe('steps.gate.allow')

@@ -62,7 +62,7 @@ const fileRow = {
 
 /** Run the gate as `user` (null = logged out), deleting `node`, with `folders` as the chain. */
 function runGate(opts: {
-  user?: { id: string; role?: string } | null
+  user?: { id: string; role?: string; groups?: string[] } | null
   node?: Record<string, any> | null
   folders?: Record<string, any>[]
   children?: unknown[]
@@ -137,6 +137,19 @@ describe('handoff DELETE /api/node proxy rule', () => {
     // …and an `anyone` (Public) grant is likewise capped at view: public never means deletable.
     const anon = runGate({ folders: [folderRow([{ principalId: 'anyone', level: 'view' }])] })
     expect(anon).toMatchObject({ allow: false, deny401: true, deny403: false, doDelete: false })
+
+    // A member of a group granted `edit` may delete; a non-member is refused.
+    const groupMember = runGate({
+      user: { id: 'carol', groups: ['group-1'] },
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'edit' }])],
+    })
+    expect(groupMember).toMatchObject({ allow: true, level: 'edit', deny401: false, deny403: false, doDelete: true })
+
+    const nonMember = runGate({
+      user: { id: 'carol', groups: ['group-2'] },
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'edit' }])],
+    })
+    expect(nonMember).toMatchObject({ allow: false, level: 'none', deny401: false, deny403: true, doDelete: false })
   })
 
   it('emits the downstream flags the later steps are conditioned on', () => {
