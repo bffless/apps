@@ -261,9 +261,12 @@ describe('grants API round-trips group principal metadata (Task 4)', () => {
       },
     })
 
+  // shape.fn.ts is owner/admin-gated (issue #266) — these tests are about the display-metadata
+  // shaping, not the gate, so run as the folder's owner to clear it.
   const shape = (grants: unknown[]) =>
     (compileHandler(shapeCode) as (ctx: any) => any)({
-      steps: { folder: { grantsJson: JSON.stringify(grants) } },
+      user: { id: 'owner-1', role: 'user' },
+      steps: { folder: { ownerId: 'owner-1', grantsJson: JSON.stringify(grants) } },
     })
 
   it('POST stores principalType/principalName for a new group grant; GET echoes them', () => {

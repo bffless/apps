@@ -33,15 +33,24 @@ pipeline:
       name: shape
       handler: function_handler
       code: ./shape.fn.ts
-    - id: response
-      name: response
+    - id: ok
+      name: ok
       handler: response_handler
       config:
         body: '{"grants": {{{steps.shape.grants}}}}'
         status: 200
+        condition: steps.shape.allowed
+        contentType: application/json
+    - id: denied
+      name: denied
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.shape.denied
         contentType: application/json
   validators:
     - type: auth_required
       config:
         allowApiKey: true
-description: List a folder's grants
+description: List a folder's grants (owner/admin only)
