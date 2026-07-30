@@ -509,11 +509,21 @@ export const handoffApi = createApi({
     }),
 
     /**
-     * POST /api/grants { folderId, principalId, principalEmail?, level } → { grants: Grant[] }
+     * POST /api/grants { folderId, principalId, principalEmail?, principalType?, principalName?, level }
+     * → { grants: Grant[] }
+     * `principalType`/`principalName` are set for a group grant ('group' +
+     * the group's display name at grant time); omitted for a user grant.
      */
     addGrant: builder.mutation<
       { grants: Grant[] },
-      { folderId: string; principalId: string; principalEmail?: string; level: 'view' | 'edit' }
+      {
+        folderId: string
+        principalId: string
+        principalEmail?: string
+        principalType?: 'group'
+        principalName?: string
+        level: 'view' | 'edit'
+      }
     >({
       query: (body) => ({
         url: 'api/grants',
@@ -692,6 +702,29 @@ export const handoffApi = createApi({
      */
     searchDirectory: builder.query<{ users: { id: string; email: string }[] }, { search: string }>({
       query: ({ search }) => `api/directory?search=${encodeURIComponent(search)}`,
+    }),
+
+    /**
+     * GET /api/groups?search=<q> → { groups: { id, name, memberCount }[] }
+     * Group picker for the share dialog. Blank search lists all (capped by
+     * the server); no `providesTags` — admin-curated, re-fetched per session.
+     */
+    searchGroups: builder.query<
+      { groups: { id: string; name: string; memberCount: number }[] },
+      { search: string }
+    >({
+      query: ({ search }) => `api/groups?search=${encodeURIComponent(search)}`,
+    }),
+
+    /**
+     * GET /api/me/groups → { groups: { id, name }[] }
+     * The session user's own group memberships, so the client-side
+     * `evaluateAccess` mirror can compute the same canWrite/canManage a
+     * group-granted user gets from the server gate. No `providesTags` —
+     * admin-curated, re-fetched per session.
+     */
+    myGroups: builder.query<{ groups: { id: string; name: string }[] }, void>({
+      query: () => 'api/me/groups',
     }),
 
     // -----------------------------------------------------------------------
@@ -959,6 +992,8 @@ export const {
   useSetNodeFeedExcludedMutation,
   useUpdateNodeMetaMutation,
   useSearchDirectoryQuery,
+  useSearchGroupsQuery,
+  useMyGroupsQuery,
   useMintShareLinkMutation,
   useListShareLinksQuery,
   useRevokeShareLinkMutation,
