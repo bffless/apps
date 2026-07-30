@@ -62,7 +62,7 @@ const fileRow = {
 
 /** Run the gate as `user` (null = logged out), deleting `node`, with `folders` as the chain. */
 function runGate(opts: {
-  user?: { id: string; role?: string } | null
+  user?: { id: string; role?: string; groups?: string[] } | null
   node?: Record<string, any> | null
   folders?: Record<string, any>[]
   children?: unknown[]
