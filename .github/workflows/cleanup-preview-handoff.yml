@@ -38,7 +38,8 @@ jobs:
           if [ -z "$pr_ids" ]; then echo "no rule sets for PR #$N — nothing to clean"; exit 0; fi
           # 2. Remove ONLY these ids from the shared alias's attachments (keep base
           #    sets and any other open PR's sets), if the alias currently has them.
-          alias_json=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/repo/bffless/apps/aliases" | jq '.data[] | select(.alias=="handoff-preview")')
+          # Endpoint shape (verified live): { repository, aliases: [{ name, proxyRuleSetIds, ... }] }
+          alias_json=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/repo/bffless/apps/aliases" | jq '.aliases[] | select(.name=="handoff-preview")')
           if [ -n "$alias_json" ]; then
             keep=$(jq -c --argjson drop "$(printf '%s\n' "$pr_ids" | jq -R . | jq -sc .)" '.proxyRuleSetIds - $drop' <<<"$alias_json")
             cur=$(jq -c '.proxyRuleSetIds' <<<"$alias_json")
