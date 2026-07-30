@@ -8,6 +8,13 @@
  * `principalType`/`principalName` are echoed verbatim from storage (display metadata only,
  * group grants spec 2026-07-29): a legacy stored grant with no `principalType` shapes with it
  * absent, NOT rewritten to `'user'` — only `'group'` is ever a real value.
+ *
+ * SECURITY (issue #266): a folder's grants list is itself sensitive (principal emails, group
+ * names) — this is a read, but not a public one. Gated identically to the write path
+ * (`../post/merge.fn.ts`): only the folder's direct owner or an admin may list it. No chain
+ * walking — same as POST, consistency with the write path is the requirement, not
+ * inherited/effective access. A denied caller gets `denied: true` and an empty list, which the
+ * 403 response step is conditioned on; `allowed` gates the 200.
  */
 import type { HandlerContext } from 'bffless/handlers';
 
@@ -20,12 +27,21 @@ interface StoredGrant {
 }
 
 interface FolderRecord {
+  ownerId?: string | null;
   grantsJson?: unknown;
 }
 
-export default function handler({ steps }: HandlerContext) {
+export default function handler({ user, steps }: HandlerContext) {
   const allSteps = (steps || {}) as { folder?: FolderRecord };
   const folder = (steps && allSteps.folder) || ({} as FolderRecord);
+
+  const uid = (user && (user.id as string)) || null;
+  const isAdmin = !!user && user.role === 'admin';
+  const isOwner = !!uid && folder.ownerId === uid;
+
+  if (!isAdmin && !isOwner) {
+    return { allowed: false, denied: true, grants: [] as StoredGrant[] };
+  }
 
   let existing: unknown = folder.grantsJson;
   if (typeof existing === 'string') {
@@ -54,5 +70,5 @@ export default function handler({ steps }: HandlerContext) {
     }
   }
 
-  return { grants: out };
+  return { allowed: true, denied: false, grants: out };
 }

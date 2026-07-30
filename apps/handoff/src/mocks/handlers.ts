@@ -568,17 +568,18 @@ export const handlers = [
   /**
    * GET /api/grants?folderId=<id>
    * Response: { grants: Grant[] }
+   *
+   * Owner-gated identically to POST (issue #266, mirrors shape.fn.ts): direct owner or admin
+   * only, no chain walking. Deny-by-default — a folder with no ACL record (or none matching the
+   * caller) is NOT a free pass, same as the real pipeline reading a null `folder.ownerId`.
    */
   http.get('/api/grants', ({ request }) => {
     if (!mockCurrentUser) return new HttpResponse(null, { status: 401 })
     const folderId = resolveFolderId(new URL(request.url).searchParams.get('folderId') ?? '')
     const acl = nodeAcl.get(folderId)
-    // Only owner or admin can manage grants
-    if (acl) {
-      const isAdmin = mockCurrentUser.role === 'admin'
-      const isOwner = acl.ownerId === mockCurrentUser.id
-      if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
-    }
+    const isAdmin = mockCurrentUser.role === 'admin'
+    const isOwner = !!acl && acl.ownerId === mockCurrentUser.id
+    if (!isAdmin && !isOwner) return new HttpResponse(null, { status: 403 })
     return HttpResponse.json({ grants: grants.get(folderId) ?? [] })
   }),
 
