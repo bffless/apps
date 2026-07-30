@@ -353,3 +353,51 @@ describe('childIsPublic', () => {
     expect(childIsPublic([parent], child)).toBe(true)
   })
 })
+
+describe('group grants', () => {
+  const groupGrant = (level: 'view' | 'edit') => ({
+    principalId: 'group-1',
+    principalType: 'group' as const,
+    principalName: 'Design',
+    level,
+  })
+
+  it('a member of a granted group gets the grant level', () => {
+    const chain = [F({ grants: [groupGrant('edit')] })]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u1', groupIds: ['group-1'] } })).toBe(
+      'edit',
+    )
+  })
+
+  it('a non-member does not match a group grant', () => {
+    const chain = [F({ grants: [groupGrant('edit')] })]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u1', groupIds: ['other'] } })).toBe('none')
+  })
+
+  it('group grants inherit down the chain', () => {
+    const chain = [F({ grants: [groupGrant('view')] }), F({})]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u1', groupIds: ['group-1'] } })).toBe('view')
+  })
+
+  it('a restricted descendant drops an inherited group grant', () => {
+    const chain = [F({ grants: [groupGrant('edit')] }), F({ mode: 'restricted' })]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u1', groupIds: ['group-1'] } })).toBe('none')
+  })
+
+  it('undefined groupIds behaves exactly like today (no match, no throw)', () => {
+    const chain = [F({ grants: [groupGrant('edit')] })]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u1' } })).toBe('none')
+  })
+
+  it('the highest of a direct and a group grant wins', () => {
+    const chain = [
+      F({
+        grants: [
+          { principalId: 'u1', level: 'view' as const },
+          groupGrant('edit'),
+        ],
+      }),
+    ]
+    expect(evaluateAccess({ folderChain: chain, viewer: { userId: 'u1', groupIds: ['group-1'] } })).toBe('edit')
+  })
+})

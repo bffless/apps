@@ -11,6 +11,10 @@ export type AccessLevel = 'none' | 'view' | 'edit' | 'owner'
 export interface Grant {
   principalId: string
   principalEmail?: string | null
+  /** UX metadata only — evaluation matches principalId. Absent ⇒ 'user' (legacy rows). */
+  principalType?: 'user' | 'group'
+  /** Display snapshot for group grants, taken at grant time. */
+  principalName?: string | null
   level: 'view' | 'edit'
 }
 
@@ -25,6 +29,8 @@ export interface FolderLink {
 export interface Viewer {
   userId?: string
   isAdmin?: boolean
+  /** Group ids the viewer is a member of (from CE user.groups / /api/me/groups). */
+  groupIds?: string[]
   /** When set: this viewer arrived via a share link scoped to this folder id. */
   shareLinkFolderId?: string
 }
@@ -90,6 +96,8 @@ export function evaluateAccess(input: {
       if (grant.principalId === ANYONE_PRINCIPAL) {
         promote('view')
       } else if (viewer.userId && grant.principalId === viewer.userId) {
+        promote(grant.level)
+      } else if (viewer.groupIds && viewer.groupIds.includes(grant.principalId)) {
         promote(grant.level)
       }
     }
