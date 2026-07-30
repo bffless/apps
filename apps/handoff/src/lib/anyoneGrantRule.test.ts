@@ -146,6 +146,39 @@ describe('embedded evalAccess ≡ evaluateAccess (port equivalence)', () => {
       viewer: { userId: 'u9' },
       want: 'view',
     },
+    {
+      name: 'member of granted group gets view',
+      chain: [F({ grants: [{ principalId: 'group-1', level: 'view' as const }] })],
+      viewer: { groupIds: ['group-1'] },
+      want: 'view',
+    },
+    {
+      name: 'member of granted group gets edit',
+      chain: [F({ grants: [{ principalId: 'group-1', level: 'edit' as const }] })],
+      viewer: { groupIds: ['group-1'] },
+      want: 'edit',
+    },
+    {
+      name: 'non-member of granted group gets nothing',
+      chain: [F({ grants: [{ principalId: 'group-1', level: 'edit' as const }] })],
+      viewer: { groupIds: ['group-2'] },
+      want: 'none',
+    },
+    {
+      name: 'restricted drops inherited group grant',
+      chain: [
+        F({ id: 'p', grants: [{ principalId: 'group-1', level: 'edit' as const }] }),
+        F({ id: 'c', ownerId: 'o2', mode: 'restricted' }),
+      ],
+      viewer: { groupIds: ['group-1'] },
+      want: 'none',
+    },
+    {
+      name: 'groupIds undefined does not match group grant',
+      chain: [F({ grants: [{ principalId: 'group-1', level: 'view' as const }] })],
+      viewer: {},
+      want: 'none',
+    },
   ]
 
   for (const c of MATRIX) {
