@@ -100,12 +100,13 @@ function verifyToken(utils: HandlerContext['utils'], tok: string): SignedToken |
 export default function handler({ user, request, steps, utils }: HandlerContext) {
   const uid = ((user && user.id) || null) as string | null;
   const isAdmin = !!user && user.role === 'admin';
+  const groupIds = ((user && (user as { groups?: string[] }).groups) || undefined);
 
   const stok = verifyToken(utils, readCookie(request, 'hf_s'));
   const shareFolderId = stok && stok.s ? String(stok.s) : '';
 
   let viewer: Viewer;
-  if (uid) viewer = { userId: uid, isAdmin: isAdmin };
+  if (uid) viewer = { userId: uid, isAdmin: isAdmin, groupIds: groupIds };
   else if (shareFolderId) viewer = { shareLinkFolderId: shareFolderId };
   else viewer = {};
 

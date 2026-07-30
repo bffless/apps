@@ -129,6 +129,54 @@ describe('a traversal key cannot borrow a readable Site prefix', () => {
   })
 })
 
+describe('gate group grants (a node resolved directly by key, not via a Site prefix)', () => {
+  const FILE_FOLDER = '00000000-0000-4000-8000-0000000000d9'
+  const FILE_NODE = {
+    id: '00000000-0000-4000-8000-0000000000f9',
+    parentId: FILE_FOLDER,
+    ownerId: 'owner-1',
+    storage_path: 'bffless/apps/uploads/content/docs/secret.pdf',
+  }
+  const folderRow = (grants: unknown[]) => ({
+    id: FILE_FOLDER,
+    nodeType: 'folder',
+    parentId: 'root',
+    ownerId: 'owner-1',
+    grantsJson: JSON.stringify(grants),
+    mode: 'inheriting',
+  })
+
+  it('a member of the granted group may read the file', () => {
+    const decision = gate({
+      user: { id: 'carol', groups: ['group-1'] },
+      request: { headers: {} },
+      utils: { verify: () => false, base64urlDecode: (v: string) => v },
+      steps: {
+        allFolders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+        allSites: [],
+        parsePath: { fullKey: FILE_NODE.storage_path, bad: false },
+        nodeByKey: [FILE_NODE],
+      },
+    })
+    expect(decision).toMatchObject({ allow: true, deny400: false, deny403: false })
+  })
+
+  it('a non-member of the granted group is denied', () => {
+    const decision = gate({
+      user: { id: 'carol', groups: ['group-2'] },
+      request: { headers: {} },
+      utils: { verify: () => false, base64urlDecode: (v: string) => v },
+      steps: {
+        allFolders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+        allSites: [],
+        parsePath: { fullKey: FILE_NODE.storage_path, bad: false },
+        nodeByKey: [FILE_NODE],
+      },
+    })
+    expect(decision).toMatchObject({ allow: false, deny400: false, deny403: true })
+  })
+})
+
 describe('the serve rule answers a refused path with a 400', () => {
   it('carries a deny400 response step gated on the parser verdict', () => {
     const deny400 = serve.pipelineConfig.steps.find((s: any) => s.id === 'deny400')

@@ -97,11 +97,12 @@ describe('parse step — per-segment decode', () => {
 
 describe('gate step — resolution + ACL', () => {
   function runGate(opts: {
-    user?: { id: string; role?: string } | null
+    user?: { id: string; role?: string; groups?: string[] } | null
     parse: any
     nodeByKey?: any[]
     request?: any
     utils?: any
+    folders?: any[]
   }) {
     const gate = handlerOf('gate')
     return gate({
@@ -111,7 +112,7 @@ describe('gate step — resolution + ACL', () => {
       steps: {
         parse: opts.parse,
         nodeByKey: opts.nodeByKey ?? [],
-        allFolders: [FOLDER_A, FOLDER_B],
+        allFolders: opts.folders ?? [FOLDER_A, FOLDER_B],
       },
     })
   }
@@ -158,6 +159,31 @@ describe('gate step — resolution + ACL', () => {
     const anon = runGate({ user: null, parse: folderParse })
     expect(anon.allow).toBe(false)
     expect(anon.deny401).toBe(true)
+  })
+
+  it('resolves the nested folder for a member of a group granted view, and denies a non-member', () => {
+    const groupFolders = [
+      FOLDER_A,
+      {
+        ...FOLDER_B,
+        grantsJson: JSON.stringify([{ principalId: 'group-1', principalType: 'group', level: 'view' }]),
+      },
+    ]
+    const member = runGate({
+      user: { id: 'carol', groups: ['group-1'] },
+      parse: folderParse,
+      folders: groupFolders,
+    })
+    expect(member.allow).toBe(true)
+    expect(member.node.id).toBe(FOLDER_B.id)
+
+    const nonMember = runGate({
+      user: { id: 'carol', groups: ['group-2'] },
+      parse: folderParse,
+      folders: groupFolders,
+    })
+    expect(nonMember.allow).toBe(false)
+    expect(nonMember.deny403).toBe(true)
   })
 
   it('404s an unresolvable path', () => {

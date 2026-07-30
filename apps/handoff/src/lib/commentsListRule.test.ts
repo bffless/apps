@@ -70,6 +70,21 @@ describe('gate', () => {
   })
   it('bad nodeId → badRequest', () =>
     expect(run({ user: { id: 'alice' }, pre: { idOk: false }, node: null }).badRequest).toBe(true))
+  it('member of a granted group reads', () =>
+    expect(
+      run({
+        user: { id: 'carol', groups: ['group-1'] },
+        folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+      }).allow,
+    ).toBe(true))
+  it('non-member of the granted group → 403', () => {
+    const r = run({
+      user: { id: 'carol', groups: ['group-2'] },
+      folders: [folderRow([{ principalId: 'group-1', principalType: 'group', level: 'view' }])],
+    })
+    expect(r.allow).toBe(false)
+    expect(r.deny403).toBe(true)
+  })
 })
 
 describe('shape', () => {
