@@ -1,0 +1,55 @@
+# Deletes a closed PR's preview rule sets (handoff-pr-<N> + handoff-rss-feed-pr-<N>)
+# and detaches them from the shared `handoff-preview` alias. Counterpart to
+# preview-handoff.yml, modeled on cleanup-preview-reader.yml — but where Reader
+# deletes its per-PR alias outright, Handoff previews share ONE alias, so we must
+# surgically remove only THIS PR's set ids from the alias's attachment list
+# (preserving the base sets and any other open PR's attachments), then delete the
+# now-detached sets (delete 409s while a set is still attached).
+name: Cleanup Handoff PR Preview
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - 'apps/handoff/**'
+      - '.github/workflows/preview-handoff.yml'
+      - '.github/workflows/cleanup-preview-handoff.yml'
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-preview-handoff-${{ github.event.pull_request.number }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detach and delete PR rule sets
+        env:
+          URL: ${{ vars.BFFLESS_URL }}
+          KEY: ${{ secrets.BFFLESS_API_KEY }}
+          N: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # 1. Resolve project id, then this PR's two set ids by name.
+          project_id=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/projects/bffless/apps" | jq -r '.id')
+          if [ -z "$project_id" ] || [ "$project_id" = "null" ]; then echo "could not resolve project bffless/apps"; exit 1; fi
+          sets_json=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/proxy-rule-sets/project/$project_id")
+          pr_ids=$(jq -r --arg a "handoff-pr-$N" --arg b "handoff-rss-feed-pr-$N" '.ruleSets[] | select(.name==$a or .name==$b) | .id' <<<"$sets_json")
+          if [ -z "$pr_ids" ]; then echo "no rule sets for PR #$N — nothing to clean"; exit 0; fi
+          # 2. Remove ONLY these ids from the shared alias's attachments (keep base
+          #    sets and any other open PR's sets), if the alias currently has them.
+          alias_json=$(curl -sf -H "X-API-Key: $KEY" "$URL/api/repo/bffless/apps/aliases" | jq '.data[] | select(.alias=="handoff-preview")')
+          if [ -n "$alias_json" ]; then
+            keep=$(jq -c --argjson drop "$(printf '%s\n' "$pr_ids" | jq -R . | jq -sc .)" '.proxyRuleSetIds - $drop' <<<"$alias_json")
+            cur=$(jq -c '.proxyRuleSetIds' <<<"$alias_json")
+            if [ "$keep" != "$cur" ]; then
+              # PUT lives on the api/aliases mount with the repo URL-encoded.
+              curl -sf -X PUT -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d "{\"proxyRuleSetIds\": $keep}" "$URL/api/aliases/bffless%2Fapps/handoff-preview" > /dev/null
+              echo "detached PR #$N sets from handoff-preview (kept: $keep)"
+            fi
+          fi
+          # 3. Delete the detached sets.
+          for id in $pr_ids; do
+            curl -sf -X DELETE -H "X-API-Key: $KEY" "$URL/api/proxy-rule-sets/$id" > /dev/null
+            echo "deleted rule set $id"
+          done
