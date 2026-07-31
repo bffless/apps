@@ -64,8 +64,9 @@ Handoff's app-specifics; do them once in the target project.
 - **Secrets — none app-specific.** Handoff's pipelines reference no named `secrets.*`. The signed
   view-cookie HMAC uses CE's built-in server-side `utils.sign` key, which is managed by the platform,
   not entered by you.
-- **Storage backend — a real bucket is REQUIRED (see §1 below).** ⚠️ **Handoff will not work on local
-  file storage.** This is Handoff's key manual prerequisite.
+- **Storage backend — works on local file storage; a real bucket is recommended for production (see
+  §1 below).** Handoff uses presigned uploads, which as of CE v0.3.15 work on a stock install
+  (local-FS or bucket) with no extra configuration.
 - **Response-header rules — none on a clean project.** Handoff needs no extra headers by itself.
   **Exception — iframed content:** Handoff renders user-uploaded **Sites** (served with no `COEP`)
   in an iframe, and exposes a chromeless **`?embed=1`** viewer mode that other apps (e.g. the reader)
@@ -81,18 +82,23 @@ Handoff's app-specifics; do them once in the target project.
 - **Data tables + auth relay + people-picker directory** — the platform-level pieces the pipelines
   depend on; see §2–§4 below.
 
-### 1. Storage backend (bucket) — REQUIRED, not local file storage
+### 1. Storage backend — works on local file storage; a real bucket is recommended for production
 
-> ⚠️ **Handoff requires a real bucket storage backend (S3, GCS, Spaces/MinIO, or Azure Blob). It will
-> not work on the local file-storage adapter.** This is the one manual prerequisite that will silently
-> break Handoff if skipped.
+Handoff uses the **presigned upload** flow — the browser PUTs files directly to storage, bypassing the
+1 MB proxy cap. As of **CE v0.3.15**, presigned uploads work on a **stock install with the local
+file-storage adapter**, no bucket required: set `ENCRYPTION_KEY` (required regardless of storage
+backend — it encrypts storage credentials in the DB) and leave `FEATURE_LOCAL_PRESIGNED_UPLOADS`
+alone (default **on**). On an older CE build, or with that flag disabled, local storage returns
+`PRESIGNED_NOT_SUPPORTED` and uploads fail — upgrade or switch to a bucket backend.
 
-Handoff uses the **presigned upload** flow — the browser PUTs files directly to the bucket, bypassing
-the 1 MB proxy cap. The **local-storage adapter does not support presigned URLs** and will return
-`PRESIGNED_NOT_SUPPORTED`, so uploads fail on local FS. Point the project's default storage at a
-bucket backend before installing Handoff.
+A **real bucket backend (S3, GCS, Spaces/MinIO, or Azure Blob) is recommended for production** —
+local file storage ties uploaded content to a single instance's disk, with no built-in redundancy or
+horizontal scaling. Nothing about Handoff itself requires one.
 
-Bucket **CORS** must allow `PUT` from the site origin. Add a rule that permits:
+#### Bucket backends — CORS
+
+If you point the project's storage at a bucket, its **CORS** policy must allow `PUT` from the site
+origin. Add a rule that permits:
 
 - Method: `PUT`
 - Origin: `https://<your-handoff-alias>` (or `*` during development)
@@ -207,20 +213,21 @@ The `handoff` alias must be served at a URL, and three settings on that domain m
 
 ## First-success checkpoint
 
-Once the rule set is imported and attached to the `handoff` alias, the **bucket** storage backend is
-configured, the two data tables exist, and Handoff is deployed (see the repo-root
+Once the rule set is imported and attached to the `handoff` alias, `ENCRYPTION_KEY` is set, the two
+data tables exist, and Handoff is deployed (see the repo-root
 [`GETTING-STARTED.md`](../../../GETTING-STARTED.md)), confirm the install with one end-to-end action:
 
 **Upload a file → see it served back.**
 
 Open your deployed Handoff (`handoff.<your-domain>`), sign in, and **upload a file**; then open it and
-confirm it **downloads / renders**. That round-trip exercises the presigned direct-to-bucket upload,
-the `handoff_nodes` registration, and the ACL-gated serve path (`GET /api/uploads/content/*`) end to
-end. If the file serves back, Handoff's backend is live.
+confirm it **downloads / renders**. That round-trip exercises the presigned upload, the `handoff_nodes`
+registration, and the ACL-gated serve path (`GET /api/uploads/content/*`) end to end. If the file
+serves back, Handoff's backend is live.
 
 - A **404 on `/api/*`** means the `handoff` rule set isn't attached to the `handoff` alias.
-- A **`PRESIGNED_NOT_SUPPORTED`** on upload means the project is still on local file storage — switch
-  to a real bucket backend (see [Manual setup → §1](#1-storage-backend-bucket--required-not-local-file-storage)).
+- A **`PRESIGNED_NOT_SUPPORTED`** on upload means either the CE build predates v0.3.15, or
+  `FEATURE_LOCAL_PRESIGNED_UPLOADS` was explicitly disabled — upgrade CE, re-enable the flag, or
+  switch to a bucket backend (see [Manual setup → §1](#1-storage-backend--works-on-local-file-storage-a-real-bucket-is-recommended-for-production)).
 
 ## Data-table ids are resolved by name (no more remapping)
 

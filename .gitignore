@@ -9,6 +9,10 @@ dist
 *.tsbuildinfo
 .node_modules
 
+# app-catalog bundle build output (scripts/build-app-bundle.mjs) — published via CI, not committed
+dist-bundles/
+.tmp-bundle-rulesets/
+
 # test / coverage artifacts
 coverage
 playwright-report
