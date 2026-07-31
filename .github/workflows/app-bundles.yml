@@ -1,0 +1,166 @@
+name: App bundles — build + publish
+
+# Builds an app-catalog install bundle (scripts/build-app-bundle.mjs) for one app, publishes
+# it as a GitHub release asset, then rebuilds and republishes the app-catalog registry.json
+# (one entry per apps/<app>/bffless-app.json that has ever been published) to the
+# `app-registry` alias so CE's app-catalog feature can discover it. See
+# docs/app-pipelines-convention.md and bffless/ce's app-catalog feature (task-15-brief.md).
+#
+# Two triggers:
+#   - push of a tag matching `<app-id>-v<version>` (e.g. `handoff-v1.0.0`) — publishes that app.
+#   - workflow_dispatch with an `app` input — same build, for a manual re-publish without
+#     cutting a new tag (e.g. re-running after a registry-only fix).
+#
+# Operator steps this workflow does NOT do (see the PR description checklist):
+#   - map `apps.bffless.dev` to the `app-registry` alias on the target instance
+#   - add a ~1h TTL cache rule on that alias
+on:
+  push:
+    tags:
+      - '*-v*'
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App id to build and publish (matches apps/<app>/bffless-app.json)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-bundles
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # workflow_dispatch supplies the app id directly; a tag push encodes it as the part
+      # before the last `-v` (tag `handoff-v1.0.0` -> app `handoff`).
+      - name: Resolve app id
+        id: app
+        run: |
+          if [ -n "${{ inputs.app }}" ]; then
+            APP="${{ inputs.app }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            APP="${TAG%-v*}"
+          fi
+          if [ ! -f "apps/$APP/bffless-app.json" ]; then
+            echo "::error::apps/$APP/bffless-app.json not found — nothing to publish" >&2
+            exit 1
+          fi
+          echo "id=$APP" >> "$GITHUB_OUTPUT"
+
+      - name: Build bundle
+        run: node scripts/build-app-bundle.mjs "${{ steps.app.outputs.id }}"
+
+      - name: Resolve version + release tag
+        id: release
+        run: |
+          VERSION=$(node -p "require('./apps/${{ steps.app.outputs.id }}/bffless-app.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ steps.app.outputs.id }}-v$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Create the release on first publish of this app+version, or re-upload (--clobber) the
+      # assets on a manual re-run against an existing tag (e.g. a registry-only fix).
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.release.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist-bundles/*.zip dist-bundles/*.sha256 --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" dist-bundles/*.zip dist-bundles/*.sha256 --repo "${{ github.repository }}" --title "$TAG" --notes "App-catalog bundle for ${{ steps.app.outputs.id }} v${{ steps.release.outputs.version }}."
+          fi
+
+      # The registry lists every app that has ever been published, not just the one built in
+      # this run — fetch each other manifested app's already-published sha256 sidecar (best
+      # effort; an app with a manifest but no release yet is skipped with a warning, not a
+      # failure, so wiring up a new app's manifest doesn't break existing apps' registry entries).
+      - name: Fetch sha256 sidecars for other published apps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for manifest in apps/*/bffless-app.json; do
+            APP_DIR=$(dirname "$manifest")
+            APP=$(basename "$APP_DIR")
+            VERSION=$(node -p "require('./$manifest').version")
+            BASE="${APP}-v${VERSION}.bundle"
+            if [ -f "dist-bundles/${BASE}.sha256" ]; then
+              continue # just built + published above
+            fi
+            gh release download "${APP}-v${VERSION}" --repo "${{ github.repository }}" --pattern "${BASE}.sha256" --dir dist-bundles --clobber || echo "no published release for ${APP}-v${VERSION} yet — omitting from registry.json"
+          done
+
+      - name: Build registry.json
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          cat > /tmp/build-registry.mjs <<'SCRIPT'
+          import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+
+          const repo = process.env.GITHUB_REPOSITORY
+          const appsDir = 'apps'
+          const apps = readdirSync(appsDir).filter((name) => statSync(join(appsDir, name)).isDirectory())
+
+          const entries = []
+          for (const app of apps) {
+            const manifestPath = join(appsDir, app, 'bffless-app.json')
+            if (!existsSync(manifestPath)) continue
+            const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+            const baseName = `${app}-v${manifest.version}.bundle`
+            const sidecarPath = join('dist-bundles', `${baseName}.sha256`)
+            if (!existsSync(sidecarPath)) {
+              console.log(`skip ${app}: no ${sidecarPath} (never published) — omitting from registry.json`)
+              continue
+            }
+            const sha256 = readFileSync(sidecarPath, 'utf8').trim().split(/\s+/)[0]
+            entries.push({
+              id: manifest.id,
+              name: manifest.name,
+              version: manifest.version,
+              bundleUrl: `https://github.com/${repo}/releases/download/${app}-v${manifest.version}/${baseName}.zip`,
+              sha256,
+              summary: manifest.summary,
+              iconUrl: manifest.iconUrl,
+              docsUrl: manifest.docsUrl,
+              sourceUrl: manifest.sourceUrl,
+              requires: manifest.requires,
+            })
+          }
+
+          const registry = { schemaVersion: 1, apps: entries }
+          mkdirSync('registry-staging', { recursive: true })
+          writeFileSync('registry-staging/registry.json', JSON.stringify(registry, null, 2) + '\n')
+          console.log(JSON.stringify(registry, null, 2))
+          SCRIPT
+          node /tmp/build-registry.mjs
+
+      # Publishes registry-staging/ (containing only registry.json) to the app-registry alias.
+      # Operator maps apps.bffless.dev -> app-registry + a ~1h cache rule (see PR checklist).
+      - name: Publish registry.json to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: registry-staging
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: app-registry
+          description: 'App-catalog registry'

@@ -102,6 +102,77 @@ function checkApp(app) {
       }
     }
   }
+
+  errors.push(...checkManifest(app))
+  return errors
+}
+
+// bffless-app.json is OPTIONAL per app — the app catalog is opt-in. Only apps that ship one
+// (currently Handoff) are validated here; Studio/Reader without a manifest are unaffected.
+// This is a lightweight, dependency-free mirror of the CE-side `validateAppManifest` shape
+// checks (apps/backend/src/app-catalog/app-manifest.util.ts in the bffless/ce repo) — just
+// enough to catch a manifest that would fail CE install before it ships, without importing
+// across repos. It does not attempt to be a full re-implementation of every CE-side rule.
+function checkManifest(app) {
+  const manifestPath = join(appsDir, app, 'bffless-app.json')
+  if (!existsSync(manifestPath)) return []
+
+  const manifestRel = `apps/${app}/bffless-app.json`
+  const errors = []
+
+  let manifest
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  } catch (err) {
+    return [`${manifestRel}: invalid JSON (${err.message})`]
+  }
+
+  if (manifest.schemaVersion !== 1) {
+    errors.push(`${manifestRel}: schemaVersion must be 1`)
+  }
+  if (manifest.id !== app) {
+    errors.push(`${manifestRel}: id ("${manifest.id}") must equal the app directory name ("${app}")`)
+  }
+  if (typeof manifest.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(manifest.version)) {
+    errors.push(`${manifestRel}: version must be a semver string (got ${JSON.stringify(manifest.version)})`)
+  }
+
+  const install = manifest.install
+  if (install == null || typeof install !== 'object') {
+    errors.push(`${manifestRel}: install: required object`)
+  } else {
+    if (!install.alias || typeof install.alias !== 'string') {
+      errors.push(`${manifestRel}: install.alias: required non-empty string`)
+    }
+    if (!install.domain || typeof install.domain.subdomain !== 'string' || !install.domain.subdomain) {
+      errors.push(`${manifestRel}: install.domain.subdomain: required non-empty string`)
+    }
+
+    const ruleSets = install.ruleSets
+    if (!Array.isArray(ruleSets) || ruleSets.length === 0) {
+      errors.push(`${manifestRel}: install.ruleSets: required non-empty array`)
+    } else {
+      ruleSets.forEach((entry, i) => {
+        const file = entry && entry.file
+        const match = typeof file === 'string' && /^rulesets\/([a-zA-Z0-9._-]+)\.json$/.exec(file)
+        if (!match) {
+          errors.push(
+            `${manifestRel}: install.ruleSets[${i}].file must match rulesets/<name>.json (got ${JSON.stringify(file)})`,
+          )
+          return
+        }
+        const setName = match[1]
+        const setDir = join(appsDir, app, '.bffless', 'proxy-rules', setName)
+        if (!existsSync(join(setDir, 'ruleset.yaml'))) {
+          errors.push(
+            `${manifestRel}: install.ruleSets[${i}].file ("${file}") has no matching authored set at ` +
+              `apps/${app}/.bffless/proxy-rules/${setName}/ruleset.yaml`,
+          )
+        }
+      })
+    }
+  }
+
   return errors
 }
 
