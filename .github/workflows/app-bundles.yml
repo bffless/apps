@@ -172,12 +172,22 @@ jobs:
           node /tmp/build-registry.mjs
 
       # Publishes registry-staging/ (containing only registry.json) to the app-registry alias.
-      # Operator maps apps.bffless.dev -> app-registry + a ~1h cache rule (see PR checklist).
+      #
+      # Deliberately a DIFFERENT instance from the app deploys above: apps ship to the
+      # demo instance (vars.BFFLESS_URL = j5s.dev), while the registry is the public
+      # distribution endpoint every self-hosted CE fetches, so it lives on the bffless.dev
+      # instance (vars.BFFLESS_REGISTRY_URL) behind apps.bffless.dev. Keeping them split
+      # means resetting the demo box can never take the catalog down for everyone.
+      #
+      # Operator: map apps.bffless.dev -> the app-registry alias on that instance and add
+      # a ~1h cache rule (see PR checklist). When the marketing site later owns that
+      # domain, this step layers registry.json onto the site's alias instead — the upload
+      # appends idempotently, so both can share one deployment.
       - name: Publish registry.json to BFFless
         uses: bffless/upload-artifact@v1
         with:
           path: registry-staging
-          api-url: ${{ vars.BFFLESS_URL }}
-          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
+          api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry
           description: 'App-catalog registry'
