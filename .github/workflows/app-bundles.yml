@@ -114,12 +114,21 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           cat > /tmp/build-registry.mjs <<'SCRIPT'
-          import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
+          import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
           import { join } from 'node:path'
 
           const repo = process.env.GITHUB_REPOSITORY
+          const stepSummary = process.env.GITHUB_STEP_SUMMARY
           const appsDir = 'apps'
           const apps = readdirSync(appsDir).filter((name) => statSync(join(appsDir, name)).isDirectory())
+
+          // Omission here is EXPECTED pre-first-release (a manifest can land in a PR before its
+          // first tag is ever cut) — the run must stay green. But a silently smaller registry.json
+          // is a real hazard (a typo'd version bump would drop an app with no failure anywhere), so
+          // every omission gets a loud, visible signal: a `::warning::` annotation (shows on the
+          // Actions run and in the checks UI) plus a line in the job summary — not just a log line
+          // buried in this step's raw output.
+          const omitted = []
 
           const entries = []
           for (const app of apps) {
@@ -129,7 +138,7 @@ jobs:
             const baseName = `${app}-v${manifest.version}.bundle`
             const sidecarPath = join('dist-bundles', `${baseName}.sha256`)
             if (!existsSync(sidecarPath)) {
-              console.log(`skip ${app}: no ${sidecarPath} (never published) — omitting from registry.json`)
+              omitted.push({ id: app, version: manifest.version })
               continue
             }
             const sha256 = readFileSync(sidecarPath, 'utf8').trim().split(/\s+/)[0]
@@ -145,6 +154,14 @@ jobs:
               sourceUrl: manifest.sourceUrl,
               requires: manifest.requires,
             })
+          }
+
+          for (const app of omitted) {
+            const message = `apps/${app.id}/bffless-app.json declares v${app.version} but no published release (tag ${app.id}-v${app.version}) exists yet — omitted from registry.json`
+            console.log(`::warning title=app-catalog registry::${message}`)
+            if (stepSummary) {
+              appendFileSync(stepSummary, `⚠️ omitted from registry.json: ${app.id} (no published release)\n`)
+            }
           }
 
           const registry = { schemaVersion: 1, apps: entries }
