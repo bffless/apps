@@ -5,17 +5,29 @@ description: Install a bffless-apps monorepo app onto the reader's own self-host
 
 # install-app
 
-> **Check the app catalog first.** CE ≥ 0.4.0 has an **Admin → Apps** page with 1-click
-> install for any app published to the catalog (currently Handoff —
-> `apps/handoff/bffless-app.json`; see the `publish-app` skill for how an app gets there).
-> For an app that's in the catalog and a target instance on CE ≥ 0.4.0, that page is the
-> **preferred path** — CE handles the preflight, the rule-set sync, the deployment, the
-> domain mapping, and the manual-step checklist for you, with no MCP registration needed.
-> Use **this** skill instead when: the target instance is older than CE 0.4.0, the app
-> hasn't been published to the catalog yet (e.g. `studio`/`reader` today), the catalog is
-> unreachable, or the operator specifically wants the manual MCP-driven route (e.g. to
-> customize the install, or because they're installing into a project the catalog's
-> project-picker default wouldn't choose).
+> **There are two install routes, and neither supersedes the other.** Ask which the
+> operator wants before starting; don't assume.
+>
+> - **1-click, via the catalog** — CE ≥ 0.4.0's **Admin → Apps** page, for any app
+>   published to the catalog (currently Handoff; see the `publish-app` skill for how an app
+>   gets there). CE runs the preflight, syncs the rule sets, deploys, maps the domain, and
+>   hands back a manual-step checklist. No MCP registration, no fork. You run the app the
+>   maintainers ship, and take its updates from the catalog.
+> - **Fork + this skill** — clone the repo and own the code. Slower to first success, but
+>   it's the route that lets you change the app: edit its rule sets, add or remove pipeline
+>   steps, restyle the frontend, deploy from your own CI on your own cadence.
+>
+> Pick by what the operator wants to *do*, not by which is newer: trying Handoff out or
+> standing up a stock instance → catalog; intending to modify the app or run it from their
+> own repo → fork. **Use this skill** for the fork route, and also whenever the catalog
+> isn't an option: target CE older than 0.4.0, an app not yet published (e.g.
+> `studio`/`reader` today), or an unreachable registry.
+>
+> The two aren't a one-way door. A catalog install can be **ejected** later (Admin → Apps →
+> the installed app → Eject) — it hands over the fork URL, the `BFFLESS_URL` /
+> `BFFLESS_PROJECT` variables, and the API-key secret, and the fork's first deploy lands on
+> **the same alias** the catalog install created. So "start easy, customize later" is a
+> supported path, not a restart.
 
 Automates the **backend install** step of `GETTING-STARTED.md` for one app
 (`studio`, `handoff`, or `reader`). It drives the **existing** BFFless MCP against

@@ -138,8 +138,14 @@ by accident.
   both erode trust in the checklist. There is **no expression language** here on purpose
   (see the design spec's rationale) — if a step's condition doesn't map to one of these five
   values, split it into multiple steps or don't gate it.
-- **`eject`** — optional; how an installed-from-catalog app maps back to "take ownership"
-  by forking this monorepo: `{ repo, appPath, deployWorkflow, variables, secrets }`.
+- **`eject`** — optional, but fill it in: it's what keeps the catalog from being a dead
+  end. Publishing an app to the catalog does **not** replace the fork-and-own route
+  (`install-app`) — the two are different trades, easy-start versus customizable, and
+  neither supersedes the other. `eject` is the bridge between them: it tells CE how an
+  installed app maps back to "take ownership" by forking this monorepo, and because the
+  fork's first deploy lands on the same alias the install created, a user can start on the
+  catalog and move to a fork without starting over. Shape:
+  `{ repo, appPath, deployWorkflow, variables, secrets }`.
   Handoff: `repo: "bffless/apps"`, `appPath: "apps/handoff"`,
   `deployWorkflow: "deploy-handoff.yml"`, `variables: ["BFFLESS_URL", "BFFLESS_PROJECT"]`,
   `secrets: ["BFFLESS_API_KEY"]` — read straight off what `.github/workflows/deploy-<app>.yml`
