@@ -56,9 +56,12 @@ but the section must be present. Run `pnpm apps:check` locally to reproduce CI.
 ## App-catalog manifest (`bffless-app.json`) — optional, per app
 
 Any `apps/<app>/` may additionally ship an **`apps/<app>/bffless-app.json`** manifest, which opts the
-app into BFFless CE's one-click **app catalog** (self-hosted CE ≥ 0.3.15 fetches a signed
-`registry.json`, downloads the app's bundle, and installs it end to end — proxy rule sets, static
-deployment, domain, manual-step checklist). This is **opt-in**: an app with no manifest (Studio,
+app into BFFless CE's one-click **app catalog** (self-hosted CE ≥ 0.4.0 fetches
+`registry.json`, downloads the app's bundle, verifies its `sha256`, and installs it end to end —
+proxy rule sets, static deployment, domain, manual-step checklist). Don't confuse that **0.4.0
+catalog-feature floor** with an app's own `requires.ceMin`, which is about what the *app* needs:
+Handoff declares `0.3.15` because that's where local-filesystem presigned uploads landed. This is
+**opt-in**: an app with no manifest (Studio,
 Reader, as of this writing) is unaffected and still passes `pnpm apps:check` — the catalog is an
 additional install path alongside the existing manual `GETTING-STARTED.md` flow, not a replacement.
 
