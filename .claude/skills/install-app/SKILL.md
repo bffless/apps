@@ -5,6 +5,18 @@ description: Install a bffless-apps monorepo app onto the reader's own self-host
 
 # install-app
 
+> **Check the app catalog first.** CE ≥ 0.4.0 has an **Admin → Apps** page with 1-click
+> install for any app published to the catalog (currently Handoff —
+> `apps/handoff/bffless-app.json`; see the `publish-app` skill for how an app gets there).
+> For an app that's in the catalog and a target instance on CE ≥ 0.4.0, that page is the
+> **preferred path** — CE handles the preflight, the rule-set sync, the deployment, the
+> domain mapping, and the manual-step checklist for you, with no MCP registration needed.
+> Use **this** skill instead when: the target instance is older than CE 0.4.0, the app
+> hasn't been published to the catalog yet (e.g. `studio`/`reader` today), the catalog is
+> unreachable, or the operator specifically wants the manual MCP-driven route (e.g. to
+> customize the install, or because they're installing into a project the catalog's
+> project-picker default wouldn't choose).
+
 Automates the **backend install** step of `GETTING-STARTED.md` for one app
 (`studio`, `handoff`, or `reader`). It drives the **existing** BFFless MCP against
 **your own** BFFless project — it does not add a runtime or call the maintainers'
