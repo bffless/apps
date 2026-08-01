@@ -11,7 +11,7 @@
 //                 (local dev helper: pnpm store:assets)
 // Env: GITHUB_REPOSITORY (required), ASSET_BASE_URL (optional, see build-registry.mjs).
 
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -36,7 +36,8 @@ const repo = process.env.GITHUB_REPOSITORY
 if (!repo) fail('GITHUB_REPOSITORY env var is required')
 
 // 1. Registry (omission warnings are emitted by the shared builder's CLI path; here we
-// re-emit them ourselves so both entry points behave identically).
+// re-emit them ourselves — ::warning annotation plus GITHUB_STEP_SUMMARY line — so both
+// entry points behave identically).
 const { registry, omitted } = buildRegistry({
   appsDir: join(repoRoot, 'apps'),
   sidecarsDir,
@@ -47,6 +48,9 @@ for (const app of omitted) {
   console.log(
     `::warning title=app-catalog registry::apps/${app.id}/bffless-app.json declares v${app.version} but no published release (tag ${app.id}-v${app.version}) exists yet — omitted from registry.json`,
   )
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `⚠️ omitted from registry.json: ${app.id} (no published release)\n`)
+  }
 }
 const registryJson = JSON.stringify(registry, null, 2) + '\n'
 
