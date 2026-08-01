@@ -542,6 +542,40 @@ function mockServePath(storageKey: string): string {
   return `/api/uploads/content/${storageKey}`
 }
 
+/**
+ * Dev-mock-only workaround: the Site viewer renders `node.url` as an
+ * `<iframe src>`, and that's an actual browser *navigation* request
+ * (`sec-fetch-dest: iframe`) — unlike `fetch()`/XHR calls, MSW's browser
+ * service worker does not reliably intercept those for a dynamically created
+ * iframe, so a served content URL (`mockServePath`) falls through to the Vite
+ * dev proxy and loads whatever's live upstream instead of the seeded mock
+ * bytes. Inlining the entry's bytes as a `data:` URL sidesteps the network
+ * entirely — the iframe renders the content directly, no request involved.
+ *
+ * Scoped to **single-file** Sites only (the entry is the only object under
+ * its path prefix): a multi-asset Site's Entry can reference relative assets
+ * and issue runtime `fetch()`s that only resolve against a real same-origin
+ * URL (see `uploadSite.test.ts`), which a `data:` URL — opaque origin, no
+ * relative resolution — can't support. Those keep the normal serve path
+ * (`mockServePath`), preserving the mock/real URL contract this file's tests
+ * assert on. Real (non-mock) responses are unaffected either way; this only
+ * changes what the mock hands back.
+ */
+function entryDataUrl(path: string, entry: string): string {
+  const entryKey = `${path}/${entry}`
+  const obj = objects.get(entryKey)
+  if (!obj) return mockServePath(entryKey)
+  const prefix = `${path}/`
+  const hasOtherAssets = [...objects.keys()].some((k) => k !== entryKey && k.startsWith(prefix))
+  if (hasOtherAssets) return mockServePath(entryKey)
+  try {
+    const html = new TextDecoder('utf-8').decode(obj.body)
+    return `data:${obj.type || 'text/html'};charset=utf-8,${encodeURIComponent(html)}`
+  } catch {
+    return mockServePath(entryKey)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -1141,7 +1175,9 @@ export const handlers = [
     const id = String(++nodeCounter)
     const entry = body.entry ?? 'index.html'
     const path = body.path ?? ''
-    const siteUrl = mockServePath(`${path}/${entry}`)
+    // See entryDataUrl() — dev-mock-only, works around iframe navigations not
+    // being intercepted by the MSW service worker.
+    const siteUrl = entryDataUrl(path, entry)
     const ownerId = mockCurrentUser?.id ?? null
 
     const raw = {

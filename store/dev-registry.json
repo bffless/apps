@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {
+      "id": "handoff",
+      "name": "Handoff",
+      "version": "1.0.0",
+      "bundleUrl": "https://github.com/bffless/apps/releases/download/handoff-v1.0.0/handoff-v1.0.0.bundle.zip",
+      "sha256": "a029bdcfeaf75b4110284879189951eaa23cd4e1ad51eee23f938dcec100217b",
+      "summary": "Share files, folders, and Sites with per-folder access control, share links, and live comments.",
+      "description": "Handoff is an internal, permissioned file server that runs entirely on your BFFless project.\n\n## Highlights\n\n- Per-folder access control\n- Share links\n- Live Sites\n",
+      "category": "files",
+      "thumbnailUrl": "https://apps.bffless.dev/assets/handoff/thumbnail.png",
+      "iconUrl": "https://apps.bffless.dev/assets/handoff/icon.png",
+      "screenshots": [
+        "https://apps.bffless.dev/assets/handoff/screenshots/01-folders.png"
+      ],
+      "docsUrl": "https://github.com/bffless/apps/blob/main/apps/handoff/bffless/README.md",
+      "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/handoff",
+      "requires": { "presignedStorage": true, "ceMin": "0.3.15" }
+    }
+  ]
+}

@@ -103,3 +103,20 @@ and every `install.ruleSets[].file` maps to an authored set directory. This is a
 local mirror of CE's shape checks, not a substitute for them — a manifest that passes here can still
 be rejected by CE's real `validateAppManifest` if a CE-side rule diverges from this copy (e.g. the
 reserved-subdomain list); when in doubt, cross-check against a real CE checkout.
+
+### App-catalog content (`apps/<app>/catalog/`) — required for manifested apps
+
+Any `apps/<app>/` that ships a `bffless-app.json` manifest must also include a `catalog/` directory
+with **required** files that populate the app store:
+
+- **`description.md`** (required) — Markdown description of the app, displayed on its store page
+- **`thumbnail.png`** (required) — Landscape thumbnail image for the store catalog grid
+- **`icon.png`** (optional) — Square icon for UI chrome
+- **`screenshots/`** (optional) — Directory of PNG screenshots, alphabetically sorted by filename
+
+These catalog assets are folded into `registry.json` by `scripts/build-registry.mjs`: `description.md`
+is inlined into the registry entry as its `description` field (not served as a standalone file),
+while the PNGs are copied to and served from `https://apps.bffless.dev/assets/<app>/` (e.g.
+`thumbnail.png`, `screenshots/<file>.png`). Without catalog content, the registry entry and store
+page render half-empty silently — `pnpm apps:check` enforces that manifested apps include at least
+`description.md` and `thumbnail.png` to catch this before deploy.
