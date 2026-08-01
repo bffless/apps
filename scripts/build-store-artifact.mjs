@@ -6,7 +6,7 @@
 // can never be deployed out of sync (deployments merge per commit SHA, so two
 // independent workflows cannot co-write one alias).
 //
-// CLI: node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out store-dist] [--stage-only]
+// CLI: node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out registry-staging] [--stage-only]
 //   --stage-only: build registry + stage store/public/assets, skip the site build
 //                 (local dev helper: pnpm store:assets)
 // Env: GITHUB_REPOSITORY (required), ASSET_BASE_URL (optional, see build-registry.mjs).
@@ -24,7 +24,7 @@ const opt = (flag, fallback) => {
   return i === -1 ? fallback : args[i + 1]
 }
 const sidecarsDir = resolve(repoRoot, opt('--sidecars', 'dist-bundles'))
-const outDir = resolve(repoRoot, opt('--out', 'store-dist'))
+const outDir = resolve(repoRoot, opt('--out', 'registry-staging'))
 const stageOnly = args.includes('--stage-only')
 
 function fail(message) {
@@ -89,18 +89,20 @@ const build = spawnSync('pnpm', ['--filter', 'store', 'build'], {
 })
 if (build.status !== 0) fail(`store build failed (exit ${build.status})`)
 
-// 4. Assemble store-dist: site + registry.json at the root, plus a transition copy at
-// registry-staging/registry.json — the live domain mapping still uses path /registry-staging
-// until the rollout step flips it to /, and CE's registry URL must never 404 in between.
-// Remove the transition copy (and this comment) once the domain path is /.
+// 4. Assemble the artifact: site + registry.json at the root. The output dir is named
+// registry-staging — not a build label — because bffless/upload-artifact prefixes every zip
+// entry with the literal `path` input (repos/upload-artifact/src/zip.ts), and CE stores those
+// entry names verbatim as each file's publicPath, matched against the domain mapping's path
+// at serve time. The live apps.bffless.dev domain mapping has path /registry-staging, so this
+// name must stay registry-staging to keep every publicPath (site pages, registry.json, assets)
+// matching what's already being served — renaming it breaks the live site. A future first-class
+// fix is an upload-artifact option to control the zip-entry prefix independently of --out.
 rmSync(outDir, { recursive: true, force: true })
 cpSync(join(repoRoot, 'store', 'dist'), outDir, { recursive: true })
 writeFileSync(join(outDir, 'registry.json'), registryJson)
-mkdirSync(join(outDir, 'registry-staging'), { recursive: true })
-writeFileSync(join(outDir, 'registry-staging', 'registry.json'), registryJson)
 
 // 5. Smoke assertions — fail loudly rather than deploy a structurally broken artifact.
-const mustExist = ['index.html', '404.html', 'registry.json', 'registry-staging/registry.json']
+const mustExist = ['index.html', '404.html', 'registry.json']
 for (const entry of registry.apps) {
   mustExist.push(join('apps', entry.id, 'index.html'))
   mustExist.push(join('assets', entry.id, 'thumbnail.png'))

@@ -4,6 +4,7 @@
   "name": "Handoff",
   "version": "1.0.0",
   "summary": "Share files, folders, and Sites with per-folder access control, share links, and live comments.",
+  "category": "files",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/handoff/bffless/README.md",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/handoff",
   "requires": {

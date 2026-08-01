@@ -114,8 +114,9 @@ with **required** files that populate the app store:
 - **`icon.png`** (optional) — Square icon for UI chrome
 - **`screenshots/`** (optional) — Directory of PNG screenshots, alphabetically sorted by filename
 
-These catalog assets are folded into `registry.json` by `scripts/build-registry.mjs` and served from
-`https://apps.bffless.dev/assets/<app>/description.md` (and similarly for images). Without catalog
-content, the registry entry and store page render half-empty silently — `pnpm apps:check` enforces
-that manifested apps include at least `description.md` and `thumbnail.png` to catch this before
-deploy.
+These catalog assets are folded into `registry.json` by `scripts/build-registry.mjs`: `description.md`
+is inlined into the registry entry as its `description` field (not served as a standalone file),
+while the PNGs are copied to and served from `https://apps.bffless.dev/assets/<app>/` (e.g.
+`thumbnail.png`, `screenshots/<file>.png`). Without catalog content, the registry entry and store
+page render half-empty silently — `pnpm apps:check` enforces that manifested apps include at least
+`description.md` and `thumbnail.png` to catch this before deploy.

@@ -580,9 +580,11 @@ Root `package.json` scripts — add:
 ```
 store/dist/
 store/public/assets/
-store-dist/
+/registry-staging/
 .tmp-store/
 ```
+
+(The composite output dir is named `registry-staging`, not `store-dist` — see Task 7's note on why that name is load-bearing.)
 
 - [ ] **Step 2: Write the registry loader**
 
@@ -990,7 +992,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `buildRegistry` (Task 1), the `store` package build (Tasks 5–6), `apps/<app>/catalog/` dirs (Task 3).
-- Produces: `store-dist/` = site pages at root + `registry.json` + `registry-staging/registry.json` (transition copy, see Step 1 comment) + `assets/<app>/…`; exits non-zero if smoke assertions fail. CLI: `node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out store-dist] [--stage-only]`. Both Task 8 workflows run it; `pnpm store:assets` (`--stage-only`) populates `store/public/assets/` for local dev.
+- Produces: `registry-staging/` = site pages at root + `registry.json` + `assets/<app>/…`; exits non-zero if smoke assertions fail. The output dir is named `registry-staging` (not `store-dist`) because upload-artifact prefixes every zip entry with the `path` input and CE serves by matching the domain mapping's path against those publicPaths — the live `apps.bffless.dev` mapping's path is `/registry-staging`, so this name is load-bearing (see Step 1 comment). CLI: `node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out registry-staging] [--stage-only]`. Both Task 8 workflows run it; `pnpm store:assets` (`--stage-only`) populates `store/public/assets/` for local dev.
 
 - [ ] **Step 1: Write the orchestrator**
 
@@ -1003,7 +1005,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 // can never be deployed out of sync (deployments merge per commit SHA, so two
 // independent workflows cannot co-write one alias).
 //
-// CLI: node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out store-dist] [--stage-only]
+// CLI: node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out registry-staging] [--stage-only]
 //   --stage-only: build registry + stage store/public/assets, skip the site build
 //                 (local dev helper: pnpm store:assets)
 // Env: GITHUB_REPOSITORY (required), ASSET_BASE_URL (optional, see build-registry.mjs).
@@ -1021,7 +1023,7 @@ const opt = (flag, fallback) => {
   return i === -1 ? fallback : args[i + 1]
 }
 const sidecarsDir = resolve(repoRoot, opt('--sidecars', 'dist-bundles'))
-const outDir = resolve(repoRoot, opt('--out', 'store-dist'))
+const outDir = resolve(repoRoot, opt('--out', 'registry-staging'))
 const stageOnly = args.includes('--stage-only')
 
 function fail(message) {
@@ -1082,18 +1084,18 @@ const build = spawnSync('pnpm', ['--filter', 'store', 'build'], {
 })
 if (build.status !== 0) fail(`store build failed (exit ${build.status})`)
 
-// 4. Assemble store-dist: site + registry.json at the root, plus a transition copy at
-// registry-staging/registry.json — the live domain mapping still uses path /registry-staging
-// until the rollout step flips it to /, and CE's registry URL must never 404 in between.
-// Remove the transition copy (and this comment) once the domain path is /.
+// 4. Assemble the artifact: site + registry.json at the root. The output dir is named
+// registry-staging — not a build label — because upload-artifact prefixes every zip entry with
+// the literal `path` input and CE stores those entry names verbatim as each file's publicPath,
+// matched against the domain mapping's path at serve time. The live apps.bffless.dev domain
+// mapping has path /registry-staging, so this name must stay registry-staging to keep every
+// publicPath matching what's already being served — renaming it breaks the live site.
 rmSync(outDir, { recursive: true, force: true })
 cpSync(join(repoRoot, 'store', 'dist'), outDir, { recursive: true })
 writeFileSync(join(outDir, 'registry.json'), registryJson)
-mkdirSync(join(outDir, 'registry-staging'), { recursive: true })
-writeFileSync(join(outDir, 'registry-staging', 'registry.json'), registryJson)
 
 // 5. Smoke assertions — fail loudly rather than deploy a structurally broken artifact.
-const mustExist = ['index.html', '404.html', 'registry.json', 'registry-staging/registry.json']
+const mustExist = ['index.html', '404.html', 'registry.json']
 for (const entry of registry.apps) {
   mustExist.push(join('apps', entry.id, 'index.html'))
   mustExist.push(join('assets', entry.id, 'thumbnail.png'))
@@ -1116,7 +1118,7 @@ node scripts/fetch-sidecars.mjs --sidecars dist-bundles
 GITHUB_REPOSITORY=bffless/apps node scripts/build-store-artifact.mjs
 ```
 
-Expected: exits 0; `store-dist/` contains `index.html`, `apps/handoff/index.html`, `registry.json`, `registry-staging/registry.json`, `assets/handoff/thumbnail.png`, `assets/handoff/screenshots/…`. Inspect `store-dist/registry.json` — the handoff entry carries the new metadata fields and the same `sha256` as the live registry.
+Expected: exits 0; `registry-staging/` contains `index.html`, `apps/handoff/index.html`, `registry.json`, `assets/handoff/thumbnail.png`, `assets/handoff/screenshots/…`, and NO nested `registry-staging/registry-staging/`. Inspect `registry-staging/registry.json` — the handoff entry carries the new metadata fields and the same `sha256` as the live registry.
 
 - [ ] **Step 3: Verify the smoke assertions actually fire**
 
@@ -1126,7 +1128,7 @@ Expected: `exit=1` with `artifact is missing: assets/handoff/thumbnail.png`. Res
 - [ ] **Step 4: Visual check of the real artifact**
 
 ```bash
-cd store-dist && python3 -m http.server 8899 &
+cd registry-staging && python3 -m http.server 8899 &
 cd /home/rico/bffless/localdev-tools
 node shot.mjs "http://localhost:8899/" --out /tmp/claude-1000/-home-rico-bffless/a37a4778-9fbd-4228-b581-4ac39c3dea11/scratchpad/artifact-index.png --full
 node shot.mjs "http://localhost:8899/apps/handoff/" --out /tmp/claude-1000/-home-rico-bffless/a37a4778-9fbd-4228-b581-4ac39c3dea11/scratchpad/artifact-detail.png --full
@@ -1153,7 +1155,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `scripts/fetch-sidecars.mjs`, `scripts/build-store-artifact.mjs`.
-- Produces: both workflows publish `store-dist/` to alias `app-registry` at `vars.BFFLESS_REGISTRY_URL` with `secrets.BFFLESS_REGISTRY_API_KEY`, serialized under the `app-bundles` concurrency group.
+- Produces: both workflows publish `registry-staging/` to alias `app-registry` at `vars.BFFLESS_REGISTRY_URL` with `secrets.BFFLESS_REGISTRY_API_KEY`, serialized under the `app-bundles` concurrency group.
 
 - [ ] **Step 1: Rewire `app-bundles.yml`**
 
@@ -1169,22 +1171,26 @@ Replace the three steps `Fetch sha256 sidecars for other published apps`, `Build
 
       # One composite artifact: store site + registry.json + assets. See
       # scripts/build-store-artifact.mjs and docs/superpowers/specs/2026-08-01-app-store-frontend-design.md.
+      # Trade-off: this run builds the composite from the tag's commit, which may be older than
+      # main — any site/catalog changes made on main since the tag would be temporarily reverted
+      # by this deploy, until the next deploy-store push run on main rebuilds from HEAD. Accepted:
+      # self-heals on the next store-path push to main.
       - name: Build store artifact (site + registry.json + assets)
-        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out store-dist
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out registry-staging
 
       # Publishes to the app-registry alias on the bffless.dev instance (deliberately NOT
       # the demo instance, so resetting the demo box can never take the catalog down).
       - name: Publish store + registry to BFFless
         uses: bffless/upload-artifact@v1
         with:
-          path: store-dist
+          path: registry-staging
           api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
           api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry
           description: 'App store + catalog registry'
 ```
 
-Also update the header comment block: the workflow now publishes the store site alongside `registry.json`, and the operator caveat about mapping `apps.bffless.dev` gains "domain path must be `/` (see rollout task in docs/superpowers/plans/2026-08-01-app-store-frontend.md)".
+Also update the header comment block: the workflow now publishes the store site alongside `registry.json`, and the operator caveat about mapping `apps.bffless.dev` gains: the artifact dir name (`registry-staging`) must stay in sync with the live domain mapping's path, since upload-artifact prefixes every zip entry with it and CE matches publicPaths against that path.
 
 - [ ] **Step 2: Create `deploy-store.yml`**
 
@@ -1254,13 +1260,13 @@ jobs:
         run: node scripts/fetch-sidecars.mjs --sidecars dist-bundles
 
       - name: Build store artifact (site + registry.json + assets)
-        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out store-dist
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out registry-staging
 
       - name: Deploy to apps.bffless.dev
         if: github.event_name == 'push'
         uses: bffless/upload-artifact@v1
         with:
-          path: store-dist
+          path: registry-staging
           api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
           api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry
@@ -1305,11 +1311,12 @@ gh pr create --repo bffless/apps --title "feat: app store frontend for apps.bffl
 Design: docs/superpowers/specs/2026-08-01-app-store-frontend-design.md
 
 ## Rollout (after merge — operator)
-- [ ] deploy-store.yml runs on merge and publishes the composite artifact (registry.json is served at BOTH /registry.json and the transition copy /registry-staging/registry.json, so the live domain path keeps working)
-- [ ] flip the apps.bffless.dev domain mapping path from /registry-staging to /
+- [ ] deploy-store.yml runs on merge and publishes the composite artifact — the artifact dir (and
+      every publicPath in it) is named `registry-staging` to match the live domain mapping's
+      existing path, so the site + registry.json + assets all serve immediately with no domain
+      change and no 404 window
 - [ ] add cache rules: ~1h /registry.json, 24h /assets/*
 - [ ] verify https://apps.bffless.dev/ and /registry.json; verify a CE instance still lists Handoff in Admin → Apps
-- [ ] follow-up PR: drop the registry-staging transition copy from build-store-artifact.mjs
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
@@ -1317,13 +1324,12 @@ EOF
 
 **PAUSE: the user reviews and merges the PR.** Do not merge it yourself.
 
-- [ ] **Step 2 (after merge): watch the deploy**
+- [ ] **Step 2 (after merge): watch the first deploy**
 
-`gh run watch` the `deploy-store.yml` run on main (or `gh run list --repo bffless/apps --workflow deploy-store.yml`). Confirm success, then: `curl -s https://apps.bffless.dev/registry.json | head -30` — must still return the registry (served via the transition path while the domain path is `/registry-staging`).
+`gh run watch` the `deploy-store.yml` run on main (or `gh run list --repo bffless/apps --workflow deploy-store.yml`). Confirm success, then: `curl -s https://apps.bffless.dev/registry.json | head -30` — must return the registry with no domain change required (the artifact's publicPaths already match the live domain mapping's `/registry-staging` path).
 
-- [ ] **Step 3: Flip the domain path and add cache rules (MCP, bffless-dev instance)**
+- [ ] **Step 3: Add cache rules (MCP, bffless-dev instance)**
 
-- `mcp__bffless-dev__update_domain` on domain `d6c04a43-419c-47df-aaab-66ff0b7b41af` (apps.bffless.dev): set `path` to `/`.
 - `mcp__bffless-dev__create_cache_rule` on project `8d14ae31-a9f5-4620-9ee7-d0f147a6f6ae` (bffless/apps): pattern `/registry.json`, max-age ~3600.
 - `mcp__bffless-dev__create_cache_rule`: pattern `/assets/*`, max-age ~86400.
 
@@ -1352,14 +1358,10 @@ Admin → Apps could render the thumbnail on each catalog card and the descripti
 EOF
 ```
 
-- [ ] **Step 6: Follow-up cleanup note**
-
-Leave a comment on the merged PR (or a tracking issue in bffless/apps) that the `registry-staging/` transition copy in `build-store-artifact.mjs` can be dropped in a follow-up PR now that the domain path is `/`.
-
 ---
 
 ## Self-Review Notes
 
-- **Spec coverage:** §1 store site → Tasks 5–6; §2 catalog convention → Tasks 3–4; §3 registry extension → Task 1; §4 pipeline → Tasks 1, 2, 7, 8; §5 serving changes → Task 9; §6 edge cases → Task 1 (omission warnings, missing-catalog tolerance), Task 6 (placeholder card), Task 7 (transition copy avoids the domain-path race — an addition beyond the spec, noted in the PR body); §7 testing → Tasks 1 (unit), 7 (smoke + E2E + visual), 9 (post-deploy).
-- **Deviation from spec, deliberate:** the spec's rollout said "update the domain path" with no transition mechanism; the dual-write `registry-staging/registry.json` copy closes the window where CE's registry URL would 404 between the first composite deploy and the domain-path flip.
+- **Spec coverage:** §1 store site → Tasks 5–6; §2 catalog convention → Tasks 3–4; §3 registry extension → Task 1; §4 pipeline → Tasks 1, 2, 7, 8; §5 serving changes → Task 9; §6 edge cases → Task 1 (omission warnings, missing-catalog tolerance), Task 6 (placeholder card), Task 7 (the composite output dir is named `registry-staging` to match the live domain mapping's path — an addition beyond the spec, noted in the PR body); §7 testing → Tasks 1 (unit), 7 (smoke + E2E + visual), 9 (post-deploy).
+- **Deviation from spec, deliberate:** the spec's rollout said "update the domain path"; in practice no domain-path change is needed at all — naming the composite artifact's output dir `registry-staging` (matching upload-artifact's zip-entry-prefix behavior to the live domain mapping's existing path) makes every publicPath in the artifact serve correctly from the first deploy, with zero operator action and zero 404 window.
 - **Type consistency:** `RegistryEntry` fields in `store/src/lib/registry.ts` (Task 5) match the entry object built in `build-registry.mjs` (Task 1); `assetPath`/`loadRegistry` names match across Tasks 5–6; `--sidecars`/`--out`/`--stage-only` flags match across Tasks 2, 7, 8; alias `app-registry` + vars `BFFLESS_REGISTRY_URL`/`BFFLESS_REGISTRY_API_KEY` match the live workflow.

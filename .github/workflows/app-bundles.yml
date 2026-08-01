@@ -13,8 +13,9 @@ name: App bundles — build + publish
 #     cutting a new tag (e.g. re-running after a registry-only fix).
 #
 # Operator steps this workflow does NOT do (see the PR description checklist):
-#   - map `apps.bffless.dev` to the `app-registry` alias on the target instance; domain path
-#     must be `/` (see rollout task in docs/superpowers/plans/2026-08-01-app-store-frontend.md)
+#   - map `apps.bffless.dev` to the `app-registry` alias on the target instance; the artifact
+#     dir name (`registry-staging`, see scripts/build-store-artifact.mjs) must keep matching the
+#     live domain mapping's path (`/registry-staging`) — publicPaths are derived from it verbatim
 #   - add a ~1h TTL cache rule on that alias
 on:
   push:
@@ -101,15 +102,19 @@ jobs:
 
       # One composite artifact: store site + registry.json + assets. See
       # scripts/build-store-artifact.mjs and docs/superpowers/specs/2026-08-01-app-store-frontend-design.md.
+      # Trade-off: this run builds the composite from the tag's commit, which may be older than
+      # main — any site/catalog changes made on main since the tag would be temporarily reverted
+      # by this deploy, until the next deploy-store push run on main rebuilds from HEAD. Accepted:
+      # self-heals on the next store-path push to main.
       - name: Build store artifact (site + registry.json + assets)
-        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out store-dist
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out registry-staging
 
       # Publishes to the app-registry alias on the bffless.dev instance (deliberately NOT
       # the demo instance, so resetting the demo box can never take the catalog down).
       - name: Publish store + registry to BFFless
         uses: bffless/upload-artifact@v1
         with:
-          path: store-dist
+          path: registry-staging
           api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
           api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry

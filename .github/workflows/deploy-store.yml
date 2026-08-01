@@ -63,13 +63,13 @@ jobs:
         run: node scripts/fetch-sidecars.mjs --sidecars dist-bundles
 
       - name: Build store artifact (site + registry.json + assets)
-        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out store-dist
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out registry-staging
 
       - name: Deploy to apps.bffless.dev
         if: github.event_name == 'push'
         uses: bffless/upload-artifact@v1
         with:
-          path: store-dist
+          path: registry-staging
           api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
           api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry

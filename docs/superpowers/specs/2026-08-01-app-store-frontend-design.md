@@ -84,9 +84,9 @@ New orchestrator **`scripts/build-store-artifact.mjs`**:
 
 1. Build `registry.json` (manifests + fetched sha256 sidecars — sidecar fetching stays `gh release
    download`, run by the workflow before this script).
-2. Copy each **published** app's `catalog/` assets → `store-dist/assets/<app>/…`.
-3. `astro build` the store, consuming the registry JSON → `store-dist/` (site at root).
-4. Write `registry.json` to `store-dist/registry.json`.
+2. Copy each **published** app's `catalog/` assets → `registry-staging/assets/<app>/…`.
+3. `astro build` the store, consuming the registry JSON → `registry-staging/` (site at root).
+4. Write `registry.json` to `registry-staging/registry.json`.
 5. Smoke-assert the artifact: `index.html` and `registry.json` present, and for every registry
    entry `<id>`: `apps/<id>/index.html` and `assets/<id>/thumbnail.png` present.
 
@@ -94,8 +94,8 @@ Two callers, serialized by the existing `app-bundles` concurrency group (`cancel
 false`):
 
 - **`app-bundles.yml`** (existing) — after bundle build + GitHub release publish, runs the
-  composite build and deploys `store-dist/` (replacing today's registry-only upload of
-  `registry-staging/`).
+  composite build and deploys `registry-staging/` — the same dir name as today's registry-only
+  upload, kept deliberately so its publicPaths keep matching the live domain mapping's path.
 - **`deploy-store.yml`** (new) — on push to `main` touching `store/**`, `apps/*/catalog/**`,
   `apps/*/bffless-app.json`, or the build scripts: fetch all published apps' sidecars, run the same
   composite build, deploy.
@@ -107,9 +107,14 @@ in v1 (possible follow-up, mirroring the per-app preview workflows).
 
 ## 5. Serving changes (operator/MCP steps at rollout)
 
-- Update the `apps.bffless.dev` domain mapping on the bffless.dev instance: path
-  `/registry-staging` → `/`. The public URL `https://apps.bffless.dev/registry.json` is unchanged
-  (CE's built-in default — must not break).
+- The domain mapping path never needs to change. `bffless/upload-artifact` prefixes every zip
+  entry with its `path` input, and CE stores those entry names verbatim as each file's
+  `publicPath`, matched against the domain mapping's path at serve time. The composite artifact's
+  output dir is named `registry-staging` (see `scripts/build-store-artifact.mjs`) specifically to
+  match the live `apps.bffless.dev` mapping's existing path (`/registry-staging`) — so the site,
+  `registry.json`, and assets all serve immediately on first deploy, with zero operator action and
+  zero 404 window. The public URL `https://apps.bffless.dev/registry.json` is unchanged (CE's
+  built-in default — must not break).
 - Add cache rules: ~1h on `/registry.json` (originally on the ce#567 PR checklist, never applied),
   longer (e.g. 24h) on `/assets/*`.
 - `isSpa` stays `false`; `isPublic` stays `true`.

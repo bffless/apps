@@ -46,8 +46,9 @@ const icon = assetPath(app.iconUrl)
         <li>Pick <strong>{name}</strong> and click <strong>Install</strong> — the bundle is fetched, checksum-verified, and set up end to end.</li>
       </ol>
       <p class="mt-3 text-sm text-zinc-500">
-        No BFFless instance yet? <a href="https://docs.bffless.dev" class="underline hover:text-zinc-700">Self-host CE</a> first —
-        or <a href={app.sourceUrl} class="underline hover:text-zinc-700">fork the source</a> and deploy it yourself.
+        No BFFless instance yet? <a href="https://docs.bffless.dev" class="underline hover:text-zinc-700">Self-host CE</a> first{app.sourceUrl && (
+          <> — or <a href={app.sourceUrl} class="underline hover:text-zinc-700">fork the source</a> and deploy it yourself</>
+        )}.
       </p>
     </section>
 
