@@ -1,0 +1,11 @@
+---
+import { loadRegistry } from '../lib/registry'
+const { apps } = loadRegistry()
+---
+<html lang="en">
+  <head><meta charset="utf-8" /><title>BFFless Apps</title></head>
+  <body>
+    <h1>BFFless Apps</h1>
+    <ul>{apps.map((app) => <li>{app.name} v{app.version}</li>)}</ul>
+  </body>
+</html>

@@ -24,7 +24,10 @@
     "skills:check": "node scripts/sync-skills.mjs --check",
     "apps:check": "node scripts/check-app-conventions.mjs",
     "scripts:test": "node --test scripts/*.test.mjs",
-    "sandcastle": "sh .sandcastle/prep.sh && npx tsx .sandcastle/main.ts"
+    "sandcastle": "sh .sandcastle/prep.sh && npx tsx .sandcastle/main.ts",
+    "store:dev": "pnpm --filter store dev",
+    "store:build": "pnpm --filter store build",
+    "store:assets": "node scripts/build-store-artifact.mjs --stage-only"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
