@@ -904,8 +904,14 @@ export function ViewerBody({ id }: { id: string }) {
             />
           )}
           {kind === 'image' && node.url && (
-            <div className="flex flex-1 items-center justify-center p-8">
-              {/* The wrapper is the pin overlay's coordinate space, so it has to
+            <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+              {/* `min-h-0` is load-bearing: as a flex item this box defaults to
+                  `min-height: auto`, so the natural-size wrapper below stretches
+                  it past the viewport-locked row, and the wrapper's `max-h-full`
+                  then resolves against *that* — clamping nothing and pushing the
+                  letterboxed image hundreds of px down the page.
+
+                  The wrapper is the pin overlay's coordinate space, so it has to
                   be the image's own box. Sizing it to the natural dimensions
                   (capped by the same max-* the <img> used to carry) reproduces
                   the previous layout exactly — including never upscaling a small

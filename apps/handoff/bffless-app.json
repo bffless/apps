@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "handoff",
   "name": "Handoff",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "summary": "Share files, folders, and Sites with per-folder access control, share links, and live comments.",
   "category": "files",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/handoff/bffless/README.md",
