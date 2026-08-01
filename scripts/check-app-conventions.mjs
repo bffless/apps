@@ -173,6 +173,20 @@ function checkManifest(app) {
     }
   }
 
+  // Store metadata (docs/superpowers/specs/2026-08-01-app-store-frontend-design.md):
+  // a cataloged app must ship its store-facing content, or the registry entry and
+  // store page render half-empty with no failure anywhere.
+  const catalogRel = `apps/${app}/catalog`
+  if (!existsSync(join(appsDir, app, 'catalog', 'description.md'))) {
+    errors.push(`missing ${catalogRel}/description.md — required for apps with a bffless-app.json`)
+  }
+  if (!existsSync(join(appsDir, app, 'catalog', 'thumbnail.png'))) {
+    errors.push(`missing ${catalogRel}/thumbnail.png — required for apps with a bffless-app.json`)
+  }
+  if (manifest.category !== undefined && typeof manifest.category !== 'string') {
+    errors.push(`${manifestRel}: category must be a string when present`)
+  }
+
   return errors
 }
 
