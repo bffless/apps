@@ -18,6 +18,9 @@ coverage
 playwright-report
 test-results
 screenshots
+# ...except the app-catalog convention's committed screenshots (apps/<app>/catalog/screenshots/*.png)
+!apps/*/catalog/screenshots/
+!apps/*/catalog/screenshots/**
 
 # local scratch
 *.local
