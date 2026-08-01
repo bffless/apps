@@ -1,0 +1,38 @@
+# Deletes a closed PR's store preview alias (store-pr-<N>) on the registry instance.
+# Counterpart to deploy-store.yml's PR-preview step, modeled on cleanup-preview-reader.yml —
+# but the store has no proxy rule sets, so alias deletion is the whole cleanup. The preview
+# deployments themselves are left behind (same as the app previews) and can be pruned from
+# the admin UI if they ever matter.
+name: Cleanup Store PR Preview
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - 'store/**'
+      - 'apps/*/catalog/**'
+      - 'apps/*/bffless-app.json'
+      - 'scripts/build-registry.mjs'
+      - 'scripts/build-store-artifact.mjs'
+      - 'scripts/fetch-sidecars.mjs'
+      - '.github/workflows/deploy-store.yml'
+      - '.github/workflows/cleanup-preview-store.yml'
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-preview-store-${{ github.event.pull_request.number }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete preview alias
+        env:
+          URL: ${{ vars.BFFLESS_REGISTRY_URL }}
+          KEY: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
+          N: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "X-API-Key: $KEY" "$URL/api/repo/bffless/apps/aliases/store-pr-$N")
+          echo "alias delete: HTTP $code"   # 204 deleted, 404 never existed — both fine
+          [ "$code" = "204" ] || [ "$code" = "404" ] || exit 1

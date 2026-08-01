@@ -5,8 +5,11 @@ name: Store — build + deploy apps.bffless.dev
 # main. app-bundles.yml publishes the same artifact after an app release; the shared
 # `app-bundles` concurrency group serializes the two so they can't race on the alias.
 #
-# On pull_request this builds (and smoke-asserts) without deploying — the CI check for
-# store changes.
+# On pull_request this builds (and smoke-asserts) the same artifact and deploys it to a
+# per-PR preview alias (store-pr-<N>) on the registry instance — never to app-registry.
+# The preview registry.json is built from the PR's manifests/catalog but only apps with a
+# PUBLISHED release get entries, same as production. cleanup-preview-store.yml deletes the
+# alias when the PR closes.
 
 on:
   push:
@@ -31,6 +34,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ${{ github.event_name == 'push' && 'app-bundles' || format('store-pr-{0}', github.event.pull_request.number) }}
@@ -74,3 +78,20 @@ jobs:
           api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry
           description: 'App store + catalog registry'
+
+      # PR preview on the same instance, own alias — the pr-comment carries the preview
+      # URLs. The composite's paths live under registry-staging/ (see the artifact-dir
+      # comment in scripts/build-store-artifact.mjs), which matches the base-path the
+      # action derives from `path`, so preview links resolve the same way production does.
+      - name: Deploy PR preview
+        if: github.event_name == 'pull_request'
+        uses: bffless/upload-artifact@v1
+        with:
+          path: registry-staging
+          api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
+          api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
+          alias: store-pr-${{ github.event.pull_request.number }}
+          description: 'Store preview for PR #${{ github.event.pull_request.number }}'
+          summary-title: Store Preview
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
