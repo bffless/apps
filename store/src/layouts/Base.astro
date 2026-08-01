@@ -1,0 +1,47 @@
+---
+interface Props {
+  title: string
+  description: string
+  /** Absolute URL for og:image (registry thumbnailUrl); falls back to the site logo. */
+  ogImage?: string
+}
+const { title, description, ogImage } = Astro.props
+const canonical = new URL(Astro.url.pathname, Astro.site)
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    {ogImage && <meta name="twitter:card" content="summary_large_image" />}
+  </head>
+  <body class="min-h-screen bg-zinc-50 text-zinc-900 antialiased">
+    <header class="border-b border-zinc-200 bg-white">
+      <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
+        <a href="/" class="flex items-center gap-2 font-semibold">
+          <img src="/logo.svg" alt="" class="h-7 w-7" />
+          <span>BFFless Apps</span>
+        </a>
+        <nav class="flex items-center gap-4 text-sm text-zinc-600">
+          <a href="https://docs.bffless.dev" class="hover:text-zinc-900">Docs</a>
+          <a href="https://github.com/bffless/apps" class="hover:text-zinc-900">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main class="mx-auto max-w-5xl px-4 py-10">
+      <slot />
+    </main>
+    <footer class="border-t border-zinc-200 py-8 text-center text-sm text-zinc-500">
+      Apps install in one click from Admin → Apps on any self-hosted
+      <a href="https://docs.bffless.dev" class="underline hover:text-zinc-700">BFFless CE</a> ≥ 0.4.0 instance.
+    </footer>
+  </body>
+</html>

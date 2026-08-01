@@ -1,11 +1,22 @@
 ---
+import Base from '../layouts/Base.astro'
+import AppCard from '../components/AppCard.astro'
 import { loadRegistry } from '../lib/registry'
 const { apps } = loadRegistry()
 ---
-<html lang="en">
-  <head><meta charset="utf-8" /><title>BFFless Apps</title></head>
-  <body>
-    <h1>BFFless Apps</h1>
-    <ul>{apps.map((app) => <li>{app.name} v{app.version}</li>)}</ul>
-  </body>
-</html>
+<Base
+  title="BFFless Apps — one-click apps for your own instance"
+  description="Open-source apps that run entirely on your self-hosted BFFless instance. Install any of them in one click from Admin → Apps."
+>
+  <div class="mb-10 max-w-2xl">
+    <h1 class="text-3xl font-bold tracking-tight">Apps for your BFFless instance</h1>
+    <p class="mt-3 text-zinc-600">
+      Every app here is open source and runs entirely on <em>your</em> self-hosted BFFless project —
+      its backend is a reviewable pipeline rule set, not someone else's server. Install in one click
+      from <strong>Admin → Apps</strong> on CE ≥ 0.4.0.
+    </p>
+  </div>
+  <div class="grid gap-6 sm:grid-cols-2">
+    {apps.map((app) => <AppCard app={app} />)}
+  </div>
+</Base>
