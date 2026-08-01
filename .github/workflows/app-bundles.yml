@@ -1,9 +1,10 @@
 name: App bundles — build + publish
 
 # Builds an app-catalog install bundle (scripts/build-app-bundle.mjs) for one app, publishes
-# it as a GitHub release asset, then rebuilds and republishes the app-catalog registry.json
-# (one entry per apps/<app>/bffless-app.json that has ever been published) to the
-# `app-registry` alias so CE's app-catalog feature can discover it. See
+# it as a GitHub release asset, then rebuilds and republishes the composite store artifact
+# (store site + registry.json + assets — one registry entry per apps/<app>/bffless-app.json
+# that has ever been published, see scripts/build-store-artifact.mjs) to the `app-registry`
+# alias so both the store site and CE's app-catalog feature can discover it. See
 # docs/app-pipelines-convention.md and bffless/ce's app-catalog feature (task-15-brief.md).
 #
 # Two triggers:
@@ -12,7 +13,8 @@ name: App bundles — build + publish
 #     cutting a new tag (e.g. re-running after a registry-only fix).
 #
 # Operator steps this workflow does NOT do (see the PR description checklist):
-#   - map `apps.bffless.dev` to the `app-registry` alias on the target instance
+#   - map `apps.bffless.dev` to the `app-registry` alias on the target instance; domain path
+#     must be `/` (see rollout task in docs/superpowers/plans/2026-08-01-app-store-frontend.md)
 #   - add a ~1h TTL cache rule on that alias
 on:
   push:
@@ -90,104 +92,25 @@ jobs:
             gh release create "$TAG" dist-bundles/*.zip dist-bundles/*.sha256 --repo "${{ github.repository }}" --title "$TAG" --notes "App-catalog bundle for ${{ steps.app.outputs.id }} v${{ steps.release.outputs.version }}."
           fi
 
-      # The registry lists every app that has ever been published, not just the one built in
-      # this run — fetch each other manifested app's already-published sha256 sidecar (best
-      # effort; an app with a manifest but no release yet is skipped with a warning, not a
-      # failure, so wiring up a new app's manifest doesn't break existing apps' registry entries).
+      # The registry lists every app that has ever been published — fetch the other apps'
+      # sidecars (best effort; a manifest with no release yet is omitted with a warning).
       - name: Fetch sha256 sidecars for other published apps
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          for manifest in apps/*/bffless-app.json; do
-            APP_DIR=$(dirname "$manifest")
-            APP=$(basename "$APP_DIR")
-            VERSION=$(node -p "require('./$manifest').version")
-            BASE="${APP}-v${VERSION}.bundle"
-            if [ -f "dist-bundles/${BASE}.sha256" ]; then
-              continue # just built + published above
-            fi
-            gh release download "${APP}-v${VERSION}" --repo "${{ github.repository }}" --pattern "${BASE}.sha256" --dir dist-bundles --clobber || echo "no published release for ${APP}-v${VERSION} yet — omitting from registry.json"
-          done
+        run: node scripts/fetch-sidecars.mjs --sidecars dist-bundles
 
-      - name: Build registry.json
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          cat > /tmp/build-registry.mjs <<'SCRIPT'
-          import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
-          import { join } from 'node:path'
+      # One composite artifact: store site + registry.json + assets. See
+      # scripts/build-store-artifact.mjs and docs/superpowers/specs/2026-08-01-app-store-frontend-design.md.
+      - name: Build store artifact (site + registry.json + assets)
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out store-dist
 
-          const repo = process.env.GITHUB_REPOSITORY
-          const stepSummary = process.env.GITHUB_STEP_SUMMARY
-          const appsDir = 'apps'
-          const apps = readdirSync(appsDir).filter((name) => statSync(join(appsDir, name)).isDirectory())
-
-          // Omission here is EXPECTED pre-first-release (a manifest can land in a PR before its
-          // first tag is ever cut) — the run must stay green. But a silently smaller registry.json
-          // is a real hazard (a typo'd version bump would drop an app with no failure anywhere), so
-          // every omission gets a loud, visible signal: a `::warning::` annotation (shows on the
-          // Actions run and in the checks UI) plus a line in the job summary — not just a log line
-          // buried in this step's raw output.
-          const omitted = []
-
-          const entries = []
-          for (const app of apps) {
-            const manifestPath = join(appsDir, app, 'bffless-app.json')
-            if (!existsSync(manifestPath)) continue
-            const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-            const baseName = `${app}-v${manifest.version}.bundle`
-            const sidecarPath = join('dist-bundles', `${baseName}.sha256`)
-            if (!existsSync(sidecarPath)) {
-              omitted.push({ id: app, version: manifest.version })
-              continue
-            }
-            const sha256 = readFileSync(sidecarPath, 'utf8').trim().split(/\s+/)[0]
-            entries.push({
-              id: manifest.id,
-              name: manifest.name,
-              version: manifest.version,
-              bundleUrl: `https://github.com/${repo}/releases/download/${app}-v${manifest.version}/${baseName}.zip`,
-              sha256,
-              summary: manifest.summary,
-              iconUrl: manifest.iconUrl,
-              docsUrl: manifest.docsUrl,
-              sourceUrl: manifest.sourceUrl,
-              requires: manifest.requires,
-            })
-          }
-
-          for (const app of omitted) {
-            const message = `apps/${app.id}/bffless-app.json declares v${app.version} but no published release (tag ${app.id}-v${app.version}) exists yet — omitted from registry.json`
-            console.log(`::warning title=app-catalog registry::${message}`)
-            if (stepSummary) {
-              appendFileSync(stepSummary, `⚠️ omitted from registry.json: ${app.id} (no published release)\n`)
-            }
-          }
-
-          const registry = { schemaVersion: 1, apps: entries }
-          mkdirSync('registry-staging', { recursive: true })
-          writeFileSync('registry-staging/registry.json', JSON.stringify(registry, null, 2) + '\n')
-          console.log(JSON.stringify(registry, null, 2))
-          SCRIPT
-          node /tmp/build-registry.mjs
-
-      # Publishes registry-staging/ (containing only registry.json) to the app-registry alias.
-      #
-      # Deliberately a DIFFERENT instance from the app deploys above: apps ship to the
-      # demo instance (vars.BFFLESS_URL = j5s.dev), while the registry is the public
-      # distribution endpoint every self-hosted CE fetches, so it lives on the bffless.dev
-      # instance (vars.BFFLESS_REGISTRY_URL) behind apps.bffless.dev. Keeping them split
-      # means resetting the demo box can never take the catalog down for everyone.
-      #
-      # Operator: map apps.bffless.dev -> the app-registry alias on that instance and add
-      # a ~1h cache rule (see PR checklist). When the marketing site later owns that
-      # domain, this step layers registry.json onto the site's alias instead — the upload
-      # appends idempotently, so both can share one deployment.
-      - name: Publish registry.json to BFFless
+      # Publishes to the app-registry alias on the bffless.dev instance (deliberately NOT
+      # the demo instance, so resetting the demo box can never take the catalog down).
+      - name: Publish store + registry to BFFless
         uses: bffless/upload-artifact@v1
         with:
-          path: registry-staging
+          path: store-dist
           api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
           api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
           alias: app-registry
-          description: 'App-catalog registry'
+          description: 'App store + catalog registry'

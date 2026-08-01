@@ -1,0 +1,76 @@
+name: Store — build + deploy apps.bffless.dev
+
+# Rebuilds the composite store artifact (site + registry.json + assets — see
+# scripts/build-store-artifact.mjs) when store/metadata sources change, and deploys it on
+# main. app-bundles.yml publishes the same artifact after an app release; the shared
+# `app-bundles` concurrency group serializes the two so they can't race on the alias.
+#
+# On pull_request this builds (and smoke-asserts) without deploying — the CI check for
+# store changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'store/**'
+      - 'apps/*/catalog/**'
+      - 'apps/*/bffless-app.json'
+      - 'scripts/build-registry.mjs'
+      - 'scripts/build-store-artifact.mjs'
+      - 'scripts/fetch-sidecars.mjs'
+      - '.github/workflows/deploy-store.yml'
+  pull_request:
+    paths:
+      - 'store/**'
+      - 'apps/*/catalog/**'
+      - 'apps/*/bffless-app.json'
+      - 'scripts/build-registry.mjs'
+      - 'scripts/build-store-artifact.mjs'
+      - 'scripts/fetch-sidecars.mjs'
+      - '.github/workflows/deploy-store.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'push' && 'app-bundles' || format('store-pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Script tests
+        run: pnpm scripts:test
+
+      - name: Fetch published sha256 sidecars
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/fetch-sidecars.mjs --sidecars dist-bundles
+
+      - name: Build store artifact (site + registry.json + assets)
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out store-dist
+
+      - name: Deploy to apps.bffless.dev
+        if: github.event_name == 'push'
+        uses: bffless/upload-artifact@v1
+        with:
+          path: store-dist
+          api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
+          api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
+          alias: app-registry
+          description: 'App store + catalog registry'
