@@ -15,13 +15,13 @@ The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the re
 | Path | Method | Pipeline |
 | --- | --- | --- |
 | `/api/feeds` | `GET` | list subscribed feeds |
-| `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `url`) |
+| `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `scopedUrl`) |
 | `/api/feeds/remove` | `POST` | unsubscribe (delete the feed row + cascade-delete its non-starred items) |
 | `/api/feeds/folder` | `POST` | move a feed between folders (`data_update`; the insert-only add endpoint can't, #133) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
 | `/api/items/read` | `POST` | set an item's `read` flag (`data_update` by `guid`, #114) |
 | `/api/items/star` | `POST` | set an item's `starred` flag (`data_update` by `guid`; starred items are prune-exempt, #115) |
-| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
+| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `scopedGuid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
 | `/api/discover` | `POST` | auto-discovery (#113): `http_request` fetches a site/feed URL server-side so the browser can `DOMParser` it for `<link rel="alternate">` feed links |
 | `/api/prune` | `POST` | retention (#119): `data_delete` delete-by-query removes `read` + un`starred` items older than 30 days (`fetchedAt < now-30d`); starred + unread are exempt |
 
@@ -189,9 +189,9 @@ reaches the backend and the rotated `Set-Cookie` headers relay back.
 
 The `reader` alias must be served at a URL, and two settings on that domain mapping matter:
 
-- **`isPublic: false` (private).** Rivulet is a **personal, single-user-per-deploy** reader with no
-  public surface in v1 — every route is behind login. Unlike Handoff, there are no anonymous
-  share-link pages to keep public.
+- **`isPublic: false` (private).** All routes are edge-gated behind login; users must be signed in and
+  explicitly added to the project to access any surface (`requiredRole: guest` on the aliases).
+  Unlike Handoff, there are no anonymous share-link pages to keep public in v1.
 - **`isSpa: true`.** Rivulet is a `BrowserRouter` SPA, so deep links and hard refreshes need the
   index.html fallback.
 - **Build path.** The deploy uploads `apps/reader/dist`, so set the mapping's `path` to

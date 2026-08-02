@@ -1,7 +1,7 @@
 targetUrl: pipeline
 order: 3
 pipeline:
-  name: Add feed (upsert, dedup by url)
+  name: Add feed (upsert, dedup by scopedUrl per-user)
   steps:
     - id: prep
       name: prep
@@ -47,4 +47,4 @@ pipeline:
     - type: auth_required
       config:
         allowApiKey: true
-description: "Add a feed by URL: prep builds a 1-element array -> data_upsert_many(reader_feeds, dedupField url) -> respond { ok, inserted, skipped } (or 400). auth_required."
+description: "Add a feed by URL: prep builds a 1-element array -> data_upsert_many(reader_feeds, dedupField scopedUrl, per-user) -> respond { ok, inserted, skipped } (or 400). auth_required."

@@ -3,14 +3,15 @@
 > **Status:** design in progress (grilling session). **Working name "Reader" — provisional**, rename is cheap before real code lands.
 
 A Google Reader–style RSS/Atom feed reader, shipped as a give-away app in the `bffless-apps`
-monorepo. Personal, single-user per deploy. Background auto-refresh via **two new Community Edition
-(CE) capabilities** — a feed-ingest handler and a scheduled-pipeline (cron) primitive.
+monorepo. Multi-user per project, with per-user data scoping and access control via `requiredRole: guest` on
+the aliases. Background auto-refresh via **two new Community Edition (CE) capabilities** — a feed-ingest
+handler and a scheduled-pipeline (cron) primitive.
 
 ## Ubiquitous language
 
-- **Feed / Subscription** — a followed RSS/Atom source (URL + title + folder). One row per feed.
-- **Item / Entry** — a single post from a feed. One row per item, deduped by GUID.
-- **GUID** — the item's stable id (RSS `<guid>` / Atom `<id>`, falling back to `<link>`). The dedup key on upsert.
+- **Feed / Subscription** — a followed RSS/Atom source (URL + title + folder). One row per feed per user.
+- **Item / Entry** — a single post from a feed. One row per item per user, deduped by `scopedGuid` (`userId::guid`).
+- **GUID** — the item's stable id (RSS `<guid>` / Atom `<id>`, falling back to `<link>`). The dedup key on upsert, scoped by user.
 - **Folder** — a user grouping of feeds (Reader's folders/tags-on-feed). A feed belongs to one folder.
 - **River** — the unified stream of unread items across all feeds; the default reading view.
 - **Star** — a "keep forever" flag on an item. Prune-exempting. This *is* the save feature.
@@ -33,11 +34,11 @@ monorepo. Personal, single-user per deploy. Background auto-refresh via **two ne
   3. **`pipeline_schedules` cron primitive** — general "run pipeline X every N min per project." Cheap: `@nestjs/schedule` is already wired; `src/retention/` is a working template.
 - **The reader is a *composition*, not custom backend code:** `data_query(feeds) → xml_feed_parse(urls) → data_upsert_many(items, dedupKey: guid)`. A podcast app is the same shape with different schemas + field mapping. App-specificity lives in pipeline **config**, not CE code.
 
-## Data model (per-item, deduped by GUID)
+## Data model (per-user, per-item)
 
-- **feeds** — `id`, `url`, `siteUrl`, `title`, `folder` (nullable string; null = uncategorized), `iconUrl` (nullable), `lastFetchedAt`, `lastError` (nullable), `addedAt`.
-- **items** — `id`, `guid` (dedup key), `feedId`, `title`, `link`, `author`, `publishedAt`, `summary`, `content`, `read` (boolean, default false), `starred` (boolean, default false), `archived` (boolean, default false), `fetchedAt` (**`number`, epoch-ms** — ingest stamps `Date.now()`; the retention prune filters it with a numeric `<`, so it must be numeric, not an ISO string — #119).
-- **`data_upsert_many` mapping** (normalized entry → `items`, `dedupKey: guid`): `guid ← guid||link||hash` · `title, link, author, publishedAt, summary, content ← entry.*` · `feedId ← current feed` · `fetchedAt ←` a `stamp` step's `Date.now()` (epoch-ms) · `read/starred ←` literal `false` (so read+unstarred items are prune-eligible; the star/read endpoints then flip them per user action).
+- **feeds** — `id`, `userId`, `url`, `scopedUrl` (dedup key, `userId::url`), `siteUrl`, `title`, `folder` (nullable string; null = uncategorized), `iconUrl` (nullable), `lastFetchedAt`, `lastError` (nullable), `addedAt`.
+- **items** — `id`, `userId`, `guid`, `scopedGuid` (dedup key, `userId::guid`), `feedId`, `title`, `link`, `author`, `publishedAt`, `summary`, `content`, `read` (boolean, default false), `starred` (boolean, default false), `archived` (boolean, default false), `fetchedAt` (**`number`, epoch-ms** — ingest stamps `Date.now()`; the retention prune filters it with a numeric `<`, so it must be numeric, not an ISO string — #119).
+- **`data_upsert_many` mapping** (normalized entry → `items`, `dedupKey: scopedGuid`): `userId ← context.user.id` · `guid ← entry.guid||entry.link||hash(...)` · `scopedGuid ← userId::guid` · `title, link, author, publishedAt, summary, content ← entry.*` · `feedId ← current feed` · `fetchedAt ←` a `stamp` step's `Date.now()` (epoch-ms) · `read/starred/archived ←` literal `false` (so read+unstarred items are prune-eligible; the star/read/archive endpoints then flip them per user action).
 - **Content is stored raw; sanitized at render** (client-side DOMPurify) — keeps the generic `xml_feed_parse` policy-free (D7) and lets the sanitizer tighten without re-fetching. Both `summary` (list preview) and `content` (reading pane) stored; truncated feeds → `content` falls back to summary.
 - **Folders** = a nullable `folder` string on the feed (Reader-style, one folder per feed). No folders table in v1.
 - **Retention:** starred → forever; unread → forever; read + unstarred + older than **30 days** → pruned (a natural second consumer of the cron).
