@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "reader",
   "name": "Rivulet",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "summary": "A quiet, multi-user RSS/Atom reader with folders, starring, keyboard-first reading, and background refresh.",
   "category": "reading",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/reader/bffless/README.md",
@@ -18,7 +18,10 @@
       "basePath": "/apps/reader/dist"
     },
     "ruleSets": [
-      { "file": "rulesets/reader.json", "attachToAlias": true }
+      {
+        "file": "rulesets/reader.json",
+        "attachToAlias": true
+      }
     ],
     "domain": {
       "subdomain": "reader",
@@ -55,7 +58,12 @@
     "repo": "bffless/apps",
     "appPath": "apps/reader",
     "deployWorkflow": "deploy-reader.yml",
-    "variables": ["BFFLESS_URL", "BFFLESS_PROJECT"],
-    "secrets": ["BFFLESS_API_KEY"]
+    "variables": [
+      "BFFLESS_URL",
+      "BFFLESS_PROJECT"
+    ],
+    "secrets": [
+      "BFFLESS_API_KEY"
+    ]
   }
 }
