@@ -63,15 +63,17 @@ Both additive. Existing rows simply lack the new fields until backfilled.
 
 | Field | Type | Notes |
 |---|---|---|
-| `userId` | string, required | owner |
-| `scopedUrl` | string, required | `${userId}::${url}` — dedup column for add-feed and OPML import |
+| `userId` | string, optional | owner |
+| `scopedUrl` | string, optional | `${userId}::${url}` — dedup column for add-feed and OPML import |
 
 **`reader_items`**
 
 | Field | Type | Notes |
 |---|---|---|
-| `userId` | string, required | owner |
-| `scopedGuid` | string, required | `${userId}::${guid \|\| link \|\| hash}` — dedup column |
+| `userId` | string, optional | owner |
+| `scopedGuid` | string, optional | `${userId}::${guid \|\| link \|\| hash}` — dedup column |
+
+**Why optional rather than required.** These columns land on schemas that already hold live rows. A required field would make CE's write validation reject updates to any not-yet-backfilled row (`data-update.handler.ts:178` throws `Data validation failed`), breaking the app in the window between deploying the schema and finishing the backfill. The loudness that `required` would have bought is recovered at test time instead, by the structural ratchet asserting every write path sets them.
 
 `guid` keeps holding the feed's real guid. The synthetic columns exist only because `dedupField` names a single column; `data_upsert_many` writes the resolved dedup value straight into that column (`data-upsert-many.handler.ts:227`) and requires it to be a real schema field (line 190), so they self-populate on insert.
 
