@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "reader",
+  "name": "Rivulet",
+  "version": "1.0.0",
+  "summary": "A quiet, multi-user RSS/Atom reader with folders, starring, keyboard-first reading, and background refresh.",
+  "category": "reading",
+  "docsUrl": "https://github.com/bffless/apps/blob/main/apps/reader/bffless/README.md",
+  "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/reader",
+  "requires": {
+    "presignedStorage": false,
+    "ceMin": "0.4.0"
+  },
+  "install": {
+    "alias": "reader",
+    "deployment": {
+      "path": "dist",
+      "basePath": "/apps/reader/dist"
+    },
+    "ruleSets": [
+      { "file": "rulesets/reader.json", "attachToAlias": true }
+    ],
+    "domain": {
+      "subdomain": "reader",
+      "isPublic": false,
+      "isSpa": true
+    },
+    "schedules": [
+      {
+        "name": "Rivulet refresh (auto ingest)",
+        "cronExpression": "*/15 * * * *",
+        "timezone": "UTC",
+        "targetRulePath": "/api/refresh",
+        "targetRuleMethod": "POST"
+      },
+      {
+        "name": "Rivulet nightly prune (retention)",
+        "cronExpression": "17 3 * * *",
+        "timezone": "UTC",
+        "targetRulePath": "/api/prune",
+        "targetRuleMethod": "POST"
+      }
+    ],
+    "manualSteps": [
+      {
+        "id": "grant-access",
+        "title": "Give each reader an account and project access",
+        "body": "Rivulet installs private: every route (including /api/*) is gated behind sign-in, and each person's feeds and read/star state are scoped to their own account. Anyone who should use the reader needs a user account on this instance and access to the project the app installed into (the guest role is enough — guests can use the app without seeing the admin backend). A single-admin instance needs nothing here: your admin account already has access.",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "embed-headers",
+        "title": "Allow inline embeds if this project uses cross-origin isolation",
+        "body": "Rivulet renders a Handoff markdown post's body inline by iframing the Handoff viewer's chromeless ?embed=1 mode. If this project applies a cross-origin-isolation policy (COOP/COEP) elsewhere (e.g. another app using SharedArrayBuffer), add a response-header rule matching the reader's files (apps/reader/**) with Cross-Origin-Opener-Policy: unsafe-none and Cross-Origin-Embedder-Policy: unsafe-none, at a priority below the isolating rule, and ensure the Handoff instance allows the reader's origin to frame it. A fresh project with no isolation policy needs nothing here.",
+        "appliesWhen": "always"
+      }
+    ]
+  },
+  "eject": {
+    "repo": "bffless/apps",
+    "appPath": "apps/reader",
+    "deployWorkflow": "deploy-reader.yml",
+    "variables": ["BFFLESS_URL", "BFFLESS_PROJECT"],
+    "secrets": ["BFFLESS_API_KEY"]
+  }
+}
