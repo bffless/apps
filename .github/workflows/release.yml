@@ -1,0 +1,142 @@
+name: Release
+
+# The single owner of app versioning and of the app-registry alias.
+#
+#   release          release-please keeps the Release PR current; merging that PR
+#                    bumps versions and cuts one tag + GitHub Release per app
+#   bundles          builds each released app's bundle, attached to its release
+#   publish-registry full snapshot of every app -> registry.json + site + assets
+#
+# publish-registry is chained with `needs` rather than triggered by an event because
+# the registry omits any app whose release has no bundle asset yet: it must not run
+# until every bundle is attached. Expressed as needs that is a guarantee; expressed
+# as cross-workflow events it is a race — which is the class of bug that produced
+# the 2026-08-02 stale registry. See
+# docs/superpowers/specs/2026-08-02-app-release-please-design.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
+      apps_released: ${{ steps.apps.outputs.apps_released }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # release-please-action's `paths_released` output is a JSON array of package paths
+      # ("apps/reader"); app-bundles.yml's `app` input wants the bare id ("reader"). Strip
+      # the prefix here, in plain shell, rather than in a reusable-workflow `with:`
+      # expression — those accept only a restricted expression set, and a round-trip
+      # through fromJSON/format there would not actually strip the prefix.
+      - name: Map released paths to bare app ids
+        id: apps
+        run: |
+          echo '${{ steps.release.outputs.paths_released || '[]' }}' \
+            | jq -c '[.[] | sub("^apps/"; "")]' \
+            > /tmp/apps_released.json
+          echo "apps_released=$(cat /tmp/apps_released.json)" >> "$GITHUB_OUTPUT"
+
+  # One leg per app release-please just released.
+  bundles:
+    needs: release
+    if: needs.release.outputs.releases_created == 'true'
+    strategy:
+      matrix:
+        app: ${{ fromJSON(needs.release.outputs.apps_released) }}
+    uses: ./.github/workflows/app-bundles.yml
+    with:
+      app: ${{ matrix.app }}
+    secrets: inherit
+
+  publish-registry:
+    needs: [release, bundles]
+    # always() so this still runs when `bundles` was skipped (a push with no release);
+    # the result guards then reject a genuine bundle failure, which must not publish a
+    # registry that would omit the app whose bundle failed.
+    if: |
+      always()
+      && needs.release.result == 'success'
+      && (needs.bundles.result == 'success' || needs.bundles.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # release-please's release commit touches apps/*/bffless-app.json, so a release
+      # always satisfies this; the path list additionally catches store/catalog edits
+      # that change the registry or the site without any release.
+      - name: Decide whether to publish
+        id: decide
+        run: |
+          if [ "${{ needs.release.outputs.releases_created }}" = "true" ] \
+             || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only HEAD^ HEAD || true)
+          if echo "$CHANGED" | grep -qE '^(store/|apps/[^/]+/catalog/|apps/[^/]+/bffless-app\.json|scripts/(build-registry|build-store-artifact|fetch-sidecars)\.mjs)'; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        if: steps.decide.outputs.publish == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        if: steps.decide.outputs.publish == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.decide.outputs.publish == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Script tests
+        if: steps.decide.outputs.publish == 'true'
+        run: pnpm scripts:test
+
+      # Best effort: an app whose declared version has no published release is omitted
+      # with a ::warning, not an error.
+      - name: Fetch published sha256 sidecars
+        if: steps.decide.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/fetch-sidecars.mjs --sidecars dist-bundles
+
+      # One composite artifact — site, registry.json and assets together, so a registry
+      # entry can never reference an asset that has not been uploaded. The output dir
+      # name must stay registry-staging: upload-artifact prefixes zip entries with it and
+      # CE matches those publicPaths against the domain mapping's /registry-staging.
+      - name: Build store artifact (site + registry.json + assets)
+        if: steps.decide.outputs.publish == 'true'
+        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out registry-staging
+
+      - name: Publish store + registry to BFFless
+        if: steps.decide.outputs.publish == 'true'
+        uses: bffless/upload-artifact@v1
+        with:
+          path: registry-staging
+          api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
+          api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
+          alias: app-registry
+          description: 'App store + catalog registry'
