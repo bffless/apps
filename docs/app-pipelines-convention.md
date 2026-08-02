@@ -61,9 +61,9 @@ app into BFFless CE's one-click **app catalog** (self-hosted CE ≥ 0.4.0 fetche
 proxy rule sets, static deployment, domain, manual-step checklist). Don't confuse that **0.4.0
 catalog-feature floor** with an app's own `requires.ceMin`, which is about what the *app* needs:
 Handoff declares `0.3.15` because that's where local-filesystem presigned uploads landed. This is
-**opt-in**: an app with no manifest (Studio,
-Reader, as of this writing) is unaffected and still passes `pnpm apps:check` — the catalog is an
-additional install path alongside the existing manual `GETTING-STARTED.md` flow, not a replacement.
+**opt-in**: an app with no manifest (Studio, as of this writing) is unaffected and still passes
+`pnpm apps:check` — the catalog is an additional install path alongside the existing manual
+`GETTING-STARTED.md` flow, not a replacement.
 
 The manifest shape is owned by CE (`apps/backend/src/app-catalog/app-manifest.types.ts` /
 `app-manifest.util.ts` in `bffless/ce`) — this repo's copy must satisfy CE's `validateAppManifest` and,

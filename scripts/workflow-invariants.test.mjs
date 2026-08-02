@@ -9,7 +9,7 @@ const read = (f) => readFileSync(join(workflowsDir, f), 'utf8')
 const all = () => readdirSync(workflowsDir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
 
 test('exactly one workflow publishes to the app-registry alias', () => {
-  const publishers = all().filter((f) => /alias:\s*app-registry\b/.test(read(f)))
+  const publishers = all().filter((f) => /alias:\s*["']?app-registry\b/.test(read(f)))
   assert.deepEqual(
     publishers,
     ['release.yml'],

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // Builds the composite apps.bffless.dev artifact: store site pages at the root,
 // registry.json, and assets/<app>/** (each published app's catalog content). Published
-// by app-bundles.yml (after an app release) and deploy-store.yml (on store/metadata
-// changes) to the app-registry alias — one artifact, so the site, registry, and assets
-// can never be deployed out of sync (deployments merge per commit SHA, so two
-// independent workflows cannot co-write one alias).
+// by release.yml's publish-registry job — the sole publisher of the app-registry alias —
+// to app-registry, after a release and on store/metadata-only changes alike, as one
+// artifact so the site, registry, and assets can never be deployed out of sync.
 //
 // CLI: node scripts/build-store-artifact.mjs [--sidecars dist-bundles] [--out registry-staging] [--stage-only]
 //   --stage-only: build registry + stage store/public/assets, skip the site build

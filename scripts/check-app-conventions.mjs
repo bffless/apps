@@ -284,6 +284,37 @@ export function checkReleaseComponents(config, appIds, manifest) {
   return errors
 }
 
+/**
+ * All three release-please-owned version numbers must agree, for every catalog app:
+ * package.json (what release-please bumps), bffless-app.json (the one number the
+ * catalog actually reads), and .release-please-manifest.json (what the next release
+ * diffs against). They are written in a single release commit, so on `main` this is a
+ * true invariant — a mismatch means the `extra-files` path in
+ * release-please-config.json did not resolve where it was assumed to (package-scoped,
+ * relative to apps/<app>/), and bffless-app.json silently lagged the tag: the registry
+ * would keep serving the previous version with no warning anywhere.
+ *
+ * @param {string[]} appIds catalog app ids (ship a bffless-app.json)
+ * @param {Record<string, {packageJson?: string, manifest?: string, releaseManifest?: string}>} versions
+ *   per-app version strings read from the three files; a missing value fails just like
+ *   a mismatch — an app that hasn't been released yet still must not disagree once it has.
+ */
+export function checkVersionParity(appIds, versions) {
+  const errors = []
+  for (const app of appIds) {
+    const { packageJson, manifest, releaseManifest } = versions[app] ?? {}
+    if (packageJson !== undefined && packageJson === manifest && manifest === releaseManifest) {
+      continue
+    }
+    errors.push(
+      `${app}: version mismatch — apps/${app}/package.json (${JSON.stringify(packageJson)}), ` +
+        `apps/${app}/bffless-app.json (${JSON.stringify(manifest)}) and ` +
+        `.release-please-manifest.json["apps/${app}"] (${JSON.stringify(releaseManifest)}) must all agree`,
+    )
+  }
+  return errors
+}
+
 function main() {
   const apps = listAppDirs()
   if (apps.length === 0) {
@@ -316,9 +347,11 @@ function main() {
     }
   }
 
+  const catalogApps = apps.filter((app) => existsSync(join(appsDir, app, 'bffless-app.json')))
+
   const releaseErrors = checkReleaseComponents(
     readJson(join(repoRoot, 'release-please-config.json')),
-    apps.filter((app) => existsSync(join(appsDir, app, 'bffless-app.json'))),
+    catalogApps,
     readJson(join(repoRoot, '.release-please-manifest.json')),
   )
   if (releaseErrors.length === 0) {
@@ -326,6 +359,28 @@ function main() {
   } else {
     console.log(`✗ release-please components`)
     for (const err of releaseErrors) {
+      console.log(`    - ${err}`)
+      failures.push(err)
+    }
+  }
+
+  const releaseManifest = readJson(join(repoRoot, '.release-please-manifest.json')) ?? {}
+  const versions = Object.fromEntries(
+    catalogApps.map((app) => [
+      app,
+      {
+        packageJson: readJson(join(appsDir, app, 'package.json'))?.version,
+        manifest: readJson(join(appsDir, app, 'bffless-app.json'))?.version,
+        releaseManifest: releaseManifest[`apps/${app}`],
+      },
+    ]),
+  )
+  const parityErrors = checkVersionParity(catalogApps, versions)
+  if (parityErrors.length === 0) {
+    console.log(`✓ package.json, bffless-app.json and the release-please manifest agree on version`)
+  } else {
+    console.log(`✗ version parity`)
+    for (const err of parityErrors) {
       console.log(`    - ${err}`)
       failures.push(err)
     }

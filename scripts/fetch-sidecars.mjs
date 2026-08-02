@@ -14,8 +14,8 @@
 // kept for .commit by asking the release which assets it HAS rather than by pattern-matching
 // gh's failure text: a missing asset is skipped, but a failed download of an asset the release
 // does list still fails loudly.
-// Replaces the inline bash loop in app-bundles.yml so deploy-store.yml can share it. Requires
-// the `gh` CLI (GH_TOKEN in CI).
+// Replaces the inline bash loop in app-bundles.yml so release.yml's publish-registry job can
+// share it. Requires the `gh` CLI (GH_TOKEN in CI).
 
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'

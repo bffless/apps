@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkManualSteps, checkReleaseComponents } from './check-app-conventions.mjs'
+import { checkManualSteps, checkReleaseComponents, checkVersionParity } from './check-app-conventions.mjs'
 
 const REL = 'apps/demo/bffless-app.json'
 
@@ -104,4 +104,33 @@ test('rejects a component whose tag would not match <app>-v<version>', () => {
   const errors = checkReleaseComponents(config, ['reader', 'handoff'], MANIFEST)
   assert.equal(errors.length, 1)
   assert.match(errors[0], /rivulet/)
+})
+
+// checkVersionParity: package.json, bffless-app.json and .release-please-manifest.json are
+// all written in one release-please commit; if the extra-files path in
+// release-please-config.json resolved wrong, bffless-app.json (the number the catalog
+// actually reads) would silently lag the tag — a direct generalisation of the incident
+// this branch exists to fix.
+test('accepts versions that agree across package.json, bffless-app.json and the manifest', () => {
+  const errors = checkVersionParity(['reader', 'handoff'], {
+    reader: { packageJson: '1.0.1', manifest: '1.0.1', releaseManifest: '1.0.1' },
+    handoff: { packageJson: '1.0.2', manifest: '1.0.2', releaseManifest: '1.0.2' },
+  })
+  assert.deepEqual(errors, [])
+})
+
+test('rejects package.json ahead of the release-please manifest', () => {
+  const errors = checkVersionParity(['reader'], {
+    reader: { packageJson: '1.1.0', manifest: '1.0.1', releaseManifest: '1.0.1' },
+  })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /reader/)
+})
+
+test('rejects bffless-app.json behind package.json and the release-please manifest', () => {
+  const errors = checkVersionParity(['handoff'], {
+    handoff: { packageJson: '1.1.0', manifest: '1.0.2', releaseManifest: '1.1.0' },
+  })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /handoff/)
 })

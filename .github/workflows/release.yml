@@ -23,6 +23,15 @@ permissions:
   contents: write
   pull-requests: write
 
+# Serializes runs so two merges landing inside one release's ~90s window cannot race on the
+# app-registry alias — an older run's upload finishing last would point the alias at the
+# older deployment, a stale registry by a different route than the 2026-08-02 incident.
+# cancel-in-progress stays false deliberately: cancelling a run mid-release could leave a
+# tag cut with no bundle asset attached.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -56,20 +65,27 @@ jobs:
     needs: release
     if: needs.release.outputs.releases_created == 'true'
     strategy:
+      # One app's bundle failure must not cancel another app's leg that would have
+      # succeeded — recovery for a genuine failure is then one dispatch, not two.
+      fail-fast: false
       matrix:
         app: ${{ fromJSON(needs.release.outputs.apps_released) }}
     uses: ./.github/workflows/app-bundles.yml
     with:
       app: ${{ matrix.app }}
-    secrets: inherit
+    # No secrets: inherit — app-bundles.yml touches no repository secret (only
+    # github.token, passed to called workflows regardless of this line). This job must
+    # not carry BFFLESS_REGISTRY_API_KEY: it never publishes the registry, and it is
+    # workflow_dispatch-able on its own.
 
   publish-registry:
     needs: [release, bundles]
-    # always() so this still runs when `bundles` was skipped (a push with no release);
-    # the result guards then reject a genuine bundle failure, which must not publish a
-    # registry that would omit the app whose bundle failed.
+    # !cancelled() so this still runs when `bundles` was skipped (a push with no
+    # release); the result guards then reject a genuine bundle failure, which must not
+    # publish a registry that would omit the app whose bundle failed. always() would
+    # also be true for a cancelled run, which is not the intent here.
     if: |
-      always()
+      !cancelled()
       && needs.release.result == 'success'
       && (needs.bundles.result == 'success' || needs.bundles.result == 'skipped')
     runs-on: ubuntu-latest
@@ -88,10 +104,11 @@ jobs:
       # branch pointed at before this push, so diffing before->after covers the full
       # range; fetch-depth: 0 above ensures that range is present locally. `before` is
       # unusable on a workflow_dispatch run (no push event) or when it reports the
-      # all-zeros SHA (first push to the branch, or a force-push that rewrote history) —
-      # in both cases the range is indeterminate, and this defaults to publishing rather
-      # than risk a silently stale registry: an unneeded publish costs ~90s, a
-      # wrongly-skipped one leaves nothing to signal the miss.
+      # all-zeros SHA (first push to the branch) — in both cases the range is
+      # indeterminate, and this defaults to publishing rather than risk a silently stale
+      # registry: an unneeded publish costs ~90s, a wrongly-skipped one leaves nothing to
+      # signal the miss. (Force-push to `main` is blocked by the require-pr ruleset, so
+      # it is not a case this needs to guard against.)
       - name: Decide whether to publish
         id: decide
         run: |
@@ -106,7 +123,16 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"   # range indeterminate — publish rather than risk staleness
             exit 0
           fi
-          CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" || true)
+          # A base SHA that doesn't resolve locally (fetch depth too shallow, or some other
+          # reason git can't see it) makes the range indeterminate the same way a missing/zero
+          # `before` does: default to publish rather than let `|| true` swallow the failure and
+          # silently read as "nothing changed". Not a force-push guard — force-push to `main` is
+          # blocked by the require-pr ruleset.
+          if ! git rev-parse --verify --quiet "$BEFORE^{commit}" >/dev/null; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"   # base commit not resolvable — range indeterminate, publish rather than risk staleness
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
           if echo "$CHANGED" | grep -qE '^(store/|apps/[^/]+/catalog/|apps/[^/]+/bffless-app\.json|scripts/(build-registry|build-store-artifact|fetch-sidecars)\.mjs)'; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else

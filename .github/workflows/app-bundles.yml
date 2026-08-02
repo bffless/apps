@@ -48,10 +48,11 @@ jobs:
 
       - name: Resolve app id
         id: app
+        env:
+          APP: ${{ inputs.app }}
         run: |
-          APP="${{ inputs.app }}"
           if [ ! -f "apps/$APP/bffless-app.json" ]; then
-            echo "::error::apps/$APP/bffless-app.json not found — nothing to publish" >&2
+            echo "::error::apps/$APP/bffless-app.json not found — no manifest to build a bundle from" >&2
             exit 1
           fi
           echo "id=$APP" >> "$GITHUB_OUTPUT"

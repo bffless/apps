@@ -674,9 +674,12 @@ The workflow chain cannot be exercised locally. This task is the operator's, not
 
 - [ ] **Step 1: Open the PR**
 
+The PR title's commit type must be non-releasing (`ci:` or `chore:`, not `feat(ci):`
+or any other `feat`/`fix` type) — see Step 2 for why.
+
 ```bash
 git push -u origin spec/app-release-please
-gh pr create --title "feat(ci): release-please per app, one registry publisher" --body-file - <<'EOF'
+gh pr create --title "ci: release-please per app, one registry publisher" --body-file - <<'EOF'
 Implements docs/superpowers/specs/2026-08-02-app-release-please-design.md.
 
 App versions were hand-edited in `bffless-app.json` — the one number the catalog
@@ -699,9 +702,22 @@ EOF
 
 **Ask the operator before pushing** — in this repo a merge is a live manifest and rule deploy.
 
-- [ ] **Step 2: Merge, and expect no release**
+- [ ] **Step 2: Squash-merge, and expect no release**
 
-Merging this PR is a `ci`/`refactor` change touching no `apps/*/**`, so release-please should open no Release PR and `bundles` should skip. `publish-registry` runs (the push changes `scripts/build-*.mjs`? it does not — so confirm the decide step's verdict either way).
+This branch's commit `1cf6644` is itself typed `feat(release):` and touches
+`apps/reader/package.json` and `apps/handoff/package.json`, with both apps' current
+tags pointing at the branch base. A **merge commit** would carry that subject line
+into `main`'s history, and release-please would read it as a real feature release —
+proposing reader `1.0.1` → `1.1.0` and handoff `1.0.2` → `1.1.0` for what is meant to
+be a CI refactor, on the very numbers the catalog reads. So this PR **must be
+squash-merged**, using the non-releasing subject from Step 1 (`ci: ...`) as the
+squash commit message — never GitHub's default, which is the PR title only if you
+edit the default merge-commit strategy, and never a plain merge, which preserves
+every original commit subject including `1cf6644`'s.
+
+With a squash merge using a `ci:`/`chore:` subject, release-please should open no
+Release PR and `bundles` should skip. `publish-registry` runs (the push changes
+`scripts/build-*.mjs`? it does not — so confirm the decide step's verdict either way).
 
 Confirm in the run log: `release` succeeded, `bundles` skipped, and `publish-registry` either published or reported `publish=false` — both are correct outcomes here, and knowing which one happened is the point.
 
