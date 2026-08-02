@@ -10,6 +10,10 @@ pipeline:
           url:
             op: eq
             value: request.body.url
+          userId:
+            op: eq
+            value: user.id
+        filterLogic: and
         pageSize: 1
         schemaId: $schema:reader_feeds
     - id: pick
@@ -34,6 +38,9 @@ pipeline:
           starred:
             op: ne
             value: true
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.pick.found

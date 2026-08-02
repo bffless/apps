@@ -15,6 +15,10 @@ pipeline:
           url:
             op: eq
             value: steps.prep.url
+          userId:
+            op: eq
+            value: user.id
+        filterLogic: and
         pageSize: 1
         schemaId: $schema:reader_feeds
         condition: steps.prep.hasUrl

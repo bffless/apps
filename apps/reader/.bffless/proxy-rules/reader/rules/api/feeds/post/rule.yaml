@@ -15,13 +15,14 @@ pipeline:
           url: steps.item.url
           title: steps.item.title
           folder: steps.item.folder
+          userId: steps.item.userId
           addedAt: steps.item.addedAt
           siteUrl: steps.item.siteUrl
         items: steps.prep.feeds
-        dedupKey: steps.item.url
+        dedupKey: steps.item.scopedUrl
         schemaId: $schema:reader_feeds
         condition: steps.prep.hasUrl
-        dedupField: url
+        dedupField: scopedUrl
     - id: respond
       name: respond
       handler: response_handler

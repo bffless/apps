@@ -1,7 +1,11 @@
-function handler({ request }) {
+function handler({ user, request }) {
   var b = (request && request.body) || {}
+  var uid = (user && user.id) ? String(user.id) : ''
   var url = (typeof b.url === 'string') ? b.url.trim() : ''
+  var ok = !!(url && uid)
   var feed = {
+    userId: uid,
+    scopedUrl: uid + '::' + url,
     url: url,
     title: (typeof b.title === 'string') ? b.title : '',
     siteUrl: (typeof b.siteUrl === 'string') ? b.siteUrl : '',
@@ -10,7 +14,7 @@ function handler({ request }) {
   }
   return {
     feeds: [feed],
-    hasUrl: !!url,
-    noUrl: !url
+    hasUrl: ok,
+    noUrl: !ok
   }
 }

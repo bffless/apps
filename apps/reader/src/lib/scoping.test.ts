@@ -66,12 +66,6 @@ const EXPECTED_UNSCOPED = new Set<string>([
   'api/refresh/post:feeds',
   'api/prune/post:del',
 
-  // Task 7
-  'api/feeds/post:upsert',
-  'api/feeds/remove/post:query',
-  'api/feeds/remove/post:delItems',
-  'api/feeds/folder/post:query',
-
   // Task 8
   'api/refresh/post:upsert',
 ])
