@@ -1,26 +1,23 @@
 name: App bundles — build + publish
 
-# Builds an app-catalog install bundle (scripts/build-app-bundle.mjs) for one app, publishes
-# it as a GitHub release asset, then rebuilds and republishes the composite store artifact
-# (store site + registry.json + assets — one registry entry per apps/<app>/bffless-app.json
-# that has ever been published, see scripts/build-store-artifact.mjs) to the `app-registry`
-# alias so both the store site and CE's app-catalog feature can discover it. See
-# docs/app-pipelines-convention.md and bffless/ce's app-catalog feature (task-15-brief.md).
+# Builds an app-catalog install bundle (scripts/build-app-bundle.mjs) for ONE app and
+# publishes it as a GitHub release asset. It does NOT publish the registry — that is
+# release.yml's publish-registry job, which is the single publisher of the app-registry
+# alias. Two publishers writing the same commit-scoped storage key is what made the
+# registry go stale on 2026-08-02; see
+# docs/superpowers/specs/2026-08-02-app-release-please-design.md.
 #
-# Two triggers:
-#   - push of a tag matching `<app-id>-v<version>` (e.g. `handoff-v1.0.0`) — publishes that app.
-#   - workflow_dispatch with an `app` input — same build, for a manual re-publish without
-#     cutting a new tag (e.g. re-running after a registry-only fix).
-#
-# Operator steps this workflow does NOT do (see the PR description checklist):
-#   - map `apps.bffless.dev` to the `app-registry` alias on the target instance; the artifact
-#     dir name (`registry-staging`, see scripts/build-store-artifact.mjs) must keep matching the
-#     live domain mapping's path (`/registry-staging`) — publicPaths are derived from it verbatim
-#   - add a ~1h TTL cache rule on that alias
+# Two entry points, both supplying `app`:
+#   - workflow_call from release.yml, once per app release-please just released
+#   - workflow_dispatch, to rebuild one app's bundle by hand against its existing tag
+#     (the release step re-uploads with --clobber)
 on:
-  push:
-    tags:
-      - '*-v*'
+  workflow_call:
+    inputs:
+      app:
+        description: 'App id to build and publish (matches apps/<app>/bffless-app.json)'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       app:
@@ -30,10 +27,6 @@ on:
 
 permissions:
   contents: write
-
-concurrency:
-  group: app-bundles
-  cancel-in-progress: false
 
 jobs:
   build-and-publish:
@@ -53,17 +46,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # workflow_dispatch supplies the app id directly; a tag push encodes it as the part
-      # before the last `-v` (tag `handoff-v1.0.0` -> app `handoff`).
       - name: Resolve app id
         id: app
         run: |
-          if [ -n "${{ inputs.app }}" ]; then
-            APP="${{ inputs.app }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-            APP="${TAG%-v*}"
-          fi
+          APP="${{ inputs.app }}"
           if [ ! -f "apps/$APP/bffless-app.json" ]; then
             echo "::error::apps/$APP/bffless-app.json not found — nothing to publish" >&2
             exit 1
@@ -96,30 +82,3 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" --repo "${{ github.repository }}" --title "$TAG" --notes "App-catalog bundle for ${{ steps.app.outputs.id }} v${{ steps.release.outputs.version }}."
           fi
-
-      # The registry lists every app that has ever been published — fetch the other apps'
-      # sidecars (best effort; a manifest with no release yet is omitted with a warning).
-      - name: Fetch sha256 sidecars for other published apps
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/fetch-sidecars.mjs --sidecars dist-bundles
-
-      # One composite artifact: store site + registry.json + assets. See
-      # scripts/build-store-artifact.mjs and docs/superpowers/specs/2026-08-01-app-store-frontend-design.md.
-      # Trade-off: this run builds the composite from the tag's commit, which may be older than
-      # main — any site/catalog changes made on main since the tag would be temporarily reverted
-      # by this deploy, until the next deploy-store push run on main rebuilds from HEAD. Accepted:
-      # self-heals on the next store-path push to main.
-      - name: Build store artifact (site + registry.json + assets)
-        run: node scripts/build-store-artifact.mjs --sidecars dist-bundles --out registry-staging
-
-      # Publishes to the app-registry alias on the bffless.dev instance (deliberately NOT
-      # the demo instance, so resetting the demo box can never take the catalog down).
-      - name: Publish store + registry to BFFless
-        uses: bffless/upload-artifact@v1
-        with:
-          path: registry-staging
-          api-url: ${{ vars.BFFLESS_REGISTRY_URL }}
-          api-key: ${{ secrets.BFFLESS_REGISTRY_API_KEY }}
-          alias: app-registry
-          description: 'App store + catalog registry'
