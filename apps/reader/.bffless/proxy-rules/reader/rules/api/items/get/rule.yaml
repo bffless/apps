@@ -12,6 +12,10 @@ pipeline:
       handler: data_query
       config:
         limit: 500
+        filters:
+          userId:
+            op: eq
+            value: user.id
         schemaId: $schema:reader_feeds
         condition: steps.prep.hasFolder
     - id: folderUrls
@@ -28,6 +32,10 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isAll
         operation: count
@@ -41,9 +49,13 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         orderBy:
           field: publishedAt
           direction: desc
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isAll
     - id: countRiver
@@ -57,6 +69,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isRiver
@@ -74,6 +89,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         orderBy:
           field: publishedAt
           direction: desc
@@ -91,6 +109,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isStarred
@@ -108,6 +129,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         orderBy:
           field: publishedAt
           direction: desc
@@ -125,6 +149,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isFeed
@@ -142,6 +169,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         orderBy:
           field: publishedAt
           direction: desc
@@ -159,6 +189,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isFolder
@@ -176,6 +209,9 @@ pipeline:
           archived:
             op: ne
             value: steps.prep.archivedNe
+          userId:
+            op: eq
+            value: user.id
         orderBy:
           field: publishedAt
           direction: desc
@@ -191,6 +227,10 @@ pipeline:
           guid:
             op: eq
             value: steps.prep.guid
+          userId:
+            op: eq
+            value: user.id
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.hasGuid
     - id: assemble

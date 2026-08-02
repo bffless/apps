@@ -10,18 +10,22 @@ Rivulet's rule set is **authored** under
 contains **no secrets**.
 
 The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the reading pipelines
-(11 rules total, `order` 0–10):
+(15 rules total, `order` 0–14):
 
 | Path | Method | Pipeline |
 | --- | --- | --- |
 | `/api/feeds` | `GET` | list subscribed feeds |
-| `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `url`) |
+| `/api/feeds` | `POST` | add a feed by URL (`data_upsert_many`, dedup by `scopedUrl`) |
 | `/api/feeds/remove` | `POST` | unsubscribe (delete the feed row + cascade-delete its non-starred items) |
 | `/api/feeds/folder` | `POST` | move a feed between folders (`data_update`; the insert-only add endpoint can't, #133) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
 | `/api/items/read` | `POST` | set an item's `read` flag (`data_update` by `guid`, #114) |
+| `/api/items/read-all` | `POST` | mark all read for a view (`all`/`river`/`starred`/feed/folder), `data_update` where `read=false` |
 | `/api/items/star` | `POST` | set an item's `starred` flag (`data_update` by `guid`; starred items are prune-exempt, #115) |
-| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `guid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
+| `/api/items/archive` | `POST` | set an item's `archived` flag by `guid`; archived items are hidden from views and prune-exempt |
+| `/api/items/delete` | `POST` | hard-delete an item by `guid` (`data_delete`); a still-in-feed item may re-insert on the next refresh |
+| `/api/counts` | `GET` | sidebar badge counts: unread-per-feed + starred total (`db_aggregate`) |
+| `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `scopedGuid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
 | `/api/discover` | `POST` | auto-discovery (#113): `http_request` fetches a site/feed URL server-side so the browser can `DOMParser` it for `<link rel="alternate">` feed links |
 | `/api/prune` | `POST` | retention (#119): `data_delete` delete-by-query removes `read` + un`starred` items older than 30 days (`fetchedAt < now-30d`); starred + unread are exempt |
 
@@ -132,20 +136,39 @@ range operators cast the field to numeric (bffless/ce#412), which an ISO string 
 
 Two schemas back the reader (content is stored **raw** and sanitized at render — CONTEXT.md D10):
 
-- **`reader_feeds`** — `url` (dedup key), `title`, `siteUrl`, `folder` (nullable), `iconUrl`,
-  `lastFetchedAt`, `lastError`, `addedAt`.
-- **`reader_items`** — `guid` (dedup key), `feedId` (the owning feed's `url`, = `xml_feed_parse`
-  `entry.source`), `title`, `link`, `author`, `publishedAt` (feed timestamp, ISO string), `summary`,
-  `content`, `enclosureType` / `enclosureUrl` (nullable strings — the primary `text/*` enclosure's
-  mime + URL carried from the feed, so the reader can detect an embeddable post, e.g. `text/markdown`
-  from a Handoff feed; backfilled onto existing rows by the refresh upsert's `updateFields`),
-  `read` (boolean), `starred` (boolean), `fetchedAt` (**`number`** — epoch-ms; ingest stamps
-  `Date.now()`, and the nightly prune filters it with a numeric `<`, so it must not be an ISO
-  string).
+- **`reader_feeds`** — `userId` (owner), `scopedUrl` (dedup key, `userId::url`), `url`, `title`,
+  `siteUrl`, `folder` (nullable), `iconUrl`, `lastFetchedAt`, `lastError`, `addedAt`.
+- **`reader_items`** — `userId` (owner), `scopedGuid` (dedup key, `userId::guid`), `guid` (the feed's
+  own guid), `feedId` (the owning feed's `url`, = `xml_feed_parse` `entry.source`), `title`, `link`,
+  `author`, `publishedAt` (feed timestamp, ISO string), `summary`, `content`, `enclosureType` /
+  `enclosureUrl`, `read`, `starred`, `archived`, `fetchedAt` (numeric epoch-ms).
 
 **`schemaId` portability caveat:** the exported rules embed the reference project's `schemaId`s. When
 you import into a different project, re-point each pipeline's `schemaId` to your project's
 `reader_feeds` / `reader_items` schema IDs (same as Handoff's caveat).
+
+### Multi-user
+
+Rivulet is multi-user: every row carries the owning `userId`, and every data-access step in the rule
+set filters on `user.id`. Two exceptions run as *userless* system context, fired by a
+`pipeline_schedule`:
+
+- `/api/refresh` step `feeds` reads **every** user's feeds — the cron ingests on everyone's behalf.
+  `enrich.fn.js` then fans each parsed entry out to one row per subscriber of that feed URL, so a feed
+  shared by N users is fetched once and stored N times.
+- `/api/prune` step `del` filters each row's own `read` / `starred` / `archived` / `fetchedAt`, which
+  is already correct per-user.
+
+Dedup is per-user by construction: `data_upsert_many` dedups on a single column, so the synthetic
+`scopedUrl` / `scopedGuid` columns carry `userId::<natural key>`. Without them the second user to
+subscribe to a shared feed would have their whole ingest skipped as duplicate.
+
+Access is gated at the alias: `requiredRole: guest` on the `reader` and `reader-preview` aliases means
+a user must be signed in **and** explicitly added to the project, while CE keeps `guest` memberships
+out of the admin backend.
+
+`apps/reader/src/lib/scoping.test.ts` is the guard — it walks every rule and fails if any data-access
+step loses its `userId` filter, or if a multi-filter step forgets `filterLogic: and`.
 
 ### 1. Auth relay
 
@@ -170,9 +193,9 @@ reaches the backend and the rotated `Set-Cookie` headers relay back.
 
 The `reader` alias must be served at a URL, and two settings on that domain mapping matter:
 
-- **`isPublic: false` (private).** Rivulet is a **personal, single-user-per-deploy** reader with no
-  public surface in v1 — every route is behind login. Unlike Handoff, there are no anonymous
-  share-link pages to keep public.
+- **`isPublic: false` (private).** All routes are edge-gated behind login; users must be signed in and
+  explicitly added to the project to access any surface (`requiredRole: guest` on the aliases).
+  Unlike Handoff, there are no anonymous share-link pages to keep public in v1.
 - **`isSpa: true`.** Rivulet is a `BrowserRouter` SPA, so deep links and hard refreshes need the
   index.html fallback.
 - **Build path.** The deploy uploads `apps/reader/dist`, so set the mapping's `path` to

@@ -25,3 +25,9 @@ fields:
   - name: addedAt
     type: number
     required: false
+  - name: userId
+    type: string
+    required: false
+  - name: scopedUrl
+    type: string
+    required: false

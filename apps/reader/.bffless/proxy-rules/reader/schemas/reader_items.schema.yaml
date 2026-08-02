@@ -43,3 +43,9 @@ fields:
   - name: enclosureUrl
     type: string
     required: false
+  - name: userId
+    type: string
+    required: false
+  - name: scopedGuid
+    type: string
+    required: false

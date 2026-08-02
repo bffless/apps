@@ -43,8 +43,8 @@ export async function listFeeds(): Promise<Feed[]> {
 
 /**
  * Subscribe to a feed by URL. The URL is normalized client-side so the server's
- * `data_upsert_many` dedup-by-url sees the same key we'd compute on a re-add.
- * Throws on an empty/invalid URL before hitting the network.
+ * `data_upsert_many` dedup on `scopedUrl` (`userId::url`) sees the same key we'd
+ * compute on a re-add. Throws on an empty/invalid URL before hitting the network.
  */
 export async function addFeed(input: {
   url: string

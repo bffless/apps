@@ -1,8 +1,11 @@
 /**
  * Item domain types + pure shaping.
  *
- * An **item** is a single feed entry, deduped by `guid` (D4/D8). The server
- * stores content **raw**; nothing here sanitizes — rendering does, at the seam
+ * An **item** is a single feed entry, deduped by `guid` (D4/D8) — the client-side
+ * identity. Server-side, dedup runs per-user on `scopedGuid = userId::(guid ||
+ * link || hash)`, since `data_upsert_many` dedups on one global column and the
+ * same entry legitimately exists once per subscriber. The server stores content
+ * **raw**; nothing here sanitizes — rendering does, at the seam
  * (`sanitizeHtml`). This module only normalizes the loosely-typed `/api/items`
  * row into a predictable {@link Item} and derives display-only bits (preview
  * text, a sortable timestamp). Read/star/river logic lands in later stories

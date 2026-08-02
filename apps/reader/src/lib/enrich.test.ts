@@ -55,12 +55,23 @@ type EnrichOut = {
     enclosureUrl: string | null
   }>
 }
-type EnrichHandler = (arg: { steps: { parse: { entries: Entry[] }; stamp: { ms: number } } }) => EnrichOut
+type EnrichHandler = (arg: {
+  steps: {
+    feeds: Array<{ url?: string; userId?: string }>
+    parse: { entries: Entry[] }
+    stamp: { ms: number }
+  }
+}) => EnrichOut
 
 const enrich = new Function('return (' + enrichSource + ')')() as EnrichHandler
 
+// Every entry these tests feed in uses the default source below, owned by one
+// user, so the fan-out is 1:1 and the original enclosure assertions still hold.
 function run(entries: Entry[], nowMs = 0): EnrichOut {
-  return enrich({ steps: { parse: { entries }, stamp: { ms: nowMs } } })
+  const sources = entries.map((e) => e.source ?? 'https://feed.test/f.xml')
+  const withSource = entries.map((e, i) => ({ ...e, source: sources[i] }))
+  const feeds = sources.map((url) => ({ url, userId: 'u1' }))
+  return enrich({ steps: { feeds, parse: { entries: withSource }, stamp: { ms: nowMs } } })
 }
 
 describe('enrich handler — enclosure selection', () => {

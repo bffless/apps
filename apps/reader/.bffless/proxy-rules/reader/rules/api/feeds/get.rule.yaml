@@ -8,6 +8,10 @@ pipeline:
       handler: data_query
       config:
         limit: 500
+        filters:
+          userId:
+            op: eq
+            value: user.id
         schemaId: $schema:reader_feeds
     - id: respond
       name: respond

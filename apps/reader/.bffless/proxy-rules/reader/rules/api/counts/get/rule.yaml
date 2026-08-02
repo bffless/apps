@@ -14,6 +14,9 @@ pipeline:
           archived:
             op: ne
             value: true
+          userId:
+            op: eq
+            value: user.id
         groupBy: feedId
         filterLogic: and
         schemaId: $schema:reader_items
@@ -29,6 +32,9 @@ pipeline:
           archived:
             op: ne
             value: true
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         operation: count
@@ -46,6 +52,9 @@ pipeline:
           archived:
             op: ne
             value: true
+          userId:
+            op: eq
+            value: user.id
         filterLogic: and
         schemaId: $schema:reader_items
         operation: count

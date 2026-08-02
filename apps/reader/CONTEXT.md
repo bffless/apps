@@ -3,14 +3,15 @@
 > **Status:** design in progress (grilling session). **Working name "Reader" — provisional**, rename is cheap before real code lands.
 
 A Google Reader–style RSS/Atom feed reader, shipped as a give-away app in the `bffless-apps`
-monorepo. Personal, single-user per deploy. Background auto-refresh via **two new Community Edition
-(CE) capabilities** — a feed-ingest handler and a scheduled-pipeline (cron) primitive.
+monorepo. Multi-user per project, with per-user data scoping and access control via `requiredRole: guest` on
+the aliases. Background auto-refresh via **two new Community Edition (CE) capabilities** — a feed-ingest
+handler and a scheduled-pipeline (cron) primitive.
 
 ## Ubiquitous language
 
-- **Feed / Subscription** — a followed RSS/Atom source (URL + title + folder). One row per feed.
-- **Item / Entry** — a single post from a feed. One row per item, deduped by GUID.
-- **GUID** — the item's stable id (RSS `<guid>` / Atom `<id>`, falling back to `<link>`). The dedup key on upsert.
+- **Feed / Subscription** — a followed RSS/Atom source (URL + title + folder). One row per feed per user.
+- **Item / Entry** — a single post from a feed. One row per item per user, deduped by `scopedGuid` (`userId::guid`).
+- **GUID** — the item's stable id (RSS `<guid>` / Atom `<id>`, falling back to `<link>`). The dedup key on upsert, scoped by user.
 - **Folder** — a user grouping of feeds (Reader's folders/tags-on-feed). A feed belongs to one folder.
 - **River** — the unified stream of unread items across all feeds; the default reading view.
 - **Star** — a "keep forever" flag on an item. Prune-exempting. This *is* the save feature.
@@ -31,20 +32,20 @@ monorepo. Personal, single-user per deploy. Background auto-refresh via **two ne
   1. **`xml_feed_parse` handler** — the reusable XML/feed consumer (solves the "no XML parser" blocker). Backed by a pure, unit-tested `FeedParserService` (`fast-xml-parser`).
   2. **`data_upsert_many` handler** — generic array→schema insert-with-dedup (solves the "no array fan-out" blocker without a generic executor loop).
   3. **`pipeline_schedules` cron primitive** — general "run pipeline X every N min per project." Cheap: `@nestjs/schedule` is already wired; `src/retention/` is a working template.
-- **The reader is a *composition*, not custom backend code:** `data_query(feeds) → xml_feed_parse(urls) → data_upsert_many(items, dedupKey: guid)`. A podcast app is the same shape with different schemas + field mapping. App-specificity lives in pipeline **config**, not CE code.
+- **The reader is a *composition*, not custom backend code:** `data_query(feeds) → xml_feed_parse(urls) → data_upsert_many(items, dedupKey: scopedGuid)`. A podcast app is the same shape with different schemas + field mapping. App-specificity lives in pipeline **config**, not CE code.
 
-## Data model (per-item, deduped by GUID)
+## Data model (per-user, per-item)
 
-- **feeds** — `id`, `url`, `siteUrl`, `title`, `folder` (nullable string; null = uncategorized), `iconUrl` (nullable), `lastFetchedAt`, `lastError` (nullable), `addedAt`.
-- **items** — `id`, `guid` (dedup key), `feedId`, `title`, `link`, `author`, `publishedAt`, `summary`, `content`, `read` (boolean, default false), `starred` (boolean, default false), `archived` (boolean, default false), `fetchedAt` (**`number`, epoch-ms** — ingest stamps `Date.now()`; the retention prune filters it with a numeric `<`, so it must be numeric, not an ISO string — #119).
-- **`data_upsert_many` mapping** (normalized entry → `items`, `dedupKey: guid`): `guid ← guid||link||hash` · `title, link, author, publishedAt, summary, content ← entry.*` · `feedId ← current feed` · `fetchedAt ←` a `stamp` step's `Date.now()` (epoch-ms) · `read/starred ←` literal `false` (so read+unstarred items are prune-eligible; the star/read endpoints then flip them per user action).
+- **feeds** — `id`, `userId`, `url`, `scopedUrl` (dedup key, `userId::url`), `siteUrl`, `title`, `folder` (nullable string; null = uncategorized), `iconUrl` (nullable), `lastFetchedAt`, `lastError` (nullable), `addedAt`.
+- **items** — `id`, `userId`, `guid`, `scopedGuid` (dedup key, `userId::guid`), `feedId`, `title`, `link`, `author`, `publishedAt`, `summary`, `content`, `read` (boolean, default false), `starred` (boolean, default false), `archived` (boolean, default false), `fetchedAt` (**`number`, epoch-ms** — ingest stamps `Date.now()`; the retention prune filters it with a numeric `<`, so it must be numeric, not an ISO string — #119).
+- **`data_upsert_many` mapping** (normalized entry → `items`, `dedupKey: scopedGuid`): `userId ← context.user.id` · `guid ← entry.guid||entry.link||hash(...)` · `scopedGuid ← userId::guid` · `title, link, author, publishedAt, summary, content ← entry.*` · `feedId ← current feed` · `fetchedAt ←` a `stamp` step's `Date.now()` (epoch-ms) · `read/starred/archived ←` literal `false` (so read+unstarred items are prune-eligible; the star/read/archive endpoints then flip them per user action).
 - **Content is stored raw; sanitized at render** (client-side DOMPurify) — keeps the generic `xml_feed_parse` policy-free (D7) and lets the sanitizer tighten without re-fetching. Both `summary` (list preview) and `content` (reading pane) stored; truncated feeds → `content` falls back to summary.
 - **Folders** = a nullable `folder` string on the feed (Reader-style, one folder per feed). No folders table in v1.
 - **Retention:** starred → forever; unread → forever; read + unstarred + older than **30 days** → pruned (a natural second consumer of the cron).
 
 ## Decisions log
 
-- **D1** — Personal reader, **single-user per deploy**. No accounts/follow-graph. Social deferred to v2. *(Give-away app model; keeps focus on the novel infra.)*
+- **D1** — ~~Personal reader, **single-user per deploy**. No accounts/follow-graph.~~ **Superseded by D15.** Social/follow-graph remains deferred.
 - **D2** — v1 = the Reader **core loop** (add-feed + auto-discovery, folders, river + per-feed/folder views, read/unread + auto-mark-on-scroll + mark-all-read, star, keyboard nav, oldest-first, OPML in/out, refresh). Deferred to v2: social, full-text extraction, search, per-item tags, recommendations.
 - **D3** — **Background auto-refresh is v1** (chose B over browser-parse/manual). Requires the CE feed-parse work + cron.
 - **D4** — **Per-item storage**, deduped by GUID (not per-feed snapshot). Fan-out lives inside the bespoke `feed_ingest` handler; no generic-executor surgery.
@@ -58,6 +59,16 @@ monorepo. Personal, single-user per deploy. Background auto-refresh via **two ne
 - **D10** — **Schemas finalized** (see Data model): content **stored raw, sanitized at render** (DOMPurify) — not at ingest, keeping `xml_feed_parse` policy-free; **both `summary` and `content`** stored; **folder = nullable string** on the feed, no folders table.
 - **D9** — **Cron primitive stores cron expressions** (`cronExpression` + optional IANA `timezone`, default UTC); the **UI presents interval/time presets** that compile to cron (raw-cron field is a later add). `nextRunAt` computed via `cron-parser`; master poller is `@Cron(EVERY_MINUTE)`. **Atomic conditional claim** (`UPDATE … SET executionStartedAt WHERE executionStartedAt IS NULL`) — built now for replica-safety, not the in-process boolean. Table `pipeline_schedules` (projectId, targetProxyRuleId, cronExpression, timezone, enabled, lastRunAt, nextRunAt, executionStartedAt, lastError), modeled on `retention-rules.schema.ts`.
 - **D14** — **Manual per-item Delete (hard) + Archive (hidden, prune-exempt, insert-only-dedup keeps it from resurrecting); no auto-reconcile** — RSS windowing would destroy kept history. `archived` is a flag like `starred`: `GET /api/items` hides archived rows by default (opt back in with `?includeArchived=true`), `GET /api/counts` and `POST /api/prune` always treat archived as excluded/exempt. `POST /api/items/delete` hard-removes the row (`data_delete` by `guid`) for cleaning up dead/source-deleted posts; because ingest is insert-only-dedup-by-guid, a still-in-feed item can re-insert on the next refresh — deletion isn't a permanent block, archive is the durable "make it go away" action.
+- **D15** — **Multi-user via copy-per-user** (supersedes D1). Every `reader_feeds` / `reader_items`
+  row carries a `userId`; every data-access step filters `userId eq user.id`; the userless cron
+  refresh derives ownership from the feed row and fans each entry out to one row per subscriber.
+  Dedup moves to synthetic `scopedUrl` / `scopedGuid` columns (`userId::<natural key>`) because
+  `data_upsert_many` dedups on a single column — without this the second subscriber to a shared feed
+  gets an empty reader. Access is `requiredRole: guest` on the reader aliases: signed in **and**
+  explicitly added to the project, with no admin-backend visibility. Rejected: shared feed/item rows
+  with a per-user state join table — cheaper at scale, but needs a third schema and a join
+  `data_query` can't express in one step. Chosen for give-away-app scale; cheap now, expensive to
+  unwind later. Design: `docs/superpowers/specs/2026-08-02-reader-per-user-scoping-design.md`.
 
 ## Deferred to v2+
 
