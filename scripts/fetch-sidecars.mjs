@@ -1,10 +1,19 @@
 #!/usr/bin/env node
-// Downloads the published sha256 sidecar for every manifested app (apps/*/bffless-app.json)
-// into --sidecars, skipping files already present (e.g. the bundle just built by
-// app-bundles.yml). An app with a manifest but no published release yet is skipped with a
-// log line, not a failure — wiring up a new app's manifest must not break the registry
-// build for existing apps. A transient `gh` failure (auth/network) is NOT treated as "no
-// release" — it fails the script loudly, so CI never silently publishes a smaller registry.
+// Downloads the published sidecars for every manifested app (apps/*/bffless-app.json) into
+// --sidecars, skipping files already present (e.g. the bundle just built by app-bundles.yml):
+//
+//   <app>-v<version>.bundle.sha256  — REQUIRED; its absence omits the app from registry.json
+//   <app>-v<version>.bundle.commit  — OPTIONAL; source commit (bffless/apps#276). Releases cut
+//                                     before that change have no .commit asset, which is a
+//                                     normal steady state, not an error.
+//
+// An app with a manifest but no published release yet is skipped with a log line, not a
+// failure — wiring up a new app's manifest must not break the registry build for existing
+// apps. A transient `gh` failure (auth/network) is NOT treated as "no release" — it fails the
+// script loudly, so CI never silently publishes a smaller registry. The same distinction is
+// kept for .commit by asking the release which assets it HAS rather than by pattern-matching
+// gh's failure text: a missing asset is skipped, but a failed download of an asset the release
+// does list still fails loudly.
 // Replaces the inline bash loop in app-bundles.yml so deploy-store.yml can share it. Requires
 // the `gh` CLI (GH_TOKEN in CI).
 
@@ -39,7 +48,11 @@ for (const app of apps) {
 
   // Check existence first so a genuinely-missing release (expected, common) is distinguishable
   // from a transient gh failure (auth/network — must fail the build, not silently omit).
-  const view = spawnSync('gh', ['release', 'view', tag, '--repo', repo], { stdio: 'pipe', encoding: 'utf8' })
+  // `--json assets` additionally tells us which optional sidecars this release actually carries.
+  const view = spawnSync('gh', ['release', 'view', tag, '--repo', repo, '--json', 'assets'], {
+    stdio: 'pipe',
+    encoding: 'utf8',
+  })
   if (view.status !== 0) {
     if (/release not found/i.test(view.stderr || '')) {
       console.log(`no published release for ${tag} yet — omitting from registry.json`)
@@ -49,13 +62,32 @@ for (const app of apps) {
     fail(`gh release view ${tag} failed unexpectedly (not a "release not found" — likely auth/network) — see stderr above`)
   }
 
-  const download = spawnSync(
-    'gh',
-    ['release', 'download', tag, '--repo', repo, '--pattern', `${baseName}.sha256`, '--dir', sidecarsDir, '--clobber'],
-    { stdio: 'pipe', encoding: 'utf8' },
-  )
-  if (download.status !== 0) {
-    console.error(download.stderr || `gh release download ${tag} failed with no stderr output`)
-    fail(`gh release download ${tag} failed even though the release exists — see stderr above`)
+  let assetNames = []
+  try {
+    assetNames = (JSON.parse(view.stdout).assets ?? []).map((asset) => asset.name)
+  } catch (err) {
+    fail(`could not parse the asset list for ${tag}: ${err.message}`)
+  }
+
+  const download = (pattern) => {
+    const result = spawnSync(
+      'gh',
+      ['release', 'download', tag, '--repo', repo, '--pattern', pattern, '--dir', sidecarsDir, '--clobber'],
+      { stdio: 'pipe', encoding: 'utf8' },
+    )
+    if (result.status !== 0) {
+      console.error(result.stderr || `gh release download ${tag} failed with no stderr output`)
+      fail(`gh release download ${tag} (${pattern}) failed — see stderr above`)
+    }
+  }
+
+  download(`${baseName}.sha256`)
+
+  // Optional: absent on every release cut before bffless/apps#276. registry.json simply carries
+  // no `commit` for those, and CE falls back to the bundle hash — no failure, no guessed value.
+  if (assetNames.includes(`${baseName}.commit`)) {
+    download(`${baseName}.commit`)
+  } else {
+    console.log(`${tag} has no .commit sidecar — registry entry will omit the source commit`)
   }
 }

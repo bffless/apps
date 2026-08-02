@@ -87,10 +87,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.release.outputs.tag }}"
+          # nullglob so an absent .commit sidecar (build-app-bundle.mjs omits it when the commit
+          # is unresolvable) drops out of the list instead of reaching gh as a literal glob.
+          shopt -s nullglob
+          ASSETS=(dist-bundles/*.zip dist-bundles/*.sha256 dist-bundles/*.commit)
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist-bundles/*.zip dist-bundles/*.sha256 --repo "${{ github.repository }}" --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "${{ github.repository }}" --clobber
           else
-            gh release create "$TAG" dist-bundles/*.zip dist-bundles/*.sha256 --repo "${{ github.repository }}" --title "$TAG" --notes "App-catalog bundle for ${{ steps.app.outputs.id }} v${{ steps.release.outputs.version }}."
+            gh release create "$TAG" "${ASSETS[@]}" --repo "${{ github.repository }}" --title "$TAG" --notes "App-catalog bundle for ${{ steps.app.outputs.id }} v${{ steps.release.outputs.version }}."
           fi
 
       # The registry lists every app that has ever been published — fetch the other apps'

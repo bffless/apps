@@ -7,6 +7,7 @@
 // Usage: node scripts/build-app-bundle.mjs <app-id>
 // Output: dist-bundles/<app-id>-v<version>.bundle.zip
 //         dist-bundles/<app-id>-v<version>.sha256  (sha256sum -c compatible: "<hex>  <filename>")
+//         dist-bundles/<app-id>-v<version>.commit  (bare 40-hex sha + newline; omitted when unresolvable)
 //
 // Steps:
 //   1. Read + JSON-validate apps/<app-id>/bffless-app.json (schemaVersion 1, id, version present).
@@ -14,9 +15,21 @@
 //   3. Per install.ruleSets[] entry: `npx --yes bffless@latest rules build <authored-dir> -o <file>`.
 //      Do NOT strip any fields from the built envelope ({ version, exportedAt, kind, ruleSet,
 //      rules, schemas }) — CE's SyncProxyRuleSetDto whitelists all of them.
-//   4. Assemble the zip: bffless-app.json (raw bytes, as authored) + rulesets/*.json + dist/**
-//      (entry paths exactly "dist/...", matching manifest.install.deployment.path = "dist").
-//   5. sha256 the zip bytes to the sidecar file; print both paths.
+//   4. Assemble the zip: bffless-app.json (raw bytes, as authored) + .bffless-build.json +
+//      rulesets/*.json + dist/** (entry paths exactly "dist/...", matching
+//      manifest.install.deployment.path = "dist").
+//   5. sha256 the zip bytes to the sidecar file; write the .commit sidecar; print the paths.
+//
+// Source-commit provenance (bffless/apps#276, bffless/ce#610): resolved by
+// scripts/source-commit.mjs, which explains why build time is the only unambiguous point to do
+// it. Both consumers are stamped from that one resolved value, so they cannot disagree:
+//
+//   - `.bffless-build.json` INSIDE the zip — read by CE's AppBundleService and used as the
+//     install deployment's commitSha. It rides with the bytes, so it is covered by the same
+//     sha256 the registry pins, and a bundle can never be attributed to another commit.
+//   - the `.commit` sidecar BESIDE the zip — read by scripts/build-registry.mjs, which only
+//     ever sees sidecars (it never downloads a bundle). Published to the release next to
+//     .sha256 and re-fetched by scripts/fetch-sidecars.mjs on later runs.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -24,6 +37,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative } from 'node:path'
 import { zipSync } from 'fflate'
+import { resolveSourceCommit } from './source-commit.mjs'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -83,6 +97,11 @@ function main() {
 
   console.log(`Building bundle for ${manifest.id} v${manifest.version}...`)
 
+  // Resolved BEFORE step 2 so a locally-built dist/ can never trip the dirty check. All build
+  // outputs are gitignored, but the ordering makes that independent of .gitignore.
+  const sourceCommit = resolveSourceCommit(repoRoot)
+  if (sourceCommit) console.log(`Source commit: ${sourceCommit}`)
+
   // Step 2: build the frontend.
   run('pnpm', ['--filter', appId, 'build'])
 
@@ -119,8 +138,17 @@ function main() {
     zipEntries[ruleSetEntry.file] = readFileSync(outFile)
   }
 
-  // Step 4: assemble the zip — manifest + rulesets/*.json + dist/** (paths exactly "dist/...").
+  // Step 4: assemble the zip — manifest + build stamp + rulesets/*.json + dist/**
+  // (paths exactly "dist/...").
   zipEntries['bffless-app.json'] = manifestRaw
+  // A separate entry rather than a field on the manifest: bffless-app.json goes in as the raw
+  // authored bytes (above), and build provenance is not manifest content. CE's buildDistZip only
+  // deploys entries under deployment.path, so this never reaches storage.
+  if (sourceCommit) {
+    zipEntries['.bffless-build.json'] = Buffer.from(
+      JSON.stringify({ commit: sourceCommit }, null, 2) + '\n',
+    )
+  }
   for (const relPath of listFilesRecursive(distDir)) {
     const zipPath = `${manifest.install.deployment.path}/${relPath.split('\\').join('/')}`
     zipEntries[zipPath] = readFileSync(join(distDir, relPath))
@@ -139,9 +167,19 @@ function main() {
   const shaPath = join(outDir, `${baseName}.sha256`)
   writeFileSync(shaPath, `${sha256}  ${baseName}.zip\n`)
 
+  // Commit sidecar — published to the release beside .sha256 so build-registry.mjs can stamp
+  // `commit` without ever downloading a bundle. Omitted entirely when unresolvable, so its
+  // absence (not an empty or placeholder value) is what downstream readers test for.
+  let commitPath = null
+  if (sourceCommit) {
+    commitPath = join(outDir, `${baseName}.commit`)
+    writeFileSync(commitPath, `${sourceCommit}\n`)
+  }
+
   console.log(`\nBuilt bundle:`)
   console.log(`  ${zipPath}`)
   console.log(`  ${shaPath}  (sha256 ${sha256})`)
+  if (commitPath) console.log(`  ${commitPath}  (commit ${sourceCommit})`)
 }
 
 main()
