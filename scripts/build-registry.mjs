@@ -2,7 +2,8 @@
 // Builds the app-catalog registry.json: one entry per apps/<app>/bffless-app.json whose
 // bundle release sidecar (<app>-v<version>.bundle.sha256) is present in --sidecars, folding
 // in store metadata from apps/<app>/catalog/ (description.md, thumbnail.png, icon.png,
-// screenshots/*). Extracted from .github/workflows/app-bundles.yml so deploy-store.yml can
+// screenshots/*) and source provenance from the optional <app>-v<version>.bundle.commit
+// sidecar. Extracted from .github/workflows/app-bundles.yml so deploy-store.yml can
 // reuse it and it can be unit-tested (scripts/build-registry.test.mjs).
 //
 // CLI: node scripts/build-registry.mjs --out <file> [--apps-dir apps] [--sidecars dist-bundles]
@@ -12,6 +13,28 @@
 import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+const COMMIT_PATTERN = /^[0-9a-f]{40}$/i
+
+// Source commit for a bundle, from the `.commit` sidecar written by build-app-bundle.mjs and
+// published beside `.sha256` (bffless/apps#276). Absent for every release cut before that
+// change, and for bundles built from an unresolvable commit — both are normal, so this returns
+// undefined and the entry simply carries no `commit`.
+//
+// Read from the sidecar rather than github.sha because registry.json is rebuilt by
+// deploy-store.yml too, where no bundle is built and github.sha belongs to none of the entries.
+// Anything that is not a bare 40-hex sha is dropped: a garbled sidecar must not surface as a
+// plausible-looking commit that links somewhere wrong.
+function readSourceCommit(sidecarsDir, baseName) {
+  const commitPath = join(sidecarsDir, `${baseName}.commit`)
+  if (!existsSync(commitPath)) return undefined
+  const raw = readFileSync(commitPath, 'utf8').trim()
+  if (!COMMIT_PATTERN.test(raw)) {
+    console.log(`::warning title=app-catalog registry::${baseName}.commit is not a 40-hex sha — omitting commit`)
+    return undefined
+  }
+  return raw.toLowerCase()
+}
 
 function readCatalog(catalogDir, appAssetBase) {
   if (!existsSync(catalogDir)) return {}
@@ -58,6 +81,12 @@ export function buildRegistry({ appsDir, sidecarsDir, assetBaseUrl, repo }) {
       version: manifest.version,
       bundleUrl: `https://github.com/${repo}/releases/download/${app}-v${manifest.version}/${baseName}.zip`,
       sha256,
+      // Provenance. Both optional and additive: a CE that predates them ignores them, and a
+      // newer CE reading an older entry simply has no commit to show. Note CE does NOT depend
+      // on these for the install itself — it reads .bffless-build.json from inside the bundle,
+      // so it never has to trust the registry for the commit it stamps on a deployment.
+      commit: readSourceCommit(sidecarsDir, baseName),
+      releaseTag: `${app}-v${manifest.version}`,
       summary: manifest.summary,
       description: catalog.description,
       category: manifest.category,
