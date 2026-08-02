@@ -44,7 +44,7 @@ monorepo. Personal, single-user per deploy. Background auto-refresh via **two ne
 
 ## Decisions log
 
-- **D1** — Personal reader, **single-user per deploy**. No accounts/follow-graph. Social deferred to v2. *(Give-away app model; keeps focus on the novel infra.)*
+- **D1** — ~~Personal reader, **single-user per deploy**. No accounts/follow-graph.~~ **Superseded by D15.** Social/follow-graph remains deferred.
 - **D2** — v1 = the Reader **core loop** (add-feed + auto-discovery, folders, river + per-feed/folder views, read/unread + auto-mark-on-scroll + mark-all-read, star, keyboard nav, oldest-first, OPML in/out, refresh). Deferred to v2: social, full-text extraction, search, per-item tags, recommendations.
 - **D3** — **Background auto-refresh is v1** (chose B over browser-parse/manual). Requires the CE feed-parse work + cron.
 - **D4** — **Per-item storage**, deduped by GUID (not per-feed snapshot). Fan-out lives inside the bespoke `feed_ingest` handler; no generic-executor surgery.
@@ -58,6 +58,16 @@ monorepo. Personal, single-user per deploy. Background auto-refresh via **two ne
 - **D10** — **Schemas finalized** (see Data model): content **stored raw, sanitized at render** (DOMPurify) — not at ingest, keeping `xml_feed_parse` policy-free; **both `summary` and `content`** stored; **folder = nullable string** on the feed, no folders table.
 - **D9** — **Cron primitive stores cron expressions** (`cronExpression` + optional IANA `timezone`, default UTC); the **UI presents interval/time presets** that compile to cron (raw-cron field is a later add). `nextRunAt` computed via `cron-parser`; master poller is `@Cron(EVERY_MINUTE)`. **Atomic conditional claim** (`UPDATE … SET executionStartedAt WHERE executionStartedAt IS NULL`) — built now for replica-safety, not the in-process boolean. Table `pipeline_schedules` (projectId, targetProxyRuleId, cronExpression, timezone, enabled, lastRunAt, nextRunAt, executionStartedAt, lastError), modeled on `retention-rules.schema.ts`.
 - **D14** — **Manual per-item Delete (hard) + Archive (hidden, prune-exempt, insert-only-dedup keeps it from resurrecting); no auto-reconcile** — RSS windowing would destroy kept history. `archived` is a flag like `starred`: `GET /api/items` hides archived rows by default (opt back in with `?includeArchived=true`), `GET /api/counts` and `POST /api/prune` always treat archived as excluded/exempt. `POST /api/items/delete` hard-removes the row (`data_delete` by `guid`) for cleaning up dead/source-deleted posts; because ingest is insert-only-dedup-by-guid, a still-in-feed item can re-insert on the next refresh — deletion isn't a permanent block, archive is the durable "make it go away" action.
+- **D15** — **Multi-user via copy-per-user** (supersedes D1). Every `reader_feeds` / `reader_items`
+  row carries a `userId`; every data-access step filters `userId eq user.id`; the userless cron
+  refresh derives ownership from the feed row and fans each entry out to one row per subscriber.
+  Dedup moves to synthetic `scopedUrl` / `scopedGuid` columns (`userId::<natural key>`) because
+  `data_upsert_many` dedups on a single column — without this the second subscriber to a shared feed
+  gets an empty reader. Access is `requiredRole: guest` on the reader aliases: signed in **and**
+  explicitly added to the project, with no admin-backend visibility. Rejected: shared feed/item rows
+  with a per-user state join table — cheaper at scale, but needs a third schema and a join
+  `data_query` can't express in one step. Chosen for give-away-app scale; cheap now, expensive to
+  unwind later. Design: `docs/superpowers/specs/2026-08-02-reader-per-user-scoping-design.md`.
 
 ## Deferred to v2+
 
