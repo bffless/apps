@@ -170,9 +170,9 @@ The existing harness (`src/lib/enrich.test.ts`) reads `.fn.js` sources and rule 
 
 Filed separately; none block this work.
 
-1. **Composite `dedupField` on `data_upsert_many`** (accept an array of columns). Would remove `scopedGuid` / `scopedUrl` entirely. The next multi-user BFFless app will hit this too.
-2. **Run-as identity for `pipeline_schedules`.** Scheduled runs could then carry a user and use `auth_required` + `user.id`, removing the special-casing in `refresh` and `prune`.
-3. **`allowApiKey` is dead config** — declared at `types.ts:22`, set by the upload-schema generator, read by nothing. `AuthRequiredValidator.validate` only checks `context.user` and `config.roles`.
+1. **Composite `dedupField` on `data_upsert_many` (ce#613)** — accept an array of columns. Would remove `scopedGuid` / `scopedUrl` entirely. The next multi-user BFFless app will hit this too. https://github.com/bffless/ce/issues/613
+2. **Run-as identity for `pipeline_schedules` (ce#614).** Scheduled runs could then carry a user and use `auth_required` + `user.id`, removing the special-casing in `refresh` and `prune`. https://github.com/bffless/ce/issues/614
+3. **`allowApiKey` is dead config (ce#615)** — declared at `types.ts:22`, set by the upload-schema generator, read by nothing. `AuthRequiredValidator.validate` only checks `context.user` and `config.roles`. https://github.com/bffless/ce/issues/615
 
 ## Out of scope
 
