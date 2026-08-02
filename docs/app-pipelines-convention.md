@@ -71,8 +71,10 @@ end to end, `AppBundleService.loadFromBuffer`. See `apps/handoff/bffless-app.jso
 example. Fields, in brief:
 
 - `schemaVersion: 1`, `id` (must equal the `apps/<id>` directory name), `name`, `version` (semver —
-  since this repo has no release machinery, **the manifest's `version` is the app's version of
-  record**, bumped by hand in the PR that changes it), `summary`/`docsUrl`/`sourceUrl`.
+  **do not edit by hand**; release-please owns it and writes the bump into `bffless-app.json` on the
+  Release PR merge for any conventional commit touching `apps/<app>/**`, cutting the
+  `<app>-v<version>` tag in the same commit — see the `publish-app` skill §2 for detail),
+  `summary`/`docsUrl`/`sourceUrl`.
 - `requires: { presignedStorage?, ceMin? }` — a minimum CE version and whether the app needs presigned
   uploads (works on local file storage or a bucket as of CE v0.3.15 — this is not "needs a bucket").
 - `install.alias`, `install.deployment: { path, basePath }` (path is relative to the app dir, e.g.
@@ -97,10 +99,13 @@ example. Fields, in brief:
 (`npx bffless rules build <dir> -o rulesets/<name>.json` — the full envelope, unmodified; CE's sync
 DTO whitelists the extra envelope fields and resolves schemas by name), and zips
 `bffless-app.json` + `rulesets/*.json` + `dist/**` into `dist-bundles/<app-id>-v<version>.bundle.zip`
-with a `.sha256` sidecar. `.github/workflows/app-bundles.yml` runs this on a `<app-id>-v<version>` tag
-push (or `workflow_dispatch`), publishes the zip as a GitHub release asset, and republishes
-`registry.json` (one entry per manifested app that has a published release) to the `app-registry`
-alias.
+with a `.sha256` sidecar. `.github/workflows/app-bundles.yml` builds and publishes one app's bundle
+as a GitHub release asset — it has no tag-push trigger; it's invoked with an `app` input, either by
+`.github/workflows/release.yml` (`workflow_call`, once per app release-please just released) or by
+hand (`workflow_dispatch`, to re-upload against an existing tag). It does not touch the registry:
+`release.yml`'s `publish-registry` job is the sole publisher of `registry.json` (one entry per
+manifested app that has a published release) to the `app-registry` alias — see the `publish-app`
+skill §5 for the full flow.
 
 `scripts/check-app-conventions.mjs` validates any `bffless-app.json` it finds — `schemaVersion`, `id`
 matches the directory, `version` is semver, `install.alias`/`install.domain.subdomain` are non-empty,
