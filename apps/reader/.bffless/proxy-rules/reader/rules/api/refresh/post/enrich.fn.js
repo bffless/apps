@@ -39,7 +39,11 @@ function handler({ steps }) {
       }
     }
     // D8's dedup chain, resolved here now that the key must also carry the owner.
-    var key = e.guid || e.link || (String(e.source) + '|' + String(e.title) + '|' + pub)
+    // Built from stable entry data only (raw publishedAt, not `pub`): `pub` falls
+    // back to the current stamp when publishedAt is missing/unparseable, and using
+    // that here would mint a fresh dedup key on every 15-minute poll for any entry
+    // with no guid/link/date, inserting an unbounded stream of duplicate rows.
+    var key = e.guid || e.link || (String(e.source) + '|' + String(e.title) + '|' + String(e.publishedAt || ''))
     var owners = subs['#' + e.source] || []
     for (var o = 0; o < owners.length; o++) {
       out.push({

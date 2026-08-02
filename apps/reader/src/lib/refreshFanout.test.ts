@@ -99,6 +99,17 @@ describe('enrich handler — per-subscriber fan-out', () => {
     expect(out).toEqual([])
   })
 
+  it('the synthesised key for an entry with no guid/link/date is stable across polls', () => {
+    // Regression for enrich.fn.js:42 — the fallback key must be built from stable
+    // entry data only, never from `pub` (which falls back to the current stamp),
+    // or a re-poll mints a fresh scopedGuid every time and inserts a duplicate row.
+    const feeds = [{ url: 'f', userId: 'u1' }]
+    const entries = [{ source: 'f', title: 'T' }]
+    const first = enrich({ steps: { feeds, parse: { entries }, stamp: { ms: 0 } } }).entries
+    const second = enrich({ steps: { feeds, parse: { entries }, stamp: { ms: 900_000 } } }).entries
+    expect(first[0].scopedGuid).toBe(second[0].scopedGuid)
+  })
+
   it('the upsert step dedups on scopedGuid and maps the owner', () => {
     const upsert = refreshRule.pipeline?.steps?.find((s) => s.id === 'upsert')
     expect(upsert?.config?.dedupField).toBe('scopedGuid')
