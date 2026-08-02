@@ -32,7 +32,7 @@ handler and a scheduled-pipeline (cron) primitive.
   1. **`xml_feed_parse` handler** — the reusable XML/feed consumer (solves the "no XML parser" blocker). Backed by a pure, unit-tested `FeedParserService` (`fast-xml-parser`).
   2. **`data_upsert_many` handler** — generic array→schema insert-with-dedup (solves the "no array fan-out" blocker without a generic executor loop).
   3. **`pipeline_schedules` cron primitive** — general "run pipeline X every N min per project." Cheap: `@nestjs/schedule` is already wired; `src/retention/` is a working template.
-- **The reader is a *composition*, not custom backend code:** `data_query(feeds) → xml_feed_parse(urls) → data_upsert_many(items, dedupKey: guid)`. A podcast app is the same shape with different schemas + field mapping. App-specificity lives in pipeline **config**, not CE code.
+- **The reader is a *composition*, not custom backend code:** `data_query(feeds) → xml_feed_parse(urls) → data_upsert_many(items, dedupKey: scopedGuid)`. A podcast app is the same shape with different schemas + field mapping. App-specificity lives in pipeline **config**, not CE code.
 
 ## Data model (per-user, per-item)
 
