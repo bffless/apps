@@ -115,6 +115,24 @@ export function FeedSidebar({
           <p className="px-2 py-3 text-sm text-slate-400 dark:text-slate-500">No feeds yet. Add one above.</p>
         )}
       </nav>
+
+      {/*
+        Quiet attribution. `mt-auto` settles it under the feed list rather than
+        against it, so it reads as a footer on a short list and doesn't crowd a
+        long one. Deliberately dimmer than the empty-state copy above it — this
+        is the least important text on the page.
+      */}
+      <p className="mt-auto px-2 pt-6 text-xs text-slate-400 dark:text-slate-600">
+        Built with{' '}
+        <a
+          href="https://bffless.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline decoration-dotted underline-offset-2 transition-colors hover:text-slate-600 dark:hover:text-slate-400"
+        >
+          BFFless
+        </a>
+      </p>
     </aside>
   )
 }
