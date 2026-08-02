@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "handoff",
   "name": "Handoff",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "summary": "Share files, folders, and Sites with per-folder access control, share links, and live comments.",
   "category": "files",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/handoff/bffless/README.md",
@@ -18,8 +18,14 @@
       "basePath": "/apps/handoff/dist"
     },
     "ruleSets": [
-      { "file": "rulesets/handoff.json", "attachToAlias": true },
-      { "file": "rulesets/handoff-rss-feed.json", "attachToAlias": true }
+      {
+        "file": "rulesets/handoff.json",
+        "attachToAlias": true
+      },
+      {
+        "file": "rulesets/handoff-rss-feed.json",
+        "attachToAlias": true
+      }
     ],
     "domain": {
       "subdomain": "handoff",
@@ -40,7 +46,12 @@
     "repo": "bffless/apps",
     "appPath": "apps/handoff",
     "deployWorkflow": "deploy-handoff.yml",
-    "variables": ["BFFLESS_URL", "BFFLESS_PROJECT"],
-    "secrets": ["BFFLESS_API_KEY"]
+    "variables": [
+      "BFFLESS_URL",
+      "BFFLESS_PROJECT"
+    ],
+    "secrets": [
+      "BFFLESS_API_KEY"
+    ]
   }
 }
