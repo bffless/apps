@@ -66,20 +66,6 @@ const EXPECTED_UNSCOPED = new Set<string>([
   'api/refresh/post:feeds',
   'api/prune/post:del',
 
-  // Task 4
-  'api/items/get:folderFeeds',
-  'api/items/get:countAll',
-  'api/items/get:pageAll',
-  'api/items/get:countRiver',
-  'api/items/get:pageRiver',
-  'api/items/get:countStarred',
-  'api/items/get:pageStarred',
-  'api/items/get:countFeed',
-  'api/items/get:pageFeed',
-  'api/items/get:countFolder',
-  'api/items/get:pageFolder',
-  'api/items/get:pageGuid',
-
   // Task 5
   'api/items/read/post:query',
   'api/items/star/post:query',
