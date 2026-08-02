@@ -80,4 +80,17 @@ describe('FeedSidebar — counts-driven badges', () => {
     // With empty counts, no unread badges render at all (only positive counts show).
     expect(screen.queryByLabelText(/unread/)).not.toBeInTheDocument()
   })
+
+  it('renders the BFFless attribution as an outbound link', () => {
+    renderSidebar()
+    const link = screen.getByRole('link', { name: 'BFFless' })
+    expect(link).toHaveAttribute('href', 'https://bffless.dev')
+    // Opening in a new tab must not hand the target a live `window.opener`.
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  })
+
+  it('keeps the attribution present when there are no feeds', () => {
+    renderSidebar({ feeds: [] })
+    expect(screen.getByRole('link', { name: 'BFFless' })).toBeInTheDocument()
+  })
 })

@@ -9,7 +9,7 @@
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/reader",
   "requires": {
     "presignedStorage": false,
-    "ceMin": "0.4.8"
+    "ceMin": "0.4.13"
   },
   "install": {
     "alias": "reader",
