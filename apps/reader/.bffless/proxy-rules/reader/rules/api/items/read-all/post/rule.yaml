@@ -12,6 +12,10 @@ pipeline:
       handler: data_query
       config:
         limit: 500
+        filters:
+          userId:
+            op: eq
+            value: user.id
         schemaId: $schema:reader_feeds
         condition: steps.prep.hasFolder
     - id: folderUrls
@@ -30,6 +34,10 @@ pipeline:
           read:
             op: eq
             value: false
+          userId:
+            op: eq
+            value: user.id
+        filterLogic: and
         schemaId: $schema:reader_items
         condition: steps.prep.isAllOrRiver
     - id: updStarred
@@ -45,6 +53,9 @@ pipeline:
           starred:
             op: eq
             value: true
+          userId:
+            op: eq
+            value: user.id
         schemaId: $schema:reader_items
         condition: steps.prep.isStarred
         filterLogic: and
@@ -61,6 +72,9 @@ pipeline:
           feedId:
             op: eq
             value: steps.prep.feedId
+          userId:
+            op: eq
+            value: user.id
         schemaId: $schema:reader_items
         condition: steps.prep.isFeed
         filterLogic: and
@@ -77,6 +91,9 @@ pipeline:
           feedId:
             op: in
             value: steps.folderUrls.urls
+          userId:
+            op: eq
+            value: user.id
         schemaId: $schema:reader_items
         condition: steps.prep.isFolder
         filterLogic: and
