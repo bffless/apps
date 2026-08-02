@@ -5,9 +5,9 @@
 //
 // Build time is the only point where this is unambiguous — the builder zips the tree it is
 // standing in. Doing it later, from a workflow's ${{ github.sha }}, is wrong for any run that
-// did not build the bundle it is stamping: deploy-store.yml republishes registry.json on
-// store/catalog edits without building anything, where github.sha is main's HEAD and belongs to
-// none of the entries.
+// did not build the bundle it is stamping: release.yml's publish-registry job rebuilds
+// registry.json on store/catalog edits without building any bundle itself, where github.sha
+// is main's HEAD and belongs to none of the entries.
 
 import { spawnSync } from 'node:child_process'
 

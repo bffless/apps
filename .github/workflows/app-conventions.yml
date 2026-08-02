@@ -7,14 +7,25 @@ name: App conventions
 # guide installing any app — including any future app — without a rewrite, and keeps
 # each app's manual admin-panel steps surfaced to the reader.
 #
-# Fix a failure with: node scripts/check-app-conventions.mjs (pnpm apps:check) and
-# see docs/app-pipelines-convention.md.
+# Also runs `pnpm scripts:test` (node:test over scripts/*.test.mjs), which includes
+# workflow-invariants.test.mjs — the assertion that release.yml is the sole publisher
+# of the app-registry alias. Before this, that test's only invocation was inside
+# release.yml's publish-registry job, which runs on `main` — so the branch's central
+# guard never ran where it could actually stop a second-publisher regression from
+# being merged. Paths below cover the inputs both checks depend on: apps/**,
+# scripts/**, the workflow files, and release-please's two version-of-truth files (see
+# checkVersionParity in check-app-conventions.mjs).
+#
+# Fix a convention failure with: node scripts/check-app-conventions.mjs (pnpm apps:check),
+# see docs/app-pipelines-convention.md. Fix a script-test failure with: pnpm scripts:test.
 on:
   pull_request:
     paths:
       - 'apps/**'
-      - 'scripts/check-app-conventions.mjs'
-      - '.github/workflows/app-conventions.yml'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - 'release-please-config.json'
+      - '.release-please-manifest.json'
   workflow_dispatch:
 
 permissions:
@@ -26,10 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Check per-app pipelines convention
         run: node scripts/check-app-conventions.mjs
+
+      - name: Script tests
+        run: pnpm scripts:test

@@ -64,12 +64,15 @@ by accident.
 - **`id`** — must equal the `apps/<id>` directory name (both `check-app-conventions.mjs`
   and CE's `validateAppManifest` enforce this), and match `/^[a-z0-9-]+$/`.
 - **`name`** — display name, any non-empty string.
-- **`version`** — semver. **This file is the app's version of record.** There is no
-  release-please, no `package.json` version bump, no changelog automation in this repo for
-  catalog purposes — you bump `version` by hand in the PR that changes the app (or just to
-  cut a new catalog release), and that bump is what drives the release tag (§5). Forgetting
-  to bump it means `node scripts/build-app-bundle.mjs` re-produces the *same* version —
-  harmless but pointless; the registry entry won't change.
+- **`version`** — semver. **Do not edit `version` by hand.** release-please owns it: a conventional
+  commit touching `apps/<app>/**` bumps that app on the next Release PR, which writes both
+  `apps/<app>/package.json` and `apps/<app>/bffless-app.json` and cuts the `<app>-v<version>` tag in
+  the same commit. Adding a new catalog app means adding a matching component to
+  `release-please-config.json` and a seed entry to `.release-please-manifest.json` — `pnpm
+  apps:check` fails if you forget.
+
+  `requires.ceMin` is still yours to set. It is a judgement about which CE release the app depends
+  on and cannot be derived from commit history.
 - **`summary`** — one line, shown in the catalog list.
 - **`iconUrl`, `docsUrl`, `sourceUrl`** — all optional strings, no format validation beyond
   "is a string". Point `docsUrl` at the app's `bffless/README.md` on GitHub and `sourceUrl`
@@ -258,47 +261,56 @@ Run these in order, on every manifest change, before pushing a release tag:
 
 ## 5. Publish
 
-1. Bump `version` in `apps/<app-id>/bffless-app.json` (§2) if you haven't already, and get
-   it merged to `main` via a normal PR.
-2. Cut the release **one of two ways**:
-   - **Tag push (normal case):** `git tag <app-id>-v<version> && git push origin <app-id>-v<version>`
-     — e.g. `handoff-v1.1.0`. The tag `push` trigger in
-     `.github/workflows/app-bundles.yml` resolves the app id from the tag (`handoff-v1.1.0`
-     → `handoff`), builds, and publishes.
-   - **`workflow_dispatch` (manual re-publish without a new tag):** Actions tab → "App
-     bundles — build + publish" → Run workflow → `app: <app-id>`. Useful for re-running
-     after a registry-only fix; it re-resolves `version` from the manifest that's currently
-     on the branch you dispatch from and **re-uses the existing tag** (`gh release upload
-     --clobber` if the tag/release already exists, `gh release create` if not) — it does
-     **not** cut a new tag itself.
-3. **What the workflow does after that** (you don't have to do any of this by hand):
-   - builds the bundle (same `build-app-bundle.mjs` you ran locally);
-   - creates (or re-uses, with `--clobber`) the GitHub release `<app-id>-v<version>` and
-     uploads the zip + sha256 sidecar as release assets;
-   - re-fetches the already-published sha256 sidecar for **every other** manifested app
-     (best-effort — an app with a manifest but no release yet is *omitted* from the
-     registry with a loud `::warning::` annotation + job-summary line, not a failed run);
-   - rebuilds `registry.json` from every manifest that now has a published release, and
-     publishes it to the `app-registry` alias on the `vars.BFFLESS_REGISTRY_URL` /
-     `secrets.BFFLESS_REGISTRY_API_KEY` instance (**admin.bffless.dev** — deliberately a
-     different instance than where apps themselves deploy, so resetting the demo box can
-     never take the catalog down).
-4. **Operator steps the workflow deliberately does NOT do** (see the workflow's own header
-   comment and the PR checklist it came with):
-   - mapping `apps.bffless.dev` → the `app-registry` alias on the target instance;
-   - adding a ~1h TTL cache rule on that alias.
-   Confirm these are already in place before assuming a fresh publish is externally
-   reachable — a successful workflow run does not by itself mean `registry.json` is live at
-   `apps.bffless.dev`.
+Publishing is release-please-driven end to end — you neither bump `version` by hand nor cut tags
+(§2).
+
+1. Land a conventional commit that touches `apps/<app-id>/**` on `main`, via a normal PR — the same
+   PR that changes the app. `release.yml`'s `release` job (release-please) picks it up and keeps a
+   Release PR open, proposing that app's version bump.
+2. Merge the Release PR when you're ready to publish. Its merge commit writes the bumped `version`
+   into `apps/<app-id>/package.json` and `bffless-app.json`, and cuts the `<app-id>-v<version>` tag +
+   GitHub Release — release-please does this, not you.
+
+**What `release.yml` does after that merge** (you don't have to do any of this by hand):
+
+- its `bundles` job fans out to `.github/workflows/app-bundles.yml` via `workflow_call`, once per app
+  release-please just released, supplying `app: <app-id>` as an input. `app-bundles.yml` has no
+  tag-push trigger — the app id always comes from that `app` input (from `workflow_call`, or from
+  `workflow_dispatch` for a manual rebuild), never resolved from the tag name. That job builds the
+  bundle (same `build-app-bundle.mjs` you'd run locally) and uploads it as a GitHub release asset,
+  creating the release if needed or `--clobber`-replacing assets on a re-run;
+- its `publish-registry` job re-fetches the already-published sha256 sidecar for **every** manifested
+  app (best-effort — an app with a manifest but no release yet is *omitted* from the registry with a
+  loud `::warning::` annotation + job-summary line, not a failed run), rebuilds `registry.json` from
+  every app that now has a published release, and publishes it — with the store site and every
+  referenced asset — to the `app-registry` alias on the `vars.BFFLESS_REGISTRY_URL` /
+  `secrets.BFFLESS_REGISTRY_API_KEY` instance (**admin.bffless.dev** — deliberately a different
+  instance than where apps themselves deploy, so resetting the demo box can never take the catalog
+  down). `release.yml` is the **only** workflow that writes this alias —
+  `scripts/workflow-invariants.test.mjs` asserts it.
+
+**Manual re-publish without cutting a new version** (e.g. a registry-only fix): Actions tab →
+dispatch `app-bundles.yml` → `app: <app-id>` to re-upload that app's bundle against its *existing*
+tag, or dispatch `release.yml` itself to force a full registry rebuild without releasing anything
+new.
+
+**Operator steps neither workflow does** (see `release.yml`'s own header comment):
+
+- mapping `apps.bffless.dev` → the `app-registry` alias on the target instance;
+- adding a ~1h TTL cache rule on that alias.
+
+Confirm these are already in place before assuming a fresh publish is externally reachable — a
+successful workflow run does not by itself mean `registry.json` is live at `apps.bffless.dev`.
 
 ## 6. Troubleshooting
 
 - **App is missing from `registry.json` after a run that looked green.** Check the run's
   job summary / `::warning::` annotations for "no published release for `<app>-v<version>`
   yet — omitting from registry.json". This means that app's manifest declares a version
-  whose tag/release doesn't exist yet — either the tag was never pushed, or it was pushed
-  under a different version than the one currently in `bffless-app.json`. Fix by cutting the
-  matching tag (§5) or aligning the manifest's `version` back to a version that has one.
+  whose tag/release doesn't exist yet — normally because the `bundles` job for that release
+  failed or hasn't run yet, since release-please cuts the tag and the manifest version in the
+  same commit. Check the `app-bundles.yml` run tied to that release; if the tag exists but the
+  asset is missing, re-dispatch `app-bundles.yml` for that app (§5).
 - **Install fails CE's preflight on `ceMin` or storage.** Either the target CE is genuinely
   older than the floor you declared (expected — that's the preflight working), or `ceMin`
   is wrong (§2) — verify against the CE tag history, don't just bump it until the error goes

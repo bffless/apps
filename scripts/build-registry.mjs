@@ -3,8 +3,8 @@
 // bundle release sidecar (<app>-v<version>.bundle.sha256) is present in --sidecars, folding
 // in store metadata from apps/<app>/catalog/ (description.md, thumbnail.png, icon.png,
 // screenshots/*) and source provenance from the optional <app>-v<version>.bundle.commit
-// sidecar. Extracted from .github/workflows/app-bundles.yml so deploy-store.yml can
-// reuse it and it can be unit-tested (scripts/build-registry.test.mjs).
+// sidecar. Extracted from .github/workflows/app-bundles.yml so release.yml's
+// publish-registry job can reuse it and it can be unit-tested (scripts/build-registry.test.mjs).
 //
 // CLI: node scripts/build-registry.mjs --out <file> [--apps-dir apps] [--sidecars dist-bundles]
 // Env: GITHUB_REPOSITORY (required), ASSET_BASE_URL (default https://apps.bffless.dev),
@@ -22,7 +22,8 @@ const COMMIT_PATTERN = /^[0-9a-f]{40}$/i
 // undefined and the entry simply carries no `commit`.
 //
 // Read from the sidecar rather than github.sha because registry.json is rebuilt by
-// deploy-store.yml too, where no bundle is built and github.sha belongs to none of the entries.
+// release.yml's publish-registry job on store/catalog-only pushes too, where no bundle is
+// built in that run and github.sha belongs to none of the entries.
 // Anything that is not a bare 40-hex sha is dropped: a garbled sidecar must not surface as a
 // plausible-looking commit that links somewhere wrong.
 function readSourceCommit(sidecarsDir, baseName) {
