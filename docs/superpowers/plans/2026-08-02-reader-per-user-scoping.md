@@ -1353,6 +1353,10 @@ Use `update_pipeline_record` per row. **Do one row of each schema first and re-r
 
 `scopedGuid` cannot be skipped: dedup matches on it, so any still-live item whose row lacks it will not match on the next poll and will insert a duplicate — one per active item.
 
+**Read the stored `guid`, do not recompute it.** The formula above says `guid || link` because that is what the old dedup chain resolved to for almost every row — but not for all of them. Pre-branch, `dedupField` was `guid`, so CE force-wrote the resolved key into the `guid` column, and for an entry with neither a `<guid>` nor a `<link>` that key was a *hash*, not a URL. The new synthesised key is `source|title|publishedAt`, which will not equal that hash. So for those rows, `"<owner id>::" + (guid || link)` produces a `scopedGuid` the next refresh will not match, and it inserts one duplicate.
+
+Take the value straight from each row's stored `guid` column — it already holds the resolved natural key for every row, hash-fallback ones included — rather than re-deriving it from `guid || link`. Affected rows are rare (feeds publishing entries with no guid *and* no link), and the blast radius is one duplicate each, but reading the column is free and removes the case entirely.
+
 - [ ] **Step 4: Only now, merge/deploy the scoped rule set**
 
 ```bash
