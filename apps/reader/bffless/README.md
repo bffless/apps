@@ -10,7 +10,7 @@ Rivulet's rule set is **authored** under
 contains **no secrets**.
 
 The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the reading pipelines
-(11 rules total, `order` 0–10):
+(15 rules total, `order` 0–14):
 
 | Path | Method | Pipeline |
 | --- | --- | --- |
@@ -20,7 +20,11 @@ The set holds the **SuperTokens auth reverse-proxy** (`/api/auth/*`) plus the re
 | `/api/feeds/folder` | `POST` | move a feed between folders (`data_update`; the insert-only add endpoint can't, #133) |
 | `/api/items` | `GET` | query stored items, optionally `?feedId=<url>` |
 | `/api/items/read` | `POST` | set an item's `read` flag (`data_update` by `guid`, #114) |
+| `/api/items/read-all` | `POST` | mark all read for a view (`all`/`river`/`starred`/feed/folder), `data_update` where `read=false` |
 | `/api/items/star` | `POST` | set an item's `starred` flag (`data_update` by `guid`; starred items are prune-exempt, #115) |
+| `/api/items/archive` | `POST` | set an item's `archived` flag by `guid`; archived items are hidden from views and prune-exempt |
+| `/api/items/delete` | `POST` | hard-delete an item by `guid` (`data_delete`); a still-in-feed item may re-insert on the next refresh |
+| `/api/counts` | `GET` | sidebar badge counts: unread-per-feed + starred total (`db_aggregate`) |
 | `/api/refresh` | `POST` | ingest: `data_query → xml_feed_parse → data_upsert_many` (dedup by `scopedGuid`); stamps a numeric epoch-ms `fetchedAt` and defaults `read`/`starred` to `false` |
 | `/api/discover` | `POST` | auto-discovery (#113): `http_request` fetches a site/feed URL server-side so the browser can `DOMParser` it for `<link rel="alternate">` feed links |
 | `/api/prune` | `POST` | retention (#119): `data_delete` delete-by-query removes `read` + un`starred` items older than 30 days (`fetchedAt < now-30d`); starred + unread are exempt |

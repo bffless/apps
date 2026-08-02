@@ -35,7 +35,7 @@ pipeline:
       handler: data_upsert_many
       config:
         map:
-          guid: steps.item.guid
+          guid: steps.item.itemGuid
           link: steps.item.link
           read: false
           userId: steps.item.userId

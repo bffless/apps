@@ -13,7 +13,7 @@ const refreshRule = parse(
 
 type Feed = { url?: string; userId?: string }
 type Entry = { source?: string; guid?: string; link?: string; title?: string; publishedAt?: string }
-type Enriched = { userId: string; scopedGuid: string; guid?: string; source?: string }
+type Enriched = { userId: string; scopedGuid: string; guid?: string; itemGuid?: string; source?: string }
 
 const urls = new Function('return (' + urlsSource + ')')() as (a: {
   steps: { feeds: Feed[] }
@@ -99,6 +99,22 @@ describe('enrich handler — per-subscriber fan-out', () => {
     expect(out).toEqual([])
   })
 
+  it('emits the resolved natural key as itemGuid even when guid and link are absent', () => {
+    // Regression: reader_items.guid is `required: true`, but data_upsert_many's
+    // required-field check exempts only the dedupField column (scopedGuid), not
+    // guid. If the pipeline map still sources `guid` from the raw, possibly-absent
+    // e.guid, an entry with neither guid nor link fails validation and is silently
+    // dropped (counted as an error the frontend never surfaces). itemGuid must carry
+    // the same fallback-resolved key as scopedGuid so `guid: steps.item.itemGuid`
+    // always has a value.
+    const out = fanout(
+      [{ url: 'f', userId: 'u1' }],
+      [{ source: 'f', title: 'T', publishedAt: '2026-01-01T00:00:00.000Z' }],
+    )
+    expect(out[0].itemGuid).toBe('f|T|2026-01-01T00:00:00.000Z')
+    expect(out[0].scopedGuid).toBe('u1::' + out[0].itemGuid)
+  })
+
   it('the synthesised key for an entry with no guid/link/date is stable across polls', () => {
     // Regression for enrich.fn.js:42 — the fallback key must be built from stable
     // entry data only, never from `pub` (which falls back to the current stamp),
@@ -116,5 +132,14 @@ describe('enrich handler — per-subscriber fan-out', () => {
     expect(upsert?.config?.dedupKey).toBe('steps.item.scopedGuid')
     expect((upsert?.config?.map as Record<string, unknown>).userId).toBe('steps.item.userId')
     expect(upsert?.config?.updateFields).not.toContain('scopedGuid')
+  })
+
+  it('the upsert step maps guid from the resolved itemGuid, not the raw entry guid', () => {
+    // Regression: `guid` is a required schema field but data_upsert_many only
+    // exempts the dedupField (scopedGuid) from required-field validation. Mapping
+    // guid from the raw steps.item.guid (which can be undefined) drops entries
+    // with neither a guid nor a link.
+    const upsert = refreshRule.pipeline?.steps?.find((s) => s.id === 'upsert')
+    expect((upsert?.config?.map as Record<string, unknown>).guid).toBe('steps.item.itemGuid')
   })
 })

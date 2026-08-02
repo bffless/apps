@@ -1319,13 +1319,16 @@ git commit -m "docs(reader): document per-user scoping, supersede D1 with D15"
 
 **Do not execute any part of this task autonomously.** It mutates live data and live access control on `reader.j5s.dev`. Per the workspace rules, irreversible or high-stakes actions get confirmed first. Present this runbook, get explicit go-ahead per step, and run the steps in order.
 
-**The order is load-bearing.** Step 4 before step 3 drops a guest into the owner's data. Step 3 before step 2 blanks the owner's reader.
+> **⚠️ Merging this PR *is* the rule deploy — there is no separate manual push step.**
+> `.github/workflows/deploy-reader.yml` triggers on every push to `main` that touches `apps/reader/**` and runs `bffless/deploy-proxy-rules@v1` unconditionally. Once this branch is merged (or pushed to a `bapps-**` working branch, or run via `workflow_dispatch`), the scoped rule set — including the new `dedupField: scopedGuid` / `scopedUrl` — is live on `bffless/apps`. There is no "push the rules by hand once you're ready" moment to schedule separately; **merge order is deploy order.**
+>
+> **Opening a PR alone is not harmless either.** `.github/workflows/preview-reader.yml` syncs this branch's rules to a per-PR rule set (`reader-pr-N`) on every push to the PR. The `pr-N` suffix renames the rule *set*, but every rule's `schemaId: $schema:reader_feeds` / `$schema:reader_items` reference resolves by schema **name**, which is not suffixed — so the preview set's data steps still resolve to the **live** `reader_feeds` / `reader_items` schemas. A preview deploy therefore runs scoped rules (filtering on `user.id`, dedup-ing on `scopedGuid`/`scopedUrl`) against live data before those columns are backfilled, which is exactly the failure mode this runbook exists to avoid.
+>
+> **Consequence if the order below is violated:** deploying the scoped rules before the backfill completes doesn't just blank the owner's reader — within 15 minutes the refresh cron fires, finds no row matching the new `scopedGuid` dedup key for any item, and re-inserts every currently-live item as a fresh row. The later backfill then stamps `scopedGuid` onto the *original* rows, colliding with the cron-inserted copies. The result is permanent duplicate rows that do not self-reconcile — every item appears twice, and read/star/archive act on an arbitrary one of the pair. This is why the schedules get disabled in step 2, not just why the backfill should be "quick."
 
-- [ ] **Step 1: Deploy the schema fields only**
+**The order below is load-bearing, in full:**
 
-The four new columns are additive and no live rule references them yet, so this is safe on its own and makes the backfill possible. Push the schemas ahead of the rules, or accept that steps 1–3 land together and run the backfill immediately after (the window where the owner's reader looks empty is the gap between rule deploy and backfill completion — keep it short).
-
-- [ ] **Step 2: Resolve the owner's user id and count the rows**
+- [ ] **Step 1: Resolve the owner's identity, count the rows, and add the schema fields**
 
 Using the BFFless MCP against `bffless/apps`:
 
@@ -1335,23 +1338,28 @@ query_pipeline_data(reader_feeds)   -> row count
 query_pipeline_data(reader_items)   -> row count
 ```
 
-Record all three. The item count decides whether the backfill is a handful of calls or needs batching.
+Record all three — the item count decides whether the backfill is a handful of calls or needs batching. Then add the four new columns (`reader_feeds.userId`, `reader_feeds.scopedUrl`, `reader_items.userId`, `reader_items.scopedGuid`) to the **live** schemas, via `admin.j5s.dev` (Data Tables → schema → Edit) or `update_pipeline_schema`. This is safe in isolation: the columns are additive, optional, and no live rule references them yet — the current (unscoped) rules keep working unmodified.
 
-- [ ] **Step 3: Backfill every existing row**
+- [ ] **Step 2: Disable both `pipeline_schedules`**
+
+Before touching any row, disable the **refresh** (`*/15 * * * *`) and **prune** (`17 3 * * *`) schedules — `list_pipeline_schedules` to find their ids, then `update_pipeline_schedule` with `enabled: false` for each. This is not optional and not just for tidiness: the refresh cron runs *unscoped* against every feed row every 15 minutes. If it fires mid-backfill or between rule-deploy and backfill-completion, it re-inserts every live item as a fresh, un-backfilled row — see the consequence note above. A backfill "kept short" is still a race against a 15-minute timer; disabling the schedule removes the race entirely. Leave them disabled through step 6.
+
+- [ ] **Step 3: Backfill every existing row, and verify it**
 
 For each `reader_feeds` row: set `userId = <owner id>` and `scopedUrl = "<owner id>::" + url`.
 For each `reader_items` row: set `userId = <owner id>` and `scopedGuid = "<owner id>::" + (guid || link)`.
 
-Use `update_pipeline_record` per row. **Do one row of each schema first and re-read it** before doing the rest.
+Use `update_pipeline_record` per row. **Do one row of each schema first and re-read it** before doing the rest. Once the batch is done, re-query both schemas (`query_pipeline_data`) and confirm every row now carries non-empty `userId` and `scopedUrl`/`scopedGuid` — a partially-backfilled table is exactly what re-enabling the schedule and merging would then corrupt.
 
 `scopedGuid` cannot be skipped: dedup matches on it, so any still-live item whose row lacks it will not match on the next poll and will insert a duplicate — one per active item.
 
-- [ ] **Step 4: Deploy the scoped rule set**
+- [ ] **Step 4: Only now, merge/deploy the scoped rule set**
 
 ```bash
 npx bffless rules diff    # re-read it; it should match Task 9's diff
-npx bffless rules push apps/reader/.bffless/proxy-rules/reader
 ```
+
+Then merge the PR to `main` (or push to a `bapps-**` branch, or run `workflow_dispatch` on `deploy-reader.yml`) — this *is* the push; do not also run `npx bffless rules push` by hand unless deploying outside CI. By this point the backfill from step 3 is complete and the schedules are still disabled from step 2, so the scoped rules landing has no unbackfilled rows to collide with and no cron running underneath the change.
 
 - [ ] **Step 5: Verify as the owner before opening the gate**
 
@@ -1361,7 +1369,11 @@ Load `reader.j5s.dev` signed in as the owner. Every feed, folder, unread count a
 
 In `admin.j5s.dev` → project `bffless/apps` → Aliases → `reader` → Update Alias → **Required Role: Guest**. Repeat for `reader-preview`. Leave `handoff`, `handoff-preview`, `studio`, `studio-preview` untouched.
 
-- [ ] **Step 7: Verify isolation with a second account**
+- [ ] **Step 7: Re-enable the schedules**
+
+`update_pipeline_schedule` with `enabled: true` for both refresh and prune. The rules are scoped, the backfill is complete and verified, and the schemas have carried the new columns since step 1 — it's now safe for the cron to resume.
+
+- [ ] **Step 8: Verify isolation with a second account**
 
 Add a second account to the project as `guest` (a `project_invite_links` link defaults to that role). Then, signed in as that account:
 
@@ -1370,7 +1382,7 @@ Add a second account to the project as `guest` (a `project_invite_links` link de
 3. Star and mark-read items. Confirm as the owner that their own read/star state did not move.
 4. **The sharp case:** as the second user, `POST /api/items/delete` with a `guid` taken from a feed only the owner subscribes to. Expect `{"ok":true,"deleted":0}` and confirm the owner's row survives.
 
-- [ ] **Step 8: Confirm the cron**
+- [ ] **Step 9: Confirm the cron**
 
 Wait for one 15-minute refresh cycle (or trigger it), then confirm both accounts received new items and that no duplicates appeared for the owner.
 
@@ -1425,7 +1437,7 @@ Add them to the CE follow-ups section of the design spec and commit.
 | Refresh fan-out + dedupe + limit | 8 |
 | Migration order + backfill | 11 steps 1–5 |
 | Frontend (no changes) | none needed — verified in 11 step 5 |
-| Testing (unit / structural / live isolation) | 7, 8 / 2 / 11 step 7 |
+| Testing (unit / structural / live isolation) | 7, 8 / 2 / 11 step 8 |
 | CE follow-ups | 12 |
 | Out of scope | not implemented |
 

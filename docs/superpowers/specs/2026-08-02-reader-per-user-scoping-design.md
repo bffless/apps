@@ -134,7 +134,11 @@ Three of eight steps change.
 
 **Deliberate oddity:** the UI's "Refresh now" button runs the same global refresh, so one user's manual refresh does ingest work for everyone. It is idempotent and each user still sees only their own items, so this is acceptable at this scale — recorded as a choice, not an oversight.
 
+**Validator-free exposure at `guest`.** `refresh/post/rule.yaml` and `prune/post/rule.yaml` both carry `validators: []`, correctly — a `pipeline_schedule` fires them as a userless system run, and `auth_required` (which needs `context.user`) would reject that. Before this change the admin-only alias gate was the de-facto authorization on top of the missing validator. At `requiredRole: guest`, any project guest can `POST /api/refresh` directly, triggering one outbound fetch per distinct feed URL across **every** user, or `POST /api/prune` to force an early global prune. Neither is catastrophic — prune only removes rows already eligible under their own owner's retention criteria, and refresh's dedup means repeated calls don't duplicate data — but it's real exposure this spec's access-control analysis didn't previously call out. A `roles` gate on these two rules (once CE supports scoping a schedule-fired pipeline to a specific caller role independent of the alias) is a possible follow-up, not implemented here.
+
 ## Migration
+
+**Deployment is CI-triggered, not operator-triggered.** `.github/workflows/deploy-reader.yml` runs `bffless/deploy-proxy-rules@v1` on every push to `main` that touches `apps/reader/**` — so **merging the PR for this change *is* the rules deploy**; there is no separate manual `bffless rules push` step to schedule independently. `.github/workflows/preview-reader.yml` similarly syncs on `pull_request`, but the per-PR name suffix (`reader-pr-N`) applies only to the rule-set name, not to `$schema:reader_feeds` / `$schema:reader_items` references — so an open PR's preview rule set still resolves to the **live** schemas. See Task 11 of the implementation plan for the full ordered runbook this implies.
 
 The order is load-bearing on a live app.
 

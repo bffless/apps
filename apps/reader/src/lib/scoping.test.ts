@@ -53,6 +53,7 @@ const DATA_HANDLERS = new Set([
   'data_update',
   'data_delete',
   'data_upsert_many',
+  'data_create',
 ])
 
 // Steps that legitimately run with no userId filter. Both are fired by a
@@ -104,6 +105,21 @@ function dataSteps(): FoundStep[] {
   return found
 }
 
+// All step handlers anywhere in the set, unfiltered by DATA_HANDLERS — used to
+// self-guard the ratchet: a CE handler that reads/writes data (name matches
+// /^(data|db)_/) but isn't in DATA_HANDLERS would otherwise slip through
+// dataSteps() unscoped and undetected.
+function allHandlerNames(): string[] {
+  const names: string[] = []
+  for (const file of ruleFiles(rulesRoot)) {
+    const rule = parse(readFileSync(file, 'utf8')) as Rule
+    for (const step of rule.pipeline?.steps ?? []) {
+      if (step.handler) names.push(step.handler)
+    }
+  }
+  return names
+}
+
 function isScoped(step: FoundStep): boolean {
   if (step.handler === 'data_upsert_many') {
     const map = step.config.map as Record<string, unknown> | undefined
@@ -143,6 +159,33 @@ describe('rule set scoping ratchet', () => {
       .filter((s) => {
         const filters = (s.config.filters ?? {}) as Record<string, unknown>
         return Object.keys(filters).length > 1 && s.config.filterLogic !== 'and'
+      })
+      .map((s) => s.key)
+      .sort()
+    expect(bad).toEqual([])
+  })
+
+  it('no data/db-prefixed CE handler is missing from DATA_HANDLERS', () => {
+    // Self-guard: if CE ships a new data_* or db_* handler and a rule adopts it,
+    // this fails loudly instead of the handler silently bypassing dataSteps() —
+    // and therefore isScoped() — entirely.
+    const unknown = Array.from(new Set(allHandlerNames()))
+      .filter((h) => /^(data|db)_/.test(h))
+      .filter((h) => !DATA_HANDLERS.has(h))
+      .sort()
+    expect(unknown).toEqual([])
+  })
+
+  it('every data_upsert_many step dedups on a per-user column', () => {
+    // The spec's stated failure mode is not a missing filter — it's a global
+    // dedupField: the second user to subscribe to a shared feed has their whole
+    // ingest silently skipped as duplicate. A `map.userId` filter alone can't
+    // catch that, since dedupField is a separate config key.
+    const bad = dataSteps()
+      .filter((s) => s.handler === 'data_upsert_many')
+      .filter((s) => {
+        const dedupField = s.config.dedupField
+        return dedupField !== 'scopedUrl' && dedupField !== 'scopedGuid'
       })
       .map((s) => s.key)
       .sort()

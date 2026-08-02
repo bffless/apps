@@ -44,6 +44,11 @@ function handler({ steps }) {
     // that here would mint a fresh dedup key on every 15-minute poll for any entry
     // with no guid/link/date, inserting an unbounded stream of duplicate rows.
     var key = e.guid || e.link || (String(e.source) + '|' + String(e.title) + '|' + String(e.publishedAt || ''))
+    // Ownership lookup depends on xml_feed_parse echoing the requested feed URL
+    // back as entry.source verbatim, so it matches the stored feed row's url
+    // byte-for-byte. If the parser ever canonicalised or redirect-resolved URLs,
+    // every entry would miss this lookup and owners would stay empty — the cron
+    // would silently ingest nothing for that feed, with no error surfaced.
     var owners = subs['#' + e.source] || []
     for (var o = 0; o < owners.length; o++) {
       out.push({
@@ -51,6 +56,7 @@ function handler({ steps }) {
         scopedGuid: owners[o] + '::' + key,
         source: e.source,
         guid: e.guid,
+        itemGuid: key,
         title: e.title,
         link: e.link,
         author: e.author,

@@ -2,10 +2,13 @@
  * Feed domain types + pure helpers.
  *
  * A **feed** is a followed RSS/Atom source. It is deduped by `url` (D8/D12), so
- * `url` — after normalization — is the stable identity used both as the upsert
- * dedup key and as the `feedId` foreign key on items. Keeping the URL handling
- * here (pure, tested) means the add-feed flow and OPML import (#117) share one
- * definition of "the same feed."
+ * `url` — after normalization — is the stable client-side identity, used both as
+ * the `feedId` foreign key on items and as the natural key folded into the
+ * server's per-user dedup column (`scopedUrl = userId::url`, since
+ * `data_upsert_many` dedups on one global column and multiple users may
+ * subscribe to the same feed). Keeping the URL handling here (pure, tested)
+ * means the add-feed flow and OPML import (#117) share one definition of "the
+ * same feed."
  */
 
 /** A feed as the client uses it. `url` is the identity; `folder` null = uncategorized. */
