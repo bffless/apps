@@ -79,10 +79,15 @@ example. Fields, in brief:
   `"dist"`; basePath is where the deployed bundle is served from, e.g. `"/apps/handoff/dist"`),
   `install.ruleSets: [{ file: "rulesets/<name>.json", attachToAlias }]` — one entry per **authored**
   set under `.bffless/proxy-rules/<name>/` (§1 above) — `install.domain: { subdomain, isPublic, isSpa }`,
-  `install.schedules`, `install.manualSteps: [{ id, title, body, appliesWhen }]` for anything the
-  installer can't do for the reader (mirrors this doc's "Manual setup (admin panel)" README section,
-  but structured and filterable by `appliesWhen`: `always` / `bucketStorage` / `localStorage` /
-  `platformMode` / `selfHosted`).
+  `install.schedules`, `install.manualSteps: [{ id, title, body, deepLink?, appliesWhen? }]` for
+  anything the installer can't do for the reader (mirrors this doc's "Manual setup (admin panel)"
+  README section, but structured and filterable by `appliesWhen`: `always` / `bucketStorage` /
+  `localStorage` / `platformMode` / `selfHosted`). `title` is the action, `body` is at most 220
+  characters (enforced by `pnpm apps:check` here, not by CE — see below), and `body` may use the
+  closed placeholder set `{projectPath}` / `{appHost}` (also valid in `title`/`deepLink`), expanded
+  by CE at read time to the installed project's `owner/name` and the app's host. A note that needs a
+  conditional to decide whether it applies to the reader isn't a setup note — put it in the README
+  instead. Full authoring guidance lives in the `publish-app` skill (§2).
 - `eject: { repo, appPath, deployWorkflow, variables, secrets }` — how an installed app maps back to
   "eject" into this monorepo's own CI (fork the repo, point the listed Actions vars/secrets at your
   instance, the named workflow deploys it from then on).

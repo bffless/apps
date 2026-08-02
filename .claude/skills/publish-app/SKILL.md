@@ -120,12 +120,26 @@ by accident.
   install (mirrors the app's README "Manual setup (admin panel)" section, but structured).
   Each entry: `{ id, title, body, deepLink?, appliesWhen? }`.
 
+  - **`title` is the action** — imperative, scannable when the note is collapsed
+    ("Configure bucket CORS", "Give other people access"), not a description of the
+    problem.
+  - **`body` is at most 220 characters** — what's true, what to do, when to skip. If a note
+    needs a conditional to decide whether it even *applies to this reader* — beyond what the
+    five `appliesWhen` values below already express — it isn't a setup note, it's a
+    troubleshooting entry, and belongs in the app's README instead, not jammed into `body`
+    with "if X, do Y; otherwise, ignore this."
+  - **Placeholders** — `{projectPath}` and `{appHost}` are the *only* tokens CE expands (a
+    closed set; anything else fails CE's validation). `{projectPath}` expands to the
+    installed project's `owner/name`; `{appHost}` expands to the app's own host. Both work in
+    `title`, `body`, and `deepLink` — CE fills them in at read time, once it knows which
+    project and host the app actually landed on.
+
   **`appliesWhen` is a closed enum CE evaluates against the *target instance's real
   context* — not a hint, not free text:**
 
-  | Value | Shown when | Handoff example |
+  | Value | Shown when | Example |
   | --- | --- | --- |
-  | `always` (default if omitted) | unconditionally | the iframe/COOP-COEP step — every install could hit it |
+  | `always` (default if omitted) | unconditionally | Reader's `grant-access` step — every install could hit it, and it carries a `{projectPath}` deepLink |
   | `bucketStorage` | the target project's storage backend is a real bucket (S3/GCS/Spaces/MinIO) | the bucket-CORS step — meaningless on local-FS, where there's no cross-origin PUT to allow |
   | `localStorage` | the target is local filesystem storage | the inverse — a step only relevant without a bucket |
   | `platformMode` | installing into a Platform (multi-tenant) workspace | e.g. a step about Control-Plane-managed SSL |
@@ -178,6 +192,8 @@ The regexes/rules CE enforces, as of the `app-catalog` feature (CE 0.4.0):
 | registry entry `bundleUrl` | required, must start `https://` |
 | registry entry `sha256` | required, `/^[a-f0-9]{64}$/i` |
 | `install.manualSteps[].appliesWhen` | one of `always`, `bucketStorage`, `localStorage`, `platformMode`, `selfHosted` |
+| `install.manualSteps[].{title,body,deepLink}` placeholders | only `{projectPath}` / `{appHost}`; any other `{token}` is rejected, naming the unknown token |
+| `install.manualSteps[].body` length | **not enforced by CE.** The 220-character cap is a `pnpm apps:check` rule in *this* repo only, not a CE gate — deliberately: enforcing it in CE would retroactively break `schemaVersion: 1` manifests already published under the old, unbounded limit. Don't treat it as a platform guarantee; a manifest that skips this repo's check can still install a longer body. |
 
 **A subtler, high-consequence gate: CE's `ValidationPipe` runs with
 `forbidNonWhitelisted`.** The rule-set sync endpoint's DTO (`SyncProxyRuleSetDto`)
