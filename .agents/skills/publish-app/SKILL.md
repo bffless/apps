@@ -69,7 +69,8 @@ by accident.
   `apps/<app>/package.json` and `apps/<app>/bffless-app.json` and cuts the `<app>-v<version>` tag in
   the same commit. Adding a new catalog app means adding a matching component to
   `release-please-config.json` and a seed entry to `.release-please-manifest.json` — `pnpm
-  apps:check` fails if you forget.
+  apps:check` fails if you forget. Which bump you get is decided by the **PR title**, not by the
+  commits inside the PR — see §5.
 
   `requires.ceMin` is still yours to set. It is a judgement about which CE release the app depends
   on and cannot be derived from commit history.
@@ -267,6 +268,22 @@ Publishing is release-please-driven end to end — you neither bump `version` by
 1. Land a conventional commit that touches `apps/<app-id>/**` on `main`, via a normal PR — the same
    PR that changes the app. `release.yml`'s `release` job (release-please) picks it up and keeps a
    Release PR open, proposing that app's version bump.
+
+   > **The PR title is the release.** `main` takes squash merges, so the squash commit's subject is
+   > the **PR title** — and that subject is the only thing release-please reads. The conventional
+   > types on the individual commits inside the PR survive in the squash body as bullets and are
+   > **ignored**. Title the PR `feat(<app-id>): …` for a minor bump, `fix(<app-id>): …` for a patch,
+   > and anything else (`ci:`, `chore:`, `docs:`, `refactor:`) to publish nothing.
+   >
+   > Two consequences worth planning around:
+   >
+   > - **One PR expresses one bump type, applied to every app it touches.** A PR carrying a feature
+   >   for one app and a fix for another gets the title's type for both. If the distinction matters,
+   >   split it into two PRs.
+   > - **Getting the title wrong is not fixable after the fact.** The bump is computed from history;
+   >   correcting it means landing another PR with the right title. This has already happened once —
+   >   PR #283 mixed `feat(reader):` and `fix(handoff):` commits under a `fix:` title, so Rivulet
+   >   took a patch (1.0.2) where its new UI warranted a minor.
 2. Merge the Release PR when you're ready to publish. Its merge commit writes the bumped `version`
    into `apps/<app-id>/package.json` and `bffless-app.json`, and cuts the `<app-id>-v<version>` tag +
    GitHub Release — release-please does this, not you.
