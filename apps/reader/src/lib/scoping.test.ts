@@ -65,9 +65,6 @@ const DATA_HANDLERS = new Set([
 const EXPECTED_UNSCOPED = new Set<string>([
   'api/refresh/post:feeds',
   'api/prune/post:del',
-
-  // Task 8
-  'api/refresh/post:upsert',
 ])
 
 type Step = { id: string; handler?: string; code?: string; config?: Record<string, unknown> }

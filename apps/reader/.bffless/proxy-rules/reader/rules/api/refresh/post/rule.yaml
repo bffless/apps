@@ -8,7 +8,7 @@ pipeline:
       name: feeds
       handler: data_query
       config:
-        limit: 500
+        limit: 2000
         schemaId: $schema:reader_feeds
     - id: urls
       name: urls
@@ -38,6 +38,7 @@ pipeline:
           guid: steps.item.guid
           link: steps.item.link
           read: false
+          userId: steps.item.userId
           archived: false
           title: steps.item.title
           author: steps.item.author
@@ -50,12 +51,10 @@ pipeline:
           enclosureType: steps.item.enclosureType
           enclosureUrl: steps.item.enclosureUrl
         items: steps.enrich.entries
-        dedupKey:
-          - steps.item.guid
-          - steps.item.link
+        dedupKey: steps.item.scopedGuid
         schemaId: $schema:reader_items
         condition: steps.urls.count
-        dedupField: guid
+        dedupField: scopedGuid
         updateFields:
           - enclosureType
           - enclosureUrl
@@ -73,4 +72,4 @@ pipeline:
           Cache-Control: no-store
         contentType: application/json
   validators: []
-description: "Ingest: data_query(reader_feeds) -> urls -> xml_feed_parse -> stamp(now ms) -> data_upsert_many(reader_items, dedupField guid, dedupKey guid||link; fetchedAt=epoch ms, read/starred/archived=false so items are prune-filterable and visible — CE compiles the `ne` filter to a bare SQL `!=`, so a row whose JSONB lacks the key is NULL and gets excluded by `archived ne true`; the flag must be written explicitly, never left absent; updateFields=[enclosureType,enclosureUrl] backfills those two columns onto already-ingested rows on re-poll while preserving read/starred and everything else — insert-only otherwise) -> respond { inserted, skipped, errors }. feedId = entry.source. No auth_required validator: the reader alias is private (edge-gated login), so /api/* is protected at the site level, and the CE scheduler fires this as a system run with NO user — auth_required (which needs context.user) would reject it. #119."
+description: "Ingest: data_query(reader_feeds, unscoped — the cron is a userless system run, so this must read every user's feeds) -> urls (dedupe by url, so a feed shared by N subscribers is fetched once) -> xml_feed_parse -> stamp(now ms) -> enrich (fans each parsed entry out to one row per subscriber of its source url, using the feed rows as the only source of ownership) -> data_upsert_many(reader_items, dedupField scopedGuid = userId + '::' + (guid||link||hash), so each subscriber gets an independent row for the same entry; fetchedAt=epoch ms, read/starred/archived=false so items are prune-filterable and visible — CE compiles the `ne` filter to a bare SQL `!=`, so a row whose JSONB lacks the key is NULL and gets excluded by `archived ne true`; the flag must be written explicitly, never left absent; updateFields=[enclosureType,enclosureUrl] backfills those two columns onto already-ingested rows on re-poll while preserving read/starred and everything else — insert-only otherwise) -> respond { inserted, skipped, errors }. feedId = entry.source. No auth_required validator: the reader alias is private (edge-gated login), so /api/* is protected at the site level, and the CE scheduler fires this as a system run with NO user — auth_required (which needs context.user) would reject it. #119."
