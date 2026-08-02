@@ -31,6 +31,12 @@ on:
       - 'scripts/build-store-artifact.mjs'
       - 'scripts/fetch-sidecars.mjs'
       - '.github/workflows/deploy-store.yml'
+  # Manual republish. The push trigger above is path-filtered, so there is
+  # otherwise no way to rebuild registry.json without touching one of those
+  # paths — which matters when the registry is stale for a reason that has
+  # nothing to do with a file changing (an app release published after the
+  # last store build, or a publish whose bytes did not land).
+  workflow_dispatch:
 
 permissions:
   contents: read
