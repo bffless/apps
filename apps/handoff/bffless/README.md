@@ -377,3 +377,15 @@ and execute the embedded handlers, so a broken handler fails `pnpm test` — not
   `expires should be of type "number"` (`PRESIGNED_URL_FAILED`). MinIO happens to tolerate strings, so
   a rule set that works on MinIO can still break on S3. Keep them unquoted (`expiresIn: 3600`, not
   `expiresIn: '3600'`) so the rule set works on every bucket backend.
+
+## Sites or embeds won't render in an iframe
+
+Handoff renders user-uploaded Sites (served with no COEP) in an iframe, and
+exposes a chromeless `?embed=1` viewer that other apps iframe to show a post
+inline. If this project applies a cross-origin-isolation policy (COOP/COEP)
+somewhere else, both are blocked.
+
+Fix: add a response-header rule matching Handoff's files (`apps/handoff/**`)
+with `Cross-Origin-Opener-Policy: unsafe-none` and
+`Cross-Origin-Embedder-Policy: unsafe-none`, at a priority below the isolating
+rule. A fresh project with no isolation policy needs none of this.

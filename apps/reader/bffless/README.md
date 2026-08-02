@@ -228,3 +228,16 @@ Rivulet's core reading path is live.
   check for drift with `npx bffless rules diff`. When you add or remove endpoints, also update the
   endpoint table at the top of this README and the **Data tables** section so they stay in sync with
   the authored source.
+
+## Posts won't render inline
+
+Rivulet shows a Handoff markdown post's body inline by iframing the Handoff
+viewer's chromeless `?embed=1` mode. If this project applies a
+cross-origin-isolation policy (COOP/COEP) somewhere else — another app using
+`SharedArrayBuffer`, say — that iframe is blocked.
+
+Fix: add a response-header rule matching the reader's files (`apps/reader/**`)
+with `Cross-Origin-Opener-Policy: unsafe-none` and
+`Cross-Origin-Embedder-Policy: unsafe-none`, at a priority below the isolating
+rule, and make sure the Handoff instance allows the reader's origin to frame
+it. A fresh project with no isolation policy needs none of this.

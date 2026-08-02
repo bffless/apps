@@ -44,14 +44,9 @@
     "manualSteps": [
       {
         "id": "grant-access",
-        "title": "Give each reader an account and project access",
-        "body": "Rivulet installs private: every route (including /api/*) is gated behind sign-in, and each person's feeds and read/star state are scoped to their own account. Anyone who should use the reader needs a user account on this instance and access to the project the app installed into (the guest role is enough — guests can use the app without seeing the admin backend). A single-admin instance needs nothing here: your admin account already has access.",
-        "appliesWhen": "always"
-      },
-      {
-        "id": "embed-headers",
-        "title": "Allow inline embeds if this project uses cross-origin isolation",
-        "body": "Rivulet renders a Handoff markdown post's body inline by iframing the Handoff viewer's chromeless ?embed=1 mode. If this project applies a cross-origin-isolation policy (COOP/COEP) elsewhere (e.g. another app using SharedArrayBuffer), add a response-header rule matching the reader's files (apps/reader/**) with Cross-Origin-Opener-Policy: unsafe-none and Cross-Origin-Embedder-Policy: unsafe-none, at a priority below the isolating rule, and ensure the Handoff instance allows the reader's origin to frame it. A fresh project with no isolation policy needs nothing here.",
+        "title": "Give other people access",
+        "body": "Rivulet is private — only signed-in users with access to this project can read feeds. Add each person as a guest. Just you? Nothing to do here.",
+        "deepLink": "/repo/{projectPath}/settings?tab=members",
         "appliesWhen": "always"
       }
     ]
