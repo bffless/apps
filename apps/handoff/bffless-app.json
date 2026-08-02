@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "id": "handoff",
   "name": "Handoff",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "summary": "Share files, folders, and Sites with per-folder access control, share links, and live comments.",
   "category": "files",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/handoff/bffless/README.md",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/handoff",
   "requires": {
     "presignedStorage": true,
-    "ceMin": "0.3.15"
+    "ceMin": "0.4.8"
   },
   "install": {
     "alias": "handoff",
@@ -30,15 +30,9 @@
     "manualSteps": [
       {
         "id": "bucket-cors",
-        "title": "Configure bucket CORS",
-        "body": "Handoff uploads directly to your storage bucket via presigned PUT URLs. Add a CORS rule on the bucket that allows method PUT from your Handoff origin (or * during development) with header Content-Type.",
+        "title": "Let the browser upload to your bucket",
+        "body": "Uploads go straight from the browser to your storage bucket, so the bucket needs a CORS rule allowing PUT and Content-Type from {appHost}. CE can't set this for you — do it in your cloud console.",
         "appliesWhen": "bucketStorage"
-      },
-      {
-        "id": "iframe-headers",
-        "title": "Allow Handoff Sites to be iframed (cross-origin isolation exception)",
-        "body": "Handoff renders user-uploaded Sites (served with no COEP) in an iframe and exposes a chromeless ?embed=1 viewer that other apps iframe to show a post inline. If this project applies a cross-origin-isolation policy (COOP/COEP) elsewhere (e.g. another app using SharedArrayBuffer), add a response-header rule matching Handoff's files (apps/handoff/**) with Cross-Origin-Opener-Policy: unsafe-none and Cross-Origin-Embedder-Policy: unsafe-none, at a priority below the isolating rule. A fresh project with no isolation policy needs nothing here.",
-        "appliesWhen": "always"
       }
     ]
   },

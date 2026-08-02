@@ -18,7 +18,7 @@
 // Run: node scripts/check-app-conventions.mjs   (pnpm apps:check)
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -53,6 +53,11 @@ const REQUIRED_SECTIONS = [
   { label: 'Manual setup (admin panel)', re: /^#{1,6}\s+manual setup \(admin panel\)/im },
   { label: 'First-success checkpoint', re: /^#{1,6}\s+first-success checkpoint/im },
 ]
+
+// Mirrors PLACEHOLDER_TOKENS in the CE repo's app-manifest.util.ts.
+const PLACEHOLDER_TOKENS = ['projectPath', 'appHost']
+// A note's body is at most three short lines in the install dialog's width.
+const MAX_BODY_CHARS = 220
 
 function listAppDirs() {
   if (!existsSync(appsDir)) return []
@@ -187,6 +192,46 @@ function checkManifest(app) {
     errors.push(`${manifestRel}: category must be a string when present`)
   }
 
+  errors.push(...checkManualSteps(manifest, manifestRel))
+
+  return errors
+}
+
+/**
+ * A setup note is read, not completed: title is the action, body is at most
+ * three short lines. A note that needs a conditional to decide whether it
+ * applies to the reader belongs in the app's README instead.
+ */
+export function checkManualSteps(manifest, manifestRel) {
+  const steps = manifest?.install?.manualSteps
+  if (!Array.isArray(steps)) return []
+
+  const errors = []
+
+  steps.forEach((step, i) => {
+    const at = `${manifestRel}: install.manualSteps[${i}]`
+
+    if (typeof step?.body === 'string' && step.body.length > MAX_BODY_CHARS) {
+      errors.push(
+        `${at}.body: ${step.body.length} characters, max ${MAX_BODY_CHARS} — ` +
+          `shorten it, or move the detail to the app README`,
+      )
+    }
+
+    for (const field of ['title', 'body', 'deepLink']) {
+      const value = step?.[field]
+      if (typeof value !== 'string') continue
+      for (const match of value.matchAll(/\{([^}]*)\}/g)) {
+        if (!PLACEHOLDER_TOKENS.includes(match[1])) {
+          errors.push(
+            `${at}.${field}: unknown placeholder {${match[1]}} ` +
+              `(known: ${PLACEHOLDER_TOKENS.join(', ')})`,
+          )
+        }
+      }
+    }
+  })
+
   return errors
 }
 
@@ -236,4 +281,6 @@ function main() {
   console.log(`\nAll ${apps.length} app(s) satisfy the per-app pipelines convention.`)
 }
 
-main()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+}
