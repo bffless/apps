@@ -70,6 +70,13 @@ provider tokens/secrets are set per project, not per app).
 - **Response-header rules — COOP/COEP for `ffmpeg.wasm` threading.** Studio's Export step needs the
   page **cross-origin isolated**, which is a response-header rule *not* in the proxy-rules JSON. See
   [Cross-origin isolation](#cross-origin-isolation-required-for-ffmpeg-threading) below.
+- **Keep the domain private** — Studio's rules carry no per-rule auth; the
+  non-public domain (optionally `requiredRole: admin`) is what gates the paid
+  AI endpoints.
+- **AI skills path — the `thumbnail-draft` rule's `ai` step Skills section.** Set Skills Source to
+  `studio` and Path to `apps/studio/dist/.bffless/skills` so `/api/thumbnail/draft` can load the
+  `image-prompts` skill; without this pairing thumbnail drafting silently skips the skill (the
+  installer can't wire it).
 
 ## Prerequisites (provision these in the target project first)
 
