@@ -22,7 +22,13 @@ function Shell() {
       <ScrollToTop />
       <header className="sticky top-0 z-40 border-b rule bg-surface/85 backdrop-blur">
         <div className="container-page flex h-14 items-center">
-          <Link to="/" className="font-semibold tracking-[-0.01em] text-lg font-semibold text-ink">
+          <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-[-0.01em] text-ink">
+            <span
+              aria-hidden="true"
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-accent"
+            >
+              <span className="ml-0.5 h-0 w-0 border-y-[5px] border-l-[8px] border-y-transparent border-l-white" />
+            </span>
             Studio
           </Link>
         </div>
