@@ -158,7 +158,7 @@ export function BlogCard({
         </div>
       ) : (
         !generating && (
-          <p className="text-[13px] text-ink-faint">
+          <p className="text-[13px] text-ink-mute">
             No post yet. Generate one from your final script.
           </p>
         )
