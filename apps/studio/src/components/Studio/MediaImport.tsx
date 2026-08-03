@@ -44,7 +44,7 @@ export function MediaImport({ onSelect }: Props) {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
       className={[
-        'corner-marks flex flex-col items-center justify-center gap-4 border border-dashed px-8 py-20 text-center transition-colors',
+        'flex flex-col items-center justify-center gap-4 border border-dashed px-8 py-20 text-center transition-colors',
         dragging ? 'border-accent bg-accent/5' : 'rule bg-surface-dim/30',
       ].join(' ')}
     >
