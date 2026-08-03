@@ -60,9 +60,9 @@ provider tokens/secrets are set per project, not per app).
   an **Anthropic** key (`claude-sonnet-4-6` for `/api/thumbnail/draft`). See
   [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) §1 and §3 for where to
   obtain and enter each.
-- **Secrets — `HF_TOKEN` from Hugging Face.** Add `HF_TOKEN` under **Settings → Secrets** set to a
-  [Hugging Face](https://huggingface.co/settings/tokens) **read** token; `/api/transcribe` references
-  it as `secrets.HF_TOKEN` for WhisperX alignment/diarization. See Prerequisites §2.
+- **Secrets — `HF_TOKEN` from Hugging Face.** Add `HF_TOKEN` under **Settings → AI Services → Secrets**
+  set to a [Hugging Face](https://huggingface.co/settings/tokens) **read** token; `/api/transcribe`
+  references it as `secrets.HF_TOKEN` for WhisperX alignment/diarization. See Prerequisites §2.
 - **Storage backend — a default bucket is required.** Studio uploads/serves write under
   `<owner>/<repo>/uploads/<kind>/…`, so the project needs a storage backend with a default bucket for
   uploads; also provision the `studio_jobs` + projects data tables. See the
@@ -74,7 +74,7 @@ provider tokens/secrets are set per project, not per app).
   non-public domain (optionally `requiredRole: admin`) is what gates the paid
   AI endpoints.
 - **AI skills path — the `thumbnail-draft` rule's `ai` step Skills section.** Set Skills Source to
-  `studio` and Path to `apps/studio/dist/.bffless/skills` so `/api/thumbnail/draft` can load the
+  `studio` and Path to `apps/studio/dist/bffless/skills` so `/api/thumbnail/draft` can load the
   `image-prompts` skill; without this pairing thumbnail drafting silently skips the skill (the
   installer can't wire it).
 

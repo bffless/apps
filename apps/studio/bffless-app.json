@@ -72,7 +72,7 @@
       {
         "id": "point-skills-path",
         "title": "Point AI skills at the app files",
-        "body": "Proxy Rules → thumbnail-draft rule → AI step → Skills: set Source to studio and Path to apps/studio/dist/.bffless/skills. Thumbnail drafting loads the image-prompts skill from there and silently skips it otherwise.",
+        "body": "Proxy Rules → thumbnail-draft rule → AI step → Skills: set Source to this app's alias and Path to apps/studio/dist/bffless/skills. Thumbnail drafting loads image-prompts from there; otherwise it's silently skipped.",
         "deepLink": "/repo/{projectPath}/settings?tab=proxy-rules",
         "appliesWhen": "always"
       }
