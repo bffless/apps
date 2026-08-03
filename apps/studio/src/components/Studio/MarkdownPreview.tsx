@@ -129,7 +129,7 @@ function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
       const level = heading[1].length
       const cls = level <= 1 ? 'font-semibold tracking-[-0.01em] text-[18px]' : 'font-semibold tracking-[-0.01em] text-[15px]'
       return (
-        <p key={i} className={`${cls} font-semibold text-ink`}>
+        <p key={i} className={`${cls} text-ink`}>
           {renderInline(heading[2])}
         </p>
       )

@@ -286,7 +286,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   )
 
   // Dropped footage spans for the selected scene (refiner's cuts, else
-  // director's), drawn as red cells in the cut editor.
+  // director's), drawn as violet cells in the cut editor.
   const cutSpans = useMemo(
     () => (selected ? effectiveCuts(selected) : []),
     [selected],

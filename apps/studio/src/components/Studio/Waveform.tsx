@@ -39,8 +39,8 @@ export function Waveform({ peaks, progress = 0, height = 56 }: Props) {
         const p = peaks[Math.floor((x / w) * peaks.length)] ?? 0
         // mirror the peak around the midline so it reads like a classic waveform
         const half = Math.max(0.5, p * (mid - 1))
-        // accent (#d85a3d) for played, ink-soft (#3a352e) for the rest
-        ctx.fillStyle = x <= playedX ? 'rgba(216, 90, 61, 0.85)' : 'rgba(58, 53, 46, 0.5)'
+        // accent violet for played, muted ink for the rest
+        ctx.fillStyle = x <= playedX ? 'rgba(124, 58, 237, 0.85)' : 'rgba(63, 61, 70, 0.5)'
         ctx.fillRect(x, mid - half, 1, half * 2)
       }
     }

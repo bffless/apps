@@ -41,7 +41,7 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
         const label = (
           <span
             className={[
-              'font-semibold tracking-[-0.01em] text-[15px] leading-none whitespace-nowrap',
+              'tracking-[-0.01em] text-[15px] leading-none whitespace-nowrap',
               current ? 'font-semibold text-ink' : done ? 'text-ink-soft' : 'text-ink-faint',
             ].join(' ')}
           >

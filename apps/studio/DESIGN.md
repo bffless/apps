@@ -28,16 +28,24 @@ a var flip + contrast tuning.
 
 ## Typography
 
-- Inter everywhere; headings are `font-semibold tracking-[-0.01em]`, `text-wrap: balance`.
+- Inter everywhere; headings (`h1`–`h3`) are `font-semibold` with `-0.015em`
+  tracking (base CSS), `text-wrap: balance`; the component-level utility sweep
+  uses `tracking-[-0.01em]` as a variant on non-heading emphasis text.
 - JetBrains Mono ONLY where mono is functional: timecodes, durations, cut
   ranges, `.meta-label`. `.font-mono` gets `tabular-nums` globally.
-- Base 16px / 1.5. Fixed rem scale (~1.125 ratio); no fluid clamp headings.
+- Base 16px / 1.5; component sizes are currently fixed px values, converging
+  on a ~1.125 rem scale; no fluid clamp headings.
 
 ## Components
 
-- Controls `rounded-md` (6px); cards `rounded-lg` (8px) on `surface-raised`.
+- Controls 6px (`rounded-md`). StageCard is the reference raised card
+  (`rounded-lg` on `surface-raised`); most legacy cards are still flat
+  `bg-surface` with hairline borders and migrate incrementally.
 - `.pill-cta` accent fill / white text; `.pill-ghost` `line` border, `surface-dim` hover fill.
-- Active state = full `border-accent` (side-stripe accents are banned).
+- StageCard establishes the full-border active treatment; five legacy
+  side-stripe accents (DirectorPanel, SynopsisCard, SceneAssembleBar,
+  SceneList active item, SourceQueue drag target) remain and migrate
+  incrementally.
 - `.meta-label`: 11px mono uppercase, 0.08em tracking, `ink-mute`.
 - Focus: global `:focus-visible` 2px accent outline. Motion 150–300ms ease-out,
   with a `prefers-reduced-motion` collapse.

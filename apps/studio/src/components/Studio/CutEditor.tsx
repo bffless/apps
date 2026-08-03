@@ -37,11 +37,11 @@ type Props = {
   /** The scene's original transcript words — the ONE text (ADR-0003). */
   words: TWord[]
   /** Footage spans being dropped (refiner's `cuts`, else the director's), in
-   *  original-video seconds. Rendered as red cells. */
+   *  original-video seconds. Rendered as violet cells. */
   cuts?: CutSpan[]
   /** Hand-edit the cuts by dragging on the grid. The drag's start cell decides
    *  the op: starting on kept footage **adds** a cut (drag to size / extend an
-   *  adjacent one); starting on a red cell **removes** (contract or split). The
+   *  adjacent one); starting on a violet (cut) cell **removes** (contract or split). The
    *  span is in original-video seconds, snapped to whole cells. Omit to make the
    *  grid read-only (the prep previews). */
   onEditCut?: (span: CutSpan, op: 'add' | 'remove') => void
@@ -72,7 +72,7 @@ type Props = {
   /** The scene's own source's extracted audio (16 kHz WAV — the source `words`
    *  and the window are timed against). When set, each timestamp
    *  becomes a play button: click it to play the FINAL CUT from that second —
-   *  the kept spans only, skipping every red cut span (story 13d) — through the
+   *  the kept spans only, skipping every cut span (story 13d) — through the
    *  scene's `windowEnd`, with the lit row tracking the playhead across the
    *  skips. Modifier-click plays the raw source straight through cuts. Omit
    *  (prep previews) to keep the gutter read-only. */
@@ -93,7 +93,7 @@ type Props = {
   /** Measured dead space (story 13c): spans of true silence in the extracted
    *  WAV, in original-video seconds. When set, wordless cells split into two
    *  states — **dead space** (inside a span — dimmed, prime cut territory) and
-   *  **noise** (energy but no words — a breath/click marker), with cuts red on
+   *  **noise** (energy but no words — a breath/click marker), with cuts violet on
    *  top of either. Omit (not yet measured) for the flat two-state grid. */
   deadSpace?: DeadSpan[]
   /** Auto-trim dead space (story 13e): apply the tool's derived cuts as ONE
@@ -122,7 +122,7 @@ function lastSecond(words: TWord[]): number {
  * The cut editor — the Build screen's one grid (ADR-0003). The original
  * transcript on a time grid: line numbers are timestamps; each row is
  * `secondsPerLine` seconds sliced into `segmentSeconds` cells. Dropped footage
- * (`cuts`) is filled red; empty cells are the dead space; drag to cut/un-cut.
+ * (`cuts`) is filled violet; empty cells are the dead space; drag to cut/un-cut.
  * A filmstrip gutter keeps the picture in view, and clicking a timestamp plays
  * the FINAL CUT from that second — kept spans only, cuts skipped in both audio
  * and the synced video (story 13d); modifier-click plays the raw source. Each
@@ -234,7 +234,7 @@ export function CutEditor({
 
   // Playback from a clicked timestamp (story 13d): the transport plays the
   // whole-source WAV, and by default it plays THE FINAL CUT — on every tick the
-  // playhead is bumped past any red span with `nextKeptTime`, so cuts are
+  // playhead is bumped past any cut span with `nextKeptTime`, so cuts are
   // skipped and the lit row tracks the grid across the skips. 'raw' mode
   // (modifier-click, search hits) plays the source straight through.
   // `playheadSec` lights the row the playhead is in; clicking the row that's
@@ -276,7 +276,7 @@ export function CutEditor({
    * playhead is inside `[startSec, toggleEnd)` pauses instead (rows pass their
    * own span; auditions pass an empty window so re-triggering replays the
    * seam). `stopSec` overrides the scene-window stop bound. In 'stitched' mode
-   * the start itself is resolved to the first kept moment — red spans never
+   * the start itself is resolved to the first kept moment — cut spans never
    * play.
    */
   const transportPlay = useCallback(
@@ -494,9 +494,9 @@ export function CutEditor({
           <p className="mt-0.5 text-[12.5px] text-ink-soft">
             Line numbers are timestamps · rows are {secondsPerLine}s, one cell per{' '}
             {segmentSeconds === 1 ? 'second' : `${segmentSeconds}s`} ·{' '}
-            <span className="text-accent-ink">red</span> = cut ·{' '}
+            <span className="text-accent-ink">violet</span> = cut ·{' '}
             {deadSpace ? <>dimmed = dead space · “·” = noise</> : <>blank = dead space</>}
-            {editable && ' · drag empty cells to cut, drag red cells to un-cut'}
+            {editable && ' · drag empty cells to cut, drag violet cells to un-cut'}
             {originalAudioUrl && ' · timestamps play the final cut — modifier-click for the raw source'}
           </p>
         </div>
@@ -768,7 +768,7 @@ export function CutEditor({
         <div className="min-w-0 flex-1">
           <Pane
             label="Words"
-            sublabel="original speech · cuts in red"
+            sublabel="original speech · cuts in violet"
             words={words}
             secondsPerLine={secondsPerLine}
             segmentSeconds={segmentSeconds}
@@ -955,7 +955,7 @@ function Filmstrip({
                     onClick={() => setZoomFrame(frame)}
                     title="Click to view full-size"
                     aria-label={`View frame at ${formatClock(line.startSec)} full-size`}
-                    className="group relative block cursor-zoom-in appearance-none overflow-hidden border-0 bg-surface-dim p-0 outline-none hover:z-10 hover:overflow-visible"
+                    className="group relative block cursor-zoom-in appearance-none overflow-hidden border-0 bg-surface-dim p-0 hover:z-10 hover:overflow-visible"
                     style={{ width: FILMSTRIP_WIDTH, height: rowHeight }}
                   >
                     <div
@@ -1194,8 +1194,8 @@ function Row({
             // appearance-none strips the native button chrome, but then WebKit
             // falls back to a black UA border on every side — border-0 kills it,
             // and we re-add only the faint right divider to match the plain
-            // timestamp it replaced. outline-none drops the click focus box.
-            'flex h-full w-full cursor-pointer select-none appearance-none items-center justify-end border-0 border-r border-line/60 bg-transparent px-2 text-[11px] outline-none transition-colors',
+            // timestamp it replaced.
+            'flex h-full w-full cursor-pointer select-none appearance-none items-center justify-end border-0 border-r border-line/60 bg-transparent px-2 text-[11px] transition-colors',
             playing ? 'font-semibold text-accent' : 'text-ink-faint hover:text-accent',
           ].join(' ')}
         >
@@ -1231,7 +1231,7 @@ function Row({
               edit ? 'cursor-pointer select-none' : '',
               // separators only on whole-second boundaries, so quarter-slices stay quiet
               col > 0 && col % perSecond === 0 ? 'border-l border-line/50' : '',
-              // dropped footage red (on top of any measured state); the exact
+              // dropped footage violet (on top of any measured state); the exact
               // playhead cell tinted; then measured dead space dims WORDLESS
               // cells — true silence, the prime territory for a cut.
               cutCols[col]
@@ -1242,7 +1242,7 @@ function Row({
                     ? 'bg-surface-dim/70'
                     : '',
               // the exact cell under the playhead — outlined so it reads on top
-              // of a cut's red fill as well
+              // of a cut's violet fill as well
               playingCol === col ? 'ring-2 ring-inset ring-accent' : '',
               // the active cut/un-cut paint preview
               previewCols[col] && edit?.previewKind ? previewClass[edit.previewKind] : '',

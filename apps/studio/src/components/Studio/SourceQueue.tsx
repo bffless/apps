@@ -200,7 +200,7 @@ function SourceRow({
                 onLoaded={() => {}}
               />
             ) : (
-              <span className="font-mono text-[12px] text-ink-faint">Loading preview&hellip;</span>
+              <span className="font-mono text-[12px] text-ink-mute">Loading preview&hellip;</span>
             )}
             {source.audioUrl && (
               <AudioArtifact peaks={source.audioPeaks} audioUrl={source.audioUrl} />

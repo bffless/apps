@@ -179,7 +179,7 @@ export function SceneRefinePanel({
 
       <p className="mt-3 text-[12.5px] leading-relaxed text-ink-soft">
         Then tune the cuts by hand in the editor below — drag empty cells to cut,
-        drag red cells to un-cut.
+        drag violet cells to un-cut.
       </p>
 
       {error && <p className="mt-3 text-[13px] text-accent-ink">{error}</p>}

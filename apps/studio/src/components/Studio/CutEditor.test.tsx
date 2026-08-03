@@ -55,7 +55,7 @@ describe('CutEditor cut painting', () => {
     expect(span.end).toBeCloseTo(2.1)
   })
 
-  it('starting the drag on a red (cut) cell removes instead', () => {
+  it('starting the drag on a violet (cut) cell removes instead', () => {
     const onEditCut = vi.fn()
     render(
       <CutEditor
@@ -71,7 +71,7 @@ describe('CutEditor cut painting', () => {
     expect(op).toBe('remove')
   })
 
-  it('paints cut cells red', () => {
+  it('paints cut cells violet', () => {
     render(<CutEditor words={words} duration={6} cuts={[{ start: 2.0, end: 2.5 }]} />)
     expect(cellOf('beta').className).toContain('bg-accent/30')
     expect(cellOf('alpha').className).not.toContain('bg-accent/30')
@@ -111,7 +111,7 @@ describe('CutEditor measured dead space (story 13c)', () => {
     expect(cellAt(row, 12).textContent).toBe('') // 1.2s — dead space, not noise
   })
 
-  it('paints cuts red on top of dead space', () => {
+  it('paints cuts violet on top of dead space', () => {
     render(
       <CutEditor words={words} duration={6} deadSpace={deadSpace} cuts={[{ start: 1.0, end: 1.3 }]} />,
     )
@@ -323,7 +323,7 @@ describe('CutEditor stitched playback (story 13d)', () => {
   const renderWithCut = () =>
     render(<CutEditor words={words} duration={6} cuts={cuts} originalAudioUrl="blob:original" />)
 
-  it('skips the red span: a tick inside the cut jumps the playhead to its end', () => {
+  it('skips the cut span: a tick inside the cut jumps the playhead to its end', () => {
     renderWithCut()
     const audio = document.querySelector('audio')!
     fireEvent.click(screen.getByRole('button', { name: 'Play from 0:00' }))
