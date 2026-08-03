@@ -50,10 +50,10 @@ export function MarkdownPreview({
       ? { frames, onCaptureSiblings, onPreviewFrame, onReframe }
       : null
   return (
-    <div className="prose-paper flex flex-col gap-3 text-[14px] leading-relaxed text-ink">
+    <div className="prose-surface flex flex-col gap-3 text-[14px] leading-relaxed text-ink">
       {front && (front.title || front.description) && (
-        <header className="border-b border-paper-line pb-3">
-          {front.title && <p className="font-serif text-[20px] leading-tight text-ink">{front.title}</p>}
+        <header className="border-b border-line pb-3">
+          {front.title && <p className="font-semibold tracking-[-0.01em] text-[20px] leading-tight text-ink">{front.title}</p>}
           {front.description && <p className="mt-1 text-[13px] text-ink-soft">{front.description}</p>}
         </header>
       )}
@@ -115,7 +115,7 @@ function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
             }
             return (
               <figure key={j} className="flex flex-col gap-1">
-                <img src={src} alt={alt} className="rounded-md border border-paper-line" />
+                <img src={src} alt={alt} className="rounded-md border border-line" />
                 {alt && <figcaption className="text-[12.5px] text-ink-soft italic">{alt}</figcaption>}
               </figure>
             )
@@ -127,7 +127,7 @@ function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
     const heading = /^(#{1,6})\s+(.*)$/.exec(lines[0])
     if (heading && lines.length === 1) {
       const level = heading[1].length
-      const cls = level <= 1 ? 'font-serif text-[18px]' : 'font-serif text-[15px]'
+      const cls = level <= 1 ? 'font-semibold tracking-[-0.01em] text-[18px]' : 'font-semibold tracking-[-0.01em] text-[15px]'
       return (
         <p key={i} className={`${cls} font-semibold text-ink`}>
           {renderInline(heading[2])}
@@ -147,7 +147,7 @@ function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
 
     if (lines.every((l) => /^>\s?/.test(l))) {
       return (
-        <blockquote key={i} className="border-l-2 border-paper-line pl-3 text-ink-soft italic">
+        <blockquote key={i} className="border-l-2 border-line pl-3 text-ink-soft italic">
           {renderInline(lines.map((l) => l.replace(/^>\s?/, '')).join(' '))}
         </blockquote>
       )
@@ -174,7 +174,7 @@ function renderInline(text: string): ReactNode {
           href={link[2]}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-terracotta underline decoration-1 underline-offset-2 hover:text-terracotta-hover"
+          className="text-accent underline decoration-1 underline-offset-2 hover:text-accent-hover"
         >
           {link[1]}
         </a>
@@ -183,7 +183,7 @@ function renderInline(text: string): ReactNode {
       return <strong key={i}>{part.slice(2, -2)}</strong>
     if (part.startsWith('`') && part.endsWith('`'))
       return (
-        <code key={i} className="rounded bg-paper-deep/30 px-1 font-mono text-[12.5px]">
+        <code key={i} className="rounded bg-surface-dim/30 px-1 font-mono text-[12.5px]">
           {part.slice(1, -1)}
         </code>
       )

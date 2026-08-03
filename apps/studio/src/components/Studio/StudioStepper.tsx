@@ -12,7 +12,7 @@ type Props = {
  * The top-level "where am I" stepper for the whole producer journey:
  * Import → Prep → Build → Export. Orientation first — the deliberate per-step
  * actions live in the prep board below it. Mirrors `StageCard`'s glyph language:
- * terracotta fill = done, ringed = current, faint = upcoming. Phases listed in
+ * accent fill = done, ringed = current, faint = upcoming. Phases listed in
  * `navigable` become clickable so you can hop back (Prep ⇄ Build) without losing
  * any work.
  */
@@ -31,8 +31,8 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
             className={[
               'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors',
               done || current
-                ? 'bg-terracotta text-paper'
-                : 'border border-paper-line text-ink-faint',
+                ? 'bg-accent text-surface'
+                : 'border border-line text-ink-faint',
             ].join(' ')}
           >
             {done ? '✓' : i + 1}
@@ -41,7 +41,7 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
         const label = (
           <span
             className={[
-              'font-serif text-[15px] leading-none whitespace-nowrap',
+              'font-semibold tracking-[-0.01em] text-[15px] leading-none whitespace-nowrap',
               current ? 'font-semibold text-ink' : done ? 'text-ink-soft' : 'text-ink-faint',
             ].join(' ')}
           >
@@ -53,7 +53,7 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
         // glance; done/upcoming sit flush. Both branches reset the default button
         // chrome (we don't load Tailwind's preflight).
         const inner = 'flex items-center gap-2.5 rounded-full px-2 py-1'
-        const highlight = current ? 'bg-terracotta/12 ring-1 ring-terracotta/30' : ''
+        const highlight = current ? 'bg-accent/12 ring-1 ring-accent/30' : ''
 
         return (
           <li key={p.id} className="flex flex-1 items-center gap-2 last:flex-none">
@@ -77,7 +77,7 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
               <span
                 className={[
                   'h-px flex-1 transition-colors',
-                  done ? 'bg-terracotta/50' : 'bg-paper-line',
+                  done ? 'bg-accent/50' : 'bg-line',
                 ].join(' ')}
               />
             )}

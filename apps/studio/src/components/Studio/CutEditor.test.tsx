@@ -73,8 +73,8 @@ describe('CutEditor cut painting', () => {
 
   it('paints cut cells red', () => {
     render(<CutEditor words={words} duration={6} cuts={[{ start: 2.0, end: 2.5 }]} />)
-    expect(cellOf('beta').className).toContain('bg-terracotta/30')
-    expect(cellOf('alpha').className).not.toContain('bg-terracotta/30')
+    expect(cellOf('beta').className).toContain('bg-accent/30')
+    expect(cellOf('alpha').className).not.toContain('bg-accent/30')
   })
 
   it('is read-only without onEditCut', () => {
@@ -99,8 +99,8 @@ describe('CutEditor measured dead space (story 13c)', () => {
   it('dims wordless cells inside a dead-space span', () => {
     render(<CutEditor words={words} duration={6} deadSpace={deadSpace} />)
     const row = rowOf('alpha')
-    expect(cellAt(row, 12).className).toContain('bg-paper-deep/70') // 1.2s — silence
-    expect(cellAt(row, 5).className).not.toContain('bg-paper-deep/70') // 0.5s — noise
+    expect(cellAt(row, 12).className).toContain('bg-surface-dim/70') // 1.2s — silence
+    expect(cellAt(row, 5).className).not.toContain('bg-surface-dim/70') // 0.5s — noise
   })
 
   it('marks energy-but-no-words cells with a noise dot, but not cells inside a word’s span', () => {
@@ -116,15 +116,15 @@ describe('CutEditor measured dead space (story 13c)', () => {
       <CutEditor words={words} duration={6} deadSpace={deadSpace} cuts={[{ start: 1.0, end: 1.3 }]} />,
     )
     const row = rowOf('alpha')
-    expect(cellAt(row, 11).className).toContain('bg-terracotta/30')
-    expect(cellAt(row, 11).className).not.toContain('bg-paper-deep/70')
-    expect(cellAt(row, 14).className).toContain('bg-paper-deep/70') // past the cut, still dimmed
+    expect(cellAt(row, 11).className).toContain('bg-accent/30')
+    expect(cellAt(row, 11).className).not.toContain('bg-surface-dim/70')
+    expect(cellAt(row, 14).className).toContain('bg-surface-dim/70') // past the cut, still dimmed
   })
 
   it('without a measurement the grid stays flat — no dimming, no dots', () => {
     render(<CutEditor words={words} duration={6} />)
     const row = rowOf('alpha')
-    expect(cellAt(row, 12).className).not.toContain('bg-paper-deep/70')
+    expect(cellAt(row, 12).className).not.toContain('bg-surface-dim/70')
     expect(cellAt(row, 5).textContent).toBe('')
     expect(screen.getByText(/blank = dead space/)).toBeInTheDocument()
   })
@@ -167,10 +167,10 @@ describe('CutEditor auto-trim (story 13e)', () => {
   it('outlines the planned cuts on the grid while the bar is open', () => {
     render(<CutEditor words={words} duration={6} deadSpace={deadSpace} onAutoTrim={vi.fn()} />)
     const row = rowOf('alpha')
-    expect(cellAt(row, 13).className).not.toContain('ring-terracotta') // closed — no outline
+    expect(cellAt(row, 13).className).not.toContain('ring-accent') // closed — no outline
     openTrim()
-    expect(cellAt(row, 13).className).toContain('ring-terracotta') // 1.3s — inside the plan
-    expect(cellAt(row, 11).className).not.toContain('ring-terracotta') // 1.1s — keep-padding
+    expect(cellAt(row, 13).className).toContain('ring-accent') // 1.3s — inside the plan
+    expect(cellAt(row, 11).className).not.toContain('ring-accent') // 1.1s — keep-padding
   })
 
   it('raising the minimum pause above the silence empties the plan and disables Apply', () => {
@@ -290,18 +290,18 @@ describe('CutEditor original-audio playback highlight', () => {
     render(<CutEditor words={words} duration={6} originalAudioUrl="blob:original" />)
     const audio = playFromRowZero()
     seek(audio, 0.04) // col 0 of row 0 — the cell holding "alpha"
-    expect(cellOf('alpha').className).toContain('ring-terracotta')
+    expect(cellOf('alpha').className).toContain('ring-accent')
     seek(audio, 0.65) // col 6 of row 0 — the highlight leaves alpha's cell
-    expect(cellOf('alpha').className).not.toContain('ring-terracotta')
+    expect(cellOf('alpha').className).not.toContain('ring-accent')
   })
 
   it('clears the cell highlight when playback pauses', () => {
     render(<CutEditor words={words} duration={6} originalAudioUrl="blob:original" />)
     const audio = playFromRowZero()
     seek(audio, 0.04)
-    expect(cellOf('alpha').className).toContain('ring-terracotta')
+    expect(cellOf('alpha').className).toContain('ring-accent')
     fireEvent.pause(audio)
-    expect(cellOf('alpha').className).not.toContain('ring-terracotta')
+    expect(cellOf('alpha').className).not.toContain('ring-accent')
   })
 })
 
@@ -329,7 +329,7 @@ describe('CutEditor stitched playback (story 13d)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Play from 0:00' }))
     seek(audio, 2.5)
     expect(audio.currentTime).toBe(4)
-    expect(cellOf('gamma').className).toContain('ring-terracotta') // grid tracks the jump
+    expect(cellOf('gamma').className).toContain('ring-accent') // grid tracks the jump
   })
 
   it('modifier-click plays the raw source straight through the cut', () => {
@@ -345,7 +345,7 @@ describe('CutEditor stitched playback (story 13d)', () => {
     renderWithCut()
     fireEvent.click(screen.getByRole('button', { name: 'Play from 0:02' }))
     // the playhead lights 4.0s (the cut's end) immediately, before any timeupdate
-    expect(cellOf('gamma').className).toContain('ring-terracotta')
+    expect(cellOf('gamma').className).toContain('ring-accent')
   })
 
   it('does not start at all when everything to the window end is cut', () => {

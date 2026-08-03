@@ -23,7 +23,7 @@ export function PromptDisclosure({ label, onOpen, loading, loaded, error, prompt
   const [opened, setOpened] = useState(false)
   return (
     <details
-      className="border rule bg-paper-deep/30 px-4 py-2.5"
+      className="border rule bg-surface-dim/30 px-4 py-2.5"
       onToggle={(e) => {
         if ((e.target as HTMLDetailsElement).open && !opened) {
           setOpened(true)

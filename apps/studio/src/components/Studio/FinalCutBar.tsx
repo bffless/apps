@@ -100,7 +100,7 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
   }, [resultBlob, saving, onSave])
 
   return (
-    <div className="border rule bg-paper p-5">
+    <div className="border rule bg-surface p-5">
       <p className="meta-label">Export · stitch the final cut</p>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
         Once every scene is assembled & saved, stitch them into the whole video. This
@@ -166,8 +166,8 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
       {(running || stage) && !error && stage && (
         <p className="mt-3 text-[12.5px] text-ink-soft">{stage}</p>
       )}
-      {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-terracotta-ink">{error}</p>}
-      {saveError && <p className="mt-3 text-[13px] text-terracotta-ink">Couldn’t save: {saveError}</p>}
+      {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink">{error}</p>}
+      {saveError && <p className="mt-3 text-[13px] text-accent-ink">Couldn’t save: {saveError}</p>}
 
       {playbackSrc && !running && (
         <div className="mt-4">
@@ -175,7 +175,7 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
             src={playbackSrc}
             controls
             crossOrigin="anonymous"
-            className="w-full rounded-md border border-paper-line"
+            className="w-full rounded-md border border-line"
           />
         </div>
       )}

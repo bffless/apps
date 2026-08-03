@@ -124,7 +124,7 @@ export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props)
         <img
           src={open ? previewSrc : src}
           alt={alt}
-          className={`w-full rounded-md border border-paper-line transition-opacity ${
+          className={`w-full rounded-md border border-line transition-opacity ${
             previewLoading ? 'opacity-50' : ''
           }`}
         />
@@ -142,7 +142,7 @@ export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props)
           <button
             type="button"
             onClick={openStrip}
-            className="pill-ghost absolute right-2 top-2 bg-paper/90 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            className="pill-ghost absolute right-2 top-2 bg-surface/90 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           >
             Change frame
           </button>
@@ -150,7 +150,7 @@ export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props)
       </div>
 
       {open && (
-        <div className="flex flex-col gap-2 rounded-md border border-paper-line bg-paper-deep/10 p-2">
+        <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-dim/10 p-2">
           <div className="flex items-center justify-between">
             <span className="meta-label">Click a frame to preview it above</span>
             <button type="button" className="pill-ghost" onClick={close} disabled={saving}>
@@ -176,7 +176,7 @@ export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props)
                     className={`relative shrink-0 overflow-hidden rounded border transition ${
                       isSelected
                         ? 'border-ink ring-2 ring-ink'
-                        : 'border-paper-line hover:border-ink/60'
+                        : 'border-line hover:border-ink/60'
                     }`}
                   >
                     <img src={s.thumb} alt="" className="block h-16 w-auto" />

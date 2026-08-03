@@ -96,7 +96,7 @@ export function BlogCard({
   }
 
   return (
-    <div className="flex flex-col gap-4 border rule bg-paper p-5">
+    <div className="flex flex-col gap-4 border rule bg-surface p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="meta-label">Blog post</p>
@@ -136,7 +136,7 @@ export function BlogCard({
           value={direction}
           onChange={(e) => setDirection(e.target.value)}
           placeholder="e.g. friendly tone, lead with the demo, keep it short"
-          className="mt-1 w-full rounded-md border border-paper-line bg-paper-deep/20 px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-faint"
+          className="mt-1 w-full rounded-md border border-line bg-surface-dim/20 px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-faint"
         />
       </div>
 
@@ -147,7 +147,7 @@ export function BlogCard({
       )}
 
       {post?.markdown ? (
-        <div className="rounded-md border border-paper-line bg-paper-deep/10 p-4">
+        <div className="rounded-md border border-line bg-surface-dim/10 p-4">
           <MarkdownPreview
             markdown={post.markdown}
             frames={post.frames}

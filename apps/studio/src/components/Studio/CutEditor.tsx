@@ -484,7 +484,7 @@ export function CutEditor({
   )
 
   return (
-    <div className="border rule bg-paper">
+    <div className="border rule bg-surface">
       {originalAudioUrl && (
         <audio ref={audioRef} src={originalAudioUrl} preload="metadata" className="hidden" />
       )}
@@ -494,7 +494,7 @@ export function CutEditor({
           <p className="mt-0.5 text-[12.5px] text-ink-soft">
             Line numbers are timestamps · rows are {secondsPerLine}s, one cell per{' '}
             {segmentSeconds === 1 ? 'second' : `${segmentSeconds}s`} ·{' '}
-            <span className="text-terracotta-ink">red</span> = cut ·{' '}
+            <span className="text-accent-ink">red</span> = cut ·{' '}
             {deadSpace ? <>dimmed = dead space · “·” = noise</> : <>blank = dead space</>}
             {editable && ' · drag empty cells to cut, drag red cells to un-cut'}
             {originalAudioUrl && ' · timestamps play the final cut — modifier-click for the raw source'}
@@ -503,14 +503,14 @@ export function CutEditor({
         <div className="flex flex-wrap items-center gap-4 font-mono text-[12px] text-ink-mute">
           {finalCutSec != null && (
             <span className="whitespace-nowrap">
-              final cut <span className="font-semibold text-terracotta-ink">{formatClock(finalCutSec)}</span>
+              final cut <span className="font-semibold text-accent-ink">{formatClock(finalCutSec)}</span>
               {' · '}source <span className="text-ink">{formatClock(duration)}</span>
             </span>
           )}
           {onAutoTrim && deadSpace && !trimOpen && (
             <button
               type="button"
-              className="border rule bg-paper px-2 py-1 text-ink transition-colors hover:bg-paper-deep/40"
+              className="border rule bg-surface px-2 py-1 text-ink transition-colors hover:bg-surface-dim/40"
               onClick={() => setTrimOpen(true)}
             >
               ✂ Auto-trim
@@ -519,7 +519,7 @@ export function CutEditor({
           {onSearch && !searchOpen && (
             <button
               type="button"
-              className="border rule bg-paper px-2 py-1 text-ink transition-colors hover:bg-paper-deep/40"
+              className="border rule bg-surface px-2 py-1 text-ink transition-colors hover:bg-surface-dim/40"
               onClick={() => setSearchOpen(true)}
             >
               ⌕ Search
@@ -544,7 +544,7 @@ export function CutEditor({
               onClick={() => setTallRows((v) => !v)}
               className={[
                 'border rule px-2 py-1 text-ink transition-colors',
-                tallRows ? 'bg-ink text-paper' : 'bg-paper hover:bg-paper-deep/40',
+                tallRows ? 'bg-ink text-surface' : 'bg-surface hover:bg-surface-dim/40',
               ].join(' ')}
             >
               {tallRows ? 'compact rows' : 'tall frames'}
@@ -558,7 +558,7 @@ export function CutEditor({
         // The pending cuts are outlined on the grid below while the bar is open;
         // Apply writes them as one manual edit and never auto-plays — each new
         // cut's audition button is the review gesture.
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b rule bg-paper-deep/40 px-5 py-2 text-[12.5px] text-ink-soft">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b rule bg-surface-dim/40 px-5 py-2 text-[12.5px] text-ink-soft">
           <span className="meta-label">Auto-trim dead space</span>
           {originalAudioUrl ? (
             <label className="flex items-center gap-2 font-mono text-[12px] text-ink-mute">
@@ -601,14 +601,14 @@ export function CutEditor({
             <button
               type="button"
               disabled={!trimPlan || trimPlan.cuts.length === 0}
-              className="rounded border border-paper-line px-2 py-0.5 text-[11px] text-ink hover:bg-paper disabled:opacity-50"
+              className="rounded border border-line px-2 py-0.5 text-[11px] text-ink hover:bg-surface disabled:opacity-50"
               onClick={() => trimPlan && onAutoTrim(trimPlan.cuts)}
             >
               Apply
             </button>
             <button
               type="button"
-              className="rounded border border-paper-line px-2 py-0.5 text-[11px] text-ink hover:bg-paper"
+              className="rounded border border-line px-2 py-0.5 text-[11px] text-ink hover:bg-surface"
               onClick={() => setTrimOpen(false)}
             >
               Close
@@ -620,7 +620,7 @@ export function CutEditor({
       {searchOpen && (
         // Transcript search (story 08): query bar + results. Hits are whole-talk;
         // Play previews the span's original audio.
-        <div className="border-b rule bg-paper-deep/40">
+        <div className="border-b rule bg-surface-dim/40">
           <form
             className="flex flex-wrap items-center gap-3 px-5 py-2 text-[12.5px] text-ink-soft"
             onSubmit={(e) => {
@@ -640,18 +640,18 @@ export function CutEditor({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search the talk — “where I sound excited”, “the bike ride”…"
               aria-label="Search query"
-              className="min-w-48 flex-1 border rule bg-paper px-2 py-1 text-[13px] text-ink outline-none placeholder:text-ink-faint"
+              className="min-w-48 flex-1 border rule bg-surface px-2 py-1 text-[13px] text-ink outline-none placeholder:text-ink-faint"
             />
             <button
               type="submit"
               disabled={!searchQuery.trim() || searchBusy}
-              className="rounded border border-paper-line px-2 py-0.5 text-[11px] text-ink hover:bg-paper disabled:opacity-50"
+              className="rounded border border-line px-2 py-0.5 text-[11px] text-ink hover:bg-surface disabled:opacity-50"
             >
               {searchBusy ? 'Searching…' : 'Search'}
             </button>
             <button
               type="button"
-              className="rounded border border-paper-line px-2 py-0.5 text-[11px] text-ink hover:bg-paper"
+              className="rounded border border-line px-2 py-0.5 text-[11px] text-ink hover:bg-surface"
               onClick={() => {
                 setSearchOpen(false)
                 setSearchHits(null)
@@ -699,7 +699,7 @@ export function CutEditor({
                           {originalAudioUrl && (
                             <button
                               type="button"
-                              className="rounded border border-paper-line px-2 py-0.5 font-mono text-[11px] text-ink hover:bg-paper-deep/40"
+                              className="rounded border border-line px-2 py-0.5 font-mono text-[11px] text-ink hover:bg-surface-dim/40"
                               onClick={() => playSpan(hit.start, hit.end)}
                             >
                               ▶ Play
@@ -731,15 +731,15 @@ export function CutEditor({
           the playhead second; Stop pauses (which clears the lit row via the
           element's pause event). */}
       {playheadSec != null && (
-        <div className="sticky top-[var(--diff-sticky-top,3.5rem)] z-20 flex items-center gap-3 border-b rule bg-terracotta/15 px-5 py-2 text-[12.5px] text-ink-soft backdrop-blur">
+        <div className="sticky top-[var(--diff-sticky-top,3.5rem)] z-20 flex items-center gap-3 border-b rule bg-accent/15 px-5 py-2 text-[12.5px] text-ink-soft backdrop-blur">
           <span className="flex items-center gap-2">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-terracotta" />
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
             Playing {playMode === 'stitched' ? 'the final cut — skipping cuts' : 'the raw source'} ·{' '}
-            <span className="font-mono text-terracotta-ink">{formatClock(playheadSec)}</span>
+            <span className="font-mono text-accent-ink">{formatClock(playheadSec)}</span>
           </span>
           <button
             type="button"
-            className="ml-auto bg-transparent px-1 py-0.5 text-[11px] text-ink-soft transition-colors hover:text-terracotta"
+            className="ml-auto bg-transparent px-1 py-0.5 text-[11px] text-ink-soft transition-colors hover:text-accent"
             onClick={stop}
           >
             ■ Stop
@@ -819,7 +819,7 @@ function Select<T extends number>({
 }) {
   return (
     <select
-      className="border rule bg-paper px-2 py-1 text-ink"
+      className="border rule bg-surface px-2 py-1 text-ink"
       value={value}
       onChange={(e) => onChange(Number(e.target.value) as T)}
     >
@@ -930,10 +930,10 @@ function Filmstrip({
   const [zoomFrame, setZoomFrame] = useState<FilmFrame | null>(null)
 
   return (
-    <div className="bg-paper">
+    <div className="bg-surface">
       {/* header height matches the Pane header so row 0 aligns across the columns */}
       <div className="flex items-baseline gap-2 px-4 py-2.5">
-        <span className="font-serif text-[15px] text-ink">Frames</span>
+        <span className="font-semibold tracking-[-0.01em] text-[15px] text-ink">Frames</span>
         <span className="font-mono text-[11px] uppercase tracking-wider text-ink-faint">video</span>
       </div>
       <div className="pb-2">
@@ -948,23 +948,23 @@ function Filmstrip({
                   the WHOLE frame — the cut-off top and bottom — over its
                   neighbours, with a slight border. In tall-rows mode the cell is
                   already the full frame height, so the whole frame just shows. */}
-              <div className="border-t border-paper-line/60">
+              <div className="border-t border-line/60">
                 {frame && frame.sheet.width > 0 ? (
                   <button
                     type="button"
                     onClick={() => setZoomFrame(frame)}
                     title="Click to view full-size"
                     aria-label={`View frame at ${formatClock(line.startSec)} full-size`}
-                    className="group relative block cursor-zoom-in appearance-none overflow-hidden border-0 bg-paper-deep p-0 outline-none hover:z-10 hover:overflow-visible"
+                    className="group relative block cursor-zoom-in appearance-none overflow-hidden border-0 bg-surface-dim p-0 outline-none hover:z-10 hover:overflow-visible"
                     style={{ width: FILMSTRIP_WIDTH, height: rowHeight }}
                   >
                     <div
-                      className="absolute left-0 top-1/2 -translate-y-1/2 bg-paper-deep ring-ink-faint transition-shadow group-hover:ring-1 group-hover:shadow-lg group-hover:shadow-ink/30"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 bg-surface-dim ring-ink-faint transition-shadow group-hover:ring-1 group-hover:shadow-lg group-hover:shadow-ink/30"
                       style={spriteStyle(frame, FILMSTRIP_WIDTH)}
                     />
                   </button>
                 ) : (
-                  <div className="bg-paper-deep" style={{ width: FILMSTRIP_WIDTH, height: rowHeight }} />
+                  <div className="bg-surface-dim" style={{ width: FILMSTRIP_WIDTH, height: rowHeight }} />
                 )}
               </div>
             </div>
@@ -999,9 +999,9 @@ function FrameZoomDialog({ frame, onClose }: { frame: FilmFrame; onClose: () => 
         e.preventDefault()
         onClose()
       }}
-      className="m-auto rounded-lg border border-paper-line bg-paper p-0 shadow-xl backdrop:bg-ink/70"
+      className="m-auto rounded-lg border border-line bg-surface p-0 shadow-xl backdrop:bg-ink/70"
     >
-      <div className="flex items-center justify-between gap-4 border-b border-paper-line px-4 py-2">
+      <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-2">
         <span className="meta-label">Frame · {formatClock(frame.time)}</span>
         <button type="button" className="pill-ghost" onClick={onClose} aria-label="Close frame view">
           ✕
@@ -1057,9 +1057,9 @@ function Pane({
     playheadSec != null ? gridPosition(playheadSec, secondsPerLine, segmentSeconds) : null
 
   return (
-    <div className="bg-paper">
+    <div className="bg-surface">
       <div className="flex items-baseline gap-2 px-4 py-2.5">
-        <span className="font-serif text-[15px] text-ink">{label}</span>
+        <span className="font-semibold tracking-[-0.01em] text-[15px] text-ink">{label}</span>
         <span className="font-mono text-[11px] uppercase tracking-wider text-ink-faint">
           {sublabel}
         </span>
@@ -1161,16 +1161,16 @@ function Row({
   // The cut/un-cut paint previews are outline-only, keyed off `previewKind` so
   // each gesture reads distinctly.
   const previewClass: Record<NonNullable<CellEdit['previewKind']>, string> = {
-    add: 'ring-2 ring-inset ring-terracotta',
+    add: 'ring-2 ring-inset ring-accent',
     remove: 'ring-2 ring-inset ring-ink-faint',
   }
 
   return (
     <div
       className={[
-        'grid border-t border-paper-line/60',
+        'grid border-t border-line/60',
         // the row the audio playhead is in lights up as it plays
-        playing ? 'bg-terracotta/15' : '',
+        playing ? 'bg-accent/15' : '',
       ].join(' ')}
       // The row track grows to `rowHeight` (tall-rows mode) and the cells stretch
       // to it; their `items-center` keeps the single line of text centred.
@@ -1195,14 +1195,14 @@ function Row({
             // falls back to a black UA border on every side — border-0 kills it,
             // and we re-add only the faint right divider to match the plain
             // timestamp it replaced. outline-none drops the click focus box.
-            'flex h-full w-full cursor-pointer select-none appearance-none items-center justify-end border-0 border-r border-paper-line/60 bg-transparent px-2 text-[11px] outline-none transition-colors',
-            playing ? 'font-semibold text-terracotta' : 'text-ink-faint hover:text-terracotta',
+            'flex h-full w-full cursor-pointer select-none appearance-none items-center justify-end border-0 border-r border-line/60 bg-transparent px-2 text-[11px] outline-none transition-colors',
+            playing ? 'font-semibold text-accent' : 'text-ink-faint hover:text-accent',
           ].join(' ')}
         >
           {formatClock(line.startSec)}
         </button>
       ) : (
-        <div className="flex select-none items-center justify-end border-r border-paper-line/60 px-2 text-[11px] text-ink-faint">
+        <div className="flex select-none items-center justify-end border-r border-line/60 px-2 text-[11px] text-ink-faint">
           {formatClock(line.startSec)}
         </div>
       )}
@@ -1230,20 +1230,20 @@ function Row({
               'relative flex min-h-[2rem] items-center px-1',
               edit ? 'cursor-pointer select-none' : '',
               // separators only on whole-second boundaries, so quarter-slices stay quiet
-              col > 0 && col % perSecond === 0 ? 'border-l border-paper-line/50' : '',
+              col > 0 && col % perSecond === 0 ? 'border-l border-line/50' : '',
               // dropped footage red (on top of any measured state); the exact
               // playhead cell tinted; then measured dead space dims WORDLESS
               // cells — true silence, the prime territory for a cut.
               cutCols[col]
-                ? 'bg-terracotta/30'
+                ? 'bg-accent/30'
                 : playingCol === col
-                  ? 'bg-terracotta/30'
+                  ? 'bg-accent/30'
                   : deadCols?.[col] && cell.length === 0
-                    ? 'bg-paper-deep/70'
+                    ? 'bg-surface-dim/70'
                     : '',
               // the exact cell under the playhead — outlined so it reads on top
               // of a cut's red fill as well
-              playingCol === col ? 'ring-2 ring-inset ring-terracotta' : '',
+              playingCol === col ? 'ring-2 ring-inset ring-accent' : '',
               // the active cut/un-cut paint preview
               previewCols[col] && edit?.previewKind ? previewClass[edit.previewKind] : '',
               // auto-trim's pending cuts, while its bar is open
@@ -1260,7 +1260,7 @@ function Row({
                 onClick={() => onAudition?.(auditionHere)}
                 title="Audition this edit — plays 1.5s before the cut through 1.5s after"
                 aria-label={`Audition the cut at ${formatClock(auditionHere.start)}`}
-                className="absolute -left-2 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-terracotta bg-paper text-[10px] leading-none text-terracotta-ink transition-colors hover:bg-terracotta hover:text-paper"
+                className="absolute -left-2 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-accent bg-surface text-[10px] leading-none text-accent-ink transition-colors hover:bg-accent hover:text-surface"
               >
                 ⟲
               </button>

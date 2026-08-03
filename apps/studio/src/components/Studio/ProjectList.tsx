@@ -19,7 +19,7 @@ export function ProjectList({
         <button type="button" className="pill-cta" onClick={onNew}>+ New project</button>
       </div>
       {projects.length === 0 ? (
-        <div className="border rule bg-paper-deep/30 px-6 py-16 text-center">
+        <div className="border rule bg-surface-dim/30 px-6 py-16 text-center">
           <p className="text-[16px] text-ink-soft">Start your first project — upload a recording and the app preps it for you.</p>
         </div>
       ) : (

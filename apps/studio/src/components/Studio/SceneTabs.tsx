@@ -19,7 +19,7 @@ type Props = {
 /**
  * The scene queue as a horizontal tab strip — one tab per scene, so the work
  * area below (video + transcript diff) can run the full width of the page. Built
- * scenes are checked off; the active tab carries the terracotta underline. The
+ * scenes are checked off; the active tab carries the accent underline. The
  * strip scrolls horizontally when the scenes outrun the page width.
  *
  * The "Scenes · chapters" label and the tab strip are emitted as siblings (no
@@ -62,18 +62,18 @@ export function SceneTabs({ scenes, selectedId, onSelect, tablistRef, tablistCla
                 className={[
                   '-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-[13.5px] transition-colors',
                   active
-                    ? 'border-terracotta text-ink'
-                    : 'border-transparent text-ink-soft hover:border-paper-line hover:text-ink',
+                    ? 'border-accent text-ink'
+                    : 'border-transparent text-ink-soft hover:border-line hover:text-ink',
                 ].join(' ')}
               >
                 <span
                   className={[
                     'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
                     done
-                      ? 'bg-terracotta text-paper'
+                      ? 'bg-accent text-surface'
                       : active
-                        ? 'border border-terracotta text-terracotta-ink'
-                        : 'border border-paper-line text-ink-faint',
+                        ? 'border border-accent text-accent-ink'
+                        : 'border border-line text-ink-faint',
                   ].join(' ')}
                 >
                   {done ? '✓' : scene.index + 1}
@@ -89,7 +89,7 @@ export function SceneTabs({ scenes, selectedId, onSelect, tablistRef, tablistCla
                 tall for the slim tab strip. */}
             <button
               type="button"
-              className="whitespace-nowrap rounded-full border border-paper-line px-3 py-1 text-[12px] text-ink transition-colors hover:border-ink hover:bg-ink hover:text-paper disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-paper-line disabled:hover:bg-transparent disabled:hover:text-ink"
+              className="whitespace-nowrap rounded-full border border-line px-3 py-1 text-[12px] text-ink transition-colors hover:border-ink hover:bg-ink hover:text-surface disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-transparent disabled:hover:text-ink"
               disabled={previewDisabled}
               onClick={onPreview}
             >

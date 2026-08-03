@@ -32,7 +32,7 @@ export function ContactSheetPreview({
   const interval = Math.round(sheets[0]?.interval ?? 0)
 
   return (
-    <div className="border rule bg-paper-deep/30 p-4">
+    <div className="border rule bg-surface-dim/30 p-4">
       <div className="mb-3 flex items-baseline justify-between">
         <p className="meta-label">{title}</p>
         <p className="font-mono text-[12px] text-ink-mute">
@@ -62,7 +62,7 @@ export function ContactSheetPreview({
               <img
                 src={sheet.url ?? sheet.dataUrl}
                 alt={`Frames ${clockLabel(first)} to ${clockLabel(last)} with burned-in timestamps`}
-                className="w-full rounded border border-paper-line"
+                className="w-full rounded border border-line"
                 draggable={false}
               />
             </figure>

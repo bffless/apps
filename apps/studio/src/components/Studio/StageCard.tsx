@@ -22,14 +22,14 @@ export function StageCard({ stage, index, current, busy, onAction, hideAction }:
   return (
     <div
       className={[
-        'flex items-start gap-4 border-l-2 bg-paper px-5 py-4 transition-colors',
+        'flex items-start gap-4 border-l-2 bg-surface px-5 py-4 transition-colors',
         active
-          ? 'border-terracotta bg-terracotta/5'
+          ? 'border-accent bg-accent/5'
           : done
-            ? 'border-paper-line opacity-60'
+            ? 'border-line opacity-60'
             : error
-              ? 'border-terracotta-ink'
-              : 'border-paper-line',
+              ? 'border-accent-ink'
+              : 'border-line',
       ].join(' ')}
     >
       <StatusGlyph status={stage.status} index={index} />
@@ -38,7 +38,7 @@ export function StageCard({ stage, index, current, busy, onAction, hideAction }:
         <div className="flex flex-wrap items-center gap-2">
           <h4
             className={[
-              'font-serif text-[17px] leading-tight text-ink',
+              'font-semibold tracking-[-0.01em] text-[17px] leading-tight text-ink',
               done ? 'line-through decoration-ink-faint' : '',
             ].join(' ')}
           >
@@ -51,7 +51,7 @@ export function StageCard({ stage, index, current, busy, onAction, hideAction }:
           <p
             className={[
               'mt-1.5 font-mono text-[12px]',
-              error ? 'text-terracotta-ink' : 'text-ink-mute',
+              error ? 'text-accent-ink' : 'text-ink-mute',
             ].join(' ')}
           >
             {error ? '✕ ' : '→ '}
@@ -81,7 +81,7 @@ function WhereBadge({ where }: { where: Stage['where'] }) {
       <span className="flex items-center gap-1">
         <span className={`${pill} bg-ink/10 text-ink-mute`}>browser</span>
         <span className="font-mono text-[10px] text-ink-faint">→</span>
-        <span className={`${pill} bg-terracotta/15 text-terracotta-ink`}>pipeline</span>
+        <span className={`${pill} bg-accent/15 text-accent-ink`}>pipeline</span>
       </span>
     )
   }
@@ -89,7 +89,7 @@ function WhereBadge({ where }: { where: Stage['where'] }) {
     <span
       className={[
         pill,
-        where === 'browser' ? 'bg-ink/10 text-ink-mute' : 'bg-terracotta/15 text-terracotta-ink',
+        where === 'browser' ? 'bg-ink/10 text-ink-mute' : 'bg-accent/15 text-accent-ink',
       ].join(' ')}
     >
       {where}
@@ -101,16 +101,16 @@ function StatusGlyph({ status, index }: { status: Stage['status']; index: number
   const base =
     'mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[12px] font-semibold'
   if (status === 'done')
-    return <span className={`${base} bg-terracotta text-paper`}>✓</span>
+    return <span className={`${base} bg-accent text-surface`}>✓</span>
   if (status === 'error')
-    return <span className={`${base} bg-terracotta-ink text-paper`}>✕</span>
+    return <span className={`${base} bg-accent-ink text-surface`}>✕</span>
   if (status === 'active')
     return (
-      <span className={`${base} border-2 border-terracotta text-terracotta`}>
-        <span className="h-2 w-2 animate-ping rounded-full bg-terracotta" />
+      <span className={`${base} border-2 border-accent text-accent`}>
+        <span className="h-2 w-2 animate-ping rounded-full bg-accent" />
       </span>
     )
   return (
-    <span className={`${base} border border-paper-line text-ink-faint`}>{index + 1}</span>
+    <span className={`${base} border border-line text-ink-faint`}>{index + 1}</span>
   )
 }

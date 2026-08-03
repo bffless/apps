@@ -89,7 +89,7 @@ export function ThumbnailStudio({
   }
 
   return (
-    <div className="flex flex-col gap-4 border rule bg-paper p-5">
+    <div className="flex flex-col gap-4 border rule bg-surface p-5">
       <div>
         <p className="meta-label">YouTube thumbnail</p>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
@@ -108,7 +108,7 @@ export function ThumbnailStudio({
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
           placeholder="e.g. bold, dark navy, show the terminal — excited energy"
-          className="mt-1 w-full resize-y rounded-md border border-paper-line bg-paper-deep/20 p-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
+          className="mt-1 w-full resize-y rounded-md border border-line bg-surface-dim/20 p-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
         />
         <button type="button" className="pill-ghost mt-2" disabled={drafting} onClick={handleDraft}>
           {drafting ? 'Drafting…' : 'Draft prompt'}
@@ -126,7 +126,7 @@ export function ThumbnailStudio({
           onChange={(e) => setPrompt(e.target.value)}
           rows={8}
           placeholder={drafting ? 'Drafting a prompt…' : 'Draft a prompt, or paste your own.'}
-          className="mt-1 w-full resize-y rounded-md border border-paper-line bg-paper-deep/20 p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
+          className="mt-1 w-full resize-y rounded-md border border-line bg-surface-dim/20 p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
         />
         <button
           type="button"
@@ -144,7 +144,7 @@ export function ThumbnailStudio({
           <img
             src={signedUrl}
             alt="Generated YouTube thumbnail"
-            className="w-full max-w-2xl rounded-md border border-paper-line"
+            className="w-full max-w-2xl rounded-md border border-line"
           />
           <button
             type="button"

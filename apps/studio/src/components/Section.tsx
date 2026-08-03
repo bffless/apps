@@ -18,7 +18,7 @@ export function Section({ eyebrow, title, children, divider = true, className }:
           <div className="mb-8 md:mb-12">
             {eyebrow && <p className="mb-4 meta-label">{eyebrow}</p>}
             {title && (
-              <h2 className="max-w-3xl font-serif text-3xl leading-[1.05] tracking-[-0.01em] text-ink md:text-[40px]">
+              <h2 className="max-w-3xl font-semibold tracking-[-0.01em] text-3xl leading-[1.05] tracking-[-0.01em] text-ink md:text-[40px]">
                 {title}
               </h2>
             )}
@@ -30,7 +30,7 @@ export function Section({ eyebrow, title, children, divider = true, className }:
   )
 }
 
-/** A terracotta period — the landing site's signature punctuation accent. */
+/** A accent period — the landing site's signature punctuation accent. */
 export function Dot() {
-  return <span className="text-terracotta">.</span>
+  return <span className="text-accent">.</span>
 }

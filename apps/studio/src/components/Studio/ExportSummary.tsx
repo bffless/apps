@@ -81,7 +81,7 @@ export function ExportSummary({
   }
 
   return (
-    <div className="flex flex-col gap-5 border rule bg-paper p-5">
+    <div className="flex flex-col gap-5 border rule bg-surface p-5">
       {/* Recommended title — editable */}
       <div>
         <label htmlFor="export-title" className="meta-label">
@@ -92,7 +92,7 @@ export function ExportSummary({
           value={description?.title ?? ''}
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder={generating ? 'Generating a title…' : 'Your video title'}
-          className="mt-1 w-full bg-transparent font-serif text-[22px] leading-tight text-ink outline-none placeholder:text-ink-faint"
+          className="mt-1 w-full bg-transparent font-semibold tracking-[-0.01em] text-[22px] leading-tight text-ink outline-none placeholder:text-ink-faint"
         />
       </div>
 
@@ -126,7 +126,7 @@ export function ExportSummary({
           placeholder={
             generating ? 'Writing a summary of the final cut…' : 'No description yet.'
           }
-          className="mt-2 w-full resize-y rounded-md border border-paper-line bg-paper-deep/20 p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none"
+          className="mt-2 w-full resize-y rounded-md border border-line bg-surface-dim/20 p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none"
         />
       </div>
 

@@ -45,12 +45,12 @@ export function SceneList({ scenes, selectedId, onSelect }: Props) {
             <li key={scene.id}>
               <div
                 className={[
-                  'flex flex-col border-l-2 bg-paper transition-colors',
+                  'flex flex-col border-l-2 bg-surface transition-colors',
                   active
-                    ? 'border-terracotta bg-terracotta/5'
+                    ? 'border-accent bg-accent/5'
                     : done
-                      ? 'border-paper-line opacity-70 hover:opacity-100'
-                      : 'border-paper-line hover:bg-paper-deep/40',
+                      ? 'border-line opacity-70 hover:opacity-100'
+                      : 'border-line hover:bg-surface-dim/40',
                 ].join(' ')}
               >
                 <div className="flex items-stretch">
@@ -63,8 +63,8 @@ export function SceneList({ scenes, selectedId, onSelect }: Props) {
                       className={[
                         'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
                         done
-                          ? 'bg-terracotta text-paper'
-                          : 'border border-paper-line text-ink-faint',
+                          ? 'bg-accent text-surface'
+                          : 'border border-line text-ink-faint',
                       ].join(' ')}
                     >
                       {done ? '✓' : scene.index + 1}
@@ -110,7 +110,7 @@ export function SceneList({ scenes, selectedId, onSelect }: Props) {
                   )}
                 </div>
                 {prompt && isOpen && (
-                  <div id={panelId} className="border-t border-paper-line/60 px-3 py-2.5">
+                  <div id={panelId} className="border-t border-line/60 px-3 py-2.5">
                     <p className="meta-label">Cutting brief</p>
                     <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-soft">
                       {prompt}

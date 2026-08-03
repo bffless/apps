@@ -20,9 +20,9 @@ function Shell() {
   return (
     <div className="flex min-h-svh flex-col">
       <ScrollToTop />
-      <header className="sticky top-0 z-40 border-b rule bg-paper/85 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b rule bg-surface/85 backdrop-blur">
         <div className="container-page flex h-14 items-center">
-          <Link to="/" className="font-serif text-lg font-semibold text-ink">
+          <Link to="/" className="font-semibold tracking-[-0.01em] text-lg font-semibold text-ink">
             Studio
           </Link>
         </div>

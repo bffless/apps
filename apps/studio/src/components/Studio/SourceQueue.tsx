@@ -111,9 +111,9 @@ function SourceRow({
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       className={[
-        'flex items-start gap-4 border-b bg-paper px-5 py-4 last:border-b-0 transition-colors',
+        'flex items-start gap-4 border-b bg-surface px-5 py-4 last:border-b-0 transition-colors',
         'rule',
-        isDragTarget ? 'bg-terracotta/5 border-l-2 border-l-terracotta' : 'border-l-2 border-l-transparent',
+        isDragTarget ? 'bg-accent/5 border-l-2 border-l-accent' : 'border-l-2 border-l-transparent',
       ].join(' ')}
     >
       {/* Drag handle */}
@@ -131,7 +131,7 @@ function SourceRow({
           <span className="font-mono text-[11px] text-ink-faint">{index + 1}</span>
           <span
             data-testid="source-name"
-            className="font-serif text-[17px] leading-tight text-ink truncate"
+            className="font-semibold tracking-[-0.01em] text-[17px] leading-tight text-ink truncate"
           >
             {source.fileName}
           </span>
@@ -162,7 +162,7 @@ function SourceRow({
           >
             {isThisOne ? (
               <span className="flex items-center gap-2">
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-paper border-t-transparent" />
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-surface border-t-transparent" />
                 Processing&hellip;
               </span>
             ) : (
@@ -191,7 +191,7 @@ function SourceRow({
 
         {/* Expanded per-source detail: preview player + waveform + transcript */}
         {expanded && (
-          <div className="mt-4 border rule bg-paper-deep/30 p-4 flex flex-col gap-4">
+          <div className="mt-4 border rule bg-surface-dim/30 p-4 flex flex-col gap-4">
             {previewSrc ? (
               <PreviewPlayer
                 src={previewSrc}
@@ -289,7 +289,7 @@ export function SourceQueue({ sources, files, busyId, onReorder, onRemove, onPro
       {/* Project-level diarization toggle (story 10e). Off = single-narrator fast
           path; on = detect speakers (slower, runs as an async job). Locked while
           a clip is processing so the choice can't change mid-run. */}
-      <label className="mb-3 flex items-start gap-2 border rule bg-paper px-4 py-3 text-[13px] text-ink-soft">
+      <label className="mb-3 flex items-start gap-2 border rule bg-surface px-4 py-3 text-[13px] text-ink-soft">
         <input
           type="checkbox"
           className="mt-0.5"
@@ -363,13 +363,13 @@ export function SourceQueue({ sources, files, busyId, onReorder, onRemove, onPro
         onClick={() => addInputRef.current?.click()}
         className={[
           'mt-3 cursor-pointer border border-dashed px-5 py-4 text-center font-mono text-[12px] uppercase tracking-wider transition-colors',
-          addDragging ? 'border-terracotta bg-terracotta/5 text-terracotta' : 'rule text-ink-faint',
+          addDragging ? 'border-accent bg-accent/5 text-accent' : 'rule text-ink-faint',
         ].join(' ')}
       >
         {sources.length === 0 ? 'Drop clips here or click to add' : 'Drop more clips here, or click to add'}
       </div>
 
-      {addError && <p className="mt-2 text-[13px] text-terracotta-ink">{addError}</p>}
+      {addError && <p className="mt-2 text-[13px] text-accent-ink">{addError}</p>}
     </div>
   )
 }
@@ -382,12 +382,12 @@ type IndicatorProps = {
 function StageIndicator({ label, status }: IndicatorProps) {
   const dot = (() => {
     if (status === 'done')
-      return <span className="flex h-2.5 w-2.5 flex-shrink-0 items-center justify-center rounded-full bg-terracotta text-[8px] font-bold text-paper">&#10003;</span>
+      return <span className="flex h-2.5 w-2.5 flex-shrink-0 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-surface">&#10003;</span>
     if (status === 'error')
-      return <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-terracotta-ink" />
+      return <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-accent-ink" />
     if (status === 'active')
-      return <span className="h-2.5 w-2.5 flex-shrink-0 animate-ping rounded-full bg-terracotta" />
-    return <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full border border-paper-line bg-paper" />
+      return <span className="h-2.5 w-2.5 flex-shrink-0 animate-ping rounded-full bg-accent" />
+    return <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full border border-line bg-surface" />
   })()
 
   return (
@@ -399,9 +399,9 @@ function StageIndicator({ label, status }: IndicatorProps) {
           status === 'done'
             ? 'text-ink-mute line-through decoration-ink-faint'
             : status === 'active'
-              ? 'text-terracotta'
+              ? 'text-accent'
               : status === 'error'
-                ? 'text-terracotta-ink'
+                ? 'text-accent-ink'
                 : 'text-ink-faint',
         ].join(' ')}
       >

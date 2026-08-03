@@ -26,7 +26,7 @@ export function SceneMeta({ scene, className = '' }: Props) {
   const done = scene.status === 'built'
 
   return (
-    <div className={['border rule bg-paper-deep/30 p-5', className].join(' ')}>
+    <div className={['border rule bg-surface-dim/30 p-5', className].join(' ')}>
       <div className="flex items-center justify-between gap-3">
         <p className="meta-label">Scene {scene.index + 1}</p>
         {/* Read-only status badge — a scene becomes "built" automatically when you
@@ -40,15 +40,15 @@ export function SceneMeta({ scene, className = '' }: Props) {
           }
           className={[
             'rounded-full px-2.5 py-0.5 font-mono text-[11px]',
-            done ? 'bg-terracotta text-paper' : 'border border-paper-line text-ink-mute',
+            done ? 'bg-accent text-surface' : 'border border-line text-ink-mute',
           ].join(' ')}
         >
           {done ? '✓ built' : 'not built'}
         </span>
       </div>
-      <h3 className="mt-1 font-serif text-[20px] leading-tight text-ink">{scene.title}</h3>
+      <h3 className="mt-1 font-semibold tracking-[-0.01em] text-[20px] leading-tight text-ink">{scene.title}</h3>
 
-      <dl className="mt-4 flex flex-col divide-y divide-paper-line/60 text-[13px]">
+      <dl className="mt-4 flex flex-col divide-y divide-line/60 text-[13px]">
         <Stat label="Footage span">
           <span className="font-mono">
             {formatTime(scene.start)}–{formatTime(scene.end)}
@@ -62,7 +62,7 @@ export function SceneMeta({ scene, className = '' }: Props) {
             <span className="text-ink-mute">none</span>
           ) : (
             <span className="font-mono">
-              {cuts.length} · <span className="text-terracotta-ink">−{formatTime(dropped)}</span>
+              {cuts.length} · <span className="text-accent-ink">−{formatTime(dropped)}</span>
             </span>
           )}
         </Stat>
