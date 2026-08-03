@@ -36,7 +36,7 @@ export function TranscriptText({
   const showSpeakers = useMemo(() => uniqueSpeakers(words).length > 1, [words])
 
   return (
-    <div className="border rule bg-paper">
+    <div className="border rule bg-surface">
       <div className="flex items-baseline justify-between border-b rule px-5 py-3">
         <p className="meta-label">{label}</p>
         <p className="font-mono text-[12px] text-ink-mute">

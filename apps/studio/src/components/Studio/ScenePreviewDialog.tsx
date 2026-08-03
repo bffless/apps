@@ -139,13 +139,13 @@ export function ScenePreviewDialog({ open, onClose, scene, frames, audioUrl }: P
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto w-[min(92vw,720px)] rounded-lg border border-paper-line bg-paper p-0 shadow-xl backdrop:bg-ink/70"
+      className="m-auto w-[min(92vw,720px)] rounded-lg border border-line bg-surface p-0 shadow-xl backdrop:bg-ink/70"
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose()
       }}
     >
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" className="hidden" />}
-      <div className="flex items-center justify-between border-b border-paper-line px-5 py-3">
+      <div className="flex items-center justify-between border-b border-line px-5 py-3">
         <h2 className="meta-label">
           Preview · {scene.title} <span className="text-ink-mute">· instant, no render</span>
         </h2>
@@ -158,7 +158,7 @@ export function ScenePreviewDialog({ open, onClose, scene, frames, audioUrl }: P
         {frame ? (
           <div className="shrink-0" style={spriteStyle(frame, FRAME_WIDTH)} />
         ) : (
-          <p className="px-6 text-center text-[13px] text-paper">
+          <p className="px-6 text-center text-[13px] text-surface">
             No frames captured for this scene yet — the audio still previews.
           </p>
         )}
@@ -167,7 +167,7 @@ export function ScenePreviewDialog({ open, onClose, scene, frames, audioUrl }: P
       <div className="px-5 py-4">
         <div
           ref={trackRef}
-          className="relative h-6 cursor-pointer touch-none overflow-hidden rounded bg-paper-deep"
+          className="relative h-6 cursor-pointer touch-none overflow-hidden rounded bg-surface-dim"
           onPointerDown={(e) => {
             if (e.button !== 0) return
             e.currentTarget.setPointerCapture(e.pointerId)
@@ -179,7 +179,7 @@ export function ScenePreviewDialog({ open, onClose, scene, frames, audioUrl }: P
         >
           {plan.duration > 0 && (
             <div
-              className="absolute inset-y-0 w-0.5 bg-terracotta"
+              className="absolute inset-y-0 w-0.5 bg-accent"
               style={{ left: `${(now / plan.duration) * 100}%` }}
             />
           )}
@@ -193,12 +193,12 @@ export function ScenePreviewDialog({ open, onClose, scene, frames, audioUrl }: P
             {fmtTime(now)} / {fmtTime(plan.duration)}
           </span>
           {plan.duration <= 0 && (
-            <span className="text-[12.5px] text-terracotta-ink">
+            <span className="text-[12.5px] text-accent-ink">
               Everything in this scene is cut — nothing to preview.
             </span>
           )}
           {plan.duration > 0 && !audioUrl && (
-            <span className="text-[12.5px] text-terracotta-ink">
+            <span className="text-[12.5px] text-accent-ink">
               No extracted audio on this session — frames only.
             </span>
           )}

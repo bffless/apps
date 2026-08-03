@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 type Props = {
   /** Normalized 0–1 peak amplitudes, one per bar (from `computePeaks`). */
   peaks: number[]
-  /** Playback progress 0–1; bars before it are drawn "played" (terracotta). */
+  /** Playback progress 0–1; bars before it are drawn "played" (accent). */
   progress?: number
   height?: number
 }
@@ -12,7 +12,7 @@ type Props = {
  * Paints a precomputed min/max-style waveform to a canvas — a cheap "we got the
  * audio" stenograph. The peaks are computed once during extraction (a few
  * hundred small numbers, persisted), so drawing never re-decodes the clip.
- * Bars left of `progress` render in terracotta to track playback.
+ * Bars left of `progress` render in accent to track playback.
  */
 export function Waveform({ peaks, progress = 0, height = 56 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -39,8 +39,8 @@ export function Waveform({ peaks, progress = 0, height = 56 }: Props) {
         const p = peaks[Math.floor((x / w) * peaks.length)] ?? 0
         // mirror the peak around the midline so it reads like a classic waveform
         const half = Math.max(0.5, p * (mid - 1))
-        // terracotta (#d85a3d) for played, ink-soft (#3a352e) for the rest
-        ctx.fillStyle = x <= playedX ? 'rgba(216, 90, 61, 0.85)' : 'rgba(58, 53, 46, 0.5)'
+        // accent violet for played, muted ink for the rest
+        ctx.fillStyle = x <= playedX ? 'rgba(124, 58, 237, 0.85)' : 'rgba(63, 61, 70, 0.5)'
         ctx.fillRect(x, mid - half, 1, half * 2)
       }
     }

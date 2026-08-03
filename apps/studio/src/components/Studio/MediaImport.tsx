@@ -44,12 +44,12 @@ export function MediaImport({ onSelect }: Props) {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
       className={[
-        'corner-marks flex flex-col items-center justify-center gap-4 border border-dashed px-8 py-20 text-center transition-colors',
-        dragging ? 'border-terracotta bg-terracotta/5' : 'rule bg-paper-deep/30',
+        'flex flex-col items-center justify-center gap-4 border border-dashed px-8 py-20 text-center transition-colors',
+        dragging ? 'border-accent bg-accent/5' : 'rule bg-surface-dim/30',
       ].join(' ')}
     >
       <p className="meta-label">Import footage</p>
-      <h3 className="max-w-md font-serif text-[24px] leading-tight text-ink">
+      <h3 className="max-w-md font-semibold tracking-[-0.01em] text-[24px] leading-tight text-ink">
         Drop your clips to auto-shorten
       </h3>
       <p className="max-w-sm text-[14.5px] leading-relaxed text-ink-soft">
@@ -67,7 +67,7 @@ export function MediaImport({ onSelect }: Props) {
         className="hidden"
         onChange={(e) => accept(e.target.files)}
       />
-      {error && <p className="text-[13px] text-terracotta-ink">{error}</p>}
+      {error && <p className="text-[13px] text-accent-ink">{error}</p>}
     </div>
   )
 }

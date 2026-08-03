@@ -12,7 +12,7 @@
 
 export type TWord = { text: string; start: number; end: number; speaker?: string }
 
-/** A dropped footage span, in seconds — drawn as red cells on the grid. */
+/** A dropped footage span, in seconds — drawn as violet cells on the grid. */
 export type CutSpan = { start: number; end: number }
 
 /** One time-slice column in a row: the words that begin during that slice. */
@@ -137,7 +137,7 @@ export function formatClock(seconds: number): string {
 
 /**
  * For one row, which columns fall inside a cut span — so the renderer can fill
- * those cells red. A cell covers `[startSec + col*seg, +seg)`; it's cut if that
+ * those cells violet. A cell covers `[startSec + col*seg, +seg)`; it's cut if that
  * slice overlaps any cut span at all.
  *
  * Overlaps under a microsecond don't count: a span snapped to the grid builds

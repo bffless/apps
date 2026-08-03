@@ -27,7 +27,7 @@ export function ProjectCard({
   const href = `/project/${meta.id}`
 
   return (
-    <div className="flex flex-col border rule bg-paper-deep/30 overflow-hidden">
+    <div className="flex flex-col border rule bg-surface-dim/30 overflow-hidden">
       <Link to={href} className="relative block aspect-video overflow-hidden bg-ink/5">
         {meta.thumbnailUrl
           ? <img src={meta.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
@@ -44,7 +44,7 @@ export function ProjectCard({
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => { setEditing(false); if (draft.trim()) onRename(meta.id, draft.trim()) }}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-            className="w-full border rule bg-paper px-2 py-1 text-[15px]"
+            className="w-full border rule bg-surface px-2 py-1 text-[15px]"
           />
         ) : (
           <Link to={href} className="text-left text-[16px] font-medium">

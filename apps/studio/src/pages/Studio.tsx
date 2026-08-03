@@ -286,7 +286,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
   )
 
   // Dropped footage spans for the selected scene (refiner's cuts, else
-  // director's), drawn as red cells in the cut editor.
+  // director's), drawn as violet cells in the cut editor.
   const cutSpans = useMemo(
     () => (selected ? effectiveCuts(selected) : []),
     [selected],
@@ -390,7 +390,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
               jobId={pipe.directorPromptJobId}
               label="View the prompt the director was sent"
             />
-            <div className="border rule bg-paper p-4">
+            <div className="border rule bg-surface p-4">
               <SceneList
                 scenes={pipe.scenes}
                 selectedId={pipe.selectedId}
@@ -437,7 +437,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
             )}
 
             {/* Control bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-paper-deep/30 px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-surface-dim/30 px-5 py-4">
               <p className="text-[14px] text-ink-soft">
                 {pipe.ready
                   ? `Prep complete · ${pipe.scenes.length} scenes`
@@ -450,7 +450,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
               <div className="flex items-center gap-2">
                 {saveStatus !== 'idle' && (
                   <span
-                    className={`text-[12px] ${saveStatus === 'error' ? 'text-terracotta-ink' : 'text-ink-soft'}`}
+                    className={`text-[12px] ${saveStatus === 'error' ? 'text-accent-ink' : 'text-ink-soft'}`}
                     aria-live="polite"
                     title={saveStatus === 'error' && saveError ? saveError : undefined}
                   >
@@ -513,7 +513,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     deliberately rather than getting ahead of the producer.
                     The plan is thumbnails → director (no voice step — ADR-0003). */}
                 {pipe.sourcesReady && !showPlan && (
-                  <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-terracotta/5 px-5 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-accent/5 px-5 py-4">
                     <p className="text-[14px] text-ink-soft">
                       {pipe.sources.length === 1 ? 'Your clip is' : `All ${pipe.sources.length} clips are`} processed
                       — ready to build the plan.
@@ -547,7 +547,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                 {/* Once every prep step is done, the producer moves to Build
                     deliberately — completing prep no longer auto-advances. */}
                 {pipe.ready && (
-                  <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-terracotta/5 px-5 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-accent/5 px-5 py-4">
                     <p className="text-[14px] text-ink-soft">
                       Prep complete — {pipe.scenes.length} scene
                       {pipe.scenes.length === 1 ? '' : 's'} ready to cut.
@@ -662,7 +662,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     selectedId={pipe.selectedId}
                     onSelect={pipe.select}
                     tablistRef={tabsRef}
-                    tablistClassName="sticky top-14 z-30 bg-paper/85 backdrop-blur"
+                    tablistClassName="sticky top-14 z-30 bg-surface/85 backdrop-blur"
                     onPreview={() => setPreviewOpen(true)}
                     previewDisabled={!selected}
                   />
@@ -753,7 +753,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                 {/* The export step lives on its own now (the final stitch +
                     download moved there). This CTA is always shown so the goal is
                     visible, but disabled until every scene is built. */}
-                <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-terracotta/5 px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-accent/5 px-5 py-4">
                   <p className="text-[14px] text-ink-soft">
                     {pipe.allBuilt
                       ? `✓ All ${pipe.scenes.length} scene${pipe.scenes.length === 1 ? '' : 's'} built — ready to export.`
@@ -793,7 +793,7 @@ function saveLabel(status: 'idle' | 'saving' | 'saved' | 'error', savedAt: numbe
  */
 function DiffLockedHint() {
   return (
-    <div className="border rule bg-paper px-5 py-10 text-center">
+    <div className="border rule bg-surface px-5 py-10 text-center">
       <p className="meta-label">Transcript editor</p>
       <p className="mx-auto mt-2 max-w-prose text-[13.5px] leading-relaxed text-ink-soft">
         Cut this scene, generate its contact sheets, then refine it above — the
@@ -806,9 +806,9 @@ function DiffLockedHint() {
 /** The director's one-line logline of the whole talk — the "what's this about". */
 function SynopsisCard({ synopsis }: { synopsis: string }) {
   return (
-    <div className="border-l-2 border-terracotta bg-terracotta/5 px-5 py-4">
+    <div className="border-l-2 border-accent bg-accent/5 px-5 py-4">
       <p className="meta-label">The director’s take</p>
-      <p className="mt-1.5 font-serif text-[18px] leading-snug text-ink">{synopsis}</p>
+      <p className="mt-1.5 font-semibold tracking-[-0.01em] text-[18px] leading-snug text-ink">{synopsis}</p>
     </div>
   )
 }
@@ -830,7 +830,7 @@ function RestoreBanner({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border border-terracotta/40 bg-terracotta/5 px-5 py-4">
+    <div className="flex flex-wrap items-center justify-between gap-4 border border-accent/40 bg-accent/5 px-5 py-4">
       <p className="text-[14px] text-ink-soft">
         Couldn’t restore the clip from the bucket ({error}). Re-attach{' '}
         {fileName ? <span className="font-mono text-ink">{fileName}</span> : 'the clip'} to continue —

@@ -47,7 +47,7 @@ export function SceneRefinePanel({
   const busy = slicing || sheeting || refining
 
   return (
-    <div className="border rule bg-paper p-5">
+    <div className="border rule bg-surface p-5">
       <p className="meta-label">Refine this scene</p>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
         First cut this scene out of the raw into its own short clip — then everything
@@ -107,7 +107,7 @@ export function SceneRefinePanel({
             it. Both creator inputs survive Revert and seed the next re-refine.
             The global director prompt itself isn't editable here: include it as
             context, or don't. */}
-        <div className="flex flex-col gap-3 border-t border-paper-line/60 pt-3">
+        <div className="flex flex-col gap-3 border-t border-line/60 pt-3">
           <span className="text-[13.5px] text-ink">
             2 · Refine the cuts
             {refined && (
@@ -134,7 +134,7 @@ export function SceneRefinePanel({
               disabled={busy}
               rows={2}
               placeholder="e.g. Trim the long pause; keep the on-screen code visible."
-              className="w-full resize-y rounded-md border border-paper-line bg-paper p-3 text-[14px] leading-relaxed text-ink disabled:opacity-60"
+              className="w-full resize-y rounded-md border border-line bg-surface p-3 text-[14px] leading-relaxed text-ink disabled:opacity-60"
             />
           </label>
           {direction.trim() !== '' && (
@@ -179,10 +179,10 @@ export function SceneRefinePanel({
 
       <p className="mt-3 text-[12.5px] leading-relaxed text-ink-soft">
         Then tune the cuts by hand in the editor below — drag empty cells to cut,
-        drag red cells to un-cut.
+        drag violet cells to un-cut.
       </p>
 
-      {error && <p className="mt-3 text-[13px] text-terracotta-ink">{error}</p>}
+      {error && <p className="mt-3 text-[13px] text-accent-ink">{error}</p>}
 
       {scene.promptJobId && (
         <div className="mt-3">

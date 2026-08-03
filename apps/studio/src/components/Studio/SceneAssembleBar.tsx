@@ -120,7 +120,7 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
   }, [resultBlob, saving, onSave])
 
   return (
-    <div className="border rule bg-paper p-5">
+    <div className="border rule bg-surface p-5">
       <p className="meta-label">Assemble this scene</p>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
         Render <span className="text-ink">just this scene</span> from its cut clip —
@@ -130,7 +130,7 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
       </p>
 
       {!hasClip ? (
-        <p className="mt-3 text-[12.5px] text-terracotta-ink">
+        <p className="mt-3 text-[12.5px] text-accent-ink">
           Cut this scene first (step 0 above) — the assemble works on the scene’s own clip.
         </p>
       ) : (
@@ -147,7 +147,7 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
               without this a scene whose save FAILED looks exactly like a saved one
               — which is how a failed save got mistaken for a fixed scene (#220). */}
           {resultBlob && !savedCurrent && !running && (
-            <span className="text-terracotta-ink">● not saved</span>
+            <span className="text-accent-ink">● not saved</span>
           )}
         </div>
       )}
@@ -198,9 +198,9 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
       {(running || stage) && !error && (
         <div className="mt-4">
           {running && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper-deep">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-dim">
               <div
-                className="h-full bg-terracotta transition-[width] duration-200"
+                className="h-full bg-accent transition-[width] duration-200"
                 style={{ width: `${Math.round(progress * 100)}%` }}
               />
             </div>
@@ -209,9 +209,9 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
         </div>
       )}
 
-      {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-terracotta-ink">{error}</p>}
+      {error && <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink">{error}</p>}
       {saveError && (
-        <div className="mt-3 border-l-2 border-terracotta bg-terracotta/5 p-3 text-[13px] text-terracotta-ink">
+        <div className="mt-3 border-l-2 border-accent bg-accent/5 p-3 text-[13px] text-accent-ink">
           <p className="whitespace-pre-wrap">Couldn’t save: {saveError}</p>
           <p className="mt-1 text-ink-soft">
             The render is still here — press <span className="text-ink">Save this scene</span> to
@@ -226,7 +226,7 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
             src={playbackSrc}
             controls
             crossOrigin="anonymous"
-            className="w-full rounded-md border border-paper-line"
+            className="w-full rounded-md border border-line"
           />
         </div>
       )}

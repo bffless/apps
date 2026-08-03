@@ -61,12 +61,12 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
             : `${builtCount} / ${scenes.length} scenes built`
 
   return (
-    <div className="border rule bg-paper p-5">
+    <div className="border rule bg-surface p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="meta-label">Auto build</p>
           <p className="mt-1 flex items-center gap-2 text-[13px] text-ink-soft">
-            {run.status === 'running' && <Spinner className="h-3 w-3 text-terracotta" />}
+            {run.status === 'running' && <Spinner className="h-3 w-3 text-accent" />}
             {headline}
           </p>
         </div>
@@ -95,7 +95,7 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
       </div>
 
       {run.status === 'halted' && run.error && (
-        <p className="mt-3 whitespace-pre-wrap text-[13px] text-terracotta-ink">{run.error}</p>
+        <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink">{run.error}</p>
       )}
 
       <ul className="mt-4 flex flex-col gap-2">
@@ -104,12 +104,12 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
           const steps = sceneStepStatuses(scene, run)
           const expanded = scene.id === run.currentSceneId || scene.id === selectedId
           return (
-            <li key={scene.id} className="rounded-md border border-paper-line">
+            <li key={scene.id} className="rounded-md border border-line">
               <button
                 type="button"
                 onClick={() => onSelect(scene.id)}
                 className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[13px] ${
-                  scene.id === selectedId ? 'bg-paper-deep' : ''
+                  scene.id === selectedId ? 'bg-surface-dim' : ''
                 }`}
               >
                 <span className="truncate">
@@ -118,11 +118,11 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
                 <span
                   className={
                     rolled === 'error'
-                      ? 'text-terracotta-ink'
+                      ? 'text-accent-ink'
                       : rolled === 'built'
                         ? 'text-ink'
                         : rolled === 'running'
-                          ? 'inline-flex items-center gap-1.5 text-terracotta'
+                          ? 'inline-flex items-center gap-1.5 text-accent'
                           : 'text-ink-mute'
                   }
                 >
@@ -140,17 +140,17 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
                 </span>
               </button>
               {expanded && (
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1 border-t border-paper-line px-3 py-2 font-mono text-[12px] text-ink-mute sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 border-t border-line px-3 py-2 font-mono text-[12px] text-ink-mute sm:grid-cols-3">
                   {AUTO_STEPS.map((step) => (
                     <span
                       key={step.id}
                       className={
                         steps[step.id] === 'error'
-                          ? 'text-terracotta-ink'
+                          ? 'text-accent-ink'
                           : steps[step.id] === 'done'
                             ? 'text-ink'
                             : steps[step.id] === 'running'
-                              ? 'text-terracotta'
+                              ? 'text-accent'
                               : ''
                       }
                     >

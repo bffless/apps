@@ -32,11 +32,11 @@ export function DirectorPanel({
 }: Props) {
   const [confirming, setConfirming] = useState(false)
   return (
-    <div className="mb-6 border-l-2 border-terracotta bg-terracotta/5 p-5">
+    <div className="mb-6 border-l-2 border-accent bg-accent/5 p-5">
       <p className="meta-label">
         {rerun ? 'Done · the master director' : 'Final prep step · the master director'}
       </p>
-      <h3 className="mt-1 font-serif text-[22px] leading-tight text-ink">
+      <h3 className="mt-1 font-semibold tracking-[-0.01em] text-[22px] leading-tight text-ink">
         {rerun ? 'Re-run the AI director' : 'Send it to the AI director'}
       </h3>
       <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
@@ -53,13 +53,13 @@ export function DirectorPanel({
           disabled={busy}
           rows={3}
           placeholder="e.g. Keep the live demo around 12:30. Make the intro punchy and drop the throat-clearing."
-          className="w-full resize-y rounded-md border border-paper-line bg-paper p-3 text-[14px] leading-relaxed text-ink disabled:opacity-60"
+          className="w-full resize-y rounded-md border border-line bg-surface p-3 text-[14px] leading-relaxed text-ink disabled:opacity-60"
         />
       </label>
 
       {rerun && confirming ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="text-[13px] text-terracotta-ink">
+          <p className="text-[13px] text-accent-ink">
             This replaces your {sceneCount} scene{sceneCount === 1 ? '' : 's'} and any build
             work on them.
           </p>

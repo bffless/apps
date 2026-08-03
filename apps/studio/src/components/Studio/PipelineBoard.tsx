@@ -50,7 +50,7 @@ export function PipelineBoard({ stages, currentStageId, busy, onAction, panelSta
                 onAction={onAction}
                 hideAction={stage.id === panelStageId}
               />
-              {artifact && <div className="border-t rule bg-paper-deep/30 px-5 py-4">{artifact}</div>}
+              {artifact && <div className="border-t rule bg-surface-dim/30 px-5 py-4">{artifact}</div>}
             </li>
           )
         })}

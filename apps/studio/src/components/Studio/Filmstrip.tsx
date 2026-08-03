@@ -33,7 +33,7 @@ export function Filmstrip({ src, duration, count = 12, height = 48, frames }: Pr
     <div className="flex w-full overflow-hidden" style={{ height }}>
       {shown.length === 0
         ? Array.from({ length: count }).map((_, i) => (
-            <div key={i} className="h-full flex-1 border-r border-paper/40 bg-ink/10" />
+            <div key={i} className="h-full flex-1 border-r border-surface/40 bg-ink/10" />
           ))
         : shown.map((f, i) => (
             <img
@@ -41,7 +41,7 @@ export function Filmstrip({ src, duration, count = 12, height = 48, frames }: Pr
               src={f}
               alt=""
               draggable={false}
-              className="h-full flex-1 border-r border-paper/30 object-cover last:border-r-0"
+              className="h-full flex-1 border-r border-surface/30 object-cover last:border-r-0"
             />
           ))}
     </div>

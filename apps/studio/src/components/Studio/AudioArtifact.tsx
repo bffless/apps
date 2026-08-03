@@ -40,7 +40,7 @@ export function AudioArtifact({ peaks, audioUrl }: Props) {
   }
 
   return (
-    <div className="border rule bg-paper p-4">
+    <div className="border rule bg-surface p-4">
       <div className="mb-2 flex items-baseline justify-between">
         <p className="meta-label">Extracted audio</p>
         <p className="font-mono text-[11px] text-ink-faint">16 kHz mono · play it back</p>
