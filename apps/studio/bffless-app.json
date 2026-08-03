@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "studio",
+  "name": "Studio",
+  "version": "1.0.0",
+  "summary": "Cut a long screen recording into a short video in your own voice — AI proposes the scenes and cuts, you tune them, nothing is re-voiced.",
+  "category": "video",
+  "docsUrl": "https://github.com/bffless/apps/blob/main/apps/studio/bffless/README.md",
+  "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/studio",
+  "requires": {
+    "presignedStorage": true,
+    "ceMin": "0.4.13"
+  },
+  "install": {
+    "alias": "studio",
+    "deployment": {
+      "path": "dist",
+      "basePath": "/apps/studio/dist"
+    },
+    "ruleSets": [
+      {
+        "file": "rulesets/studio.json",
+        "attachToAlias": true
+      },
+      {
+        "file": "rulesets/studio-blog.json",
+        "attachToAlias": true
+      }
+    ],
+    "domain": {
+      "subdomain": "studio",
+      "isPublic": false,
+      "isSpa": true
+    },
+    "schedules": [],
+    "manualSteps": [
+      {
+        "id": "connect-replicate",
+        "title": "Connect Replicate",
+        "body": "Add a Replicate API token under Settings → AI Services. It powers transcription (WhisperX), scene direction (Gemini), voice clone/speech (MiniMax — clone ≈ $3/call), and thumbnails.",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "connect-anthropic",
+        "title": "Connect Anthropic",
+        "body": "Add an Anthropic API key under Settings → AI Services. It powers thumbnail prompt drafts and the companion blog writer.",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "add-hf-token",
+        "title": "Add the HF_TOKEN secret",
+        "body": "Create a secret named HF_TOKEN with a Hugging Face read token under Settings → AI Services → Secrets. Transcription's WhisperX alignment/diarization requires it.",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "coop-coep-headers",
+        "title": "Add COOP/COEP response headers",
+        "body": "Add a response-header rule on ** setting Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: credentialless. Video export (ffmpeg.wasm) needs them; the installer can't create header rules.",
+        "deepLink": "/repo/{projectPath}/settings?tab=response-headers",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "restrict-access",
+        "title": "Keep Studio private",
+        "body": "Studio's API rules carry no per-rule auth — the private domain is what protects the paid AI endpoints. Keep the domain non-public; optionally require the admin role.",
+        "deepLink": "/repo/{projectPath}/settings?tab=members",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "point-skills-path",
+        "title": "Point AI skills at the app files",
+        "body": "Proxy Rules → thumbnail-draft rule → AI step → Skills: set Source to this app's alias and Path to apps/studio/dist/bffless/skills. Thumbnail drafting loads image-prompts from there; otherwise it's silently skipped.",
+        "deepLink": "/repo/{projectPath}/settings?tab=proxy-rules",
+        "appliesWhen": "always"
+      }
+    ]
+  },
+  "eject": {
+    "repo": "bffless/apps",
+    "appPath": "apps/studio",
+    "deployWorkflow": "deploy-studio.yml",
+    "variables": ["BFFLESS_URL", "BFFLESS_PROJECT"],
+    "secrets": ["BFFLESS_API_KEY"]
+  }
+}

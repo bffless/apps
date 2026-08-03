@@ -1,11 +1,11 @@
 {
   "name": "studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/copy-skills.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
