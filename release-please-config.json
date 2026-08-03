@@ -12,6 +12,12 @@
       "component": "handoff",
       "include-component-in-tag": true,
       "extra-files": [{ "type": "json", "path": "bffless-app.json", "jsonpath": "$.version" }]
+    },
+    "apps/studio": {
+      "release-type": "node",
+      "component": "studio",
+      "include-component-in-tag": true,
+      "extra-files": [{ "type": "json", "path": "bffless-app.json", "jsonpath": "$.version" }]
     }
   },
   "changelog-sections": [
