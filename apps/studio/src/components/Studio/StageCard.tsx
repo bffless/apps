@@ -22,13 +22,13 @@ export function StageCard({ stage, index, current, busy, onAction, hideAction }:
   return (
     <div
       className={[
-        'flex items-start gap-4 border-l-2 bg-surface px-5 py-4 transition-colors',
+        'flex items-start gap-4 rounded-lg border bg-surface-raised px-5 py-4 transition-colors',
         active
-          ? 'border-accent bg-accent/5'
-          : done
-            ? 'border-line opacity-60'
-            : error
-              ? 'border-accent-ink'
+          ? 'border-accent'
+          : error
+            ? 'border-accent-ink'
+            : done
+              ? 'border-line opacity-60'
               : 'border-line',
       ].join(' ')}
     >
