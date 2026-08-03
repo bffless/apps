@@ -82,7 +82,12 @@
     "repo": "bffless/apps",
     "appPath": "apps/studio",
     "deployWorkflow": "deploy-studio.yml",
-    "variables": ["BFFLESS_URL", "BFFLESS_PROJECT"],
-    "secrets": ["BFFLESS_API_KEY"]
+    "variables": [
+      "BFFLESS_URL",
+      "BFFLESS_PROJECT"
+    ],
+    "secrets": [
+      "BFFLESS_API_KEY"
+    ]
   }
 }
