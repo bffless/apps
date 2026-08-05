@@ -31,6 +31,7 @@ import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
 import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
 import { createBlobCache } from '../../lib/blobCache'
 import { fetchWithReauth } from '../../lib/auth'
+import { presignedUpload } from '../../lib/upload'
 import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
 import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
@@ -1448,7 +1449,7 @@ export function useScenePipeline() {
   // path, persisted on the project (url-only) so it survives reload + rides
   // server-sync. Stores notes + prompt alongside so the UI can repopulate.
   const renderThumbnail = useCallback(
-    async (notes: string, prompt: string) => {
+    async (notes: string, prompt: string, referenceUrl: string | null = null) => {
       if (!prompt.trim()) {
         setSceneError('Draft a prompt before generating the image.')
         return
@@ -1456,9 +1457,20 @@ export function useScenePipeline() {
       setRenderingThumbnail(true)
       setSceneError(null)
       try {
-        const raw = await thumbnailRenderReq({ prompt, projectId: activeProjectId ?? '' }).unwrap()
+        const raw = await thumbnailRenderReq({
+          prompt,
+          projectId: activeProjectId ?? '',
+          ...(referenceUrl ? { referenceImageUrl: referenceUrl } : {}),
+        }).unwrap()
         const { imageUrl } = toThumbnailImage(raw)
-        dispatch(setYoutubeThumbnail({ notes, prompt, url: imageUrl }))
+        dispatch(
+          setYoutubeThumbnail({
+            notes,
+            prompt,
+            url: imageUrl,
+            ...(referenceUrl ? { referenceUrl } : {}),
+          }),
+        )
       } catch (e) {
         setSceneError(stageError(e))
       } finally {
@@ -1466,6 +1478,17 @@ export function useScenePipeline() {
       }
     },
     [thumbnailRenderReq, activeProjectId, dispatch],
+  )
+
+  // Upload the optional thumbnail reference image (the creator's face, a product
+  // shot) through the same presigned direct-to-bucket flow every other asset
+  // uses — the bytes never go through a pipeline body.
+  const uploadThumbnailReference = useCallback(
+    async (file: File): Promise<string> => {
+      if (!activeProjectId) throw new Error('Open a project before uploading a reference image.')
+      return presignedUpload(file, '/api/uploads/thumbnails', activeProjectId)
+    },
+    [activeProjectId],
   )
 
   // ---- Export: save the assembled cut (story 05) ----------------------------
@@ -1566,6 +1589,7 @@ export function useScenePipeline() {
     renderingThumbnail,
     draftThumbnailPrompt,
     renderThumbnail,
+    uploadThumbnailReference,
     saveSceneCut,
     generateSceneSheets,
     refineScene,

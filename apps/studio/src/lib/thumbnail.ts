@@ -75,3 +75,23 @@ export function toThumbnailImage(raw: unknown): ThumbnailImage {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   return { imageUrl: str(o.imageUrl) }
 }
+
+/**
+ * Hard ceiling for an optional reference image, mirroring the `maxFileSize` on
+ * the `/api/uploads/thumbnails/{prepare,register}` rules (10 MB). Checking it
+ * client-side means an oversized pick fails instantly instead of after a wasted
+ * presign + PUT round trip. Keep the two in sync.
+ */
+export const MAX_REFERENCE_BYTES = 10 * 1024 * 1024
+
+/**
+ * Why this file can't be used as the thumbnail's reference image, or null when
+ * it's good to go. Pure + unit-tested; the picker just renders the string.
+ */
+export function referenceFileError(file: { type: string; size: number }): string | null {
+  if (!file.type.startsWith('image/')) return 'That doesn’t look like an image file.'
+  if (file.size > MAX_REFERENCE_BYTES) {
+    return `That image is ${(file.size / 1024 ** 2).toFixed(1)} MB — the limit is 10 MB.`
+  }
+  return null
+}

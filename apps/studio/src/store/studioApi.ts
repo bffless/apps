@@ -186,7 +186,12 @@ export const studioApi = createApi({
     // Thumbnail render (story 06): call google/nano-banana with the (edited)
     // prompt; the pipeline stores the image to the bucket and returns a serve
     // path. Raw blob goes through `toThumbnailImage` at the call site.
-    thumbnailRender: builder.mutation<unknown, { prompt: string; projectId: string }>({
+    // `referenceImageUrl` is an optional `/api/uploads/...` serve path; the rule
+    // turns it into nano-banana's `image_input` array (empty when absent).
+    thumbnailRender: builder.mutation<
+      unknown,
+      { prompt: string; projectId: string; referenceImageUrl?: string }
+    >({
       query: (body) => ({
         url: 'api/thumbnail/render',
         method: 'POST',

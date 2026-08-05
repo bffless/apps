@@ -5,6 +5,8 @@ import {
   toThumbnailPrompt,
   toThumbnailImage,
   thumbnailFileName,
+  referenceFileError,
+  MAX_REFERENCE_BYTES,
 } from './thumbnail'
 
 function scene(over: Partial<Scene> = {}): Scene {
@@ -80,5 +82,24 @@ describe('toThumbnailImage', () => {
   })
   it('falls back to empty string on a malformed reply', () => {
     expect(toThumbnailImage(undefined)).toEqual({ imageUrl: '' })
+  })
+})
+
+describe('referenceFileError', () => {
+  it('accepts a normal image', () => {
+    expect(referenceFileError({ type: 'image/png', size: 500_000 })).toBeNull()
+  })
+
+  it('rejects a non-image, so a picked video never starts an upload', () => {
+    expect(referenceFileError({ type: 'video/mp4', size: 10 })).toMatch(/image/i)
+  })
+
+  it('rejects an image over the 10 MB rule cap, naming the actual size', () => {
+    const msg = referenceFileError({ type: 'image/jpeg', size: MAX_REFERENCE_BYTES + 1 })
+    expect(msg).toMatch(/10 MB/)
+  })
+
+  it('accepts an image exactly at the cap', () => {
+    expect(referenceFileError({ type: 'image/jpeg', size: MAX_REFERENCE_BYTES })).toBeNull()
   })
 })

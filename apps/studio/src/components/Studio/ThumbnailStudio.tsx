@@ -1,22 +1,31 @@
 import { useEffect, useState } from 'react'
-import { thumbnailFileName } from '../../lib/thumbnail'
+import { referenceFileError, thumbnailFileName } from '../../lib/thumbnail'
 
 type Props = {
   /** The recommended title (from the Export description). */
   title: string
   /** The YouTube-ready description block (summary + chapters). */
   description: string
-  /** Persisted thumbnail (notes + prompt + serve path), or null. */
-  thumbnail: { notes: string; prompt: string; url: string } | null
+  /** Persisted thumbnail (notes + prompt + serve path + reference), or null. */
+  thumbnail: {
+    notes: string
+    prompt: string
+    url: string
+    /** Optional reference image serve path fed to nano-banana. */
+    referenceUrl?: string
+  } | null
   drafting: boolean
   rendering: boolean
   /** Draft a prompt; resolves to the drafted text (or null on failure). */
   onDraft: (title: string, description: string, notes: string) => Promise<string | null>
-  /** Render the image from the (edited) prompt + notes. */
-  onRender: (notes: string, prompt: string) => void
+  /** Render the image from the (edited) prompt + notes + optional reference. */
+  onRender: (notes: string, prompt: string, referenceUrl: string | null) => void
+  /** Upload a reference image to the bucket; resolves to its serve path. */
+  onUploadReference: (file: File) => Promise<string>
   /** Sign a serve path into a displayable direct URL. */
   signFor: (url: string) => Promise<string>
 }
+
 
 /**
  * Export-step YouTube thumbnail generator (story 06). The creator writes free-text
@@ -32,6 +41,7 @@ export function ThumbnailStudio({
   rendering,
   onDraft,
   onRender,
+  onUploadReference,
   signFor,
 }: Props) {
   const [notes, setNotes] = useState(thumbnail?.notes ?? '')
@@ -39,7 +49,55 @@ export function ThumbnailStudio({
   const [signedUrl, setSignedUrl] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
 
-  // Re-sign the persisted thumbnail for <img>/download whenever its serve path
+  // The optional reference image: a serve path (persisted with the thumbnail so
+  // it survives reload) plus its signed preview URL.
+  const [referenceUrl, setReferenceUrl] = useState<string | null>(
+    thumbnail?.referenceUrl ?? null,
+  )
+  const [referencePreview, setReferencePreview] = useState<string | null>(null)
+  const [uploadingReference, setUploadingReference] = useState(false)
+  const [referenceError, setReferenceError] = useState<string | null>(null)
+
+  // Same signed-URL dance as the rendered thumbnail below — a serve path can't
+  // go straight into an image tag.
+  useEffect(() => {
+    let cancelled = false
+    if (!referenceUrl) {
+      Promise.resolve().then(() => { if (!cancelled) setReferencePreview(null) })
+      return () => { cancelled = true }
+    }
+    signFor(referenceUrl)
+      .then((u) => { if (!cancelled) setReferencePreview(u) })
+      .catch(() => { if (!cancelled) setReferencePreview(null) })
+    return () => { cancelled = true }
+  }, [referenceUrl, signFor])
+
+  // Upload straight to the bucket via the presigned `thumbnails` flow, then keep
+  // only the returned serve path. A failure is surfaced rather than swallowed —
+  // generating without the creator's face silently is the wrong outcome.
+  async function handleReferencePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    const invalid = referenceFileError(file)
+    if (invalid) {
+      setReferenceError(invalid)
+      return
+    }
+
+    setReferenceError(null)
+    setUploadingReference(true)
+    try {
+      setReferenceUrl(await onUploadReference(file))
+    } catch (err) {
+      setReferenceError(err instanceof Error ? err.message : 'Upload failed.')
+    } finally {
+      setUploadingReference(false)
+    }
+  }
+
+  // Re-sign the persisted thumbnail for display/download whenever its serve path
   // changes (new render or a restored session). Serve paths can't be shown
   // directly — big media must go through a signed direct-bucket URL.
   useEffect(() => {
@@ -115,6 +173,49 @@ export function ThumbnailStudio({
         </button>
       </div>
 
+      {/* Optional reference image — fed to nano-banana alongside the prompt */}
+      <div>
+        <label htmlFor="thumb-reference" className="meta-label">
+          Reference image (optional)
+        </label>
+        <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
+          Upload a shot of your face (or a product) and it’s sent with the prompt, so the
+          thumbnail is built around it instead of a generic illustration.
+        </p>
+        <input
+          id="thumb-reference"
+          type="file"
+          accept="image/*"
+          disabled={uploadingReference}
+          onChange={handleReferencePick}
+          className="mt-2 block w-full text-[13px] text-ink-soft file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-line file:bg-surface-dim/20 file:px-3 file:py-1.5 file:text-[13px] file:text-ink"
+        />
+        {uploadingReference && (
+          <p className="mt-2 text-[13px] text-ink-soft">Uploading…</p>
+        )}
+        {referenceError && (
+          <p role="alert" className="mt-2 text-[13px] text-red-500">
+            {referenceError}
+          </p>
+        )}
+        {referencePreview && (
+          <div className="mt-2 flex items-center gap-3">
+            <img
+              src={referencePreview}
+              alt="Reference image for the thumbnail"
+              className="h-20 w-auto rounded-md border border-line"
+            />
+            <button
+              type="button"
+              className="pill-ghost"
+              onClick={() => { setReferenceUrl(null); setReferenceError(null) }}
+            >
+              Remove reference
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Editable drafted prompt */}
       <div>
         <label htmlFor="thumb-prompt" className="meta-label">
@@ -131,8 +232,8 @@ export function ThumbnailStudio({
         <button
           type="button"
           className="pill-cta mt-2"
-          disabled={rendering || !prompt.trim()}
-          onClick={() => onRender(notes, prompt)}
+          disabled={rendering || uploadingReference || !prompt.trim()}
+          onClick={() => onRender(notes, prompt, referenceUrl)}
         >
           {rendering ? 'Generating…' : thumbnail ? 'Regenerate' : 'Generate'}
         </button>

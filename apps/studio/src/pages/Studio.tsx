@@ -603,6 +603,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                   rendering={pipe.renderingThumbnail}
                   onDraft={pipe.draftThumbnailPrompt}
                   onRender={pipe.renderThumbnail}
+                  onUploadReference={pipe.uploadThumbnailReference}
                   signFor={pipe.signFor}
                 />
                 <BlogCard
