@@ -28,10 +28,30 @@ Three of six steps point somewhere wrong, one demands a credential most users do
 
 **Files:**
 - Modify: `apps/studio/bffless-app.json` (the `install.manualSteps` array, lines 36-79)
+- Modify: `.claude/skills/publish-app/SKILL.md` (line 125, the entry shape; line 199, the placeholder-validation row)
+- Modify: `.agents/skills/publish-app/SKILL.md` (the mirrored copy, if `pnpm skills:check` reports drift)
 
 **Interfaces:**
 - Consumes: `AppManualStep.externalLink?: { label: string; url: string }` from the CE PR.
 - Produces: a five-entry `manualSteps` array. Task 2's README mirrors the same setup facts and must not contradict it.
+
+**Document the new field so app authors can find it.** The CE branch's final review flagged
+that `publish-app/SKILL.md` enumerates the manifest's manual-step fields and does not mention
+`externalLink` — so no app author would discover it. `check-app-conventions.mjs` does not reject
+unknown fields, so nothing breaks; it is purely a discoverability gap. Two edits:
+
+- **Line 125**, the entry shape, currently reads
+  `Each entry: {  id, title, body, deepLink?, appliesWhen? }`. Add `externalLink?` to it, and
+  describe it as an optional `{ label, url }` pointing at an external `https://` page where a
+  credential is obtained — rendered as a second link beside **Go**.
+- **Line 199**, the placeholder-validation row, currently reads
+  `install.manualSteps[].{title,body,deepLink} placeholders`. Note that `externalLink` is
+  deliberately **excluded** from placeholder validation, because an external URL is literal and a
+  brace in it is a plain character rather than a token. An author who expects `{projectPath}` to
+  expand inside `externalLink.url` would otherwise be surprised.
+
+The repo keeps two copies of its skills in sync — run `pnpm skills:check` after editing and
+`pnpm skills:sync` if it reports drift.
 
 - [ ] **Step 1: Branch**
 
