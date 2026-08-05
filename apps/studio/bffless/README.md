@@ -1,5 +1,9 @@
 # Studio backend — BFFless proxy rule set
 
+> Setting Studio up for the first time? Start with [`../README.md`](../README.md) — it lists every
+> credential and setting in one table. This file is the technical reference for the proxy rule
+> sets themselves.
+
 Studio has no app server. Its `/api/*` endpoints are a **BFFless proxy rule set** (handler chains:
 presigned uploads, file serving, Replicate calls, data tables, signed URLs). To run Studio against
 your own BFFless project you import that rule set and attach it to the alias serving the app.
@@ -60,9 +64,10 @@ provider tokens/secrets are set per project, not per app).
   an **Anthropic** key (`claude-sonnet-4-6` for `/api/thumbnail/draft`). See
   [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) §1 and §3 for where to
   obtain and enter each.
-- **Secrets — `HF_TOKEN` from Hugging Face.** Add `HF_TOKEN` under **Settings → AI Services → Secrets**
-  set to a [Hugging Face](https://huggingface.co/settings/tokens) **read** token; `/api/transcribe`
-  references it as `secrets.HF_TOKEN` for WhisperX alignment/diarization. See Prerequisites §2.
+- **Secrets — `HF_TOKEN` from Hugging Face (optional).** Only needed for **speaker diarization**;
+  transcription works without it. Add `HF_TOKEN` under **Settings → AI → Secrets** set to a
+  [Hugging Face](https://huggingface.co/settings/tokens) **read** token; `/api/transcribe`
+  passes it as `huggingface_access_token` when the diarize flag is on. See Prerequisites §2.
 - **Storage backend — a default bucket is required.** Studio uploads/serves write under
   `<owner>/<repo>/uploads/<kind>/…`, so the project needs a storage backend with a default bucket for
   uploads; also provision the `studio_jobs` + projects data tables. See the
@@ -73,25 +78,28 @@ provider tokens/secrets are set per project, not per app).
 - **Keep the domain private** — Studio's rules carry no per-rule auth; the
   non-public domain (optionally `requiredRole: admin`) is what gates the paid
   AI endpoints.
-- **AI skills path — the `thumbnail-draft` rule's `ai` step Skills section.** Set Skills Source to
-  `studio` and Path to `apps/studio/dist/bffless/skills` so `/api/thumbnail/draft` can load the
-  `image-prompts` skill; without this pairing thumbnail drafting silently skips the skill (the
-  installer can't wire it).
+- **AI skills path (optional).** Set **Settings → AI → Skills Path** to
+  `apps/studio/dist/bffless/skills` so `/api/thumbnail/draft` can load the `image-prompts` skill.
+  Leave **Source** blank — skills already resolve against the deployment serving the request.
+  Without the path, thumbnail drafting silently skips the skill and returns a generic prompt.
+  Note this is a **per-project** setting, not per-rule.
 
 ## Prerequisites (provision these in the target project first)
 
 In the BFFless dashboard → **Settings → AI**:
 
-1. **Replicate token** — under **AI Services → Replicate**, create an API token at
+1. **Replicate token** — under **Settings → AI → Replicate**, create an API token at
    [replicate.com](https://replicate.com/account/api-tokens) and paste it. Powers
    `victor-upmeet/whisperx` (transcribe), `google/gemini-3.1-pro` (director / describe / search),
    `google/gemini-3.5-flash` (refiner), `minimax/voice-cloning` + `minimax/speech-2.8-turbo` (voice),
    and `google/nano-banana-2` (thumbnail render).
-2. **`HF_TOKEN` secret** — under **Secrets** (just below AI Services), add `HF_TOKEN` set to a
+2. **`HF_TOKEN` secret (optional)** — under **Settings → AI → Secrets**, add `HF_TOKEN` set to a
    [Hugging Face](https://huggingface.co/settings/tokens) **read** token. Used by `/api/transcribe`
-   for WhisperX alignment/diarization (when diarization is enabled). Referenced as `secrets.HF_TOKEN`.
-3. **Anthropic key** — under AI Services, for the `/api/thumbnail/draft` `ai_handler`
-   (`claude-sonnet-4-6`).
+   only when speaker diarization is enabled; `align_output` needs no token. Referenced as
+   `secrets.HF_TOKEN`.
+3. **Anthropic key** — under **Settings → AI → LLM Providers → Add Provider**, for
+   `/api/thumbnail/draft` (`claude-sonnet-4-6`) and the companion blog writer
+   (`claude-opus-4-6`).
 
 Also:
 
@@ -128,7 +136,7 @@ end-to-end action:
 That round-trip exercises the presigned upload, bucket storage, and the WhisperX transcribe pipeline
 (`/api/transcribe`). If the transcript renders, Studio's backend is live. A 404 on `/api/*` means the
 rule set isn't attached to the `studio` alias; a transcribe failure usually means a missing Replicate
-token or `HF_TOKEN`.
+token.
 
 ## Portability: storage paths are deployment-relative
 

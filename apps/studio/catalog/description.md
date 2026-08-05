@@ -22,7 +22,7 @@ from the finished video's transcript, and an AI thumbnail workflow.
 
 Studio is a static app; every backend step is a BFFless pipeline on your own
 instance. Bring a Replicate token (transcription, scene direction, voice,
-thumbnails), an Anthropic key (thumbnail drafts, blog writer), a Hugging Face
-`HF_TOKEN` secret, a storage bucket with presigned uploads, and one COOP/COEP
-response-header rule for the in-browser exporter. The install steps walk
-through each.
+thumbnails), an Anthropic key (thumbnail drafts, blog writer),
+a storage bucket with presigned uploads, and one cross-origin isolation
+response-header rule for the in-browser exporter. A Hugging Face `HF_TOKEN`
+is optional, for speaker diarization. The install steps walk through each.
