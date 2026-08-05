@@ -55,34 +55,37 @@ only serves on aliases the rule sets are attached to.
 Everything the human must configure in the BFFless admin panel that the `install-app` skill
 **cannot** do. The repo-root [`GETTING-STARTED.md`](../../../GETTING-STARTED.md) spine points here for
 Studio's app-specifics; do them once in the target project (all monorepo apps share one project, so
-provider tokens/secrets are set per project, not per app).
+provider tokens/secrets are set per project, not per app). **Locations and required-ness live in one
+place, [`../README.md#setup`](../README.md#setup)** — the bullets below add only what's specific to
+how the rule sets consume each value.
 
-- **External connections / AI provider tokens — Replicate + Anthropic (admin-panel only, no MCP).**
-  Studio's AI pipelines need a **Replicate** token (powers `victor-upmeet/whisperx` transcribe,
-  `google/gemini-3.1-pro` director, `google/gemini-3.5-flash` refiner, `minimax/*` voice,
-  `google/nano-banana-2` thumbnail) and
-  an **Anthropic** key (`claude-sonnet-4-6` for `/api/thumbnail/draft`). See
-  [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) §1 and §3 for where to
-  obtain and enter each.
-- **Secrets — `HF_TOKEN` from Hugging Face (optional).** Only needed for **speaker diarization**;
-  transcription works without it. Add `HF_TOKEN` under **Settings → AI → Secrets** set to a
-  [Hugging Face](https://huggingface.co/settings/tokens) **read** token; `/api/transcribe`
-  passes it as `huggingface_access_token` when the diarize flag is on. See Prerequisites §2.
-- **Storage backend — a default bucket is required.** Studio uploads/serves write under
-  `<owner>/<repo>/uploads/<kind>/…`, so the project needs a storage backend with a default bucket for
-  uploads; also provision the `studio_jobs` + projects data tables. See the
-  [Prerequisites](#prerequisites-provision-these-in-the-target-project-first) table.
-- **Response-header rules — COOP/COEP for `ffmpeg.wasm` threading.** Studio's Export step needs the
-  page **cross-origin isolated**, which is a response-header rule *not* in the proxy-rules JSON. See
-  [Cross-origin isolation](#cross-origin-isolation-required-for-ffmpeg-threading) below.
-- **Keep the domain private** — Studio's rules carry no per-rule auth; the
-  non-public domain (optionally `requiredRole: admin`) is what gates the paid
-  AI endpoints.
-- **AI skills path (optional).** Set **Settings → AI → Skills Path** to
-  `apps/studio/dist/bffless/skills` so `/api/thumbnail/draft` can load the `image-prompts` skill.
-  Leave **Source** blank — skills already resolve against the deployment serving the request.
-  Without the path, thumbnail drafting silently skips the skill and returns a generic prompt.
-  Note this is a **per-project** setting, not per-rule.
+- **AI provider tokens — Replicate + Anthropic.** Location/required-ness:
+  [`../README.md#setup`](../README.md#setup). Replicate powers `victor-upmeet/whisperx`
+  (transcribe), `google/gemini-3.1-pro` (director), `google/gemini-3.5-flash` (refiner),
+  `minimax/*` (voice), and `google/nano-banana-2` (thumbnail). Anthropic powers
+  `/api/thumbnail/draft` (`claude-sonnet-4-6`) and, if you also import `studio-blog`, the
+  companion blog writer (`claude-opus-4-6`).
+- **`HF_TOKEN` secret.** Location/required-ness: [`../README.md#setup`](../README.md#setup).
+  `/api/transcribe` reads it as `secrets.HF_TOKEN` and passes it on as
+  `huggingface_access_token`, only when the diarize flag is on.
+- **Storage backend.** Location/required-ness: [`../README.md#setup`](../README.md#setup). The
+  rules never hard-code a project name — see
+  [Portability](#portability-storage-paths-are-deployment-relative) below for how upload paths
+  derive from `deployment.owner`/`deployment.repo`.
+- **Response-header rule for cross-origin isolation.** Location/required-ness:
+  [`../README.md#setup`](../README.md#setup). See
+  [Cross-origin isolation](#cross-origin-isolation-recommended-for-faster-ffmpeg-export) below for
+  what it does and why it isn't part of the rule-set JSON.
+- **Access control.** Location: [`../README.md#setup`](../README.md#setup). Worth restating here
+  because it's rule-set-specific: Studio's proxy rules carry no per-rule auth (see
+  [Notes](#notes)), so project-level access control is the *only* thing gating the paid AI
+  endpoints.
+- **AI skills path (optional).** Not a Settings page — it's **Proxy Rules → the `thumbnail-draft`
+  rule → its AI step → Skills → Skills Path**, set to `apps/studio/dist/bffless/skills` to load
+  the `image-prompts` skill. Leave **Skills Source (Alias)** on **Auto (serving deployment)** —
+  skills already resolve against the deployment serving the request. The value is stored
+  **per project**, so setting it on this one step applies to every AI step. Without it, thumbnail
+  drafting silently skips the skill and returns a generic prompt.
 
 ## Prerequisites (provision these in the target project first)
 
@@ -96,32 +99,39 @@ In the BFFless dashboard → **Settings → AI**:
 2. **`HF_TOKEN` secret (optional)** — under **Settings → AI → Secrets**, add `HF_TOKEN` set to a
    [Hugging Face](https://huggingface.co/settings/tokens) **read** token. Used by `/api/transcribe`
    only when speaker diarization is enabled; `align_output` needs no token. Referenced as
-   `secrets.HF_TOKEN`.
-3. **Anthropic key** — under **Settings → AI → LLM Providers → Add Provider**, for
-   `/api/thumbnail/draft` (`claude-sonnet-4-6`) and the companion blog writer
-   (`claude-opus-4-6`).
+   `secrets.HF_TOKEN`. The diarization model is **gated** on Hugging Face: beyond creating the
+   token, you must also visit the model page and accept its terms once, or diarization fails with
+   no clear error.
+3. **Anthropic key (optional — only for thumbnail drafts and the blog writer)** — under
+   **Settings → AI → LLM Providers → Add Provider**, for `/api/thumbnail/draft`
+   (`claude-sonnet-4-6`) and the companion blog writer (`claude-opus-4-6`). Studio's core pipeline
+   (upload, transcribe, direct, refine, voice, export) runs on Replicate and doesn't need it.
 
 Also:
 
 | Need | Why |
 | --- | --- |
 | **Storage backend** (default bucket) | Uploads/serves write under `<owner>/<repo>/uploads/<kind>/…` sub-dirs (`source/`, `audio/`, `voice/`, `narration/`, `scene-clip/`, `export/`, `thumbnails/`, …) — created on demand. |
-| **Data tables** for `studio_jobs` + projects | The async job poll (`/api/studio/job`) and `/api/projects*` use BFFless data handlers. |
 
-## Cross-origin isolation (required for ffmpeg threading)
+The `studio_jobs` and projects data tables need no separate provisioning — both rule sets ship
+their schemas under `schemas/*.schema.yaml`, so importing the rule set creates the tables.
+
+## Cross-origin isolation (recommended for faster ffmpeg export)
 
 The export's `/api/*` proxy rules are the backend, but Studio's **Export** step assembles video with
-multithreaded `ffmpeg.wasm`, which needs `SharedArrayBuffer` — i.e. the page must be
-**cross-origin isolated**. That comes from a **response-header rule** (separate from the proxy rule
-set, so it is not part of the `studio` rule set source). Without it, `getFFmpeg()` silently falls back to
-the single-threaded core (slower, 2 GiB cap) — you'll see `ffmpeg core: single-threaded` in the
-console.
+`ffmpeg.wasm`. When the page is **cross-origin isolated** it can use the multithreaded core
+(`SharedArrayBuffer`); this is *not* a hard requirement — without it, `getFFmpeg()` silently falls
+back to the single-threaded core (slower, 2 GiB cap) and export still works, same as
+[`../README.md`](../README.md#setup) says. You'll see `ffmpeg core: single-threaded` in the console
+if isolation hasn't been set up.
 
-Add this once per project (BFFless dashboard → Settings → Response Headers, or via MCP
-`create_response_header_rule`):
+Isolation comes from a **response-header rule** (separate from the proxy rule set, so it is not
+part of the `studio` rule set source). Add it once per project: **Settings → Response Headers →
+Add Rule → click the Cross-Origin Isolation preset → Create.** The preset sets, on path pattern
+`**`:
 
-- **Path pattern:** `**`
-- **Headers:** `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: credentialless`
 
 After adding it, hard-reload the deployment; the console should report the multithreaded core.
 

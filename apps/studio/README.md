@@ -38,11 +38,13 @@ failure usually means a missing Replicate token.
 
 Neither of these is needed to get Studio running.
 
-**Better thumbnail prompts.** Set Settings → AI → Skills Path to `apps/studio/dist/bffless/skills`
-to load the `image-prompts` skill, which defines the house styles, style routing, and negatives.
-Leave **Source** blank — it already defaults to the deployment serving the request, which is
-Studio. Without this the thumbnail drafter still returns a prompt, just a generic one; the skill
-is skipped silently. Note this is a per-project setting.
+**Better thumbnail prompts.** In Proxy Rules, open the `thumbnail-draft` rule → its AI step →
+Skills, and set Skills Path to `apps/studio/dist/bffless/skills` to load the `image-prompts`
+skill, which defines the house styles, style routing, and negatives. Leave **Skills Source
+(Alias)** on **Auto (serving deployment)** — skills already resolve against the deployment
+serving the request, which is Studio. Without this the thumbnail drafter still returns a prompt,
+just a generic one; the skill is skipped silently. Note the path is stored **per project**, so
+setting it once on this step applies to every AI step.
 
 **Sharing a project with other apps.** Scope access control to the `studio` alias (Aliases →
 `studio` → Private) instead of making the whole project private, which cascades to every alias
@@ -52,6 +54,7 @@ and cannot be scoped per app.
 ## Going deeper
 
 - [`bffless/README.md`](./bffless/README.md) — the proxy rule sets: authoring, building, importing, attaching
+- [`GETTING-STARTED.md`](../../GETTING-STARTED.md) — deploying an app from source, for forkers
 - [`CLAUDE.md`](./CLAUDE.md) — local development commands and the locked pipeline
 - [`CONTEXT.md`](./CONTEXT.md) and [`DESIGN.md`](./DESIGN.md) — domain model and design decisions
 - [`stories/`](./stories/) — the design, story by story. Read `00-architecture-and-state.md` first

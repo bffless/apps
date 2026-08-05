@@ -9,7 +9,7 @@
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/studio",
   "requires": {
     "presignedStorage": true,
-    "ceMin": "0.4.13"
+    "ceMin": "0.4.19"
   },
   "install": {
     "alias": "studio",
