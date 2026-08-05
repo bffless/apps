@@ -37,43 +37,48 @@
       {
         "id": "connect-replicate",
         "title": "Connect Replicate",
-        "body": "Add a Replicate API token under Settings → AI Services. It powers transcription (WhisperX), scene direction (Gemini), voice clone/speech (MiniMax — clone ≈ $3/call), and thumbnails.",
+        "body": "Add your Replicate API token under Settings → AI → Replicate. Powers transcription (WhisperX), scene direction + refiner (Gemini), voice clone/speech (MiniMax — cloning ≈ $3/call), and thumbnails.",
         "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "externalLink": {
+          "label": "Get a Replicate token",
+          "url": "https://replicate.com/account/api-tokens"
+        },
         "appliesWhen": "always"
       },
       {
         "id": "connect-anthropic",
         "title": "Connect Anthropic",
-        "body": "Add an Anthropic API key under Settings → AI Services. It powers thumbnail prompt drafts and the companion blog writer.",
+        "body": "Add an Anthropic API key under Settings → AI → LLM Providers → Add Provider. It powers thumbnail prompt drafts (Claude Sonnet) and the companion blog writer (Claude Opus).",
         "deepLink": "/repo/{projectPath}/settings?tab=ai",
-        "appliesWhen": "always"
-      },
-      {
-        "id": "add-hf-token",
-        "title": "Add the HF_TOKEN secret",
-        "body": "Create a secret named HF_TOKEN with a Hugging Face read token under Settings → AI Services → Secrets. Transcription's WhisperX alignment/diarization requires it.",
-        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "externalLink": {
+          "label": "Get an Anthropic key",
+          "url": "https://console.anthropic.com/settings/keys"
+        },
         "appliesWhen": "always"
       },
       {
         "id": "coop-coep-headers",
-        "title": "Add COOP/COEP response headers",
-        "body": "Add a response-header rule on ** setting Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: credentialless. Video export (ffmpeg.wasm) needs them; the installer can't create header rules.",
+        "title": "Turn on cross-origin isolation",
+        "body": "Settings → Response Headers → Add Rule → click the Cross-Origin Isolation preset → Create. Studio's in-browser video export needs it; without it, export falls back to a slower single-threaded encoder.",
         "deepLink": "/repo/{projectPath}/settings?tab=response-headers",
         "appliesWhen": "always"
       },
       {
         "id": "restrict-access",
         "title": "Keep Studio private",
-        "body": "Studio's API rules carry no per-rule auth — the private domain is what protects the paid AI endpoints. Keep the domain non-public; optionally require the admin role.",
-        "deepLink": "/repo/{projectPath}/settings?tab=members",
+        "body": "Studio's API rules carry no per-rule auth — access control is the only protection for the paid AI endpoints. Under Settings → General → Visibility, set it to Private, then optionally set Required Role to Admin or higher.",
+        "deepLink": "/repo/{projectPath}/settings?tab=general",
         "appliesWhen": "always"
       },
       {
-        "id": "point-skills-path",
-        "title": "Point AI skills at the app files",
-        "body": "Proxy Rules → thumbnail-draft rule → AI step → Skills: set Source to this app's alias and Path to apps/studio/dist/bffless/skills. Thumbnail drafting loads image-prompts from there; otherwise it's silently skipped.",
-        "deepLink": "/repo/{projectPath}/settings?tab=proxy-rules",
+        "id": "add-hf-token",
+        "title": "Optional: HF_TOKEN for speaker diarization",
+        "body": "Optional — transcription works without it. Only for speaker diarization. Create a secret named HF_TOKEN (a Hugging Face read token) under Settings → AI → Secrets, and accept the gated model's terms on Hugging Face.",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "externalLink": {
+          "label": "Get a Hugging Face token",
+          "url": "https://huggingface.co/settings/tokens"
+        },
         "appliesWhen": "always"
       }
     ]
