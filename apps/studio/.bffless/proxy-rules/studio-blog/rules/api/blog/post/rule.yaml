@@ -134,6 +134,7 @@ pipeline:
         model: claude-opus-4-6
         skills:
           mode: selected
+          path: apps/studio/dist/bffless/skills
           enabled:
             - bffless-docs
         timeout: 280000

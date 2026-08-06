@@ -17,6 +17,7 @@ pipeline:
         model: claude-sonnet-4-6
         skills:
           mode: selected
+          path: apps/studio/dist/bffless/skills
           enabled:
             - image-prompts
         provider: anthropic
