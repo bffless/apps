@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/bffless/apps/compare/studio-v1.0.0...studio-v1.1.0) (2026-08-06)
+
+
+### Features
+
+* **studio:** optional reference image for thumbnail generation ([#290](https://github.com/bffless/apps/issues/290)) ([7d49e99](https://github.com/bffless/apps/commit/7d49e997a6e5cfcf1615035b9627fcc252743ae1))
+
 ## [1.0.0](https://github.com/bffless/apps/compare/studio-v1.0.0...studio-v1.0.0) (2026-08-03)
 
 
