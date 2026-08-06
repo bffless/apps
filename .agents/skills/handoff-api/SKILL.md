@@ -57,6 +57,27 @@ The key authenticates as its owner, so content you create is owned by that
 user (the same as uploading in the browser). The PUT-to-bucket step (below) is
 the one exception — it is presigned and takes no key.
 
+**Check that the instance actually recognises your key.** An unrecognised key is
+not rejected — it falls through to *anonymous*, and the read endpoints answer
+anonymously rather than erroring. The usual cause is a key for a **different
+instance**: `bffless login` stores one credential per admin URL, and `auth token`
+will hand you whichever one it resolves. Confirm with one call:
+
+    curl -s "$HANDOFF_BASE_URL/api/nodes" | head -c 200                       # anonymous
+    curl -s -H "X-API-Key: $BFFLESS_API_KEY" "$HANDOFF_BASE_URL/api/nodes"    # keyed
+
+**If the two match, your key is not being recognised — stop and fix it, do not
+work around it.** Check that the admin URL you logged into belongs to the same
+instance as `$HANDOFF_BASE_URL` (`handoff.example.com` → `admin.example.com`),
+then `npx bffless login --api-url https://admin.example.com`. A recognised key
+authenticates as its owner: nodes it creates carry that user's `ownerId`, and it
+can list, delete, and patch them.
+
+Every write is rejected with `401` when the key is unrecognised. Older
+deployments accepted those writes and recorded `"ownerId": null` — orphans that
+no API key can delete, because no key can reach `edit` on them. If you find some,
+tell the user; they need an admin in the browser.
+
 ## Discovery
 
 In a Handoff repo clone, the endpoint source of truth is the authored rules
@@ -65,6 +86,37 @@ under `.bffless/proxy-rules/` — `handoff/` (the `/api/*` app backend) and
 `rules/**/rule.yaml` whose path mirrors the URL. Outside a clone (or for live
 state), `get_proxy_rule_set` via a BFFless MCP connection to the instance
 works too, but is optional.
+
+## Resolve a path to a node
+
+Every write is keyed by `parentId`, but users hand you *paths* — a URL like
+`https://handoff.example.com/tree/claude`, or just "put it in claude".
+`GET /api/resolve/<path>` turns one into the other:
+
+    curl -s -H "X-API-Key: $BFFLESS_API_KEY" "$HANDOFF_BASE_URL/api/resolve/claude"
+    → {"node":{"id":"a46c2c42-…","type":"folder","path":"claude",
+               "parentId":"root","mode":"restricted","ownerId":"…"}}
+
+The path is everything after `/tree/` or `/blob/` in the browser URL, encoded per
+segment (`Design%20Docs/Q3`). Folders resolve by walking names down the tree,
+files and Sites by their storage key. It runs the same ACL gate as the serve
+endpoint, so the answer reflects what you may actually see:
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Resolved and readable — use `node.id` as `parentId`. |
+| `401` | No credential presented, or the key is unrecognised (above). |
+| `403` | The path exists, you have no access to it. |
+| `404` | No such path. |
+
+Use it before any write into a named folder. **Do not** tree-walk
+`GET /api/nodes?parentId=…` hunting for an id, and **do not** read the app's node
+table through the BFFless admin API — `resolve` is the supported route and it
+sees restricted folders that a listing will never show you.
+
+`GET /api/nodes?path=…` is *not* a resolver: the parameter is silently ignored
+and you get the whole root listing back, which looks like an answer and is not
+one.
 
 ## Upload a file (prepare → PUT → register)
 
@@ -87,6 +139,20 @@ works too, but is optional.
 - Pass the `storageKey` prepare returns to register **unchanged** (it is the
   full bucket key).
 - `createdMs` is client-supplied epoch ms, e.g. `date +%s%3N`.
+- **`uploadUrl` comes back host-relative** (`/api/storage/presigned/local?…`).
+  `curl -X PUT` on it fails with exit 3 / `%{http_code} 000`. Prefix
+  `$HANDOFF_BASE_URL` unless it already starts with `http`.
+- **Register takes no mime field.** The rule reads exactly `parentId`,
+  `originalName`, `displayName`, `path`, `storageKey`, `createdMs` from the
+  body — the node's `mime` is derived from the stored object, and on local
+  presigned storage it lands as `application/octet-stream` even when you PUT
+  `Content-Type: text/markdown`. Nothing in the request fixes this, so don't
+  burn calls trying; a `.md` extension in the name is what the viewer has to go
+  on.
+- Send `path` to register too (same value as prepare) — it is the register
+  handler's storage key, not just a prepare-time argument.
+- A name collision on register is `409`, with the same "An item with that name
+  already exists" text the folder endpoint returns.
 
 Verified root upload (`report.md`): prepare
 `{filename:"report.md", contentType:"text/markdown", path:"report.md", parentId:"root"}`
@@ -196,9 +262,30 @@ or `principalName` — publicness can never escalate to edit.
 
 - An empty root listing is normal: content is private-by-default; you only see
   what you own or were granted.
+- **Creating requires access to the destination.** `POST /api/folders`,
+  `/api/nodes`, `/api/sites`, and `/api/uploads/prepare` answer `401` with no
+  credential and `403` without `edit` on the target folder. The check runs
+  *before* the name-collision check, so a `403` tells you nothing about whether
+  the name is free. At root, any authenticated user may create.
+- **A `409` at root can name something you cannot see.** Root is a shared
+  namespace and in-folder uniqueness is owner-blind, so a name taken by another
+  user's private folder collides for you too. Pick a different name — do not
+  switch to the root node's UUID to get around it (next bullet).
+- **`parentId: "root"` and the root node's UUID are different destinations.**
+  The literal `"root"` is the real root; passing the root node's id creates the
+  node one level down, under `My Files/`, with no error either way. If a
+  `"root"` create fails on a name collision, switching to the UUID *looks* like
+  it worked — it silently put your folder somewhere else. Never use it as a
+  workaround.
 - The PUT step is unauthenticated and goes straight to the bucket — do not add
   the key.
 - Delete is write-gated and single-node; delete children before parents.
+- **To correct a file you already registered, re-PUT its storage key.** Call
+  `prepare` again with the same `path` and **no `parentId`** (which skips the
+  node collision check), then PUT the new bytes: the node still points at that
+  key, so the served content updates in place. This is the only way to fix a
+  file when the key cannot `DELETE` or `PATCH`. Caveat: `node.size` is set at
+  register time and is **not** refreshed, so it goes stale after an overwrite.
 - A `text/html` upload registered via `POST /api/nodes` shows "Preview
   unavailable" — that is the type, not a broken file. Use `POST /api/sites`
   (above).

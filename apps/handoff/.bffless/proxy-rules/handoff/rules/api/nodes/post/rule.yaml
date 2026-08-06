@@ -19,6 +19,18 @@ pipeline:
         pageSize: 500
         schemaId: $schema:handoff_nodes
         condition: steps.pre.check
+    - id: allFolders
+      name: allFolders
+      handler: data_query
+      config:
+        filters:
+          nodeType:
+            op: in
+            value:
+              - folder
+              - root
+        pageSize: 500
+        schemaId: $schema:handoff_nodes
     - id: guard
       name: guard
       handler: function_handler
@@ -62,5 +74,21 @@ pipeline:
         body: '{"error":"An item with that name already exists in this folder. Rename it and try again."}'
         status: 409
         condition: steps.guard.collision
+        contentType: application/json
+    - id: deny401
+      name: deny401
+      handler: response_handler
+      config:
+        body: '{"error":"unauthorized"}'
+        status: 401
+        condition: steps.guard.deny401
+        contentType: application/json
+    - id: deny403
+      name: deny403
+      handler: response_handler
+      config:
+        body: '{"error":"forbidden"}'
+        status: 403
+        condition: steps.guard.deny403
         contentType: application/json
 description: Verbatim register node + in-Folder uniqueness (structural storage)

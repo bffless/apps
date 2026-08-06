@@ -259,11 +259,13 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
     createdMs: 1000,
   }
 
-  it('has exactly 14 embedded folderChain functions', () => {
+  it('has exactly 18 embedded folderChain functions', () => {
     // 8 original + the two feed select handlers (#188) + the PATCH
     // /api/node/meta gate (Task 5) + the GET/POST/PATCH /api/comments gates
-    // (margin comments), each a verbatim copy.
-    expect(chainCodes.length).toBe(14)
+    // (margin comments) + the four create-endpoint guards (POST /api/folders,
+    // /api/nodes, /api/sites, /api/uploads/prepare), which reach it through
+    // _shared/writeAccess — each a verbatim copy.
+    expect(chainCodes.length).toBe(18)
   })
 
   it('resolves the root sentinel to R, so a root-scoped grant matches a nested node', () => {
@@ -345,8 +347,9 @@ describe('Task 5 — root sentinel resolved into the ACL folder chain', () => {
         }
       }
     }
-    // 8 original + the GET/POST/PATCH /api/comments gates' allFolders queries.
-    expect(widened.length).toBe(11)
+    // 8 original + the GET/POST/PATCH /api/comments gates' allFolders queries
+    // + the four create-endpoint guards' allFolders queries.
+    expect(widened.length).toBe(15)
   })
 
   it('leaves allSites (nodeType site) queries unchanged', () => {
