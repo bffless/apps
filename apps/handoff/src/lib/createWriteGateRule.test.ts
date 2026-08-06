@@ -48,9 +48,6 @@ const CASES = [
   { path: '/api/uploads/prepare', effectStep: 'presigned' },
 ]
 
-/** Only the endpoints implemented so far — extended as Task 5 lands. */
-const IMPLEMENTED = CASES.filter((c) => c.path !== '/api/uploads/prepare')
-
 function callGuard(
   path: string,
   opts: {
@@ -76,7 +73,7 @@ function callGuard(
   })
 }
 
-describe.each(IMPLEMENTED)('create write gate — POST $path', ({ path, effectStep }) => {
+describe.each(CASES)('create write gate — POST $path', ({ path, effectStep }) => {
   const steps = () => findRule(proxy.rules, path, 'POST').pipelineConfig.steps as any[]
 
   it('queries the folder tree so the guard can walk the chain', () => {

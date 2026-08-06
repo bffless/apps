@@ -113,8 +113,8 @@ export function decideWrite(opts: {
   const isRoot = parentId === '' || parentId === 'root';
   const hasCred = !!viewer.userId || !!viewer.shareLinkFolderId;
 
-  let level: AccessLevel = 'none';
-  let allow = false;
+  let level: AccessLevel;
+  let allow: boolean;
 
   if (isRoot) {
     // Root is everyone's landing area: creating there needs an account, nothing more.
