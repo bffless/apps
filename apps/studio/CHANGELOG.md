@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/bffless/apps/compare/studio-v1.1.1...studio-v1.1.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* **studio:** load the bundled AI skills on catalog installs ([#297](https://github.com/bffless/apps/issues/297)) ([00f67c2](https://github.com/bffless/apps/commit/00f67c27f01ed851b17ae95238e41093597c0341))
+
 ## [1.1.1](https://github.com/bffless/apps/compare/studio-v1.1.0...studio-v1.1.1) (2026-08-06)
 
 
