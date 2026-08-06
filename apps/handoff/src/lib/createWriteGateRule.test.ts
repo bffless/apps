@@ -48,8 +48,8 @@ const CASES = [
   { path: '/api/uploads/prepare', effectStep: 'presigned' },
 ]
 
-/** Only the endpoints implemented so far — extended as Tasks 3-5 land. */
-const IMPLEMENTED = CASES.filter((c) => c.path === '/api/folders')
+/** Only the endpoints implemented so far — extended as Tasks 4-5 land. */
+const IMPLEMENTED = CASES.filter((c) => c.path === '/api/folders' || c.path === '/api/nodes')
 
 function callGuard(
   path: string,
