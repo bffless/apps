@@ -73,8 +73,11 @@ ffmpeg.wasm (story 05+).
   (gated by `MOCK_STUDIO`, currently `false`). Mock and real **must return the same shape** — coerce
   both through one pure `toX()` function. Unhandled `/api/*` falls through the Vite proxy to `j5s.dev`.
 - **Never stream large files through a pipeline.** Edge nginx caps request bodies at **1 MB**.
-  Uploads use the **presigned direct-to-bucket** flow; feed a bucket object to Replicate via a
-  server-minted `signed_url`.
+  Uploads use the **presigned direct-to-bucket** flow. To feed a bucket object to Replicate, pass
+  its `/api/uploads/...` serve path (or storage path) straight into the `replicate` step's `input` —
+  the handler reads the object from storage itself and hands the bytes to Replicate, so it works on
+  every storage backend. A server-minted `signed_url` also works, but only where the backend
+  supports presigned GET. Either way the bytes never enter a request body.
 - **Non-destructive layers.** The director's `cuts` are an immutable baseline; the refiner and
   hand-edits write to `scene.refined` (`source: 'ai' | 'manual'`). Reverting = `refined = null`.
   Downstream reads `refined ?? baseline` via `effectiveCuts`.

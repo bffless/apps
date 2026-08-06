@@ -206,7 +206,17 @@ export type ProjectWorkingState = {
    * never persisted; the path is re-signed on load for display/download. Null
    * until rendered; re-rendering overwrites it. Cleared when working state resets.
    */
-  youtubeThumbnail: { notes: string; prompt: string; url: string } | null
+  youtubeThumbnail: {
+    notes: string
+    prompt: string
+    url: string
+    /**
+     * Optional reference image the creator uploaded (a face or product shot),
+     * persisted url-only like everything else so a reload keeps it attached and
+     * re-renders can reuse it without picking the file again.
+     */
+    referenceUrl?: string
+  } | null
   /**
    * The Export page's generated blog post (issue #68): the Markdown document,
    * the creator's direction, the final script it was written from (staleness
