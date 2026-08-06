@@ -122,7 +122,10 @@ by accident.
   Handoff ships none (`"schedules": []`).
 - **`install.manualSteps`** — anything a human still has to do in the admin panel after
   install (mirrors the app's README "Manual setup (admin panel)" section, but structured).
-  Each entry: `{ id, title, body, deepLink?, appliesWhen? }`.
+  Each entry: `{ id, title, body, deepLink?, appliesWhen?, externalLink? }`.
+  `externalLink` is optional `{ label, url }` pointing at an external `https://` page where a
+  credential is obtained (e.g. a provider's API-token settings page) — CE renders it as a second
+  link beside **Go**.
 
   - **`title` is the action** — imperative, scannable when the note is collapsed
     ("Configure bucket CORS", "Give other people access"), not a description of the
@@ -197,6 +200,7 @@ The regexes/rules CE enforces, as of the `app-catalog` feature (CE 0.4.0):
 | registry entry `sha256` | required, `/^[a-f0-9]{64}$/i` |
 | `install.manualSteps[].appliesWhen` | one of `always`, `bucketStorage`, `localStorage`, `platformMode`, `selfHosted` |
 | `install.manualSteps[].{title,body,deepLink}` placeholders | only `{projectPath}` / `{appHost}`; any other `{token}` is rejected, naming the unknown token |
+| `install.manualSteps[].externalLink.url` placeholders | **not validated.** `externalLink` is deliberately excluded from placeholder expansion — an external URL is literal, so a `{` in it is a plain character, not a token. Don't expect `{projectPath}` to expand inside `externalLink.url`. |
 | `install.manualSteps[].body` length | **not enforced by CE.** The 220-character cap is a `pnpm apps:check` rule in *this* repo only, not a CE gate — deliberately: enforcing it in CE would retroactively break `schemaVersion: 1` manifests already published under the old, unbounded limit. Don't treat it as a platform guarantee; a manifest that skips this repo's check can still install a longer body. |
 
 **A subtler, high-consequence gate: CE's `ValidationPipe` runs with
