@@ -57,20 +57,26 @@ The key authenticates as its owner, so content you create is owned by that
 user (the same as uploading in the browser). The PUT-to-bucket step (below) is
 the one exception — it is presigned and takes no key.
 
-**Check what your key actually resolves to before trusting that.** Some project
-keys carry *no user identity*: every node they create comes back with
-`"ownerId": null`, and `GET /api/nodes` returns only the public view —
-byte-identical to an unauthenticated request. Confirm with one call:
+**Check that the instance actually recognises your key.** An unrecognised key is
+not rejected — it falls through to *anonymous*, and the read endpoints answer
+anonymously rather than erroring. The usual cause is a key for a **different
+instance**: `bffless login` stores one credential per admin URL, and `auth token`
+will hand you whichever one it resolves. Confirm with one call:
 
     curl -s "$HANDOFF_BASE_URL/api/nodes" | head -c 200                       # anonymous
     curl -s -H "X-API-Key: $BFFLESS_API_KEY" "$HANDOFF_BASE_URL/api/nodes"    # keyed
 
-If the two match, you have a keyless key. It can still `POST` (create folders,
-upload, register nodes), but `DELETE /api/node` and `PATCH /api/node/meta`
-return `{"error":"unauthorized"}` — **including on nodes it just created**. Plan
-around it: get names and paths right the first time, because you cannot rename,
-retitle, or delete your mistakes. Say so up front rather than leaving strays the
-user has to clean up by hand.
+**If the two match, your key is not being recognised — stop and fix it, do not
+work around it.** Check that the admin URL you logged into belongs to the same
+instance as `$HANDOFF_BASE_URL` (`handoff.example.com` → `admin.example.com`),
+then `npx bffless login --api-url https://admin.example.com`. A recognised key
+authenticates as its owner: nodes it creates carry that user's `ownerId`, and it
+can list, delete, and patch them.
+
+Every write is rejected with `401` when the key is unrecognised. Older
+deployments accepted those writes and recorded `"ownerId": null` — orphans that
+no API key can delete, because no key can reach `edit` on them. If you find some,
+tell the user; they need an admin in the browser.
 
 ## Discovery
 
@@ -81,43 +87,36 @@ under `.bffless/proxy-rules/` — `handoff/` (the `/api/*` app backend) and
 state), `get_proxy_rule_set` via a BFFless MCP connection to the instance
 works too, but is optional.
 
-## Finding a folder's id from its path
+## Resolve a path to a node
 
-Every write is keyed by `parentId`, but users hand you *paths*
-(`https://handoff.example.com/tree/claude`). **There is no endpoint that
-resolves one to the other.** `GET /api/nodes?path=…` is silently ignored — it
-returns the full root listing as though the filter weren't there, so a guess
-here yields a plausible wrong answer rather than an error.
+Every write is keyed by `parentId`, but users hand you *paths* — a URL like
+`https://handoff.example.com/tree/claude`, or just "put it in claude".
+`GET /api/resolve/<path>` turns one into the other:
 
-Walk the tree instead: `GET /api/nodes` for root, match the segment by `name`,
-then `GET /api/nodes?parentId=<that id>` for the next segment.
+    curl -s -H "X-API-Key: $BFFLESS_API_KEY" "$HANDOFF_BASE_URL/api/resolve/claude"
+    → {"node":{"id":"a46c2c42-…","type":"folder","path":"claude",
+               "parentId":"root","mode":"restricted","ownerId":"…"}}
 
-That fails when a folder is `mode: "restricted"` and you are not its owner —
-the folder is absent from your listing yet still holds the name, so the
-diagnosis arrives as a contradiction:
+The path is everything after `/tree/` or `/blob/` in the browser URL, encoded per
+segment (`Design%20Docs/Q3`). Folders resolve by walking names down the tree,
+files and Sites by their storage key. It runs the same ACL gate as the serve
+endpoint, so the answer reflects what you may actually see:
 
-    POST /api/folders {"parentId":"root","name":"claude"}
-    → 400 "An item with that name already exists in this folder."   # but it's in no listing
+| Status | Meaning |
+| --- | --- |
+| `200` | Resolved and readable — use `node.id` as `parentId`. |
+| `401` | No credential presented, or the key is unrecognised (above). |
+| `403` | The path exists, you have no access to it. |
+| `404` | No such path. |
 
-Read that error as *"the name is taken by something you can't see"*, not as a
-bad request. Ask the user for the folder id — in the browser it is in the URL
-when the folder is open. If they have BFFless admin access, it is also in the
-node table:
+Use it before any write into a named folder. **Do not** tree-walk
+`GET /api/nodes?parentId=…` hunting for an id, and **do not** read the app's node
+table through the BFFless admin API — `resolve` is the supported route and it
+sees restricted folders that a listing will never show you.
 
-    K=$(npx bffless auth token --api-url https://admin.example.com)
-    curl -s -H "X-API-Key: $K" \
-      "https://admin.example.com/api/pipeline-schemas/<schemaId>/data?limit=200"
-    # match the record whose data.displayName is the folder name
-
-`<schemaId>` is the UUID in the admin data-table URL
-(`/repo/<project>/handoff/data/<schemaId>`). This reads the app's raw node
-table — fine for a lookup, but ask before reaching for it, and prefer the
-user's answer.
-
-Writes into a restricted folder can still succeed once you have the id, even
-when `GET /api/nodes?parentId=<id>` on the same folder returns `unauthorized`.
-Read access and write access are gated separately; don't infer one from the
-other.
+`GET /api/nodes?path=…` is *not* a resolver: the parameter is silently ignored
+and you get the whole root listing back, which looks like an answer and is not
+one.
 
 ## Upload a file (prepare → PUT → register)
 
@@ -263,6 +262,15 @@ or `principalName` — publicness can never escalate to edit.
 
 - An empty root listing is normal: content is private-by-default; you only see
   what you own or were granted.
+- **Creating requires access to the destination.** `POST /api/folders`,
+  `/api/nodes`, `/api/sites`, and `/api/uploads/prepare` answer `401` with no
+  credential and `403` without `edit` on the target folder. The check runs
+  *before* the name-collision check, so a `403` tells you nothing about whether
+  the name is free. At root, any authenticated user may create.
+- **A `409` at root can name something you cannot see.** Root is a shared
+  namespace and in-folder uniqueness is owner-blind, so a name taken by another
+  user's private folder collides for you too. Pick a different name — do not
+  switch to the root node's UUID to get around it (next bullet).
 - **`parentId: "root"` and the root node's UUID are different destinations.**
   The literal `"root"` is the real root; passing the root node's id creates the
   node one level down, under `My Files/`, with no error either way. If a
