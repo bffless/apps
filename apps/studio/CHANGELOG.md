@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/bffless/apps/compare/studio-v1.1.0...studio-v1.1.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **studio:** make the thumbnail prompt work without a skill ([#292](https://github.com/bffless/apps/issues/292)) ([44fc2be](https://github.com/bffless/apps/commit/44fc2be8a05a6a711e7639143e786f45522cfb81))
+
 ## [1.1.0](https://github.com/bffless/apps/compare/studio-v1.0.0...studio-v1.1.0) (2026-08-06)
 
 
