@@ -57,21 +57,47 @@ The key authenticates as its owner, so content you create is owned by that
 user (the same as uploading in the browser). The PUT-to-bucket step (below) is
 the one exception — it is presigned and takes no key.
 
-**Check that the instance actually recognises your key.** An unrecognised key is
-not rejected — it falls through to *anonymous*, and the read endpoints answer
-anonymously rather than erroring. The usual cause is a key for a **different
-instance**: `bffless login` stores one credential per admin URL, and `auth token`
-will hand you whichever one it resolves. Confirm with one call:
+Two *different* things can be wrong with a key, and they need different checks.
+Run both before concluding anything about what content exists.
 
-    curl -s "$HANDOFF_BASE_URL/api/nodes" | head -c 200                       # anonymous
-    curl -s -H "X-API-Key: $BFFLESS_API_KEY" "$HANDOFF_BASE_URL/api/nodes"    # keyed
+**1. Is the key recognised?** An unrecognised key is not rejected — it falls
+through to *anonymous*, and the read endpoints answer anonymously rather than
+erroring. The usual cause is a key for a **different instance**: `bffless login`
+stores one credential per admin URL, and `auth token` will hand you whichever one
+it resolves. Compare the full bodies, not a `head -c` prefix:
 
-**If the two match, your key is not being recognised — stop and fix it, do not
-work around it.** Check that the admin URL you logged into belongs to the same
-instance as `$HANDOFF_BASE_URL` (`handoff.example.com` → `admin.example.com`),
-then `npx bffless login --api-url https://admin.example.com`. A recognised key
-authenticates as its owner: nodes it creates carry that user's `ownerId`, and it
-can list, delete, and patch them.
+    curl -s "$HANDOFF_BASE_URL/api/nodes" | python3 -m json.tool > /tmp/anon.json
+    curl -s -H "X-API-Key: $KEY" "$HANDOFF_BASE_URL/api/nodes" | python3 -m json.tool > /tmp/keyed.json
+    diff /tmp/anon.json /tmp/keyed.json    # byte-identical ⇒ NOT recognised
+
+**If they match, the key is not recognised — stop and fix it, do not work around
+it.** Check that the admin URL you logged into belongs to the same instance as
+`$HANDOFF_BASE_URL` (`handoff.example.com` → `admin.example.com`), then
+`npx bffless login --api-url https://admin.example.com`.
+
+**2. Is it the *right user*?** A recognised key authenticates as exactly one
+user, and the diff above passes for **any** valid user on the instance — so it
+gives a false all-clear. This is the failure that wastes the most time: the human
+runs `bffless login`, but a stale `BFFLESS_API_KEY` is already exported and
+**outranks it** (source order above: env var beats the CLI store). Every call
+then succeeds while showing a *different account's* tree, and the user's own
+folders look like they do not exist.
+
+Suspect it whenever a path the user just linked you resolves `401`, or the root
+listing lacks folders they say are there. Compare the two sources directly:
+
+    echo "env: ${BFFLESS_API_KEY:0:12}…"
+    echo "cli: $(npx bffless auth token --api-url https://admin.example.com | head -c 12)…"
+
+If they differ, the env var is shadowing the login. Use the CLI key explicitly
+(`CLI_KEY=$(npx bffless auth token --api-url …)`, then send `$CLI_KEY`) and tell
+the user their `BFFLESS_API_KEY` is stale — the login was never the problem.
+There is **no `/api/me`** endpoint to ask "who am I" with (requesting it returns
+the SPA, not a 404 — see Gotchas); the available identity signal is the `ownerId`
+on a node the user says is theirs.
+
+A recognised key authenticates as its owner: nodes it creates carry that user's
+`ownerId`, and it can list, delete, and patch them.
 
 Every write is rejected with `401` when the key is unrecognised. Older
 deployments accepted those writes and recorded `"ownerId": null` — orphans that
@@ -105,9 +131,20 @@ endpoint, so the answer reflects what you may actually see:
 | Status | Meaning |
 | --- | --- |
 | `200` | Resolved and readable — use `node.id` as `parentId`. |
-| `401` | No credential presented, or the key is unrecognised (above). |
-| `403` | The path exists, you have no access to it. |
+| `401` | No credential, key unrecognised, **or the path exists and this user cannot see it**. |
 | `404` | No such path. |
+
+`403` is *not* what an inaccessible path returns here — a restricted folder you
+lack a grant on answers `401`, the same as sending no key at all. So **`401` does
+not mean your key is broken.** The load-bearing distinction is `401` vs `404`:
+
+- `404` — the path genuinely does not exist.
+- `401` on a path the user can see in their browser — the path exists and you are
+  authenticated as the **wrong user**. Go back to Auth check 2; do not report the
+  folder as missing.
+
+`GET /api/nodes?parentId=<id>` follows the same rule: `401` when the folder is
+real but invisible to you.
 
 Use it before any write into a named folder. **Do not** tree-walk
 `GET /api/nodes?parentId=…` hunting for an id, and **do not** read the app's node
@@ -117,6 +154,40 @@ sees restricted folders that a listing will never show you.
 `GET /api/nodes?path=…` is *not* a resolver: the parameter is silently ignored
 and you get the whole root listing back, which looks like an answer and is not
 one.
+
+## Read a file back (download)
+
+List the folder, then pull each node's bytes. **Take the path from the node JSON
+and URL-encode it programmatically — never retype it** (see Gotchas: filenames
+carry invisible characters). Two routes, both fine:
+
+**Direct** — GET the node's own `url` with the key. Fewest calls:
+
+    curl -s -H "X-API-Key: $KEY" -o out.png \
+      "$HANDOFF_BASE_URL/api/uploads/content/tmp/Screenshot%20…png"
+
+**Presigned** — `POST /api/sign` `{path: <node.storageKey>}` →
+`{signed:{url,…}}`. The returned `url` is **host-relative**, exactly like
+`uploadUrl` (`/api/storage/presigned/local?key=…&exp=…&sig=…`), so prefix
+`$HANDOFF_BASE_URL`. It carries its own signature — the GET takes no key. Use it
+when the bytes must be fetched by something that has no API key.
+
+Note `path` here is the **`storageKey`** (`bffless/handoff/uploads/content/…`),
+not `node.path` and not `node.url` — three similar-looking fields on the same
+node. A `storageKey` that does not match a stored object byte-for-byte answers
+`403`, not `404`, so a mistyped key reads as a permissions failure.
+
+Verified folder download (both files in `tmp/`), driving straight off the listing:
+
+    curl -s -H "X-API-Key: $KEY" "$HANDOFF_BASE_URL/api/nodes?parentId=$FOLDER_ID" \
+     | python3 -c "
+    import sys, json, os, subprocess, urllib.parse
+    base, key = os.environ['HANDOFF_BASE_URL'], os.environ['KEY']
+    for n in json.load(sys.stdin)['nodes']:
+        if n['type'] != 'file': continue
+        url = base + urllib.parse.quote(n['url'])          # verbatim from the node
+        subprocess.run(['curl','-s','-o',n['name'],'-H',f'X-API-Key: {key}',url])
+    "
 
 ## Upload a file (prepare → PUT → register)
 
@@ -213,7 +284,9 @@ path:"reports/ce-v0.2.18-release-review"}` → renders at
 
 - List a folder: `GET /api/nodes?parentId=<id>` → `{nodes:[…]}` (omit param for root)
 - Create folder: `POST /api/folders` `{parentId, name, createdMs}` → `{node}`
-- Read a file back: `POST /api/sign` `{path:<storageKey>}` → `{signed:{url,…}}`
+- Read a file back: GET `node.url` with the key, or `POST /api/sign`
+  `{path:<storageKey>}` → `{signed:{url,…}}` (host-relative) — see "Read a file
+  back" above
 - Share a folder: `POST /api/share-links` `{folderId, expiresMs?}` → share link
 - Delete: `DELETE /api/node?id=<uuid>` → `{id}` (refuses a non-empty folder with 409)
 - Set a File/Site's display title + description (feed-surfaced metadata):
@@ -258,10 +331,31 @@ or `principalName` — publicness can never escalate to edit.
 - Discover groups: `GET /api/groups?search=<query>&limit=<n>` → `{groups:[{id, name, memberCount}]}` (member-accessible picker; blank search lists all up to limit). Used to build a group-selector UI.
 - Own memberships: `GET /api/me/groups` → `{groups:[{id, name}]}` (the groups this user belongs to). Both endpoints require the CE release shipping member-accessible group endpoints; 404 on older CE versions.
 
+Observed on at least one deployment: both group endpoints answer
+`401 {"message":"unauthorised"}` to a valid `X-API-Key` that every other endpoint
+accepts — note the `message` envelope, where the rest of the API uses `error`.
+Treat group features as unavailable to API-key callers unless you have confirmed
+otherwise on that deployment, and do not read the 401 as a bad key.
+
 ## Gotchas
 
 - An empty root listing is normal: content is private-by-default; you only see
-  what you own or were granted.
+  what you own or were granted. But a listing that is merely *smaller* than what
+  the user describes is usually the wrong-user problem, not privacy — Auth
+  check 2.
+- **An unknown `/api/*` route returns `200 text/html`, not `404`.** The request
+  falls through to the Handoff SPA and you get `index.html` with a success
+  status. A typo'd or non-existent endpoint therefore looks like it worked until
+  you read the body — `curl … | head` shows `<!doctype html>`. Check that a `200`
+  is actually JSON before trusting it, and do not infer an endpoint exists
+  because it did not 404. (`/api/me` is one that does not exist.)
+- **Filenames carry characters that are not the ones you would type.** macOS
+  screenshots use U+202F (narrow no-break space) before `AM`/`PM`; it is
+  indistinguishable from a space in terminal output, in a browser URL, and in
+  this file. Hand-retyping such a name into `/api/sign` or a content URL fails
+  with `403` — which reads as a permissions problem and is not one. Always take
+  `storageKey` / `url` / `path` verbatim from the node JSON and URL-encode in
+  code, never by hand.
 - **Creating requires access to the destination.** `POST /api/folders`,
   `/api/nodes`, `/api/sites`, and `/api/uploads/prepare` answer `401` with no
   credential and `403` without `edit` on the target folder. The check runs
