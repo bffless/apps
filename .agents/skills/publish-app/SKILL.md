@@ -168,9 +168,14 @@ by accident.
   catalog and move to a fork without starting over. Shape:
   `{ repo, appPath, deployWorkflow, variables, secrets }`.
   Handoff: `repo: "bffless/apps"`, `appPath: "apps/handoff"`,
-  `deployWorkflow: "deploy-handoff.yml"`, `variables: ["BFFLESS_URL", "BFFLESS_PROJECT"]`,
-  `secrets: ["BFFLESS_API_KEY"]` — read straight off what `.github/workflows/deploy-<app>.yml`
-  actually consumes; don't guess.
+  `deployWorkflow: "apps/handoff/bffless/deploy-handoff.yml"`,
+  `variables: ["BFFLESS_URL", "BFFLESS_PROJECT"]`, `secrets: ["BFFLESS_API_KEY"]` — read the
+  vars and secrets straight off what the workflow actually consumes; don't guess.
+  `deployWorkflow` is normally the bare `deploy-<app>.yml` under `.github/workflows/`;
+  Handoff points at a repo path because it has no live workflow here any more (retired
+  2026-08-07 — it ships via the catalog), so its workflow is kept as a template the ejecting
+  fork copies into `.github/workflows/`. CE requires the field to be a non-empty string and
+  only displays it, so a path is legal — but say where it goes in the app's `bffless/README.md`.
 
 ## 3. The validation contract (know this before you write the manifest, not after)
 

@@ -83,4 +83,6 @@ The BFFless instance is the tenant boundary; no multi-org within one Handoff.
 - Mock-first: every `/api/*` has an MSW mock returning the same shape as the real pipeline.
 - Never stream files through a pipeline; presigned direct-to-bucket for uploads (edge body cap).
 - `/api/*` exported to `apps/handoff/bffless/` as a proxy rule set + README for forkers.
-- Its own deploy workflow `.github/workflows/deploy-handoff.yml` using `bffless/upload-artifact`.
+- No deploy workflow of its own (retired 2026-08-07): Handoff ships as an app-catalog install bundle,
+  built + released by `release.yml` → `app-bundles.yml`. The old `bffless/upload-artifact` workflow is
+  kept as a fork/eject template at `apps/handoff/bffless/deploy-handoff.yml`.
