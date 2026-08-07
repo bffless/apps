@@ -24,8 +24,16 @@ The spine below is written with a placeholder **`<app>`**. Choose the app you're
 | `<app>` | Per-app README (app-specifics live here) | Alias | Deploy workflow | First-success |
 | --- | --- | --- | --- | --- |
 | `studio` | [`apps/studio/bffless/README.md`](apps/studio/bffless/README.md) | `studio` | **Deploy Studio to BFFless** | upload a recording → see the transcript |
-| `handoff` | [`apps/handoff/bffless/README.md`](apps/handoff/bffless/README.md) | `handoff` | **Deploy Handoff to BFFless** | upload a file → see it served back |
+| `handoff` | [`apps/handoff/bffless/README.md`](apps/handoff/bffless/README.md) | `handoff` | **Deploy Handoff to BFFless** — [template](apps/handoff/bffless/deploy-handoff.yml), copy it in first (see note) | upload a file → see it served back |
 | `reader` | [`apps/reader/bffless/README.md`](apps/reader/bffless/README.md) | `reader` | **Deploy Reader to BFFless** | sign in → add a feed → see items appear |
+
+> **Handoff has no workflow in `.github/workflows/` — copy the template.** Upstream stopped shipping
+> Handoff to a live instance (it's installed from the BFFless app catalog instead), so its deploy
+> workflow ships as a template at
+> [`apps/handoff/bffless/deploy-handoff.yml`](apps/handoff/bffless/deploy-handoff.yml). In your fork:
+> `cp apps/handoff/bffless/deploy-handoff.yml .github/workflows/` and commit it — after that, step 6
+> reads exactly the same as it does for Studio and Reader. (Preferring the 1-click install? Skip this
+> guide: install Handoff from the app catalog on your instance.)
 
 Each app's README has a **"Manual setup (admin panel)"** section (the human-only, admin-panel steps —
 external connections/AI tokens, secrets, **storage backend requirements**, response-header rules) and
@@ -214,6 +222,7 @@ alias, `schemaId` remapping, any response-header rule) is in your app's
 ## 6. Deploy the app
 
 Run the app's deploy workflow from your fork: **Actions → "Deploy <App> to BFFless" → Run workflow**
+(for `handoff`, copy the template into `.github/workflows/` first — see the note under *Pick your app*)
 (or push a change under `apps/<app>/**`). It builds the app and uploads the artifact to the `<app>`
 alias using your `BFFLESS_URL` / `BFFLESS_API_KEY`. Leave the workflow's `alias: <app>` as-is — it must
 match the alias you attached the rule set to in step 5.

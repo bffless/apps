@@ -2,9 +2,10 @@ import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 // Single-shot loop: the agent picks one ready GitHub issue, implements it on its
-// own branch, pushes, and opens a PR (it does NOT merge — see prompt.md). The PR
-// triggers the existing preview-*.yml workflows, which deploy to the shared
-// handoff-preview / studio-preview alias for a live preview URL.
+// own branch, pushes, and opens a PR (it does NOT merge — see prompt.md). For Studio
+// the PR triggers preview-studio.yml, which deploys to the shared studio-preview alias
+// for a live preview URL; Handoff has no preview workflow (it ships via the app
+// catalog, not from this repo), so Handoff PRs are verified locally only.
 // Run this with: npm run sandcastle  (alias for: npx tsx .sandcastle/main.ts)
 
 await run({

@@ -63,6 +63,11 @@ touches the app's path, or manually via **Run workflow** (`workflow_dispatch`).
 To deploy from your own fork, set repo-level `BFFLESS_URL` (variable) and `BFFLESS_API_KEY`
 (secret), then run the app's workflow.
 
+**Handoff is the exception.** It is no longer deployed from this repo — it's installed from the
+BFFless app catalog (1-click), and CI here only builds and releases its install bundle. Its deploy
+workflow ships as a template at [`apps/handoff/bffless/deploy-handoff.yml`](apps/handoff/bffless/deploy-handoff.yml);
+copy it into `.github/workflows/` in your fork to take over deploys yourself.
+
 ### App backends (BFFless proxy rule sets)
 
 Apps have no server — their `/api/*` lives in a BFFless proxy rule set, exported as JSON in the app

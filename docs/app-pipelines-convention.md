@@ -12,9 +12,16 @@ Every `apps/<app>/` **must ship**:
 
 1. Its backend pipelines, as an **authored** rule set at **`apps/<app>/.bffless/proxy-rules/<set>/`**
    (`ruleset.yaml` + a `rules/` file per route + schemas + handler bodies as real `.fn.js` files),
-   which CI syncs to the project on deploy via `bffless/deploy-proxy-rules` (check drift with
-   `npx bffless rules diff`). An app may ship more than one set — Studio has `studio` +
-   `studio-blog`, Handoff has `handoff` + `handoff-rss-feed`.
+   which reach a live project one of two ways: for an app this repo deploys, CI syncs them via
+   `bffless/deploy-proxy-rules` on every merge (check drift with `npx bffless rules diff`); for an
+   app that ships through the app catalog, `scripts/build-app-bundle.mjs` compiles them into the
+   install bundle. An app may ship more than one set — Studio has `studio` + `studio-blog`, Handoff
+   has `handoff` + `handoff-rss-feed`.
+
+   > Which route an app takes is per-app and can change. Handoff was deployed from here until
+   > 2026-08-07 and is now catalog-only, so nothing in this repo syncs its rules — hence its
+   > absence from the `ruleSets` globs in `.bffless/config.json`, which drive the nightly drift
+   > check. The authoring requirement above is identical either way.
 
    No secrets baked in — credentials are referenced by name or via the project's auth relay.
 

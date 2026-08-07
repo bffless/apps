@@ -60,7 +60,7 @@ This repo ships project skills under `.claude/skills/` — including the **bffle
 11. **Open the story PR — base = BASE branch** (the epic branch, or `main` in legacy mode):
     - `gh pr create --base <BASE> --head sandcastle/issue-<N>-<short-slug> --title "SANDCASTLE: <summary> (#<N>)" --body "<what changed, why, how verified, preview-deploy result>. Refs #<N>"`
     - Include the Handoff screenshot share link if any: `📸 Screenshots (Handoff): <share-link>`.
-    - The PR triggers `preview-handoff.yml` / `preview-studio.yml`, deploying to the `*-preview` alias and commenting a live URL.
+    - For Studio, the PR triggers `preview-studio.yml`, deploying to the `studio-preview` alias and commenting a live URL. **Handoff has no preview workflow** (retired 2026-08-07 — Handoff ships via the app catalog, not from this repo), so a Handoff PR gets no preview URL: report the local verification instead.
 12. **Land it (epic mode only) — auto-merge on green CI, then close the issue:**
     - Wait for checks: `gh pr checks <pr> --watch --fail-fast`.
     - If green: `gh pr merge <pr> --squash --delete-branch`.

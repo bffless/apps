@@ -2,6 +2,7 @@
   "apiUrl": "https://admin.j5s.dev",
   "project": "bffless/apps",
   "ruleSets": [
-    "apps/*/.bffless/proxy-rules/*"
+    "apps/reader/.bffless/proxy-rules/*",
+    "apps/studio/.bffless/proxy-rules/*"
   ]
 }

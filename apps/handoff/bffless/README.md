@@ -22,7 +22,7 @@ server-side `utils.sign` key, which the sandbox never sees.
 
 > Handoff used to ship a single 3,500-line `handoff.proxy-rules.json` export, edited by hand and via
 > one-off `patch-*.mjs` scripts. That's gone (bffless/apps#231) — the authored files are now the source
-> of truth, and this repo's CI syncs them to the live project on every merge.
+> of truth, and the app-catalog install bundle is built from them.
 
 ## Push
 
@@ -349,8 +349,8 @@ Variables*; if a presigned upload 404s on a bucket path, confirm the function re
 ## Changing the rules
 
 Edit the authored files under [`../.bffless/proxy-rules/<set>/`](../.bffless/proxy-rules/) — **not**
-the live dashboard. A dashboard edit to a git-managed set is allowed but not sticky: the next CI sync
-overwrites it, and the nightly `rules diff` drift check will flag it in the meantime.
+the live dashboard. These files are the source of truth; the live sets on your instance come from
+them, via an app-catalog install/update or your own `rules push`.
 
 ```bash
 npx bffless rules validate apps/handoff/.bffless/proxy-rules/handoff   # lint manifests + handlers
@@ -359,10 +359,17 @@ pnpm --filter handoff test:run                                          # the ru
 npx bffless rules diff     apps/handoff/.bffless/proxy-rules/handoff   # local vs live
 ```
 
-Merging to `main` syncs both sets to the live project (`.github/workflows/deploy-handoff.yml`) — no
-manual export/import step. Handoff's PR previews are **frontend-only** and run against the *current
-live* rules; to try a rule change before merge, push it to a throwaway suffixed set:
-`npx bffless rules dev apps/handoff/.bffless/proxy-rules/handoff --push --name-suffix pr-<N>`.
+**Nothing is deployed from this repo on merge.** Handoff no longer has a workflow under
+`.github/workflows/` — upstream only builds and releases the install bundle, and the rules reach an
+instance when someone installs or updates Handoff from the app catalog. To see a rule change live,
+push it yourself — to a throwaway suffixed set while iterating:
+
+```bash
+npx bffless rules dev apps/handoff/.bffless/proxy-rules/handoff --push --name-suffix wip
+```
+
+To run continuous deploys from your own fork instead, copy [`deploy-handoff.yml`](deploy-handoff.yml)
+into `.github/workflows/` there — it syncs both sets and uploads the build on every merge.
 
 The rule guards in `src/lib/*Rule.test.ts` compile these files with the real `buildRuleSet` compiler
 and execute the embedded handlers, so a broken handler fails `pnpm test` — not production.

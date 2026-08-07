@@ -45,7 +45,7 @@
   "eject": {
     "repo": "bffless/apps",
     "appPath": "apps/handoff",
-    "deployWorkflow": "deploy-handoff.yml",
+    "deployWorkflow": "apps/handoff/bffless/deploy-handoff.yml",
     "variables": [
       "BFFLESS_URL",
       "BFFLESS_PROJECT"

@@ -1,6 +1,11 @@
 name: Proxy Rules Drift Check
 # `bffless rules diff` exits 0 in sync / 1 drift / 2 error — the job fails on drift so
 # the team notices manual dashboard edits to git-managed sets. Requires CE >= 0.2.0.
+#
+# Covers only the sets this repo still deploys — `.bffless/config.json` lists Reader's and
+# Studio's globs, not `apps/*`. Handoff was dropped on 2026-08-07 when its deploy workflow
+# was retired: nothing here syncs Handoff's rules any more (it installs from the app
+# catalog), so every authored change would read as permanent drift and fail this job nightly.
 on:
   schedule:
     - cron: '23 6 * * *'
