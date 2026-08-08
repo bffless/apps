@@ -90,6 +90,74 @@ export function nextAction(scenes: Scene[]): { scene: Scene; step: AutoStepId | 
   return null
 }
 
+/** One step currently executing. `sceneId: null` only for the final `'stitch'`. */
+export type ActiveStep = { sceneId: string | null; stepId: AutoStepId | 'stitch' }
+
+/**
+ * Which shared resource each step occupies. cut + assemble both `exec` on the
+ * ONE ffmpeg.wasm instance (and the MT core already saturates every CPU core,
+ * with a fixed 3 GiB heap), so they share a lane of capacity 1. refine is a
+ * server job the browser merely polls; sheets is main-thread canvas capture.
+ */
+export const STEP_LANE: Record<AutoStepId, 'ffmpeg' | 'refine' | 'sheets'> = {
+  cut: 'ffmpeg',
+  assemble: 'ffmpeg',
+  refine: 'refine',
+  sheets: 'sheets',
+}
+
+export type AutoAction =
+  | { kind: 'step'; scene: Scene; step: AutoStepId }
+  | { kind: 'markBuilt'; scene: Scene }
+  | { kind: 'stitch' }
+
+/**
+ * Every step the run may start RIGHT NOW, given what's already in flight — the
+ * parallel generalization of `nextAction`. Walks scenes in order; each scene
+ * offers at most its single `nextStep` (the intra-scene cut → sheets → refine
+ * → assemble dependency is enforced by derivation, exactly as in the
+ * sequential runner). A step is admitted only if:
+ *  - its scene has nothing in flight,
+ *  - its lane (see `STEP_LANE`) is free — counting both `inFlight` and steps
+ *    admitted earlier in this same pass (earlier scene wins the lane),
+ *  - for `refine`: every earlier scene is built or already has `refined` — the
+ *    seam-context ordering (story 03r: scene N's refine reads scene N−1's
+ *    refined tail).
+ * `markBuilt` is instant bookkeeping, never lane-capped. `stitch` is offered
+ * only when no scene work remains AND nothing is in flight (it concats every
+ * scene's saved cut).
+ */
+export function nextActions(scenes: Scene[], inFlight: ActiveStep[]): AutoAction[] {
+  const busyLanes = new Set(
+    inFlight
+      .filter((a): a is ActiveStep & { stepId: AutoStepId } => a.stepId !== 'stitch')
+      .map((a) => STEP_LANE[a.stepId]),
+  )
+  const busyScenes = new Set(inFlight.map((a) => a.sceneId))
+  const actions: AutoAction[] = []
+  let sceneWorkRemains = false
+
+  for (const [i, sc] of scenes.entries()) {
+    if (sc.status === 'built') continue
+    sceneWorkRemains = true
+    const step = nextStep(sc)
+    if (step === null) {
+      if (!busyScenes.has(sc.id)) actions.push({ kind: 'markBuilt', scene: sc })
+      continue
+    }
+    if (busyScenes.has(sc.id)) continue
+    if (step === 'refine' && !scenes.slice(0, i).every((p) => p.status === 'built' || !!p.refined))
+      continue
+    const lane = STEP_LANE[step]
+    if (busyLanes.has(lane)) continue
+    busyLanes.add(lane)
+    actions.push({ kind: 'step', scene: sc, step })
+  }
+
+  if (!sceneWorkRemains && inFlight.length === 0) actions.push({ kind: 'stitch' })
+  return actions
+}
+
 /** Per-step display status for one scene, given the live run pointer. */
 export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoStepId, AutoStepStatus> {
   const status = (step: AutoStepDef): AutoStepStatus => {

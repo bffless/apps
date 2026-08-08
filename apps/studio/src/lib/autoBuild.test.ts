@@ -6,12 +6,15 @@ import {
   STALE_RENDER_PATCH,
   nextStep,
   nextAction,
+  nextActions,
+  STEP_LANE,
   isSceneComplete,
   sceneStepStatuses,
   sceneRunStatus,
   isHaltStale,
   assembleInputsKey,
   type AutoBuildRun,
+  type ActiveStep,
 } from './autoBuild'
 
 const idle: AutoBuildRun = { status: 'idle', currentSceneId: null, currentStepId: null, error: null }
@@ -238,5 +241,82 @@ describe('assembleInputsKey', () => {
       refined: { cuts: [{ start: 3, end: 4 }], source: 'manual' },
     })
     expect(assembleInputsKey(base)).not.toBe(assembleInputsKey(refined))
+  })
+})
+
+describe('nextActions (lane scheduler)', () => {
+  // Scenes staged at a given step, built with the same fields nextStep derives from.
+  const atCut = (id: string, index: number) => scene({ id, index })
+  const atSheets = (id: string, index: number) =>
+    scene({ id, index, clipUrl: 'c', clipAudioUrl: 'a' })
+  const atRefine = (id: string, index: number) =>
+    scene({ id, index, clipUrl: 'c', clipAudioUrl: 'a', sheets: [{} as ContactSheet] })
+  const atAssemble = (id: string, index: number) =>
+    scene({
+      id, index, clipUrl: 'c', clipAudioUrl: 'a', sheets: [{} as ContactSheet],
+      refined: { cuts: [{ start: 1, end: 2 }], source: 'ai' },
+    })
+  const complete = (id: string, index: number) =>
+    scene({
+      id, index, clipUrl: 'c', clipAudioUrl: 'a', sheets: [{} as ContactSheet],
+      refined: { cuts: [], source: 'ai' }, assembledUrl: 'done',
+    })
+  const built = (id: string, index: number) => ({ ...complete(id, index), status: 'built' as const })
+
+  const stepsOf = (actions: ReturnType<typeof nextActions>) =>
+    actions.filter((a) => a.kind === 'step').map((a) => `${a.scene.id}:${a.step}`)
+
+  it('maps cut+assemble to the ffmpeg lane, refine and sheets to their own', () => {
+    expect(STEP_LANE).toEqual({ cut: 'ffmpeg', assemble: 'ffmpeg', refine: 'refine', sheets: 'sheets' })
+  })
+
+  it('offers only one ffmpeg step: assemble of the earlier scene wins over cut of a later one', () => {
+    const actions = nextActions([atAssemble('s1', 0), atCut('s2', 1)], [])
+    expect(stepsOf(actions)).toEqual(['s1:assemble'])
+  })
+
+  it('overlaps the three lanes across scenes', () => {
+    const actions = nextActions([atAssemble('s1', 0), atRefine('s2', 1), atSheets('s3', 2)], [])
+    // s2 refine is allowed: the only earlier scene (s1) already has `refined`.
+    expect(stepsOf(actions)).toEqual(['s1:assemble', 's2:refine', 's3:sheets'])
+  })
+
+  it('blocks a lane already in flight', () => {
+    const inFlight: ActiveStep[] = [{ sceneId: 's1', stepId: 'assemble' }]
+    const actions = nextActions([atAssemble('s1', 0), atCut('s2', 1), atSheets('s3', 2)], inFlight)
+    // s2's cut needs the busy ffmpeg lane; s3's sheets lane is free.
+    expect(stepsOf(actions)).toEqual(['s3:sheets'])
+  })
+
+  it('never offers a second step on a scene that already has one in flight', () => {
+    const inFlight: ActiveStep[] = [{ sceneId: 's1', stepId: 'sheets' }]
+    const actions = nextActions([atSheets('s1', 0)], inFlight)
+    expect(actions).toEqual([])
+  })
+
+  it('holds scene N refine until every earlier scene is refined or built (seam order, 03r)', () => {
+    // s1 is only at cut — its refine hasn't happened, so s2 must wait even
+    // though the refine lane is free.
+    const actions = nextActions([atCut('s1', 0), atRefine('s2', 1)], [])
+    expect(stepsOf(actions)).toEqual(['s1:cut'])
+    // Once s1 is built, s2's refine unblocks.
+    const after = nextActions([built('s1', 0), atRefine('s2', 1)], [])
+    expect(stepsOf(after)).toEqual(['s2:refine'])
+  })
+
+  it('emits markBuilt for a complete-but-pending scene', () => {
+    const actions = nextActions([complete('s1', 0)], [])
+    expect(actions).toEqual([{ kind: 'markBuilt', scene: expect.objectContaining({ id: 's1' }) }])
+  })
+
+  it('emits stitch only when all scenes are built AND nothing is in flight', () => {
+    expect(nextActions([built('s1', 0)], [])).toEqual([{ kind: 'stitch' }])
+    expect(nextActions([built('s1', 0)], [{ sceneId: null, stepId: 'stitch' }])).toEqual([])
+    expect(nextActions([built('s1', 0), atAssemble('s2', 1)], [{ sceneId: 's2', stepId: 'assemble' }])).toEqual([])
+  })
+
+  it('skips built scenes entirely', () => {
+    const actions = nextActions([built('s1', 0), atCut('s2', 1)], [])
+    expect(stepsOf(actions)).toEqual(['s2:cut'])
   })
 })
