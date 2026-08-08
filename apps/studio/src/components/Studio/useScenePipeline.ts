@@ -1336,10 +1336,10 @@ export function useScenePipeline() {
   // Throw out the refinement and revert to the director's first pass.
   const clearRefinement = useCallback(
     (id: string) => {
-      setSceneError(null)
+      setSceneErrorFor(id, null)
       patchSceneEdit(id, { refined: null, promptJobId: undefined })
     },
-    [patchSceneEdit],
+    [patchSceneEdit, setSceneErrorFor],
   )
 
   // ---- Scene build loop -----------------------------------------------------
