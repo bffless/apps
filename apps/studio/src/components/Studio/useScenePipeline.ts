@@ -33,6 +33,7 @@ import { createBlobCache } from '../../lib/blobCache'
 import { fetchWithReauth } from '../../lib/auth'
 import { presignedUpload } from '../../lib/upload'
 import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
+import { createSemaphore } from '../../lib/semaphore'
 import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
 import {
@@ -140,6 +141,13 @@ function measureVideoDuration(url: string): Promise<number> {
  * `useSession.ts`'s `inFlight` dedupe.
  */
 let stepInFlight = false
+
+/**
+ * One upload at a time across every concurrent build step — parallel uploads
+ * trip the dev proxy's keep-alive sockets (the 502 lesson `sliceScene` and
+ * `processAll` already encode). Module-level so all hook instances share it.
+ */
+const uploadSlot = createSemaphore(1)
 
 /**
  * Turn whatever a failed step threw into a readable message. RTK Query's
@@ -301,13 +309,33 @@ export function useScenePipeline() {
   // The scene whose assembled cut is currently uploading to the bucket (story 03g
   // phase 2 — per-scene assemble & save). Transient.
   const [savingSceneCutId, setSavingSceneCutId] = useState<string | null>(null)
-  // Per-scene refiner (story 03c) busy flags + last error. Transient: the scene
-  // being captured-for, the scene being refined, and any error from either.
-  const [sheetingId, setSheetingId] = useState<string | null>(null)
-  const [refiningId, setRefiningId] = useState<string | null>(null)
-  // The scene currently being cut into its own video clip (story 03g). Transient.
-  const [slicingId, setSlicingId] = useState<string | null>(null)
+  // Per-scene busy sets (story 03u): auto build runs steps on DIFFERENT scenes
+  // concurrently, so "busy" is per scene now. Guards stay belt-and-braces — the
+  // scheduler already never double-fires a scene/lane.
+  const [sheetingIds, setSheetingIds] = useState<ReadonlySet<string>>(new Set())
+  const [refiningIds, setRefiningIds] = useState<ReadonlySet<string>>(new Set())
+  const [slicingIds, setSlicingIds] = useState<ReadonlySet<string>>(new Set())
+  // Last error per scene, plus the legacy "most recent" scalar the manual
+  // editor still shows. The orchestrator reads the per-scene map, so one
+  // scene's stale error can never halt another scene's attempt.
+  const [sceneErrors, setSceneErrors] = useState<Record<string, string>>({})
   const [sceneError, setSceneError] = useState<string | null>(null)
+
+  const toggleId = (set: ReadonlySet<string>, id: string, on: boolean): ReadonlySet<string> => {
+    const next = new Set(set)
+    if (on) next.add(id)
+    else next.delete(id)
+    return next
+  }
+  const setSceneErrorFor = useCallback((id: string, msg: string | null) => {
+    setSceneErrors((prev) => {
+      const next = { ...prev }
+      if (msg) next[id] = msg
+      else delete next[id]
+      return next
+    })
+    setSceneError(msg)
+  }, [])
   // Per-source processing (story 09b): which source id is currently running its
   // upload → extract → transcribe pipeline. Transient — fine to lose on reload.
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -469,8 +497,8 @@ export function useScenePipeline() {
     async (sceneId: string, jobId: string) => {
       if (pollsInFlight.has(jobId)) return
       pollsInFlight.add(jobId)
-      setRefiningId(sceneId)
-      setSceneError(null)
+      setRefiningIds((s) => toggleId(s, sceneId, true))
+      setSceneErrorFor(sceneId, null)
       try {
         const { result } = await pollJob(jobId)
         const scene = scenes.find((s) => s.id === sceneId)
@@ -484,14 +512,14 @@ export function useScenePipeline() {
           promptJobId: jobId,
         })
       } catch (e) {
-        setSceneError(stageError(e))
+        setSceneErrorFor(sceneId, stageError(e))
         patchScene(sceneId, { refineJobId: null })
       } finally {
         pollsInFlight.delete(jobId)
-        setRefiningId(null)
+        setRefiningIds((s) => toggleId(s, sceneId, false))
       }
     },
-    [pollJob, scenes, patchScene, patchSceneEdit],
+    [pollJob, scenes, patchScene, patchSceneEdit, setSceneErrorFor],
   )
 
   /**
@@ -1100,12 +1128,12 @@ export function useScenePipeline() {
   // clip. Separate from the whole-clip prep sheets.
   const generateSceneSheets = useCallback(
     async (id: string) => {
-      if (sheetingId || refiningId) return
+      if (sheetingIds.has(id) || refiningIds.has(id)) return
       const scene = scenes.find((s) => s.id === id)
       const src = scene && sourceForScene(sources, scene)
       if (!scene || !src?.sourceUrl) return
-      setSheetingId(id)
-      setSceneError(null)
+      setSheetingIds((s) => toggleId(s, id, true))
+      setSceneErrorFor(id, null)
       // Capture frames off a SAME-ORIGIN blob: URL, never the cross-origin signed
       // bucket URL directly. A `<video crossOrigin>` media read against the GCS
       // object fails CORS (the element's range/preflight isn't satisfied even
@@ -1123,19 +1151,19 @@ export function useScenePipeline() {
           const ext = blob.type === 'image/png' ? 'png' : 'jpg'
           const name = `scene-${scene.index + 1}-sheet-${String(sheet.index + 1).padStart(2, '0')}.${ext}`
           const sheetFile = new File([blob], name, { type: blob.type })
-          const { url } = await uploadReq({ file: sheetFile, kind: 'thumbnails' }).unwrap()
+          const { url } = await uploadSlot.run(() => uploadReq({ file: sheetFile, kind: 'thumbnails' }).unwrap())
           // Persist URL-only — drop the base64 blob so localStorage stays small.
           uploaded.push({ ...sheet, url, dataUrl: '' })
         }
         patchScene(id, { sheets: uploaded })
       } catch (e) {
-        setSceneError(stageError(e))
+        setSceneErrorFor(id, stageError(e))
       } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl)
-        setSheetingId(null)
+        setSheetingIds((s) => toggleId(s, id, false))
       }
     },
-    [sheetingId, refiningId, scenes, sources, sourceBlobs, uploadReq, patchScene],
+    [sheetingIds, refiningIds, scenes, sources, sourceBlobs, uploadReq, patchScene, setSceneErrorFor],
   )
 
   // Button 2: hand the scene's word timings + the director's cutting brief +
@@ -1144,11 +1172,11 @@ export function useScenePipeline() {
   // cuts are untouched).
   const refineScene = useCallback(
     async (id: string) => {
-      if (sheetingId || refiningId) return
+      if (sheetingIds.has(id) || refiningIds.has(id)) return
       const scene = scenes.find((s) => s.id === id)
       if (!scene) return
-      setRefiningId(id)
-      setSceneError(null)
+      setRefiningIds((s) => toggleId(s, id, true))
+      setSceneErrorFor(id, null)
       try {
         // Belt-and-braces with the SceneRefinePanel gate (story 03k): the refiner
         // is required to listen, so refining an un-cut scene is an error, not a
@@ -1195,11 +1223,22 @@ export function useScenePipeline() {
         patchScene(id, { refineJobId: jobId })
         await completeRefineJob(id, jobId)
       } catch (e) {
-        setSceneError(stageError(e))
-        setRefiningId(null)
+        setSceneErrorFor(id, stageError(e))
+        setRefiningIds((s) => toggleId(s, id, false))
       }
     },
-    [sheetingId, refiningId, scenes, sources, deadSpace, direction, refineSceneReq, patchScene, completeRefineJob],
+    [
+      sheetingIds,
+      refiningIds,
+      scenes,
+      sources,
+      deadSpace,
+      direction,
+      refineSceneReq,
+      patchScene,
+      completeRefineJob,
+      setSceneErrorFor,
+    ],
   )
 
   // Creator steering for the refine call (story 03l). Both are INPUT-layer scene
@@ -1260,12 +1299,12 @@ export function useScenePipeline() {
   // overwrites both.
   const sliceScene = useCallback(
     async (sceneId: string) => {
-      if (slicingId) return
+      if (slicingIds.has(sceneId)) return
       const scene = scenes.find((s) => s.id === sceneId)
       const src = scene && sourceForScene(sources, scene)
       if (!scene || !src) return
-      setSlicingId(sceneId)
-      setSceneError(null)
+      setSlicingIds((s) => toggleId(s, sceneId, true))
+      setSceneErrorFor(sceneId, null)
       try {
         if (!src.audioUrl) throw new Error('No extracted audio to cut the scene soundtrack from.')
         if (!src.sourceUrl) throw new Error('No source clip available to cut from.')
@@ -1280,18 +1319,18 @@ export function useScenePipeline() {
         })
         const blob = await ffmpegSlice({ source, command })
         const clip = new File([blob], `scene-${scene.index}.mp4`, { type: 'video/mp4' })
-        const { url } = await uploadReq({ file: clip, kind: 'scene-clip' }).unwrap()
+        const { url } = await uploadSlot.run(() => uploadReq({ file: clip, kind: 'scene-clip' }).unwrap())
         const wav = await sliceAudioWav(await audioBlobs.get(src.audioUrl), scene.start, scene.end)
         const audioFile = new File([wav], `scene-${scene.index}-audio.wav`, { type: 'audio/wav' })
-        const { url: clipAudioUrl } = await uploadReq({ file: audioFile, kind: 'audio' }).unwrap()
+        const { url: clipAudioUrl } = await uploadSlot.run(() => uploadReq({ file: audioFile, kind: 'audio' }).unwrap())
         patchSceneEdit(sceneId, { clipUrl: url, clipAudioUrl })
       } catch (e) {
-        setSceneError(stageError(e))
+        setSceneErrorFor(sceneId, stageError(e))
       } finally {
-        setSlicingId(null)
+        setSlicingIds((s) => toggleId(s, sceneId, false))
       }
     },
-    [slicingId, scenes, sources, sourceBlobs, audioBlobs, uploadReq, patchSceneEdit],
+    [slicingIds, scenes, sources, sourceBlobs, audioBlobs, uploadReq, patchSceneEdit, setSceneErrorFor],
   )
 
   // Throw out the refinement and revert to the director's first pass.
@@ -1307,14 +1346,13 @@ export function useScenePipeline() {
 
   const markBuilt = useCallback(
     (id: string) => {
-      const next = scenes.map((s) =>
-        s.id === id ? { ...s, status: 'built' as const } : s,
-      )
-      dispatch(setScenes(next))
-      const stillPending = next.find((s) => s.status === 'pending')
+      // Targeted patch, NOT a wholesale setScenes — a concurrent step's write
+      // to another scene must survive this (story 03u).
+      patchScene(id, { status: 'built' })
+      const stillPending = scenes.find((s) => s.id !== id && s.status === 'pending')
       if (stillPending) dispatch(setSelected(stillPending.id))
     },
-    [scenes, dispatch],
+    [scenes, patchScene, dispatch],
   )
 
   // Flip a scene's built flag both ways — the producer's own "this one's good to
@@ -1504,7 +1542,7 @@ export function useScenePipeline() {
       setSavingFinalCut(true)
       try {
         const file = new File([blob], 'studio-final-cut.mp4', { type: blob.type || 'video/mp4' })
-        const { url } = await uploadReq({ file, kind: 'export' }).unwrap()
+        const { url } = await uploadSlot.run(() => uploadReq({ file, kind: 'export' }).unwrap())
         dispatch(setFinalCutUrl(url))
         return url
       } finally {
@@ -1526,7 +1564,7 @@ export function useScenePipeline() {
       setSavingSceneCutId(sceneId)
       try {
         const file = new File([blob], `scene-${sceneId}.mp4`, { type: blob.type || 'video/mp4' })
-        const { url } = await uploadReq({ file, kind: 'export' }).unwrap()
+        const { url } = await uploadSlot.run(() => uploadReq({ file, kind: 'export' }).unwrap())
         patchScene(sceneId, { assembledUrl: url, status: 'built' })
         return url
       } finally {
@@ -1561,9 +1599,10 @@ export function useScenePipeline() {
     savingFinalCut,
     savingSceneCutId,
     running,
-    sheetingId,
-    refiningId,
-    slicingId,
+    sheetingIds,
+    refiningIds,
+    slicingIds,
+    sceneErrors,
     sceneError,
     ready,
     sourcesReady,

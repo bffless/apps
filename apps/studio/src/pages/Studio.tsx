@@ -690,9 +690,9 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                 {selected && (
                   <SceneRefinePanel
                     scene={selected}
-                    slicing={pipe.slicingId === selected.id}
-                    sheeting={pipe.sheetingId === selected.id}
-                    refining={pipe.refiningId === selected.id}
+                    slicing={pipe.slicingIds.has(selected.id)}
+                    sheeting={pipe.sheetingIds.has(selected.id)}
+                    refining={pipe.refiningIds.has(selected.id)}
                     direction={direction}
                     error={pipe.sceneError}
                     onSlice={() => pipe.sliceScene(selected.id)}
