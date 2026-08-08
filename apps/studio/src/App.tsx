@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { StudioProjects } from './pages/StudioProjects'
 import { StudioProjectGuard } from './pages/StudioProjectGuard'
+import { BrowserSupportBanner } from './components/BrowserSupportBanner'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -20,6 +21,7 @@ function Shell() {
   return (
     <div className="flex min-h-svh flex-col">
       <ScrollToTop />
+      <BrowserSupportBanner />
       <header className="sticky top-0 z-40 border-b rule bg-surface/85 backdrop-blur">
         <div className="container-page flex h-14 items-center">
           <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-[-0.01em] text-ink no-underline">
