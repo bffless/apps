@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import reducer, {
   startAutoBuild,
   pauseAutoBuild,
+  coerceAutoBuildPaused,
   resumeAutoBuild,
   stopAutoBuild,
   haltAutoBuild,
@@ -77,5 +78,12 @@ describe('autoBuild reducers', () => {
   it('complete → done', () => {
     const s = reducer(reducer(initial, startAutoBuild()), completeAutoBuild())
     expect(s.working.p1.autoBuild.status).toBe('done')
+  })
+
+  it('coerceAutoBuildPaused pauses a rehydrated running run and drops stale active entries', () => {
+    let s = reducer(initial, startAutoBuild())
+    s = reducer(s, autoStepStarted({ sceneId: 's1', stepId: 'assemble' }))
+    s = reducer(s, coerceAutoBuildPaused())
+    expect(s.working.p1.autoBuild).toEqual({ status: 'paused', active: [], halt: null })
   })
 })

@@ -550,6 +550,14 @@ const studioSlice = createSlice({
       const w = active(state); if (!w) return
       if (w.autoBuild.status === 'running') w.autoBuild.status = 'paused'
     },
+    /** Rehydration coercion (story 03u): a persisted `running` run is not
+     *  actually executing — pause it AND drop its stale `active` set (nothing
+     *  launched this session; the in-memory in-flight map is the only truth). */
+    coerceAutoBuildPaused(state) {
+      const w = active(state); if (!w) return
+      if (w.autoBuild.status === 'running') w.autoBuild.status = 'paused'
+      w.autoBuild.active = []
+    },
     /** Resume a paused or halted run; clears the halt. */
     resumeAutoBuild(state) {
       const w = active(state); if (!w) return
@@ -659,6 +667,7 @@ export const {
   reorderSources,
   startAutoBuild,
   pauseAutoBuild,
+  coerceAutoBuildPaused,
   resumeAutoBuild,
   stopAutoBuild,
   haltAutoBuild,

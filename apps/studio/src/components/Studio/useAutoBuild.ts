@@ -33,6 +33,7 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks'
 import {
   startAutoBuild,
   pauseAutoBuild,
+  coerceAutoBuildPaused,
   resumeAutoBuild,
   stopAutoBuild,
   haltAutoBuild,
@@ -158,7 +159,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
     // in flight — coerce it to `paused` and wait for an explicit Resume. `liveRef`
     // is only set by Start/Resume in THIS session, so this never fires mid-run.
     if (!liveRef.current) {
-      dispatch(pauseAutoBuild())
+      dispatch(coerceAutoBuildPaused())
       return
     }
     const p = pipeRef.current
