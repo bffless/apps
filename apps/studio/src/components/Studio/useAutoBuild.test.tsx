@@ -116,7 +116,7 @@ function Harness({
   return (
     <div>
       <span data-testid="status">{run.status}</span>
-      <span data-testid="error">{run.error ?? ''}</span>
+      <span data-testid="error">{run.halt?.message ?? ''}</span>
       <button onClick={start}>start</button>
       <button onClick={resume}>resume</button>
     </div>
@@ -159,8 +159,11 @@ describe('useAutoBuild — a save that fails on the assemble step', () => {
     await click('start')
     await waitFor(() => expect(status()).toBe('halted'))
     expect(error()).toContain('Failed to fetch')
-    expect(runOf(store).currentSceneId).toBe('s1')
-    expect(runOf(store).currentStepId).toBe('assemble')
+    expect(runOf(store).halt).toEqual({
+      sceneId: 's1',
+      stepId: 'assemble',
+      message: expect.stringContaining('Failed to fetch'),
+    })
 
     // The producer fixes scene 1 by hand: SceneAssembleBar → Save this scene,
     // which is exactly this durable write.

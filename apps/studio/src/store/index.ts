@@ -78,12 +78,36 @@ const migrations = {
     )
     return { ...rest, working }
   },
+  // v3 — parallel auto build (story 03u): the run's single pointer
+  // (`currentSceneId`/`currentStepId`) becomes the `active` set, and the string
+  // `error` becomes the structured `halt`. A rehydrated run is never actually
+  // executing (the orchestrator coerces `running` → `paused`), so `active`
+  // migrates to empty; a persisted halt keeps its subject so the board still
+  // points at the failing step.
+  3: (state: any) => {
+    if (!state) return state
+    const working = Object.fromEntries(
+      Object.entries(state.working ?? {}).map(([id, w]: [string, any]) => {
+        const run = w?.autoBuild ?? {}
+        const halt =
+          run.status === 'halted'
+            ? {
+                sceneId: run.currentSceneId ?? null,
+                stepId: run.currentStepId ?? 'assemble',
+                message: run.error ?? 'Halted',
+              }
+            : null
+        return [id, { ...w, autoBuild: { status: run.status ?? 'idle', active: [], halt } }]
+      }),
+    )
+    return { ...state, working }
+  },
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 const persistConfig = {
   key: 'studio-projects', // new key → clean slate; old `studio` localStorage is ignored
-  version: 2,
+  version: 3,
   storage,
   migrate: createMigrate(migrations, { debug: false }),
 }

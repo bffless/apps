@@ -44,14 +44,14 @@ function Spinner({ className = '' }: { className?: string }) {
  */
 export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onPause, onResume, onStop }: Props) {
   const builtCount = scenes.filter((s) => s.status === 'built').length
-  const activeIndex = scenes.findIndex((s) => s.id === run.currentSceneId)
-  // The final stitch has no active scene (currentSceneId is null) — give it its own
-  // headline + spinner so the run doesn't look frozen / off-by-one while it renders.
-  const stitching = run.status === 'running' && run.currentStepId === 'stitch'
+  const activeSceneIds = new Set(run.active.map((a) => a.sceneId))
+  // The final stitch has no scene — give it its own headline + spinner.
+  const stitching = run.status === 'running' && run.active.some((a) => a.stepId === 'stitch')
+  const runningCount = run.active.filter((a) => a.stepId !== 'stitch').length
   const headline = stitching
     ? 'Stitching the final cut…'
     : run.status === 'running'
-      ? `Running · Scene ${activeIndex >= 0 ? activeIndex + 1 : Math.min(builtCount + 1, scenes.length)} / ${scenes.length}`
+      ? `Running · ${runningCount || 1} step${runningCount === 1 ? '' : 's'} · ${builtCount} / ${scenes.length} built`
       : run.status === 'paused'
         ? '⏸ Paused'
         : run.status === 'halted'
@@ -94,15 +94,15 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
         </div>
       </div>
 
-      {run.status === 'halted' && run.error && (
-        <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink">{run.error}</p>
+      {run.status === 'halted' && run.halt && (
+        <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink">{run.halt.message}</p>
       )}
 
       <ul className="mt-4 flex flex-col gap-2">
         {scenes.map((scene, i) => {
           const rolled = sceneRunStatus(scene, run)
           const steps = sceneStepStatuses(scene, run)
-          const expanded = scene.id === run.currentSceneId || scene.id === selectedId
+          const expanded = activeSceneIds.has(scene.id) || scene.id === selectedId
           return (
             <li key={scene.id} className="rounded-md border border-line">
               <button

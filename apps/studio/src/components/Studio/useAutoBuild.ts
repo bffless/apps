@@ -26,7 +26,8 @@ import {
   haltAutoBuild,
   clearAutoHalt,
   completeAutoBuild,
-  setAutoPointer,
+  autoStepStarted,
+  autoStepFinished,
   selectActive,
 } from '../../store/studioSlice'
 import {
@@ -35,6 +36,7 @@ import {
   assembleInputsKey,
   type AutoStepId,
   type AutoBuildRun,
+  type ActiveStep,
 } from '../../lib/autoBuild'
 import { assembleSceneBlob, assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { autoBuildError } from './useScenePipeline'
@@ -148,10 +150,11 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
     // No pending scenes → stitch the final cut once, then finish.
     if (!action) {
       inFlightRef.current = true
+      const a: ActiveStep = { sceneId: null, stepId: 'stitch' }
+      dispatch(autoStepStarted(a))
       ;(async () => {
         try {
           if (!p.finalCutUrl) {
-            dispatch(setAutoPointer({ sceneId: null, stepId: 'stitch' }))
             const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
             await p.saveFinalCut(blob)
           }
@@ -159,8 +162,9 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
           dispatch(completeAutoBuild())
         } catch (e) {
           liveRef.current = false
-          dispatch(haltAutoBuild(autoBuildError(e)))
+          dispatch(haltAutoBuild({ ...a, message: autoBuildError(e) }))
         } finally {
+          dispatch(autoStepFinished(a))
           inFlightRef.current = false
           bump()
         }
@@ -175,7 +179,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
     if (attempted && attempted.sceneId === scene.id && attempted.stepId === step && p.sceneError) {
       attemptRef.current = null
       liveRef.current = false
-      dispatch(haltAutoBuild(p.sceneError))
+      dispatch(haltAutoBuild({ sceneId: scene.id, stepId: step, message: p.sceneError }))
       return
     }
 
@@ -187,7 +191,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
 
     attemptRef.current = { sceneId: scene.id, stepId: step }
     inFlightRef.current = true
-    dispatch(setAutoPointer({ sceneId: scene.id, stepId: step }))
+    dispatch(autoStepStarted({ sceneId: scene.id, stepId: step }))
     ;(async () => {
       try {
         await runStep(step, scene, p, fetchBytes, renderRef)
@@ -199,8 +203,9 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
         // `sceneError` happens to be lying around instead of retrying (issue #220).
         attemptRef.current = null
         liveRef.current = false
-        dispatch(haltAutoBuild(autoBuildError(e)))
+        dispatch(haltAutoBuild({ sceneId: scene.id, stepId: step, message: autoBuildError(e) }))
       } finally {
+        dispatch(autoStepFinished({ sceneId: scene.id, stepId: step }))
         inFlightRef.current = false
         bump()
       }

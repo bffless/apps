@@ -41,13 +41,15 @@ export type AutoStepStatus = 'pending' | 'running' | 'done' | 'error'
  *  `halted` = stopped on an error (resumable after the cause is fixed). */
 export type AutoRunStatus = 'idle' | 'running' | 'paused' | 'halted' | 'done'
 
-/** The run pointer, persisted in the studio slice. `currentStepId` is widened with
- *  'stitch' for the project-level final concat that runs after the last scene. */
+export type AutoHalt = ActiveStep & { message: string }
+
+/** The run state, persisted in the studio slice. `active` is every step
+ *  currently executing (the parallel runner's in-flight set, mirrored for the
+ *  board); `halt` names the ONE failed step that stopped the run. */
 export type AutoBuildRun = {
   status: AutoRunStatus
-  currentSceneId: string | null
-  currentStepId: AutoStepId | 'stitch' | null
-  error: string | null
+  active: ActiveStep[]
+  halt: AutoHalt | null
 }
 
 export type AutoStepDef = {
@@ -158,12 +160,14 @@ export function nextActions(scenes: Scene[], inFlight: ActiveStep[]): AutoAction
   return actions
 }
 
-/** Per-step display status for one scene, given the live run pointer. */
+/** Per-step display status for one scene, given the live run state. */
 export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoStepId, AutoStepStatus> {
   const status = (step: AutoStepDef): AutoStepStatus => {
     if (step.isDone(scene)) return 'done'
-    if (run.currentSceneId === scene.id && run.currentStepId === step.id)
-      return run.status === 'halted' ? 'error' : run.status === 'running' ? 'running' : 'pending'
+    if (run.status === 'halted' && run.halt?.sceneId === scene.id && run.halt.stepId === step.id)
+      return 'error'
+    if (run.status === 'running' && run.active.some((a) => a.sceneId === scene.id && a.stepId === step.id))
+      return 'running'
     return 'pending'
   }
   return Object.fromEntries(AUTO_STEPS.map((step) => [step.id, status(step)])) as Record<
@@ -175,7 +179,7 @@ export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoS
 /**
  * Is this halt pointing at work that has since been done?
  *
- * A halt is a claim about ONE step: "`currentStepId` on `currentSceneId` failed".
+ * A halt is a claim about ONE step: "`halt.stepId` on `halt.sceneId` failed".
  * Like every other Auto Build reading, that claim is only as durable as the scene
  * state underneath it — and the producer can satisfy the step by hand (assemble +
  * save the scene from `SceneAssembleBar`, cut it, mark it built). Once they have,
@@ -183,22 +187,20 @@ export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoS
  * `⏸ Paused` rather than keep flying `✗ Halted` and a stale network error over a
  * scene that now reads `✓ built` (issue #220). The runner clears it on sight.
  *
- * This is the derived-state rule the module doc promises, applied to the run
- * pointer too — no second source of truth, not even for failure.
+ * This is the derived-state rule the module doc promises, applied to the failed
+ * step too — no second source of truth, not even for failure.
  */
 export function isHaltStale(
   scenes: Scene[],
   run: AutoBuildRun,
   finalCutUrl: string | null,
 ): boolean {
-  if (run.status !== 'halted') return false
-  // The final stitch has no scene — its durable output is the saved final cut,
-  // which FinalCutBar can produce by hand just like a scene's.
-  if (run.currentStepId === 'stitch') return !!finalCutUrl
-  const scene = scenes.find((s) => s.id === run.currentSceneId)
+  if (run.status !== 'halted' || !run.halt) return false
+  if (run.halt.stepId === 'stitch') return !!finalCutUrl
+  const scene = scenes.find((s) => s.id === run.halt!.sceneId)
   if (!scene) return false
   if (scene.status === 'built') return true
-  const step = AUTO_STEPS.find((s) => s.id === run.currentStepId)
+  const step = AUTO_STEPS.find((s) => s.id === run.halt!.stepId)
   return !!step && step.isDone(scene)
 }
 
@@ -220,9 +222,7 @@ export function sceneRunStatus(
   run: AutoBuildRun,
 ): 'built' | 'error' | 'running' | 'pending' {
   if (scene.status === 'built') return 'built'
-  if (run.currentSceneId === scene.id) {
-    if (run.status === 'halted') return 'error'
-    if (run.status === 'running') return 'running'
-  }
+  if (run.status === 'halted' && run.halt?.sceneId === scene.id) return 'error'
+  if (run.status === 'running' && run.active.some((a) => a.sceneId === scene.id)) return 'running'
   return 'pending'
 }
