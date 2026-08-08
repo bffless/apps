@@ -41,13 +41,15 @@ export type AutoStepStatus = 'pending' | 'running' | 'done' | 'error'
  *  `halted` = stopped on an error (resumable after the cause is fixed). */
 export type AutoRunStatus = 'idle' | 'running' | 'paused' | 'halted' | 'done'
 
-/** The run pointer, persisted in the studio slice. `currentStepId` is widened with
- *  'stitch' for the project-level final concat that runs after the last scene. */
+export type AutoHalt = ActiveStep & { message: string }
+
+/** The run state, persisted in the studio slice. `active` is every step
+ *  currently executing (the parallel runner's in-flight set, mirrored for the
+ *  board); `halt` names the ONE failed step that stopped the run. */
 export type AutoBuildRun = {
   status: AutoRunStatus
-  currentSceneId: string | null
-  currentStepId: AutoStepId | 'stitch' | null
-  error: string | null
+  active: ActiveStep[]
+  halt: AutoHalt | null
 }
 
 export type AutoStepDef = {
@@ -75,27 +77,82 @@ export function isSceneComplete(scene: Scene): boolean {
   return nextStep(scene) === null
 }
 
+/** One step currently executing. `sceneId: null` only for the final `'stitch'`. */
+export type ActiveStep = { sceneId: string | null; stepId: AutoStepId | 'stitch' }
+
 /**
- * What auto mode should do next across the whole run:
- *  - `{ scene, step }` — run `step` on the first not-yet-built scene, OR
- *  - `{ scene, step: null }` — that scene's steps are all done; mark it built, OR
- *  - `null` — no pending scenes remain; do the final stitch / finish.
- * Built scenes (`status === 'built'`) are skipped.
+ * Which shared resource each step occupies. cut + assemble both `exec` on the
+ * ONE ffmpeg.wasm instance (and the MT core already saturates every CPU core,
+ * with a fixed 3 GiB heap), so they share a lane of capacity 1. refine is a
+ * server job the browser merely polls; sheets is main-thread canvas capture.
  */
-export function nextAction(scenes: Scene[]): { scene: Scene; step: AutoStepId | null } | null {
-  for (const scene of scenes) {
-    if (scene.status === 'built') continue
-    return { scene, step: nextStep(scene) }
-  }
-  return null
+export const STEP_LANE: Record<AutoStepId, 'ffmpeg' | 'refine' | 'sheets'> = {
+  cut: 'ffmpeg',
+  assemble: 'ffmpeg',
+  refine: 'refine',
+  sheets: 'sheets',
 }
 
-/** Per-step display status for one scene, given the live run pointer. */
+export type AutoAction =
+  | { kind: 'step'; scene: Scene; step: AutoStepId }
+  | { kind: 'markBuilt'; scene: Scene }
+  | { kind: 'stitch' }
+
+/**
+ * Every step the run may start RIGHT NOW, given what's already in flight.
+ * Walks scenes in order; each scene
+ * offers at most its single `nextStep` (the intra-scene cut → sheets → refine
+ * → assemble dependency is enforced by derivation, exactly as in the
+ * sequential runner). A step is admitted only if:
+ *  - its scene has nothing in flight,
+ *  - its lane (see `STEP_LANE`) is free — counting both `inFlight` and steps
+ *    admitted earlier in this same pass (earlier scene wins the lane),
+ *  - for `refine`: every earlier scene is built or already has `refined` — the
+ *    seam-context ordering (story 03r: scene N's refine reads scene N−1's
+ *    refined tail).
+ * `markBuilt` is instant bookkeeping, never lane-capped. `stitch` is offered
+ * only when no scene work remains AND nothing is in flight (it concats every
+ * scene's saved cut).
+ */
+export function nextActions(scenes: Scene[], inFlight: ActiveStep[]): AutoAction[] {
+  const busyLanes = new Set(
+    inFlight
+      .filter((a): a is ActiveStep & { stepId: AutoStepId } => a.stepId !== 'stitch')
+      .map((a) => STEP_LANE[a.stepId]),
+  )
+  const busyScenes = new Set(inFlight.map((a) => a.sceneId))
+  const actions: AutoAction[] = []
+  let sceneWorkRemains = false
+
+  for (const [i, sc] of scenes.entries()) {
+    if (sc.status === 'built') continue
+    sceneWorkRemains = true
+    const step = nextStep(sc)
+    if (step === null) {
+      if (!busyScenes.has(sc.id)) actions.push({ kind: 'markBuilt', scene: sc })
+      continue
+    }
+    if (busyScenes.has(sc.id)) continue
+    if (step === 'refine' && !scenes.slice(0, i).every((p) => p.status === 'built' || !!p.refined))
+      continue
+    const lane = STEP_LANE[step]
+    if (busyLanes.has(lane)) continue
+    busyLanes.add(lane)
+    actions.push({ kind: 'step', scene: sc, step })
+  }
+
+  if (!sceneWorkRemains && inFlight.length === 0) actions.push({ kind: 'stitch' })
+  return actions
+}
+
+/** Per-step display status for one scene, given the live run state. */
 export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoStepId, AutoStepStatus> {
   const status = (step: AutoStepDef): AutoStepStatus => {
     if (step.isDone(scene)) return 'done'
-    if (run.currentSceneId === scene.id && run.currentStepId === step.id)
-      return run.status === 'halted' ? 'error' : run.status === 'running' ? 'running' : 'pending'
+    if (run.status === 'halted' && run.halt?.sceneId === scene.id && run.halt.stepId === step.id)
+      return 'error'
+    if (run.status === 'running' && run.active.some((a) => a.sceneId === scene.id && a.stepId === step.id))
+      return 'running'
     return 'pending'
   }
   return Object.fromEntries(AUTO_STEPS.map((step) => [step.id, status(step)])) as Record<
@@ -107,7 +164,7 @@ export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoS
 /**
  * Is this halt pointing at work that has since been done?
  *
- * A halt is a claim about ONE step: "`currentStepId` on `currentSceneId` failed".
+ * A halt is a claim about ONE step: "`halt.stepId` on `halt.sceneId` failed".
  * Like every other Auto Build reading, that claim is only as durable as the scene
  * state underneath it — and the producer can satisfy the step by hand (assemble +
  * save the scene from `SceneAssembleBar`, cut it, mark it built). Once they have,
@@ -115,22 +172,20 @@ export function sceneStepStatuses(scene: Scene, run: AutoBuildRun): Record<AutoS
  * `⏸ Paused` rather than keep flying `✗ Halted` and a stale network error over a
  * scene that now reads `✓ built` (issue #220). The runner clears it on sight.
  *
- * This is the derived-state rule the module doc promises, applied to the run
- * pointer too — no second source of truth, not even for failure.
+ * This is the derived-state rule the module doc promises, applied to the failed
+ * step too — no second source of truth, not even for failure.
  */
 export function isHaltStale(
   scenes: Scene[],
   run: AutoBuildRun,
   finalCutUrl: string | null,
 ): boolean {
-  if (run.status !== 'halted') return false
-  // The final stitch has no scene — its durable output is the saved final cut,
-  // which FinalCutBar can produce by hand just like a scene's.
-  if (run.currentStepId === 'stitch') return !!finalCutUrl
-  const scene = scenes.find((s) => s.id === run.currentSceneId)
+  if (run.status !== 'halted' || !run.halt) return false
+  if (run.halt.stepId === 'stitch') return !!finalCutUrl
+  const scene = scenes.find((s) => s.id === run.halt!.sceneId)
   if (!scene) return false
   if (scene.status === 'built') return true
-  const step = AUTO_STEPS.find((s) => s.id === run.currentStepId)
+  const step = AUTO_STEPS.find((s) => s.id === run.halt!.stepId)
   return !!step && step.isDone(scene)
 }
 
@@ -152,9 +207,7 @@ export function sceneRunStatus(
   run: AutoBuildRun,
 ): 'built' | 'error' | 'running' | 'pending' {
   if (scene.status === 'built') return 'built'
-  if (run.currentSceneId === scene.id) {
-    if (run.status === 'halted') return 'error'
-    if (run.status === 'running') return 'running'
-  }
+  if (run.status === 'halted' && run.halt?.sceneId === scene.id) return 'error'
+  if (run.status === 'running' && run.active.some((a) => a.sceneId === scene.id)) return 'running'
   return 'pending'
 }

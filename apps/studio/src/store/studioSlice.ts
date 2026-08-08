@@ -18,7 +18,7 @@ import { STAGE_DEFS, PER_VIDEO_STAGES, type StageId, type StageStatus } from '..
 import { nextUntitledName, type ProjectMeta } from '../lib/projects'
 import { reconcileIndex } from '../lib/projectSync'
 import type { Scene } from '../lib/scenes'
-import type { AutoBuildRun } from '../lib/autoBuild'
+import type { AutoBuildRun, AutoHalt, ActiveStep } from '../lib/autoBuild'
 import type { VideoDescription } from '../lib/describe'
 import type { ContactSheet } from '../lib/frames'
 import type { DeadSpan } from '../lib/deadSpace'
@@ -232,10 +232,11 @@ export type ProjectWorkingState = {
    * and are retired in a later task.
    */
   sources: VideoSource[]
-  /** Auto-build run pointer (story 03s). Durable so a reload knows a run was in
-   *  progress; the orchestrator coerces a persisted `running` back to `paused`
-   *  on reload (in-flight browser steps aren't resumable). The resumable truth is
-   *  the scenes themselves — this is just status + where it stopped + the error. */
+  /** Auto-build run state (story 03s, reshaped for parallel runs by 03u). Durable
+   *  so a reload knows a run was in progress; the orchestrator coerces a persisted
+   *  `running` back to `paused` on reload (in-flight browser steps aren't
+   *  resumable). The resumable truth is the scenes themselves — this is just
+   *  status + the in-flight `active` set + the structured `halt`. */
   autoBuild: AutoBuildRun
 }
 
@@ -264,7 +265,7 @@ export function freshWorkingState(): ProjectWorkingState {
     youtubeThumbnail: null,
     blog: null,
     sources: [],
-    autoBuild: { status: 'idle', currentSceneId: null, currentStepId: null, error: null },
+    autoBuild: { status: 'idle', active: [], halt: null },
   }
 }
 
@@ -538,55 +539,72 @@ const studioSlice = createSlice({
       w.sources.splice(to, 0, moved)
       w.sources = w.sources.map((s, i) => ({ ...s, order: i }))
     },
-    /** Begin / restart an auto-build run; clears any prior halt error. */
+    /** Begin / restart an auto-build run; clears any prior halt. */
     startAutoBuild(state) {
       const w = active(state); if (!w) return
       w.autoBuild.status = 'running'
-      w.autoBuild.error = null
+      w.autoBuild.halt = null
     },
-    /** Pause after the current step finishes (only meaningful while running). */
+    /** Pause: no NEW steps start; in-flight steps run to completion. */
     pauseAutoBuild(state) {
       const w = active(state); if (!w) return
       if (w.autoBuild.status === 'running') w.autoBuild.status = 'paused'
     },
-    /** Resume a paused or halted run; clears the error. */
+    /** Rehydration coercion (story 03u): a persisted `running` run is not
+     *  actually executing — pause it AND drop its stale `active` set (nothing
+     *  launched this session; the in-memory in-flight map is the only truth). */
+    coerceAutoBuildPaused(state) {
+      const w = active(state); if (!w) return
+      if (w.autoBuild.status === 'running') w.autoBuild.status = 'paused'
+      w.autoBuild.active = []
+    },
+    /** Resume a paused or halted run; clears the halt. */
     resumeAutoBuild(state) {
       const w = active(state); if (!w) return
       if (w.autoBuild.status === 'paused' || w.autoBuild.status === 'halted') {
         w.autoBuild.status = 'running'
-        w.autoBuild.error = null
+        w.autoBuild.halt = null
       }
     },
     /** End the run, leaving completed scene work intact. */
     stopAutoBuild(state) {
       const w = active(state); if (!w) return
-      w.autoBuild = { status: 'idle', currentSceneId: null, currentStepId: null, error: null }
+      w.autoBuild = { status: 'idle', active: [], halt: null }
     },
-    /** Stop on an error, recording the message and leaving the pointer in place. */
-    haltAutoBuild(state, action: PayloadAction<string>) {
+    /** Stop on an error, recording WHICH step failed. In-flight siblings still
+     *  finish (their autoStepFinished lands after this). */
+    haltAutoBuild(state, action: PayloadAction<AutoHalt>) {
       const w = active(state); if (!w) return
       w.autoBuild.status = 'halted'
-      w.autoBuild.error = action.payload
+      w.autoBuild.halt = action.payload
     },
-    /** Drop a halt whose step has since been done by hand (`isHaltStale`), leaving
-     *  the run paused and resumable. The pointer stays put — every board reading
-     *  derives from the scene, which now says `done`. */
+    /** Drop a halt whose step has since been done by hand (`isHaltStale`),
+     *  leaving the run paused and resumable. */
     clearAutoHalt(state) {
       const w = active(state); if (!w) return
       if (w.autoBuild.status !== 'halted') return
       w.autoBuild.status = 'paused'
-      w.autoBuild.error = null
+      w.autoBuild.halt = null
     },
     /** The run finished every scene (and the final stitch). */
     completeAutoBuild(state) {
       const w = active(state); if (!w) return
       w.autoBuild.status = 'done'
     },
-    /** Move the run pointer to the step currently executing. */
-    setAutoPointer(state, action: PayloadAction<{ sceneId: string | null; stepId: AutoBuildRun['currentStepId'] }>) {
+    /** A step began executing (idempotent per step). */
+    autoStepStarted(state, action: PayloadAction<ActiveStep>) {
       const w = active(state); if (!w) return
-      w.autoBuild.currentSceneId = action.payload.sceneId
-      w.autoBuild.currentStepId = action.payload.stepId
+      const a = action.payload
+      if (!w.autoBuild.active.some((x) => x.sceneId === a.sceneId && x.stepId === a.stepId))
+        w.autoBuild.active.push(a)
+    },
+    /** A step finished (successfully or not) — drop it from the active set. */
+    autoStepFinished(state, action: PayloadAction<ActiveStep>) {
+      const w = active(state); if (!w) return
+      const a = action.payload
+      w.autoBuild.active = w.autoBuild.active.filter(
+        (x) => !(x.sceneId === a.sceneId && x.stepId === a.stepId),
+      )
     },
     /** Server sync: replace the working state for a project with the server copy. */
     hydrateProject(state, action: PayloadAction<{ id: string; working: ProjectWorkingState }>) {
@@ -649,12 +667,14 @@ export const {
   reorderSources,
   startAutoBuild,
   pauseAutoBuild,
+  coerceAutoBuildPaused,
   resumeAutoBuild,
   stopAutoBuild,
   haltAutoBuild,
   clearAutoHalt,
   completeAutoBuild,
-  setAutoPointer,
+  autoStepStarted,
+  autoStepFinished,
   hydrateProject,
   evictOthers,
   reconcileServerIndex,
