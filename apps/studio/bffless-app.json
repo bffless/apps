@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "studio",
   "name": "Studio",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "summary": "Cut a long screen recording into a short video in your own voice — AI proposes the scenes and cuts, you tune them, nothing is re-voiced.",
   "category": "video",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/studio/bffless/README.md",

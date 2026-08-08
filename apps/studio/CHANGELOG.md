@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/bffless/apps/compare/studio-v1.1.2...studio-v1.2.0) (2026-08-08)
+
+
+### Features
+
+* **studio:** warn non-Firefox browsers that video processing requires Firefox ([#301](https://github.com/bffless/apps/issues/301)) ([fbc25c3](https://github.com/bffless/apps/commit/fbc25c35b3870ee9b859a3f8965f918be0391bbe))
+
 ## [1.1.2](https://github.com/bffless/apps/compare/studio-v1.1.1...studio-v1.1.2) (2026-08-06)
 
 
