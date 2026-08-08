@@ -5,7 +5,6 @@ import {
   AUTO_STEPS,
   STALE_RENDER_PATCH,
   nextStep,
-  nextAction,
   nextActions,
   STEP_LANE,
   isSceneComplete,
@@ -109,7 +108,7 @@ describe('STALE_RENDER_PATCH', () => {
     // the edit reopens is the render itself — not a full rebuild.
     expect(nextStep(edited)).toBe('assemble')
     expect(isSceneComplete(edited)).toBe(false)
-    expect(nextAction([edited])).toEqual({ scene: edited, step: 'assemble' })
+    expect(nextActions([edited], [])).toEqual([{ kind: 'step', scene: edited, step: 'assemble' }])
   })
 
   it('leaves the editable cut layer intact so revert / re-refine still work', () => {
@@ -117,37 +116,6 @@ describe('STALE_RENDER_PATCH', () => {
     // Only the rendered bytes + status are touched; the refined cuts (and the
     // director baseline they fall back to) survive untouched.
     expect(edited.refined).toEqual(built().refined)
-  })
-})
-
-describe('nextAction', () => {
-  it('returns null when there are no scenes', () => {
-    expect(nextAction([])).toBeNull()
-  })
-
-  it('skips built scenes and points at the first pending one', () => {
-    const built = scene({ id: 'a', status: 'built' })
-    const pending = scene({ id: 'b' })
-    const r = nextAction([built, pending])
-    expect(r?.scene.id).toBe('b')
-    expect(r?.step).toBe('cut')
-  })
-
-  it('returns step=null for a fully-stepped but not-yet-built scene', () => {
-    const done = scene({
-      id: 'c',
-      clipUrl: 'u',
-      clipAudioUrl: 'a',
-      sheets: [{} as ContactSheet],
-      refined: { cuts: [], source: 'ai' },
-      assembledUrl: 'done',
-      status: 'pending',
-    })
-    expect(nextAction([done])).toEqual({ scene: done, step: null })
-  })
-
-  it('returns null when every scene is built', () => {
-    expect(nextAction([scene({ status: 'built' })])).toBeNull()
   })
 })
 

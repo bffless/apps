@@ -77,21 +77,6 @@ export function isSceneComplete(scene: Scene): boolean {
   return nextStep(scene) === null
 }
 
-/**
- * What auto mode should do next across the whole run:
- *  - `{ scene, step }` — run `step` on the first not-yet-built scene, OR
- *  - `{ scene, step: null }` — that scene's steps are all done; mark it built, OR
- *  - `null` — no pending scenes remain; do the final stitch / finish.
- * Built scenes (`status === 'built'`) are skipped.
- */
-export function nextAction(scenes: Scene[]): { scene: Scene; step: AutoStepId | null } | null {
-  for (const scene of scenes) {
-    if (scene.status === 'built') continue
-    return { scene, step: nextStep(scene) }
-  }
-  return null
-}
-
 /** One step currently executing. `sceneId: null` only for the final `'stitch'`. */
 export type ActiveStep = { sceneId: string | null; stepId: AutoStepId | 'stitch' }
 
@@ -114,8 +99,8 @@ export type AutoAction =
   | { kind: 'stitch' }
 
 /**
- * Every step the run may start RIGHT NOW, given what's already in flight — the
- * parallel generalization of `nextAction`. Walks scenes in order; each scene
+ * Every step the run may start RIGHT NOW, given what's already in flight.
+ * Walks scenes in order; each scene
  * offers at most its single `nextStep` (the intra-scene cut → sheets → refine
  * → assemble dependency is enforced by derivation, exactly as in the
  * sequential runner). A step is admitted only if:

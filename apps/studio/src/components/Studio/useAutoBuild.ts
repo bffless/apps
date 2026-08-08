@@ -1,19 +1,31 @@
 /**
- * Auto Build orchestrator (story 03s). When a run is `running`, this hook fires the
- * one next step on the one next scene, then waits: each `pipe` action updates Redux
- * (scene fields, or the shared `sceneError`), the effect re-runs, and `nextAction`
- * recomputes where to go — so progress is driven by state, not a tight loop holding
- * stale callbacks. The cut/sheets/refine/voice actions swallow their errors into
- * `pipe.sceneError`; we detect failure by seeing the pointed step still not done
- * with an error present on the next tick. The assemble step (we own it) and the
- * final stitch throw, so they're caught directly.
+ * Auto Build orchestrator (stories 03s, 03u). When a run is `running`, this hook
+ * launches EVERY step the run may start right now and then waits: each `pipe`
+ * action updates Redux (scene fields, or that scene's entry in `sceneErrors`), the
+ * effect re-runs, and `nextActions` recomputes the whole frontier — so progress is
+ * driven by state, not a tight loop holding stale callbacks.
+ *
+ * Concurrency is a **lane scheduler**, not a step pointer: `nextActions` admits one
+ * step per scene, capped by the shared resource each step occupies (`STEP_LANE` —
+ * cut/assemble share the single ffmpeg.wasm instance; refine is a server poll;
+ * sheets is main-thread canvas capture). So scene 2 can refine while scene 1
+ * assembles, but two ffmpeg steps never overlap. `inFlightRef` is the runner's own
+ * source of truth for what's executing (Redux `active` mirrors it for the board,
+ * but a rehydrated `active` is stale by definition, so we never read it back).
+ *
+ * The cut/sheets/refine actions swallow their errors into `pipe.sceneErrors[id]`;
+ * we detect failure per scene by seeing a step we attempted still be that scene's
+ * next step with that scene's error present on a later pass — per-scene errors mean
+ * one scene's stale error can never halt another scene's concurrent attempt. The
+ * assemble step (we own it) and the final stitch throw, so they're caught directly.
  *
  * `liveRef` is the in-session guard: it's only set by an explicit Start/Resume in
  * THIS session, so a persisted `running` status rehydrated after a reload does NOT
- * auto-fire — the runner coerces it to `paused` and the user resumes.
+ * auto-fire — the runner coerces it to `paused` and the user resumes. It's cleared
+ * again the moment the run halts or completes.
  *
- * Pause/Stop only prevent the NEXT step from starting; an in-flight step always runs
- * to completion (steps aren't cancellable mid-flight).
+ * Pause/Stop only prevent the NEXT steps from starting; every in-flight step always
+ * runs to completion (steps aren't cancellable mid-flight).
  */
 
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'react'
@@ -31,7 +43,8 @@ import {
   selectActive,
 } from '../../store/studioSlice'
 import {
-  nextAction,
+  nextActions,
+  nextStep,
   isHaltStale,
   assembleInputsKey,
   type AutoStepId,
@@ -46,7 +59,7 @@ import type { Scene } from '../../lib/scenes'
 /** The slice of `useScenePipeline` the orchestrator drives. */
 type Pipe = {
   scenes: Scene[]
-  sceneError: string | null
+  sceneErrors: Record<string, string>
   finalCutUrl: string | null
   sliceScene: (id: string) => Promise<void>
   generateSceneSheets: (id: string) => Promise<void>
@@ -69,10 +82,14 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   const run = useAppSelector((s) => selectActive(s).autoBuild)
   const fetchBytes = useSignedBytes()
 
-  // In-flight guard (one step at a time) and the last step we attempted (to tell a
-  // genuine failure apart from a benign warning that left the step done).
-  const inFlightRef = useRef(false)
-  const attemptRef = useRef<{ sceneId: string; stepId: AutoStepId } | null>(null)
+  // Steps currently executing, keyed `${sceneId}:${stepId}` — the runner's source of
+  // truth for what's in flight (the Redux `active` set mirrors it for the board, but
+  // a rehydrated run must start empty, so we never read it back).
+  const inFlightRef = useRef(new Map<string, ActiveStep>())
+  // The last step ATTEMPTED per scene, to tell a genuine failure (step still next +
+  // that scene's error set) from a benign warning that left it done.
+  const attemptRef = useRef(new Map<string, AutoStepId>())
+  const keyOf = (a: ActiveStep) => `${a.sceneId ?? ''}:${a.stepId}`
   // Only true after an explicit Start/Resume in this session — gates the runner so
   // a rehydrated `running` never auto-fires.
   const liveRef = useRef(false)
@@ -80,19 +97,20 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   // two halves — an ffmpeg.wasm render (minutes) and an upload (seconds) — and only
   // the upload is realistically flaky. Holding the rendered blob across the halt
   // means Resume after a failed save retries just the upload instead of re-paying
-  // for the render (issue #220). One slot is enough: the runner only ever has one
-  // scene in flight, and a successful save drops it (an MP4 is heavy). `key` is the
+  // for the render (issue #220). One slot is enough even under the parallel runner:
+  // assemble sits in the ffmpeg lane (capacity 1), so at most one scene is ever
+  // rendering, and a successful save drops it (an MP4 is heavy). `key` is the
   // fingerprint of the render's inputs — if the producer re-cut the scene while the
   // run was halted, it no longer matches and we render again rather than upload a
   // clip of the wrong timeline.
   const renderRef = useRef<{ sceneId: string; key: string; blob: Blob } | null>(null)
   // Advancement nudge. The runner relies on re-running after a step finishes; the
   // incidental re-render from the step's own `patchScene` can flush this effect
-  // WHILE `inFlightRef` is still true (React can flush a prior update's passive
-  // effects when the action's `finally` fires its `setXxxId(null)`), and then no
-  // dep change re-triggers it — the run stalls "running" with the step done. So
-  // each step bumps `tick` AFTER clearing `inFlightRef`, guaranteeing exactly one
-  // re-run with the guard already false that fires the next step.
+  // WHILE the step is still in `inFlightRef` (React can flush a prior update's
+  // passive effects when the action's `finally` fires its `setXxxId(null)`), and
+  // then no dep change re-triggers it — the run stalls "running" with the step
+  // done. So each step bumps `tick` AFTER removing itself from `inFlightRef`,
+  // guaranteeing exactly one re-run with the lane already free.
   const [tick, bump] = useReducer((n: number) => n + 1, 0)
 
   const start = useCallback(() => {
@@ -105,17 +123,17 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   }, [dispatch])
   const pause = useCallback(() => {
     liveRef.current = false
-    attemptRef.current = null
+    attemptRef.current.clear()
     dispatch(pauseAutoBuild())
   }, [dispatch])
   const stop = useCallback(() => {
     liveRef.current = false
-    attemptRef.current = null
+    attemptRef.current.clear()
     dispatch(stopAutoBuild())
   }, [dispatch])
 
   // Keep `pipe` in a ref so the runner reads the CURRENT actions/state while staying
-  // keyed to just the signals that should re-trigger it (status, scenes, sceneError,
+  // keyed to just the signals that should re-trigger it (status, scenes, sceneErrors,
   // finalCutUrl) — `pipe` itself is a fresh object every render.
   // useLayoutEffect (not useEffect): react-hooks/refs forbids writing a ref during render;
   // a layout effect runs before the runner's passive effect so pipeRef is current when it reads.
@@ -143,76 +161,89 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
       dispatch(pauseAutoBuild())
       return
     }
-    if (inFlightRef.current) return
     const p = pipeRef.current
-    const action = nextAction(p.scenes)
 
-    // No pending scenes → stitch the final cut once, then finish.
-    if (!action) {
-      inFlightRef.current = true
-      const a: ActiveStep = { sceneId: null, stepId: 'stitch' }
+    // Failure detection for the swallowing steps (cut/sheets/refine): an attempt
+    // that's no longer in flight, whose step is STILL the scene's next step, with
+    // THAT scene's error present → halt. Per-scene errors mean a stale error from
+    // one scene can never halt another's attempt.
+    for (const [sceneId, stepId] of attemptRef.current) {
+      if (inFlightRef.current.has(keyOf({ sceneId, stepId }))) continue
+      const scene = p.scenes.find((s) => s.id === sceneId)
+      if (!scene || nextStep(scene) !== stepId) {
+        attemptRef.current.delete(sceneId) // step advanced (or scene gone) — benign
+        continue
+      }
+      const message = p.sceneErrors[sceneId]
+      if (message) {
+        attemptRef.current.delete(sceneId)
+        liveRef.current = false
+        dispatch(haltAutoBuild({ sceneId, stepId, message }))
+        return
+      }
+    }
+
+    const actions = nextActions(p.scenes, [...inFlightRef.current.values()])
+
+    // Mark-built is instant bookkeeping — do ONE per pass (it reads the scenes
+    // snapshot for the selection advance) and let the state change re-run us.
+    const done = actions.find((a) => a.kind === 'markBuilt')
+    if (done) {
+      p.markBuilt(done.scene.id)
+      return
+    }
+
+    for (const action of actions) {
+      if (action.kind === 'stitch') {
+        const a: ActiveStep = { sceneId: null, stepId: 'stitch' }
+        inFlightRef.current.set(keyOf(a), a)
+        dispatch(autoStepStarted(a))
+        ;(async () => {
+          try {
+            if (!p.finalCutUrl) {
+              const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
+              await p.saveFinalCut(blob)
+            }
+            liveRef.current = false
+            dispatch(completeAutoBuild())
+          } catch (e) {
+            liveRef.current = false
+            dispatch(haltAutoBuild({ ...a, message: autoBuildError(e) }))
+          } finally {
+            dispatch(autoStepFinished(a))
+            inFlightRef.current.delete(keyOf(a))
+            bump()
+          }
+        })()
+        continue
+      }
+      if (action.kind !== 'step') continue
+      const { scene, step } = action
+      const a: ActiveStep = { sceneId: scene.id, stepId: step }
+      if (inFlightRef.current.has(keyOf(a))) continue
+      inFlightRef.current.set(keyOf(a), a)
+      attemptRef.current.set(scene.id, step)
       dispatch(autoStepStarted(a))
       ;(async () => {
         try {
-          if (!p.finalCutUrl) {
-            const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
-            await p.saveFinalCut(blob)
-          }
-          liveRef.current = false
-          dispatch(completeAutoBuild())
+          await runStep(step, scene, p, fetchBytes, renderRef)
         } catch (e) {
+          // Only assemble / save throw; the swallowing steps are caught by the
+          // attempt scan above on a later pass. Clear the attempt so Resume
+          // retries instead of re-halting on a leftover error (issue #220).
+          attemptRef.current.delete(scene.id)
           liveRef.current = false
-          dispatch(haltAutoBuild({ ...a, message: autoBuildError(e) }))
+          dispatch(haltAutoBuild({ sceneId: scene.id, stepId: step, message: autoBuildError(e) }))
         } finally {
           dispatch(autoStepFinished(a))
-          inFlightRef.current = false
+          inFlightRef.current.delete(keyOf(a))
           bump()
         }
       })()
-      return
     }
-
-    const { scene, step } = action
-
-    // The step we just attempted is STILL the next step and an error surfaced → halt.
-    const attempted = attemptRef.current
-    if (attempted && attempted.sceneId === scene.id && attempted.stepId === step && p.sceneError) {
-      attemptRef.current = null
-      liveRef.current = false
-      dispatch(haltAutoBuild({ sceneId: scene.id, stepId: step, message: p.sceneError }))
-      return
-    }
-
-    // All steps done but not yet built → mark it built and let the effect re-run.
-    if (step === null) {
-      p.markBuilt(scene.id)
-      return
-    }
-
-    attemptRef.current = { sceneId: scene.id, stepId: step }
-    inFlightRef.current = true
-    dispatch(autoStepStarted({ sceneId: scene.id, stepId: step }))
-    ;(async () => {
-      try {
-        await runStep(step, scene, p, fetchBytes, renderRef)
-      } catch (e) {
-        // Only the assemble step / save throw; swallowing steps are caught via the
-        // attemptRef path above on the next tick. Clear the attempt: this halt has
-        // already been recorded from the thrown error, so leaving it set would make
-        // the next Resume hit the stale-attempt branch above and re-halt on whatever
-        // `sceneError` happens to be lying around instead of retrying (issue #220).
-        attemptRef.current = null
-        liveRef.current = false
-        dispatch(haltAutoBuild({ sceneId: scene.id, stepId: step, message: autoBuildError(e) }))
-      } finally {
-        dispatch(autoStepFinished({ sceneId: scene.id, stepId: step }))
-        inFlightRef.current = false
-        bump()
-      }
-    })()
     // The runner reads pipe via `pipeRef`; it's keyed only to the signals that must
     // re-trigger it (plus `tick`, the post-step advancement nudge).
-  }, [run.status, pipe.scenes, pipe.sceneError, pipe.finalCutUrl, tick, dispatch, fetchBytes])
+  }, [run.status, pipe.scenes, pipe.sceneErrors, pipe.finalCutUrl, tick, dispatch, fetchBytes])
 
   return { run, start, pause, resume, stop }
 }

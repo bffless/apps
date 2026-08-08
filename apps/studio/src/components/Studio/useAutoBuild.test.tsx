@@ -75,6 +75,10 @@ const stateOf = (store: Store) =>
 const runOf = (store: Store) => selectActive(stateOf(store)).autoBuild
 const scenesOf = (store: Store) => selectActive(stateOf(store)).scenes
 
+/** Stable defaults — a fresh literal per render would re-key the runner effect. */
+const NO_SCENE_ERRORS: Record<string, string> = {}
+const noop = async () => {}
+
 /**
  * Stands in for `useScenePipeline`. Only the UPLOAD is a spy (that's the flaky
  * half the tests drive); the durable writes around it are the real ones —
@@ -83,10 +87,16 @@ const scenesOf = (store: Store) => selectActive(stateOf(store)).scenes
  */
 function Harness({
   upload,
-  sceneError = null,
+  sceneErrors = NO_SCENE_ERRORS,
+  sliceScene = noop,
+  generateSceneSheets = noop,
+  refineScene = noop,
 }: {
   upload: (id: string, blob: Blob) => Promise<string>
-  sceneError?: string | null
+  sceneErrors?: Record<string, string>
+  sliceScene?: (id: string) => Promise<void>
+  generateSceneSheets?: (id: string) => Promise<void>
+  refineScene?: (id: string) => Promise<void>
 }) {
   const dispatch = useDispatch()
   const scenes = useSelector((s: { studio: unknown }) =>
@@ -97,11 +107,11 @@ function Harness({
   )
   const { run, start, resume } = useAutoBuild({
     scenes,
-    sceneError,
+    sceneErrors,
     finalCutUrl,
-    sliceScene: async () => {},
-    generateSceneSheets: async () => {},
-    refineScene: async () => {},
+    sliceScene,
+    generateSceneSheets,
+    refineScene,
     saveSceneCut: async (id: string, blob: Blob) => {
       const url = await upload(id, blob)
       dispatch(patchScene({ id, patch: { assembledUrl: url, status: 'built' } }))
@@ -267,8 +277,8 @@ describe('useAutoBuild — a save that fails on the assemble step', () => {
   })
 
   it('retries the step on Resume even when a stale sceneError is still set', async () => {
-    // A leftover `sceneError` from an earlier swallowed failure must not make the
-    // stale-attempt guard re-halt the run before it retries anything.
+    // A leftover error for this scene from an earlier swallowed failure must not
+    // make the stale-attempt guard re-halt the run before it retries anything.
     const store = makeStore([prepped('s1', 0)])
     const upload = vi
       .fn()
@@ -276,7 +286,7 @@ describe('useAutoBuild — a save that fails on the assemble step', () => {
       .mockResolvedValue('s1.mp4')
     render(
       <Provider store={store}>
-        <Harness upload={upload} sceneError="an older, already-fixed hiccup" />
+        <Harness upload={upload} sceneErrors={{ s1: 'an older, already-fixed hiccup' }} />
       </Provider>,
     )
 
@@ -288,5 +298,117 @@ describe('useAutoBuild — a save that fails on the assemble step', () => {
 
     await waitFor(() => expect(scenesOf(store)[0].assembledUrl).toBe('s1.mp4'))
     expect(upload).toHaveBeenCalledTimes(2)
+  })
+})
+
+/** A promise the test resolves by hand, to hold a step in flight. */
+function deferred<T = void>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
+/** A scene cut + sheeted but not yet refined — its next step is refine. */
+function atRefine(id: string, index: number): Scene {
+  return { ...prepped(id, index), refined: undefined }
+}
+
+describe('useAutoBuild — parallel launch', () => {
+  it('runs scene 2 refine while scene 1 assembles', async () => {
+    const store = makeStore([prepped('s1', 0), atRefine('s2', 1)])
+    const renderGate = deferred<Blob>()
+    assembleSceneBlobMock.mockReturnValue(renderGate.promise) // s1 assemble hangs
+    const refineGate = deferred()
+    const refineScene = vi.fn().mockReturnValue(refineGate.promise) // s2 refine hangs
+    const upload = vi.fn().mockResolvedValue('s1.mp4')
+    render(
+      <Provider store={store}>
+        <Harness upload={upload} refineScene={refineScene} />
+      </Provider>,
+    )
+
+    await click('start')
+    // BOTH steps are in flight at once — the sequential runner could never
+    // show two entries here.
+    await waitFor(() =>
+      expect(runOf(store).active).toEqual(
+        expect.arrayContaining([
+          { sceneId: 's1', stepId: 'assemble' },
+          { sceneId: 's2', stepId: 'refine' },
+        ]),
+      ),
+    )
+    expect(refineScene).toHaveBeenCalledWith('s2')
+
+    // Finish s2's refine (write the durable field, as the real pipe would),
+    // then release s1's render; the run drives both scenes home.
+    await act(async () => {
+      store.dispatch(patchScene({ id: 's2', patch: { refined: { cuts: [], source: 'ai' } } }))
+      refineGate.resolve()
+    })
+    await act(async () => {
+      renderGate.resolve(new Blob(['mp4'], { type: 'video/mp4' }))
+    })
+    await waitFor(() => expect(scenesOf(store)[0].assembledUrl).toBe('s1.mp4'))
+  })
+
+  it('never runs two ffmpeg-lane steps at once', async () => {
+    // s1 is at assemble (ffmpeg), s2 is bare — its cut also needs ffmpeg.
+    const store = makeStore([
+      prepped('s1', 0),
+      {
+        ...prepped('s2', 1),
+        clipUrl: undefined,
+        clipAudioUrl: undefined,
+        sheets: undefined,
+        refined: undefined,
+      },
+    ])
+    const renderGate = deferred<Blob>()
+    assembleSceneBlobMock.mockReturnValue(renderGate.promise)
+    const sliceScene = vi.fn().mockResolvedValue(undefined)
+    render(
+      <Provider store={store}>
+        <Harness upload={vi.fn().mockResolvedValue('s1.mp4')} sliceScene={sliceScene} />
+      </Provider>,
+    )
+
+    await click('start')
+    await waitFor(() =>
+      expect(runOf(store).active).toEqual([{ sceneId: 's1', stepId: 'assemble' }]),
+    )
+    expect(sliceScene).not.toHaveBeenCalled() // ffmpeg lane is busy with s1
+  })
+
+  it('halts on the failing scene without blaming a concurrent healthy one', async () => {
+    // s2's refine fails the way the real pipe fails: the action resolves
+    // (swallowed error), writes NO durable `refined`, and the scene's entry in
+    // `sceneErrors` carries the message. Passing the error from the start is
+    // deterministic: the attempt scan runs BEFORE any relaunch on the pass
+    // after the refine settles, so the run halts instead of looping.
+    const store = makeStore([prepped('s1', 0), atRefine('s2', 1)])
+    assembleSceneBlobMock.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }))
+    const refineScene = vi.fn().mockResolvedValue(undefined)
+    const upload = vi.fn().mockResolvedValue('s1.mp4')
+    render(
+      <Provider store={store}>
+        <Harness
+          upload={upload}
+          refineScene={refineScene}
+          sceneErrors={{ s2: 'REPLICATE_NOT_CONFIGURED' }}
+        />
+      </Provider>,
+    )
+
+    await click('start')
+    await waitFor(() => expect(status()).toBe('halted'))
+    expect(runOf(store).halt).toEqual({
+      sceneId: 's2',
+      stepId: 'refine',
+      message: 'REPLICATE_NOT_CONFIGURED',
+    })
+    expect(refineScene).toHaveBeenCalledTimes(1) // halted, not relaunched
   })
 })
