@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/bffless/apps/compare/recall-v0.1.2...recall-v0.2.0) (2026-08-09)
+
+
+### Features
+
+* **recall:** title conversations from first user message ([#312](https://github.com/bffless/apps/issues/312)) ([1c09e76](https://github.com/bffless/apps/commit/1c09e76fc73444a2f2c74356dc5e0d3c29e28e72))
+
 ## [0.1.2](https://github.com/bffless/apps/compare/recall-v0.1.1...recall-v0.1.2) (2026-08-09)
 
 
