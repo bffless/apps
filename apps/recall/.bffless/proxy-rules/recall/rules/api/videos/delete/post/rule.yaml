@@ -1,0 +1,34 @@
+targetUrl: pipeline
+order: 9
+pipeline:
+  name: Delete recall video (bucket prefix + record)
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: delete
+      name: delete
+      handler: file_delete
+      config:
+        prefix: "{{steps.prep.prefix}}"
+    - id: deleteRecord
+      name: deleteRecord
+      handler: data_delete
+      config:
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{ "ok": true, "deleted": {{steps.delete.deleted}}, "prefix": "{{steps.prep.prefix}}", "recordsDeleted": {{steps.deleteRecord.count}} }'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Delete a video: bucket prefix + recall_videos record (Task 5). POST { videoId } -> prep validates videoId and builds prefix 'videos/<id>/' (throws if missing, so a bad request fails closed) -> file_delete wipes every bucket object under it (source video, audio, any derived assets) -> data_delete BY RECORDID DIRECTLY (recordId: steps.prep.videoId - unlike Studio's delete, no prior query+pick is needed to resolve a recordId from a filtered lookup, because a recall video's videoId already IS its recordId; data_delete tolerates 0 matches so this is safe even if the record is already gone) -> response { ok, deleted, prefix, recordsDeleted }. Admin-only."

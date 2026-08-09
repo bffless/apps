@@ -32,5 +32,6 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
 export const recallApi = createApi({
   reducerPath: 'recallApi',
   baseQuery: baseQueryWithReauth,
+  tagTypes: ['Videos'],
   endpoints: () => ({}),
 })

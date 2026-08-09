@@ -1,0 +1,66 @@
+targetUrl: pipeline
+order: 8
+pipeline:
+  name: Save recall video
+  description: "Update a recall_videos record (Task 5). POST { videoId, title, description, youtube_url } -> query looks the row up directly BY ITS OWN system id (recordId: request.body.videoId - recall_videos has no separate identity field to filter on, unlike Studio's studio_projects.projectId, since a video's id only ever exists after POST /api/videos returns it) -> pick computes hasId/noId/exists/missing WITHOUT throwing (mirrors Studio's error-handling fix) plus a server-side updated_ms timestamp -> update (condition steps.pick.exists) writes title/description/youtube_url/updated_ms by recordId -> shape returns the updated record -> respond (condition exists) 200, respondNotFound (condition missing) 404, or respondNoId (condition noId) 400. Unlike Studio's save, there is NO insert/self-heal fallback: a data_create here would mint a brand-new id that no longer matches the videoId the client (and any videos/<id>/ storage prefix already in use) is holding, so a missing row is reported as 404 rather than silently recreated under a different id."
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.body.videoId
+        schemaId: $schema:recall_videos
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        fields:
+          title: request.body.title
+          description: request.body.description
+          youtube_url: request.body.youtube_url
+          updated_ms: steps.pick.now
+        recordId: steps.pick.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.pick.exists
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        condition: steps.pick.exists
+        contentType: application/json
+    - id: respondNotFound
+      name: respondNotFound
+      handler: response_handler
+      config:
+        body: '{"error":"video not found"}'
+        status: 404
+        headers:
+          Cache-Control: no-store
+        condition: steps.pick.missing
+        contentType: application/json
+    - id: respondNoId
+      name: respondNoId
+      handler: response_handler
+      config:
+        body: '{"error":"videoId is required to save a video"}'
+        status: 400
+        headers:
+          Cache-Control: no-store
+        condition: steps.pick.noId
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
