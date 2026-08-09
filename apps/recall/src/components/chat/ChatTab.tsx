@@ -141,7 +141,7 @@ function ChatSession({ onSeek, onNewChat }: { onSeek: (target: SeekTarget) => vo
         const result = await response.json()
         if (cancelled || !result.success || !Array.isArray(result.data) || result.data.length === 0) return
         const sorted = [...result.data].sort(
-          (a: BackendMessage, b: BackendMessage) => new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime(),
+          (a: BackendMessage, b: BackendMessage) => new Date(a.createdAt || '').getTime() - new Date(b.createdAt || '').getTime(),
         )
         setMessages(
           sorted.map(
