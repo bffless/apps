@@ -1,0 +1,44 @@
+targetUrl: pipeline
+order: 19
+pipeline:
+  name: List public recall videos
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        pageSize: 500
+        schemaId: $schema:recall_videos
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: >-
+  List every PUBLISHED recall_videos record for the home page library grid
+  (Task 11). GET /api/videos -> data_query lists every row (pageSize 500, no
+  status filter at the query layer -- the shape step below drops
+  draft/transcribing/transcribed/indexing/error rows) -> shape keeps ONLY
+  status === 'published' rows and maps each to public-safe metadata: {
+  videoId, title, description, youtubeId (extracted from youtube_url -- same
+  regex as src/lib/youtube.ts's extractYouTubeId, duplicated here since fn.js
+  sandboxes can't import app source), duration, publishedAtMs (updated_ms,
+  falling back to the record's own createdAt system timestamp) } --
+  transcript and both storage paths (source_path/audio_path) are NEVER
+  included, unlike the admin-only GET /api/admin/videos which keeps
+  status+paths for the admin table -> sorted newest-first by publishedAtMs ->
+  respond { videos }. Sibling of POST /api/videos (create, admin-only) under
+  the same api/videos/ method folder -- no path collision, since the
+  single-video admin lookup lives at a DIFFERENT url (GET /api/videos/get,
+  see _custom/videos-get) precisely so plain GET /api/videos was free for
+  this public list. NO validators: public, cheap (one data_query, no
+  downstream AI calls), same posture as GET /api/admin/videos.

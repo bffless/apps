@@ -38,16 +38,24 @@ export function AdminVideos() {
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
           Videos
         </h1>
-        <button
-          type="button"
-          onClick={() => {
-            void handleNew()
-          }}
-          disabled={creating}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {creating ? 'Creating…' : 'New video'}
-        </button>
+        <div className="flex items-center gap-4">
+          <Link
+            to="/admin/conversations"
+            className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+          >
+            Conversations →
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              void handleNew()
+            }}
+            disabled={creating}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? 'Creating…' : 'New video'}
+          </button>
+        </div>
       </div>
 
       {isLoading && <p className="text-slate-500 dark:text-slate-400">Loading…</p>}

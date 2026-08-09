@@ -9,11 +9,13 @@
  */
 
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { MomentChip, type Moment } from '../components/MomentChip'
 import { SeekingPlayer } from '../components/SeekingPlayer'
 import { ChatTab } from '../components/chat/ChatTab'
 import type { SeekTarget } from '../components/CitationChip'
 import { useSearchMutation, type SearchVideo } from '../store/searchApi'
+import { useListPublicVideosQuery, type PublicVideoMeta } from '../store/videosApi'
 
 type PlayerTarget = { youtubeId: string; startSec: number; title?: string }
 type Tab = 'search' | 'chat'
@@ -196,6 +198,88 @@ function SearchTab({ onSelectMoment }: { onSelectMoment: (video: SearchVideo, mo
   )
 }
 
+function formatMMSS(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds))
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
+function LibraryCard({ video }: { video: PublicVideoMeta }) {
+  return (
+    <Link
+      to={`/video/${video.videoId}`}
+      className="group overflow-hidden rounded-lg border border-slate-200 transition-colors hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700"
+    >
+      <div className="relative aspect-video w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+        <img
+          src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
+          alt=""
+          className="h-full w-full object-cover transition-transform group-hover:scale-105"
+          loading="lazy"
+        />
+        {video.duration > 0 && (
+          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-xs font-medium text-white">
+            {formatMMSS(video.duration)}
+          </span>
+        )}
+      </div>
+      <div className="p-3">
+        <h3 className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+          {video.title || 'Untitled video'}
+        </h3>
+      </div>
+    </Link>
+  )
+}
+
+function LibrarySkeleton() {
+  return (
+    <div
+      className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4"
+      aria-hidden="true"
+    >
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="animate-pulse space-y-2">
+          <div className="aspect-video w-full rounded-lg bg-slate-200 dark:bg-slate-800" />
+          <div className="h-4 w-3/4 rounded bg-slate-200 dark:bg-slate-800" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function LibrarySection() {
+  const { data, isLoading, isError } = useListPublicVideosQuery()
+  const videos = data?.videos ?? []
+
+  return (
+    <section className="mt-12 border-t border-slate-200 pt-8 dark:border-slate-800">
+      <h2 className="mb-4 text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+        Library
+      </h2>
+
+      {isLoading && <LibrarySkeleton />}
+
+      {!isLoading && isError && (
+        <p className="text-red-600 dark:text-red-400">Couldn't load the library. Try refreshing.</p>
+      )}
+
+      {!isLoading && !isError && videos.length === 0 && (
+        <p className="text-slate-500 dark:text-slate-400">No published videos yet.</p>
+      )}
+
+      {!isLoading && !isError && videos.length > 0 && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {videos.map((video) => (
+            <LibraryCard key={video.videoId} video={video} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function Home() {
   const [tab, setTab] = useState<Tab>('search')
   const [player, setPlayer] = useState<PlayerTarget | null>(null)
@@ -246,6 +330,8 @@ export function Home() {
       </div>
 
       {tab === 'search' ? <SearchTab onSelectMoment={handleSelectMoment} /> : <ChatTab onSeek={handleSeek} />}
+
+      <LibrarySection />
     </div>
   )
 }

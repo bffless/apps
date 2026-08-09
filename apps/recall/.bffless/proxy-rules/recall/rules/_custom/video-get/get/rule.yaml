@@ -1,0 +1,63 @@
+pathPattern: /api/video
+targetUrl: pipeline
+order: 20
+pipeline:
+  name: Get public recall video
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.prep.ok
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond404
+      name: respond404
+      handler: response_handler
+      config:
+        body: '{"error":"NOT_FOUND"}'
+        status: 404
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+        condition: steps.shape.notOk
+    - id: respond200
+      name: respond200
+      handler: response_handler
+      config:
+        body: '{"video": {{{steps.shape.video}}}}'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+        condition: steps.shape.ok
+  validators: []
+description: >-
+  Get one PUBLISHED recall_videos record, including a parsed transcript, for
+  the public video/transcript page (Task 11). GET /api/video?videoId=<id> ->
+  prep validates videoId is present (ok/notOk sentinel, mirrors
+  api/search/post/prep.fn.js) -> query does a recordId lookup (condition
+  steps.prep.ok, so a missing/blank videoId never even queries) -- the
+  video's own system id IS its videoId, same as every other single-video
+  rule in this set, so no filter+first-match step is needed -> shape
+  returns 404 (via steps.shape.notOk) for a missing record OR any status
+  other than 'published' -- same as GET /api/videos, an unpublished video
+  never leaks even its existence to an anonymous visitor -- otherwise shapes
+  the public fields { videoId, title, description, youtubeId, duration,
+  transcript: { words: [...] } }, parsing the record's stringified
+  transcript JSON server-side so the client never has to -> respond404
+  { error: 'NOT_FOUND' } (condition steps.shape.notOk) or respond200
+  { video } (condition steps.shape.ok). Custom pathPattern /api/video
+  (singular, mirrors Studio's _custom/-api-projects-get) because this needs
+  a query-string videoId, distinct from both GET /api/videos (the plain
+  public list) and GET /api/videos/get (the admin single-record lookup with
+  the raw untouched transcript string). NO validators: public, cheap (one
+  data_query, no downstream AI calls).

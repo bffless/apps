@@ -31,6 +31,40 @@ export type Video = VideoMeta & {
   transcript: string | null
 }
 
+/**
+ * A published video's public metadata (Task 11), as `GET /api/videos`
+ * shapes it — never the transcript or either storage path. `videoId` (not
+ * `id`) and `youtubeId` (not `youtube_url`) intentionally diverge from
+ * `VideoMeta`'s field names: this is a different, public-facing wire shape,
+ * not a subset of the admin one.
+ */
+export type PublicVideoMeta = {
+  videoId: string
+  title: string
+  description: string | null
+  youtubeId: string
+  duration: number
+  publishedAtMs: number
+}
+
+/**
+ * A published video's full public record (Task 11), as `GET /api/video`
+ * shapes it — the transcript is already parsed JSON, ready for
+ * `TranscriptView`. `youtubeId` can be `null` here (an admin could in
+ * theory publish a video whose `youtube_url` stopped parsing after the
+ * fact) even though `PublicVideoMeta` never carries a null one — the list
+ * shape drops any row it can't extract an id from, but the single-video
+ * lookup doesn't 404 over it.
+ */
+export type PublicVideo = {
+  videoId: string
+  title: string
+  description: string | null
+  youtubeId: string | null
+  duration: number
+  transcript: { words: { text: string; start: number; end: number }[] }
+}
+
 // A genuine partial PATCH (Task 6): every field but `videoId` is optional and
 // an omitted one is left untouched server-side (see the save rule's `pick`
 // step). The title-edit form still sends all three text fields on every save;
@@ -155,6 +189,30 @@ export const videosApi = recallApi.injectEndpoints({
         { type: 'Videos', id: 'LIST' },
       ],
     }),
+
+    // GET /api/videos → { videos: PublicVideoMeta[] } — PUBLIC (Task 11):
+    // every published video, newest-first, for the home page library grid.
+    // No reauth surprises expected (public route), but this still goes
+    // through `recallApi`'s shared base query like every other endpoint.
+    listPublicVideos: builder.query<{ videos: PublicVideoMeta[] }, void>({
+      query: () => 'api/videos',
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.videos.map((v) => ({ type: 'Videos' as const, id: v.videoId })),
+              { type: 'Videos' as const, id: 'PUBLIC_LIST' },
+            ]
+          : [{ type: 'Videos' as const, id: 'PUBLIC_LIST' }],
+    }),
+
+    // GET /api/video?videoId=<id> → { video: PublicVideo } — PUBLIC
+    // (Task 11): the video/transcript page's data source. 404s (surfaced as
+    // RTK's usual `isError`/`error.status === 404`) for an unknown id or a
+    // non-published video.
+    getPublicVideo: builder.query<{ video: PublicVideo }, string>({
+      query: (videoId) => `api/video?videoId=${encodeURIComponent(videoId)}`,
+      providesTags: (_result, _error, videoId) => [{ type: 'Videos', id: videoId }],
+    }),
   }),
 })
 
@@ -168,4 +226,6 @@ export const {
   useLazyGetJobQuery,
   useIndexStartMutation,
   useUnpublishMutation,
+  useListPublicVideosQuery,
+  useGetPublicVideoQuery,
 } = videosApi
