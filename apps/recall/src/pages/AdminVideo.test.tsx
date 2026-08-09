@@ -8,7 +8,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { configureStore } from '@reduxjs/toolkit'
@@ -333,7 +333,18 @@ describe('FramesGrid', () => {
     expect(onSeek).toHaveBeenCalledWith(310)
   })
 
-  it('v2: each sheet lazy-loads independently — a tile shows no background until ITS sheet\'s warmer <img> fires load', () => {
+  // PR-feedback-7: a hidden (`display:none`) per-sheet warmer `<img
+  // loading="lazy">` gated a `background-image` behind its `onLoad` — but a
+  // `display:none` element has no layout box, so whether/when the browser
+  // ever fires that lazy `load` at all is undefined (this was the live
+  // first-load bug: tiles blank, zero network requests, forever, until a
+  // fresh page load). Fixed by rendering each tile as its own real, VISIBLE
+  // `<img loading="lazy">` (absolutely positioned/cropped inside its frame)
+  // instead — no warmer, no gate, no event to wait for. These specs pin
+  // that every tile's own `<img>` is present with the right `src`/
+  // `loading="lazy"` the instant the grid renders, with no dispatched event
+  // of any kind.
+  it("v2: each sheet's tiles render their own real <img loading=\"lazy\"> cropped from that sheet's url immediately, with no load/intersection event", () => {
     const video = baseVideo({
       sheet_path: META_V2.sheets[0].url,
       sheet_meta: JSON.stringify(META_V2),
@@ -341,43 +352,65 @@ describe('FramesGrid', () => {
     renderGrid(video)
 
     const tiles = screen.getAllByRole('button', { name: /^\d+:\d{2}$/ })
-    const firstTileImg = tiles[0].querySelector('span') as HTMLSpanElement
-    const secondSheetTileImg = tiles[30].querySelector('span') as HTMLSpanElement
+    const firstTileImg = tiles[0].querySelector('img') as HTMLImageElement
+    const secondSheetTileImg = tiles[30].querySelector('img') as HTMLImageElement
 
-    // Nothing has "loaded" yet — no tile shows a background image.
-    expect(firstTileImg.style.backgroundImage).toBe('')
-    expect(secondSheetTileImg.style.backgroundImage).toBe('')
+    expect(firstTileImg).toHaveAttribute('src', META_V2.sheets[0].url)
+    expect(firstTileImg).toHaveAttribute('loading', 'lazy')
+    expect(secondSheetTileImg).toHaveAttribute('src', META_V2.sheets[1].url)
+    expect(secondSheetTileImg).toHaveAttribute('loading', 'lazy')
 
-    // Each sheet has its own hidden lazy-load warmer <img>, keyed by url.
-    const warmers = document.querySelectorAll('img[loading="lazy"]')
-    expect(warmers).toHaveLength(2)
-
-    // Firing `load` on sheet 0's warmer only lights up sheet 0's tiles.
-    const sheet0Warmer = document.querySelector(`img[src="${META_V2.sheets[0].url}"]`) as HTMLImageElement
-    act(() => {
-      sheet0Warmer.dispatchEvent(new Event('load'))
-    })
-
-    expect(firstTileImg.style.backgroundImage).toBe(`url("${META_V2.sheets[0].url}")`)
-    expect(secondSheetTileImg.style.backgroundImage).toBe('') // sheet 1 still unloaded
-
-    // Firing `load` on sheet 1's warmer lights up its tiles too.
-    const sheet1Warmer = document.querySelector(`img[src="${META_V2.sheets[1].url}"]`) as HTMLImageElement
-    act(() => {
-      sheet1Warmer.dispatchEvent(new Event('load'))
-    })
-    expect(secondSheetTileImg.style.backgroundImage).toBe(`url("${META_V2.sheets[1].url}")`)
+    // Every tile across both sheets gets a real, lazy-loadable <img> — 30 +
+    // 5 = 35, one per tile, not one warmer per sheet.
+    const images = document.querySelectorAll('img[loading="lazy"]')
+    expect(images).toHaveLength(35)
   })
 
-  it('v1: falls back to sheet_path as the (only) sheet url', () => {
+  it('v1: falls back to sheet_path as the (only) sheet url, on every tile\'s own <img>', () => {
     const video = baseVideo({
       sheet_path: '/api/uploads/sheets/v1/x.jpg',
       sheet_meta: JSON.stringify(META),
     })
     renderGrid(video)
 
-    const warmers = document.querySelectorAll('img[loading="lazy"]')
-    expect(warmers).toHaveLength(1)
-    expect(warmers[0]).toHaveAttribute('src', '/api/uploads/sheets/v1/x.jpg')
+    const images = document.querySelectorAll('img[loading="lazy"]')
+    expect(images).toHaveLength(10) // one per tile, all sharing the v1 sheet's url
+    images.forEach((img) => expect(img).toHaveAttribute('src', '/api/uploads/sheets/v1/x.jpg'))
+  })
+
+  it('post-generation transition: sheets added via a prop update on an ALREADY-MOUNTED grid render tiles immediately, no remount and no event required', () => {
+    const store = makeStore()
+    const withoutSheet = baseVideo()
+    mockFetchRouter({ video: withoutSheet })
+
+    const { rerender } = render(
+      <Provider store={store}>
+        <FramesGrid videoId="v1" video={withoutSheet} onSeek={vi.fn()} />
+      </Provider>,
+    )
+
+    // No sheet yet: FramesGrid renders nothing (same component instance,
+    // just no output).
+    expect(screen.queryByRole('button', { name: /^\d+:\d{2}$/ })).not.toBeInTheDocument()
+
+    // Simulates what a live "Generate frames" completion does: the SAME
+    // mounted component gets a re-render with a fresh `video` prop that now
+    // carries sheet data (RTK Query cache update / invalidation-refetch),
+    // not a fresh mount of the page.
+    const withSheet = baseVideo({
+      sheet_path: META_V2.sheets[0].url,
+      sheet_meta: JSON.stringify(META_V2),
+    })
+    rerender(
+      <Provider store={store}>
+        <FramesGrid videoId="v1" video={withSheet} onSeek={vi.fn()} />
+      </Provider>,
+    )
+
+    const tiles = screen.getAllByRole('button', { name: /^\d+:\d{2}$/ })
+    expect(tiles).toHaveLength(35)
+    const firstTileImg = tiles[0].querySelector('img') as HTMLImageElement
+    expect(firstTileImg).toHaveAttribute('src', META_V2.sheets[0].url)
+    expect(firstTileImg).toHaveAttribute('loading', 'lazy')
   })
 })
