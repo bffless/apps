@@ -8,12 +8,15 @@
 
 import { useEffect, useState, type DragEvent, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { StatusPill } from '../components/StatusPill'
+import { useIndexJob, type IndexStage } from '../hooks/useIndexJob'
 import { useIngest, type IngestStage } from '../hooks/useIngest'
 import { extractYouTubeId } from '../lib/youtube'
 import {
   useDeleteVideoMutation,
   useGetAdminVideoQuery,
   useSaveVideoMutation,
+  useUnpublishMutation,
   type Video,
 } from '../store/videosApi'
 
@@ -181,6 +184,90 @@ function IngestPanel({ videoId, video }: { videoId: string; video: Video }) {
   )
 }
 
+const INDEX_STAGE_LABELS: Record<IndexStage, string> = {
+  idle: 'Publish',
+  indexing: 'Indexing…',
+  done: 'Publish',
+  error: 'Publish',
+}
+
+/**
+ * Publish/unpublish controls (Task 8). "Publish" (or "Re-index" once already
+ * published) is disabled until the video has a valid YouTube URL and is at
+ * least `transcribed`; it drives `useIndexJob`'s enqueue+poll loop the same
+ * way `IngestPanel` drives `useIngest`'s. "Unpublish" only shows once
+ * published and is a single synchronous mutation (no job to poll — see
+ * `rules/api/unpublish/post/rule.yaml`).
+ */
+function PublishPanel({ videoId, video }: { videoId: string; video: Video }) {
+  const { stage, error, start } = useIndexJob(videoId)
+  const [unpublish, { isLoading: unpublishing, error: unpublishError }] = useUnpublishMutation()
+
+  // Same out-of-band-write problem as IngestPanel: the index rule writes the
+  // video record's status/transcript embeddings from its postSteps, outside
+  // this component's own `getAdminVideo` fetch, so refetch by hand once the
+  // job reaches a terminal stage.
+  const { refetch } = useGetAdminVideoQuery(videoId, { skip: !videoId })
+  useEffect(() => {
+    if (stage === 'done' || stage === 'error') {
+      void refetch()
+    }
+  }, [stage, refetch])
+
+  const youtubeId = video.youtube_url ? extractYouTubeId(video.youtube_url) : null
+  const eligible =
+    !!youtubeId && (video.status === 'transcribed' || video.status === 'published')
+  const busy = stage === 'indexing'
+  const publishLabel =
+    stage === 'idle' && video.status === 'published' ? 'Re-index' : INDEX_STAGE_LABELS[stage]
+
+  return (
+    <section className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-800">
+      <h2 className="mb-3 text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+        Publish
+      </h2>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <StatusPill status={video.status} />
+
+        <button
+          type="button"
+          onClick={() => {
+            void start()
+          }}
+          disabled={!eligible || busy}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {publishLabel}
+        </button>
+
+        {video.status === 'published' && (
+          <button
+            type="button"
+            onClick={() => {
+              void unpublish({ videoId })
+            }}
+            disabled={unpublishing}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+          >
+            {unpublishing ? 'Unpublishing…' : 'Unpublish'}
+          </button>
+        )}
+      </div>
+
+      {!eligible && (
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          Add a valid YouTube URL and finish transcribing before publishing.
+        </p>
+      )}
+      {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {unpublishError && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">Couldn't unpublish. Try again.</p>
+      )}
+    </section>
+  )
+}
+
 function VideoForm({ videoId, video }: { videoId: string; video: Video }) {
   const navigate = useNavigate()
   const [saveVideo, { isLoading: saving }] = useSaveVideoMutation()
@@ -288,6 +375,7 @@ function VideoForm({ videoId, video }: { videoId: string; video: Video }) {
       </form>
 
       <IngestPanel videoId={videoId} video={video} />
+      <PublishPanel videoId={videoId} video={video} />
     </div>
   )
 }

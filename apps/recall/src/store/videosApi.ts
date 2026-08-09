@@ -55,6 +55,9 @@ export type Job = {
 export type TranscribeStartArgs = { videoId: string; audioPath: string; durationSec: number }
 export type TranscribeStartResponse = { jobId: string; status: string }
 
+export type IndexStartArgs = { videoId: string }
+export type IndexStartResponse = { jobId: string; status: string }
+
 export const videosApi = recallApi.injectEndpoints({
   endpoints: (builder) => ({
     // GET /api/admin/videos → { videos: VideoMeta[] } — every status, transcript
@@ -128,6 +131,30 @@ export const videosApi = recallApi.injectEndpoints({
       query: (jobId) => `api/recall/job?id=${encodeURIComponent(jobId)}`,
       keepUnusedDataFor: 0,
     }),
+
+    // POST /api/index { videoId } → { jobId, status } (Task 8). ENQUEUE-ONLY,
+    // same shape as transcribeStart: chunking/embedding runs in the pipeline's
+    // postSteps so it can't hit the 30s edge timeout. The rule flips the video
+    // to 'indexing' synchronously (or 400s with { error: reason } if the video
+    // isn't eligible yet), then writes transcript embeddings + 'published'/
+    // 'transcribed'(on failure) out-of-band — no invalidatesTags here, same
+    // reasoning as transcribeStart; `useIndexJob` refetches `getAdminVideo`
+    // once its poll reaches a terminal stage.
+    indexStart: builder.mutation<IndexStartResponse, IndexStartArgs>({
+      query: (body) => ({ url: 'api/index', method: 'POST', body }),
+    }),
+
+    // POST /api/unpublish { videoId } → { ok }. All-sync (Task 8): deletes the
+    // video's transcript embeddings and flips status back to 'transcribed' in
+    // the SAME request, so — unlike indexStart — it's safe to invalidate the
+    // video tag immediately.
+    unpublish: builder.mutation<{ ok: boolean }, { videoId: string }>({
+      query: (body) => ({ url: 'api/unpublish', method: 'POST', body }),
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'Videos', id: arg.videoId },
+        { type: 'Videos', id: 'LIST' },
+      ],
+    }),
   }),
 })
 
@@ -139,4 +166,6 @@ export const {
   useDeleteVideoMutation,
   useTranscribeStartMutation,
   useLazyGetJobQuery,
+  useIndexStartMutation,
+  useUnpublishMutation,
 } = videosApi

@@ -1,0 +1,212 @@
+targetUrl: ""
+order: 14
+timeout: 30000
+pipeline:
+  name: Index video (chunk, embed, publish)
+  description: >-
+    POST /api/index { videoId } -> ENQUEUE + POLL, mirroring Task 6's
+    transcribe rule. Sync steps: prep normalizes videoId -> load the video
+    record -> gate checks it's eligible (status transcribed|published,
+    youtube_url present and shaped like a real YouTube URL, transcript
+    present) -> on failure, respondReject returns 400 { error: reason } and
+    NOTHING else runs (no job, no video mutation); on success, createJob
+    (recall_jobs, kind 'index') -> setIndexing flips the video to 'indexing'
+    -> respond { jobId, status: 'pending' } immediately (embedding a whole
+    video's transcript is slow; postSteps avoid the edge timeout).
+    postSteps do the slow work, but EVERY postStep is conditioned, directly
+    or transitively, on steps.gate.ok (the postSteps chain shares the same
+    request `context` as the sync steps, so steps.gate is still visible) --
+    a gate-rejected request touches no job/video state at all, even though
+    postSteps always fire after a successful sync response. setRunning ->
+    chunk (Task 7's chunk.fn.js, reads the loaded record's transcript) ->
+    chunkCheck (ok iff no parse error and count > 0) -> texts
+    (JSON.stringify the chunk texts -- Replicate's `texts` input wants a
+    JSON-encoded string, not a YAML array) -> embed (Replicate
+    nateraw/bge-large-en-v1.5, batch) -> zip (pairs steps.chunk.chunks[i]
+    with steps.embed.output[i]; a length mismatch -- including the embed
+    step having failed outright -- reports EMBED_COUNT_MISMATCH rather than
+    throwing) -> zipCheck (the final pass/fail verdict; {ok:false,
+    notOk:false} when the gate never passed, so neither the success nor the
+    error branch below fires) -> on success: embedStore writes the paired
+    chunks onto the video's `transcript` field (deletes any prior embeddings
+    first) -> videoPublished flips status to 'published' -> jobDone marks
+    the job 'done'. On failure (chunk or embed/zip): jobErr marks the job
+    'error' with the failure reason, and videoErrBack puts the video back to
+    'transcribed' -- NOT 'error' -- since an indexing failure leaves a
+    perfectly valid transcribed video behind, unlike a transcription
+    failure which has no earlier good state to fall back to.
+
+    Replicate I/O verified 2026-08-09 against
+    https://replicate.com/nateraw/bge-large-en-v1.5/api/schema (the model's
+    public OpenAPI schema; no live prediction was run -- no Replicate API
+    token is available in this dev environment). Confirmed input fields:
+    `texts` (string, JSON-encoded array of strings), `batch_size` (integer,
+    default 32 -- Replicate's own internal GPU batching chunk size, NOT a
+    cap on total texts per call), `normalize_embeddings` (boolean, default
+    true), `convert_to_numpy` (boolean, default false -- left false so the
+    response is inline JSON vectors, not an .npy download URL). `version` is
+    left unpinned (the handler resolves the model's latest version via the
+    Replicate API at runtime) rather than trust an unverified hash. Task
+    12's post-deploy pass should confirm against a real prediction: (a) the
+    output really is an order-preserving array of 1024-dim float vectors
+    (the schema's own `output` typing is a generic `array of string`, which
+    reads as a Cog schema-generation quirk given the model card / blog post
+    both describe float vectors -- needs a live check), and (b) whether a
+    ~160-chunk 2h-video batch succeeds in one call or needs splitting into
+    <=100-text sequential steps per the task brief's fallback plan.
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: load
+      name: load
+      handler: data_query
+      config:
+        schemaId: $schema:recall_videos
+        recordId: steps.prep.videoId
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: respondReject
+      name: respondReject
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "error": "{{steps.gate.reason}}"
+          }
+        status: 400
+        contentType: application/json
+        condition: steps.gate.notOk
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'index'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:recall_jobs
+        condition: steps.gate.ok
+    - id: setIndexing
+      name: setIndexing
+      handler: data_update
+      config:
+        fields:
+          status: "'indexing'"
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.gate.ok
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+        condition: steps.gate.ok
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+        condition: steps.gate.ok
+    - id: chunk
+      name: chunk
+      handler: function_handler
+      code: ./chunk.fn.js
+      config:
+        condition: steps.gate.ok
+    - id: chunkCheck
+      name: chunkCheck
+      handler: function_handler
+      code: ./chunkCheck.fn.js
+    - id: texts
+      name: texts
+      handler: function_handler
+      code: ./texts.fn.js
+      config:
+        condition: steps.chunkCheck.ok
+    - id: embed
+      name: embed
+      handler: replicate
+      config:
+        input:
+          texts: steps.texts.textsJson
+          batch_size: 32
+          normalize_embeddings: true
+          convert_to_numpy: false
+        model: nateraw/bge-large-en-v1.5
+        timeout: 280000
+        condition: steps.chunkCheck.ok
+    - id: zip
+      name: zip
+      handler: function_handler
+      code: ./zip.fn.js
+      config:
+        condition: steps.chunkCheck.ok
+    - id: zipCheck
+      name: zipCheck
+      handler: function_handler
+      code: ./zipCheck.fn.js
+    - id: embedStore
+      name: embedStore
+      handler: embed_store
+      config:
+        schemaId: $schema:recall_videos
+        recordId: steps.prep.videoId
+        fieldName: transcript
+        chunks: steps.zip.chunks
+        condition: steps.zipCheck.ok
+    - id: videoPublished
+      name: videoPublished
+      handler: data_update
+      config:
+        fields:
+          status: "'published'"
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.zipCheck.ok
+    - id: jobDone
+      name: jobDone
+      handler: data_update
+      config:
+        fields:
+          result: steps.embedStore
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+        condition: steps.zipCheck.ok
+    - id: jobErr
+      name: jobErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.zipCheck.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+        condition: steps.zipCheck.notOk
+    - id: videoErrBack
+      name: videoErrBack
+      handler: data_update
+      config:
+        fields:
+          status: "'transcribed'"
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.zipCheck.notOk
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
