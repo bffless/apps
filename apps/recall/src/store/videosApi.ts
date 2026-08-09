@@ -89,6 +89,9 @@ export type Job = {
 export type TranscribeStartArgs = { videoId: string; audioPath: string; durationSec: number }
 export type TranscribeStartResponse = { jobId: string; status: string }
 
+/** `POST /api/uploads/sign` response — a time-limited direct bucket URL. */
+export type SignDownloadResponse = { url: string; expiresIn: number }
+
 export type IndexStartArgs = { videoId: string }
 export type IndexStartResponse = { jobId: string; status: string }
 
@@ -166,6 +169,24 @@ export const videosApi = recallApi.injectEndpoints({
       keepUnusedDataFor: 0,
     }),
 
+    // POST /api/uploads/sign { url } → { url, expiresIn } (PR-feedback-1): swap
+    // a persisted `source_path`/`audio_path` serve path for a direct, time-
+    // limited bucket URL so `<video>` reads the file straight from storage
+    // instead of streaming it through `file_serve` (slow/OOM-prone on large
+    // videos — same reasoning as Studio's `useSignedBytes`). The record stores
+    // paths WITH a leading slash (e.g. `/api/uploads/videos/<id>/source/...`);
+    // strip it before sending since the sign rule's `resolvePath.fn.js`
+    // envelope check is on the bare `api/uploads/...` key. `keepUnusedDataFor`
+    // mirrors Studio's 45min (signature lives 1h server-side).
+    signDownload: builder.query<SignDownloadResponse, string>({
+      query: (path) => ({
+        url: 'api/uploads/sign',
+        method: 'POST',
+        body: { url: path.replace(/^\/+/, '') },
+      }),
+      keepUnusedDataFor: 45 * 60,
+    }),
+
     // POST /api/index { videoId } → { jobId, status } (Task 8). ENQUEUE-ONLY,
     // same shape as transcribeStart: chunking/embedding runs in the pipeline's
     // postSteps so it can't hit the 30s edge timeout. The rule flips the video
@@ -224,6 +245,7 @@ export const {
   useDeleteVideoMutation,
   useTranscribeStartMutation,
   useLazyGetJobQuery,
+  useLazySignDownloadQuery,
   useIndexStartMutation,
   useUnpublishMutation,
   useListPublicVideosQuery,

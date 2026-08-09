@@ -10,11 +10,14 @@
  *
  * `activeSec` highlights whichever span currently contains it
  * (`span.start <= activeSec < span.end`, half-open so a boundary second
- * belongs to the NEXT span, not the one that just ended). Recall has no
- * live playhead feed (the youtube-nocookie iframe carries no JS API), so
- * callers only ever pass the last second the visitor explicitly seeked to
- * -- see `Video.tsx` for that limitation. Post-v1: wire the YouTube iframe
- * API for live playhead tracking.
+ * belongs to the NEXT span, not the one that just ended). The PUBLIC video
+ * page has no live playhead feed (the plain `youtube.com/embed` iframe
+ * carries no JS API unless `enablejsapi=1` is wired up), so `Video.tsx`
+ * only ever passes the last second the visitor explicitly seeked to -- see
+ * that file for the limitation. Post-v1: wire the YouTube iframe API for
+ * live playhead tracking. (The ADMIN video page's transcript panel doesn't
+ * have this limitation -- it seeks a real `<video>` element and tracks
+ * genuine `timeupdate` events, see `AdminVideo.tsx`.)
  */
 
 const GAP_THRESHOLD_SEC = 1.5

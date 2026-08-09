@@ -3,12 +3,19 @@ import { render } from '@testing-library/react'
 import { SeekingPlayer } from './SeekingPlayer'
 
 describe('SeekingPlayer', () => {
-  it('renders a youtube-nocookie embed URL with a rounded start second', () => {
+  it('renders a standard youtube.com embed URL with a rounded start second, autoplay off by default', () => {
     const { container } = render(<SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={754.4} />)
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    expect(iframe?.src).toBe(
-      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=754&autoplay=1',
+    expect(iframe?.src).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?start=754&autoplay=0')
+  })
+
+  it('turns autoplay on when explicitly requested (a user-seek mount)', () => {
+    const { container } = render(
+      <SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={754.4} autoplay />,
+    )
+    expect(container.querySelector('iframe')?.src).toBe(
+      'https://www.youtube.com/embed/dQw4w9WgXcQ?start=754&autoplay=1',
     )
   })
 
@@ -26,18 +33,16 @@ describe('SeekingPlayer', () => {
 
   it('remounts the iframe when startSec changes', () => {
     const { container, rerender } = render(
-      <SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} />,
+      <SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} autoplay />,
     )
     const first = container.querySelector('iframe')
     expect(first).not.toBeNull()
 
-    rerender(<SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={99} />)
+    rerender(<SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={99} autoplay />)
     const second = container.querySelector('iframe')
     expect(second).not.toBeNull()
     expect(second).not.toBe(first)
-    expect(second?.src).toBe(
-      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=99&autoplay=1',
-    )
+    expect(second?.src).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?start=99&autoplay=1')
   })
 
   it('remounts the iframe when youtubeId changes', () => {

@@ -9,7 +9,13 @@
  * `youTubeDeepLink`/`extractYouTubeTimestamp` in `src/lib/youtube.ts` use
  * for chat citations), read once at mount as the player's initial position.
  *
- * `activeSec` tracking limitation: the youtube-nocookie iframe embed here
+ * `hasUserSeeked` (PR-feedback-2) gates `SeekingPlayer`'s `autoplay`: the
+ * very first mount — whether at `startSec=0` or at a `?t=` deep link — is
+ * NOT a user gesture, so it renders paused (autoplay would get throttled by
+ * the browser and read as another blocker false-positive anyway). Only a
+ * transcript click flips it on, autoplaying from then on.
+ *
+ * `activeSec` tracking limitation: the plain `youtube.com/embed` iframe here
  * carries no JS API, so there's no live playhead to read. `activeSec` is
  * therefore only ever the last second the visitor explicitly seeked to
  * (via a transcript click or the initial `?t=`) — TranscriptView highlights
@@ -59,10 +65,15 @@ function VideoPage({ video }: { video: PublicVideo }) {
   const [activeSec, setActiveSec] = useState<number | undefined>(
     initialStartSec > 0 ? initialStartSec : undefined,
   )
+  // Gates `SeekingPlayer`'s `autoplay` — false on the initial mount (page
+  // load, even at a `?t=` deep link) since that's not a user gesture; a
+  // transcript click flips it on for good.
+  const [hasUserSeeked, setHasUserSeeked] = useState(false)
 
   function handleSeek(sec: number) {
     setStartSec(sec)
     setActiveSec(sec)
+    setHasUserSeeked(true)
   }
 
   const words = video.transcript.words
@@ -71,7 +82,12 @@ function VideoPage({ video }: { video: PublicVideo }) {
     <div className="mx-auto max-w-4xl px-6 py-10">
       {video.youtubeId ? (
         <div className="mb-6">
-          <SeekingPlayer youtubeId={video.youtubeId} startSec={startSec} title={video.title} />
+          <SeekingPlayer
+            youtubeId={video.youtubeId}
+            startSec={startSec}
+            title={video.title}
+            autoplay={hasUserSeeked}
+          />
         </div>
       ) : (
         <p className="mb-6 text-sm text-red-600 dark:text-red-400">

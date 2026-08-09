@@ -283,13 +283,21 @@ function LibrarySection() {
 export function Home() {
   const [tab, setTab] = useState<Tab>('search')
   const [player, setPlayer] = useState<PlayerTarget | null>(null)
+  // Gates `SeekingPlayer`'s `autoplay` (PR-feedback-2). The player panel here
+  // only ever mounts as the direct result of a moment/citation click, so this
+  // is always `true` by the time `player` goes non-null — kept explicit
+  // (rather than hard-coding `autoplay` on the panel) for the same
+  // "only autoplay off a real user gesture" reasoning as `Video.tsx`.
+  const [hasUserSeeked, setHasUserSeeked] = useState(false)
 
   function handleSelectMoment(video: SearchVideo, moment: Moment) {
     setPlayer({ youtubeId: video.youtubeId, startSec: moment.start, title: video.title })
+    setHasUserSeeked(true)
   }
 
   function handleSeek(target: SeekTarget) {
     setPlayer(target)
+    setHasUserSeeked(true)
   }
 
   return (
@@ -305,7 +313,12 @@ export function Home() {
 
       {player && (
         <div className="mb-8">
-          <SeekingPlayer youtubeId={player.youtubeId} startSec={player.startSec} title={player.title} />
+          <SeekingPlayer
+            youtubeId={player.youtubeId}
+            startSec={player.startSec}
+            title={player.title}
+            autoplay={hasUserSeeked}
+          />
         </div>
       )}
 
