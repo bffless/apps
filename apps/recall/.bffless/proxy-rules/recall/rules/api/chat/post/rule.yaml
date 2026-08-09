@@ -33,7 +33,22 @@ pipeline:
     gracefully for that one query (the assistant reports no results rather
     than crashing). A proper JSON-encode belongs in CE, not here -- tracked
     as a bffless/ce#651 follow-up.
+
+    Conversation titles (title-conversations-from-first-message): a `prep`
+    function_handler step runs before `ai` and derives a title from the
+    first user message in `request.body.messages` (collapsed whitespace,
+    truncated to 60 chars on a word boundary with a trailing ellipsis --
+    see prep.fn.js). The ai step's `extraConversationFields: { title:
+    "steps.prep.title" }` merges that into the conversation record, but
+    CE's ai_handler (ensureConversationExists) only evaluates
+    extraConversationFields when the conversation is first CREATED, never
+    on later messages in the same thread -- so the title is set once, from
+    the message that started the conversation, and never rewritten.
   steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
     - id: ai
       name: ai
       handler: ai_handler
@@ -106,6 +121,8 @@ pipeline:
         maxHistoryMessages: 20
         persistMessagesSchemaId: $schema:recall_messages
         persistConversationsSchemaId: $schema:recall_conversations
+        extraConversationFields:
+          title: steps.prep.title
       isEnabled: true
   validators:
     - type: rate_limit
