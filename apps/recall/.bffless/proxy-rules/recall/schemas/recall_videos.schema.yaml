@@ -22,12 +22,6 @@ fields:
   - name: audio_path
     type: string
     required: false
-  - name: sheet_path
-    type: string
-    required: false
-  - name: sheet_meta
-    type: text
-    required: false
   - name: transcript
     type: text
     required: false
@@ -36,4 +30,10 @@ fields:
     required: false
   - name: updated_ms
     type: number
+    required: false
+  - name: sheet_path
+    type: string
+    required: false
+  - name: sheet_meta
+    type: text
     required: false
