@@ -1,0 +1,24 @@
+id: dfeb44d9-d5bb-4f50-85b5-15140397b326
+name: recall_uploads
+fields:
+  - name: filename
+    type: string
+    required: true
+  - name: storage_path
+    type: string
+    required: true
+  - name: content_type
+    type: string
+    required: true
+  - name: size
+    type: number
+    required: true
+  - name: url
+    type: string
+    required: true
+  - name: sub_dir
+    type: string
+    required: true
+  - name: original_name
+    type: string
+    required: true

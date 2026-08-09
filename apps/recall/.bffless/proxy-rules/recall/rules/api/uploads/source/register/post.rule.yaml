@@ -1,0 +1,31 @@
+targetUrl: pipeline
+order: 3
+pipeline:
+  name: Register recall_uploads source upload
+  description: Verify the bucket object and write the recall_uploads record (finalize step of the direct-to-bucket flow).
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: videos/{{request.body.videoId}}/source
+        schemaId: $schema:recall_uploads
+        storageKey: request.body.storageKey
+        maxFileSize: 2147483648
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - video/*
+      isEnabled: true
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+      isEnabled: true
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Register: finalize a direct-to-bucket recall source video upload into recall_uploads"

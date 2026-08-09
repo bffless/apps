@@ -1,0 +1,24 @@
+id: 0cfb9415-7b4f-4ca2-95f4-0f4d69f5af78
+name: recall_videos
+fields:
+  - name: title
+    type: string
+  - name: description
+    type: text
+  - name: youtube_url
+    type: string
+  - name: status
+    type: string
+    required: true
+  - name: duration
+    type: number
+  - name: source_path
+    type: string
+  - name: audio_path
+    type: string
+  - name: transcript
+    type: text
+  - name: created_ms
+    type: number
+  - name: updated_ms
+    type: number

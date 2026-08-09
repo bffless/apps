@@ -1,0 +1,29 @@
+targetUrl: pipeline
+order: 5
+pipeline:
+  name: Register recall_uploads audio upload
+  description: Verify the bucket object and write the upload record (finalize step of the direct-to-bucket audio flow). Reuses the recall_uploads schema; the audio/ subDir distinguishes records.
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: videos/{{request.body.videoId}}/audio
+        schemaId: $schema:recall_uploads
+        storageKey: request.body.storageKey
+        maxFileSize: 2147483648
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - audio/*
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Register: finalize a direct-to-bucket recall audio upload into recall_uploads"

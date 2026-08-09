@@ -1,0 +1,19 @@
+id: 44ab534e-46b6-4277-a49f-add7dd735fcf
+name: recall_messages
+fields:
+- name: conversation_id
+  type: string
+  required: true
+- name: role
+  type: string
+  required: true
+- name: content
+  type: text
+  required: true
+- name: tokens_used
+  type: number
+  default: 0
+  required: false
+- name: metadata
+  type: json
+  required: false

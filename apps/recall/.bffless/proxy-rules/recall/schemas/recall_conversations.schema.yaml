@@ -1,0 +1,32 @@
+id: b97445e8-4a40-4aa2-8ae2-6b7ee03a9c58
+name: recall_conversations
+fields:
+- name: user_id
+  type: string
+  required: true
+- name: chat_id
+  type: string
+  required: true
+- name: title
+  type: string
+  required: false
+- name: model
+  type: string
+  required: true
+- name: system_prompt
+  type: text
+  required: false
+- name: message_count
+  type: number
+  default: 0
+  required: true
+- name: total_tokens
+  type: number
+  default: 0
+  required: true
+- name: metadata
+  type: json
+  required: false
+- name: ip_address
+  type: string
+  required: false
