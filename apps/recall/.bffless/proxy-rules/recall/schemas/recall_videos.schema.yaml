@@ -1,0 +1,39 @@
+id: 0cfb9415-7b4f-4ca2-95f4-0f4d69f5af78
+name: recall_videos
+fields:
+  - name: title
+    type: string
+    required: false
+  - name: description
+    type: text
+    required: false
+  - name: youtube_url
+    type: string
+    required: false
+  - name: status
+    type: string
+    required: true
+  - name: duration
+    type: number
+    required: false
+  - name: source_path
+    type: string
+    required: false
+  - name: audio_path
+    type: string
+    required: false
+  - name: transcript
+    type: text
+    required: false
+  - name: created_ms
+    type: number
+    required: false
+  - name: updated_ms
+    type: number
+    required: false
+  - name: sheet_path
+    type: string
+    required: false
+  - name: sheet_meta
+    type: text
+    required: false

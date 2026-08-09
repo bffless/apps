@@ -1,0 +1,66 @@
+targetUrl: pipeline
+order: 9
+pipeline:
+  name: Delete recall video (bucket prefix + record)
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: delete
+      name: delete
+      handler: file_delete
+      config:
+        prefix: "{{steps.prep.prefix}}"
+    - id: deleteSheets
+      name: deleteSheets
+      handler: file_delete
+      config:
+        prefix: "{{steps.prep.sheetsPrefix}}"
+    - id: deleteSourceUploads
+      name: deleteSourceUploads
+      handler: data_delete
+      config:
+        schemaId: $schema:recall_uploads
+        filters:
+          sub_dir:
+            op: eq
+            value: steps.prep.sourceSubDir
+    - id: deleteAudioUploads
+      name: deleteAudioUploads
+      handler: data_delete
+      config:
+        schemaId: $schema:recall_uploads
+        filters:
+          sub_dir:
+            op: eq
+            value: steps.prep.audioSubDir
+    - id: deleteSheetUploads
+      name: deleteSheetUploads
+      handler: data_delete
+      config:
+        schemaId: $schema:recall_uploads
+        filters:
+          sub_dir:
+            op: eq
+            value: steps.prep.sheetsSubDir
+    - id: deleteRecord
+      name: deleteRecord
+      handler: data_delete
+      config:
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+    - id: response
+      name: response
+      handler: response_handler
+      config:
+        body: '{ "ok": true, "deleted": {{steps.delete.deleted}}, "prefix": "{{steps.prep.prefix}}", "recordsDeleted": {{steps.deleteRecord.count}}, "uploadRecordsDeleted": {{steps.deleteSourceUploads.count}} }'
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Delete a video: bucket prefixes + recall_videos record + recall_uploads bookkeeping rows (Task 5; PR-feedback-3 added the sheets prefix + upload-row cleanup). POST { videoId } -> prep validates videoId and builds the two bucket prefixes ('videos/<id>/', 'sheets/<id>/') plus the three LITERAL sub_dir values register_upload wrote for this video's uploads ('videos/<id>/source', 'videos/<id>/audio', 'sheets/<id>') (throws if videoId is missing, so a bad request fails closed) -> delete (file_delete) wipes every bucket object under 'videos/<id>/' (source video, audio, any derived assets) -> deleteSheets (file_delete) wipes every object under the TOP-LEVEL 'sheets/<id>/' prefix (contact-sheet sprites live outside 'videos/', per the upload rule's design, so they need their own file_delete or they're orphaned on delete) -> deleteSourceUploads/deleteAudioUploads/deleteSheetUploads (data_delete, delete-by-query on recall_uploads where sub_dir = each literal value -- same filter idiom as Reader's api/prune rule) remove the bookkeeping rows register_upload wrote at upload time, which the bucket-level file_delete steps above never touch (they're a SEPARATE schema, not part of the videos/<id>/ or sheets/<id>/ prefixes' own records) -> data_delete BY RECORDID DIRECTLY (recordId: steps.prep.videoId - unlike Studio's delete, no prior query+pick is needed to resolve a recordId from a filtered lookup, because a recall video's videoId already IS its recordId; data_delete tolerates 0 matches so this is safe even if the record is already gone) -> response { ok, deleted, prefix, recordsDeleted, uploadRecordsDeleted }. recall_jobs rows (transcribe/index job history) are deliberately NOT cleaned up here: their videoId lives nested inside the `request` JSON field, and data_delete's filter builder only extracts TOP-LEVEL JSON keys (`data->>'field'`), so there's no clean way to filter on a nested path -- job rows are left behind as an audit trail rather than either skipped entirely or reached via an unsupported filter. Admin-only."

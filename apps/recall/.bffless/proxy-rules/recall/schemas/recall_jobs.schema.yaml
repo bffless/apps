@@ -1,0 +1,24 @@
+id: a551576f-ee19-4a85-8b5c-4b0e8f0917e4
+name: recall_jobs
+fields:
+  - name: kind
+    type: string
+    required: true
+  - name: status
+    type: string
+    required: true
+  - name: request
+    type: json
+    required: false
+  - name: result
+    type: json
+    required: false
+  - name: error
+    type: string
+    required: false
+  - name: prompt
+    type: text
+    required: false
+  - name: system
+    type: text
+    required: false

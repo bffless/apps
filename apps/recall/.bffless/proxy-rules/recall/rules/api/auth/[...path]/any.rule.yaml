@@ -1,0 +1,4 @@
+targetUrl: http://localhost:3000/api/auth
+order: 1
+forwardCookies: true
+description: 'Reverse-proxy SuperTokens auth endpoints to the CE backend so this subdomain app can refresh the sAccessToken session. forwardCookies carries the path-scoped sRefreshToken and relays the rotated Set-Cookie back. Without it a long auto-build outlives the access token and every /api/* call 401s "try refresh token" with no way to recover. NOT the /_bffless/auth relay — that only refreshes the bffless_access cookie, which does not exist on a primary-domain subdomain. Recall is a private deployment, so this rule also depends on CE exempting matched auth-proxy rules from the visibility gate (bffless/ce): without that, the gate 401s the refresh call itself and the rule never fires.'

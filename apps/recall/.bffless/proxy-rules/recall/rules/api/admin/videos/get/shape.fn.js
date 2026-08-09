@@ -1,0 +1,29 @@
+function handler({ steps }) {
+  var rows = (steps && steps.query) || []
+  function str(v) {
+    return typeof v === 'string' ? v : null
+  }
+  function num(v) {
+    var n = Number(v)
+    return typeof v !== 'undefined' && v !== null && !isNaN(n) ? n : 0
+  }
+  var out = []
+  for (var i = 0; i < rows.length; i++) {
+    var q = rows[i] || {}
+    out.push({
+      id: typeof q.id === 'string' ? q.id : null,
+      title: typeof q.title === 'string' ? q.title : '',
+      description: str(q.description),
+      youtube_url: str(q.youtube_url),
+      status: typeof q.status === 'string' ? q.status : 'draft',
+      duration: num(q.duration),
+      source_path: str(q.source_path),
+      audio_path: str(q.audio_path),
+      created_ms: num(q.created_ms),
+      updated_ms: num(q.updated_ms),
+      // transcript intentionally dropped - list is a lightweight admin table, not
+      // a place to ship a (potentially large) transcript blob to every row.
+    })
+  }
+  return { videos: out }
+}

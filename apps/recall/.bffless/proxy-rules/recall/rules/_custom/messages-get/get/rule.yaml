@@ -1,0 +1,69 @@
+pathPattern: /api/messages
+targetUrl: pipeline
+order: 22
+pipeline:
+  name: Get recall conversation messages
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: respond400
+      name: respond400
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "error": "{{steps.prep.reason}}"
+          }
+        status: 400
+        contentType: application/json
+        condition: steps.prep.notOk
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        filters:
+          conversation_id:
+            op: eq
+            value: steps.prep.conversationId
+        pageSize: 500
+        schemaId: $schema:recall_messages
+        condition: steps.prep.ok
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: respond200
+      name: respond200
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+        condition: steps.prep.ok
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: >-
+  Get one conversation's message thread for the admin Conversations viewer
+  (Task 11, read-only). GET /api/messages?conversationId=<id> -> prep
+  validates conversationId is present (ok/notOk sentinel, mirrors
+  _custom/video-get's prep.fn.js) -> on failure, respond400 returns 400
+  { error: 'CONVERSATION_ID_REQUIRED' } -> on success: query (data_query
+  filters recall_messages by conversation_id -- the SAME filter-by-field
+  pattern as the public GET /api/chat, schemaId swapped to
+  $schema:recall_messages, condition steps.prep.ok) -> shape maps each row
+  to { id, role, content, createdAt }, sorted OLDEST-first (a chat thread
+  reads top-to-bottom, opposite of GET /api/conversations' newest-first
+  list) -> respond200 { messages }. Custom pathPattern /api/messages (mirrors
+  _custom/video-get) since this needs a query-string conversationId.
+  Admin-only (auth_required, roles: ['admin']) -- unlike the public GET
+  /api/chat (which trusts an unguessable conversation id), this is reached
+  by picking any conversation from the admin-only GET /api/conversations
+  list, so it must carry the same guard.

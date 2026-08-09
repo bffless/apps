@@ -1,0 +1,63 @@
+name: Deploy Recall to BFFless
+
+# One workflow per app: pushes that touch apps/recall (or this file) deploy Recall,
+# and it can always be run by hand. Clone the monorepo, set BFFLESS_URL +
+# BFFLESS_API_KEY on your fork, and deploy just this app.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/recall/**'
+      - '.github/workflows/deploy-recall.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-recall
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter recall build
+
+      - name: Run unit tests
+        run: pnpm --filter recall test:run
+
+      # Requires CE >= 0.2.0 on the instance. Recall has a single rule set
+      # (unlike Studio's two) and ships no agent skills, so there's no
+      # separate skills-upload step here.
+      - name: Sync proxy rules to BFFless
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: apps/recall/.bffless/proxy-rules/recall
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
+          summary-title: Recall Proxy Rules
+
+      - name: Deploy to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/recall/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: recall
+          proxy-rule-set-names: recall

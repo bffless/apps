@@ -1,0 +1,29 @@
+targetUrl: pipeline
+order: 4
+pipeline:
+  name: Prepare recall_uploads audio upload
+  description: Mint a presigned PUT URL so the browser uploads the extracted audio straight to the bucket (bypasses the 1MB proxy cap), so transcription can hand the audio to the transcriber.
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: videos/{{request.body.videoId}}/audio
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 2147483648
+        allowedMimeTypes:
+          - audio/*
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Prepare: mint presigned PUT URL for direct-to-bucket recall audio upload"

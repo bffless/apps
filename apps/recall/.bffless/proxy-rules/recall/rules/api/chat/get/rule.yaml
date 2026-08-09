@@ -1,0 +1,37 @@
+targetUrl: pipeline
+order: 18
+pipeline:
+  name: Get recall chat conversation
+  steps:
+    - id: form_validation
+      name: form_validation
+      handler: form_handler
+      config:
+        fields:
+          conversationId:
+            type: string
+            required: false
+    - id: query_records
+      name: query_records
+      handler: data_query
+      config:
+        filters:
+          conversation_id:
+            op: eq
+            value: request.query.conversationId
+        schemaId: $schema:recall_messages
+description: >-
+  GET /api/chat?conversationId=<id> -> resume a stored conversation (Task
+  10 fix). Ported from the chat-pipelines demo's GET /api/chat rule,
+  schemaId swapped to $schema:recall_messages -- same two-step shape
+  (form_handler validates the optional conversationId query param,
+  data_query filters recall_messages by conversation_id) with no explicit
+  response_handler, so the framework's default envelope applies:
+  `{ success: true, data: [...] }`, each record spread with its schema
+  fields (id, role, content, tokens_used, metadata, conversation_id) plus
+  the record's own `id`/`createdAt`/`updatedAt` -- `ChatTab.tsx` sorts on
+  `createdAt` (camelCase, matching data_query's actual output field, not
+  the `created_at` the source app's popup variant assumed). Public GET by
+  conversation id, same as the source: ids are SDK-generated UUIDs
+  (unguessable), and the source rule carries no validators (no auth, no
+  rate_limit) -- left as-is rather than inventing one.

@@ -1,0 +1,29 @@
+targetUrl: pipeline
+order: 10
+pipeline:
+  name: List admin recall videos
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        pageSize: 500
+        schemaId: $schema:recall_videos
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "List ALL recall_videos records for the admin table (Task 5). GET /api/admin/videos -> data_query lists every row (no status filter - draft/processing/ready/error all show) -> shape builds an ARRAY of full metas { id, title, description, youtube_url, status, duration, source_path, audio_path, created_ms, updated_ms }, dropping the (potentially large) transcript field -> response. Admin-only (auth_required, roles: ['admin'])."

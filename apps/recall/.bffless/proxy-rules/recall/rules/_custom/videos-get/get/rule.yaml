@@ -1,0 +1,30 @@
+pathPattern: /api/videos/get
+targetUrl: pipeline
+order: 11
+pipeline:
+  name: Get recall video
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.query.videoId
+        schemaId: $schema:recall_videos
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Get one recall_videos record, INCLUDING transcript (Task 5). GET /api/videos/get?videoId=<id> -> data_query BY RECORDID DIRECTLY (recordId: request.query.videoId - the video's id already IS its system record id, so no filter+first-match step is needed the way Studio's -api-projects-get needs one for its client-generated projectId) -> shape returns the full record { id, title, description, youtube_url, status, duration, source_path, audio_path, transcript, created_ms, updated_ms } (nulls/defaults when not found, mirroring Studio's tolerant not-found shape) -> response. Custom pathPattern (mirrors Studio's _custom/-api-projects-get) because the directory-inferred route for GET under api/videos/get would collide with the api/videos/... method-folder convention. Admin-only."

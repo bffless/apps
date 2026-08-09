@@ -3,6 +3,7 @@
   "project": "bffless/apps",
   "ruleSets": [
     "apps/reader/.bffless/proxy-rules/*",
-    "apps/studio/.bffless/proxy-rules/*"
+    "apps/studio/.bffless/proxy-rules/*",
+    "apps/recall/.bffless/proxy-rules/*"
   ]
 }

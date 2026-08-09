@@ -1,0 +1,29 @@
+targetUrl: pipeline
+order: 23
+pipeline:
+  name: Prepare recall_uploads sheet upload
+  description: Mint a presigned PUT URL so the browser uploads the contact-sheet sprite straight to the bucket (bypasses the 1MB proxy cap). Top-level `sheets/` subDir (NOT under `videos/`) so the public serve rule can only ever reach sprite images, never source/audio files.
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: sheets/{{request.body.videoId}}
+        filename: request.body.filename
+        expiresIn: 3600
+        dateBucket: true
+        maxFileSize: 10485760
+        allowedMimeTypes:
+          - image/*
+    - id: response
+      name: Return Prepare Result
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Prepare: mint presigned PUT URL for direct-to-bucket recall contact-sheet upload"

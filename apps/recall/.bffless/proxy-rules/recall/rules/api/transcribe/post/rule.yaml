@@ -1,0 +1,124 @@
+targetUrl: ""
+order: 12
+timeout: 120000
+pipeline:
+  name: Transcribe audio (WhisperX, async)
+  description: audioPath (already in bucket) -> ENQUEUE a job (kind 'transcribe') and return its id, flipping the video record to 'transcribing' synchronously so the admin UI can show it immediately. The WhisperX call runs in postSteps so it can't hit the 30s edge timeout. Flattened { words, text } (NO diarization/speaker — dropped vs. Studio's version, Recall has no per-speaker UI) is stringified and written onto the recall_videos record's transcript field (status 'transcribed', duration from the client-measured durationSec), and mirrored onto the job row's result (status 'done'), polled via /api/recall/job. On failure BOTH the job row and the video record flip to status 'error'.
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'transcribe'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:recall_jobs
+    - id: setTranscribing
+      name: setTranscribing
+      handler: data_update
+      config:
+        fields:
+          status: "'transcribing'"
+        recordId: request.body.videoId
+        schemaId: $schema:recall_videos
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+    - id: sign
+      name: sign
+      handler: signed_url
+      config:
+        path: steps.prep.storagePath
+        expiresIn: 3600
+    - id: whisper
+      name: whisper
+      handler: replicate
+      config:
+        input:
+          debug: false
+          audio_file: steps.sign.url
+          batch_size: 64
+          temperature: 0
+          align_output: true
+        model: victor-upmeet/whisperx
+        timeout: 280000
+        version: 655845d6190ef70573c669245f245892cd039df4b880a1e3a65852c09252f5cc
+    - id: flatten
+      name: flatten
+      handler: function_handler
+      code: ./flatten.fn.js
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+    - id: stringify
+      name: stringify
+      handler: function_handler
+      code: ./stringify.fn.js
+    - id: videoDone
+      name: videoDone
+      handler: data_update
+      config:
+        fields:
+          transcript: steps.stringify.transcript
+          status: "'transcribed'"
+          duration: request.body.durationSec
+        recordId: request.body.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.check.ok
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.check.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+        condition: steps.check.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.check.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+        condition: steps.check.notOk
+    - id: videoErr
+      name: videoErr
+      handler: data_update
+      config:
+        fields:
+          status: "'error'"
+        recordId: request.body.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.check.notOk
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Transcribe an already-uploaded WAV with word-level timestamps (Task 6). POST /api/transcribe { videoId, audioPath, durationSec } -> prep rebuilds the bucket storage path from the /api/uploads/... serve path -> createJob (recall_jobs, kind 'transcribe') -> setTranscribing flips the recall_videos record's status to 'transcribing' -> respond { jobId, status: 'pending' } immediately (WhisperX is slow; the edge has a 30s timeout). postSteps: setRunning -> sign a presigned GET for the audio -> Replicate WhisperX (align_output true, batch_size 64, temperature 0, NO diarization/huggingface_access_token — dropped vs. Studio, Recall has no per-speaker UI) -> flatten segments to { words: [{text,start,end}], text } -> check validates the shape -> stringify JSON-encodes { words, text } -> on success: videoDone writes transcript+status:'transcribed'+duration onto the recall_videos record AND finishOk writes result+status:'done' onto the job row; on failure: finishErr writes error+status:'error' onto the job row AND videoErr flips the recall_videos record to status:'error' too, so the admin UI never gets stuck on 'transcribing'. Admin-only."

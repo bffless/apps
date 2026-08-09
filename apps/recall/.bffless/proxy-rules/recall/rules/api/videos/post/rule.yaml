@@ -1,0 +1,37 @@
+targetUrl: pipeline
+order: 7
+pipeline:
+  name: Create recall video
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        fields:
+          title: steps.prep.title
+          status: "'draft'"
+          created_ms: steps.prep.ms
+          updated_ms: steps.prep.ms
+        schemaId: $schema:recall_videos
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Create a recall_videos record (Task 5). POST { title, createdMs } -> prep trims the title and normalizes createdMs (falls back to Date.now() if missing/invalid, mirroring Studio's create rule) -> data_create writes title/status('draft')/created_ms/updated_ms; the row's own system id IS the videoId used everywhere else (recall_videos has no separate id field to rename, unlike Studio's studio_projects.projectId, because Recall has no offline-first client-generated id: the id only ever exists after this call returns) -> shape normalizes the response -> { video: { id, title, description, youtube_url, status, duration, source_path, audio_path, created_ms, updated_ms } }. Admin-only (auth_required, roles: ['admin'])."

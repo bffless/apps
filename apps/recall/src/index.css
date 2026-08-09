@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+/* Enable a class-based dark variant (Tailwind v4 CSS config). `dark:` utilities
+   apply when the root carries `.dark`. No theme toggle exists yet (later task) —
+   this is here so the convention matches the other apps once one is added. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+:root.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+}
+.dark body {
+  background: #020617;
+  color: #e2e8f0;
+}

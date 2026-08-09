@@ -1,0 +1,80 @@
+targetUrl: ""
+order: 15
+timeout: 30000
+pipeline:
+  name: Unpublish video (delete embeddings)
+  description: >-
+    POST /api/unpublish { videoId } -> all-sync (no postSteps -- deleting
+    embeddings and flipping a status are both fast DB writes, unlike
+    /api/index's transcript embedding). prep validates videoId is present
+    (throws if missing -- fails closed, see prep.fn.js: PR-feedback-4 added a
+    prefix-based file_delete below, so a blank id can no longer be tolerated
+    the way it used to be) and hands embed_store a REAL empty array via
+    steps.prep.chunks: the expression evaluator has no array-literal syntax,
+    so a bare `chunks: []` in this config would evaluate to the literal
+    STRING "[]" and be rejected by embed_store's Array.isArray guard -- see
+    prep.fn.js. embedStore in chunked mode with an empty chunks array deletes
+    the video's existing transcript embeddings and stores nothing new, which
+    is exactly "unpublish": the record keeps its transcript text, just drops
+    out of vector search. deleteSheets (file_delete) wipes the video's
+    contact-sheet sprite from the TOP-LEVEL 'sheets/<id>/' bucket prefix
+    (PR-feedback-4: a video re-published later shows no thumbnails until the
+    admin re-runs "Generate frames" -- deliberate, not a bug) ->
+    deleteSheetUploads (data_delete, same delete-by-query idiom as
+    api/videos/delete/post/rule.yaml) removes the matching recall_uploads
+    bookkeeping row -> setTranscribed flips status back to 'transcribed' (the
+    video is still fully transcribed, just not indexed/published) AND clears
+    sheet_path/sheet_meta to '' so the record stops pointing at bucket
+    objects that no longer exist -> respond returns { ok: true }. Admin-only,
+    same as /api/index and /api/transcribe.
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: embedStore
+      name: embedStore
+      handler: embed_store
+      config:
+        schemaId: $schema:recall_videos
+        recordId: steps.prep.videoId
+        fieldName: transcript
+        chunks: steps.prep.chunks
+    - id: deleteSheets
+      name: deleteSheets
+      handler: file_delete
+      config:
+        prefix: "{{steps.prep.sheetsPrefix}}"
+    - id: deleteSheetUploads
+      name: deleteSheetUploads
+      handler: data_delete
+      config:
+        schemaId: $schema:recall_uploads
+        filters:
+          sub_dir:
+            op: eq
+            value: steps.prep.sheetsSubDir
+    - id: setTranscribed
+      name: setTranscribed
+      handler: data_update
+      config:
+        fields:
+          status: "'transcribed'"
+          sheet_path: "''"
+          sheet_meta: "''"
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "ok": true
+          }
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']

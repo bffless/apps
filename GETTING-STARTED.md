@@ -26,6 +26,7 @@ The spine below is written with a placeholder **`<app>`**. Choose the app you're
 | `studio` | [`apps/studio/bffless/README.md`](apps/studio/bffless/README.md) | `studio` | **Deploy Studio to BFFless** | upload a recording → see the transcript |
 | `handoff` | [`apps/handoff/bffless/README.md`](apps/handoff/bffless/README.md) | `handoff` | **Deploy Handoff to BFFless** — [template](apps/handoff/bffless/deploy-handoff.yml), copy it in first (see note) | upload a file → see it served back |
 | `reader` | [`apps/reader/bffless/README.md`](apps/reader/bffless/README.md) | `reader` | **Deploy Reader to BFFless** | sign in → add a feed → see items appear |
+| `recall` | [`apps/recall/bffless/README.md`](apps/recall/bffless/README.md) | `recall` | **Deploy Recall to BFFless** | upload a talk, publish it → search or chat and get a timestamped citation that seeks the player |
 
 > **Handoff has no workflow in `.github/workflows/` — copy the template.** Upstream stopped shipping
 > Handoff to a live instance (it's installed from the BFFless app catalog instead), so its deploy
@@ -52,7 +53,11 @@ one app's specifics into itself.
 > tokens but **requires a real bucket storage backend** (not local file storage). Reader needs neither
 > tokens nor a bucket, but needs **two background pipeline schedules** (auto-refresh + nightly prune)
 > and a **private, SPA domain mapping** plus the **auth relay** — the `install-app` skill creates the
-> schedules and reports the rest.
+> schedules and reports the rest. Recall needs **both** AI Services tokens Studio does (Replicate —
+> WhisperX transcription and every embedding call at ingest/search/chat time; Anthropic — the RAG
+> chat) **and** a real bucket storage backend like Handoff (source video + extracted audio upload
+> straight to the bucket via presigned PUT, no local-disk fallback), **plus bucket CORS** allowing
+> `https://recall.j5s.dev` and the shared `recall-preview` PR alias as upload origins.
 
 ---
 

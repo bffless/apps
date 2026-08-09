@@ -1,0 +1,40 @@
+targetUrl: pipeline
+order: 21
+pipeline:
+  name: List recall conversations
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        pageSize: 200
+        schemaId: $schema:recall_conversations
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: >-
+  List every recall_conversations record for the admin Conversations viewer
+  (Task 11, read-only). GET /api/conversations -> data_query lists every row
+  (pageSize 200, no filter -- there's no per-conversation ownership model to
+  scope by) -> shape maps each row to { id, title, model, message_count,
+  total_tokens, createdAt }, sorted newest-first by createdAt -- message
+  bodies are intentionally NOT included here (see GET /api/messages), same
+  list/detail split as the admin video table vs. GET /api/videos/get ->
+  respond { conversations }. Admin-only (auth_required, roles: ['admin']) --
+  unlike GET /api/chat (public, resumes a specific conversation by its own
+  unguessable id), this enumerates every conversation, which is exactly the
+  kind of aggregate view that must stay behind auth.
