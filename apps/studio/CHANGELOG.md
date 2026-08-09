@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/bffless/apps/compare/studio-v1.2.0...studio-v1.3.0) (2026-08-09)
+
+
+### Features
+
+* **studio:** auto build runs scene steps in parallel across resource lanes ([#303](https://github.com/bffless/apps/issues/303)) ([f2fddb2](https://github.com/bffless/apps/commit/f2fddb23942020f44e6780bbce328f38fc3a3095))
+
 ## [1.2.0](https://github.com/bffless/apps/compare/studio-v1.1.2...studio-v1.2.0) (2026-08-08)
 
 
