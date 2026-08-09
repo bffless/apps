@@ -7,9 +7,18 @@
 
 import { recallApi } from './recallApi'
 
-/** A `recall_conversations` row's summary, as `GET /api/conversations` shapes it. */
+/**
+ * A `recall_conversations` row's summary, as `GET /api/conversations` shapes it.
+ *
+ * `chat_id` is the client-generated id `useChat` sends and the id CE's
+ * ai_handler chat persistence actually writes onto each `recall_messages`
+ * row's `conversation_id` field -- NOT `id` (the record's own UUID). Fetch a
+ * conversation's messages by `chat_id`, falling back to `id` only for
+ * legacy/malformed rows that somehow lack it.
+ */
 export type ConversationMeta = {
   id: string
+  chat_id: string | null
   title: string | null
   model: string
   message_count: number
