@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/bffless/apps/compare/recall-v0.1.0...recall-v0.1.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **recall:** frames grid renders immediately after generation ([#308](https://github.com/bffless/apps/issues/308)) ([01c9adb](https://github.com/bffless/apps/commit/01c9adbc52fb4cf7ef7d2b05691b206817da4c82))
+
 ## [0.1.0](https://github.com/bffless/apps/compare/recall-v0.0.1...recall-v0.1.0) (2026-08-09)
 
 
