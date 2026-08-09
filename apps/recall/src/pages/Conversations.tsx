@@ -45,6 +45,11 @@ function ConversationRow({
     >
       <span className="truncate font-medium text-slate-900 dark:text-slate-100">
         {conversation.title || 'Untitled conversation'}
+        {!conversation.title && conversation.chat_id && (
+          <span className="ml-1.5 font-mono text-xs font-normal text-slate-400 dark:text-slate-500">
+            {conversation.chat_id.slice(0, 8)}
+          </span>
+        )}
       </span>
       <span className="text-xs text-slate-500 dark:text-slate-400">
         {conversation.message_count} message{conversation.message_count === 1 ? '' : 's'} ·{' '}
@@ -54,8 +59,8 @@ function ConversationRow({
   )
 }
 
-function MessageThread({ conversationId }: { conversationId: string }) {
-  const { data, isLoading, isError } = useGetMessagesQuery(conversationId)
+function MessageThread({ conversationKey }: { conversationKey: string }) {
+  const { data, isLoading, isError } = useGetMessagesQuery(conversationKey)
   const messages = data?.messages ?? []
 
   if (isLoading) {
@@ -97,6 +102,14 @@ export function Conversations() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const conversations = data?.conversations ?? []
+  const selectedConversation = conversations.find((c) => c.id === selectedId) ?? null
+  // recall_messages rows are keyed by the useChat-client-generated chat_id
+  // (see ConversationMeta's doc comment), not the recall_conversations
+  // record's own UUID -- fall back to the record id defensively, for any
+  // legacy row that somehow lacks a chat_id.
+  const selectedConversationKey = selectedConversation
+    ? selectedConversation.chat_id || selectedConversation.id
+    : null
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
@@ -135,8 +148,8 @@ export function Conversations() {
           </div>
 
           <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-            {selectedId ? (
-              <MessageThread key={selectedId} conversationId={selectedId} />
+            {selectedConversationKey ? (
+              <MessageThread key={selectedId} conversationKey={selectedConversationKey} />
             ) : (
               <p className="text-slate-500 dark:text-slate-400">
                 Pick a conversation to view its messages.
