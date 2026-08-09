@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "recall",
   "name": "Recall",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "summary": "Video transcript RAG search & chat, with second-exact YouTube deep links.",
   "category": "search",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/recall/bffless/README.md",

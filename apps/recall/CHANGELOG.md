@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/bffless/apps/compare/recall-v0.1.1...recall-v0.1.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* **recall:** query conversation messages by chat id ([#310](https://github.com/bffless/apps/issues/310)) ([3618b67](https://github.com/bffless/apps/commit/3618b67a1b63fc88d5dc3c06350eab25f1af8f5e))
+
 ## [0.1.1](https://github.com/bffless/apps/compare/recall-v0.1.0...recall-v0.1.1) (2026-08-09)
 
 
