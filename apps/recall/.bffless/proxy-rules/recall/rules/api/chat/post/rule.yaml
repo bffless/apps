@@ -1,0 +1,99 @@
+targetUrl: ''
+order: 17
+timeout: 30000
+debugEnabled: false
+pipeline:
+  name: recall RAG chat
+  description: >-
+    POST /api/chat -> PUBLIC RAG chat over the video library's transcripts
+    (Task 10). ai_handler in chat mode, streaming, claude-haiku-4-5 via
+    Anthropic. The rag-search plugin exposes a search_videos tool
+    (vector_search over recall_videos.transcript, same embedding model used
+    at index/search time) that the model calls before answering -- the
+    system prompt requires every factual claim to cite a
+    `[<title> @ mm:ss](youtube-link)` built from the tool's title/youtube_url
+    fields and chunkMetadata.start (or the [t=Ns] chunk-text prefix as a
+    fallback), and to decline off-library questions. Conversations/messages
+    persist to recall_conversations/recall_messages, same shape as the
+    chat-pipelines demo this was ported from. rate_limit is the only
+    validator (keyBy 'ip', 25 requests / 5 min) -- no auth_required, this is
+    the public chat surface, same policy as /api/search.
+  steps:
+    - id: ai
+      name: ai
+      handler: ai_handler
+      config:
+        mode: chat
+        model: claude-haiku-4-5
+        provider: anthropic
+        responseMode: stream
+        maxTokens: 2048
+        temperature: 0.7
+        skills:
+          mode: none
+        plugins:
+          mode: selected
+          enabled:
+            - rag-search
+          options:
+            rag-search:
+              sources:
+                - type: vector_search
+                  toolName: search_videos
+                  toolDescription: Search the video library transcripts for relevant moments.
+                  schemaId: $schema:recall_videos
+                  fieldName: transcript
+                  embeddingModel: nateraw/bge-large-en-v1.5
+                  limit: 8
+        systemPrompt: >-
+          You are Recall's chat assistant. You answer questions ONLY using
+          results from the `search_videos` tool, which searches this video
+          library's transcripts.
+
+
+          Today's date is {{now()}}
+
+
+          ## Rules
+
+
+          - For every question, call `search_videos` before answering. Never
+          answer from general knowledge or memory -- only from what the tool
+          returns.
+
+          - Every factual claim you make MUST be followed by a citation link
+          in this exact format:
+          `[<video title> @ <mm:ss>](https://www.youtube.com/watch?v=<id>&t=<sec>s)`.
+
+            - `<video title>` and `<id>` come from the result's `title` and `youtube_url` fields (extract the video id from `youtube_url`).
+            - `<sec>` (used for both `<mm:ss>` and the `&t=` query param) comes from the chunk's `chunkMetadata.start` when present. If `chunkMetadata.start` is missing, parse it from the `[t=<sec>s]` prefix at the start of the chunk text instead.
+            - `<mm:ss>` is `<sec>` formatted as minutes:seconds, seconds zero-padded.
+
+          - NEVER show the raw `[t=<sec>s]` prefix to the user -- strip it
+          from any quoted or paraphrased chunk text. It's a machine marker,
+          not part of the transcript.
+
+          - If `search_videos` returns nothing relevant to the question, say
+          so plainly and suggest the visitor try the Search tab instead of
+          guessing.
+
+          - If a question is unrelated to this video library (general
+          chit-chat, other products, unrelated topics), politely decline and
+          redirect to what you can help with: finding and citing moments
+          from these videos.
+
+          - Be concise. Lead with the answer, cite as you go, don't pad with
+          fluff.
+        messagesField: request.body.messages
+        persistMessages: true
+        maxHistoryMessages: 20
+        persistMessagesSchemaId: $schema:recall_messages
+        persistConversationsSchemaId: $schema:recall_conversations
+      isEnabled: true
+  validators:
+    - type: rate_limit
+      config:
+        keyBy: ip
+        limit: 25
+        windowSeconds: 300
+description: recall RAG chat handler -- public, video-transcript-grounded, rate-limited

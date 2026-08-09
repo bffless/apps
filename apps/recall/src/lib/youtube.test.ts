@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { extractYouTubeId, youTubeDeepLink } from './youtube';
+import { extractYouTubeId, extractYouTubeTimestamp, youTubeDeepLink } from './youtube';
 
 test.each([
   ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'dQw4w9WgXcQ'],
@@ -18,4 +18,14 @@ test.each([
 test('youTubeDeepLink rounds to whole seconds', () => {
   expect(youTubeDeepLink('dQw4w9WgXcQ', 754.4))
     .toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=754s');
+});
+
+test.each([
+  ['https://www.youtube.com/watch?v=abc12345678&t=754s', 754],
+  ['https://www.youtube.com/watch?v=abc12345678&t=0s', 0],
+  ['https://www.youtube.com/watch?v=abc12345678', null],
+  ['https://www.youtube.com/watch?t=90s&v=abc12345678', 90],
+  ['not a url', null],
+])('extractYouTubeTimestamp(%s) -> %s', (input, expected) => {
+  expect(extractYouTubeTimestamp(input)).toBe(expected);
 });

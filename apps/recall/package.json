@@ -13,12 +13,16 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.118",
     "@reduxjs/toolkit": "^2.12.0",
+    "ai": "^6.0.116",
     "async-mutex": "^0.5.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
     "react-redux": "^9.3.0",
-    "react-router-dom": "^7.9.0"
+    "react-router-dom": "^7.9.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

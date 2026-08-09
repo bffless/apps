@@ -1,17 +1,21 @@
 /**
- * The public home page (Task 9): search over every published video's
- * transcript, with a shared player panel that seeks to whichever moment the
- * visitor picked. A Search|Chat tab bar sits above the results — the Chat
- * tab is a placeholder here; Task 10 wires the real RAG chat UI into it,
- * sharing this same player panel/state.
+ * The public home page (Task 9/10): search over every published video's
+ * transcript, and a RAG chat over the same library, sharing one player panel
+ * that seeks to whichever moment the visitor picked. A Search|Chat tab bar
+ * sits above the results. Search hands the panel a `{ youtubeId, startSec,
+ * title }` (it already has the video title on hand); chat's citation chips
+ * only carry `{ youtubeId, startSec }` (see `CitationChip`) — `title` is
+ * optional on `PlayerTarget` so both feed the same state.
  */
 
 import { useState, type FormEvent } from 'react'
 import { MomentChip, type Moment } from '../components/MomentChip'
 import { SeekingPlayer } from '../components/SeekingPlayer'
+import { ChatTab } from '../components/chat/ChatTab'
+import type { SeekTarget } from '../components/CitationChip'
 import { useSearchMutation, type SearchVideo } from '../store/searchApi'
 
-type PlayerTarget = { youtubeId: string; startSec: number; title: string }
+type PlayerTarget = { youtubeId: string; startSec: number; title?: string }
 type Tab = 'search' | 'chat'
 
 const COLD_START_DELAY_MS = 2000
@@ -192,20 +196,16 @@ function SearchTab({ onSelectMoment }: { onSelectMoment: (video: SearchVideo, mo
   )
 }
 
-function ChatTab() {
-  return (
-    <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-slate-500 dark:border-slate-700 dark:text-slate-400">
-      Chat is coming in the next task.
-    </div>
-  )
-}
-
 export function Home() {
   const [tab, setTab] = useState<Tab>('search')
   const [player, setPlayer] = useState<PlayerTarget | null>(null)
 
   function handleSelectMoment(video: SearchVideo, moment: Moment) {
     setPlayer({ youtubeId: video.youtubeId, startSec: moment.start, title: video.title })
+  }
+
+  function handleSeek(target: SeekTarget) {
+    setPlayer(target)
   }
 
   return (
@@ -245,7 +245,7 @@ export function Home() {
         ))}
       </div>
 
-      {tab === 'search' ? <SearchTab onSelectMoment={handleSelectMoment} /> : <ChatTab />}
+      {tab === 'search' ? <SearchTab onSelectMoment={handleSelectMoment} /> : <ChatTab onSeek={handleSeek} />}
     </div>
   )
 }
