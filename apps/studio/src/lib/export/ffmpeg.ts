@@ -37,6 +37,15 @@ import wasmUrl from '@ffmpeg/core/wasm?url'
 import coreMtUrl from '@ffmpeg/core-mt?url'
 import wasmMtUrl from '@ffmpeg/core-mt/wasm?url'
 import workerMtUrl from '@ffmpeg/core-mt/worker?url'
+import { createSemaphore } from '../semaphore'
+
+/**
+ * One exec at a time. There is ONE core instance per session with one wasm FS;
+ * two concurrent execs would interleave FS staging (and the MT heap is fixed).
+ * The auto-build scheduler's ffmpeg lane already guarantees this — the mutex
+ * lives here so the invariant can't be bypassed by any other caller.
+ */
+const execLock = createSemaphore(1)
 
 const abs = (u: string) => new URL(u, window.location.href).href
 
@@ -123,43 +132,45 @@ export async function assemble({
   onProgress,
   onLog,
 }: AssembleAssets): Promise<Blob> {
-  const ff = await getFFmpeg()
+  return execLock.run(async () => {
+    const ff = await getFFmpeg()
 
-  const tail: string[] = []
-  const onLogEvent = ({ message }: { message: string }) => {
-    tail.push(message)
-    if (tail.length > 40) tail.shift()
-    onLog?.(message)
-  }
-  const onProgressEvent = ({ progress }: { progress: number }) => {
-    // ffmpeg can briefly report >1 or <0 near the end; clamp for the bar.
-    onProgress?.(Math.min(1, Math.max(0, progress)))
-  }
-  ff.on('log', onLogEvent)
-  ff.on('progress', onProgressEvent)
-
-  const sourceName = command.args[1] // argv is ['-i', source, ...]
-  const written: string[] = []
-  try {
-    await ff.writeFile(sourceName, source)
-    written.push(sourceName)
-
-    const code = await ff.exec(command.args)
-    if (code !== 0) {
-      throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${tail.slice(-12).join('\n')}`)
+    const tail: string[] = []
+    const onLogEvent = ({ message }: { message: string }) => {
+      tail.push(message)
+      if (tail.length > 40) tail.shift()
+      onLog?.(message)
     }
+    const onProgressEvent = ({ progress }: { progress: number }) => {
+      // ffmpeg can briefly report >1 or <0 near the end; clamp for the bar.
+      onProgress?.(Math.min(1, Math.max(0, progress)))
+    }
+    ff.on('log', onLogEvent)
+    ff.on('progress', onProgressEvent)
 
-    const output = command.args[command.args.length - 1]
-    const data = await ff.readFile(output)
-    written.push(output)
-    if (typeof data === 'string') throw new Error('ffmpeg returned text, expected binary output')
-    // Copy into a fresh buffer — the FS-backed view is invalidated by deleteFile.
-    return new Blob([data.slice()], { type: 'video/mp4' })
-  } finally {
-    ff.off('log', onLogEvent)
-    ff.off('progress', onProgressEvent)
-    for (const name of written) await ff.deleteFile(name).catch(() => {})
-  }
+    const sourceName = command.args[1] // argv is ['-i', source, ...]
+    const written: string[] = []
+    try {
+      await ff.writeFile(sourceName, source)
+      written.push(sourceName)
+
+      const code = await ff.exec(command.args)
+      if (code !== 0) {
+        throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${tail.slice(-12).join('\n')}`)
+      }
+
+      const output = command.args[command.args.length - 1]
+      const data = await ff.readFile(output)
+      written.push(output)
+      if (typeof data === 'string') throw new Error('ffmpeg returned text, expected binary output')
+      // Copy into a fresh buffer — the FS-backed view is invalidated by deleteFile.
+      return new Blob([data.slice()], { type: 'video/mp4' })
+    } finally {
+      ff.off('log', onLogEvent)
+      ff.off('progress', onProgressEvent)
+      for (const name of written) await ff.deleteFile(name).catch(() => {})
+    }
+  })
 }
 
 /** Where `slice()` mounts the source Blob inside the wasm FS. */
@@ -204,48 +215,50 @@ export type SliceAssets = {
  * holding a reference to the Blob.
  */
 export async function slice({ source, command, onProgress, onLog }: SliceAssets): Promise<Blob> {
-  const ff = await getFFmpeg()
+  return execLock.run(async () => {
+    const ff = await getFFmpeg()
 
-  const tail: string[] = []
-  const onLogEvent = ({ message }: { message: string }) => {
-    tail.push(message)
-    if (tail.length > 40) tail.shift()
-    onLog?.(message)
-  }
-  const onProgressEvent = ({ progress }: { progress: number }) => {
-    onProgress?.(Math.min(1, Math.max(0, progress)))
-  }
-  ff.on('log', onLogEvent)
-  ff.on('progress', onProgressEvent)
-
-  // The blob is mounted under its basename, so the argv's input path must be the
-  // one `sliceSourcePath()` builds.
-  const name = command.source.slice(command.source.lastIndexOf('/') + 1)
-  const written: string[] = []
-  let mounted = false
-  try {
-    await ff.createDir(SLICE_MOUNT).catch(() => {}) // may already exist from a prior slice
-    const { FFFSType } = await import('@ffmpeg/ffmpeg')
-    await ff.mount(FFFSType.WORKERFS, { blobs: [{ name, data: source }] }, SLICE_MOUNT)
-    mounted = true
-
-    const code = await ff.exec(command.args)
-    if (code !== 0) {
-      throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${tail.slice(-12).join('\n')}`)
+    const tail: string[] = []
+    const onLogEvent = ({ message }: { message: string }) => {
+      tail.push(message)
+      if (tail.length > 40) tail.shift()
+      onLog?.(message)
     }
+    const onProgressEvent = ({ progress }: { progress: number }) => {
+      onProgress?.(Math.min(1, Math.max(0, progress)))
+    }
+    ff.on('log', onLogEvent)
+    ff.on('progress', onProgressEvent)
 
-    const data = await ff.readFile(command.output)
-    written.push(command.output)
-    if (typeof data === 'string') throw new Error('ffmpeg returned text, expected binary output')
-    return new Blob([data.slice()], { type: 'video/mp4' })
-  } finally {
-    ff.off('log', onLogEvent)
-    ff.off('progress', onProgressEvent)
-    for (const name of written) await ff.deleteFile(name).catch(() => {})
-    // Unmount BEFORE removing the dir, and never let cleanup mask a real error.
-    if (mounted) await ff.unmount(SLICE_MOUNT).catch(() => {})
-    await ff.deleteDir(SLICE_MOUNT).catch(() => {})
-  }
+    // The blob is mounted under its basename, so the argv's input path must be the
+    // one `sliceSourcePath()` builds.
+    const name = command.source.slice(command.source.lastIndexOf('/') + 1)
+    const written: string[] = []
+    let mounted = false
+    try {
+      await ff.createDir(SLICE_MOUNT).catch(() => {}) // may already exist from a prior slice
+      const { FFFSType } = await import('@ffmpeg/ffmpeg')
+      await ff.mount(FFFSType.WORKERFS, { blobs: [{ name, data: source }] }, SLICE_MOUNT)
+      mounted = true
+
+      const code = await ff.exec(command.args)
+      if (code !== 0) {
+        throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${tail.slice(-12).join('\n')}`)
+      }
+
+      const data = await ff.readFile(command.output)
+      written.push(command.output)
+      if (typeof data === 'string') throw new Error('ffmpeg returned text, expected binary output')
+      return new Blob([data.slice()], { type: 'video/mp4' })
+    } finally {
+      ff.off('log', onLogEvent)
+      ff.off('progress', onProgressEvent)
+      for (const name of written) await ff.deleteFile(name).catch(() => {})
+      // Unmount BEFORE removing the dir, and never let cleanup mask a real error.
+      if (mounted) await ff.unmount(SLICE_MOUNT).catch(() => {})
+      await ff.deleteDir(SLICE_MOUNT).catch(() => {})
+    }
+  })
 }
 
 export type ConcatAssets = {
@@ -261,36 +274,38 @@ export type ConcatAssets = {
  * join (no re-encode → fast, minimal memory), reads back the result, cleans up.
  */
 export async function concat({ parts, command, onLog }: ConcatAssets): Promise<Blob> {
-  const ff = await getFFmpeg()
+  return execLock.run(async () => {
+    const ff = await getFFmpeg()
 
-  const tail: string[] = []
-  const onLogEvent = ({ message }: { message: string }) => {
-    tail.push(message)
-    if (tail.length > 40) tail.shift()
-    onLog?.(message)
-  }
-  ff.on('log', onLogEvent)
-
-  const written: string[] = []
-  try {
-    for (const part of parts) {
-      await ff.writeFile(part.name, part.bytes)
-      written.push(part.name)
+    const tail: string[] = []
+    const onLogEvent = ({ message }: { message: string }) => {
+      tail.push(message)
+      if (tail.length > 40) tail.shift()
+      onLog?.(message)
     }
-    await ff.writeFile(command.listName, command.listContent)
-    written.push(command.listName)
+    ff.on('log', onLogEvent)
 
-    const code = await ff.exec(command.args)
-    if (code !== 0) {
-      throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${tail.slice(-12).join('\n')}`)
+    const written: string[] = []
+    try {
+      for (const part of parts) {
+        await ff.writeFile(part.name, part.bytes)
+        written.push(part.name)
+      }
+      await ff.writeFile(command.listName, command.listContent)
+      written.push(command.listName)
+
+      const code = await ff.exec(command.args)
+      if (code !== 0) {
+        throw new Error(`ffmpeg exited ${code} (${coreLabel()})\n${tail.slice(-12).join('\n')}`)
+      }
+
+      const data = await ff.readFile(command.output)
+      written.push(command.output)
+      if (typeof data === 'string') throw new Error('ffmpeg returned text, expected binary output')
+      return new Blob([data.slice()], { type: 'video/mp4' })
+    } finally {
+      ff.off('log', onLogEvent)
+      for (const name of written) await ff.deleteFile(name).catch(() => {})
     }
-
-    const data = await ff.readFile(command.output)
-    written.push(command.output)
-    if (typeof data === 'string') throw new Error('ffmpeg returned text, expected binary output')
-    return new Blob([data.slice()], { type: 'video/mp4' })
-  } finally {
-    ff.off('log', onLogEvent)
-    for (const name of written) await ff.deleteFile(name).catch(() => {})
-  }
+  })
 }
