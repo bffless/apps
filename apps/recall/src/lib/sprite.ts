@@ -102,12 +102,28 @@ export function nearestTile(
  * `backgroundImage` — callers merge that in with the relevant sheet's URL.
  * Returns `null` for an out-of-range index or a non-positive
  * `displayW`/tile size, so a caller can fall back to no-sprite rendering.
+ *
+ * Also returns the same geometry as raw numbers (`sheetWidth`/`sheetHeight`/
+ * `offsetX`/`offsetY`) for callers that crop via an absolutely-positioned
+ * `<img>` instead of a CSS `background-*` shorthand (see `FramesGrid` in
+ * `pages/AdminVideo.tsx`) — an `<img>` needs numeric `width`/`height`/`left`/
+ * `top`, not a `"123px 45px"` string. `offsetX`/`offsetY` are the exact same
+ * (negative) numbers baked into `backgroundPosition`.
  */
 export function spriteStyle(
   meta: SheetGrid,
   tileIndex: number,
   displayW: number,
-): { width: number; height: number; backgroundSize: string; backgroundPosition: string } | null {
+): {
+  width: number
+  height: number
+  backgroundSize: string
+  backgroundPosition: string
+  sheetWidth: number
+  sheetHeight: number
+  offsetX: number
+  offsetY: number
+} | null {
   if (!meta || meta.cols <= 0 || meta.rows <= 0 || meta.tileW <= 0 || meta.tileH <= 0) return null
   if (tileIndex < 0 || displayW <= 0) return null
 
@@ -126,5 +142,9 @@ export function spriteStyle(
     height: displayH,
     backgroundSize: `${sheetW}px ${sheetH}px`,
     backgroundPosition: `${bgX}px ${bgY}px`,
+    sheetWidth: sheetW,
+    sheetHeight: sheetH,
+    offsetX: bgX,
+    offsetY: bgY,
   }
 }

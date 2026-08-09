@@ -250,14 +250,27 @@ function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
  * to show — `FramesBackfill` (above, in `IngestPanel`) covers the "no sheet
  * yet" state.
  *
- * Each distinct sheet image loads lazily: a hidden `<img loading="lazy">`
- * per sheet (sharing the exact same URL as that sheet's CSS
- * `background-image` tiles, so the browser fetches it once and reuses the
- * cached response) decides WHEN the browser actually fetches it based on
- * viewport proximity; a sheet's tiles stay an empty skeleton box until its
- * warmer `<img>` fires `onLoad`. A 14-minute video can have ~3 sheet images
- * (~85 tiles) — without this, opening the page would eagerly fetch all of
- * them even if the admin never scrolls past the first row.
+ * Each tile is its own `<img loading="lazy">` (PR-feedback-7, replacing an
+ * earlier hidden-warmer-plus-CSS-`background-image` design — see below),
+ * absolutely positioned inside a small `overflow-hidden` frame and scaled up
+ * to the full sheet's size so only its own tile shows through, the same
+ * offset math `spriteStyle` already computed for `background-position` but
+ * as raw numbers (`sheetWidth`/`sheetHeight`/`offsetX`/`offsetY`) instead of
+ * a CSS shorthand string. Every tile from the same sheet shares that sheet's
+ * `src`, so the browser fetches the image once and serves the rest from
+ * cache — same "fetch once, crop many" behavior as the old approach, but the
+ * lazy/eager decision is now native browser viewport-proximity on a REAL,
+ * rendered element instead of on a same-URL warmer `<img>` kept permanently
+ * `display: none`.
+ *
+ * That earlier design was the actual first-load bug (see PR-feedback-7's
+ * report): `loading="lazy"` on an `<img>` with no layout box (`display:
+ * none`) has no box for the browser to test against the viewport, so
+ * whether/when it ever fires `load` is undefined browser behavior — CSS
+ * `background-image` can't be natively lazy-loaded at all, which is why that
+ * design needed a warmer in the first place. Rendering the real, visible
+ * `<img>` sidesteps both problems: it has genuine geometry to test, and it
+ * IS the pixels shown, so nothing else has to react to its `load` event.
  */
 const FRAMES_GRID_TILE_DISPLAY_W = 160
 
@@ -284,15 +297,10 @@ export function FramesGrid({
 }) {
   const { stage, error, busy, generate } = useFramesGenerate(videoId, video)
   const sheetMeta = parseSheetMeta(video.sheet_meta)
-  const [loadedUrls, setLoadedUrls] = useState<ReadonlySet<string>>(new Set())
 
   if (!video.sheet_path || !sheetMeta) return null
   const sheets = normalizeSheets(sheetMeta, video.sheet_path)
   if (sheets.every((s) => s.tiles.length === 0)) return null
-
-  function markLoaded(url: string) {
-    setLoadedUrls((prev) => (prev.has(url) ? prev : new Set(prev).add(url)))
-  }
 
   return (
     <section className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-800">
@@ -312,28 +320,11 @@ export function FramesGrid({
         </button>
       </div>
 
-      {/* Hidden per-sheet lazy-load warmers — see the section doc above. */}
-      {sheets.map((sheet) =>
-        sheet.url ? (
-          <img
-            key={sheet.url}
-            src={sheet.url}
-            loading="lazy"
-            decoding="async"
-            alt=""
-            aria-hidden="true"
-            className="hidden"
-            onLoad={() => markLoaded(sheet.url!)}
-          />
-        ) : null,
-      )}
-
       <div className="grid grid-cols-5 gap-2">
         {sheets.map((sheet, sheetIndex) =>
           sheet.tiles.map((tile, tileIndex) => {
             const style = spriteStyle(sheetMeta, tileIndex, FRAMES_GRID_TILE_DISPLAY_W)
             if (!style || !sheet.url) return null
-            const loaded = loadedUrls.has(sheet.url)
             return (
               <button
                 key={`${sheetIndex}-${tileIndex}`}
@@ -342,16 +333,24 @@ export function FramesGrid({
                 className="group flex flex-col items-center gap-1"
               >
                 <span
-                  className="overflow-hidden rounded bg-slate-200 ring-1 ring-transparent transition-all group-hover:ring-blue-500 dark:bg-slate-800"
-                  style={{
-                    width: style.width,
-                    height: style.height,
-                    backgroundImage: loaded ? `url(${sheet.url})` : undefined,
-                    backgroundSize: style.backgroundSize,
-                    backgroundPosition: style.backgroundPosition,
-                    backgroundRepeat: 'no-repeat',
-                  }}
-                />
+                  className="relative block overflow-hidden rounded bg-slate-200 ring-1 ring-transparent transition-all group-hover:ring-blue-500 dark:bg-slate-800"
+                  style={{ width: style.width, height: style.height }}
+                >
+                  <img
+                    src={sheet.url}
+                    loading="lazy"
+                    decoding="async"
+                    alt=""
+                    draggable={false}
+                    className="absolute max-w-none"
+                    style={{
+                      width: style.sheetWidth,
+                      height: style.sheetHeight,
+                      left: style.offsetX,
+                      top: style.offsetY,
+                    }}
+                  />
+                </span>
                 <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
                   {formatTileTime(tile.t)}
                 </span>
