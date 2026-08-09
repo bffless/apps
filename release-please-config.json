@@ -18,6 +18,12 @@
       "component": "studio",
       "include-component-in-tag": true,
       "extra-files": [{ "type": "json", "path": "bffless-app.json", "jsonpath": "$.version" }]
+    },
+    "apps/recall": {
+      "release-type": "node",
+      "component": "recall",
+      "include-component-in-tag": true,
+      "extra-files": [{ "type": "json", "path": "bffless-app.json", "jsonpath": "$.version" }]
     }
   },
   "changelog-sections": [

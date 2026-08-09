@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "id": "recall",
+  "name": "Recall",
+  "version": "0.0.1",
+  "summary": "Video transcript RAG search & chat, with second-exact YouTube deep links.",
+  "category": "search",
+  "docsUrl": "https://github.com/bffless/apps/blob/main/apps/recall/bffless/README.md",
+  "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/recall",
+  "requires": {
+    "presignedStorage": true,
+    "ceMin": "0.4.24"
+  },
+  "install": {
+    "alias": "recall",
+    "deployment": {
+      "path": "dist",
+      "basePath": "/apps/recall/dist"
+    },
+    "ruleSets": [
+      {
+        "file": "rulesets/recall.json",
+        "attachToAlias": true
+      }
+    ],
+    "domain": {
+      "subdomain": "recall",
+      "isPublic": true,
+      "isSpa": true
+    },
+    "schedules": [],
+    "manualSteps": [
+      {
+        "id": "connect-replicate",
+        "title": "Connect Replicate",
+        "body": "Add your Replicate API token under Settings → AI → AI Services. Powers transcription (WhisperX), transcript-chunk indexing, and query embeddings for both search and chat.",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "externalLink": {
+          "label": "Get a Replicate token",
+          "url": "https://replicate.com/account/api-tokens"
+        },
+        "appliesWhen": "always"
+      },
+      {
+        "id": "connect-anthropic",
+        "title": "Connect Anthropic",
+        "body": "Add an Anthropic API key under Settings → AI → AI Services. It powers the public chat (Claude Haiku 4.5, streaming).",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "externalLink": {
+          "label": "Get an Anthropic key",
+          "url": "https://console.anthropic.com/settings/keys"
+        },
+        "appliesWhen": "always"
+      },
+      {
+        "id": "enable-ai-data-tools",
+        "title": "Enable the AI Data Tools plugin",
+        "body": "Turn on AI Data Tools under Settings → AI → AI Plugins. Without it, chat's search_videos tool is invisible to the model and it prints raw tool-call XML instead of citing a video.",
+        "deepLink": "/repo/{projectPath}/settings?tab=ai",
+        "appliesWhen": "always"
+      },
+      {
+        "id": "bucket-cors",
+        "title": "Let the browser upload to your bucket",
+        "body": "Uploads go straight from the browser to your storage bucket, so the bucket needs a CORS rule allowing PUT and GET from {appHost}. CE can't set this for you — do it in your cloud console.",
+        "appliesWhen": "bucketStorage"
+      }
+    ]
+  },
+  "eject": {
+    "repo": "bffless/apps",
+    "appPath": "apps/recall",
+    "deployWorkflow": "deploy-recall.yml",
+    "variables": [
+      "BFFLESS_URL",
+      "BFFLESS_PROJECT"
+    ],
+    "secrets": [
+      "BFFLESS_API_KEY"
+    ]
+  }
+}
