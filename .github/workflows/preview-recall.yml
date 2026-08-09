@@ -1,0 +1,82 @@
+name: Preview Recall on BFFless
+
+# PR previews for Recall. Any PR that touches apps/recall (or this file) builds
+# the app and deploys it to the shared `recall-preview` alias, then comments the
+# URL on the PR. The alias is reused — the newest PR build wins — so this is best
+# for one preview at a time. We deliberately reuse one stable alias rather than
+# minting a per-PR alias: Recall's presigned bucket uploads (source/audio) need
+# the bucket's CORS `Access-Control-Allow-Origin` to name the exact preview
+# origin ahead of time, and each new alias would be a brand-new origin that
+# needs its own CORS entry AND its own proxy-rule-set wiring before uploads work
+# from it. `recall-preview` is already CORS-allowlisted and carries the recall
+# rule set, so /api/* and presigned uploads both work out of the box. (Reader
+# demonstrates the per-PR flow in preview-reader.yml — it has no GCS-bucket CORS
+# entry pinning it to one origin, so a fresh alias per PR is cheap there. Recall
+# doesn't have that luxury, same reasoning as Studio's preview-studio.yml.) Rule
+# changes are still reviewable per PR via the dry-run report below, without
+# touching the live recall rule set.
+on:
+  pull_request:
+    paths:
+      - 'apps/recall/**'
+      - '.github/workflows/preview-recall.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-recall-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter recall build
+
+      - name: Run unit tests
+        run: pnpm --filter recall test:run
+
+      - name: Proxy rules change report (dry run)
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: apps/recall/.bffless/proxy-rules/recall
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          # Empty var → action falls back to .bffless/config.json's `bffless/apps`;
+          # forkers set this repo var to target their own project.
+          project: ${{ vars.BFFLESS_PROJECT }}
+          dry-run: true
+          summary-title: Recall Proxy Rules (dry run)
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy preview to BFFless
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/recall/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+          alias: recall-preview
+          proxy-rule-set-names: recall
+          description: 'Recall preview for PR #${{ github.event.pull_request.number }}'
+          summary-title: Recall Preview
+          pr-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
