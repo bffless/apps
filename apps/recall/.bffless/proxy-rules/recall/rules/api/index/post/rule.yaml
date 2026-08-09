@@ -24,17 +24,30 @@ pipeline:
     JSON-encoded string, not a YAML array) -> embed (Replicate
     nateraw/bge-large-en-v1.5, batch) -> zip (pairs steps.chunk.chunks[i]
     with steps.embed.output[i]; a length mismatch -- including the embed
-    step having failed outright -- reports EMBED_COUNT_MISMATCH rather than
-    throwing) -> zipCheck (the final pass/fail verdict; {ok:false,
-    notOk:false} when the gate never passed, so neither the success nor the
-    error branch below fires) -> on success: embedStore writes the paired
-    chunks onto the video's `transcript` field (deletes any prior embeddings
-    first) -> videoPublished flips status to 'published' -> jobDone marks
-    the job 'done'. On failure (chunk or embed/zip): jobErr marks the job
-    'error' with the failure reason, and videoErrBack puts the video back to
-    'transcribed' -- NOT 'error' -- since an indexing failure leaves a
-    perfectly valid transcribed video behind, unlike a transcription
-    failure which has no earlier good state to fall back to.
+    step having failed outright -- OR any vector not shaped like number[]
+    reports EMBED_COUNT_MISMATCH / EMBED_SHAPE_ERROR rather than throwing)
+    -> zipCheck (pass/fail verdict for chunk+embed+zip; {ok:false,
+    notOk:false} when the gate never passed, so neither branch below fires)
+    -> on zipCheck.ok: embedStore writes the paired chunks onto the video's
+    `transcript` field (deletes any prior embeddings FIRST, then stores the
+    new ones) -> storeCheck (a SECOND verdict, specifically for embed_store:
+    postSteps never abort on a failed step and a failed step writes NO
+    output, so without this check a failed embed_store -- which has already
+    deleted the prior embeddings -- would fall straight through to
+    videoPublished/jobDone with zero embeddings actually stored; same
+    "never ran" {ok:false, notOk:false} sentinel as zipCheck when zipCheck
+    itself didn't pass, so that earlier failure isn't double-reported) -> on
+    storeCheck.ok: videoPublished flips status to 'published', jobDone marks
+    the job 'done'. On failure: EITHER zipCheck.notOk (chunk/embed/zip
+    problem) OR storeCheck.notOk (embed_store itself failed) drives a
+    job-error + video-back-to-'transcribed' pair (jobErr/videoErrBack for
+    the former, jobErrStore/videoErrBackStore for the latter -- kept as
+    separate steps rather than one OR'd condition because CE's condition
+    expressions only support a single field path or its negation, no
+    boolean composition). Status goes back to 'transcribed', NOT 'error', in
+    both cases -- an indexing failure leaves a perfectly valid transcribed
+    video behind, unlike a transcription failure which has no earlier good
+    state to fall back to.
 
     Replicate I/O verified 2026-08-09 against
     https://replicate.com/nateraw/bge-large-en-v1.5/api/schema (the model's
@@ -168,6 +181,10 @@ pipeline:
         fieldName: transcript
         chunks: steps.zip.chunks
         condition: steps.zipCheck.ok
+    - id: storeCheck
+      name: storeCheck
+      handler: function_handler
+      code: ./storeCheck.fn.js
     - id: videoPublished
       name: videoPublished
       handler: data_update
@@ -176,7 +193,7 @@ pipeline:
           status: "'published'"
         recordId: steps.prep.videoId
         schemaId: $schema:recall_videos
-        condition: steps.zipCheck.ok
+        condition: steps.storeCheck.ok
     - id: jobDone
       name: jobDone
       handler: data_update
@@ -186,7 +203,7 @@ pipeline:
           status: "'done'"
         recordId: steps.createJob.id
         schemaId: $schema:recall_jobs
-        condition: steps.zipCheck.ok
+        condition: steps.storeCheck.ok
     - id: jobErr
       name: jobErr
       handler: data_update
@@ -206,6 +223,25 @@ pipeline:
         recordId: steps.prep.videoId
         schemaId: $schema:recall_videos
         condition: steps.zipCheck.notOk
+    - id: jobErrStore
+      name: jobErrStore
+      handler: data_update
+      config:
+        fields:
+          error: steps.storeCheck.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:recall_jobs
+        condition: steps.storeCheck.notOk
+    - id: videoErrBackStore
+      name: videoErrBackStore
+      handler: data_update
+      config:
+        fields:
+          status: "'transcribed'"
+        recordId: steps.prep.videoId
+        schemaId: $schema:recall_videos
+        condition: steps.storeCheck.notOk
   validators:
     - type: auth_required
       config:

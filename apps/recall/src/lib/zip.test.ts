@@ -57,4 +57,20 @@ describe('zip.fn.js', () => {
     expect(out.error).toBe('EMBED_COUNT_MISMATCH')
     expect(out.chunks).toEqual([])
   })
+
+  test('vectors shaped as an array of strings (not number arrays) report EMBED_SHAPE_ERROR', () => {
+    // Guards against the published OpenAPI schema's own `output` typing
+    // (`array of string`) turning out to be literal, not a Cog schema-gen
+    // quirk -- if the model ever really does hand back one string per text
+    // instead of a float array, this must be rejected, not stored.
+    const out = run([{ text: 'a', metadata: { start: 0, end: 4 } }], ['0.1,0.2'])
+    expect(out.error).toBe('EMBED_SHAPE_ERROR')
+    expect(out.chunks).toEqual([])
+  })
+
+  test('a vector whose first element is not a number reports EMBED_SHAPE_ERROR', () => {
+    const out = run([{ text: 'a', metadata: { start: 0, end: 4 } }], [['0.1', '0.2']])
+    expect(out.error).toBe('EMBED_SHAPE_ERROR')
+    expect(out.chunks).toEqual([])
+  })
 })
