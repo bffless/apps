@@ -80,8 +80,9 @@ with these), change `embeddingModel` in exactly three places:
 
 1. **`rules/api/index/post/rule.yaml`** — the `embed` step's `model` field (the ingest-time
    embedding call, chunked transcript text → vectors, stored via `embed_store`).
-2. **`rules/api/search/post/rule.yaml`** — the `embed` step's `model` field (the query-time
-   embedding call that feeds `vector_search`).
+2. **`rules/_custom/search-get/get/rule.yaml`** — the `embed` step's `model` field (the query-time
+   embedding call that feeds `vector_search`; PR-feedback-7 moved this rule from
+   `api/search/post/` to a `_custom` GET layout, see the Performance section below).
 3. **`rules/api/chat/post/rule.yaml`** — the `rag-search` plugin's
    `plugins.options.rag-search.sources[0].embeddingModel` field (the tool's own query embedding,
    independent of the two rules above — it's inside the `ai_handler` step, not a standalone
@@ -119,6 +120,40 @@ rule's system prompt both prefer `chunkMetadata.start` when present and fall bac
 prefix otherwise, so this app already works with or without that CE patch — but the prefix is
 still the only carrier on an un-patched CE instance, so don't strip it from the embedded text
 (only from what's shown to a person) if you're customizing the chunker.
+
+## Performance
+
+Every PUBLIC, read-only route sets an explicit `Cache-Control` so repeat page loads, back/forward
+navigation, and identical repeat searches don't re-hit a pipeline (or, for search, an actual
+Replicate embedding call) for data that hasn't meaningfully changed:
+
+| Route | Cache-Control | Why this window |
+| --- | --- | --- |
+| `GET /api/search?q=` | `public, max-age=300` (5 min) | The expensive one — an embedding call + vector search per unique query. A just-published video won't appear in a *repeat of the exact same query* until the entry expires; a new query is an automatic cache miss and always fresh. |
+| `GET /api/videos` (library grid) | `public, max-age=60` (1 min) | Cheap (one `data_query`), but hit on every home-page load — worth a short cache. |
+| `GET /api/video?videoId=` (detail page) | `public, max-age=300` (5 min) on success; `no-store` on 404 | A 404 is never cached — a video that publishes moments after a failed lookup shouldn't stay "not found" for a shared cache's TTL. |
+| `GET /api/uploads/sheets/*` (contact-sheet sprites) | `public, max-age=86400` (24h) | Every sheet path is genuinely immutable — `presigned_upload`'s default `keyStrategy: 'uuid'` mints a fresh random-uuid path on every upload, so regenerating a video's frames never overwrites an old path, it just points the record at a new one. A day-long cache of an old path is not a staleness risk. |
+| `GET /api/chat?conversationId=` (resume) | none (no `response_handler`, so no header at all) | Personal-ish (a specific visitor's own conversation) — deliberately left uncached, verified there's no accidental `public` leaking through the framework's default response envelope. |
+| Every admin route, `/api/recall/job` poll | `no-store` | Auth'd, must never land in a shared cache, and admin UIs need to see fresh state (a job poll caching its own "pending" would never see "done"). |
+
+**Search moved from `POST` to `GET`** (`_custom/search-get/get/rule.yaml`, query param `q`) —
+this wasn't optional: per RFC 9111, conforming HTTP caches only ever store `GET`/`HEAD` responses,
+so a `Cache-Control` header on a `POST /api/search` response would have been silently ignored by
+every real cache. The frontend's `searchApi.ts` switched from an RTK Query `mutation` to a `query`
+endpoint to match — which also means the frontend gets its own in-memory cache/dedupe for the
+lifetime of `keepUnusedDataFor`, layered on top of the HTTP-level cache.
+
+**Nothing here needed a manual admin-panel step or fell outside rules-as-code** — every cache
+policy above is expressed entirely in the rule set (`headers: {Cache-Control: ...}` on a
+`response_handler` step, or `cacheability`/`cacheMaxAge` on `file_serve_handler`) and ships with a
+normal `rules sync`/`rules push`.
+
+**One caveat when re-syncing after this change**: converting search from POST to GET means the
+OLD `POST /api/search` rule is now absent from the local rule set entirely — a plain
+`bffless rules push` (no `--prune`) does **not** delete rules that are missing locally, it only
+creates/updates what IS present, so the old POST rule stays live on the server (harmlessly
+orphaned; the frontend never calls it anymore) until someone runs `bffless rules push --prune` (or
+deletes it by hand in the admin panel).
 
 ## First-success checkpoint
 

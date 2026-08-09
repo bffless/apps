@@ -20,12 +20,18 @@ pipeline:
         body: "{{{steps.shape}}}"
         status: 200
         headers:
-          Cache-Control: no-store
+          Cache-Control: public, max-age=60
         contentType: application/json
   validators: []
 description: >-
   List every PUBLISHED recall_videos record for the home page library grid
-  (Task 11). GET /api/videos -> data_query lists every row (pageSize 500, no
+  (Task 11; PR-feedback-7 added `Cache-Control: public, max-age=60` — a
+  1-minute shared/browser cache so repeat home-page loads and back/forward
+  navigation don't re-run this data_query every time. Short enough that a
+  just-published video shows up on the library grid within a minute, not
+  instantly but not meaningfully stale either — this is a public content
+  list, not a live status dashboard). GET /api/videos -> data_query lists
+  every row (pageSize 500, no
   status filter at the query layer -- the shape step below drops
   draft/transcribing/transcribed/indexing/error rows) -> shape keeps ONLY
   status === 'published' rows and maps each to public-safe metadata: {

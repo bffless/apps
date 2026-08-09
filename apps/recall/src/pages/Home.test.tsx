@@ -63,9 +63,10 @@ const SEARCH_VIDEO = {
   moments: [{ start: 12, snippet: 'hello world', similarity: 0.9 }],
 }
 
-/** Routes `POST /api/search`, `GET /api/videos` (library grid), and a
- * lenient catch-all for anything else (e.g. ChatTab's mount-time reads) so
- * tests only need to describe what they actually care about. */
+/** Routes `GET /api/search?q=` (PR-feedback-7: converted from POST for HTTP
+ * cacheability), `GET /api/videos` (library grid), and a lenient catch-all
+ * for anything else (e.g. ChatTab's mount-time reads) so tests only need to
+ * describe what they actually care about. */
 function mockFetchRouter({
   searchVideos = [SEARCH_VIDEO],
 }: {
@@ -76,7 +77,7 @@ function mockFetchRouter({
     'fetch',
     vi.fn(async (request: Request) => {
       const { pathname } = new URL(request.url)
-      if (pathname === '/api/search' && request.method === 'POST') return searchFn()
+      if (pathname === '/api/search' && request.method === 'GET') return searchFn()
       if (pathname === '/api/videos' && request.method === 'GET') return jsonResponse({ videos: [] })
       return jsonResponse({})
     }),

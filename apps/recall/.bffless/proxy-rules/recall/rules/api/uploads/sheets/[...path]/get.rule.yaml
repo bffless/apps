@@ -9,5 +9,30 @@ pipeline:
       handler: file_serve_handler
       config:
         subDir: sheets
+        cacheability: public
+        cacheMaxAge: 86400
   validators: []
-description: Serve contact-sheet sprite images (Range-aware) — PUBLIC, no auth_required. Sheets of published videos are public content, and paths contain the video's uuid so a draft's sheet is unguessable. subDir is `sheets` (top-level, distinct from `videos/`), so this route can never reach source/audio files even if it wanted to.
+description: >-
+  Serve contact-sheet sprite images (Range-aware) — PUBLIC, no auth_required.
+  Sheets of published videos are public content, and paths contain the
+  video's uuid so a draft's sheet is unguessable. subDir is `sheets`
+  (top-level, distinct from `videos/`), so this route can never reach
+  source/audio files even if it wanted to.
+
+  PR-feedback-7: `cacheability: public` + `cacheMaxAge: 86400` (24h,
+  `Cache-Control: public, max-age=86400`) — file_serve_handler defaults to
+  `private, max-age=3600`, which is right for ACL-gated content but wrong
+  here (this route is already unconditionally public, no ACL check to
+  respect) and too short-lived for something that never actually changes.
+  Every sheet path IS immutable: `presigned_upload`'s default `keyStrategy:
+  'uuid'` mints `{subDir}/{uuid}-{filename}` for EVERY upload (verified
+  against `presigned-upload.handler.ts`) — the sheet prepare rule sets no
+  `keyStrategy` override, so regenerating a video's frames (the admin
+  "Regenerate" button, or a fresh `useIngest` run) always uploads under a
+  brand-new random-uuid path, never overwrites the old one. A stale long-
+  lived cache entry for an OLD sheet path is therefore not a real staleness
+  risk — that path's bytes never change, because nothing ever gets
+  re-uploaded to it; the record's `sheet_path`/`sheet_meta` just point at a
+  newer path instead, which every future page load reads fresh (this rule
+  only caches individual sprite IMAGES, not the record's own JSON, which is
+  never cached — see `/api/search`, `/api/video`, `/api/videos`).

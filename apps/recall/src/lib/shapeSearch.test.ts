@@ -15,7 +15,10 @@ type SearchVideo = {
 }
 type ShapeOutput = { videos: SearchVideo[] }
 
-const shapeFnSrc = loadFnSource('api/search/post/shape.fn.js')
+// PR-feedback-7: the search rule moved from POST api/search/post/ to a
+// GET _custom/search-get/get/ (for HTTP cacheability — see the rule's own
+// description) — shape.fn.js's logic is unchanged, just relocated.
+const shapeFnSrc = loadFnSource('_custom/search-get/get/shape.fn.js')
 
 type VideoRow = Record<string, unknown>
 

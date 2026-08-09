@@ -36,7 +36,7 @@ pipeline:
         body: '{"video": {{{steps.shape.video}}}}'
         status: 200
         headers:
-          Cache-Control: no-store
+          Cache-Control: public, max-age=300
         contentType: application/json
         condition: steps.shape.ok
   validators: []
@@ -54,8 +54,12 @@ description: >-
   the public fields { videoId, title, description, youtubeId, duration,
   transcript: { words: [...] } }, parsing the record's stringified
   transcript JSON server-side so the client never has to -> respond404
-  { error: 'NOT_FOUND' } (condition steps.shape.notOk) or respond200
-  { video } (condition steps.shape.ok). Custom pathPattern /api/video
+  { error: 'NOT_FOUND' } (condition steps.shape.notOk, Cache-Control: no-store
+  — a 404 is deliberately never publicly cached, so a video that publishes
+  moments after a failed lookup isn't stuck "not found" for a shared cache's
+  TTL) or respond200 { video } (condition steps.shape.ok, PR-feedback-7:
+  Cache-Control: public, max-age=300 — a 5-minute shared/browser cache, same
+  rationale and window as /api/search below). Custom pathPattern /api/video
   (singular, mirrors Studio's _custom/-api-projects-get) because this needs
   a query-string videoId, distinct from both GET /api/videos (the plain
   public list) and GET /api/videos/get (the admin single-record lookup with

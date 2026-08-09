@@ -1,0 +1,153 @@
+pathPattern: /api/search
+targetUrl: ""
+order: 16
+timeout: 120000
+pipeline:
+  name: Public semantic search
+  description: >-
+    GET /api/search?q=<query> -> PUBLIC, all-sync, rate-limited (Task 9;
+    PR-feedback-7 converted this rule from POST to GET, same pathPattern
+    idiom as `_custom/video-get` — a custom `_custom` layout because this
+    needs a query-string parameter, and the directory-inferred route for a
+    plain GET under `api/search/` would collide with nothing but is still
+    the established pattern here for any query-string GET). Converting to
+    GET is what makes this endpoint cacheable at all: HTTP caches (browser
+    and any shared/CDN cache in front) key on method + URL and, per RFC
+    9111, only ever store GET (and HEAD) responses — a POST response's
+    `Cache-Control` header is effectively ignored by conforming caches. The
+    query text now lives in the URL (`?q=`) instead of the body, which
+    RTK Query's `searchApi.ts` also takes advantage of: switching from a
+    `mutation` to a `query` endpoint gets its OWN in-memory cache/dedupe on
+    the frontend for free, on top of the HTTP-level one this rule adds.
+
+    prep validates q (now read from `request.query.q`, not
+    `request.body.q`) is a non-empty string <=500 chars (also
+    JSON-stringifies it as a single-element array for Replicate's `texts`
+    input, same convention as the index rule's texts.fn.js) -> on failure,
+    respond400 returns 400 { error: reason } and nothing else runs --
+    embed/search/videos/shape are all condition-gated (directly or
+    transitively) on steps.prep.ok, and a condition-gated step that never
+    runs writes no output, so a bad query never spends a Replicate call. On
+    success: embed (Replicate nateraw/bge-large-en-v1.5, the SAME model used
+    at index time -- query and document vectors must come from the same
+    embedding space, batch of one text) -> pick extracts the query vector
+    from steps.embed.output[0] and validates its shape the same way the
+    index rule's zip.fn.js does (defends against the replicate step having
+    failed outright) -> on failure, respond502 returns 502
+    { error: 'EMBED_FAILED' } -> on success: search (vector_search over
+    recall_videos.transcript, top 24, selecting title/youtube_url/duration/
+    status alongside the usual id/similarity/chunkText/chunkMetadata) AND
+    (in parallel, same condition) videos (data_query, schemaId
+    recall_videos, limit 500, select ['sheet_path','sheet_meta']) --
+    PR-feedback-6 fixed a live bug where sheetMeta always reached the client
+    as null: CE's vector_search handler joins pipeline_data for its
+    `select`ed fields via a SQL subquery that UNCONDITIONALLY drops any
+    JSONB string field over 200 chars (`pipeline-embeddings.service.ts`'s
+    vectorSearch(), `length(kv.value #>> '{}') <= 200`) *before* the
+    handler's own `config.select` filtering even runs -- so `sheet_meta` (a
+    multi-tile JSON blob, always >200 chars) never reached this rule at all;
+    `data_query`'s own `select` has no such length limit, so a plain
+    unfiltered query sidesteps it entirely. -> shape groups hits by video,
+    caps at 4 moments/video, prefers chunkMetadata.start/end over parsing
+    the `[t=Ns] ` chunkText prefix (CE's chunk-metadata vector-search patch
+    may not be deployed yet), strips that prefix from every snippet either
+    way, drops any hit whose status isn't 'published' (defense-in-depth --
+    unpublished videos shouldn't have embeddings, but a failed unpublish
+    could leave strays), looks up each video's sheet_path/sheet_meta from
+    steps.videos (NOT from the vector_search hit), and sorts videos by their
+    best moment's similarity -> respond200 { videos },
+    `Cache-Control: public, max-age=300` -- a 5-minute shared/browser cache
+    keyed on the full URL (i.e. per unique `q`), so identical repeat
+    searches and back/forward navigation don't re-run an embedding call +
+    vector search. KNOWN TRADE-OFF: a video published/re-indexed in that
+    5-minute window won't appear in a REPEAT of the exact same query until
+    the cache entry expires (a genuinely new query is unaffected -- it's a
+    cache miss). rate_limit is the only validator (keyBy 'ip', 30 requests /
+    5 min) -- no auth_required, this is the public search surface.
+    Rule-level timeout raised to 120000 for Replicate cold starts, same as
+    the index rule's embed step.
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: respond400
+      name: respond400
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "error": "{{steps.prep.reason}}"
+          }
+        status: 400
+        contentType: application/json
+        condition: steps.prep.notOk
+    - id: embed
+      name: embed
+      handler: replicate
+      config:
+        input:
+          texts: steps.prep.textsJson
+          batch_size: 32
+          normalize_embeddings: true
+          convert_to_numpy: false
+        model: nateraw/bge-large-en-v1.5
+        timeout: 120000
+        condition: steps.prep.ok
+    - id: pick
+      name: pick
+      handler: function_handler
+      code: ./pick.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: respond502
+      name: respond502
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "error": "EMBED_FAILED"
+          }
+        status: 502
+        contentType: application/json
+        condition: steps.pick.notOk
+    - id: search
+      name: search
+      handler: vector_search
+      config:
+        schemaId: $schema:recall_videos
+        fieldName: transcript
+        queryVector: steps.pick.vector
+        limit: 24
+        select: ['title', 'youtube_url', 'duration', 'status']
+        condition: steps.pick.ok
+    - id: videos
+      name: videos
+      handler: data_query
+      config:
+        schemaId: $schema:recall_videos
+        limit: 500
+        select: ['sheet_path', 'sheet_meta']
+        condition: steps.pick.ok
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+      config:
+        condition: steps.pick.ok
+    - id: respond200
+      name: respond200
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: public, max-age=300
+        contentType: application/json
+        condition: steps.pick.ok
+  validators:
+    - type: rate_limit
+      config:
+        keyBy: ip
+        limit: 30
+        windowSeconds: 300

@@ -21,7 +21,7 @@ import { MomentChip, type Moment } from '../components/MomentChip'
 import { SeekingPlayer } from '../components/SeekingPlayer'
 import { ChatTab } from '../components/chat/ChatTab'
 import type { SeekTarget } from '../components/CitationChip'
-import { useSearchMutation, type SearchVideo } from '../store/searchApi'
+import { useLazySearchQuery, type SearchVideo } from '../store/searchApi'
 import { useListPublicVideosQuery, type PublicVideoMeta } from '../store/videosApi'
 
 // `nonce` (PR-feedback-6 bugfix): a monotonic counter, bumped on EVERY seek
@@ -143,7 +143,13 @@ function SearchTab({
   // shell should already read as "a search happened" on the very first
   // render, same as right after a manual submit.
   const [submittedQ, setSubmittedQ] = useState<string | null>(() => (initialQ.trim() ? initialQ.trim() : null))
-  const [search, { data, isLoading, isError, error }] = useSearchMutation()
+  // `useLazySearchQuery`, not `useSearchMutation` (PR-feedback-7): `search`
+  // is now a `query` endpoint (GET, cacheable) — `isFetching` (not
+  // `isLoading`, which is only true before the FIRST result for a given
+  // `q` ever lands) is what should drive the "Searching…" state here, since
+  // re-submitting an already-cached `q` should still show it search-ish
+  // briefly even though RTK Query serves it instantly from cache.
+  const [search, { data, isFetching, isError, error }] = useLazySearchQuery()
   const [showColdStartNote, setShowColdStartNote] = useState(false)
 
   // Not a useEffect: the "first search after idle can be slow" note is tied
@@ -169,7 +175,7 @@ function SearchTab({
     try {
       await search({ q: trimmed }).unwrap()
     } catch {
-      // Error state is already surfaced via the mutation's own `isError`/`error`.
+      // Error state is already surfaced via the query's own `isError`/`error`.
     } finally {
       clearTimeout(timer)
       setShowColdStartNote(false)
@@ -179,17 +185,17 @@ function SearchTab({
   // Auto-run once on mount if the page loaded with a `?q=` already set (a
   // refresh or a shared link). This effect does NOT call any local setState
   // (`submittedQ` is already seeded above, via the lazy initializer) —
-  // it only dispatches the RTK Query mutation itself, so it doesn't trip
-  // react-hooks' "no setState synchronously in an effect body" rule. No
-  // `setSearchParams` push either: the URL already has this `q`, so
-  // re-pushing it would just create a pointless duplicate history entry.
+  // it only dispatches the RTK Query lazy-query trigger itself, so it
+  // doesn't trip react-hooks' "no setState synchronously in an effect body"
+  // rule. No `setSearchParams` push either: the URL already has this `q`,
+  // so re-pushing it would just create a pointless duplicate history entry.
   useEffect(() => {
     if (initialQ.trim()) {
       void search({ q: initialQ.trim() })
     }
     // Runs once on mount only: `initialQ` never changes after mount (a
     // useState initializer), and `search`'s identity is stable (an RTK
-    // Query mutation trigger).
+    // Query lazy-query trigger).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -209,15 +215,15 @@ function SearchTab({
         />
         <button
           type="submit"
-          disabled={isLoading || !q.trim()}
+          disabled={isFetching || !q.trim()}
           className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isLoading ? 'Searching…' : 'Search'}
+          {isFetching ? 'Searching…' : 'Search'}
         </button>
       </form>
 
       <div className="mt-6">
-        {isLoading && (
+        {isFetching && (
           <>
             <ResultsSkeleton />
             {showColdStartNote && (
@@ -228,7 +234,7 @@ function SearchTab({
           </>
         )}
 
-        {!isLoading && isError && (
+        {!isFetching && isError && (
           <p
             role="alert"
             className={
@@ -241,19 +247,19 @@ function SearchTab({
           </p>
         )}
 
-        {!isLoading && !isError && submittedQ === null && (
+        {!isFetching && !isError && submittedQ === null && (
           <p className="text-slate-500 dark:text-slate-400">
             Search across every published video's transcript.
           </p>
         )}
 
-        {!isLoading && !isError && submittedQ !== null && videos.length === 0 && (
+        {!isFetching && !isError && submittedQ !== null && videos.length === 0 && (
           <p className="text-slate-500 dark:text-slate-400">
             No matches for &ldquo;{submittedQ}&rdquo;. Try different words.
           </p>
         )}
 
-        {!isLoading && !isError && videos.length > 0 && (
+        {!isFetching && !isError && videos.length > 0 && (
           <div className="space-y-3">
             {videos.map((video) => (
               <VideoResultCard key={video.videoId} video={video} onSelectMoment={onSelectMoment} />

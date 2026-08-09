@@ -1,5 +1,6 @@
-// Shapes vector_search hits into { videos: [...] } for POST /api/search
-// (Task 9). steps.search is vector_search's raw output: an array of
+// Shapes vector_search hits into { videos: [...] } for GET /api/search?q=
+// (Task 9, converted from POST in PR-feedback-7 for HTTP cacheability).
+// steps.search is vector_search's raw output: an array of
 // { id, similarity, chunkText, chunkIndex, chunkMetadata?, title,
 // youtube_url, duration, status } -- `chunkMetadata` is only present once
 // CE's vector-search handler patch (feat/vector-search-chunk-metadata) is
