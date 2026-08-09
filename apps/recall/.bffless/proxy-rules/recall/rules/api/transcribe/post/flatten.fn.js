@@ -2,7 +2,7 @@ function handler({ steps }) {
   // WhisperX returns { segments: [{ start, end, text, words: [{ word, start, end, score }] }] }.
   // Recall drops diarization entirely (no pyannote call, no `speaker` field) —
   // unlike Studio, there's no per-speaker UI to feed.
-  var whisper = steps.whisper || {}
+  var whisper = (steps && steps.whisper) || {}
   var out = whisper.output != null ? whisper.output : whisper
   var segments = (out && out.segments) || []
   var words = []
