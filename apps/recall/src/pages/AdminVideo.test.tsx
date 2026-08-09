@@ -81,6 +81,8 @@ function baseVideo(overrides: Record<string, unknown> = {}) {
     duration: 0,
     source_path: null,
     audio_path: null,
+    sheet_path: null,
+    sheet_meta: null,
     transcript: null,
     created_ms: 1_700_000_000_000,
     updated_ms: 1_700_000_000_000,
@@ -186,5 +188,41 @@ describe('AdminVideo', () => {
     await screen.findByDisplayValue('Intro to Recall')
     expect(screen.queryByRole('heading', { name: 'Transcript' })).not.toBeInTheDocument()
     expect(screen.getByText('Idle')).toBeInTheDocument()
+  })
+
+  it('shows a "Generate frames" backfill button once a source video exists but has no sheet yet', async () => {
+    const video = baseVideo({ status: 'draft', source_path: '/api/uploads/videos/v1/source/clip.mp4' })
+    mockFetchRouter({ video })
+
+    renderPage('v1')
+
+    expect(await screen.findByRole('button', { name: 'Generate frames' })).toBeInTheDocument()
+  })
+
+  it('shows no frames affordance at all before any source video is uploaded', async () => {
+    const video = baseVideo()
+    mockFetchRouter({ video })
+
+    renderPage('v1')
+
+    await screen.findByDisplayValue('Intro to Recall')
+    expect(screen.queryByRole('button', { name: 'Generate frames' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Frames ✓/)).not.toBeInTheDocument()
+  })
+
+  it('shows a "Frames ✓ · N tiles" pill instead of the button once a sheet exists', async () => {
+    const meta = { cols: 5, rows: 2, tileW: 320, tileH: 180, tiles: Array.from({ length: 10 }, (_, i) => ({ t: i })) }
+    const video = baseVideo({
+      status: 'draft',
+      source_path: '/api/uploads/videos/v1/source/clip.mp4',
+      sheet_path: '/api/uploads/sheets/v1/x.jpg',
+      sheet_meta: JSON.stringify(meta),
+    })
+    mockFetchRouter({ video })
+
+    renderPage('v1')
+
+    expect(await screen.findByText('Frames ✓ · 10 tiles')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generate frames' })).not.toBeInTheDocument()
   })
 })

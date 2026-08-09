@@ -1,0 +1,29 @@
+targetUrl: pipeline
+order: 24
+pipeline:
+  name: Register recall_uploads sheet upload
+  description: Verify the bucket object and write the upload record (finalize step of the direct-to-bucket sheet flow). Reuses the recall_uploads schema; the sheets/ subDir distinguishes records.
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: sheets/{{request.body.videoId}}
+        schemaId: $schema:recall_uploads
+        storageKey: request.body.storageKey
+        maxFileSize: 10485760
+        originalName: request.body.originalName
+        allowedMimeTypes:
+          - image/*
+    - id: response
+      name: Return Register Result
+      handler: response_handler
+      config:
+        body: "{{{steps.register}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Register: finalize a direct-to-bucket recall contact-sheet upload into recall_uploads"

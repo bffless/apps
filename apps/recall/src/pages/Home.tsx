@@ -67,6 +67,8 @@ function VideoResultCard({
               <MomentChip
                 key={`${moment.start}-${i}`}
                 moment={moment}
+                sheetUrl={video.sheetUrl}
+                sheetMeta={video.sheetMeta}
                 onSelect={(m) => onSelectMoment(video, m)}
               />
             ))}

@@ -15,11 +15,24 @@ export type SearchMoment = {
   similarity: number
 }
 
+/** A parsed contact-sheet sprite's geometry (PR-feedback-2) — see `src/lib/sprite.ts`
+ * for the crop math that turns this + a moment's `start` into a CSS background. */
+export type SheetMeta = {
+  cols: number
+  rows: number
+  tileW: number
+  tileH: number
+  tiles: { t: number }[]
+}
+
 export type SearchVideo = {
   videoId: string
   title: string
   youtubeId: string
   duration: number
+  /** Site-relative sprite-sheet URL, or `null` if this video has none yet. */
+  sheetUrl: string | null
+  sheetMeta: SheetMeta | null
   moments: SearchMoment[]
 }
 

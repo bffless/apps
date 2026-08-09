@@ -30,14 +30,19 @@ BFFless admin panel before ingest, search, or chat will run:
    token covers all three call sites; there's no separate transcription provider to wire up.
 2. **Connect Anthropic** under **AI Services**. `/api/chat` runs `claude-haiku-4-5` in streaming
    mode for the RAG chat.
-3. **Bucket CORS**. Video/audio uploads go straight to your storage bucket via presigned PUT
-   (`/api/uploads/source/prepare` + `/api/uploads/audio/prepare`), so the bucket's CORS
+3. **Bucket CORS**. Video/audio/contact-sheet uploads go straight to your storage bucket via
+   presigned PUT (`/api/uploads/{source,audio,sheet}/prepare`), so the bucket's CORS
    `Access-Control-Allow-Origin` list needs the exact origins the browser uploads from:
    `https://recall.j5s.dev` (production) and whatever origin serves the shared PR-preview alias
    (`recall-preview` — see `preview-recall.yml`'s header comment for why it's one fixed alias
    rather than a fresh one per PR). A local dev origin (`http://localhost:5173`) only needs this
    if you're testing real (non-mocked) uploads. Presigned/bucket storage is **required** — Recall
-   has no fallback local-disk upload path.
+   has no fallback local-disk upload path. The same origin list also needs **GET** allowed: the
+   admin detail page's "Generate frames" backfill button (`src/pages/AdminVideo.tsx`) captures a
+   contact sheet from a *signed download* URL with `<video crossOrigin="anonymous">`, and canvas
+   capture from a cross-origin `<video>` is only untainted when the actual GET response carries a
+   matching `Access-Control-Allow-Origin` header — a bucket CORS entry that only allows PUT lets
+   uploads through but leaves this backfill flow silently producing a tainted (unusable) canvas.
 
 Nothing else needs a manual step: schemas (`recall_videos`, `recall_jobs`, `recall_uploads`,
 `recall_conversations`, `recall_messages`) are created by the rule sync itself, and every admin

@@ -1,0 +1,13 @@
+targetUrl: ""
+order: 25
+pipeline:
+  name: Serve recall_sheets
+  description: Serve files from the sheets subDir
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: sheets
+  validators: []
+description: Serve contact-sheet sprite images (Range-aware) — PUBLIC, no auth_required. Sheets of published videos are public content, and paths contain the video's uuid so a draft's sheet is unguessable. subDir is `sheets` (top-level, distinct from `videos/`), so this route can never reach source/audio files even if it wanted to.

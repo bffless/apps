@@ -24,6 +24,8 @@ pipeline:
           youtube_url: steps.pick.youtube_url
           source_path: steps.pick.source_path
           audio_path: steps.pick.audio_path
+          sheet_path: steps.pick.sheet_path
+          sheet_meta: steps.pick.sheet_meta
           updated_ms: steps.pick.now
         recordId: steps.pick.videoId
         schemaId: $schema:recall_videos

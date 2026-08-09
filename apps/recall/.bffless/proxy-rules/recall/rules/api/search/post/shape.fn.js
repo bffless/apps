@@ -25,6 +25,30 @@ function bySimilarityDesc(a, b) {
   return b.similarity - a.similarity
 }
 
+// sheet_path is already a usable relative serve path (e.g.
+// "/api/uploads/sheets/<videoId>/..."), same as source_path/audio_path
+// elsewhere in this app -- register_upload's `url` is what gets stored, and
+// it's always site-relative. Just normalize a bare/missing leading slash so
+// the frontend can drop it straight into a CSS `background-image: url(...)`.
+function normalizeSheetUrl(sheetPath) {
+  if (typeof sheetPath !== 'string' || !sheetPath) return null
+  return sheetPath.charAt(0) === '/' ? sheetPath : '/' + sheetPath
+}
+
+// sheet_meta is stored as a JSON string (schema type `text`, same convention
+// as recall_videos.transcript) -- tolerate a missing/malformed value by
+// returning null rather than throwing, same defensiveness as
+// parseTranscript in AdminVideo.tsx.
+function parseSheetMeta(raw) {
+  if (typeof raw !== 'string' || !raw) return null
+  try {
+    var parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch (e) {
+    return null
+  }
+}
+
 function handler({ steps }) {
   var hits = (steps && steps.search) || []
   if (!Array.isArray(hits)) hits = []
@@ -65,6 +89,8 @@ function handler({ steps }) {
         title: typeof hit.title === 'string' ? hit.title : '',
         youtubeId: youtubeId,
         duration: typeof hit.duration === 'number' ? hit.duration : 0,
+        sheetUrl: normalizeSheetUrl(hit.sheet_path),
+        sheetMeta: parseSheetMeta(hit.sheet_meta),
         moments: [],
       }
       order.push(id)

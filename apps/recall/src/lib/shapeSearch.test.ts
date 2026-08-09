@@ -3,7 +3,16 @@ import { loadFnSource, runFn } from '../test/fnHarness'
 
 type Hit = Record<string, unknown>
 type Moment = { start: number; end?: number; snippet: string; similarity: number }
-type SearchVideo = { videoId: string; title: string; youtubeId: string; duration: number; moments: Moment[] }
+type SheetMeta = { cols: number; rows: number; tileW: number; tileH: number; tiles: { t: number }[] }
+type SearchVideo = {
+  videoId: string
+  title: string
+  youtubeId: string
+  duration: number
+  sheetUrl: string | null
+  sheetMeta: SheetMeta | null
+  moments: Moment[]
+}
 type ShapeOutput = { videos: SearchVideo[] }
 
 const shapeFnSrc = loadFnSource('api/search/post/shape.fn.js')
@@ -109,5 +118,30 @@ describe('shape.fn.js', () => {
 
   test('an empty hit list returns an empty videos array', () => {
     expect(run([])).toEqual({ videos: [] })
+  })
+
+  test('normalizes sheet_path into a leading-slash sheetUrl and parses sheet_meta JSON', () => {
+    const meta: SheetMeta = { cols: 5, rows: 2, tileW: 320, tileH: 180, tiles: [{ t: 1 }] }
+    const out = run([
+      hit({ sheet_path: 'api/uploads/sheets/v1/x.jpg', sheet_meta: JSON.stringify(meta) }),
+    ])
+    expect(out.videos[0].sheetUrl).toBe('/api/uploads/sheets/v1/x.jpg')
+    expect(out.videos[0].sheetMeta).toEqual(meta)
+  })
+
+  test('leaves an already-leading-slash sheet_path untouched', () => {
+    const out = run([hit({ sheet_path: '/api/uploads/sheets/v1/x.jpg' })])
+    expect(out.videos[0].sheetUrl).toBe('/api/uploads/sheets/v1/x.jpg')
+  })
+
+  test('sheetUrl/sheetMeta are null when sheet_path/sheet_meta are absent', () => {
+    const out = run([hit()])
+    expect(out.videos[0].sheetUrl).toBeNull()
+    expect(out.videos[0].sheetMeta).toBeNull()
+  })
+
+  test('sheetMeta is null when sheet_meta fails to parse', () => {
+    const out = run([hit({ sheet_meta: 'not json{' })])
+    expect(out.videos[0].sheetMeta).toBeNull()
   })
 })

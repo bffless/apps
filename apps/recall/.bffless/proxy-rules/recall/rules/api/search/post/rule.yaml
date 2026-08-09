@@ -19,8 +19,8 @@ pipeline:
     against the replicate step having failed outright) -> on failure,
     respond502 returns 502 { error: 'EMBED_FAILED' } -> on success: search
     (vector_search over recall_videos.transcript, top 24, selecting
-    title/youtube_url/duration/status alongside the usual
-    id/similarity/chunkText/chunkMetadata) -> shape groups hits by video,
+    title/youtube_url/duration/status/sheet_path/sheet_meta alongside the
+    usual id/similarity/chunkText/chunkMetadata) -> shape groups hits by video,
     caps at 4 moments/video, prefers chunkMetadata.start/end over parsing the
     `[t=Ns] ` chunkText prefix (CE's chunk-metadata vector-search patch may
     not be deployed yet), strips that prefix from every snippet either way,
@@ -84,7 +84,7 @@ pipeline:
         fieldName: transcript
         queryVector: steps.pick.vector
         limit: 24
-        select: ['title', 'youtube_url', 'duration', 'status']
+        select: ['title', 'youtube_url', 'duration', 'status', 'sheet_path', 'sheet_meta']
         condition: steps.pick.ok
     - id: shape
       name: shape

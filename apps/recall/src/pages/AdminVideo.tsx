@@ -25,6 +25,8 @@ import { StatusPill } from '../components/StatusPill'
 import { TranscriptView, type TranscriptWord } from '../components/TranscriptView'
 import { useIndexJob, type IndexStage } from '../hooks/useIndexJob'
 import { useIngest, type IngestStage } from '../hooks/useIngest'
+import { captureFrameSheet, type SheetMeta } from '../lib/frames'
+import { presignedUpload } from '../lib/upload'
 import { extractYouTubeId } from '../lib/youtube'
 import {
   useDeleteVideoMutation,
@@ -85,6 +87,7 @@ export function AdminVideo() {
 const STAGE_LABELS: Record<IngestStage, string> = {
   idle: 'Idle',
   uploading: 'Uploading video…',
+  frames: 'Capturing frames…',
   extracting: 'Extracting audio…',
   'uploading-audio': 'Uploading audio…',
   transcribing: 'Transcribing…',
@@ -95,11 +98,115 @@ const STAGE_LABELS: Record<IngestStage, string> = {
 const STAGE_STYLES: Record<IngestStage, string> = {
   idle: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   uploading: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  frames: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   extracting: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   'uploading-audio': 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   transcribing: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   done: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   error: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+}
+
+/**
+ * Parse the persisted `sheet_meta` JSON string into `{ tiles }`, tolerating a
+ * null/malformed value (no sheet yet, or a hand-edited record) the same way
+ * `parseTranscript` does above.
+ */
+function parseSheetMeta(raw: string | null): SheetMeta | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<SheetMeta>
+    if (!Array.isArray(parsed.tiles)) return null
+    return parsed as SheetMeta
+  } catch {
+    return null
+  }
+}
+
+type FramesBackfillStage = 'idle' | 'signing' | 'capturing' | 'uploading' | 'done' | 'error'
+
+const FRAMES_BACKFILL_LABELS: Record<FramesBackfillStage, string> = {
+  idle: 'Generate frames',
+  signing: 'Signing…',
+  capturing: 'Capturing frames…',
+  uploading: 'Uploading…',
+  done: 'Generate frames',
+  error: 'Generate frames',
+}
+
+/**
+ * Backfill button + status pill for videos uploaded before contact sheets
+ * existed (PR-feedback-2): fetches a signed download URL for the already-
+ * uploaded `source_path` (the same presigned-GET flow `SourceVideoPlayer`
+ * uses), captures a sheet from it (the bucket CORS that already allows our
+ * origin for `SourceVideoPlayer`'s playback also makes the canvas capture
+ * untainted), uploads it, and saves `sheet_path`/`sheet_meta` onto the
+ * record — same three steps `useIngest`'s automatic `frames` stage runs for
+ * a fresh upload, just sourced from a signed URL instead of the local File.
+ * Hidden once a sheet already exists (shows the "Frames ✓" pill instead) or
+ * before any source video has been uploaded (nothing to capture from yet).
+ */
+function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
+  const [stage, setStage] = useState<FramesBackfillStage>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [saveVideo] = useSaveVideoMutation()
+  const [triggerSign] = useLazySignDownloadQuery()
+  const { refetch } = useGetAdminVideoQuery(videoId, { skip: !videoId })
+
+  const sheetMeta = parseSheetMeta(video.sheet_meta)
+
+  if (video.sheet_path && sheetMeta) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+        Frames ✓ · {sheetMeta.tiles.length} tiles
+      </span>
+    )
+  }
+
+  if (!video.source_path) return null
+
+  const busy = stage === 'signing' || stage === 'capturing' || stage === 'uploading'
+
+  async function generate() {
+    if (!video.source_path) return
+    setError(null)
+    try {
+      setStage('signing')
+      const { url } = await triggerSign(video.source_path).unwrap()
+
+      setStage('capturing')
+      const sheet = await captureFrameSheet(url)
+      if (!sheet.blob || sheet.meta.tiles.length === 0) {
+        throw new Error("Couldn't capture any frames from this video.")
+      }
+
+      setStage('uploading')
+      const file = new File([sheet.blob], 'sheet.jpg', { type: 'image/jpeg' })
+      const sheetPath = await presignedUpload(file, '/api/uploads/sheet', videoId)
+      await saveVideo({ videoId, sheet_path: sheetPath, sheet_meta: JSON.stringify(sheet.meta) }).unwrap()
+
+      setStage('done')
+      void refetch()
+    } catch (e) {
+      setStage('error')
+      setError(e instanceof Error && e.message ? e.message : "Couldn't generate frames.")
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          void generate()
+        }}
+        disabled={busy}
+        className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+      >
+        {FRAMES_BACKFILL_LABELS[stage]}
+      </button>
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  )
 }
 
 function formatDuration(seconds: number | null): string {
@@ -322,6 +429,7 @@ function IngestPanel({
             resume the poll on its own, reload once it finishes.
           </span>
         )}
+        {stage === 'idle' && <FramesBackfill videoId={videoId} video={video} />}
       </div>
 
       {error && (

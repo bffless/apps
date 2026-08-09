@@ -18,6 +18,8 @@ function handler({ steps }) {
       duration: num(q.duration),
       source_path: str(q.source_path),
       audio_path: str(q.audio_path),
+      sheet_path: str(q.sheet_path),
+      sheet_meta: str(q.sheet_meta),
       transcript: str(q.transcript),
       created_ms: num(q.created_ms),
       updated_ms: num(q.updated_ms),

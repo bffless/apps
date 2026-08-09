@@ -26,9 +26,19 @@ export type VideoMeta = {
   updated_ms: number
 }
 
-/** The full video row, including `transcript` — what the detail page needs. */
+/**
+ * The full video row, including `transcript` — what the detail page needs.
+ * `sheet_path`/`sheet_meta` (PR-feedback-2) are only carried on this shape —
+ * NOT `VideoMeta` — since only the admin detail page needs the contact-sheet
+ * sprite; the admin list table doesn't render thumbnails. `sheet_meta` is
+ * stored as a JSON string (schema type `text`, same convention as
+ * `transcript`) — parse it with `JSON.parse` the same tolerant way
+ * `AdminVideo.tsx`'s `parseTranscript` does.
+ */
 export type Video = VideoMeta & {
   transcript: string | null
+  sheet_path: string | null
+  sheet_meta: string | null
 }
 
 /**
@@ -76,6 +86,8 @@ export type SaveVideoArgs = {
   youtube_url?: string
   source_path?: string
   audio_path?: string
+  sheet_path?: string
+  sheet_meta?: string
 }
 
 /** A `recall_jobs` row as the ingest poll loop sees it (Task 6). */

@@ -24,5 +24,7 @@ function handler({ request, steps }) {
     youtube_url: coalesce(body.youtube_url, row ? row.youtube_url : null),
     source_path: coalesce(body.source_path, row ? row.source_path : null),
     audio_path: coalesce(body.audio_path, row ? row.audio_path : null),
+    sheet_path: coalesce(body.sheet_path, row ? row.sheet_path : null),
+    sheet_meta: coalesce(body.sheet_meta, row ? row.sheet_meta : null),
   }
 }

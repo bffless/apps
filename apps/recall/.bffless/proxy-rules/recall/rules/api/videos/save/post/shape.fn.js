@@ -19,6 +19,8 @@ function handler({ steps }) {
       duration: num(u.duration),
       source_path: str(u.source_path),
       audio_path: str(u.audio_path),
+      sheet_path: str(u.sheet_path),
+      sheet_meta: str(u.sheet_meta),
       created_ms: num(u.created_ms),
       updated_ms: num(u.updated_ms),
     },
