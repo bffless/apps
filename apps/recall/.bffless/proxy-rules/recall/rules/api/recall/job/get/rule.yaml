@@ -1,0 +1,30 @@
+targetUrl: pipeline
+order: 13
+pipeline:
+  name: Recall job poll
+  description: "Read a recall_jobs row by id for the useIngest poll loop (Task 6). Mirrors Studio's /api/studio/job poll rule exactly (recall_jobs has the same shape as studio_jobs)."
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        recordId: request.query.id
+        schemaId: $schema:recall_jobs
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config:
+        roles: ['admin']
+description: "Recall job poll (Task 6): GET /api/recall/job?id=<jobId> -> read a recall_jobs row by id -> { status, kind, result, error, prompt, system }. Cache-Control: no-store so polls never read a stale pending. Admin-only."

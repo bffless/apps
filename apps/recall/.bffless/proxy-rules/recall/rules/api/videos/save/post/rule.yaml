@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 8
 pipeline:
   name: Save recall video
-  description: "Update a recall_videos record (Task 5). POST { videoId, title, description, youtube_url } -> query looks the row up directly BY ITS OWN system id (recordId: request.body.videoId - recall_videos has no separate identity field to filter on, unlike Studio's studio_projects.projectId, since a video's id only ever exists after POST /api/videos returns it) -> pick computes hasId/noId/exists/missing WITHOUT throwing (mirrors Studio's error-handling fix) plus a server-side updated_ms timestamp -> update (condition steps.pick.exists) writes title/description/youtube_url/updated_ms by recordId -> shape returns the updated record -> respond (condition exists) 200, respondNotFound (condition missing) 404, or respondNoId (condition noId) 400. Unlike Studio's save, there is NO insert/self-heal fallback: a data_create here would mint a brand-new id that no longer matches the videoId the client (and any videos/<id>/ storage prefix already in use) is holding, so a missing row is reported as 404 rather than silently recreated under a different id."
+  description: "Update a recall_videos record (Task 5; extended Task 6 to a true partial PATCH). POST { videoId, ...anySubsetOf(title, description, youtube_url, source_path, audio_path) } -> query looks the row up directly BY ITS OWN system id (recordId: request.body.videoId - recall_videos has no separate identity field to filter on, unlike Studio's studio_projects.projectId, since a video's id only ever exists after POST /api/videos returns it) -> pick computes hasId/noId/exists/missing WITHOUT throwing (mirrors Studio's error-handling fix), a server-side updated_ms timestamp, AND coalesces each patchable field against the current row so an omitted field is left untouched (Task 6: the ingest hook calls this with only { videoId, source_path } or { videoId, audio_path }, the title-edit form still sends all three text fields) -> update (condition steps.pick.exists) writes the coalesced fields by recordId -> shape returns the updated record -> respond (condition exists) 200, respondNotFound (condition missing) 404, or respondNoId (condition noId) 400. Unlike Studio's save, there is NO insert/self-heal fallback: a data_create here would mint a brand-new id that no longer matches the videoId the client (and any videos/<id>/ storage prefix already in use) is holding, so a missing row is reported as 404 rather than silently recreated under a different id."
   steps:
     - id: query
       name: query
@@ -19,9 +19,11 @@ pipeline:
       handler: data_update
       config:
         fields:
-          title: request.body.title
-          description: request.body.description
-          youtube_url: request.body.youtube_url
+          title: steps.pick.title
+          description: steps.pick.description
+          youtube_url: steps.pick.youtube_url
+          source_path: steps.pick.source_path
+          audio_path: steps.pick.audio_path
           updated_ms: steps.pick.now
         recordId: steps.pick.videoId
         schemaId: $schema:recall_videos

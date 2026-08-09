@@ -31,12 +31,29 @@ export type Video = VideoMeta & {
   transcript: string | null
 }
 
+// A genuine partial PATCH (Task 6): every field but `videoId` is optional and
+// an omitted one is left untouched server-side (see the save rule's `pick`
+// step). The title-edit form still sends all three text fields on every save;
+// `useIngest` sends only `source_path` or `audio_path` as each upload lands.
 export type SaveVideoArgs = {
   videoId: string
-  title: string
-  description: string
-  youtube_url: string
+  title?: string
+  description?: string
+  youtube_url?: string
+  source_path?: string
+  audio_path?: string
 }
+
+/** A `recall_jobs` row as the ingest poll loop sees it (Task 6). */
+export type Job = {
+  status: 'pending' | 'running' | 'done' | 'error' | string
+  kind: string
+  result: { words?: { text: string; start: number | null; end: number | null }[]; text?: string } | null
+  error: string | null
+}
+
+export type TranscribeStartArgs = { videoId: string; audioPath: string; durationSec: number }
+export type TranscribeStartResponse = { jobId: string; status: string }
 
 export const videosApi = recallApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -90,6 +107,27 @@ export const videosApi = recallApi.injectEndpoints({
         { type: 'Videos', id: 'LIST' },
       ],
     }),
+
+    // POST /api/transcribe { videoId, audioPath, durationSec } → { jobId, status }.
+    // ENQUEUE-ONLY (Task 6, mirrors Studio's transcribeStart): the WhisperX call
+    // runs in the pipeline's postSteps so it can't hit the 30s edge timeout. The
+    // rule itself flips the video record to 'transcribing' synchronously, then
+    // writes the transcript + 'transcribed'/'error' status once the job settles —
+    // outside this request/response cycle, so there's no result here to tag;
+    // `AdminVideo`'s `IngestPanel` explicitly `refetch()`s `getAdminVideo` once
+    // `useIngest`'s poll reaches a terminal stage, since RTK has no way to know
+    // the pipeline wrote to a DIFFERENT record out-of-band.
+    transcribeStart: builder.mutation<TranscribeStartResponse, TranscribeStartArgs>({
+      query: (body) => ({ url: 'api/transcribe', method: 'POST', body }),
+    }),
+
+    // GET /api/recall/job?id=<jobId> → Job. Polled by `useIngest` every 2s.
+    // `keepUnusedDataFor: 0` so a poll never reads a stale cached 'pending' —
+    // each call hits the network and nothing lingers after the loop stops.
+    getJob: builder.query<Job, string>({
+      query: (jobId) => `api/recall/job?id=${encodeURIComponent(jobId)}`,
+      keepUnusedDataFor: 0,
+    }),
   }),
 })
 
@@ -99,4 +137,6 @@ export const {
   useCreateVideoMutation,
   useSaveVideoMutation,
   useDeleteVideoMutation,
+  useTranscribeStartMutation,
+  useLazyGetJobQuery,
 } = videosApi
