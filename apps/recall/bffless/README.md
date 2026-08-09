@@ -18,6 +18,10 @@ npx bffless@^0.2.0 rules sync apps/recall/.bffless/proxy-rules/recall --project 
 then attach the `recall` rule set to the alias serving the app (Admin → Aliases, or
 `proxy-rule-set-names` on the upload step, as CI does).
 
+Recall is also published to the CE app catalog (`apps/recall/bffless-app.json`) — installing it
+from **Admin → Apps** on a CE ≥ 0.4.24 instance does the rule sync and alias attach for you, and
+surfaces the manual steps below directly in the install flow.
+
 ## Manual setup (admin panel)
 
 A rule sync alone isn't enough to make Recall work — three things need connecting by hand in the
