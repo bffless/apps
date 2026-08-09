@@ -6,10 +6,17 @@
  * title }` (it already has the video title on hand); chat's citation chips
  * only carry `{ youtubeId, startSec }` (see `CitationChip`) — `title` is
  * optional on `PlayerTarget` so both feed the same state.
+ *
+ * PR-feedback-6: the search box and active tab sync to the URL
+ * (`?q=<query>`, `?tab=chat`) via `useSearchParams`, so a refresh or a
+ * shared link restores state. Search submissions PUSH a new history entry
+ * (so the back button walks search history, one query per entry); tab
+ * switches REPLACE (switching tabs isn't a "back" stop) — see `SearchTab`
+ * and `Home`'s `handleTabClick` respectively.
  */
 
-import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { MomentChip, type Moment } from '../components/MomentChip'
 import { SeekingPlayer } from '../components/SeekingPlayer'
 import { ChatTab } from '../components/chat/ChatTab'
@@ -17,7 +24,13 @@ import type { SeekTarget } from '../components/CitationChip'
 import { useSearchMutation, type SearchVideo } from '../store/searchApi'
 import { useListPublicVideosQuery, type PublicVideoMeta } from '../store/videosApi'
 
-type PlayerTarget = { youtubeId: string; startSec: number; title?: string }
+// `nonce` (PR-feedback-6 bugfix): a monotonic counter, bumped on EVERY seek
+// — including a repeat seek to the exact same `{youtubeId, startSec}` (a
+// chat reply citing the same timestamp twice, or re-clicking a moment after
+// playback has drifted forward). Without it, `SeekingPlayer`'s remount key
+// is unchanged and the second click is a silent no-op. See
+// `SeekingPlayer.tsx`'s own doc comment for the full story.
+type PlayerTarget = { youtubeId: string; startSec: number; title?: string; nonce: number }
 type Tab = 'search' | 'chat'
 
 const COLD_START_DELAY_MS = 2000
@@ -42,16 +55,20 @@ function VideoResultCard({
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
       <div className="flex gap-4 p-4">
-        <img
-          src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
-          alt=""
-          className="h-20 w-32 shrink-0 rounded object-cover"
-          loading="lazy"
-        />
+        <Link to={`/video/${video.videoId}`} className="shrink-0">
+          <img
+            src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
+            alt=""
+            className="h-20 w-32 rounded object-cover"
+            loading="lazy"
+          />
+        </Link>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <h3 className="truncate font-medium text-slate-900 dark:text-slate-100">
-              {video.title || 'Untitled video'}
+              <Link to={`/video/${video.videoId}`} className="hover:underline">
+                {video.title || 'Untitled video'}
+              </Link>
             </h3>
             <a
               href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
@@ -99,9 +116,33 @@ function ResultsSkeleton() {
   )
 }
 
-function SearchTab({ onSelectMoment }: { onSelectMoment: (video: SearchVideo, moment: Moment) => void }) {
-  const [q, setQ] = useState('')
-  const [submittedQ, setSubmittedQ] = useState<string | null>(null)
+/**
+ * `?q=` sync (PR-feedback-6): `initialQ` is read ONCE at mount (a `useState`
+ * initializer, not a live subscription — the URL can keep changing after
+ * that, e.g. via `setSearchParams` below, without re-triggering this).
+ * Submitting a NEW search always PUSHes (`push: true`, the default for
+ * `setSearchParams` with no `replace` option) — one history entry per query,
+ * so the back button walks search history, per the brief. The mount-time
+ * auto-run (below) passes `push: false`: the URL already has this `q`, from
+ * whoever loaded/shared this link, so re-pushing it would just create a
+ * pointless duplicate history entry.
+ */
+function SearchTab({
+  onSelectMoment,
+  searchParams,
+  setSearchParams,
+}: {
+  onSelectMoment: (video: SearchVideo, moment: Moment) => void
+  searchParams: URLSearchParams
+  setSearchParams: ReturnType<typeof useSearchParams>[1]
+}) {
+  const [initialQ] = useState(() => searchParams.get('q') ?? '')
+  const [q, setQ] = useState(initialQ)
+  // Lazily seeded from `initialQ` (not set inside an effect — see the
+  // mount-time auto-run below): if the page loaded with `?q=`, the results
+  // shell should already read as "a search happened" on the very first
+  // render, same as right after a manual submit.
+  const [submittedQ, setSubmittedQ] = useState<string | null>(() => (initialQ.trim() ? initialQ.trim() : null))
   const [search, { data, isLoading, isError, error }] = useSearchMutation()
   const [showColdStartNote, setShowColdStartNote] = useState(false)
 
@@ -117,6 +158,13 @@ function SearchTab({ onSelectMoment }: { onSelectMoment: (video: SearchVideo, mo
     if (!trimmed) return
     setSubmittedQ(trimmed)
     setShowColdStartNote(false)
+    // A NEW submission always pushes a fresh history entry — one per query,
+    // so the back button walks search history.
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('q', trimmed)
+      return next
+    })
     const timer = setTimeout(() => setShowColdStartNote(true), COLD_START_DELAY_MS)
     try {
       await search({ q: trimmed }).unwrap()
@@ -127,6 +175,23 @@ function SearchTab({ onSelectMoment }: { onSelectMoment: (video: SearchVideo, mo
       setShowColdStartNote(false)
     }
   }
+
+  // Auto-run once on mount if the page loaded with a `?q=` already set (a
+  // refresh or a shared link). This effect does NOT call any local setState
+  // (`submittedQ` is already seeded above, via the lazy initializer) —
+  // it only dispatches the RTK Query mutation itself, so it doesn't trip
+  // react-hooks' "no setState synchronously in an effect body" rule. No
+  // `setSearchParams` push either: the URL already has this `q`, so
+  // re-pushing it would just create a pointless duplicate history entry.
+  useEffect(() => {
+    if (initialQ.trim()) {
+      void search({ q: initialQ.trim() })
+    }
+    // Runs once on mount only: `initialQ` never changes after mount (a
+    // useState initializer), and `search`'s identity is stable (an RTK
+    // Query mutation trigger).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const videos = data?.videos ?? []
   const { isRateLimited, message } = isError ? errorInfo(error) : { isRateLimited: false, message: '' }
@@ -283,7 +348,10 @@ function LibrarySection() {
 }
 
 export function Home() {
-  const [tab, setTab] = useState<Tab>('search')
+  const [searchParams, setSearchParams] = useSearchParams()
+  // `?tab=chat` sync: read once at mount (same lazy-initializer pattern as
+  // `SearchTab`'s `initialQ`), any other/missing value defaults to 'search'.
+  const [tab, setTabState] = useState<Tab>(() => (searchParams.get('tab') === 'chat' ? 'chat' : 'search'))
   const [player, setPlayer] = useState<PlayerTarget | null>(null)
   // Gates `SeekingPlayer`'s `autoplay` (PR-feedback-2). The player panel here
   // only ever mounts as the direct result of a moment/citation click, so this
@@ -291,14 +359,42 @@ export function Home() {
   // (rather than hard-coding `autoplay` on the panel) for the same
   // "only autoplay off a real user gesture" reasoning as `Video.tsx`.
   const [hasUserSeeked, setHasUserSeeked] = useState(false)
+  // A plain mutable counter (not state) — every seek reads-then-increments
+  // it synchronously, so two seeks in the same tick still get distinct
+  // nonces (a functional `setPlayer` updater reading `prev.nonce` would work
+  // too, but this is simpler and doesn't require plumbing every call site
+  // through a callback form).
+  const seekNonceRef = useRef(0)
+  function nextSeekNonce(): number {
+    seekNonceRef.current += 1
+    return seekNonceRef.current
+  }
+
+  // Tab switches REPLACE (not push): flipping between Search and Chat isn't
+  // a "back" stop the way a new search query is. Drops `tab` from the URL
+  // entirely when switching back to 'search' (the default), so a plain
+  // `/` stays the canonical search-tab URL rather than always carrying
+  // `?tab=search`.
+  function handleTabClick(next: Tab) {
+    setTabState(next)
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        if (next === 'chat') params.set('tab', 'chat')
+        else params.delete('tab')
+        return params
+      },
+      { replace: true },
+    )
+  }
 
   function handleSelectMoment(video: SearchVideo, moment: Moment) {
-    setPlayer({ youtubeId: video.youtubeId, startSec: moment.start, title: video.title })
+    setPlayer({ youtubeId: video.youtubeId, startSec: moment.start, title: video.title, nonce: nextSeekNonce() })
     setHasUserSeeked(true)
   }
 
   function handleSeek(target: SeekTarget) {
-    setPlayer(target)
+    setPlayer({ ...target, nonce: nextSeekNonce() })
     setHasUserSeeked(true)
   }
 
@@ -318,6 +414,7 @@ export function Home() {
           <SeekingPlayer
             youtubeId={player.youtubeId}
             startSec={player.startSec}
+            nonce={player.nonce}
             title={player.title}
             autoplay={hasUserSeeked}
           />
@@ -331,7 +428,7 @@ export function Home() {
             type="button"
             role="tab"
             aria-selected={tab === t}
-            onClick={() => setTab(t)}
+            onClick={() => handleTabClick(t)}
             className={
               'border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors ' +
               (tab === t
@@ -344,7 +441,15 @@ export function Home() {
         ))}
       </div>
 
-      {tab === 'search' ? <SearchTab onSelectMoment={handleSelectMoment} /> : <ChatTab onSeek={handleSeek} />}
+      {tab === 'search' ? (
+        <SearchTab
+          onSelectMoment={handleSelectMoment}
+          searchParams={searchParams}
+          setSearchParams={setSearchParams}
+        />
+      ) : (
+        <ChatTab onSeek={handleSeek} />
+      )}
 
       <LibrarySection />
     </div>

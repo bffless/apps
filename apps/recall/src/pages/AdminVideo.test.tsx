@@ -8,7 +8,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { configureStore } from '@reduxjs/toolkit'
@@ -286,5 +286,98 @@ describe('FramesGrid', () => {
 
     tiles[7].click() // tile index 7 -> t = 7 * 6 = 42
     expect(onSeek).toHaveBeenCalledWith(42)
+  })
+
+  // PR-feedback-6: v2 (multi-sheet) metadata.
+  const META_V2 = {
+    v: 2,
+    cols: 6,
+    rows: 5,
+    tileW: 320,
+    tileH: 180,
+    sheets: [
+      {
+        url: '/api/uploads/sheets/v1/sheet-0.jpg',
+        tiles: Array.from({ length: 30 }, (_, i) => ({ t: i * 10 })),
+      },
+      {
+        url: '/api/uploads/sheets/v1/sheet-1.jpg',
+        tiles: Array.from({ length: 5 }, (_, i) => ({ t: 300 + i * 10 })),
+      },
+    ],
+  }
+
+  it('v2: renders every tile across every sheet', () => {
+    const video = baseVideo({
+      sheet_path: META_V2.sheets[0].url,
+      sheet_meta: JSON.stringify(META_V2),
+    })
+    renderGrid(video)
+
+    const tiles = screen.getAllByRole('button', { name: /^\d+:\d{2}$/ })
+    expect(tiles).toHaveLength(35) // 30 + 5
+    expect(screen.getByText('0:00')).toBeInTheDocument() // sheet 0, tile 0
+    expect(screen.getByText('5:40')).toBeInTheDocument() // sheet 1, last tile: t=340
+  })
+
+  it("v2: clicking a tile from the SECOND sheet still seeks to that tile's own timestamp", () => {
+    const video = baseVideo({
+      sheet_path: META_V2.sheets[0].url,
+      sheet_meta: JSON.stringify(META_V2),
+    })
+    const { onSeek } = renderGrid(video)
+
+    // Sheet 1's tiles render after sheet 0's 30 tiles; its 2nd tile is t=310.
+    const tiles = screen.getAllByRole('button', { name: /^\d+:\d{2}$/ })
+    tiles[31].click()
+    expect(onSeek).toHaveBeenCalledWith(310)
+  })
+
+  it('v2: each sheet lazy-loads independently — a tile shows no background until ITS sheet\'s warmer <img> fires load', () => {
+    const video = baseVideo({
+      sheet_path: META_V2.sheets[0].url,
+      sheet_meta: JSON.stringify(META_V2),
+    })
+    renderGrid(video)
+
+    const tiles = screen.getAllByRole('button', { name: /^\d+:\d{2}$/ })
+    const firstTileImg = tiles[0].querySelector('span') as HTMLSpanElement
+    const secondSheetTileImg = tiles[30].querySelector('span') as HTMLSpanElement
+
+    // Nothing has "loaded" yet — no tile shows a background image.
+    expect(firstTileImg.style.backgroundImage).toBe('')
+    expect(secondSheetTileImg.style.backgroundImage).toBe('')
+
+    // Each sheet has its own hidden lazy-load warmer <img>, keyed by url.
+    const warmers = document.querySelectorAll('img[loading="lazy"]')
+    expect(warmers).toHaveLength(2)
+
+    // Firing `load` on sheet 0's warmer only lights up sheet 0's tiles.
+    const sheet0Warmer = document.querySelector(`img[src="${META_V2.sheets[0].url}"]`) as HTMLImageElement
+    act(() => {
+      sheet0Warmer.dispatchEvent(new Event('load'))
+    })
+
+    expect(firstTileImg.style.backgroundImage).toBe(`url("${META_V2.sheets[0].url}")`)
+    expect(secondSheetTileImg.style.backgroundImage).toBe('') // sheet 1 still unloaded
+
+    // Firing `load` on sheet 1's warmer lights up its tiles too.
+    const sheet1Warmer = document.querySelector(`img[src="${META_V2.sheets[1].url}"]`) as HTMLImageElement
+    act(() => {
+      sheet1Warmer.dispatchEvent(new Event('load'))
+    })
+    expect(secondSheetTileImg.style.backgroundImage).toBe(`url("${META_V2.sheets[1].url}")`)
+  })
+
+  it('v1: falls back to sheet_path as the (only) sheet url', () => {
+    const video = baseVideo({
+      sheet_path: '/api/uploads/sheets/v1/x.jpg',
+      sheet_meta: JSON.stringify(META),
+    })
+    renderGrid(video)
+
+    const warmers = document.querySelectorAll('img[loading="lazy"]')
+    expect(warmers).toHaveLength(1)
+    expect(warmers[0]).toHaveAttribute('src', '/api/uploads/sheets/v1/x.jpg')
   })
 })

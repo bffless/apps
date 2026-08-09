@@ -49,9 +49,31 @@ function parseSheetMeta(raw) {
   }
 }
 
+// PR-feedback-6: sheet_path/sheet_meta come from `steps.videos` (a plain,
+// UNTRUNCATED data_query over recall_videos), NOT from the vector_search
+// hit -- CE's vector_search handler joins pipeline_data via a SQL subquery
+// that silently drops any JSONB string field over 200 chars (see
+// pipeline-embeddings.service.ts's vectorSearch()) BEFORE the handler's own
+// `select` filtering even runs, so a multi-tile sheet_meta JSON blob
+// (always >200 chars) never reached this rule at all when read off the hit
+// -- only the short sheet_path happened to survive, which is what made this
+// look like a shape.fn.js bug rather than an upstream truncation. Building
+// this lookup once, keyed by video id.
+function buildSheetIndex(videoRows) {
+  var byId = {}
+  if (!Array.isArray(videoRows)) return byId
+  for (var i = 0; i < videoRows.length; i++) {
+    var row = videoRows[i]
+    if (row && typeof row.id === 'string') byId[row.id] = row
+  }
+  return byId
+}
+
 function handler({ steps }) {
   var hits = (steps && steps.search) || []
   if (!Array.isArray(hits)) hits = []
+
+  var sheetById = buildSheetIndex(steps && steps.videos)
 
   var videosById = {}
   var order = []
@@ -84,13 +106,14 @@ function handler({ steps }) {
 
     var id = hit.id
     if (!videosById[id]) {
+      var sheetRow = sheetById[id] || {}
       videosById[id] = {
         videoId: id,
         title: typeof hit.title === 'string' ? hit.title : '',
         youtubeId: youtubeId,
         duration: typeof hit.duration === 'number' ? hit.duration : 0,
-        sheetUrl: normalizeSheetUrl(hit.sheet_path),
-        sheetMeta: parseSheetMeta(hit.sheet_meta),
+        sheetUrl: normalizeSheetUrl(sheetRow.sheet_path),
+        sheetMeta: parseSheetMeta(sheetRow.sheet_meta),
         moments: [],
       }
       order.push(id)

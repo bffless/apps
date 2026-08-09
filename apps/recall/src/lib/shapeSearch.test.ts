@@ -17,8 +17,17 @@ type ShapeOutput = { videos: SearchVideo[] }
 
 const shapeFnSrc = loadFnSource('api/search/post/shape.fn.js')
 
-function run(hits: Hit[]): ShapeOutput {
-  return runFn(shapeFnSrc, { steps: { search: hits } }) as ShapeOutput
+type VideoRow = Record<string, unknown>
+
+// PR-feedback-6: sheet_path/sheet_meta are sourced from `steps.videos` (a
+// plain data_query over recall_videos), NOT from the vector_search hit
+// itself — see the fix's commentary in shape.fn.js and rule.yaml for why.
+function run(hits: Hit[], videoRows: VideoRow[] = []): ShapeOutput {
+  return runFn(shapeFnSrc, { steps: { search: hits, videos: videoRows } }) as ShapeOutput
+}
+
+function videoRow(overrides: VideoRow = {}): VideoRow {
+  return { id: 'v1', ...overrides }
 }
 
 const YT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
@@ -120,28 +129,82 @@ describe('shape.fn.js', () => {
     expect(run([])).toEqual({ videos: [] })
   })
 
-  test('normalizes sheet_path into a leading-slash sheetUrl and parses sheet_meta JSON', () => {
+  test('normalizes sheet_path into a leading-slash sheetUrl and parses sheet_meta JSON, sourced from steps.videos', () => {
     const meta: SheetMeta = { cols: 5, rows: 2, tileW: 320, tileH: 180, tiles: [{ t: 1 }] }
-    const out = run([
-      hit({ sheet_path: 'api/uploads/sheets/v1/x.jpg', sheet_meta: JSON.stringify(meta) }),
-    ])
+    const out = run(
+      [hit()],
+      [videoRow({ sheet_path: 'api/uploads/sheets/v1/x.jpg', sheet_meta: JSON.stringify(meta) })],
+    )
     expect(out.videos[0].sheetUrl).toBe('/api/uploads/sheets/v1/x.jpg')
     expect(out.videos[0].sheetMeta).toEqual(meta)
   })
 
   test('leaves an already-leading-slash sheet_path untouched', () => {
-    const out = run([hit({ sheet_path: '/api/uploads/sheets/v1/x.jpg' })])
+    const out = run([hit()], [videoRow({ sheet_path: '/api/uploads/sheets/v1/x.jpg' })])
     expect(out.videos[0].sheetUrl).toBe('/api/uploads/sheets/v1/x.jpg')
   })
 
-  test('sheetUrl/sheetMeta are null when sheet_path/sheet_meta are absent', () => {
-    const out = run([hit()])
-    expect(out.videos[0].sheetUrl).toBeNull()
-    expect(out.videos[0].sheetMeta).toBeNull()
+  test('sheetUrl/sheetMeta are null when there is no matching video row (or no sheet fields on it)', () => {
+    expect(run([hit()]).videos[0].sheetUrl).toBeNull()
+    expect(run([hit()]).videos[0].sheetMeta).toBeNull()
+    expect(run([hit()], [videoRow()]).videos[0].sheetMeta).toBeNull()
   })
 
   test('sheetMeta is null when sheet_meta fails to parse', () => {
-    const out = run([hit({ sheet_meta: 'not json{' })])
+    const out = run([hit()], [videoRow({ sheet_meta: 'not json{' })])
     expect(out.videos[0].sheetMeta).toBeNull()
+  })
+
+  // PR-feedback-6 regression: CE's vector_search join silently drops any
+  // JSONB string field over 200 chars from the hit BEFORE this rule's own
+  // `select` filtering runs — a real 10-tile sheet_meta blob is always well
+  // over that. The old implementation read sheet_path/sheet_meta straight
+  // off the hit, so it always got `sheet_meta: undefined` (dropped) even
+  // though sheet_path (short) survived — exactly the live symptom reported
+  // ("sheetUrl correctly populated but sheetMeta: null"). This reproduces
+  // the exact live shape: a >200-char sheet_meta string, present on the
+  // (untruncated) video row but ABSENT from the hit, same as production.
+  test('sheetMeta survives a real, >200-char multi-tile blob even though the hit itself never carries it (live-bug repro)', () => {
+    const bigMeta = {
+      cols: 5,
+      rows: 2,
+      tileW: 320,
+      tileH: 180,
+      tiles: Array.from({ length: 10 }, (_, i) => ({ t: 16.950000000000003 + i * 33.9 })),
+    }
+    const bigMetaJson = JSON.stringify(bigMeta)
+    expect(bigMetaJson.length).toBeGreaterThan(200) // sanity: this is the shape that gets dropped
+
+    // The hit — exactly what vector_search actually returns in production:
+    // no sheet_path/sheet_meta keys at all (dropped by the join, and no
+    // longer even requested in `select` — see rule.yaml).
+    const bareHit = hit()
+    expect(bareHit).not.toHaveProperty('sheet_path')
+    expect(bareHit).not.toHaveProperty('sheet_meta')
+
+    const out = run(
+      [bareHit],
+      [videoRow({ sheet_path: '/api/uploads/sheets/v1/x.jpg', sheet_meta: bigMetaJson })],
+    )
+    expect(out.videos[0].sheetUrl).toBe('/api/uploads/sheets/v1/x.jpg')
+    expect(out.videos[0].sheetMeta).toEqual(bigMeta)
+  })
+
+  test('looks up each video by its own id when multiple videos and video rows are present', () => {
+    const out = run(
+      [
+        hit({ id: 'v1', chunkText: '[t=1s] a' }),
+        hit({ id: 'v2', chunkText: '[t=1s] b', youtube_url: 'https://youtu.be/AAAAAAAAAAA' }),
+      ],
+      [
+        videoRow({ id: 'v1', sheet_path: '/api/uploads/sheets/v1/x.jpg', sheet_meta: '{"tiles":[{"t":1}]}' }),
+        videoRow({ id: 'v2', sheet_path: null, sheet_meta: null }),
+      ],
+    )
+    const v1 = out.videos.find((v) => v.videoId === 'v1')
+    const v2 = out.videos.find((v) => v.videoId === 'v2')
+    expect(v1?.sheetUrl).toBe('/api/uploads/sheets/v1/x.jpg')
+    expect(v2?.sheetUrl).toBeNull()
+    expect(v2?.sheetMeta).toBeNull()
   })
 })

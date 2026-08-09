@@ -8,9 +8,14 @@
  * a quick visual cue for which moment this is before reading the snippet.
  * Cards without a sheet render exactly as before (no reserved space, no
  * layout jump) — the thumbnail slot only exists when there's a sheet to show.
+ *
+ * PR-feedback-6: `sheetMeta` can be v1 (single implicit sheet) or v2
+ * (multiple sheets, each with its own url) — `nearestTile` handles both,
+ * returning WHICH sheet's url to crop from (falling back to `sheetUrl` for a
+ * v1 meta, which carries no url of its own).
  */
 
-import { nearestTileIndex, spriteStyle, type SheetMeta } from '../lib/sprite'
+import { nearestTile, spriteStyle, type SheetMeta } from '../lib/sprite'
 
 function formatMMSS(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds))
@@ -30,9 +35,9 @@ export type Moment = {
 const THUMB_DISPLAY_W = 112
 
 function SpriteThumb({ sheetUrl, sheetMeta, t }: { sheetUrl: string; sheetMeta: SheetMeta; t: number }) {
-  const index = nearestTileIndex(sheetMeta, t)
-  if (index < 0) return null
-  const style = spriteStyle(sheetMeta, index, THUMB_DISPLAY_W)
+  const hit = nearestTile(sheetMeta, t, sheetUrl)
+  if (!hit || !hit.url) return null
+  const style = spriteStyle(sheetMeta, hit.tileIndex, THUMB_DISPLAY_W)
   if (!style) return null
 
   return (
@@ -42,7 +47,7 @@ function SpriteThumb({ sheetUrl, sheetMeta, t }: { sheetUrl: string; sheetMeta: 
       style={{
         width: style.width,
         height: style.height,
-        backgroundImage: `url(${sheetUrl})`,
+        backgroundImage: `url(${hit.url})`,
         backgroundSize: style.backgroundSize,
         backgroundPosition: style.backgroundPosition,
         backgroundRepeat: 'no-repeat',

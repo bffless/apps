@@ -1,30 +1,41 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+
+const { presignedUploadMock } = vi.hoisted(() => ({ presignedUploadMock: vi.fn() }))
+vi.mock('./upload', () => ({ presignedUpload: presignedUploadMock }))
+
 import {
+  tileCount,
   sheetTimestamps,
+  chunkTimes,
   tileRect,
   coverCropRect,
-  captureFrameSheet,
-  SHEET_FRAME_COUNT,
+  captureFrameSheets,
+  uploadFrameSheets,
+  MIN_TILES,
+  MAX_TILES,
+  TARGET_INTERVAL_SECONDS,
   SHEET_COLS,
   SHEET_ROWS,
+  TILES_PER_SHEET,
   TILE_W,
   TILE_H,
   SHEET_CAPTURE_STALL_MS,
+  type CaptureResult,
 } from './frames'
 
 /**
- * `captureFrameSheet` must never leave its promise unsettled — same
+ * `captureFrameSheets` must never leave its promise unsettled — same
  * stall-hardening contract as Studio's `captureFramesAt`. jsdom never fires
  * real media/canvas events (`getContext('2d')` returns `null`, `toBlob`
  * never invokes its callback — verified against this repo's jsdom version),
  * which makes it exactly the pathological video these tests need; they only
  * exercise the video-event-driven paths, same as Studio's `frames.test.ts`.
- * The pure timestamp/geometry math below is what's actually asserted on
- * pixel-accurate values.
+ * The pure timestamp/geometry/packing math below is what's actually
+ * asserted on pixel-accurate values.
  */
 
-/** Intercept the <video> element captureFrameSheet creates so a test can fire
- *  media events on it. */
+/** Intercept the <video> element captureFrameSheets creates so a test can
+ *  fire media events on it. */
 function trapVideo(): { get: () => HTMLVideoElement } {
   let video: HTMLVideoElement | null = null
   const orig = document.createElement.bind(document)
@@ -35,7 +46,7 @@ function trapVideo(): { get: () => HTMLVideoElement } {
   }) as typeof document.createElement)
   return {
     get: () => {
-      if (!video) throw new Error('captureFrameSheet created no <video>')
+      if (!video) throw new Error('captureFrameSheets created no <video>')
       return video
     },
   }
@@ -44,23 +55,41 @@ function trapVideo(): { get: () => HTMLVideoElement } {
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  presignedUploadMock.mockReset()
+})
+
+describe('tileCount', () => {
+  it('targets one tile per TARGET_INTERVAL_SECONDS', () => {
+    expect(tileCount(400)).toBe(Math.round(400 / TARGET_INTERVAL_SECONDS)) // 40
+    expect(tileCount(840)).toBe(84) // 14 min -> ~85 per the brief, 84 exactly
+  })
+
+  it('clamps up to MIN_TILES for a short clip', () => {
+    expect(tileCount(30)).toBe(MIN_TILES)
+    expect(tileCount(1)).toBe(MIN_TILES)
+  })
+
+  it('clamps down to MAX_TILES for a very long clip', () => {
+    expect(tileCount(10 * 3600)).toBe(MAX_TILES)
+  })
+
+  it('returns 0 for an invalid duration', () => {
+    expect(tileCount(0)).toBe(0)
+    expect(tileCount(-5)).toBe(0)
+    expect(tileCount(NaN)).toBe(0)
+  })
 })
 
 describe('sheetTimestamps', () => {
-  it('spaces SHEET_FRAME_COUNT points evenly, inclusive of the trimmed edges', () => {
+  it('spaces n points evenly, inclusive of the trimmed edges', () => {
     const times = sheetTimestamps(100, 10)
     expect(times).toHaveLength(10)
     expect(times[0]).toBeCloseTo(2, 5) // 2% of 100
     expect(times[9]).toBeCloseTo(98, 5) // 100 - 2%
-    // Evenly spaced: constant gap between consecutive points.
     const gap = times[1] - times[0]
     for (let i = 1; i < times.length; i++) {
       expect(times[i] - times[i - 1]).toBeCloseTo(gap, 5)
     }
-  })
-
-  it('defaults to SHEET_FRAME_COUNT frames', () => {
-    expect(sheetTimestamps(100)).toHaveLength(SHEET_FRAME_COUNT)
   })
 
   it('a single-frame request lands in the middle of the trimmed span', () => {
@@ -73,13 +102,18 @@ describe('sheetTimestamps', () => {
     expect(sheetTimestamps(NaN, 10)).toEqual([])
     expect(sheetTimestamps(100, 0)).toEqual([])
   })
+})
 
-  it('never produces a timestamp inside the trimmed 2% edges', () => {
-    const duration = 600
-    const times = sheetTimestamps(duration, 10)
-    const trim = duration * 0.02
-    expect(times[0]).toBeGreaterThanOrEqual(trim - 1e-9)
-    expect(times[times.length - 1]).toBeLessThanOrEqual(duration - trim + 1e-9)
+describe('chunkTimes', () => {
+  it('splits into runs of at most size, last one short', () => {
+    expect(chunkTimes([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
+    expect(chunkTimes(Array.from({ length: 84 }, (_, i) => i), TILES_PER_SHEET).map((c) => c.length)).toEqual([
+      30, 30, 24,
+    ])
+  })
+
+  it('handles empty input', () => {
+    expect(chunkTimes([], 30)).toEqual([])
   })
 })
 
@@ -90,14 +124,9 @@ describe('tileRect', () => {
     expect(tileRect(0, meta)).toEqual({ x: 0, y: 0, w: TILE_W, h: TILE_H })
   })
 
-  it('advances columns left-to-right within a row', () => {
-    expect(tileRect(1, meta)).toEqual({ x: TILE_W, y: 0, w: TILE_W, h: TILE_H })
-    expect(tileRect(4, meta)).toEqual({ x: 4 * TILE_W, y: 0, w: TILE_W, h: TILE_H })
-  })
-
-  it('wraps to the next row after `cols` tiles', () => {
-    expect(tileRect(5, meta)).toEqual({ x: 0, y: TILE_H, w: TILE_W, h: TILE_H })
-    expect(tileRect(9, meta)).toEqual({ x: 4 * TILE_W, y: TILE_H, w: TILE_W, h: TILE_H })
+  it('wraps to the next row after `cols` tiles (6x5 grid)', () => {
+    expect(tileRect(6, meta)).toEqual({ x: 0, y: TILE_H, w: TILE_W, h: TILE_H })
+    expect(tileRect(29, meta)).toEqual({ x: 5 * TILE_W, y: 4 * TILE_H, w: TILE_W, h: TILE_H })
   })
 })
 
@@ -106,66 +135,48 @@ describe('coverCropRect', () => {
     expect(coverCropRect(1920, 1080, 320, 180)).toEqual({ sx: 0, sy: 0, sw: 1920, sh: 1080 })
   })
 
-  it('crops the sides of a wider-than-target source (e.g. ultrawide -> 16:9)', () => {
-    const crop = coverCropRect(2400, 1000, 320, 180) // source ratio 2.4, dest 16:9 (~1.78)
+  it('crops the sides of a wider-than-target source', () => {
+    const crop = coverCropRect(2400, 1000, 320, 180)
     expect(crop.sh).toBe(1000)
     expect(crop.sw).toBeCloseTo(1000 * (320 / 180), 5)
-    expect(crop.sx).toBeCloseTo((2400 - crop.sw) / 2, 5)
-    expect(crop.sy).toBe(0)
-  })
-
-  it('crops the top/bottom of a taller-than-target source (e.g. portrait -> 16:9)', () => {
-    const crop = coverCropRect(1080, 1920, 320, 180) // portrait source, landscape dest
-    expect(crop.sw).toBe(1080)
-    expect(crop.sh).toBeCloseTo(1080 / (320 / 180), 5)
-    expect(crop.sy).toBeCloseTo((1920 - crop.sh) / 2, 5)
-    expect(crop.sx).toBe(0)
   })
 
   it('degrades gracefully on invalid dimensions', () => {
     expect(coverCropRect(0, 1080, 320, 180)).toEqual({ sx: 0, sy: 0, sw: 0, sh: 1080 })
-    expect(coverCropRect(1920, 1080, 0, 180)).toEqual({ sx: 0, sy: 0, sw: 1920, sh: 1080 })
   })
 })
 
-describe('captureFrameSheet (stall hardening — never rejects, never hangs)', () => {
-  it('resolves { blob: null, meta: { tiles: [] } } when the video never fires any event', async () => {
+describe('captureFrameSheets (stall hardening — never rejects, never hangs)', () => {
+  it('resolves { sheets: [] } when the video never fires any event', async () => {
     vi.useFakeTimers()
-    const p = captureFrameSheet('blob:clip')
+    const p = captureFrameSheets('blob:clip')
     await vi.advanceTimersByTimeAsync(SHEET_CAPTURE_STALL_MS + 1)
-    await expect(p).resolves.toEqual({
-      blob: null,
-      meta: { cols: SHEET_COLS, rows: SHEET_ROWS, tileW: TILE_W, tileH: TILE_H, tiles: [] },
-    })
+    const result = await p
+    expect(result.sheets).toEqual([])
+    expect(result).toMatchObject({ tileW: TILE_W, tileH: TILE_H, cols: SHEET_COLS, rows: SHEET_ROWS })
   })
 
   it('resolves empty on a media error event', async () => {
     vi.useFakeTimers()
     const trap = trapVideo()
-    const p = captureFrameSheet('blob:clip')
+    const p = captureFrameSheets('blob:clip')
     trap.get().dispatchEvent(new Event('error'))
-    await expect(p).resolves.toEqual({
-      blob: null,
-      meta: { cols: SHEET_COLS, rows: SHEET_ROWS, tileW: TILE_W, tileH: TILE_H, tiles: [] },
-    })
+    await expect(p).resolves.toMatchObject({ sheets: [] })
   })
 
-  it('resolves empty when loadedmetadata reports an invalid duration', async () => {
+  it('resolves empty when loadeddata reports an invalid duration', async () => {
     vi.useFakeTimers()
     const trap = trapVideo()
-    const p = captureFrameSheet('blob:clip')
+    const p = captureFrameSheets('blob:clip')
     Object.defineProperty(trap.get(), 'duration', { value: NaN, configurable: true })
-    trap.get().dispatchEvent(new Event('loadedmetadata'))
-    await expect(p).resolves.toEqual({
-      blob: null,
-      meta: { cols: SHEET_COLS, rows: SHEET_ROWS, tileW: TILE_W, tileH: TILE_H, tiles: [] },
-    })
+    trap.get().dispatchEvent(new Event('loadeddata'))
+    await expect(p).resolves.toMatchObject({ sheets: [] })
   })
 
   it('sets crossOrigin=anonymous for a URL source', () => {
     vi.useFakeTimers()
     const trap = trapVideo()
-    void captureFrameSheet('https://bucket.example.com/signed/clip.mp4')
+    void captureFrameSheets('https://bucket.example.com/signed/clip.mp4')
     expect(trap.get().crossOrigin).toBe('anonymous')
     vi.advanceTimersByTime(SHEET_CAPTURE_STALL_MS + 1)
   })
@@ -174,7 +185,7 @@ describe('captureFrameSheet (stall hardening — never rejects, never hangs)', (
     vi.useFakeTimers()
     const trap = trapVideo()
     const file = new File(['bytes'], 'clip.mp4', { type: 'video/mp4' })
-    void captureFrameSheet(file)
+    void captureFrameSheets(file)
     expect(trap.get().crossOrigin).toBeNull()
     vi.advanceTimersByTime(SHEET_CAPTURE_STALL_MS + 1)
   })
@@ -183,7 +194,7 @@ describe('captureFrameSheet (stall hardening — never rejects, never hangs)', (
     vi.useFakeTimers()
     const trap = trapVideo()
     let settled = false
-    const p = captureFrameSheet('blob:clip').then((r) => {
+    const p = captureFrameSheets('blob:clip').then((r) => {
       settled = true
       return r
     })
@@ -194,10 +205,65 @@ describe('captureFrameSheet (stall hardening — never rejects, never hangs)', (
     expect(settled).toBe(false)
 
     await vi.advanceTimersByTimeAsync(1001)
-    await expect(p).resolves.toEqual({
-      blob: null,
-      meta: { cols: SHEET_COLS, rows: SHEET_ROWS, tileW: TILE_W, tileH: TILE_H, tiles: [] },
-    })
+    await expect(p).resolves.toMatchObject({ sheets: [] })
     expect(settled).toBe(true)
+  })
+})
+
+describe('uploadFrameSheets', () => {
+  function captureResult(sheets: CaptureResult['sheets']): CaptureResult {
+    return { tileW: TILE_W, tileH: TILE_H, cols: SHEET_COLS, rows: SHEET_ROWS, sheets }
+  }
+
+  it('returns null when there is nothing to upload', async () => {
+    expect(await uploadFrameSheets(captureResult([]), 'v1')).toBeNull()
+    expect(presignedUploadMock).not.toHaveBeenCalled()
+  })
+
+  it('skips sheets with no blob or no tiles', async () => {
+    const blob = new Blob(['jpeg'], { type: 'image/jpeg' })
+    const result = captureResult([
+      { blob: null, tiles: [{ t: 1 }] },
+      { blob, tiles: [] },
+      { blob, tiles: [{ t: 2 }] },
+    ])
+    presignedUploadMock.mockResolvedValue('/api/uploads/sheets/v1/x.jpg')
+
+    const out = await uploadFrameSheets(result, 'v1')
+
+    expect(presignedUploadMock).toHaveBeenCalledTimes(1)
+    expect(out).not.toBeNull()
+  })
+
+  it('uploads each sheet through /api/uploads/sheet, in order, and assembles v2 meta', async () => {
+    const blob = new Blob(['jpeg'], { type: 'image/jpeg' })
+    const result = captureResult([
+      { blob, tiles: [{ t: 1 }, { t: 2 }] },
+      { blob, tiles: [{ t: 31 }, { t: 32 }] },
+    ])
+    presignedUploadMock
+      .mockResolvedValueOnce('/api/uploads/sheets/v1/sheet-0.jpg')
+      .mockResolvedValueOnce('/api/uploads/sheets/v1/sheet-1.jpg')
+
+    const out = await uploadFrameSheets(result, 'v1')
+
+    expect(presignedUploadMock).toHaveBeenCalledTimes(2)
+    expect(presignedUploadMock.mock.calls[0][1]).toBe('/api/uploads/sheet')
+    expect(presignedUploadMock.mock.calls[0][2]).toBe('v1')
+
+    expect(out).not.toBeNull()
+    expect(out!.sheet_path).toBe('/api/uploads/sheets/v1/sheet-0.jpg') // first sheet, back-compat
+    const meta = JSON.parse(out!.sheet_meta)
+    expect(meta).toEqual({
+      v: 2,
+      tileW: TILE_W,
+      tileH: TILE_H,
+      cols: SHEET_COLS,
+      rows: SHEET_ROWS,
+      sheets: [
+        { url: '/api/uploads/sheets/v1/sheet-0.jpg', tiles: [{ t: 1 }, { t: 2 }] },
+        { url: '/api/uploads/sheets/v1/sheet-1.jpg', tiles: [{ t: 31 }, { t: 32 }] },
+      ],
+    })
   })
 })

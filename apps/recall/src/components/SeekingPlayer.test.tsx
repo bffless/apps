@@ -57,6 +57,35 @@ describe('SeekingPlayer', () => {
     expect(second?.src).toContain('otherId1234')
   })
 
+  // PR-feedback-6 bugfix: an identical {youtubeId, startSec} seek (e.g. a
+  // chat reply citing the same timestamp twice) must still remount — the
+  // key can't be derived from youtubeId/startSec alone or a repeat seek is
+  // silently a no-op.
+  it('remounts the iframe when only nonce changes (same youtubeId + startSec)', () => {
+    const { container, rerender } = render(
+      <SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} nonce={1} autoplay />,
+    )
+    const first = container.querySelector('iframe')
+    expect(first).not.toBeNull()
+
+    rerender(<SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} nonce={2} autoplay />)
+    const second = container.querySelector('iframe')
+    expect(second).not.toBeNull()
+    expect(second).not.toBe(first) // a genuinely new DOM node, not just a src update
+    expect(second?.src).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?start=10&autoplay=1')
+  })
+
+  it('does not remount when neither youtubeId, startSec, nor nonce changes', () => {
+    const { container, rerender } = render(
+      <SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} nonce={1} />,
+    )
+    const first = container.querySelector('iframe')
+
+    rerender(<SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} nonce={1} title="unrelated re-render" />)
+    const second = container.querySelector('iframe')
+    expect(second).toBe(first)
+  })
+
   it('renders inside a 16:9 aspect-ratio container', () => {
     const { container } = render(<SeekingPlayer youtubeId="dQw4w9WgXcQ" startSec={10} />)
     expect(container.querySelector('.aspect-video')).not.toBeNull()

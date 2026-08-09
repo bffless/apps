@@ -22,6 +22,13 @@
  * whichever span contains THAT second, not "wherever the video actually is
  * right now" as it silently plays on. Post-v1: swap the plain iframe for
  * the YouTube iframe API to get real playhead events.
+ *
+ * `seekNonce` (PR-feedback-6 bugfix): bumped on EVERY `handleSeek` call,
+ * including a repeat click on the SAME transcript span (the same
+ * {startSec} as the current player state) — without it, `SeekingPlayer`'s
+ * remount key doesn't change and the repeat click silently does nothing,
+ * even though playback has moved on since the first click. See
+ * `SeekingPlayer.tsx`'s own doc comment for the full story.
  */
 
 import { useState } from 'react'
@@ -69,11 +76,14 @@ function VideoPage({ video }: { video: PublicVideo }) {
   // load, even at a `?t=` deep link) since that's not a user gesture; a
   // transcript click flips it on for good.
   const [hasUserSeeked, setHasUserSeeked] = useState(false)
+  // Monotonic seek counter (PR-feedback-6 bugfix) — see the module doc.
+  const [seekNonce, setSeekNonce] = useState(0)
 
   function handleSeek(sec: number) {
     setStartSec(sec)
     setActiveSec(sec)
     setHasUserSeeked(true)
+    setSeekNonce((n) => n + 1)
   }
 
   const words = video.transcript.words
@@ -85,6 +95,7 @@ function VideoPage({ video }: { video: PublicVideo }) {
           <SeekingPlayer
             youtubeId={video.youtubeId}
             startSec={startSec}
+            nonce={seekNonce}
             title={video.title}
             autoplay={hasUserSeeked}
           />

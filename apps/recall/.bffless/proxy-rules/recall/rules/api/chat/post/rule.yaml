@@ -18,6 +18,21 @@ pipeline:
     chat-pipelines demo this was ported from. rate_limit is the only
     validator (keyBy 'ip', 25 requests / 5 min) -- no auth_required, this is
     the public chat surface, same policy as /api/search.
+
+    Live hot-fix (PR-feedback-6): the rag-search plugin's default embed
+    input is `{text: "<query>"}`, but nateraw/bge-large-en-v1.5 (the SAME
+    model /api/search and /api/index pin) requires its input as `texts`, a
+    JSON-stringified array of strings -- without `embeddingInputField`/
+    `embeddingInputTemplate` the tool call failed outright with "Failed to
+    generate embedding". `embeddingInputField: texts` renames the input key;
+    `embeddingInputTemplate: '["{{query}}"]'` wraps the query into that
+    single-element JSON array, mirroring index/search's own texts.fn.js
+    convention. KNOWN LIMITATION: the plugin does plain string substitution
+    into the template, not a real JSON-encode -- a query containing a
+    double-quote character breaks the resulting JSON and the tool call fails
+    gracefully for that one query (the assistant reports no results rather
+    than crashing). A proper JSON-encode belongs in CE, not here -- tracked
+    as a bffless/ce#651 follow-up.
   steps:
     - id: ai
       name: ai
@@ -44,6 +59,8 @@ pipeline:
                   schemaId: $schema:recall_videos
                   fieldName: transcript
                   embeddingModel: nateraw/bge-large-en-v1.5
+                  embeddingInputField: texts
+                  embeddingInputTemplate: '["{{query}}"]'
                   limit: 8
         systemPrompt: >-
           You are Recall's chat assistant. You answer questions ONLY using

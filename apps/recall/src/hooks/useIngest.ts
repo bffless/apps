@@ -5,13 +5,14 @@
  * sequential await chain + a 2s poll loop against a job row) reduced to
  * Recall's single-stage shape — there's no scene queue here, just one video.
  *
- * The `frames` stage (PR-feedback-2) cuts + uploads a contact-sheet sprite
- * from the just-uploaded local `File` (cheapest source — no signed-URL round
- * trip needed) right after the source upload lands. `captureFrameSheet`
- * itself never throws (see `lib/frames.ts`) — a stalled/broken capture
- * resolves with no tiles, which this stage treats as "skip it" rather than
- * failing the whole pipeline over a thumbnail: uploading and transcribing the
- * video are the parts that actually matter.
+ * The `frames` stage (PR-feedback-2, densified + multi-sheet in
+ * PR-feedback-6) cuts + uploads one or more contact-sheet sprites from the
+ * just-uploaded local `File` (cheapest source — no signed-URL round trip
+ * needed) right after the source upload lands. `captureFrameSheets` itself
+ * never throws (see `lib/frames.ts`) — a stalled/broken capture resolves
+ * with no sheets, which this stage treats as "skip it" rather than failing
+ * the whole pipeline over a thumbnail: uploading and transcribing the video
+ * are the parts that actually matter.
  *
  * State lives entirely in this hook (component-local), not Redux: it's
  * transient UI progress, not durable business state — the durable bits
@@ -25,7 +26,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { extractAudio } from '../lib/audio'
-import { captureFrameSheet } from '../lib/frames'
+import { captureFrameSheets, uploadFrameSheets } from '../lib/frames'
 import { presignedUpload, sourceFileError } from '../lib/upload'
 import { useLazyGetJobQuery, useSaveVideoMutation, useTranscribeStartMutation } from '../store/videosApi'
 
@@ -114,11 +115,12 @@ export function useIngest(videoId: string) {
         await saveVideo({ videoId, source_path: sourcePath }).unwrap()
 
         setStage('frames')
-        const sheet = await captureFrameSheet(file)
-        if (sheet.blob && sheet.meta.tiles.length > 0) {
-          const sheetFile = new File([sheet.blob], 'sheet.jpg', { type: 'image/jpeg' })
-          const sheetPath = await presignedUpload(sheetFile, '/api/uploads/sheet', videoId)
-          await saveVideo({ videoId, sheet_path: sheetPath, sheet_meta: JSON.stringify(sheet.meta) }).unwrap()
+        const captured = await captureFrameSheets(file)
+        if (captured.sheets.length > 0) {
+          const uploaded = await uploadFrameSheets(captured, videoId)
+          if (uploaded) {
+            await saveVideo({ videoId, sheet_path: uploaded.sheet_path, sheet_meta: uploaded.sheet_meta }).unwrap()
+          }
         }
 
         setStage('extracting')

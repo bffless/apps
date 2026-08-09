@@ -19,16 +19,38 @@ pipeline:
     against the replicate step having failed outright) -> on failure,
     respond502 returns 502 { error: 'EMBED_FAILED' } -> on success: search
     (vector_search over recall_videos.transcript, top 24, selecting
-    title/youtube_url/duration/status/sheet_path/sheet_meta alongside the
-    usual id/similarity/chunkText/chunkMetadata) -> shape groups hits by video,
-    caps at 4 moments/video, prefers chunkMetadata.start/end over parsing the
-    `[t=Ns] ` chunkText prefix (CE's chunk-metadata vector-search patch may
-    not be deployed yet), strips that prefix from every snippet either way,
-    drops any hit whose status isn't 'published' (defense-in-depth --
-    unpublished videos shouldn't have embeddings, but a failed unpublish
-    could leave strays), and sorts videos by their best moment's similarity
-    -> respond200 { videos }. rate_limit is the only validator (keyBy 'ip',
-    30 requests / 5 min) -- no auth_required, this is the public search
+    title/youtube_url/duration/status alongside the usual
+    id/similarity/chunkText/chunkMetadata) AND (in parallel, same condition)
+    videos (data_query, schemaId recall_videos, pageSize 500, select
+    ['sheet_path','sheet_meta']) -- PR-feedback-6 fixed a live bug where
+    sheetMeta always reached the client as null: CE's vector_search handler
+    joins pipeline_data for its `select`ed fields via a SQL subquery that
+    UNCONDITIONALLY drops any JSONB string field over 200 chars
+    (`pipeline-embeddings.service.ts`'s vectorSearch(), `length(kv.value #>>
+    '{}') <= 200`) *before* the handler's own `config.select` filtering even
+    runs -- so `sheet_meta` (a multi-tile JSON blob, always >200 chars) never
+    reached this rule at all, regardless of being in vector_search's
+    `select` list; `sheet_path` (a short string) happened to survive, which
+    is what made the bug look like a shape.fn.js parsing bug rather than an
+    upstream truncation. `data_query`'s own `select` has no such length
+    limit (TS-side field lookup, not a SQL byte filter), so a plain
+    full-table query sidesteps it entirely -- same pattern the public
+    `GET /api/videos` list rule already uses (unfiltered `pageSize: 500`
+    data_query). This also fixes a staleness bug for free: vector_search's
+    joined data is a snapshot of whatever the record looked like at LAST
+    embed_store time (i.e. last publish), so a sheet added via the "Generate
+    frames" backfill AFTER publishing would never show up via the old path
+    either -- `videos` always reads the CURRENT record. -> shape groups
+    hits by video, caps at 4 moments/video, prefers chunkMetadata.start/end
+    over parsing the `[t=Ns] ` chunkText prefix (CE's chunk-metadata
+    vector-search patch may not be deployed yet), strips that prefix from
+    every snippet either way, drops any hit whose status isn't 'published'
+    (defense-in-depth -- unpublished videos shouldn't have embeddings, but a
+    failed unpublish could leave strays), looks up each video's
+    sheet_path/sheet_meta from steps.videos (NOT from the vector_search hit,
+    per the above), and sorts videos by their best moment's similarity ->
+    respond200 { videos }. rate_limit is the only validator (keyBy 'ip', 30
+    requests / 5 min) -- no auth_required, this is the public search
     surface. Rule-level timeout raised to 120000 for Replicate cold starts,
     same as the index rule's embed step.
   steps:
@@ -84,7 +106,15 @@ pipeline:
         fieldName: transcript
         queryVector: steps.pick.vector
         limit: 24
-        select: ['title', 'youtube_url', 'duration', 'status', 'sheet_path', 'sheet_meta']
+        select: ['title', 'youtube_url', 'duration', 'status']
+        condition: steps.pick.ok
+    - id: videos
+      name: videos
+      handler: data_query
+      config:
+        schemaId: $schema:recall_videos
+        limit: 500
+        select: ['sheet_path', 'sheet_meta']
         condition: steps.pick.ok
     - id: shape
       name: shape

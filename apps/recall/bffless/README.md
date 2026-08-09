@@ -30,7 +30,15 @@ BFFless admin panel before ingest, search, or chat will run:
    token covers all three call sites; there's no separate transcription provider to wire up.
 2. **Connect Anthropic** under **AI Services**. `/api/chat` runs `claude-haiku-4-5` in streaming
    mode for the RAG chat.
-3. **Bucket CORS**. Video/audio/contact-sheet uploads go straight to your storage bucket via
+3. **Enable the AI Data Tools plugin** under project **Settings → AI → AI Plugins**. `/api/chat`'s
+   `search_videos` tool is CE's `rag-search` plugin — the rule's `plugins: { mode: selected }`
+   block only filters among plugins already enabled at the PROJECT level (CE's
+   `buildToolsForProject` skips any plugin whose stored config has `enabled: false`), so listing
+   `rag-search` in the rule alone isn't enough. **Symptom if this step is skipped**: chat runs
+   completely toolless — the model prints raw `<function_calls>` XML as plain text in its reply
+   and claims it found nothing, instead of actually calling `search_videos` (the same Replicate
+   token from step 1 powers this tool's query embedding, no separate connection needed).
+4. **Bucket CORS**. Video/audio/contact-sheet uploads go straight to your storage bucket via
    presigned PUT (`/api/uploads/{source,audio,sheet}/prepare`), so the bucket's CORS
    `Access-Control-Allow-Origin` list needs the exact origins the browser uploads from:
    `https://recall.j5s.dev` (production) and whatever origin serves the shared PR-preview alias
@@ -43,6 +51,19 @@ BFFless admin panel before ingest, search, or chat will run:
    capture from a cross-origin `<video>` is only untainted when the actual GET response carries a
    matching `Access-Control-Allow-Origin` header — a bucket CORS entry that only allows PUT lets
    uploads through but leaves this backfill flow silently producing a tainted (unusable) canvas.
+
+### Cross-origin isolation carve-out
+
+If the BFFless project you're importing into applies `Cross-Origin-Opener-Policy` /
+`Cross-Origin-Embedder-Policy` headers **project-wide** (e.g. Studio's ffmpeg-isolation response-
+header rule, needed for `SharedArrayBuffer`), Recall's YouTube embeds (`SeekingPlayer`'s
+`youtube.com/embed` iframes — search results, chat citations, the video detail page) will fail
+with a **"COEP-framed resource needs COEP header"** console error and a blank/broken player: a
+strict COEP policy blocks embedding any cross-origin frame that doesn't itself opt in with a
+matching header, and `youtube.com` doesn't send one. Add a response-header rule scoped to
+`apps/recall/**` (or whichever path this app serves under) that sets both headers to `unsafe-none`,
+overriding the project-wide policy for just this app's pages. (This was hit and fixed live on
+j5s.dev — Recall shares a project with Studio there.)
 
 Nothing else needs a manual step: schemas (`recall_videos`, `recall_jobs`, `recall_uploads`,
 `recall_conversations`, `recall_messages`) are created by the rule sync itself, and every admin
@@ -64,13 +85,24 @@ with these), change `embeddingModel` in exactly three places:
 3. **`rules/api/chat/post/rule.yaml`** — the `rag-search` plugin's
    `plugins.options.rag-search.sources[0].embeddingModel` field (the tool's own query embedding,
    independent of the two rules above — it's inside the `ai_handler` step, not a standalone
-   `replicate` step).
+   `replicate` step). **Two more keys travel with `embeddingModel` here, not just for e5** — the
+   plugin's default embed request shape is `{text: "<query>"}`, but bge (the model this app ships
+   pinned to) needs its input as `texts`, a JSON-stringified single-element array; without
+   `embeddingInputField: texts` and `embeddingInputTemplate: '["{{query}}"]'` the tool call fails
+   outright with "Failed to generate embedding". These describe the CURRENT model's own input
+   contract, so update them alongside `embeddingModel` for whatever you swap to — an e5-family
+   model changes the template to add its prefix (see below), a model that already expects a bare
+   string might not need `embeddingInputField`/`embeddingInputTemplate` at all.
 
-If you switch to an e5-family model, also set the plugin's `embeddingInputField` /
-`embeddingInputTemplate` options so query embeddings get the `query: ` prefix (index-time chunk
-text needs the `passage: ` prefix too — add it in `rules/api/index/post/texts.fn.js`, alongside
-where the `[t=Ns]` timestamp prefix is already prepended, since both share the same "text that
-actually gets embedded" surface).
+If you switch to an e5-family model, set the plugin's `embeddingInputTemplate` to
+`'["query: {{query}}"]'` so query embeddings get the `query: ` prefix (index-time chunk text needs
+the `passage: ` prefix too — add it in `rules/api/index/post/texts.fn.js`, alongside where the
+`[t=Ns]` timestamp prefix is already prepended, since both share the same "text that actually gets
+embedded" surface). **Known limitation**: the plugin does plain string substitution into
+`embeddingInputTemplate`, not a real JSON-encode — a query containing a double-quote character
+breaks the resulting JSON, and that one query's tool call fails gracefully (the assistant reports
+no results, it doesn't crash) rather than being sanitized. A proper JSON-encode belongs in CE, not
+a per-app workaround — tracked as a bffless/ce#651 follow-up.
 
 **Then re-publish every video.** Changing the model doesn't retroactively re-embed anything —
 existing rows keep their old-model vectors in `recall_videos.transcript`'s embedded chunks until

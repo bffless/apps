@@ -1,10 +1,21 @@
 /**
  * Embeds a YouTube video seeked to a specific transcript moment (Task 9).
- * The iframe's `key` incorporates both `youtubeId` and `startSec` so React
- * fully remounts it on every seek — YouTube's embed API doesn't apply a new
- * `start` query param to an already-loaded player, so swapping `src` alone
- * would leave playback wherever it already was.
+ * The iframe's `key` incorporates `youtubeId`, `startSec`, AND `nonce` so
+ * React fully remounts it on every seek — YouTube's embed API doesn't apply
+ * a new `start` query param to an already-loaded player, so swapping `src`
+ * alone would leave playback wherever it already was.
  *
+ * PR-feedback-6 bugfix: `nonce` exists because `youtubeId`+`startSec` alone
+ * under-specifies "a seek happened" — clicking a SECOND citation/moment/
+ * transcript span that names the exact same `{youtubeId, startSec}` as the
+ * current player state is a real, common case (a chat reply citing the same
+ * timestamp twice; re-clicking a moment after playback has drifted forward),
+ * and it used to be a silent no-op: identical props meant an identical React
+ * key, so no remount, no re-seek. Callers own a monotonic counter and bump
+ * it on EVERY seek (even to an already-current time) — see `Home.tsx`'s
+ * `PlayerTarget.nonce` and `Video.tsx`'s `seekNonce`.
+ *
+
  * Uses the standard `youtube.com/embed` domain, not `youtube-nocookie.com`
  * (PR-feedback-2): live-testing feedback showed common ad/privacy blockers
  * flag `youtube-nocookie.com` frames outright (a gray net-error box, not a
@@ -22,18 +33,21 @@
 type SeekingPlayerProps = {
   youtubeId: string
   startSec: number
+  /** Monotonic seek counter — bump on every seek, even a repeat of the same
+   * `{youtubeId, startSec}`, so the player remounts (see the module doc). */
+  nonce?: number
   title?: string
   autoplay?: boolean
 }
 
-export function SeekingPlayer({ youtubeId, startSec, title, autoplay = false }: SeekingPlayerProps) {
+export function SeekingPlayer({ youtubeId, startSec, nonce = 0, title, autoplay = false }: SeekingPlayerProps) {
   const rounded = Math.round(startSec)
   const src = `https://www.youtube.com/embed/${youtubeId}?start=${rounded}&autoplay=${autoplay ? 1 : 0}`
 
   return (
     <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
       <iframe
-        key={`${youtubeId}-${startSec}`}
+        key={`${youtubeId}-${startSec}-${nonce}`}
         src={src}
         title={title || 'Video player'}
         className="h-full w-full"

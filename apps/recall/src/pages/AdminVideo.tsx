@@ -25,9 +25,8 @@ import { StatusPill } from '../components/StatusPill'
 import { TranscriptView, type TranscriptWord } from '../components/TranscriptView'
 import { useIndexJob, type IndexStage } from '../hooks/useIndexJob'
 import { useIngest, type IngestStage } from '../hooks/useIngest'
-import { captureFrameSheet, type SheetMeta } from '../lib/frames'
-import { spriteStyle } from '../lib/sprite'
-import { presignedUpload } from '../lib/upload'
+import { captureFrameSheets, uploadFrameSheets } from '../lib/frames'
+import { normalizeSheets, spriteStyle, type SheetMeta } from '../lib/sprite'
 import { extractYouTubeId } from '../lib/youtube'
 import {
   useDeleteVideoMutation,
@@ -108,19 +107,28 @@ const STAGE_STYLES: Record<IngestStage, string> = {
 }
 
 /**
- * Parse the persisted `sheet_meta` JSON string into `{ tiles }`, tolerating a
- * null/malformed value (no sheet yet, or a hand-edited record) the same way
- * `parseTranscript` does above.
+ * Parse the persisted `sheet_meta` JSON string, tolerating a null/malformed
+ * value (no sheet yet, or a hand-edited record) the same way
+ * `parseTranscript` does above. Accepts BOTH shapes (see `lib/sprite.ts`):
+ * v1 (`{ tiles }`, PR-feedback-2) and v2 (`{ v: 2, sheets }`,
+ * PR-feedback-6) — validates whichever array the tagged shape implies.
  */
 function parseSheetMeta(raw: string | null): SheetMeta | null {
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as Partial<SheetMeta>
-    if (!Array.isArray(parsed.tiles)) return null
-    return parsed as SheetMeta
+    const parsed = JSON.parse(raw) as { v?: number; tiles?: unknown; sheets?: unknown }
+    if (parsed.v === 2) {
+      return Array.isArray(parsed.sheets) ? (parsed as SheetMeta) : null
+    }
+    return Array.isArray(parsed.tiles) ? (parsed as SheetMeta) : null
   } catch {
     return null
   }
+}
+
+/** Total tile count across every sheet (v1 has exactly one implicit sheet). */
+function totalTiles(meta: SheetMeta): number {
+  return normalizeSheets(meta).reduce((sum, sheet) => sum + sheet.tiles.length, 0)
 }
 
 type FramesBackfillStage = 'idle' | 'signing' | 'capturing' | 'uploading' | 'done' | 'error'
@@ -135,17 +143,20 @@ const FRAMES_BACKFILL_LABELS: Record<FramesBackfillStage, string> = {
 }
 
 /**
- * Shared "(re)generate the contact sheet from a signed source URL" flow
- * (PR-feedback-2, extended PR-feedback-5): fetches a signed download URL for
- * the already-uploaded `source_path` (the same presigned-GET flow
- * `SourceVideoPlayer` uses), captures a sheet from it (the bucket CORS that
- * already allows our origin for `SourceVideoPlayer`'s playback also makes
- * the canvas capture untainted), uploads it, and saves `sheet_path`/
- * `sheet_meta` onto the record — same three steps `useIngest`'s automatic
- * `frames` stage runs for a fresh upload, just sourced from a signed URL
- * instead of the local File. Shared by `FramesBackfill` (the "no sheet yet"
- * button) and `FramesGrid`'s "Regenerate" affordance (the "sheet exists,
- * make a new one" case) — same flow, same code, different trigger label.
+ * Shared "(re)generate the contact sheet(s) from a signed source URL" flow
+ * (PR-feedback-2, extended PR-feedback-5, made multi-sheet-aware in
+ * PR-feedback-6): fetches a signed download URL for the already-uploaded
+ * `source_path` (the same presigned-GET flow `SourceVideoPlayer` uses),
+ * captures densely-spaced frames from it packed into one or more sheets (the
+ * bucket CORS that already allows our origin for `SourceVideoPlayer`'s
+ * playback also makes the canvas capture untainted), uploads EACH sheet
+ * (looped — `uploadFrameSheets` mints one presigned PUT per sheet file), and
+ * saves `sheet_path`/`sheet_meta` onto the record — same flow
+ * `useIngest`'s automatic `frames` stage runs for a fresh upload, just
+ * sourced from a signed URL instead of the local File. Shared by
+ * `FramesBackfill` (the "no sheet yet" button) and `FramesGrid`'s
+ * "Regenerate" affordance (the "sheet exists, make a new one" case) — same
+ * flow, same code, different trigger label.
  */
 function useFramesGenerate(videoId: string, video: Video) {
   const [stage, setStage] = useState<FramesBackfillStage>('idle')
@@ -164,15 +175,17 @@ function useFramesGenerate(videoId: string, video: Video) {
       const { url } = await triggerSign(video.source_path).unwrap()
 
       setStage('capturing')
-      const sheet = await captureFrameSheet(url)
-      if (!sheet.blob || sheet.meta.tiles.length === 0) {
+      const captured = await captureFrameSheets(url)
+      if (captured.sheets.length === 0) {
         throw new Error("Couldn't capture any frames from this video.")
       }
 
       setStage('uploading')
-      const file = new File([sheet.blob], 'sheet.jpg', { type: 'image/jpeg' })
-      const sheetPath = await presignedUpload(file, '/api/uploads/sheet', videoId)
-      await saveVideo({ videoId, sheet_path: sheetPath, sheet_meta: JSON.stringify(sheet.meta) }).unwrap()
+      const uploaded = await uploadFrameSheets(captured, videoId)
+      if (!uploaded) {
+        throw new Error("Couldn't upload the captured frames.")
+      }
+      await saveVideo({ videoId, sheet_path: uploaded.sheet_path, sheet_meta: uploaded.sheet_meta }).unwrap()
 
       setStage('done')
       void refetch()
@@ -199,7 +212,7 @@ function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
   if (video.sheet_path && sheetMeta) {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-        Frames ✓ · {sheetMeta.tiles.length} tiles
+        Frames ✓ · {totalTiles(sheetMeta)} tiles
       </span>
     )
   }
@@ -224,17 +237,27 @@ function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
 }
 
 /**
- * Visual contact-sheet section (PR-feedback-5): once the record has a sheet,
- * shows all `sheet_meta.tiles.length` tiles as a 5-per-row grid, each cropped
- * out of the single sheet image via `sprite.ts`'s `spriteStyle` (same math
- * `MomentChip` uses on the public search side, just at a larger 160×90
- * display size) with its `mm:ss` timestamp captioned beneath. Clicking a tile
- * seeks the admin `<video>` player via `onSeek` — the same seek path
- * `TranscriptPanel` uses (`VideoForm`'s `handleSeek`), so a click here jumps
- * the player exactly like clicking a transcript span does. The header's
- * "Regenerate" button reuses `useFramesGenerate`'s flow. Renders nothing
- * until there's a sheet to show — `FramesBackfill` (above, in `IngestPanel`)
- * covers the "no sheet yet" state.
+ * Visual contact-sheet section (PR-feedback-5, made multi-sheet-aware +
+ * lazy-loaded in PR-feedback-6): once the record has a sheet, shows every
+ * tile across every sheet as a 5-per-row grid, each cropped out of ITS OWN
+ * sheet image via `sprite.ts`'s `spriteStyle` (same math `MomentChip` uses
+ * on the public search side, just at a larger 160×90 display size) with its
+ * `mm:ss` timestamp captioned beneath. Clicking a tile seeks the admin
+ * `<video>` player via `onSeek` — the same seek path `TranscriptPanel` uses
+ * (`VideoForm`'s `handleSeek`), so a click here jumps the player exactly
+ * like clicking a transcript span does. The header's "Regenerate" button
+ * reuses `useFramesGenerate`'s flow. Renders nothing until there's a sheet
+ * to show — `FramesBackfill` (above, in `IngestPanel`) covers the "no sheet
+ * yet" state.
+ *
+ * Each distinct sheet image loads lazily: a hidden `<img loading="lazy">`
+ * per sheet (sharing the exact same URL as that sheet's CSS
+ * `background-image` tiles, so the browser fetches it once and reuses the
+ * cached response) decides WHEN the browser actually fetches it based on
+ * viewport proximity; a sheet's tiles stay an empty skeleton box until its
+ * warmer `<img>` fires `onLoad`. A 14-minute video can have ~3 sheet images
+ * (~85 tiles) — without this, opening the page would eagerly fetch all of
+ * them even if the admin never scrolls past the first row.
  */
 const FRAMES_GRID_TILE_DISPLAY_W = 160
 
@@ -261,8 +284,15 @@ export function FramesGrid({
 }) {
   const { stage, error, busy, generate } = useFramesGenerate(videoId, video)
   const sheetMeta = parseSheetMeta(video.sheet_meta)
+  const [loadedUrls, setLoadedUrls] = useState<ReadonlySet<string>>(new Set())
 
   if (!video.sheet_path || !sheetMeta) return null
+  const sheets = normalizeSheets(sheetMeta, video.sheet_path)
+  if (sheets.every((s) => s.tiles.length === 0)) return null
+
+  function markLoaded(url: string) {
+    setLoadedUrls((prev) => (prev.has(url) ? prev : new Set(prev).add(url)))
+  }
 
   return (
     <section className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-800">
@@ -282,34 +312,53 @@ export function FramesGrid({
         </button>
       </div>
 
+      {/* Hidden per-sheet lazy-load warmers — see the section doc above. */}
+      {sheets.map((sheet) =>
+        sheet.url ? (
+          <img
+            key={sheet.url}
+            src={sheet.url}
+            loading="lazy"
+            decoding="async"
+            alt=""
+            aria-hidden="true"
+            className="hidden"
+            onLoad={() => markLoaded(sheet.url!)}
+          />
+        ) : null,
+      )}
+
       <div className="grid grid-cols-5 gap-2">
-        {sheetMeta.tiles.map((tile, index) => {
-          const style = spriteStyle(sheetMeta, index, FRAMES_GRID_TILE_DISPLAY_W)
-          if (!style) return null
-          return (
-            <button
-              key={index}
-              type="button"
-              onClick={() => onSeek(tile.t)}
-              className="group flex flex-col items-center gap-1"
-            >
-              <span
-                className="overflow-hidden rounded bg-slate-200 ring-1 ring-transparent transition-all group-hover:ring-blue-500 dark:bg-slate-800"
-                style={{
-                  width: style.width,
-                  height: style.height,
-                  backgroundImage: `url(${video.sheet_path})`,
-                  backgroundSize: style.backgroundSize,
-                  backgroundPosition: style.backgroundPosition,
-                  backgroundRepeat: 'no-repeat',
-                }}
-              />
-              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-                {formatTileTime(tile.t)}
-              </span>
-            </button>
-          )
-        })}
+        {sheets.map((sheet, sheetIndex) =>
+          sheet.tiles.map((tile, tileIndex) => {
+            const style = spriteStyle(sheetMeta, tileIndex, FRAMES_GRID_TILE_DISPLAY_W)
+            if (!style || !sheet.url) return null
+            const loaded = loadedUrls.has(sheet.url)
+            return (
+              <button
+                key={`${sheetIndex}-${tileIndex}`}
+                type="button"
+                onClick={() => onSeek(tile.t)}
+                className="group flex flex-col items-center gap-1"
+              >
+                <span
+                  className="overflow-hidden rounded bg-slate-200 ring-1 ring-transparent transition-all group-hover:ring-blue-500 dark:bg-slate-800"
+                  style={{
+                    width: style.width,
+                    height: style.height,
+                    backgroundImage: loaded ? `url(${sheet.url})` : undefined,
+                    backgroundSize: style.backgroundSize,
+                    backgroundPosition: style.backgroundPosition,
+                    backgroundRepeat: 'no-repeat',
+                  }}
+                />
+                <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                  {formatTileTime(tile.t)}
+                </span>
+              </button>
+            )
+          }),
+        )}
       </div>
 
       {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
