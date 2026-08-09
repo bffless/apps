@@ -26,6 +26,7 @@ import { TranscriptView, type TranscriptWord } from '../components/TranscriptVie
 import { useIndexJob, type IndexStage } from '../hooks/useIndexJob'
 import { useIngest, type IngestStage } from '../hooks/useIngest'
 import { captureFrameSheet, type SheetMeta } from '../lib/frames'
+import { spriteStyle } from '../lib/sprite'
 import { presignedUpload } from '../lib/upload'
 import { extractYouTubeId } from '../lib/youtube'
 import {
@@ -134,35 +135,24 @@ const FRAMES_BACKFILL_LABELS: Record<FramesBackfillStage, string> = {
 }
 
 /**
- * Backfill button + status pill for videos uploaded before contact sheets
- * existed (PR-feedback-2): fetches a signed download URL for the already-
- * uploaded `source_path` (the same presigned-GET flow `SourceVideoPlayer`
- * uses), captures a sheet from it (the bucket CORS that already allows our
- * origin for `SourceVideoPlayer`'s playback also makes the canvas capture
- * untainted), uploads it, and saves `sheet_path`/`sheet_meta` onto the
- * record — same three steps `useIngest`'s automatic `frames` stage runs for
- * a fresh upload, just sourced from a signed URL instead of the local File.
- * Hidden once a sheet already exists (shows the "Frames ✓" pill instead) or
- * before any source video has been uploaded (nothing to capture from yet).
+ * Shared "(re)generate the contact sheet from a signed source URL" flow
+ * (PR-feedback-2, extended PR-feedback-5): fetches a signed download URL for
+ * the already-uploaded `source_path` (the same presigned-GET flow
+ * `SourceVideoPlayer` uses), captures a sheet from it (the bucket CORS that
+ * already allows our origin for `SourceVideoPlayer`'s playback also makes
+ * the canvas capture untainted), uploads it, and saves `sheet_path`/
+ * `sheet_meta` onto the record — same three steps `useIngest`'s automatic
+ * `frames` stage runs for a fresh upload, just sourced from a signed URL
+ * instead of the local File. Shared by `FramesBackfill` (the "no sheet yet"
+ * button) and `FramesGrid`'s "Regenerate" affordance (the "sheet exists,
+ * make a new one" case) — same flow, same code, different trigger label.
  */
-function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
+function useFramesGenerate(videoId: string, video: Video) {
   const [stage, setStage] = useState<FramesBackfillStage>('idle')
   const [error, setError] = useState<string | null>(null)
   const [saveVideo] = useSaveVideoMutation()
   const [triggerSign] = useLazySignDownloadQuery()
   const { refetch } = useGetAdminVideoQuery(videoId, { skip: !videoId })
-
-  const sheetMeta = parseSheetMeta(video.sheet_meta)
-
-  if (video.sheet_path && sheetMeta) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-        Frames ✓ · {sheetMeta.tiles.length} tiles
-      </span>
-    )
-  }
-
-  if (!video.source_path) return null
 
   const busy = stage === 'signing' || stage === 'capturing' || stage === 'uploading'
 
@@ -192,6 +182,30 @@ function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
     }
   }
 
+  return { stage, error, busy, generate }
+}
+
+/**
+ * Backfill button + status pill for videos uploaded before contact sheets
+ * existed (PR-feedback-2). Hidden once a sheet already exists (the richer
+ * `FramesGrid` section takes over — this just shows the "Frames ✓" pill
+ * instead) or before any source video has been uploaded (nothing to capture
+ * from yet).
+ */
+function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
+  const { stage, error, busy, generate } = useFramesGenerate(videoId, video)
+  const sheetMeta = parseSheetMeta(video.sheet_meta)
+
+  if (video.sheet_path && sheetMeta) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+        Frames ✓ · {sheetMeta.tiles.length} tiles
+      </span>
+    )
+  }
+
+  if (!video.source_path) return null
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button
@@ -206,6 +220,100 @@ function FramesBackfill({ videoId, video }: { videoId: string; video: Video }) {
       </button>
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
+  )
+}
+
+/**
+ * Visual contact-sheet section (PR-feedback-5): once the record has a sheet,
+ * shows all `sheet_meta.tiles.length` tiles as a 5-per-row grid, each cropped
+ * out of the single sheet image via `sprite.ts`'s `spriteStyle` (same math
+ * `MomentChip` uses on the public search side, just at a larger 160×90
+ * display size) with its `mm:ss` timestamp captioned beneath. Clicking a tile
+ * seeks the admin `<video>` player via `onSeek` — the same seek path
+ * `TranscriptPanel` uses (`VideoForm`'s `handleSeek`), so a click here jumps
+ * the player exactly like clicking a transcript span does. The header's
+ * "Regenerate" button reuses `useFramesGenerate`'s flow. Renders nothing
+ * until there's a sheet to show — `FramesBackfill` (above, in `IngestPanel`)
+ * covers the "no sheet yet" state.
+ */
+const FRAMES_GRID_TILE_DISPLAY_W = 160
+
+/**
+ * `mm:ss` for a tile's own timestamp — NOT `formatDuration` above, which
+ * treats `0` as "unknown" (`'—'`, for a video's not-yet-extracted duration)
+ * and would wrongly blank out the very first tile's genuine `0:00`.
+ */
+function formatTileTime(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds))
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
+export function FramesGrid({
+  videoId,
+  video,
+  onSeek,
+}: {
+  videoId: string
+  video: Video
+  onSeek: (sec: number) => void
+}) {
+  const { stage, error, busy, generate } = useFramesGenerate(videoId, video)
+  const sheetMeta = parseSheetMeta(video.sheet_meta)
+
+  if (!video.sheet_path || !sheetMeta) return null
+
+  return (
+    <section className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-800">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          Frames
+        </h2>
+        <button
+          type="button"
+          onClick={() => {
+            void generate()
+          }}
+          disabled={busy}
+          className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+        >
+          {busy ? FRAMES_BACKFILL_LABELS[stage] : 'Regenerate'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-5 gap-2">
+        {sheetMeta.tiles.map((tile, index) => {
+          const style = spriteStyle(sheetMeta, index, FRAMES_GRID_TILE_DISPLAY_W)
+          if (!style) return null
+          return (
+            <button
+              key={index}
+              type="button"
+              onClick={() => onSeek(tile.t)}
+              className="group flex flex-col items-center gap-1"
+            >
+              <span
+                className="overflow-hidden rounded bg-slate-200 ring-1 ring-transparent transition-all group-hover:ring-blue-500 dark:bg-slate-800"
+                style={{
+                  width: style.width,
+                  height: style.height,
+                  backgroundImage: `url(${video.sheet_path})`,
+                  backgroundSize: style.backgroundSize,
+                  backgroundPosition: style.backgroundPosition,
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
+              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                {formatTileTime(tile.t)}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </section>
   )
 }
 
@@ -560,6 +668,11 @@ function PublishPanel({ videoId, video }: { videoId: string; video: Video }) {
           Add a valid YouTube URL and finish transcribing before publishing.
         </p>
       )}
+      {video.status === 'transcribed' && !video.sheet_path && (
+        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+          No frames yet — generate frames for search thumbnails.
+        </p>
+      )}
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
       {unpublishError && (
         <p className="mt-2 text-sm text-red-600 dark:text-red-400">Couldn't unpublish. Try again.</p>
@@ -729,6 +842,8 @@ function VideoForm({ videoId, video }: { videoId: string; video: Video }) {
         transcriptWordCount={transcript?.words.length ?? null}
         onVideoRef={setVideoEl}
       />
+
+      <FramesGrid videoId={videoId} video={video} onSeek={handleSeek} />
 
       {transcript && transcript.words.length > 0 && (
         <TranscriptPanel

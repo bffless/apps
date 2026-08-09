@@ -6,8 +6,23 @@
 // guard would then reject. Returning a real array from a function step's
 // output sidesteps that: `steps.prep.chunks` resolves via plain property
 // lookup, no re-parsing involved.
+//
+// PR-feedback-4: NOW THROWS on a missing/blank videoId, unlike its original
+// permissive version. That used to be safe because every downstream step was
+// RECORD-ID-KEYED (embedStore/data_update against an empty id just match
+// nothing -- a harmless no-op). This rule now also runs a PREFIX-based
+// file_delete against 'sheets/<id>/' -- an empty id would resolve to
+// 'sheets//', which collapses to the top-level 'sheets/' prefix and would
+// wipe EVERY video's contact sheet. Failing closed here mirrors
+// api/videos/delete/post/prep.fn.js's existing convention.
 function handler({ request }) {
   var body = (request && request.body) || {}
-  var videoId = body.videoId
-  return { videoId: typeof videoId === 'string' ? videoId : '', chunks: [] }
+  var id = String(body.videoId || '').trim()
+  if (!id) throw new Error('videoId required')
+  return {
+    videoId: id,
+    chunks: [],
+    sheetsPrefix: 'sheets/' + id + '/',
+    sheetsSubDir: 'sheets/' + id,
+  }
 }
