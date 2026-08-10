@@ -5,6 +5,14 @@
  * renderer is `CitationChip` instead of a plain anchor, so a citation the
  * assistant writes (per the chat rule's system prompt) becomes a clickable
  * chip that seeks the shared player rather than a link that navigates away.
+ *
+ * Autoscroll: the list is its OWN scroll container and is scrolled via
+ * `el.scrollTop` — never `scrollIntoView`, which scrolls every scrollable
+ * ancestor including the document, so with page content below the chat (the
+ * library grid) each streamed token yanked the whole page down to the chat's
+ * bottom edge and fought any attempt to scroll up mid-stream. Following is
+ * sticky-bottom: scrolling up disengages it (`pinnedRef`), and it re-engages
+ * when the user returns near the bottom or sends a new message of their own.
  */
 
 import { useEffect, useRef } from 'react'
@@ -61,11 +69,32 @@ function EmptyState({
   )
 }
 
+/** How close to the bottom (px) still counts as "at the bottom" for sticking. */
+const NEAR_BOTTOM_PX = 48
+
 export function ChatMessages({ messages, status, suggestions, onSuggestionClick, onSeek }: ChatMessagesProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  // Sticky-follow state. A ref, not state: it changes on every scroll/token
+  // and must never itself cause a render.
+  const pinnedRef = useRef(true)
+  const lastUserMessageIdRef = useRef<string | null>(null)
+
+  function handleScroll() {
+    const el = containerRef.current
+    if (!el) return
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+  }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = containerRef.current
+    if (!el) return
+    // Sending a message of your own always re-pins, even if you'd scrolled up.
+    const last = messages[messages.length - 1]
+    if (last?.role === 'user' && last.id !== lastUserMessageIdRef.current) {
+      lastUserMessageIdRef.current = last.id
+      pinnedRef.current = true
+    }
+    if (pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages])
 
   if (messages.length === 0) {
@@ -73,54 +102,55 @@ export function ChatMessages({ messages, status, suggestions, onSuggestionClick,
   }
 
   return (
-    <div className="flex flex-col gap-4 py-4">
-      {messages.map((message) => {
-        const text = getMessageText(message)
-        const isUser = message.role === 'user'
+    <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto">
+      <div className="flex flex-col gap-4 py-4">
+        {messages.map((message) => {
+          const text = getMessageText(message)
+          const isUser = message.role === 'user'
 
-        return (
-          <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2 ${
-                isUser
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
-              }`}
-            >
-              {isUser ? (
-                <p className="text-sm whitespace-pre-wrap">{text}</p>
-              ) : (
-                <div className="prose prose-sm prose-slate dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-800 [&_pre]:p-2 [&_pre]:text-xs [&_pre]:text-slate-100 [&_code]:text-xs">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: ({ href, children }) => (
-                        <CitationChip href={href} onSeek={onSeek}>
-                          {children}
-                        </CitationChip>
-                      ),
-                    }}
-                  >
-                    {text}
-                  </ReactMarkdown>
-                </div>
-              )}
+          return (
+            <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-2 ${
+                  isUser
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
+                }`}
+              >
+                {isUser ? (
+                  <p className="text-sm whitespace-pre-wrap">{text}</p>
+                ) : (
+                  <div className="prose prose-sm prose-slate dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-800 [&_pre]:p-2 [&_pre]:text-xs [&_pre]:text-slate-100 [&_code]:text-xs">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => (
+                          <CitationChip href={href} onSeek={onSeek}>
+                            {children}
+                          </CitationChip>
+                        ),
+                      }}
+                    >
+                      {text}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {status === 'streaming' && messages[messages.length - 1]?.role === 'user' && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] rounded-2xl bg-slate-100 px-4 py-2 dark:bg-slate-800">
+              <div className="flex gap-1">
+                <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+              </div>
             </div>
           </div>
-        )
-      })}
-      {status === 'streaming' && messages[messages.length - 1]?.role === 'user' && (
-        <div className="flex justify-start">
-          <div className="max-w-[85%] rounded-2xl bg-slate-100 px-4 py-2 dark:bg-slate-800">
-            <div className="flex gap-1">
-              <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
-            </div>
-          </div>
-        </div>
-      )}
-      <div ref={messagesEndRef} />
+        )}
+      </div>
     </div>
   )
 }
