@@ -237,9 +237,12 @@ function ChatSession({ onSeek, onNewChat }: { onSeek: (target: SeekTarget) => vo
         )}
       </div>
 
-      <div className="min-h-[360px] px-4">
+      {/* Fixed height so `ChatMessages` scrolls internally instead of growing
+          the page — growing is what made its autoscroll drag the whole page
+          down past the library grid on every streamed token. */}
+      <div className="h-[420px] px-4 sm:h-[65svh] sm:max-h-[560px]">
         {isLoadingHistory ? (
-          <div className="flex h-[360px] items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
             Loading conversation…
           </div>
         ) : (
