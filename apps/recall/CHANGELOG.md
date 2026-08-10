@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/bffless/apps/compare/recall-v0.2.0...recall-v0.3.0) (2026-08-10)
+
+
+### Features
+
+* **recall:** global app header + chat autoscroll containment ([#314](https://github.com/bffless/apps/issues/314)) ([11f7ffd](https://github.com/bffless/apps/commit/11f7ffd677a4542cef6da77d1b1922683feeaf7c))
+
 ## [0.2.0](https://github.com/bffless/apps/compare/recall-v0.1.2...recall-v0.2.0) (2026-08-09)
 
 
