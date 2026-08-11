@@ -83,6 +83,10 @@ ffmpeg.wasm (story 05+).
   Downstream reads `refined ?? baseline` via `effectiveCuts`.
 - **No base64 in Redux/localStorage.** Contact sheets and audio persist **url-only**.
 - **One stage per PR**; `build`, `lint`, `test:run` must pass.
+- **`data-testid`s are a contract.** The headless runner (`headless/`, story 14)
+  drives the real site by these ids; renaming or removing one breaks unattended
+  runs. The PR smoke workflow (`studio-headless-smoke.yml`) is the canary — if
+  it fails after a UI change, restore the id rather than updating the runner.
 
 ## ffmpeg.wasm core-mt patch (pnpm-specific)
 
