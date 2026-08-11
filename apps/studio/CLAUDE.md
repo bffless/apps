@@ -70,7 +70,7 @@ ffmpeg.wasm (story 05+).
 ## Non-negotiable patterns
 
 - **Mock-first, swap-don't-rewrite.** Every `/api/*` has an MSW mock in `src/mocks/handlers.ts`
-  (gated by `MOCK_STUDIO`, currently `false`). Mock and real **must return the same shape** — coerce
+  (gated by the `VITE_MOCK_STUDIO` env toggle, default off; CI smoke turns it on). Mock and real **must return the same shape** — coerce
   both through one pure `toX()` function. Unhandled `/api/*` falls through the Vite proxy to `j5s.dev`.
 - **Never stream large files through a pipeline.** Edge nginx caps request bodies at **1 MB**.
   Uploads use the **presigned direct-to-bucket** flow. To feed a bucket object to Replicate, pass

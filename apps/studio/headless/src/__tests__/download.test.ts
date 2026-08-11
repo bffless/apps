@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, stat, mkdir } from 'node:fs/promises'
+import { mkdtemp, stat, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, isAbsolute } from 'node:path'
 import { fileNameFor, downloadAll } from '../download'
@@ -51,7 +51,9 @@ describe('downloadAll', () => {
       expect(isAbsolute(p)).toBe(true)
       expect((await stat(p)).size).toBe(1024)
     } finally {
-      // cleanup would go here but we'll let the test runner handle it
+      // downloadAll resolves destDir relative to the package cwd, so clean it
+      // up ourselves — nothing else removes it.
+      await rm(relDir, { recursive: true, force: true })
     }
   })
 })

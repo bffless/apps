@@ -78,7 +78,9 @@ and real).
   newline-separated), `director_prompt`, `project_title`, `base_url` (falls back to the
   `STUDIO_BASE_URL` repo variable, then `https://studio.j5s.dev`), `timeout_minutes` (default
   **180** — the plan's original default of 120 didn't leave enough headroom over the runner's own
-  ceilings, prep 30 min + director 10 min + build 90 min = 130 min, so it was raised). Secrets:
+  ceilings, prep 30 min × number of videos + director 10 min + build 90 min (e.g. 130 min for a
+  single video, ~222 min for three), so it was raised — dispatches with several videos should raise
+  `timeout_minutes` accordingly). Secrets:
   `STUDIO_USER_EMAIL` / `STUDIO_USER_PASSWORD`. Installs `ffmpeg` via apt (for Firefox's H.264/AAC
   decode of real recordings — mock-mode fixtures don't need this, see below) and Firefox via
   Playwright, runs the scenario, then always writes a job summary (✅/❌ heading, the build deep
@@ -142,8 +144,10 @@ on the first real dispatch. Checklist:
    dispatch:
    - **The admin login page's selectors** — `input[type="email"], input[name="email"]` for the
      email field, `input[type="password"]` for the password field, `button[type="submit"]` for the
-     submit button. If the real login page's markup doesn't match, the scenario will hang at the
-     `login` phase until its 30s/60s `waitForURL` timeouts fire.
+     submit button. If the real login page's markup doesn't match, `playwright.config.ts`'s
+     `actionTimeout: 120_000` now bounds the click/fill itself, so the scenario fails at the
+     `login` phase in ~2 minutes with a summarized failure — it does not hang until the job's
+     `timeout-minutes` kill.
    - **`fromJSON(inputs.timeout_minutes)`** — the `timeout-minutes:` job field expects a number;
      `type: number` workflow inputs are documented to interpolate as numbers, but if GitHub Actions
      ever passes it as a string this expression fails at job-start with a workflow syntax error

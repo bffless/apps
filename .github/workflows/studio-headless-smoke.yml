@@ -8,6 +8,12 @@ on:
     paths:
       - 'apps/studio/**'
       - '.github/workflows/studio-headless-smoke.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+concurrency:
+  group: studio-headless-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke:

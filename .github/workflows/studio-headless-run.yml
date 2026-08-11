@@ -27,7 +27,7 @@ on:
         type: string
         default: ''
       timeout_minutes:
-        description: 'Overall job timeout (must exceed runner phase ceilings: prep 30 min + director 10 min + build 90 min)'
+        description: 'Overall job timeout (must exceed runner phase ceilings: prep 30 min × number of videos + director 10 min + build 90 min)'
         required: false
         type: number
         default: 180

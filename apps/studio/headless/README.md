@@ -39,7 +39,7 @@ messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/con
 | `STUDIO_USER_PASSWORD`      | real mode             | Login password for the admin auth relay.                                     |
 | `MOCK_MODE`                 | no (`false` default)  | `true` to skip login and use local fixtures instead of downloading videos.   |
 | `FIXTURE_PATHS`             | mock mode             | One or more local file paths to import instead of downloaded videos.         |
-| `PREP_TIMEOUT_MINUTES`      | no (default `30`)     | Ceiling per prep stage / per source file.                                    |
+| `PREP_TIMEOUT_MINUTES`      | no (default `30`)     | Ceiling per prep stage / per source file. The workflow's `timeout_minutes` must exceed `PREP_TIMEOUT_MINUTES × number of videos + DIRECTOR_TIMEOUT_MINUTES + BUILD_TIMEOUT_MINUTES` — prep scales with `files.length`, not a flat 30 min. |
 | `DIRECTOR_TIMEOUT_MINUTES`  | no (default `10`)     | Ceiling for the master director run.                                         |
 | `BUILD_TIMEOUT_MINUTES`     | no (default `90`)     | Ceiling for the full auto build run.                                         |
 | `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |

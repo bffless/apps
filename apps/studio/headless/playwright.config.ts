@@ -12,6 +12,14 @@ export default defineConfig({
     ...devices['Desktop Firefox'],
     browserName: 'firefox',
     viewport: { width: 1440, height: 900 },
-    trace: 'retain-on-failure',
+    // Real-run traces would record page.fill() action params (the literal
+    // STUDIO_USER_EMAIL/STUDIO_USER_PASSWORD) and the real-run workflow
+    // uploads output/ wholesale on a public repo — never trace real mode.
+    trace: process.env.MOCK_MODE === 'true' ? 'retain-on-failure' : 'off',
+    // Bounds individual clicks/fills (the live-unverified admin-login
+    // selectors included) so a locator mismatch fails in ~2 min instead of
+    // hanging until the job is killed at timeout-minutes; explicit expect
+    // waits still govern the long phases (prep/director/build).
+    actionTimeout: 120_000,
   },
 })
