@@ -61,7 +61,7 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
             : `${builtCount} / ${scenes.length} scenes built`
 
   return (
-    <div className="border rule bg-surface p-5">
+    <div className="border rule bg-surface p-5" data-testid="auto-build-board" data-state={run.status}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="meta-label">Auto build</p>
@@ -72,7 +72,7 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
         </div>
         <div className="flex items-center gap-2">
           {run.status === 'idle' || run.status === 'done' ? (
-            <button type="button" className="pill-cta" onClick={onStart}>
+            <button type="button" className="pill-cta" data-testid="auto-build-start" onClick={onStart}>
               Start auto build
             </button>
           ) : null}
@@ -95,7 +95,9 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
       </div>
 
       {run.status === 'halted' && run.halt && (
-        <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink">{run.halt.message}</p>
+        <p className="mt-3 whitespace-pre-wrap text-[13px] text-accent-ink" data-testid="auto-build-halt">
+          {run.halt.message}
+        </p>
       )}
 
       <ul className="mt-4 flex flex-col gap-2">

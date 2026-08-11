@@ -62,6 +62,7 @@ export function StageCard({ stage, index, current, busy, onAction, hideAction }:
           <button
             type="button"
             className="pill-cta mt-3"
+            data-testid="stage-action"
             disabled={busy}
             onClick={onAction}
           >

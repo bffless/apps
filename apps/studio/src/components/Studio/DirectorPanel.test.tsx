@@ -49,4 +49,10 @@ describe('DirectorPanel rerun (story 03m)', () => {
     fireEvent.click(screen.getByRole('button', { name: /replace & re-run/i }))
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
+
+  it('exposes the input and run test-ids', () => {
+    renderPanel()
+    expect(screen.getByTestId('director-input')).toBeInTheDocument()
+    expect(screen.getByTestId('director-run')).toBeInTheDocument()
+  })
 })

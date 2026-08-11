@@ -105,6 +105,7 @@ function SourceRow({
   return (
     <li
       draggable
+      data-testid="source-row"
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -144,6 +145,7 @@ function SourceRow({
             return (
               <StageIndicator
                 key={stageId}
+                stageId={stageId}
                 label={STAGE_LABELS[stageId]}
                 status={status}
               />
@@ -267,6 +269,7 @@ export function SourceQueue({ sources, files, busyId, onReorder, onRemove, onPro
           <button
             type="button"
             className="pill-cta"
+            data-testid="process-all"
             disabled={busy || sources.length === 0}
             onClick={onProcessAll}
           >
@@ -375,11 +378,20 @@ export function SourceQueue({ sources, files, busyId, onReorder, onRemove, onPro
 }
 
 type IndicatorProps = {
+  stageId: StageId
   label: string
   status: 'pending' | 'active' | 'done' | 'error'
 }
 
-function StageIndicator({ label, status }: IndicatorProps) {
+/** Maps this row's status vocabulary ('active') onto the app-wide 'running'. */
+const STAGE_STATE: Record<IndicatorProps['status'], 'pending' | 'running' | 'done' | 'error'> = {
+  pending: 'pending',
+  active: 'running',
+  done: 'done',
+  error: 'error',
+}
+
+function StageIndicator({ stageId, label, status }: IndicatorProps) {
   const dot = (() => {
     if (status === 'done')
       return <span className="flex h-2.5 w-2.5 flex-shrink-0 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-surface">&#10003;</span>
@@ -391,7 +403,11 @@ function StageIndicator({ label, status }: IndicatorProps) {
   })()
 
   return (
-    <span className="flex items-center gap-1.5">
+    <span
+      className="flex items-center gap-1.5"
+      data-testid={`stage-${stageId}`}
+      data-state={STAGE_STATE[status]}
+    >
       {dot}
       <span
         className={[

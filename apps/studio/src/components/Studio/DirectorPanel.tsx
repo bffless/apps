@@ -53,6 +53,7 @@ export function DirectorPanel({
           disabled={busy}
           rows={3}
           placeholder="e.g. Keep the live demo around 12:30. Make the intro punchy and drop the throat-clearing."
+          data-testid="director-input"
           className="w-full resize-y rounded-md border border-line bg-surface p-3 text-[14px] leading-relaxed text-ink disabled:opacity-60"
         />
       </label>
@@ -66,6 +67,7 @@ export function DirectorPanel({
           <button
             type="button"
             className="pill-cta"
+            data-testid="director-run"
             disabled={busy}
             onClick={() => {
               setConfirming(false)
@@ -87,6 +89,7 @@ export function DirectorPanel({
         <button
           type="button"
           className="pill-cta mt-4"
+          data-testid="director-run"
           disabled={busy}
           onClick={() => (rerun ? setConfirming(true) : onSubmit())}
         >

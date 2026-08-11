@@ -16,7 +16,7 @@ export function ProjectList({
         <p className="text-[14px] text-ink-soft">
           {projects.length === 0 ? 'No projects yet.' : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
         </p>
-        <button type="button" className="pill-cta" onClick={onNew}>+ New project</button>
+        <button type="button" className="pill-cta" data-testid="new-project" onClick={onNew}>+ New project</button>
       </div>
       {projects.length === 0 ? (
         <div className="border rule bg-surface-dim/30 px-6 py-16 text-center">
