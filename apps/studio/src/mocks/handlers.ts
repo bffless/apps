@@ -4,11 +4,12 @@ import { TRANSCRIBE_FIXTURE } from './transcribeFixture'
 
 /**
  * Mock the Studio bucket-upload + transcription pipelines in dev so iterating on
- * the UI never hits real storage or the **paid** Replicate WhisperX call. Flip
- * to `false` to exercise the live pipelines (`/api/*` then bypasses to the Vite
- * proxy). Only active in dev — MSW isn't started in prod (see `main.tsx`).
+ * the UI never hits real storage or the **paid** Replicate WhisperX call. Set
+ * `VITE_MOCK_STUDIO=true` to enable; default off exercises the live pipelines
+ * (`/api/*` then bypasses to the Vite proxy). Only active in dev — MSW isn't
+ * started in prod (see `main.tsx`).
  */
-const MOCK_STUDIO = false
+const MOCK_STUDIO = import.meta.env.VITE_MOCK_STUDIO === 'true'
 
 // A 1×1 PNG (mock stand-in for the rendered nano-banana thumbnail). Stored in
 // objectStore so the /api/uploads/* serve route hands real bytes back to <img>.
@@ -591,6 +592,7 @@ export const handlers = [
 
   // Studio upload + transcription mocks (dev only, paid-call savings). The real
   // pipelines are wired (stories 01/01b/02); these return the same shapes so the
-  // FE is unchanged. Set `MOCK_STUDIO = false` above to use the live endpoints.
+  // FE is unchanged. Set `VITE_MOCK_STUDIO=true` to use the mocks (default off,
+  // which hits the live endpoints).
   ...(MOCK_STUDIO ? studioHandlers : []),
 ]

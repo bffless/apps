@@ -453,6 +453,8 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     className={`text-[12px] ${saveStatus === 'error' ? 'text-accent-ink' : 'text-ink-soft'}`}
                     aria-live="polite"
                     title={saveStatus === 'error' && saveError ? saveError : undefined}
+                    data-testid="save-indicator"
+                    data-state={saveStatus}
                   >
                     {saveLabel(saveStatus, savedAt)}
                   </span>
@@ -513,7 +515,10 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     deliberately rather than getting ahead of the producer.
                     The plan is thumbnails → director (no voice step — ADR-0003). */}
                 {pipe.sourcesReady && !showPlan && (
-                  <div className="flex flex-wrap items-center justify-between gap-4 border rule bg-accent/5 px-5 py-4">
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-4 border rule bg-accent/5 px-5 py-4"
+                    data-testid="sources-ready"
+                  >
                     <p className="text-[14px] text-ink-soft">
                       {pipe.sources.length === 1 ? 'Your clip is' : `All ${pipe.sources.length} clips are`} processed
                       — ready to build the plan.
@@ -521,6 +526,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     <button
                       type="button"
                       className="pill-cta"
+                      data-testid="continue-plan"
                       onClick={() => dispatch(setPlanRevealed(true))}
                     >
                       Continue →
@@ -555,6 +561,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     <button
                       type="button"
                       className="pill-cta"
+                      data-testid="continue-build"
                       onClick={() => navigatePhase('build')}
                     >
                       Continue to build →
@@ -641,6 +648,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                   <button
                     type="button"
                     className="pill-ghost"
+                    data-testid="auto-mode-toggle"
                     onClick={() => setAutoMode((v) => !v)}
                   >
                     {autoMode ? 'Manual scene tabs' : 'Auto build ▶'}

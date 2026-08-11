@@ -1,0 +1,96 @@
+name: Studio Headless Run
+
+# Unattended Import → Prep → Auto Build against the real Studio site.
+# Dispatch-only: every run spends real AI credits (transcribe, director,
+# refine, voice). The finished project appears in your own project list via
+# server sync; the job summary links straight to its Build page.
+on:
+  workflow_dispatch:
+    inputs:
+      video_urls:
+        description: 'Source video URL(s), newline-separated'
+        required: true
+        type: string
+      director_prompt:
+        description: 'Optional guidance for the master director'
+        required: false
+        type: string
+        default: ''
+      project_title:
+        description: 'Optional project name'
+        required: false
+        type: string
+        default: ''
+      base_url:
+        description: 'Studio deployment to drive (blank = repo var / studio.j5s.dev)'
+        required: false
+        type: string
+        default: ''
+      timeout_minutes:
+        description: 'Overall job timeout (must exceed runner phase ceilings: prep 30 min × number of videos + director 10 min + build 90 min)'
+        required: false
+        type: number
+        default: 180
+
+concurrency:
+  group: studio-headless-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install ffmpeg (Firefox H.264/AAC decode)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install Firefox for Playwright
+        run: pnpm --filter studio-headless exec playwright install firefox --with-deps
+      - name: Run scenario
+        env:
+          STUDIO_BASE_URL: ${{ inputs.base_url != '' && inputs.base_url || vars.STUDIO_BASE_URL != '' && vars.STUDIO_BASE_URL || 'https://studio.j5s.dev' }}
+          VIDEO_URLS: ${{ inputs.video_urls }}
+          DIRECTOR_PROMPT: ${{ inputs.director_prompt }}
+          PROJECT_TITLE: ${{ inputs.project_title }}
+          STUDIO_USER_EMAIL: ${{ secrets.STUDIO_USER_EMAIL }}
+          STUDIO_USER_PASSWORD: ${{ secrets.STUDIO_USER_PASSWORD }}
+        run: pnpm --filter studio-headless scenario
+      - name: Job summary
+        if: always()
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = "apps/studio/headless/output/run-summary.json";
+            let s = { ok: false, phase: "no-summary", buildUrl: null, projectId: null, error: null, timings: {} };
+            try { s = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
+            const lines = [
+              s.ok ? "## ✅ Studio headless run complete" : `## ❌ Studio headless run failed (during: ${s.phase})`,
+              "",
+            ];
+            if (s.buildUrl) {
+              lines.push(`**Open the project:** ${s.buildUrl}`);
+              if (s.projectId) lines.push(`**Project ID:** ${s.projectId}`);
+            } else if (s.projectId) {
+              lines.push(`**Project ID:** ${s.projectId}`);
+            } else {
+              lines.push("_No project was created._");
+            }
+            if (s.error) lines.push(`**Error:** ${s.error}`);
+            if (!s.ok && s.buildUrl) lines.push("\nThe project is resumable — open the link and continue from where the run halted.");
+            lines.push("", "| Phase | Elapsed |", "| --- | --- |");
+            lines.push(...Object.entries(s.timings).map(([k, v]) => `| ${k} | ${Math.round(v / 1000)}s |`));
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-output
+          path: apps/studio/headless/output/

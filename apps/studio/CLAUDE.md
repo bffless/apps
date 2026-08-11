@@ -70,7 +70,7 @@ ffmpeg.wasm (story 05+).
 ## Non-negotiable patterns
 
 - **Mock-first, swap-don't-rewrite.** Every `/api/*` has an MSW mock in `src/mocks/handlers.ts`
-  (gated by `MOCK_STUDIO`, currently `false`). Mock and real **must return the same shape** — coerce
+  (gated by the `VITE_MOCK_STUDIO` env toggle, default off; CI smoke turns it on). Mock and real **must return the same shape** — coerce
   both through one pure `toX()` function. Unhandled `/api/*` falls through the Vite proxy to `j5s.dev`.
 - **Never stream large files through a pipeline.** Edge nginx caps request bodies at **1 MB**.
   Uploads use the **presigned direct-to-bucket** flow. To feed a bucket object to Replicate, pass
@@ -83,6 +83,10 @@ ffmpeg.wasm (story 05+).
   Downstream reads `refined ?? baseline` via `effectiveCuts`.
 - **No base64 in Redux/localStorage.** Contact sheets and audio persist **url-only**.
 - **One stage per PR**; `build`, `lint`, `test:run` must pass.
+- **`data-testid`s are a contract.** The headless runner (`headless/`, story 14)
+  drives the real site by these ids; renaming or removing one breaks unattended
+  runs. The PR smoke workflow (`studio-headless-smoke.yml`) is the canary — if
+  it fails after a UI change, restore the id rather than updating the runner.
 
 ## ffmpeg.wasm core-mt patch (pnpm-specific)
 

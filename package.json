@@ -36,7 +36,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
-      "@tailwindcss/oxide"
+      "@tailwindcss/oxide",
+      "ffmpeg-static"
     ]
   },
   "devDependencies": {

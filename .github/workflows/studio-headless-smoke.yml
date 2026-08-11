@@ -1,0 +1,57 @@
+name: Studio Headless Smoke
+
+# Drift canary for the headless runner: replays the click-script against a
+# local dev server with MSW mocks. Spends zero AI credits, never touches the
+# real site.
+on:
+  pull_request:
+    paths:
+      - 'apps/studio/**'
+      - '.github/workflows/studio-headless-smoke.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+concurrency:
+  group: studio-headless-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Firefox for Playwright
+        run: pnpm --filter studio-headless exec playwright install firefox --with-deps
+      - name: Runner unit tests
+        run: pnpm --filter studio-headless test
+      - name: Generate fixture clip
+        run: apps/studio/headless/scripts/make-fixture.sh /tmp/studio-fixture.webm
+      - name: Start dev server (mock mode)
+        run: |
+          VITE_MOCK_STUDIO=true pnpm --filter studio dev &
+          pnpm --filter studio-headless exec wait-on --timeout 120000 http://localhost:5173
+      - name: Run smoke scenario
+        env:
+          MOCK_MODE: 'true'
+          SMOKE_STOP_AFTER_START: 'true'
+          STUDIO_BASE_URL: http://localhost:5173
+          FIXTURE_PATHS: /tmp/studio-fixture.webm
+        # --timeout=600000 (10 min) overrides playwright.config.ts's real-run `timeout: 0` for
+        # this smoke only: a selector drift now fails fast (well under the 20-min job backstop)
+        # with time left for the `finally` block to write run-summary.json and for the artifact
+        # upload step below, instead of hanging to the backstop with no summary to triage.
+        run: pnpm --filter studio-headless scenario --timeout=600000
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-output
+          path: apps/studio/headless/output/

@@ -1,0 +1,17 @@
+{
+  "name": "studio-headless",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "scenario": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^24.12.3",
+    "ffmpeg-static": "^5.2.0",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.7",
+    "wait-on": "^8.0.1"
+  }
+}

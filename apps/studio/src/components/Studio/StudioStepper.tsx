@@ -60,6 +60,7 @@ export function StudioStepper({ phase, navigable = [], onNavigate }: Props) {
             {canNavigate ? (
               <button
                 type="button"
+                data-testid={`stepper-${p.id}`}
                 onClick={() => onNavigate(p.id)}
                 className={`${inner} ${highlight} appearance-none border-0 bg-transparent transition-opacity hover:opacity-70`}
                 title={`Go to ${p.label}`}

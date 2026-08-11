@@ -64,6 +64,7 @@ export function MediaImport({ onSelect }: Props) {
         type="file"
         accept="video/*"
         multiple
+        data-testid="media-import-input"
         className="hidden"
         onChange={(e) => accept(e.target.files)}
       />
