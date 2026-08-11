@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/bffless/apps/compare/studio-v1.3.0...studio-v1.4.0) (2026-08-11)
+
+
+### Features
+
+* **studio:** unattended headless run (import → prep → auto build) via GitHub Actions ([#316](https://github.com/bffless/apps/issues/316)) ([45cbdc3](https://github.com/bffless/apps/commit/45cbdc3ee3ce0d77ed0794553d42c102638b938a))
+
 ## [1.3.0](https://github.com/bffless/apps/compare/studio-v1.2.0...studio-v1.3.0) (2026-08-09)
 
 
