@@ -1,4 +1,4 @@
-import type { Stage } from '../../lib/pipeline'
+import type { Stage, StageStatus } from '../../lib/pipeline'
 
 type Props = {
   stage: Stage
@@ -12,6 +12,14 @@ type Props = {
   hideAction?: boolean
 }
 
+/** Maps this stage's status vocabulary ('active') onto the app-wide 'running'. */
+const STAGE_STATE: Record<StageStatus, 'pending' | 'running' | 'done' | 'error'> = {
+  pending: 'pending',
+  active: 'running',
+  done: 'done',
+  error: 'error',
+}
+
 /** One "note" in the pipeline board: what we're going to do, and its status. */
 export function StageCard({ stage, index, current, busy, onAction, hideAction }: Props) {
   const done = stage.status === 'done'
@@ -21,6 +29,8 @@ export function StageCard({ stage, index, current, busy, onAction, hideAction }:
 
   return (
     <div
+      data-testid={`stage-${stage.id}`}
+      data-state={STAGE_STATE[stage.status]}
       className={[
         'flex items-start gap-4 rounded-lg border bg-surface-raised px-5 py-4 transition-colors',
         active
