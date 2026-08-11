@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/bffless/apps/compare/studio-v1.4.0...studio-v1.4.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **studio:** headless runner — live progress logging, never click a busy stage button ([#318](https://github.com/bffless/apps/issues/318)) ([237d176](https://github.com/bffless/apps/commit/237d1765cea4ef9b22b09927c9c196c7d391f390))
+
 ## [1.4.0](https://github.com/bffless/apps/compare/studio-v1.3.0...studio-v1.4.0) (2026-08-11)
 
 
