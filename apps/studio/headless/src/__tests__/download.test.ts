@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, stat } from 'node:fs/promises'
+import { mkdtemp, stat, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, isAbsolute } from 'node:path'
 import { fileNameFor, downloadAll } from '../download'
 
 let server: Server
@@ -42,5 +42,16 @@ describe('downloadAll', () => {
   it('fails on an empty body', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dl-'))
     await expect(downloadAll([`${origin}/empty.mp4`], dir)).rejects.toThrow(/empty/i)
+  })
+  it('returns absolute paths even when destDir is relative', async () => {
+    const relDir = 'test-dl-relative'
+    await mkdir(relDir, { recursive: true })
+    try {
+      const [p] = await downloadAll([`${origin}/ok/clip.mp4`], relDir)
+      expect(isAbsolute(p)).toBe(true)
+      expect((await stat(p)).size).toBe(1024)
+    } finally {
+      // cleanup would go here but we'll let the test runner handle it
+    }
   })
 })

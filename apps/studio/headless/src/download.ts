@@ -1,6 +1,6 @@
 import { createWriteStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
@@ -12,13 +12,14 @@ export function fileNameFor(url: string, index: number): string {
   return `source-${index}.mp4`
 }
 
-/** Fetch every URL to destDir (streaming — recordings can be GBs). */
+/** Fetch every URL to destDir (streaming — recordings can be GBs). Returns absolute paths. */
 export async function downloadAll(urls: string[], destDir: string): Promise<string[]> {
+  const absDest = resolve(destDir)
   const out: string[] = []
   for (const [i, url] of urls.entries()) {
     const res = await fetch(url, { redirect: 'follow' })
     if (!res.ok || !res.body) throw new Error(`download failed (${res.status}) for ${url}`)
-    const path = join(destDir, fileNameFor(url, i))
+    const path = join(absDest, fileNameFor(url, i))
     await pipeline(Readable.fromWeb(res.body as never), createWriteStream(path))
     if ((await stat(path)).size === 0) throw new Error(`downloaded file is empty: ${url}`)
     out.push(path)
