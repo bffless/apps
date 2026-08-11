@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url'
 import { loadConfig } from './config'
 import { downloadAll } from './download'
 
-const cfg = loadConfig()
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'output')
 mkdirSync(OUT, { recursive: true })
 
@@ -15,6 +14,7 @@ test('studio headless run', async ({ page }, testInfo) => {
   const timings: Record<string, number> = {}
   let phase = 'start'
   let projectId: string | null = null
+  let cfg: ReturnType<typeof loadConfig> | null = null
   const t0 = Date.now()
   const mark = (name: string) => { timings[name] = Date.now() - t0 }
   const shot = async (name: string) => {
@@ -27,7 +27,13 @@ test('studio headless run', async ({ page }, testInfo) => {
   page.on('pageerror', (e) => logLine(`[pageerror] ${e.message}`))
   page.on('response', (r) => { if (r.status() >= 400) logLine(`[http ${r.status()}] ${r.url()}`) })
 
+  let errorMessage: string | null = null
   try {
+    // ---- config ----
+    phase = 'config'
+    cfg = loadConfig()
+    mark('config')
+
     // ---- files ----
     const files = cfg.mockMode
       ? cfg.fixturePaths
@@ -114,14 +120,17 @@ test('studio headless run', async ({ page }, testInfo) => {
     await expect(page.getByTestId('save-indicator')).toHaveAttribute('data-state', 'saved', { timeout: 120_000 })
     mark('settle')
     phase = 'done'
+  } catch (e) {
+    errorMessage = e instanceof Error ? e.message : String(e)
+    throw e
   } finally {
-    const buildUrl = projectId ? `${cfg.baseUrl}/project/${projectId}/build` : null
+    const buildUrl = cfg && projectId ? `${cfg.baseUrl}/project/${projectId}/build` : null
     await writeFile(join(OUT, 'run-summary.json'), JSON.stringify({
       ok: phase === 'done',
       projectId,
       buildUrl,
       phase,
-      error: phase === 'done' ? null : `failed during: ${phase}`,
+      error: phase === 'done' ? null : (errorMessage ?? `failed during: ${phase}`),
       timings,
     }, null, 2))
   }
