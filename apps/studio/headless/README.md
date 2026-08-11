@@ -1,5 +1,10 @@
 # studio-headless
 
+> The scenario streams timestamped progress lines to stdout (phase
+> transitions, per-clip stage states, auto-build state), so a CI run's live
+> log shows where it is at all times; the same lines also land in
+> `output/console.log`.
+
 A Playwright scenario that drives the real Studio app end-to-end — login, project creation,
 media import, prep (per-source stages → director), and auto build — for unattended CI runs and
 local smoke checks. It talks to a live Studio origin (either a local dev server in mock mode, or
