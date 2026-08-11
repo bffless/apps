@@ -106,6 +106,14 @@ test('studio headless run', async ({ page }, testInfo) => {
     await page.getByTestId('auto-mode-toggle').click()
     await page.getByTestId('auto-build-start').click()
     const board = page.getByTestId('auto-build-board')
+    if (cfg.smokeStopAfterStart) {
+      // Smoke asserts the full click-path is intact; the mocked build itself is
+      // not the subject. Leaving idle proves the runner engaged.
+      await expect(board).not.toHaveAttribute('data-state', 'idle', { timeout: 60_000 })
+      await shot('06-smoke-autobuild-engaged')
+      phase = 'done'
+      return
+    }
     await expect(board).toHaveAttribute('data-state', /^(done|halted)$/, { timeout: cfg.buildTimeoutMs })
     if ((await board.getAttribute('data-state')) === 'halted') {
       const msg = await page.getByTestId('auto-build-halt').innerText().catch(() => 'halted (no message)')

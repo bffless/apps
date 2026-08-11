@@ -42,6 +42,7 @@ messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/con
 | `PREP_TIMEOUT_MINUTES`      | no (default `30`)     | Ceiling per prep stage / per source file.                                    |
 | `DIRECTOR_TIMEOUT_MINUTES`  | no (default `10`)     | Ceiling for the master director run.                                         |
 | `BUILD_TIMEOUT_MINUTES`     | no (default `90`)     | Ceiling for the full auto build run.                                         |
+| `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |
 
 See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).
 
@@ -50,9 +51,13 @@ See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).
 ### Mock mode (local dev server, no AI credits spent)
 
 ```bash
+apps/studio/headless/scripts/make-fixture.sh /tmp/studio-fixture.webm
 VITE_MOCK_STUDIO=true pnpm --filter studio dev &   # port 5173
-MOCK_MODE=true STUDIO_BASE_URL=http://localhost:5173 FIXTURE_PATHS=/tmp/fixture.mp4 pnpm --filter studio-headless scenario
+MOCK_MODE=true STUDIO_BASE_URL=http://localhost:5173 FIXTURE_PATHS=/tmp/studio-fixture.webm pnpm --filter studio-headless scenario
 ```
+
+Add `SMOKE_STOP_AFTER_START=true` to stop right after auto build engages (what the PR smoke
+workflow does) instead of waiting for the mocked build to finish.
 
 ### Real run (spends AI credits!)
 
@@ -62,12 +67,23 @@ STUDIO_BASE_URL=https://studio.j5s.dev VIDEO_URLS=https://…/recording.mp4 STUD
 
 ## Setup notes
 
-- **Firefox codec support**: the scenario runs on Firefox (`playwright.config.ts`). System
-  `ffmpeg` must be installed for H.264/AAC decode (`sudo apt-get install ffmpeg`), and the
-  Firefox browser binary must be installed for Playwright:
+- **Firefox codec support**: the scenario runs on Firefox (`playwright.config.ts`). Firefox
+  decodes VP8/Vorbis (WebM) natively, so mock-mode fixtures are WebM
+  (`scripts/make-fixture.sh`, `-c:v libvpx -c:a libvorbis`) — no system codec packages
+  required. The Firefox browser binary must still be installed for Playwright:
   `pnpm --filter studio-headless exec playwright install firefox`.
+- **Fixture generation**: `scripts/make-fixture.sh [out-path]` (default
+  `/tmp/studio-fixture.webm`) resolves an ffmpeg binary in order: `$FFMPEG_BIN` → `ffmpeg` on
+  `PATH` → the `ffmpeg-static` devDependency (no system ffmpeg needed either way).
 - Retries are disabled (`retries: 0`) — a retry would re-spend real AI credits against the live
   director/build pipeline in real mode.
 - `workers: 1` — the scenario is a single end-to-end run, not a suite.
 - Output (screenshots, `console.log`, `run-summary.json`, the JSON reporter output) is written to
   `output/`, which is gitignored.
+
+## PR smoke check
+
+`.github/workflows/studio-headless-smoke.yml` runs the scenario in mock mode
+(`SMOKE_STOP_AFTER_START=true`) against a local dev server on every PR touching `apps/studio/**`.
+It's a drift canary for the click-path (selectors, MSW mock shapes), not a build verifier — it
+spends zero AI credits and never touches the real site.

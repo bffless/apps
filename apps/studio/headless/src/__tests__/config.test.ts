@@ -36,4 +36,8 @@ describe('loadConfig', () => {
     expect(cfg.fixturePaths).toEqual(['/tmp/f.mp4'])
     expect(cfg.credentials).toBeNull()
   })
+  it('reads the smoke stop flag', () => {
+    const cfg = loadConfig({ STUDIO_BASE_URL: 'http://localhost:5173', MOCK_MODE: 'true', FIXTURE_PATHS: '/tmp/f.mp4', SMOKE_STOP_AFTER_START: 'true' } as never)
+    expect(cfg.smokeStopAfterStart).toBe(true)
+  })
 })

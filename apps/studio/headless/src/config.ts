@@ -5,6 +5,7 @@ export type RunnerConfig = {
   directorPrompt: string
   projectTitle: string | null
   mockMode: boolean
+  smokeStopAfterStart: boolean
   credentials: { email: string; password: string } | null
   buildTimeoutMs: number
   prepTimeoutMs: number
@@ -54,6 +55,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     directorPrompt: env.DIRECTOR_PROMPT ?? '',
     projectTitle: env.PROJECT_TITLE || null,
     mockMode,
+    smokeStopAfterStart: env.SMOKE_STOP_AFTER_START === 'true',
     credentials,
     prepTimeoutMs: minutes(env, 'PREP_TIMEOUT_MINUTES', 30),
     directorTimeoutMs: minutes(env, 'DIRECTOR_TIMEOUT_MINUTES', 10),
