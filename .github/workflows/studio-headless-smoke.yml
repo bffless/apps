@@ -38,7 +38,11 @@ jobs:
           SMOKE_STOP_AFTER_START: 'true'
           STUDIO_BASE_URL: http://localhost:5173
           FIXTURE_PATHS: /tmp/studio-fixture.webm
-        run: pnpm --filter studio-headless scenario
+        # --timeout=600000 (10 min) overrides playwright.config.ts's real-run `timeout: 0` for
+        # this smoke only: a selector drift now fails fast (well under the 20-min job backstop)
+        # with time left for the `finally` block to write run-summary.json and for the artifact
+        # upload step below, instead of hanging to the backstop with no summary to triage.
+        run: pnpm --filter studio-headless scenario --timeout=600000
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4

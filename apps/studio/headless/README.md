@@ -53,11 +53,16 @@ See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).
 ```bash
 apps/studio/headless/scripts/make-fixture.sh /tmp/studio-fixture.webm
 VITE_MOCK_STUDIO=true pnpm --filter studio dev &   # port 5173
-MOCK_MODE=true STUDIO_BASE_URL=http://localhost:5173 FIXTURE_PATHS=/tmp/studio-fixture.webm pnpm --filter studio-headless scenario
+MOCK_MODE=true STUDIO_BASE_URL=http://localhost:5173 FIXTURE_PATHS=/tmp/studio-fixture.webm pnpm --filter studio-headless scenario --timeout=600000
 ```
 
 Add `SMOKE_STOP_AFTER_START=true` to stop right after auto build engages (what the PR smoke
-workflow does) instead of waiting for the mocked build to finish.
+workflow does) instead of waiting for the mocked build to finish. The `--timeout=600000` (10 min)
+override is what the PR smoke workflow uses too — it makes a selector/drift failure fail fast
+(well under the CI job's 20-min backstop, with time left for `run-summary.json` + the artifact
+upload) instead of hanging; a real run against the live site omits it so `playwright.config.ts`'s
+`timeout: 0` governs (per-phase expect timeouts, not a blanket ceiling that could cut off a real
+multi-hour build).
 
 ### Real run (spends AI credits!)
 
