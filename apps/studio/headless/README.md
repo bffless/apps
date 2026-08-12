@@ -50,6 +50,8 @@ messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/con
 | `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |
 | `FFMPEG_MT`                 | no (`false` default)  | `true` lands on `?ffmpegCore=mt` instead of `?ffmpegCore=st`. By default the runner asks Studio for its single-threaded ffmpeg core via the explicit `?ffmpegCore=st` override — the MT core hung indefinitely on its first exec in headless CI Firefox, and forcing ST by disabling SharedArrayBuffer at the browser level breaks *both* cores (even the ST build carries atomics opcodes the validator then rejects). |
 
+| `RUNNER_BROWSER`            | no (`firefox` default) | `chrome` drives Google Chrome stable instead of Playwright Firefox (preinstalled on ubuntu-latest; `playwright install chrome` locally). The platform for the MT-ffmpeg experiment: MT hangs its first exec in headless Firefox, and wasm threads are better exercised in headless Chromium. Dispatch with `browser: chrome` + `ffmpeg_mt: true` to test. |
+
 See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).
 
 ## Checking on a run's progress
