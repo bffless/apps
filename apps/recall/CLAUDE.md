@@ -40,16 +40,19 @@ bucket CORS). Locally, unhandled `/api/*` falls through the Vite proxy to `j5s.d
 (whichever closes the window first), with a **10s time overlap** into the next window or a
 **24-word overlap cap** when the window closed on the word cap instead — a unified "restart floor"
 formula (`j = max(overlapIdx, startIdx + (windowLen - 24))`) keeps every word-capped close's
-overlap ≤24 words even at dense speech. Each chunk's text is prefixed `[t=<sec>s] ` (its start
-time) — see "A note on the `[t=Ns]` prefix" in `bffless/README.md` for why that prefix exists and
-when it's safe to remove.
+overlap ≤24 words even at dense speech. Each chunk's `text` is transcript words **only** — timing
+rides in `metadata` `{start, end}`, which CE returns as `chunkMetadata` on every hit (CE #652). An
+earlier version prefixed each text with `[t=<sec>s] `; see "A note on the legacy `[t=Ns]` marker"
+in `bffless/README.md` for why it's gone and when you'd need it back.
 
 **Search & chat share one embedding space.** `/api/search` embeds the query with the same pinned
 model and runs `vector_search`; `/api/chat` is `ai_handler` (Haiku 4.5, SSE) with the `rag-search`
-plugin's `search_videos` tool doing the identical embed+search under the hood. Both prefer
-`chunkMetadata.start` when CE returns it, falling back to parsing the chunk's `[t=Ns]` prefix.
-Changing the embedding model requires re-publishing every video — see the README's language-swap
-recipe.
+plugin's `search_videos` tool doing the identical embed+search under the hood. Both take timing
+from `chunkMetadata.start`, falling back to the legacy `[t=Ns]` marker only for chunks embedded
+before it was dropped. Changing the embedding model requires re-publishing every video — see the
+README's language-swap recipe. **Anything that changes what gets embedded — the model, or the
+chunk text itself — puts old and new vectors in different spaces, so every published video has to
+be re-indexed.**
 
 ## CE facts learned building this app
 

@@ -48,10 +48,14 @@ pipeline:
     multi-tile JSON blob, always >200 chars) never reached this rule at all;
     `data_query`'s own `select` has no such length limit, so a plain
     unfiltered query sidesteps it entirely. -> shape groups hits by video,
-    caps at 4 moments/video, prefers chunkMetadata.start/end over parsing
-    the `[t=Ns] ` chunkText prefix (CE's chunk-metadata vector-search patch
-    may not be deployed yet), strips that prefix from every snippet either
-    way, drops any hit whose status isn't 'published' (defense-in-depth --
+    caps at 4 moments/video, takes timing from chunkMetadata.start/end (CE
+    #652 returns it on every hit; chunk.fn.js has always written it), with
+    the `[t=Ns] ` chunkText marker kept only as LEGACY handling -- the
+    chunker no longer emits it (it skewed every document vector by a token
+    the query side never had), but chunks embedded before that change still
+    carry it in stored chunk_text until their video is re-indexed, so the
+    parse fallback and the snippet stripping both stay, drops any hit whose
+    status isn't 'published' (defense-in-depth --
     unpublished videos shouldn't have embeddings, but a failed unpublish
     could leave strays), looks up each video's sheet_path/sheet_meta from
     steps.videos (NOT from the vector_search hit), and sorts videos by their

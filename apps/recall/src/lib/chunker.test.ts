@@ -27,10 +27,26 @@ describe('chunk.fn.js', () => {
     }
   })
 
-  test('every chunk text starts with its [t=Ns] prefix', () => {
+  // Chunk text is what gets embedded, so it must be transcript words and
+  // nothing else. The chunker used to prepend a '[t=<sec>s] ' marker as an
+  // interim timing carrier for CE instances that dropped chunk metadata
+  // (pre-#652); that skewed every document vector by a token the query side
+  // never had. Timing now rides exclusively in metadata, which is lossless
+  // (float start AND end) where the marker was a rounded integer start.
+  test('chunk text is transcript words only — no timing marker embedded', () => {
     const out = run({ words: words(400) })
     for (const c of out.chunks) {
-      expect(c.text).toMatch(new RegExp(`^\\[t=${Math.round(c.metadata.start)}s\\] `))
+      expect(c.text).not.toMatch(/\[t=\d+s\]/)
+      expect(c.text.startsWith('w')).toBe(true) // fixture words are w0, w1, ...
+    }
+  })
+
+  test('every chunk carries its start/end timing in metadata', () => {
+    const out = run({ words: words(400) })
+    for (const c of out.chunks) {
+      expect(typeof c.metadata.start).toBe('number')
+      expect(typeof c.metadata.end).toBe('number')
+      expect(c.metadata.end).toBeGreaterThan(c.metadata.start)
     }
   })
 

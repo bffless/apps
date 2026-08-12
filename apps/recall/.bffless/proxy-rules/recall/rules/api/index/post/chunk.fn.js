@@ -78,11 +78,28 @@ function handler({ steps }) {
     prev.endT = tail.endT
   }
 
+  // `text` is BOTH what gets embedded (texts.fn.js feeds it straight to the
+  // model) and what gets stored as chunk_text, so it holds transcript words
+  // and nothing else. Timing rides in `metadata`, which embed_store persists
+  // to pipeline_data_embeddings.metadata and CE returns as `chunkMetadata` on
+  // every vector_search hit / rag-search tool result (CE #652).
+  //
+  // This used to carry an inline '[t=<sec>s] ' prefix as the interim carrier
+  // for the start time, back when CE dropped chunk metadata on the way out.
+  // That made the marker part of the embedded vector while the QUERY side --
+  // search's prep.fn.js and the chat plugin's embed template -- never had one,
+  // so every document vector was skewed by a token the query could never
+  // match. Metadata is a lossless carrier (float start AND end, vs. a rounded
+  // integer start), so the prefix is pure asymmetry with nothing to buy back.
+  //
+  // Chunks embedded BEFORE this change still carry the prefix in their stored
+  // chunk_text; search's shape.fn.js keeps stripping it for display until
+  // those videos are re-indexed.
   return {
     count: chunks.length,
     chunks: chunks.map(function (c) {
       return {
-        text: '[t=' + Math.round(c.startT) + 's] ' + c.texts.join(' '),
+        text: c.texts.join(' '),
         metadata: { start: c.startT, end: c.endT },
       }
     }),

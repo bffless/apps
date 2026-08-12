@@ -68,13 +68,30 @@ describe('shape.fn.js', () => {
     expect(out.videos[0].moments.map((m) => m.similarity)).toEqual([0.9, 0.8, 0.7, 0.3])
   })
 
-  test('parses the [t=Ns] prefix when chunkMetadata is absent, and strips it from the snippet', () => {
+  // The current chunker embeds transcript words only — timing rides in
+  // chunkMetadata, which CE #652 returns on every hit. This is the shape
+  // every newly-indexed chunk arrives in.
+  test('passes a current-chunker hit (no marker, chunkMetadata present) straight through', () => {
+    const out = run([
+      hit({ chunkText: 'some spoken words', chunkMetadata: { start: 754.4, end: 799.1 } }),
+    ])
+    expect(out.videos[0].moments[0]).toEqual({
+      start: 754.4,
+      end: 799.1,
+      snippet: 'some spoken words',
+      similarity: 0.5,
+    })
+  })
+
+  // LEGACY: chunks embedded before the marker was removed from chunk text
+  // still carry it in their stored chunk_text until re-indexed.
+  test('parses the legacy [t=Ns] marker when chunkMetadata is absent, and strips it from the snippet', () => {
     const out = run([hit({ chunkText: '[t=754s] some spoken words' })])
     expect(out.videos[0].moments[0]).toMatchObject({ start: 754, snippet: 'some spoken words' })
     expect(out.videos[0].moments[0].snippet).not.toContain('[t=')
   })
 
-  test('prefers chunkMetadata.start/end over the prefix, and still strips the prefix', () => {
+  test('prefers chunkMetadata.start/end over a legacy marker, and still strips the marker', () => {
     const out = run([
       hit({
         chunkText: '[t=754s] some spoken words',
@@ -89,7 +106,10 @@ describe('shape.fn.js', () => {
     })
   })
 
-  test('a hit with neither chunkMetadata nor a parseable prefix is skipped', () => {
+  // Also the current-chunker-on-a-pre-#652-CE case: no marker to parse and no
+  // metadata means no seek target, so the hit is correctly dropped rather than
+  // surfaced with a bogus timestamp.
+  test('a hit with neither chunkMetadata nor a parseable marker is skipped', () => {
     const out = run([hit({ chunkText: 'no timestamp prefix here' })])
     expect(out.videos).toHaveLength(0)
   })

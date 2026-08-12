@@ -2,10 +2,21 @@
 // (Task 9, converted from POST in PR-feedback-7 for HTTP cacheability).
 // steps.search is vector_search's raw output: an array of
 // { id, similarity, chunkText, chunkIndex, chunkMetadata?, title,
-// youtube_url, duration, status } -- `chunkMetadata` is only present once
-// CE's vector-search handler patch (feat/vector-search-chunk-metadata) is
-// deployed, so this prefers it but falls back to parsing the `[t=Ns] `
-// prefix chunk.fn.js baked into every chunkText at index time.
+// youtube_url, duration, status }. `chunkMetadata` is the timing source:
+// CE #652 returns it on every hit, and chunk.fn.js has always written
+// {start, end} into it.
+//
+// The `[t=Ns] ` prefix handling below is LEGACY-ONLY. chunk.fn.js used to
+// bake that marker into each chunk's text as an interim timing carrier for
+// pre-#652 CE instances; it no longer does (it polluted the embedded vector
+// with a token the query side never had). Both paths stay because chunks
+// embedded before that change still carry the marker in their stored
+// chunk_text until their video is re-indexed:
+//   - PREFIX_RE stripping keeps the marker out of a legacy chunk's snippet.
+//   - The parse fallback recovers `start` for a legacy chunk on a CE old
+//     enough to omit chunkMetadata.
+// A chunk written by the current chunker has neither a prefix to strip nor
+// anything to fall back to -- it needs chunkMetadata, which CE #652 provides.
 //
 // The [t=Ns] prefix regex and the YouTube-id regex both mirror
 // src/lib/youtube.ts / gate.fn.js's YOUTUBE_RE -- fn.js sandboxes can't
@@ -98,11 +109,15 @@ function handler({ steps }) {
       start = meta.start
       if (typeof meta.end === 'number') end = meta.end
     } else {
+      // Legacy chunk on a pre-#652 CE. A current-chunker chunk reaching this
+      // branch has no marker to parse and gets skipped -- correct: without a
+      // timestamp there's nothing to seek to.
       var m = chunkText.match(PREFIX_RE)
-      if (!m) continue // neither chunkMetadata nor a parseable prefix -- skip
+      if (!m) continue
       start = Number(m[1])
     }
 
+    // No-op on a current-chunker chunk; strips the marker off a legacy one.
     var snippet = chunkText.replace(PREFIX_RE, '')
 
     var id = hit.id

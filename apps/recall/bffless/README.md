@@ -115,15 +115,23 @@ you unpublish + re-publish (Task 8's `/api/unpublish` then `/api/index`) each on
 libraries silently degrade: old videos never surface for new-model queries, because their vectors
 live in a different space than the one being searched.
 
-**A note on the `[t=Ns]` prefix**: chunk text carries an inline `[t=<sec>s] ` prefix ahead of the
-transcript words (see `rules/api/index/post/texts.fn.js`). This is the interim carrier for each
-chunk's start timestamp, until CE's `vector_search` handler and `rag-search` plugin return
-`chunkMetadata` (start/end) directly on every hit — a CE patch proposed alongside this app (see
-the plan's Task 1) but not yet merged/deployed everywhere. `shape.fn.js` (search) and the chat
-rule's system prompt both prefer `chunkMetadata.start` when present and fall back to parsing the
-prefix otherwise, so this app already works with or without that CE patch — but the prefix is
-still the only carrier on an un-patched CE instance, so don't strip it from the embedded text
-(only from what's shown to a person) if you're customizing the chunker.
+**A note on the legacy `[t=Ns]` marker**: chunk text used to carry an inline `[t=<sec>s] ` prefix
+ahead of the transcript words — the interim carrier for each chunk's start timestamp, back when
+CE's `vector_search` handler and `rag-search` plugin dropped chunk metadata on the way out. **CE
+#652 ships `chunkMetadata` (start/end) on every hit from both**, so `chunk.fn.js` no longer emits
+the marker: it was baked into the *embedded* text while the query side (search's `prep.fn.js`, the
+chat plugin's embed template) never had one, skewing every document vector by a token no query
+could match. Metadata is also strictly richer — a float `start` **and** `end`, where the marker
+was a rounded integer `start`.
+
+The marker handling that remains is legacy-only, for chunks embedded before the change: `shape.fn.js`
+still strips it from snippets and still parses it when `chunkMetadata` is absent, and the chat rule's
+system prompt still names it as a fallback. Those paths stop firing once every video has been
+re-indexed.
+
+**Running this app against a CE older than #652?** Re-add the prefix in `chunk.fn.js` — without
+`chunkMetadata`, an unmarked chunk has no timestamp at all and `shape.fn.js` will skip it, i.e.
+search returns nothing. `ceMin` for the current chunker is effectively the release containing #652.
 
 ## Performance
 
