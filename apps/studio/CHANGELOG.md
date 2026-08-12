@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/bffless/apps/compare/studio-v1.5.0...studio-v1.5.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* **studio:** explicit ?ffmpegCore=st|mt override — the pref hack broke both cores ([#322](https://github.com/bffless/apps/issues/322)) ([cd5c595](https://github.com/bffless/apps/commit/cd5c5955009434687cd7f6f41e00f44101d6f311))
+
 ## [1.5.0](https://github.com/bffless/apps/compare/studio-v1.4.1...studio-v1.5.0) (2026-08-12)
 
 
