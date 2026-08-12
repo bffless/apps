@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/bffless/apps/compare/studio-v1.4.1...studio-v1.5.0) (2026-08-12)
+
+
+### Features
+
+* **studio:** headless run observability — chapter/step progress, progress.mjs peek, ST-ffmpeg default ([#320](https://github.com/bffless/apps/issues/320)) ([1345eb0](https://github.com/bffless/apps/commit/1345eb039d70f8936ba034cd7027273ec00b8cc9))
+
 ## [1.4.1](https://github.com/bffless/apps/compare/studio-v1.4.0...studio-v1.4.1) (2026-08-11)
 
 
