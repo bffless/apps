@@ -36,6 +36,14 @@ on:
         required: false
         type: boolean
         default: false
+      browser:
+        description: 'Browser to drive the site with (chrome = Google Chrome stable, the MT-ffmpeg experiment platform)'
+        required: false
+        type: choice
+        options:
+          - firefox
+          - chrome
+        default: firefox
 
 concurrency:
   group: studio-headless-run
@@ -57,7 +65,10 @@ jobs:
       - name: Install ffmpeg (Firefox H.264/AAC decode)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install Firefox for Playwright
+        if: inputs.browser != 'chrome'
         run: pnpm --filter studio-headless exec playwright install firefox --with-deps
+      # Google Chrome stable is preinstalled on ubuntu-latest; Playwright's
+      # channel: 'chrome' uses it directly, so there is nothing to install.
       - name: Run scenario
         env:
           STUDIO_BASE_URL: ${{ inputs.base_url != '' && inputs.base_url || vars.STUDIO_BASE_URL != '' && vars.STUDIO_BASE_URL || 'https://studio.j5s.dev' }}
@@ -67,6 +78,7 @@ jobs:
           STUDIO_USER_EMAIL: ${{ secrets.STUDIO_USER_EMAIL }}
           STUDIO_USER_PASSWORD: ${{ secrets.STUDIO_USER_PASSWORD }}
           FFMPEG_MT: ${{ inputs.ffmpeg_mt && 'true' || 'false' }}
+          RUNNER_BROWSER: ${{ inputs.browser }}
         run: pnpm --filter studio-headless scenario
       - name: Job summary
         if: always()

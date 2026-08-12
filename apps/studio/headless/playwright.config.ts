@@ -1,5 +1,13 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// RUNNER_BROWSER=chrome runs Google Chrome stable (preinstalled on
+// ubuntu-latest; `playwright install chrome` elsewhere) instead of Playwright's
+// Firefox. Chrome carries the H.264/AAC codecs like Firefox+system-ffmpeg does,
+// and is the experiment platform for the multithreaded ffmpeg core — MT hangs
+// its first exec in headless Firefox, and wasm threads are far better exercised
+// in headless Chromium.
+const chrome = process.env.RUNNER_BROWSER === 'chrome'
+
 export default defineConfig({
   testDir: './src',
   testMatch: '**/run.spec.ts',
@@ -9,8 +17,9 @@ export default defineConfig({
   outputDir: './output',
   reporter: [['list'], ['json', { outputFile: 'output/report.json' }]],
   use: {
-    ...devices['Desktop Firefox'],
-    browserName: 'firefox',
+    ...(chrome
+      ? { ...devices['Desktop Chrome'], channel: 'chrome' as const }
+      : { ...devices['Desktop Firefox'], browserName: 'firefox' as const }),
     viewport: { width: 1440, height: 900 },
     // Real-run traces would record page.fill() action params (the literal
     // STUDIO_USER_EMAIL/STUDIO_USER_PASSWORD) and the real-run workflow
