@@ -43,7 +43,10 @@ pipeline:
       handler: ffmpeg_handler
       config:
         operation: extract_audio
-        input: steps.prep.input
+        # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
+        # expression string passes through literally) — unlike spans/inputs, which are
+        # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
+        input: "{{steps.prep.input}}"
         output: "projects/{{steps.prep.projectId}}/audio/server/{{uuid()}}.wav"
     - id: check
       name: check

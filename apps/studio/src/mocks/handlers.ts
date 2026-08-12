@@ -71,6 +71,24 @@ const enqueueJob = (
   return jobId
 }
 
+/**
+ * Whether the mock `/api/video/capabilities` probe reports the server ffmpeg
+ * backend as available. Defaults **off**: the real prep flow (`processSource`
+ * in `useScenePipeline.ts`) then takes the wasm extract branch, which decodes
+ * the real uploaded `File` in-browser and never touches this file's fabricated
+ * job results. The server branch instead calls `peaksFromUrl`/`deadSpaceFromUrl`
+ * on the job's returned WAV url, which here is fake 8-byte 'mock-wav' text —
+ * `decodeAudioData` on that fails, breaking prep (and the PR smoke workflow
+ * that drives it) whenever mock mode is on. Tests that specifically want the
+ * server path should call `setMockVideoServerCapability(true)` — most don't
+ * need to: they resolve the backend directly via `localStorage.videoBackend`
+ * or by mocking `getVideoBackend`, which never consults this probe at all.
+ */
+let mockVideoServer = false
+export function setMockVideoServerCapability(on: boolean): void {
+  mockVideoServer = on
+}
+
 const studioHandlers = [
   // Presigned prepare (source + audio): hand back a fake bucket PUT URL (which we
   // also intercept) plus the storageKey/originalName the register step echoes.
@@ -242,11 +260,11 @@ const studioHandlers = [
   }),
 
   http.get('/api/video/capabilities', () =>
-    HttpResponse.json({
-      server: true,
-      ops: ['probe', 'extract_audio', 'slice', 'concat'],
-      version: 'ffmpeg 7.0-mock',
-    }),
+    HttpResponse.json(
+      mockVideoServer
+        ? { server: true, ops: ['probe', 'extract_audio', 'slice', 'concat'], version: 'ffmpeg 7.0-mock' }
+        : { server: false, ops: [], version: null },
+    ),
   ),
 
   // Master director: enqueue a job and return its id (story 03f Part 0). The

@@ -44,7 +44,10 @@ pipeline:
       config:
         condition: steps.prep.wantAudio
         operation: slice
-        input: steps.prep.input
+        # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
+        # expression string passes through literally) — unlike spans/inputs, which are
+        # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
+        input: "{{steps.prep.input}}"
         spans: steps.prep.spans
         audioFades: false
         output: "projects/{{steps.prep.projectId}}/scene-clip/server/{{uuid()}}.mp4"
@@ -55,7 +58,10 @@ pipeline:
       config:
         condition: steps.prep.noAudio
         operation: slice
-        input: steps.prep.input
+        # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
+        # expression string passes through literally) — unlike spans/inputs, which are
+        # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
+        input: "{{steps.prep.input}}"
         spans: steps.prep.spans
         audioFades: true
         output: "projects/{{steps.prep.projectId}}/export/server/{{uuid()}}.mp4"
