@@ -30,7 +30,7 @@ import {
 } from '../../lib/refiner'
 import { planScene } from '../../lib/export/assemble'
 import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
-import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
+import { deadSpaceFromUrl, extractAudio, peaksFromUrl, sliceAudioWav } from '../../lib/audio'
 import { createBlobCache } from '../../lib/blobCache'
 import { fetchWithReauth } from '../../lib/auth'
 import { presignedUpload } from '../../lib/upload'
@@ -60,6 +60,7 @@ import {
   useThumbnailRenderMutation,
   useUploadMutation,
   useLazySignDownloadQuery,
+  useVideoExtractStartMutation,
   useVideoSliceStartMutation,
   useVideoConcatStartMutation,
   toVideoResult,
@@ -248,6 +249,7 @@ export function useScenePipeline() {
   const activeProjectId = useAppSelector(selectActiveProjectId)
 
   const [transcribeStartReq] = useTranscribeStartMutation()
+  const [videoExtractStartReq] = useVideoExtractStartMutation()
   const [videoSliceStartReq] = useVideoSliceStartMutation()
   const [videoConcatStartReq] = useVideoConcatStartMutation()
   const [scenesReq] = useScenesMutation()
@@ -856,6 +858,17 @@ export function useScenePipeline() {
 
   // Stage ② — extract the audio in-browser, then upload that WAV to the bucket
   // on its own so the transcription step can hand Replicate an audio URL.
+  //
+  // NOT server-routed (task 8, story: server-video-ops): this legacy single-source
+  // seam only receives `{ file }` — no source URL in its own scope — and `next()`
+  // can never actually dispatch it: `currentStageId` (above) returns null until
+  // `sourcesReady`, and once ready it only searches `GLOBAL_STAGES`
+  // (`['thumbnails','director']`), so the `id === 'extract'` branch in `next()`
+  // is unreachable dead code left over from before the per-video `processSource`
+  // refactor (09b; see the "09a bridge... retired in 09d" comments on
+  // `currentSource`/`isPrimary` elsewhere in this file). The reachable seam is
+  // `processSource`'s own extract stage below, which has `srcUrl` from the
+  // upload step that just ran in the SAME function — that's the one server-routed.
   const extractAndUploadAudio = useCallback(
     async ({ file }: StepContext) => {
       patch('extract', { status: 'active' })
@@ -1059,16 +1072,38 @@ export function useScenePipeline() {
 
         stage = 'extract'
         dispatch(patchSourceStage({ id, stage, patch: { status: 'active' } }))
-        const { wav, peaks, deadSpace: dead } = await extractAudio(file)
-        const wavFile = new File([wav], `${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' })
-        const { url: aUrl } = await uploadReq({ file: wavFile, kind: 'audio' }).unwrap()
-        dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
-        dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` } }))
-        if (isPrimary) {
-          dispatch(setAudioUrl(aUrl))
-          dispatch(setAudioPeaks(peaks))
-          dispatch(setDeadSpace(dead))
-          patch('extract', { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` })
+        let aUrl: string
+        if ((await getVideoBackend()) === 'server') {
+          // Server path (task 8): `srcUrl` is this source's just-uploaded serve
+          // path (the upload stage above ran first, same function scope) — the
+          // source video is never decoded in the browser on this path. Derive the
+          // visual artifacts (waveform + dead space) from the small 16k WAV the
+          // job returns, the same helpers the pre-13c backfill already uses.
+          const { jobId } = await videoExtractStartReq({ sourceUrl: srcUrl, projectId: activeProjectId ?? '' }).unwrap()
+          const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+          aUrl = toVideoResult(job.result).url
+          const [peaks, dead] = await Promise.all([peaksFromUrl(aUrl), deadSpaceFromUrl(aUrl)])
+          dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
+          dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: '16 kHz mono WAV (server)' } }))
+          if (isPrimary) {
+            dispatch(setAudioUrl(aUrl))
+            dispatch(setAudioPeaks(peaks))
+            dispatch(setDeadSpace(dead))
+            patch('extract', { status: 'done', detail: '16 kHz mono WAV (server)' })
+          }
+        } else {
+          const { wav, peaks, deadSpace: dead } = await extractAudio(file)
+          const wavFile = new File([wav], `${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' })
+          const uploaded = await uploadReq({ file: wavFile, kind: 'audio' }).unwrap()
+          aUrl = uploaded.url
+          dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
+          dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` } }))
+          if (isPrimary) {
+            dispatch(setAudioUrl(aUrl))
+            dispatch(setAudioPeaks(peaks))
+            dispatch(setDeadSpace(dead))
+            patch('extract', { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` })
+          }
         }
 
         // Transcribe is async (story 10e): enqueue, persist the job id (so a
@@ -1086,7 +1121,19 @@ export function useScenePipeline() {
         setProcessingId(null)
       }
     },
-    [processingId, sources, dispatch, uploadReq, transcribeStartReq, diarize, completeTranscribeJob, patch],
+    [
+      processingId,
+      sources,
+      dispatch,
+      uploadReq,
+      transcribeStartReq,
+      diarize,
+      completeTranscribeJob,
+      patch,
+      videoExtractStartReq,
+      pollJob,
+      activeProjectId,
+    ],
   )
 
   // Walk the source queue in order and process each that isn't already fully
