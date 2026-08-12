@@ -48,8 +48,33 @@ messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/con
 | `DIRECTOR_TIMEOUT_MINUTES`  | no (default `10`)     | Ceiling for the master director run.                                         |
 | `BUILD_TIMEOUT_MINUTES`     | no (default `90`)     | Ceiling for the full auto build run.                                         |
 | `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |
+| `FFMPEG_MT`                 | no (`false` default)  | `true` re-enables the multithreaded ffmpeg core. By default Firefox launches with `SharedArrayBuffer` disabled so Studio falls back to its single-threaded core — the MT core loaded and then hung indefinitely on its first exec in headless CI Firefox. |
 
 See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).
+
+## Checking on a run's progress
+
+Two read-only ways to see where a run is:
+
+1. **The live CI log** — open the run's job and expand the **Run scenario**
+   step: it streams timestamped lines (per-clip prep stages, the director's
+   chapter list, `N/M scenes built` with the current step) as they happen.
+2. **From anywhere, via the server record** — the CI browser autosaves the
+   whole project server-side, so:
+
+   ```bash
+   BFFLESS_API_KEY=… node scripts/progress.mjs            # newest project
+   BFFLESS_API_KEY=… node scripts/progress.mjs <projectId>
+   ```
+
+   prints phase, per-source flags, the chapter list with built-status, and the
+   auto-build state.
+
+**Do not watch by opening the project page in a browser mid-run**: hydrating a
+`running` project demotes it to `paused` in *your* tab (by design — a persisted
+run isn't executing in your session) and your tab autosaves that, confusing
+anyone else reading the record. The CI browser is unaffected, but use the
+project *list*, the CI log, or `progress.mjs` to spectate.
 
 ## Running it
 

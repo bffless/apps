@@ -31,6 +31,11 @@ on:
         required: false
         type: number
         default: 180
+      ffmpeg_mt:
+        description: 'Use the multithreaded ffmpeg core (hung indefinitely in headless CI Firefox on first try; default is the single-threaded fallback)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: studio-headless-run
@@ -61,6 +66,7 @@ jobs:
           PROJECT_TITLE: ${{ inputs.project_title }}
           STUDIO_USER_EMAIL: ${{ secrets.STUDIO_USER_EMAIL }}
           STUDIO_USER_PASSWORD: ${{ secrets.STUDIO_USER_PASSWORD }}
+          FFMPEG_MT: ${{ inputs.ffmpeg_mt && 'true' || 'false' }}
         run: pnpm --filter studio-headless scenario
       - name: Job summary
         if: always()

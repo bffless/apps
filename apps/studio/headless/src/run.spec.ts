@@ -203,6 +203,13 @@ test('studio headless run', async ({ page }, testInfo) => {
     phase = 'build'
     await continueBuild.click()
     await page.getByTestId('auto-mode-toggle').click()
+    // The board lists the director's chapters — log them before starting so the
+    // CI log records what the director decided.
+    const sceneRows = page.getByTestId('auto-scene')
+    await sceneRows.first().waitFor({ timeout: 30_000 })
+    const chapterTitles = await sceneRows.allInnerTexts()
+    progress(`build: ${chapterTitles.length} chapter(s) from the director:`)
+    for (const t of chapterTitles) progress(`  · ${t.replace(/\s+/g, ' ').trim()}`)
     await page.getByTestId('auto-build-start').click()
     progress('build: auto build started')
     const board = page.getByTestId('auto-build-board')
@@ -214,11 +221,47 @@ test('studio headless run', async ({ page }, testInfo) => {
       phase = 'done'
       return
     }
+    // Scene/step-level progress: which scene is on which step, plus a stall
+    // screenshot if nothing observable changes for 10 minutes (a silent wasm
+    // hang looks exactly like "running" forever — the screenshots and the
+    // frozen describe-line are the post-mortem evidence).
+    let lastBuildDesc = ''
+    let lastChangeAt = Date.now()
+    let stallShots = 0
     await pollUntil(
       'build: waiting for auto build',
       cfg.buildTimeoutMs,
       async () => /^(done|halted)$/.test((await peek(board, 'data-state')) ?? ''),
-      async () => `build: auto build ${(await peek(board, 'data-state')) ?? 'running'}`,
+      async () => {
+        const states: string[] = []
+        for (const row of await sceneRows.all()) {
+          states.push((await peek(row, 'data-state')) ?? '?')
+        }
+        const built = states.filter((s) => s === 'built').length
+        const runningIdx = states.findIndex((s) => s === 'running')
+        let stepNote = ''
+        if (runningIdx >= 0) {
+          for (const chip of await page.locator('[data-testid^="auto-step-"]').all()) {
+            if ((await peek(chip, 'data-state')) === 'running') {
+              const id = (await peek(chip, 'data-testid'))?.replace('auto-step-', '')
+              if (id) { stepNote = ` — ${id} running`; break }
+            }
+          }
+        }
+        const desc = `build: ${built}/${states.length} scenes built` +
+          (runningIdx >= 0 ? `, scene ${runningIdx + 1}${stepNote}` : '') +
+          ` [board ${(await peek(board, 'data-state')) ?? '?'}]`
+        if (desc !== lastBuildDesc) {
+          lastBuildDesc = desc
+          lastChangeAt = Date.now()
+        } else if (Date.now() - lastChangeAt > 10 * 60_000 && stallShots < 5) {
+          stallShots += 1
+          progress(`build: no observable change for 10m — capturing stall screenshot ${stallShots}`)
+          await shot(`build-stall-${stallShots}`)
+          lastChangeAt = Date.now()
+        }
+        return desc
+      },
     )
     if ((await peek(board, 'data-state')) === 'halted') {
       const msg = await page.getByTestId('auto-build-halt').innerText().catch(() => 'halted (no message)')
