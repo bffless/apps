@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/bffless/apps/compare/studio-v1.6.0...studio-v1.7.0) (2026-08-12)
+
+
+### Features
+
+* **studio:** server-side video ops via CE ffmpeg_handler (wasm fallback intact) ([#327](https://github.com/bffless/apps/issues/327)) ([3077aae](https://github.com/bffless/apps/commit/3077aae3404f934b2ebe01fe959fb79956f64f59))
+
 ## [1.6.0](https://github.com/bffless/apps/compare/studio-v1.5.1...studio-v1.6.0) (2026-08-12)
 
 
