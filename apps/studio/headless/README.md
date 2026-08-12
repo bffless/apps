@@ -48,7 +48,7 @@ messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/con
 | `DIRECTOR_TIMEOUT_MINUTES`  | no (default `10`)     | Ceiling for the master director run.                                         |
 | `BUILD_TIMEOUT_MINUTES`     | no (default `90`)     | Ceiling for the full auto build run.                                         |
 | `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |
-| `FFMPEG_MT`                 | no (`false` default)  | `true` re-enables the multithreaded ffmpeg core. By default Firefox launches with `SharedArrayBuffer` disabled so Studio falls back to its single-threaded core — the MT core loaded and then hung indefinitely on its first exec in headless CI Firefox. |
+| `FFMPEG_MT`                 | no (`false` default)  | `true` lands on `?ffmpegCore=mt` instead of `?ffmpegCore=st`. By default the runner asks Studio for its single-threaded ffmpeg core via the explicit `?ffmpegCore=st` override — the MT core hung indefinitely on its first exec in headless CI Firefox, and forcing ST by disabling SharedArrayBuffer at the browser level breaks *both* cores (even the ST build carries atomics opcodes the validator then rejects). |
 
 See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).
 
