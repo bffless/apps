@@ -79,7 +79,7 @@ share links."_ 21 rules (20 enabled, 1 disabled).
 
 ## Studio
 
-Rule set **`studio`** (`591dab6e-51cf-4d15-8b04-36b50f5d8c6d`) — 39 rules, all enabled.
+Rule set **`studio`** (`591dab6e-51cf-4d15-8b04-36b50f5d8c6d`) — 44 rules, all enabled.
 
 ### Aliases
 
@@ -129,6 +129,15 @@ All rules are `proxyType: pipeline`.
 | POST | `/api/thumbnail/draft` | Draft a nano-banana image prompt via `ai_handler` → `{ prompt }` |
 | POST | `/api/thumbnail/render` | Render the prompt with google/nano-banana → `{ imageUrl }` |
 
+**Server-side video ops (`ffmpeg_handler`, CE >= 0.4.25)**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/video/capabilities` | Synchronous capability probe (`{ server, ops, version }`); never fails, `server:false` on CE < 0.4.25 or without ffmpeg — the client falls back to `ffmpeg.wasm` |
+| POST | `/api/video/slice` | Cut kept spans from a bucket video (optional second-pass WAV) — async fire-and-poll job, `kind: 'video-slice'` |
+| POST | `/api/video/concat` | Stream-copy-first stitch of ordered clip parts — async fire-and-poll job, `kind: 'video-concat'` |
+| POST | `/api/video/extract-audio` | 16 kHz mono WAV extraction from a bucket video — async fire-and-poll job, `kind: 'video-extract'` |
+
 **Jobs & project state (`studio_jobs` / `studio_projects`)**
 
 | Method | Path | Purpose |
@@ -142,8 +151,10 @@ All rules are `proxyType: pipeline`.
 
 > Several studio rules share an `order` value and merge by path/method; the table above
 > groups them by concern rather than by raw order for readability. The director and
-> refiner endpoints run their slow model calls in pipeline `postSteps` and write status
-> back to a `studio_jobs` row, which the front end polls via `GET /api/studio/job`.
+> refiner endpoints, and now the server-side video ops (slice/concat/extract-audio), all
+> run their slow work in pipeline `postSteps` and write status back to a `studio_jobs`
+> row, which the front end polls via `GET /api/studio/job` — a single kind-agnostic poll
+> endpoint shared across all async job kinds.
 
 ## Pipeline schemas (Data Tables)
 
