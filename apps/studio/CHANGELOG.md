@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/bffless/apps/compare/studio-v1.5.1...studio-v1.6.0) (2026-08-12)
+
+
+### Features
+
+* **studio:** headless runner browser input — Chrome stable as the MT-ffmpeg experiment platform ([#324](https://github.com/bffless/apps/issues/324)) ([0c1febe](https://github.com/bffless/apps/commit/0c1febe140ae68ebb52ccd4e0fe421e3ad898699))
+
 ## [1.5.1](https://github.com/bffless/apps/compare/studio-v1.5.0...studio-v1.5.1) (2026-08-12)
 
 
