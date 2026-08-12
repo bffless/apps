@@ -58,9 +58,12 @@ import {
   useThumbnailRenderMutation,
   useUploadMutation,
   useLazySignDownloadQuery,
+  useVideoSliceStartMutation,
+  toVideoResult,
   type UploadKind,
   type VideoJobKind,
 } from '../../store/studioApi'
+import { getVideoBackend } from '../../lib/videoBackend'
 import {
   patchStage,
   failActiveStage,
@@ -102,6 +105,10 @@ const mb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`
 // off the response path now, so we poll a status endpoint until the row is done.
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 5 * 60 * 1000 // give up on a wedged job rather than poll forever
+// Server-side ffmpeg jobs (slice/concat/extract) can legitimately run long on a
+// big source. CE's ffmpeg_handler has its own FFMPEG_MAX_SECONDS (1800s) watchdog,
+// so this just needs to outlast that — the server, not the client, decides wedged.
+const VIDEO_POLL_TIMEOUT_MS = 35 * 60 * 1000
 
 /**
  * Job ids currently being polled, shared across hook instances (same rationale as
@@ -238,6 +245,7 @@ export function useScenePipeline() {
   const activeProjectId = useAppSelector(selectActiveProjectId)
 
   const [transcribeStartReq] = useTranscribeStartMutation()
+  const [videoSliceStartReq] = useVideoSliceStartMutation()
   const [scenesReq] = useScenesMutation()
   const [refineSceneReq] = useRefineSceneMutation()
   const [describeReq] = useDescribeMutation()
@@ -408,8 +416,11 @@ export function useScenePipeline() {
    * the network (never a stale cached `pending`) and leaves no cache subscription.
    */
   const pollJob = useCallback(
-    async (jobId: string): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind; result: unknown }> => {
-      const deadline = Date.now() + POLL_TIMEOUT_MS
+    async (
+      jobId: string,
+      opts?: { timeoutMs?: number },
+    ): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind; result: unknown }> => {
+      const deadline = Date.now() + (opts?.timeoutMs ?? POLL_TIMEOUT_MS)
       for (;;) {
         const job = await dispatch(
           studioApi.endpoints.getStudioJob.initiate(jobId, { forceRefetch: true, subscribe: false }),
@@ -1309,6 +1320,25 @@ export function useScenePipeline() {
       try {
         if (!src.audioUrl) throw new Error('No extracted audio to cut the scene soundtrack from.')
         if (!src.sourceUrl) throw new Error('No source clip available to cut from.')
+
+        if ((await getVideoBackend()) === 'server') {
+          // Server path: the source never leaves the bucket. One job cuts the
+          // clip AND emits its 16k WAV (audioOutput) — replacing the wasm slice
+          // + WebAudio sliceAudioWav + two uploads.
+          const { jobId } = await videoSliceStartReq({
+            sourceUrl: src.sourceUrl,
+            spans: [{ start: scene.start, end: scene.end }],
+            wantAudio: true,
+            audioFades: false, // cut parity: slice.ts has no fades
+            projectId: activeProjectId ?? '',
+          }).unwrap()
+          const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+          const out = toVideoResult(job.result)
+          if (!out.audioUrl) throw new Error('Server cut finished without a soundtrack WAV.')
+          patchSceneEdit(sceneId, { clipUrl: out.url, clipAudioUrl: out.audioUrl })
+          return
+        }
+
         // `slice()` mounts this Blob instead of copying it into the wasm heap.
         const source = await sourceBlobs.get(src.sourceUrl)
 
@@ -1331,7 +1361,19 @@ export function useScenePipeline() {
         setSlicingIds((s) => toggleId(s, sceneId, false))
       }
     },
-    [slicingIds, scenes, sources, sourceBlobs, audioBlobs, uploadReq, patchSceneEdit, setSceneErrorFor],
+    [
+      slicingIds,
+      scenes,
+      sources,
+      sourceBlobs,
+      audioBlobs,
+      uploadReq,
+      videoSliceStartReq,
+      pollJob,
+      activeProjectId,
+      patchSceneEdit,
+      setSceneErrorFor,
+    ],
   )
 
   // Throw out the refinement and revert to the director's first pass.
