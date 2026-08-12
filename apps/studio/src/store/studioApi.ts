@@ -32,6 +32,9 @@ type ScenesResult = { synopsis?: string; scenes?: DirectorScene[] }
 /** The per-scene refiner's result blob (story 03c): the refined cuts. */
 type RefineSceneResult = RefineSceneRaw
 
+export type VideoJobKind = 'video-extract' | 'video-slice' | 'video-concat'
+export type VideoResult = { url: string; audioUrl?: string | null; duration?: number | null }
+
 /**
  * Async fire-and-poll (story 03f Part 0). The director and refiner Replicate calls
  * are slow and used to time out on the synchronous response path. Now the start
@@ -49,8 +52,8 @@ export type StartJobResponse = { jobId: string; status: string }
  */
 export type StudioJob = {
   status: 'pending' | 'running' | 'done' | 'error'
-  kind: 'scenes' | 'refine' | 'transcribe' | 'blog'
-  result?: ScenesResult | RefineSceneResult | TranscribeResponse | BlogResult | null
+  kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind
+  result?: ScenesResult | RefineSceneResult | TranscribeResponse | BlogResult | VideoResult | null
   error?: string | null
   /** The stitched per-run Gemini prompt, stored on the job row at enqueue
    *  (story 03m). Null/absent on jobs older than 03m. */
@@ -58,6 +61,19 @@ export type StudioJob = {
   /** The system instruction sent with it (story 03m). */
   system?: string | null
 }
+
+/** One pure coercer for both MSW and real /api/video job results (mock-parity rule). */
+export function toVideoResult(raw: unknown): VideoResult {
+  const obj = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw
+  const r = (obj ?? {}) as { url?: unknown; audioUrl?: unknown; duration?: unknown }
+  if (typeof r.url !== 'string' || !r.url) throw new Error('Video job finished without an output URL.')
+  return {
+    url: r.url,
+    audioUrl: typeof r.audioUrl === 'string' && r.audioUrl ? r.audioUrl : null,
+    duration: typeof r.duration === 'number' && Number.isFinite(r.duration) ? r.duration : null,
+  }
+}
+
 const rawBaseQuery = fetchBaseQuery({ baseUrl: '/', credentials: 'include' })
 
 /**
@@ -97,6 +113,24 @@ export const studioApi = createApi({
         method: 'POST',
         body,
       }),
+    }),
+
+    // Video extraction (extract audio from a source video).
+    videoExtractStart: builder.mutation<StartJobResponse, { sourceUrl: string; projectId: string }>({
+      query: (body) => ({ url: 'api/video/extract-audio', method: 'POST', body }),
+    }),
+
+    // Video slicing (extract spans from a source video, optionally with audio).
+    videoSliceStart: builder.mutation<
+      StartJobResponse,
+      { sourceUrl: string; spans: { start: number; end: number }[]; wantAudio: boolean; audioFades: boolean; projectId: string }
+    >({
+      query: (body) => ({ url: 'api/video/slice', method: 'POST', body }),
+    }),
+
+    // Video concatenation (join multiple video parts).
+    videoConcatStart: builder.mutation<StartJobResponse, { parts: string[]; projectId: string }>({
+      query: (body) => ({ url: 'api/video/concat', method: 'POST', body }),
     }),
 
     // The master director (story 03, 13f contract): timestamped transcript +
@@ -289,6 +323,9 @@ export const {
   useTranscribeStartMutation,
   useScenesMutation,
   useRefineSceneMutation,
+  useVideoExtractStartMutation,
+  useVideoSliceStartMutation,
+  useVideoConcatStartMutation,
   useLazyGetStudioJobQuery,
   useSignDownloadQuery,
   useLazySignDownloadQuery,

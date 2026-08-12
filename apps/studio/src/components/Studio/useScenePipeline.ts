@@ -59,6 +59,7 @@ import {
   useUploadMutation,
   useLazySignDownloadQuery,
   type UploadKind,
+  type VideoJobKind,
 } from '../../store/studioApi'
 import {
   patchStage,
@@ -407,7 +408,7 @@ export function useScenePipeline() {
    * the network (never a stale cached `pending`) and leaves no cache subscription.
    */
   const pollJob = useCallback(
-    async (jobId: string): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog'; result: unknown }> => {
+    async (jobId: string): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind; result: unknown }> => {
       const deadline = Date.now() + POLL_TIMEOUT_MS
       for (;;) {
         const job = await dispatch(

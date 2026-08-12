@@ -1,6 +1,7 @@
 import { http, HttpResponse, passthrough } from 'msw'
 import { readMockAuth, writeMockAuth } from './mockAuthStore'
 import { TRANSCRIBE_FIXTURE } from './transcribeFixture'
+import type { VideoJobKind } from '../store/studioApi'
 
 /**
  * Mock the Studio bucket-upload + transcription pipelines in dev so iterating on
@@ -49,7 +50,7 @@ const projectStore = new Map<string, Record<string, unknown>>()
  * actually iterates before resolving (exactly like the real pipeline's postSteps).
  */
 type MockJob = {
-  kind: 'scenes' | 'refine' | 'transcribe' | 'blog'
+  kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind
   result: unknown
   polls: number
   // What the "pipeline" sent the model (story 03m) — fabricated here, but the
