@@ -21,16 +21,10 @@ export default defineConfig({
     // hanging until the job is killed at timeout-minutes; explicit expect
     // waits still govern the long phases (prep/director/build).
     actionTimeout: 120_000,
-    launchOptions: {
-      firefoxUserPrefs:
-        // Default OFF: disabling SharedArrayBuffer makes the page report
-        // crossOriginIsolated=false, so Studio itself falls back to its
-        // single-threaded ffmpeg core. The MT core loaded and then hung
-        // indefinitely on the first exec in headless CI Firefox (run
-        // 31547724192: 34 min of silence after "core: multithreaded");
-        // ST is slower per-encode but completes. Set FFMPEG_MT=true to
-        // re-try the multithreaded core.
-        process.env.FFMPEG_MT === 'true' ? {} : { 'javascript.options.shared_memory': false },
-    },
+    // NOTE: do not "force ST" by disabling shared memory via firefoxUserPrefs —
+    // the javascript.options.shared_memory=false pref makes Firefox's wasm
+    // validator reject BOTH cores (even the single-threaded build carries
+    // atomics opcodes; run 31550836845). The runner instead lands on
+    // ?ffmpegCore=st, an explicit app-side override.
   },
 })

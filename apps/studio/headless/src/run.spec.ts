@@ -87,8 +87,12 @@ test('studio headless run', async ({ page }, testInfo) => {
 
     // ---- login (real mode only; the site 302s /api/* to the admin relay) ----
     phase = 'login'
-    progress(`opening ${cfg.baseUrl}`)
-    await page.goto(cfg.baseUrl, { waitUntil: 'domcontentloaded' })
+    // Land with the explicit core override: MT hangs its first exec in
+    // headless CI Firefox, so default to the single-threaded core. The app
+    // persists the choice to localStorage, so later SPA navigations keep it.
+    const landUrl = `${cfg.baseUrl}/?ffmpegCore=${cfg.ffmpegMt ? 'mt' : 'st'}`
+    progress(`opening ${landUrl}`)
+    await page.goto(landUrl, { waitUntil: 'domcontentloaded' })
     if (!cfg.mockMode) {
       // Either we land authenticated (rare in CI) or the first project fetch
       // bounces us to the admin login page on the admin origin.

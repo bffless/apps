@@ -40,4 +40,10 @@ describe('loadConfig', () => {
     const cfg = loadConfig({ STUDIO_BASE_URL: 'http://localhost:5173', MOCK_MODE: 'true', FIXTURE_PATHS: '/tmp/f.mp4', SMOKE_STOP_AFTER_START: 'true' } as never)
     expect(cfg.smokeStopAfterStart).toBe(true)
   })
+
+  it('defaults to the single-threaded ffmpeg core; FFMPEG_MT=true opts back in', () => {
+    const base = { STUDIO_BASE_URL: 'http://localhost:5173', MOCK_MODE: 'true', FIXTURE_PATHS: '/tmp/f.mp4' }
+    expect(loadConfig(base as never).ffmpegMt).toBe(false)
+    expect(loadConfig({ ...base, FFMPEG_MT: 'true' } as never).ffmpegMt).toBe(true)
+  })
 })

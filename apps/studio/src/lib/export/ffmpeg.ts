@@ -60,6 +60,37 @@ const coreLabel = () =>
   coreVariant === 'mt' ? 'multithreaded core' : coreVariant === 'st' ? 'single-threaded core' : 'core not loaded'
 
 /**
+ * Which core to load: an explicit `?ffmpegCore=st|mt` override beats the
+ * capability default (cross-origin isolated → MT). The override exists for
+ * environments where isolation reports true but the MT core can't actually
+ * run — headless CI Firefox hangs its first MT exec — and it's persisted so
+ * SPA navigations after the landing URL keep the choice.
+ */
+export function resolveCoreChoice(
+  search: string,
+  stored: string | null,
+  isolated: boolean,
+): 'mt' | 'st' {
+  const q = new URLSearchParams(search).get('ffmpegCore')
+  const override = q === 'st' || q === 'mt' ? q : stored === 'st' || stored === 'mt' ? stored : null
+  return override ?? (isolated ? 'mt' : 'st')
+}
+
+const coreChoice = (): 'mt' | 'st' => {
+  try {
+    const q = new URLSearchParams(window.location.search).get('ffmpegCore')
+    if (q === 'st' || q === 'mt') window.localStorage.setItem('ffmpegCore', q)
+    return resolveCoreChoice(
+      window.location.search,
+      window.localStorage.getItem('ffmpegCore'),
+      !!globalThis.crossOriginIsolated,
+    )
+  } catch {
+    return globalThis.crossOriginIsolated ? 'mt' : 'st'
+  }
+}
+
+/**
  * Load the ffmpeg core, preferring the **multithreaded** build when the page is
  * cross-origin isolated (COOP/COEP set → `SharedArrayBuffer` available). The MT
  * core parallelizes encoding across cores, which is the slice/assemble speedup.
@@ -76,7 +107,7 @@ async function getFFmpeg(): Promise<FFmpeg> {
   loading = (async () => {
     const { FFmpeg } = await import('@ffmpeg/ffmpeg')
 
-    if (globalThis.crossOriginIsolated) {
+    if (coreChoice() === 'mt') {
       try {
         const ff = new FFmpeg()
         await ff.load({
