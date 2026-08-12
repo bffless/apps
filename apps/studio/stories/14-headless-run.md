@@ -153,6 +153,32 @@ on the first real dispatch. Checklist:
      ever passes it as a string this expression fails at job-start with a workflow syntax error
      before any step runs.
 
+## Live verification results (2026-08-12 — verified)
+
+Five real dispatches on 2026-08-11/12 closed out the checklist and reshaped two defaults:
+
+- **End-to-end success — run 31552803617 (Chrome + `?ffmpegCore=st`): ~28 minutes total** for a
+  ~9-minute recording. Prep in 2 min (upload + audio + transcribe 25s, contact sheets ~45s,
+  director ~40s), then 4 scenes through the full auto-build chain plus final stitch in 25.5 min.
+  Deep link opened at Build with the stitched final cut; project autosaved server-side.
+- **Admin-login selectors and `fromJSON(inputs.timeout_minutes)` both work** — the two
+  pre-merge-unverifiable seams verified on the first dispatch.
+- **The multithreaded ffmpeg.wasm core hangs in headless Firefox** (run 31547724192: 34 silent
+  minutes after "core: multithreaded"). Forcing single-thread by disabling SharedArrayBuffer at the
+  browser level breaks *both* cores (run 31550836845 — the ST build carries atomics opcodes the
+  validator then rejects), which is why the explicit `?ffmpegCore=st|mt` app override exists.
+- **Chrome decisively beats Firefox for the ST encode**: Firefox+ST could not finish one 232s scene
+  cut in 12+ minutes (run 31551738868, cancelled); Chrome+ST built 4 scenes in 25. The workflow's
+  `browser` input therefore defaults to `chrome`.
+- **Spectating rule confirmed the hard way**: opening a running project in a browser demotes its
+  auto build to `paused` in the viewer's tab and autosaves that — watch runs via the CI log or
+  `headless/scripts/progress.mjs`, never the project page.
+- **The wasm encoder remains the structural bottleneck.** ~25 min of the 28 is build-phase
+  encoding that native ffmpeg does in seconds — the follow-up epic is the CE `ffmpeg_handler`
+  (server-side slice/concat/extract via the story-03f fire-and-poll pattern); design spec on
+  handoff.bffless.dev under `epics/studio-headless` (lands in the CE repo with its
+  implementation).
+
 ## Out of scope (v1)
 
 Everything already listed as out of scope in the design spec still holds: pre-generating

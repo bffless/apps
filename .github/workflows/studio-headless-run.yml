@@ -37,13 +37,13 @@ on:
         type: boolean
         default: false
       browser:
-        description: 'Browser to drive the site with (chrome = Google Chrome stable, the MT-ffmpeg experiment platform)'
+        description: 'Browser to drive the site with. Chrome is the proven default: Chrome+ST built 4 scenes in 25 min (run 31552803617) while Firefox+ST could not finish one scene cut.'
         required: false
         type: choice
         options:
-          - firefox
           - chrome
-        default: firefox
+          - firefox
+        default: chrome
 
 concurrency:
   group: studio-headless-run
