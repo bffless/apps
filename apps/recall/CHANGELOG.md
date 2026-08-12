@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/bffless/apps/compare/recall-v0.3.0...recall-v0.3.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* **recall:** drop the [t=Ns] marker from embedded chunk text ([#329](https://github.com/bffless/apps/issues/329)) ([0c09cb8](https://github.com/bffless/apps/commit/0c09cb87c1a378bf5f943adbd65b8413d32c65cd))
+
 ## [0.3.0](https://github.com/bffless/apps/compare/recall-v0.2.0...recall-v0.3.0) (2026-08-10)
 
 
