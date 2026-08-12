@@ -18,7 +18,12 @@ pipeline:
     request `context` as the sync steps, so steps.gate is still visible) --
     a gate-rejected request touches no job/video state at all, even though
     postSteps always fire after a successful sync response. setRunning ->
-    chunk (Task 7's chunk.fn.js, reads the loaded record's transcript) ->
+    chunk (Task 7's chunk.fn.js, reads the loaded record's transcript;
+    each chunk's `text` is transcript words ONLY and its timing rides in
+    `metadata` {start, end}, which embed_store persists and CE #652 returns
+    as chunkMetadata on every hit -- an earlier version prefixed each text
+    with '[t=<sec>s] ' as an interim timing carrier for pre-#652 CE, which
+    skewed every document vector by a token the query side never had) ->
     chunkCheck (ok iff no parse error and count > 0) -> texts
     (JSON.stringify the chunk texts -- Replicate's `texts` input wants a
     JSON-encoded string, not a YAML array) -> embed (Replicate
