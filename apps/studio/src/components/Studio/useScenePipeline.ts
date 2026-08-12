@@ -25,8 +25,10 @@ import {
   addCut,
   addCuts,
   removeCut,
+  effectiveCuts,
   type RefineSceneRaw,
 } from '../../lib/refiner'
+import { planScene } from '../../lib/export/assemble'
 import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
 import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
 import { createBlobCache } from '../../lib/blobCache'
@@ -59,6 +61,7 @@ import {
   useUploadMutation,
   useLazySignDownloadQuery,
   useVideoSliceStartMutation,
+  useVideoConcatStartMutation,
   toVideoResult,
   type UploadKind,
   type VideoJobKind,
@@ -246,6 +249,7 @@ export function useScenePipeline() {
 
   const [transcribeStartReq] = useTranscribeStartMutation()
   const [videoSliceStartReq] = useVideoSliceStartMutation()
+  const [videoConcatStartReq] = useVideoConcatStartMutation()
   const [scenesReq] = useScenesMutation()
   const [refineSceneReq] = useRefineSceneMutation()
   const [describeReq] = useDescribeMutation()
@@ -1595,6 +1599,33 @@ export function useScenePipeline() {
     [uploadReq, dispatch],
   )
 
+  // Server-side final stitch (story video-ops task 7) — the `videoConcatStart`
+  // equivalent of `assembleFinalCutBlob` + `saveFinalCut`. Observable-behavior
+  // parity note: `assembleFinalCutBlob`'s one-scene shortcut
+  // (`assembleScene.ts:64`) only skips the ffmpeg concat pass — the resulting
+  // Blob is STILL handed to `saveFinalCut`, which re-uploads it through the
+  // `export` presigned flow and mints a fresh serve URL distinct from
+  // `assembledUrl`. So there is no dedicated single-scene shortcut here either:
+  // `videoConcatStart` runs with however many parts there are (the server's
+  // concat rule accepts `parts.length === 1` — see
+  // `.bffless/proxy-rules/studio/rules/api/video/concat/post/prep.fn.js`), and
+  // its poll result becomes the new `finalCutUrl` the same way a save would.
+  // Aliasing `finalCutUrl` straight to a scene's `assembledUrl` was rejected —
+  // it would make the final cut's URL life-cycle depend on that scene's, which
+  // the wasm path never does. THROWS on failure (stitch regime — halts
+  // auto-build, mirrored at its call site).
+  const stitchFinalCutRemote = useCallback(async (): Promise<void> => {
+    const missing = scenes.findIndex((s) => !s.assembledUrl)
+    if (missing !== -1) throw new Error(`Scene ${missing + 1} isn't assembled yet.`)
+    const { jobId } = await videoConcatStartReq({
+      parts: scenes.map((s) => s.assembledUrl as string),
+      projectId: activeProjectId ?? '',
+    }).unwrap()
+    const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+    const out = toVideoResult(job.result)
+    dispatch(setFinalCutUrl(out.url))
+  }, [scenes, videoConcatStartReq, pollJob, activeProjectId, dispatch])
+
   // Save one scene's assembled cut (story 03g phase 2). Uploads the rendered scene
   // MP4 (reusing the `export` presigned flow) and persists its serve path on the
   // scene as `assembledUrl`, so a reload keeps it and the final master concat can
@@ -1615,6 +1646,36 @@ export function useScenePipeline() {
       }
     },
     [uploadReq, patchScene],
+  )
+
+  // Server-side scene assemble (story video-ops task 7) — the `videoSliceStart`
+  // equivalent of `assembleSceneBlob` + `saveSceneCut` combined into one job: the
+  // clip-local plan is the SAME pure `planScene` walk `SceneAssembleBar` uses, but
+  // the render runs on the server's ffmpeg_handler against `scene.clipUrl` and the
+  // job's own output URL becomes `assembledUrl` directly — no separate blob/upload
+  // round trip. `wantAudio: false, audioFades: true`: assemble keeps the CLIP's own
+  // audio track through the video slice (never a re-extracted WAV), and Task 5's
+  // slice rule hardcodes fades ON for that branch — sent as specified, not
+  // inverted. THROWS on failure (assemble regime — halts auto-build, mirrored at
+  // its call sites, unlike `sliceScene`'s swallow into `sceneErrors`).
+  const assembleSceneRemote = useCallback(
+    async (sceneId: string): Promise<void> => {
+      const scene = scenes.find((s) => s.id === sceneId)
+      if (!scene?.clipUrl) throw new Error("Cut this scene first — assemble works on the scene's own clip.")
+      const plan = planScene({ cuts: effectiveCuts(scene), start: scene.start, end: scene.end })
+      if (plan.video.length === 0) throw new Error('Nothing to assemble — the whole scene is cut.')
+      const { jobId } = await videoSliceStartReq({
+        sourceUrl: scene.clipUrl,
+        spans: plan.video,
+        wantAudio: false,
+        audioFades: true, // assemble parity: buildFfmpegCommand's ~10ms edge fades
+        projectId: activeProjectId ?? '',
+      }).unwrap()
+      const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+      const out = toVideoResult(job.result)
+      patchScene(sceneId, { assembledUrl: out.url, status: 'built' })
+    },
+    [scenes, videoSliceStartReq, pollJob, activeProjectId, patchScene],
   )
 
   const allBuilt = useMemo(
@@ -1655,6 +1716,7 @@ export function useScenePipeline() {
     reset,
     select,
     saveFinalCut,
+    stitchFinalCutRemote,
     description,
     describing,
     generateDescription,
@@ -1673,6 +1735,7 @@ export function useScenePipeline() {
     renderThumbnail,
     uploadThumbnailReference,
     saveSceneCut,
+    assembleSceneRemote,
     generateSceneSheets,
     refineScene,
     direction,

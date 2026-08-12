@@ -35,6 +35,12 @@ vi.mock('../../lib/export/assembleScene', () => ({
 // The runner only uses this to hand bytes to the (mocked) render.
 vi.mock('./useSignedBytes', () => ({ useSignedBytes: () => vi.fn() }))
 
+// Which backend the assemble/stitch call sites see — defaults to 'wasm' so the
+// pre-existing (task 6-and-earlier) expectations hold unchanged; individual
+// tests below flip it to 'server'.
+const { getVideoBackendMock } = vi.hoisted(() => ({ getVideoBackendMock: vi.fn() }))
+vi.mock('../../lib/videoBackend', () => ({ getVideoBackend: getVideoBackendMock }))
+
 import { useAutoBuild } from './useAutoBuild'
 
 type Store = ReturnType<typeof makeStore>
@@ -91,12 +97,16 @@ function Harness({
   sliceScene = noop,
   generateSceneSheets = noop,
   refineScene = noop,
+  assembleSceneRemote,
+  stitchFinalCutRemote,
 }: {
   upload: (id: string, blob: Blob) => Promise<string>
   sceneErrors?: Record<string, string>
   sliceScene?: (id: string) => Promise<void>
   generateSceneSheets?: (id: string) => Promise<void>
   refineScene?: (id: string) => Promise<void>
+  assembleSceneRemote?: (id: string) => Promise<void>
+  stitchFinalCutRemote?: () => Promise<void>
 }) {
   const dispatch = useDispatch()
   const scenes = useSelector((s: { studio: unknown }) =>
@@ -122,6 +132,18 @@ function Harness({
       return `final.mp4:${blob.size}`
     },
     markBuilt: (id: string) => dispatch(patchScene({ id, patch: { status: 'built' } })),
+    // Only exercised when a test forces the backend to 'server' — the wasm-path
+    // tests never call these, but the hook's Pipe type requires them.
+    assembleSceneRemote:
+      assembleSceneRemote ??
+      (async (id: string) => {
+        dispatch(patchScene({ id, patch: { assembledUrl: 'unused.mp4', status: 'built' } }))
+      }),
+    stitchFinalCutRemote:
+      stitchFinalCutRemote ??
+      (async () => {
+        dispatch(setFinalCutUrl('unused-final.mp4'))
+      }),
   })
   return (
     <div>
@@ -154,6 +176,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   assembleSceneBlobMock.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }))
   assembleFinalCutBlobMock.mockResolvedValue(new Blob(['final'], { type: 'video/mp4' }))
+  getVideoBackendMock.mockResolvedValue('wasm')
 })
 
 describe('useAutoBuild — a save that fails on the assemble step', () => {
@@ -410,5 +433,87 @@ describe('useAutoBuild — parallel launch', () => {
       message: 'REPLICATE_NOT_CONFIGURED',
     })
     expect(refineScene).toHaveBeenCalledTimes(1) // halted, not relaunched
+  })
+})
+
+describe('useAutoBuild — server video backend', () => {
+  it('assemble step calls assembleSceneRemote, never the wasm render', async () => {
+    getVideoBackendMock.mockResolvedValue('server')
+    const store = makeStore([prepped('s1', 0)])
+    const assembleSceneRemote = vi.fn().mockImplementation(async (id: string) => {
+      store.dispatch(patchScene({ id, patch: { assembledUrl: 'server-s1.mp4', status: 'built' } }))
+    })
+    render(
+      <Provider store={store}>
+        <Harness upload={vi.fn()} assembleSceneRemote={assembleSceneRemote} />
+      </Provider>,
+    )
+
+    await click('start')
+
+    await waitFor(() => expect(scenesOf(store)[0].assembledUrl).toBe('server-s1.mp4'))
+    expect(assembleSceneRemote).toHaveBeenCalledWith('s1')
+    expect(assembleSceneBlobMock).not.toHaveBeenCalled()
+  })
+
+  it('a thrown assemble-step error halts the run (same regime as the wasm path)', async () => {
+    getVideoBackendMock.mockResolvedValue('server')
+    const store = makeStore([prepped('s1', 0)])
+    const assembleSceneRemote = vi.fn().mockRejectedValue(new Error('server render failed'))
+    render(
+      <Provider store={store}>
+        <Harness upload={vi.fn()} assembleSceneRemote={assembleSceneRemote} />
+      </Provider>,
+    )
+
+    await click('start')
+
+    await waitFor(() => expect(status()).toBe('halted'))
+    expect(runOf(store).halt).toEqual({
+      sceneId: 's1',
+      stepId: 'assemble',
+      message: expect.stringContaining('server render failed'),
+    })
+  })
+
+  it('stitch action calls stitchFinalCutRemote, never the wasm concat', async () => {
+    getVideoBackendMock.mockResolvedValue('server')
+    // A single already-built, already-assembled scene: assemble is done, so the
+    // only remaining action is the final stitch.
+    const store = makeStore([{ ...prepped('s1', 0), status: 'built', assembledUrl: 's1.mp4' }])
+    const stitchFinalCutRemote = vi.fn().mockImplementation(async () => {
+      store.dispatch(setFinalCutUrl('server-final.mp4'))
+    })
+    render(
+      <Provider store={store}>
+        <Harness upload={vi.fn()} stitchFinalCutRemote={stitchFinalCutRemote} />
+      </Provider>,
+    )
+
+    await click('start')
+
+    await waitFor(() => expect(status()).toBe('done'))
+    expect(stitchFinalCutRemote).toHaveBeenCalledTimes(1)
+    expect(assembleFinalCutBlobMock).not.toHaveBeenCalled()
+  })
+
+  it('a thrown stitch error halts the run (same regime as the wasm path)', async () => {
+    getVideoBackendMock.mockResolvedValue('server')
+    const store = makeStore([{ ...prepped('s1', 0), status: 'built', assembledUrl: 's1.mp4' }])
+    const stitchFinalCutRemote = vi.fn().mockRejectedValue(new Error('concat job timed out'))
+    render(
+      <Provider store={store}>
+        <Harness upload={vi.fn()} stitchFinalCutRemote={stitchFinalCutRemote} />
+      </Provider>,
+    )
+
+    await click('start')
+
+    await waitFor(() => expect(status()).toBe('halted'))
+    expect(runOf(store).halt).toEqual({
+      sceneId: null,
+      stepId: 'stitch',
+      message: expect.stringContaining('concat job timed out'),
+    })
   })
 })

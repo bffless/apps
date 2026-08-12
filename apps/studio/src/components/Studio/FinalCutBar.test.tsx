@@ -37,6 +37,7 @@ const baseProps = {
   finalCutUrl: '/api/uploads/projects/p1/export/final.mp4',
   saving: false,
   onSave: async () => '',
+  onStitchServer: async () => {},
 }
 
 describe('FinalCutBar download', () => {

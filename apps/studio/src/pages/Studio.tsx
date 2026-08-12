@@ -601,6 +601,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                   finalCutUrl={pipe.finalCutUrl}
                   saving={pipe.savingFinalCut}
                   onSave={pipe.saveFinalCut}
+                  onStitchServer={pipe.stitchFinalCutRemote}
                 />
                 <ThumbnailStudio
                   title={pipe.description?.title ?? ''}
@@ -747,6 +748,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     scene={selected}
                     saving={pipe.savingSceneCutId === selected.id}
                     onSave={(blob) => pipe.saveSceneCut(selected.id, blob)}
+                    onAssembleServer={pipe.assembleSceneRemote}
                     onPreview={() => setPreviewOpen(true)}
                   />
                 )}

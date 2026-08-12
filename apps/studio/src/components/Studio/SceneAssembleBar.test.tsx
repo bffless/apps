@@ -40,7 +40,15 @@ const scene: Scene = {
 /** Render the bar, assemble the scene, then click Save (whose outcome the test sets). */
 async function assembleThenSave(onSave: (blob: Blob) => Promise<string>) {
   assembleSceneBlobMock.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }))
-  render(<SceneAssembleBar scene={scene} saving={false} onSave={onSave} onPreview={() => {}} />)
+  render(
+    <SceneAssembleBar
+      scene={scene}
+      saving={false}
+      onSave={onSave}
+      onAssembleServer={async () => {}}
+      onPreview={() => {}}
+    />,
+  )
   await act(async () => {
     screen.getByRole('button', { name: /assemble scene/i }).click()
   })

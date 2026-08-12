@@ -24,6 +24,7 @@ import studioReducer, {
 import { studioApi } from '../../store/studioApi'
 import type { Scene } from '../../lib/scenes'
 import { resetVideoBackendForTests } from '../../lib/videoBackend'
+import { installMswRelativeUrlShim } from '../../test/mswRequestShim'
 
 const { ffmpegSliceMock, buildSliceCommandMock, sliceAudioWavMock } = vi.hoisted(() => ({
   ffmpegSliceMock: vi.fn(),
@@ -101,23 +102,7 @@ async function cut() {
   })
 }
 
-// Node's global `Request`/`fetch` (unlike a browser's) have no page origin to
-// resolve a relative URL against, and every `/api/*` call in this app is
-// relative (`fetchBaseQuery({ baseUrl: '/' })` builds a bare `new
-// Request('/api/...')` before MSW even sees it; `fetchWithReauth('/api/...')`
-// does too). Patch `Request` to prefix a fake origin onto relative inputs —
-// MSW matches handlers by path regardless of origin, so this is purely a
-// URL-parsing shim, not a behavior change. Must run BEFORE `server.listen()`:
-// MSW's interceptor reads the (now-patched) global `Request` at match time.
-const RealRequest = globalThis.Request
-function PatchedRequest(input: RequestInfo | URL, init?: RequestInit) {
-  // jsdom's default test URL (`window.location.origin`) — MSW resolves its
-  // handlers' relative paths against the same origin, so this must match.
-  const fixed = typeof input === 'string' && input.startsWith('/') ? `${window.location.origin}${input}` : input
-  return new RealRequest(fixed, init)
-}
-PatchedRequest.prototype = RealRequest.prototype
-vi.stubGlobal('Request', PatchedRequest as unknown as typeof Request)
+installMswRelativeUrlShim()
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
