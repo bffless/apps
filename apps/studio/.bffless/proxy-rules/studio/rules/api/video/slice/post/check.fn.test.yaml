@@ -1,0 +1,52 @@
+handler: ./check.fn.js
+cases:
+  - name: with-audio output maps both urls and duration
+    data:
+      steps:
+        sliceWithAudio:
+          storage_path: o/r/uploads/projects/p1/scene-clip/server/c.mp4
+          content_type: video/mp4
+          size: 456
+          duration: 4.2
+          audio:
+            storage_path: o/r/uploads/projects/p1/audio/server/a.wav
+            content_type: audio/wav
+            size: 78
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          url: /api/uploads/projects/p1/scene-clip/server/c.mp4
+          audioUrl: /api/uploads/projects/p1/audio/server/a.wav
+          duration: 4.2
+  - name: audio-less output maps url only, audioUrl null
+    data:
+      steps:
+        sliceOnly:
+          storage_path: o/r/uploads/projects/p1/export/server/c.mp4
+          content_type: video/mp4
+          size: 321
+          duration: 9.5
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          url: /api/uploads/projects/p1/export/server/c.mp4
+          audioUrl: null
+          duration: 9.5
+  - name: missing step output is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server slice failed
+        data: null
