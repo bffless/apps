@@ -14,8 +14,8 @@ route + schemas) — that's the source of truth, not a committed JSON export. **
 credentials are referenced by name (`secrets.HF_TOKEN`) or use the project's configured provider
 tokens:
 
-- [`studio/`](../.bffless/proxy-rules/studio/) — the main `studio` set (40 rules): uploads,
-  transcribe, director, refiner, voice, thumbnail, projects/jobs.
+- [`studio/`](../.bffless/proxy-rules/studio/) — the main `studio` set (44 rules): uploads,
+  transcribe, director, refiner, voice, thumbnail, projects/jobs, server-side video ops.
 - [`studio-blog/`](../.bffless/proxy-rules/studio-blog/) — the `studio-blog` set (4 rules): the
   companion blog-post writer (`POST /api/blog`) + blog image uploads
   (`/api/uploads/blog/{prepare,register,*}`).
@@ -134,6 +134,18 @@ Add Rule → click the Cross-Origin Isolation preset → Create.** The preset se
 - `Cross-Origin-Embedder-Policy: credentialless`
 
 After adding it, hard-reload the deployment; the console should report the multithreaded core.
+
+## Server video ops (optional, CE >= 0.4.25)
+
+Four rules in the `studio` set (`/api/video/{capabilities,slice,concat,extract-audio}`) call CE's
+`ffmpeg_handler` to run scene cuts, clip stitching, and audio extraction server-side instead of in
+the browser via `ffmpeg.wasm`. The client calls `GET /api/video/capabilities` once per session — a
+cheap, synchronous probe that never fails — and only uses the server path when it reports
+`server: true`. On CE < 0.4.25 the rule fails to import or the handler type doesn't exist, the probe
+comes back non-200, and the client transparently stays on the wasm path it already uses today; no
+separate opt-in is required. A `?videoBackend=server|wasm` query param overrides the probe result for
+one session, for testing either path deliberately. **No new secrets or provider tokens** — these
+rules read/write the same storage bucket as the rest of the set and don't call any external API.
 
 ## First-success checkpoint
 

@@ -55,6 +55,7 @@ import {
 import { assembleSceneBlob, assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { autoBuildError } from './useScenePipeline'
 import { useSignedBytes } from './useSignedBytes'
+import { getVideoBackend } from '../../lib/videoBackend'
 import type { Scene } from '../../lib/scenes'
 
 /** The slice of `useScenePipeline` the orchestrator drives. */
@@ -68,6 +69,11 @@ type Pipe = {
   saveSceneCut: (id: string, blob: Blob) => Promise<string>
   saveFinalCut: (blob: Blob) => Promise<string>
   markBuilt: (id: string) => void
+  // Server-side equivalents (story video-ops task 7) — each does the render AND
+  // the persist in one job, so the assemble/stitch step is a single call rather
+  // than render-then-save. Both throw on failure, same regime as the wasm path.
+  assembleSceneRemote: (id: string) => Promise<void>
+  stitchFinalCutRemote: () => Promise<void>
 }
 
 export type AutoBuildControls = {
@@ -202,8 +208,12 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
         ;(async () => {
           try {
             if (!p.finalCutUrl) {
-              const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
-              await p.saveFinalCut(blob)
+              if ((await getVideoBackend()) === 'server') {
+                await p.stitchFinalCutRemote()
+              } else {
+                const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
+                await p.saveFinalCut(blob)
+              }
             }
             liveRef.current = false
             dispatch(completeAutoBuild())
@@ -262,9 +272,13 @@ async function runStep(
   if (step === 'sheets') return p.generateSceneSheets(scene.id)
   if (step === 'refine') return p.refineScene(scene.id)
 
-  // assemble: render the scene MP4 then save it (both throw on failure). Reuse the
-  // render we already paid for if this is a retry of a save that failed and nothing
-  // about the scene's cut has changed since.
+  // assemble, server backend: one job does the render AND the persist — no
+  // separate blob to hold across a halt, so `renderRef` never enters play.
+  if ((await getVideoBackend()) === 'server') return p.assembleSceneRemote(scene.id)
+
+  // assemble, wasm backend: render the scene MP4 then save it (both throw on
+  // failure). Reuse the render we already paid for if this is a retry of a save
+  // that failed and nothing about the scene's cut has changed since.
   const key = assembleInputsKey(scene)
   const held = renderRef.current
   const blob =

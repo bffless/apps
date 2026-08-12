@@ -1,0 +1,26 @@
+handler: ./check.fn.js
+cases:
+  - name: maps storage_path to a serve URL
+    data:
+      steps:
+        stitch:
+          storage_path: o/r/uploads/projects/p1/export/server/s.mp4
+          content_type: video/mp4
+          size: 789
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data: { url: /api/uploads/projects/p1/export/server/s.mp4 }
+  - name: missing step output is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server stitch failed
+        data: null

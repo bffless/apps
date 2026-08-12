@@ -1,6 +1,7 @@
 import { http, HttpResponse, passthrough } from 'msw'
 import { readMockAuth, writeMockAuth } from './mockAuthStore'
 import { TRANSCRIBE_FIXTURE } from './transcribeFixture'
+import type { VideoJobKind } from '../store/studioApi'
 
 /**
  * Mock the Studio bucket-upload + transcription pipelines in dev so iterating on
@@ -49,7 +50,7 @@ const projectStore = new Map<string, Record<string, unknown>>()
  * actually iterates before resolving (exactly like the real pipeline's postSteps).
  */
 type MockJob = {
-  kind: 'scenes' | 'refine' | 'transcribe' | 'blog'
+  kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind
   result: unknown
   polls: number
   // What the "pipeline" sent the model (story 03m) — fabricated here, but the
@@ -68,6 +69,24 @@ const enqueueJob = (
   const jobId = `mock-job-${++jobCounter}`
   jobStore.set(jobId, { kind, result, polls: 0, prompt, system })
   return jobId
+}
+
+/**
+ * Whether the mock `/api/video/capabilities` probe reports the server ffmpeg
+ * backend as available. Defaults **off**: the real prep flow (`processSource`
+ * in `useScenePipeline.ts`) then takes the wasm extract branch, which decodes
+ * the real uploaded `File` in-browser and never touches this file's fabricated
+ * job results. The server branch instead calls `peaksFromUrl`/`deadSpaceFromUrl`
+ * on the job's returned WAV url, which here is fake 8-byte 'mock-wav' text —
+ * `decodeAudioData` on that fails, breaking prep (and the PR smoke workflow
+ * that drives it) whenever mock mode is on. Tests that specifically want the
+ * server path should call `setMockVideoServerCapability(true)` — most don't
+ * need to: they resolve the backend directly via `localStorage.videoBackend`
+ * or by mocking `getVideoBackend`, which never consults this probe at all.
+ */
+let mockVideoServer = false
+export function setMockVideoServerCapability(on: boolean): void {
+  mockVideoServer = on
 }
 
 const studioHandlers = [
@@ -174,6 +193,79 @@ const studioHandlers = [
     const jobId = enqueueJob('transcribe', TRANSCRIBE_FIXTURE)
     return HttpResponse.json({ jobId, status: 'pending' })
   }),
+
+  // Server video ops (CE ffmpeg_handler, story: server-video-ops). Same fire-and-poll
+  // shape as /api/transcribe; outputs are written into objectStore so the returned
+  // serve path actually serves.
+  http.post('/api/video/extract-audio', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      sourceUrl?: string
+      projectId?: string
+    }
+    if (!body.sourceUrl)
+      return HttpResponse.json({ error: 'sourceUrl required' }, { status: 400 })
+    const pid = body.projectId ?? 'mock'
+    const key = `projects/${pid}/audio/server/${Date.now()}.wav`
+    // Store as ArrayBuffer to match objectStore's { body: ArrayBuffer; type: string } shape
+    const mockWavData = new TextEncoder().encode('mock-wav')
+    objectStore.set(key, { body: mockWavData.buffer as ArrayBuffer, type: 'audio/wav' })
+    const jobId = enqueueJob('video-extract', { url: `/api/uploads/${key}` })
+    return HttpResponse.json({ jobId, status: 'pending' })
+  }),
+
+  http.post('/api/video/slice', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      sourceUrl?: string
+      spans?: { start: number; end: number }[]
+      wantAudio?: boolean
+      projectId?: string
+    }
+    if (!body.sourceUrl || !Array.isArray(body.spans) || body.spans.length === 0) {
+      return HttpResponse.json({ error: 'sourceUrl and spans required' }, { status: 400 })
+    }
+    const pid = body.projectId ?? 'mock'
+    const stamp = Date.now()
+    const clipKey = `projects/${pid}/scene-clip/server/${stamp}.mp4`
+    const mockMp4Data = new TextEncoder().encode('mock-mp4')
+    objectStore.set(clipKey, { body: mockMp4Data.buffer as ArrayBuffer, type: 'video/mp4' })
+    const duration = body.spans.reduce((n, s) => n + (s.end - s.start), 0)
+    let audioUrl: string | undefined
+    if (body.wantAudio) {
+      const wavKey = `projects/${pid}/audio/server/${stamp}.wav`
+      const mockWavData = new TextEncoder().encode('mock-wav')
+      objectStore.set(wavKey, { body: mockWavData.buffer as ArrayBuffer, type: 'audio/wav' })
+      audioUrl = `/api/uploads/${wavKey}`
+    }
+    const jobId = enqueueJob('video-slice', {
+      url: `/api/uploads/${clipKey}`,
+      audioUrl,
+      duration,
+    })
+    return HttpResponse.json({ jobId, status: 'pending' })
+  }),
+
+  http.post('/api/video/concat', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      parts?: string[]
+      projectId?: string
+    }
+    if (!Array.isArray(body.parts) || body.parts.length === 0) {
+      return HttpResponse.json({ error: 'parts required' }, { status: 400 })
+    }
+    const key = `projects/${body.projectId ?? 'mock'}/export/server/${Date.now()}.mp4`
+    const mockMp4Data = new TextEncoder().encode('mock-mp4')
+    objectStore.set(key, { body: mockMp4Data.buffer as ArrayBuffer, type: 'video/mp4' })
+    const jobId = enqueueJob('video-concat', { url: `/api/uploads/${key}` })
+    return HttpResponse.json({ jobId, status: 'pending' })
+  }),
+
+  http.get('/api/video/capabilities', () =>
+    HttpResponse.json(
+      mockVideoServer
+        ? { server: true, ops: ['probe', 'extract_audio', 'slice', 'concat'], version: 'ffmpeg 7.0-mock' }
+        : { server: false, ops: [], version: null },
+    ),
+  ),
 
   // Master director: enqueue a job and return its id (story 03f Part 0). The
   // canned synopsis + scenes (per-scene cutting brief + cut spans, derived from

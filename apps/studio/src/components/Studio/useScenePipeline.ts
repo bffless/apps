@@ -25,10 +25,12 @@ import {
   addCut,
   addCuts,
   removeCut,
+  effectiveCuts,
   type RefineSceneRaw,
 } from '../../lib/refiner'
+import { planScene } from '../../lib/export/assemble'
 import { totalDuration, sourceForScene, globalToLocal } from '../../lib/sources'
-import { deadSpaceFromUrl, extractAudio, sliceAudioWav } from '../../lib/audio'
+import { deadSpaceFromUrl, extractAudio, peaksFromUrl, sliceAudioWav } from '../../lib/audio'
 import { createBlobCache } from '../../lib/blobCache'
 import { fetchWithReauth } from '../../lib/auth'
 import { presignedUpload } from '../../lib/upload'
@@ -58,8 +60,14 @@ import {
   useThumbnailRenderMutation,
   useUploadMutation,
   useLazySignDownloadQuery,
+  useVideoExtractStartMutation,
+  useVideoSliceStartMutation,
+  useVideoConcatStartMutation,
+  toVideoResult,
   type UploadKind,
+  type VideoJobKind,
 } from '../../store/studioApi'
+import { getVideoBackend } from '../../lib/videoBackend'
 import {
   patchStage,
   failActiveStage,
@@ -101,6 +109,10 @@ const mb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`
 // off the response path now, so we poll a status endpoint until the row is done.
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 5 * 60 * 1000 // give up on a wedged job rather than poll forever
+// Server-side ffmpeg jobs (slice/concat/extract) can legitimately run long on a
+// big source. CE's ffmpeg_handler has its own FFMPEG_MAX_SECONDS (1800s) watchdog,
+// so this just needs to outlast that — the server, not the client, decides wedged.
+const VIDEO_POLL_TIMEOUT_MS = 35 * 60 * 1000
 
 /**
  * Job ids currently being polled, shared across hook instances (same rationale as
@@ -237,6 +249,9 @@ export function useScenePipeline() {
   const activeProjectId = useAppSelector(selectActiveProjectId)
 
   const [transcribeStartReq] = useTranscribeStartMutation()
+  const [videoExtractStartReq] = useVideoExtractStartMutation()
+  const [videoSliceStartReq] = useVideoSliceStartMutation()
+  const [videoConcatStartReq] = useVideoConcatStartMutation()
   const [scenesReq] = useScenesMutation()
   const [refineSceneReq] = useRefineSceneMutation()
   const [describeReq] = useDescribeMutation()
@@ -407,8 +422,11 @@ export function useScenePipeline() {
    * the network (never a stale cached `pending`) and leaves no cache subscription.
    */
   const pollJob = useCallback(
-    async (jobId: string): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog'; result: unknown }> => {
-      const deadline = Date.now() + POLL_TIMEOUT_MS
+    async (
+      jobId: string,
+      opts?: { timeoutMs?: number },
+    ): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind; result: unknown }> => {
+      const deadline = Date.now() + (opts?.timeoutMs ?? POLL_TIMEOUT_MS)
       for (;;) {
         const job = await dispatch(
           studioApi.endpoints.getStudioJob.initiate(jobId, { forceRefetch: true, subscribe: false }),
@@ -840,6 +858,17 @@ export function useScenePipeline() {
 
   // Stage ② — extract the audio in-browser, then upload that WAV to the bucket
   // on its own so the transcription step can hand Replicate an audio URL.
+  //
+  // NOT server-routed (task 8, story: server-video-ops): this legacy single-source
+  // seam only receives `{ file }` — no source URL in its own scope — and `next()`
+  // can never actually dispatch it: `currentStageId` (above) returns null until
+  // `sourcesReady`, and once ready it only searches `GLOBAL_STAGES`
+  // (`['thumbnails','director']`), so the `id === 'extract'` branch in `next()`
+  // is unreachable dead code left over from before the per-video `processSource`
+  // refactor (09b; see the "09a bridge... retired in 09d" comments on
+  // `currentSource`/`isPrimary` elsewhere in this file). The reachable seam is
+  // `processSource`'s own extract stage below, which has `srcUrl` from the
+  // upload step that just ran in the SAME function — that's the one server-routed.
   const extractAndUploadAudio = useCallback(
     async ({ file }: StepContext) => {
       patch('extract', { status: 'active' })
@@ -1043,16 +1072,38 @@ export function useScenePipeline() {
 
         stage = 'extract'
         dispatch(patchSourceStage({ id, stage, patch: { status: 'active' } }))
-        const { wav, peaks, deadSpace: dead } = await extractAudio(file)
-        const wavFile = new File([wav], `${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' })
-        const { url: aUrl } = await uploadReq({ file: wavFile, kind: 'audio' }).unwrap()
-        dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
-        dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` } }))
-        if (isPrimary) {
-          dispatch(setAudioUrl(aUrl))
-          dispatch(setAudioPeaks(peaks))
-          dispatch(setDeadSpace(dead))
-          patch('extract', { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` })
+        let aUrl: string
+        if ((await getVideoBackend()) === 'server') {
+          // Server path (task 8): `srcUrl` is this source's just-uploaded serve
+          // path (the upload stage above ran first, same function scope) — the
+          // source video is never decoded in the browser on this path. Derive the
+          // visual artifacts (waveform + dead space) from the small 16k WAV the
+          // job returns, the same helpers the pre-13c backfill already uses.
+          const { jobId } = await videoExtractStartReq({ sourceUrl: srcUrl, projectId: activeProjectId ?? '' }).unwrap()
+          const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+          aUrl = toVideoResult(job.result).url
+          const [peaks, dead] = await Promise.all([peaksFromUrl(aUrl), deadSpaceFromUrl(aUrl)])
+          dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
+          dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: '16 kHz mono WAV (server)' } }))
+          if (isPrimary) {
+            dispatch(setAudioUrl(aUrl))
+            dispatch(setAudioPeaks(peaks))
+            dispatch(setDeadSpace(dead))
+            patch('extract', { status: 'done', detail: '16 kHz mono WAV (server)' })
+          }
+        } else {
+          const { wav, peaks, deadSpace: dead } = await extractAudio(file)
+          const wavFile = new File([wav], `${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' })
+          const uploaded = await uploadReq({ file: wavFile, kind: 'audio' }).unwrap()
+          aUrl = uploaded.url
+          dispatch(patchSource({ id, patch: { audioUrl: aUrl, audioPeaks: peaks, deadSpace: dead } }))
+          dispatch(patchSourceStage({ id, stage, patch: { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` } }))
+          if (isPrimary) {
+            dispatch(setAudioUrl(aUrl))
+            dispatch(setAudioPeaks(peaks))
+            dispatch(setDeadSpace(dead))
+            patch('extract', { status: 'done', detail: `16 kHz mono WAV · ${mb(wav.size)}` })
+          }
         }
 
         // Transcribe is async (story 10e): enqueue, persist the job id (so a
@@ -1070,7 +1121,19 @@ export function useScenePipeline() {
         setProcessingId(null)
       }
     },
-    [processingId, sources, dispatch, uploadReq, transcribeStartReq, diarize, completeTranscribeJob, patch],
+    [
+      processingId,
+      sources,
+      dispatch,
+      uploadReq,
+      transcribeStartReq,
+      diarize,
+      completeTranscribeJob,
+      patch,
+      videoExtractStartReq,
+      pollJob,
+      activeProjectId,
+    ],
   )
 
   // Walk the source queue in order and process each that isn't already fully
@@ -1308,6 +1371,25 @@ export function useScenePipeline() {
       try {
         if (!src.audioUrl) throw new Error('No extracted audio to cut the scene soundtrack from.')
         if (!src.sourceUrl) throw new Error('No source clip available to cut from.')
+
+        if ((await getVideoBackend()) === 'server') {
+          // Server path: the source never leaves the bucket. One job cuts the
+          // clip AND emits its 16k WAV (audioOutput) — replacing the wasm slice
+          // + WebAudio sliceAudioWav + two uploads.
+          const { jobId } = await videoSliceStartReq({
+            sourceUrl: src.sourceUrl,
+            spans: [{ start: scene.start, end: scene.end }],
+            wantAudio: true,
+            audioFades: false, // cut parity: slice.ts has no fades
+            projectId: activeProjectId ?? '',
+          }).unwrap()
+          const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+          const out = toVideoResult(job.result)
+          if (!out.audioUrl) throw new Error('Server cut finished without a soundtrack WAV.')
+          patchSceneEdit(sceneId, { clipUrl: out.url, clipAudioUrl: out.audioUrl })
+          return
+        }
+
         // `slice()` mounts this Blob instead of copying it into the wasm heap.
         const source = await sourceBlobs.get(src.sourceUrl)
 
@@ -1330,7 +1412,19 @@ export function useScenePipeline() {
         setSlicingIds((s) => toggleId(s, sceneId, false))
       }
     },
-    [slicingIds, scenes, sources, sourceBlobs, audioBlobs, uploadReq, patchSceneEdit, setSceneErrorFor],
+    [
+      slicingIds,
+      scenes,
+      sources,
+      sourceBlobs,
+      audioBlobs,
+      uploadReq,
+      videoSliceStartReq,
+      pollJob,
+      activeProjectId,
+      patchSceneEdit,
+      setSceneErrorFor,
+    ],
   )
 
   // Throw out the refinement and revert to the director's first pass.
@@ -1552,6 +1646,33 @@ export function useScenePipeline() {
     [uploadReq, dispatch],
   )
 
+  // Server-side final stitch (story video-ops task 7) — the `videoConcatStart`
+  // equivalent of `assembleFinalCutBlob` + `saveFinalCut`. Observable-behavior
+  // parity note: `assembleFinalCutBlob`'s one-scene shortcut
+  // (`assembleScene.ts:64`) only skips the ffmpeg concat pass — the resulting
+  // Blob is STILL handed to `saveFinalCut`, which re-uploads it through the
+  // `export` presigned flow and mints a fresh serve URL distinct from
+  // `assembledUrl`. So there is no dedicated single-scene shortcut here either:
+  // `videoConcatStart` runs with however many parts there are (the server's
+  // concat rule accepts `parts.length === 1` — see
+  // `.bffless/proxy-rules/studio/rules/api/video/concat/post/prep.fn.js`), and
+  // its poll result becomes the new `finalCutUrl` the same way a save would.
+  // Aliasing `finalCutUrl` straight to a scene's `assembledUrl` was rejected —
+  // it would make the final cut's URL life-cycle depend on that scene's, which
+  // the wasm path never does. THROWS on failure (stitch regime — halts
+  // auto-build, mirrored at its call site).
+  const stitchFinalCutRemote = useCallback(async (): Promise<void> => {
+    const missing = scenes.findIndex((s) => !s.assembledUrl)
+    if (missing !== -1) throw new Error(`Scene ${missing + 1} isn't assembled yet.`)
+    const { jobId } = await videoConcatStartReq({
+      parts: scenes.map((s) => s.assembledUrl as string),
+      projectId: activeProjectId ?? '',
+    }).unwrap()
+    const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+    const out = toVideoResult(job.result)
+    dispatch(setFinalCutUrl(out.url))
+  }, [scenes, videoConcatStartReq, pollJob, activeProjectId, dispatch])
+
   // Save one scene's assembled cut (story 03g phase 2). Uploads the rendered scene
   // MP4 (reusing the `export` presigned flow) and persists its serve path on the
   // scene as `assembledUrl`, so a reload keeps it and the final master concat can
@@ -1572,6 +1693,36 @@ export function useScenePipeline() {
       }
     },
     [uploadReq, patchScene],
+  )
+
+  // Server-side scene assemble (story video-ops task 7) — the `videoSliceStart`
+  // equivalent of `assembleSceneBlob` + `saveSceneCut` combined into one job: the
+  // clip-local plan is the SAME pure `planScene` walk `SceneAssembleBar` uses, but
+  // the render runs on the server's ffmpeg_handler against `scene.clipUrl` and the
+  // job's own output URL becomes `assembledUrl` directly — no separate blob/upload
+  // round trip. `wantAudio: false, audioFades: true`: assemble keeps the CLIP's own
+  // audio track through the video slice (never a re-extracted WAV), and Task 5's
+  // slice rule hardcodes fades ON for that branch — sent as specified, not
+  // inverted. THROWS on failure (assemble regime — halts auto-build, mirrored at
+  // its call sites, unlike `sliceScene`'s swallow into `sceneErrors`).
+  const assembleSceneRemote = useCallback(
+    async (sceneId: string): Promise<void> => {
+      const scene = scenes.find((s) => s.id === sceneId)
+      if (!scene?.clipUrl) throw new Error("Cut this scene first — assemble works on the scene's own clip.")
+      const plan = planScene({ cuts: effectiveCuts(scene), start: scene.start, end: scene.end })
+      if (plan.video.length === 0) throw new Error('Nothing to assemble — the whole scene is cut.')
+      const { jobId } = await videoSliceStartReq({
+        sourceUrl: scene.clipUrl,
+        spans: plan.video,
+        wantAudio: false,
+        audioFades: true, // assemble parity: buildFfmpegCommand's ~10ms edge fades
+        projectId: activeProjectId ?? '',
+      }).unwrap()
+      const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
+      const out = toVideoResult(job.result)
+      patchScene(sceneId, { assembledUrl: out.url, status: 'built' })
+    },
+    [scenes, videoSliceStartReq, pollJob, activeProjectId, patchScene],
   )
 
   const allBuilt = useMemo(
@@ -1612,6 +1763,7 @@ export function useScenePipeline() {
     reset,
     select,
     saveFinalCut,
+    stitchFinalCutRemote,
     description,
     describing,
     generateDescription,
@@ -1630,6 +1782,7 @@ export function useScenePipeline() {
     renderThumbnail,
     uploadThumbnailReference,
     saveSceneCut,
+    assembleSceneRemote,
     generateSceneSheets,
     refineScene,
     direction,

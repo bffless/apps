@@ -177,7 +177,10 @@ Five real dispatches on 2026-08-11/12 closed out the checklist and reshaped two 
   encoding that native ffmpeg does in seconds — the follow-up epic is the CE `ffmpeg_handler`
   (server-side slice/concat/extract via the story-03f fire-and-poll pattern); design spec on
   handoff.bffless.dev under `epics/studio-headless` (lands in the CE repo with its
-  implementation).
+  implementation). **Landed 2026-08-12** — see
+  `docs/superpowers/plans/2026-08-12-studio-server-video-ops.md`: four new `/api/video/*` rules
+  (`capabilities`, `slice`, `concat`, `extract-audio`) call CE's `ffmpeg_handler` (CE >= 0.4.25),
+  with a once-per-session capability probe and transparent `ffmpeg.wasm` fallback on older CE.
 
 ## Out of scope (v1)
 

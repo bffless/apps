@@ -1,0 +1,93 @@
+targetUrl: ""
+order: 58
+timeout: 120000
+pipeline:
+  name: Server video slice (ffmpeg, async)
+  description: "sourceUrl (video already in bucket) + spans -> ENQUEUE a job (kind 'video-slice'); the ffmpeg slice op runs in postSteps, cutting the kept spans and (when wantAudio) emitting a second 16 kHz mono WAV pass. Result { url, audioUrl, duration } polled via /api/studio/job. Mirrors /api/transcribe."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'video-slice'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+    - id: sliceWithAudio
+      name: sliceWithAudio
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.wantAudio
+        operation: slice
+        # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
+        # expression string passes through literally) — unlike spans/inputs, which are
+        # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
+        input: "{{steps.prep.input}}"
+        spans: steps.prep.spans
+        audioFades: false
+        output: "projects/{{steps.prep.projectId}}/scene-clip/server/{{uuid()}}.mp4"
+        audioOutput: "projects/{{steps.prep.projectId}}/audio/server/{{uuid()}}.wav"
+    - id: sliceOnly
+      name: sliceOnly
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.noAudio
+        operation: slice
+        # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
+        # expression string passes through literally) — unlike spans/inputs, which are
+        # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
+        input: "{{steps.prep.input}}"
+        spans: steps.prep.spans
+        audioFades: true
+        output: "projects/{{steps.prep.projectId}}/export/server/{{uuid()}}.mp4"
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.check.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.check.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.check.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.check.notOk
+  validators: []
+description: "Server-side video slicing (kept spans) via CE's ffmpeg_handler (>= 0.4.25), with an optional second-pass 16 kHz mono WAV audio output. No secrets. No validators yet (auth deferred to story 07, mirrors the set). NOTE: ffmpeg_handler reads config.audioFades as a raw boolean (config.audioFades === true), never expression-evaluated like input/output/spans/inputs are (see FfmpegHandlerConfig TSDoc: input/output/key are documented 'template-resolved'/'expression-interpolated', audioFades is plainly 'boolean', and buildSliceArgs receives config.audioFades === true directly with no evaluateExpression/evaluateTemplate call). An expression string ('steps.prep.audioFades') would always be truthy-non-true, so audioFades is hardcoded per branch instead: sliceWithAudio (wantAudio, the Build-stage per-scene clip cut) passes audioFades: false to match the current cut behavior; sliceOnly (noAudio, the Export-stage stitch input) passes audioFades: true for assemble parity with the wasm path. steps.prep.audioFades is still computed from request.body.audioFades for future use (e.g. if the handler contract changes to honor it) but is NOT read by either op step today — the client's audioFades body field is currently ignored by this rule; flagged for the client plan (Task 7) to reconcile."

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Scene } from '../../lib/scenes'
 import { assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { finalCutFileName } from '../../lib/export/fileName'
+import { getVideoBackend } from '../../lib/videoBackend'
 import { useSignedBytes } from './useSignedBytes'
 import { useSignDownloadQuery, useSignAttachmentQuery } from '../../store/studioApi'
 import { skipToken } from '@reduxjs/toolkit/query'
@@ -16,6 +17,9 @@ type Props = {
   saving: boolean
   /** Upload the final blob → bucket; resolves to the saved serve URL. */
   onSave: (blob: Blob) => Promise<string>
+  /** Server-backend stitch: concats AND persists `finalCutUrl` in one job —
+   *  no local blob, no separate save step. */
+  onStitchServer: () => Promise<void>
 }
 
 /**
@@ -25,7 +29,7 @@ type Props = {
  * no memory, so it never approaches the OOM the old whole-film pass hit. Enabled
  * only once every scene has been assembled & saved.
  */
-export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Props) {
+export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave, onStitchServer }: Props) {
   // Serve-path-aware fetch: each assembled scene is tens of MB — sign them to
   // the bucket instead of streaming every one through the BFFless backend.
   const fetchBytes = useSignedBytes()
@@ -76,6 +80,16 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
     }
     setResultBlob(null)
     try {
+      if ((await getVideoBackend()) === 'server') {
+        // No granular progress — the poll is status-only until the job lands.
+        // The job persists `finalCutUrl` itself, so there's no local blob and
+        // no separate "Save to my library" step: the card just re-reads the
+        // `finalCutUrl` prop once the promise resolves.
+        setStage('Rendering on the server…')
+        await onStitchServer()
+        setStage('')
+        return
+      }
       const blob = await assembleFinalCutBlob({ scenes, fetchBytes, onStage: setStage })
       setResultBlob(blob)
       setResultUrl(URL.createObjectURL(blob))
@@ -86,7 +100,7 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave }: Prop
     } finally {
       setRunning(false)
     }
-  }, [running, allAssembled, scenes, resultUrl, fetchBytes])
+  }, [running, allAssembled, scenes, resultUrl, fetchBytes, onStitchServer])
 
   const save = useCallback(async () => {
     if (!resultBlob || saving) return

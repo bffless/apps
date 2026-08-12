@@ -1,0 +1,22 @@
+targetUrl: pipeline
+order: 56
+pipeline:
+  name: Server video capability probe
+  description: "ffmpeg_handler probe with no input: never fails, returns { server, ops, version }. server:false on instances without ffmpeg or with FFMPEG_HANDLER_ENABLED=false — the FE falls back to wasm. Requires CE >= 0.4.25 for the handler type; on older CE this rule fails to import, which is fine (the FE probe treats any non-200 as wasm)."
+  steps:
+    - id: probe
+      name: probe
+      handler: ffmpeg_handler
+      config:
+        operation: probe
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.probe}}}"
+        status: 200
+        headers:
+          Cache-Control: no-store
+        contentType: application/json
+  validators: []
+description: "Capability probe for server-side video ops (CE ffmpeg_handler, >= 0.4.25). Synchronous and cheap; no job row. The client calls this once per session."

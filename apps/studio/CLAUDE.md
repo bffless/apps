@@ -29,13 +29,17 @@ Don't re-derive the design from chat history or git log.
 ## Backend (`/api/*`)
 
 There is no app server. The `/api/*` endpoints are two sibling BFFless proxy rule sets, **authored**
-under `.bffless/proxy-rules/studio/` (40 rules, the main set) and `.bffless/proxy-rules/studio-blog/`
+under `.bffless/proxy-rules/studio/` (44 rules, the main set) and `.bffless/proxy-rules/studio-blog/`
 (4 rules, the companion blog writer + blog image uploads) so a forker can build + import them into
 their own project (attach BOTH to the app's alias) — see
 `bffless/README.md` for import steps + prerequisites (storage, Replicate/Anthropic tokens,
 `HF_TOKEN`). Locally, unhandled `/api/*` falls through the Vite proxy to `j5s.dev`. After changing
 rules, edit the source under `.bffless/proxy-rules/<set>/` and commit — CI syncs it to the project on
 deploy; check for drift with `npx bffless rules diff`.
+
+Server-side video ops (`/api/video/{capabilities,slice,concat,extract-audio}`, CE's `ffmpeg_handler`)
+unlock on CE ≥ 0.4.25; the client probes once per session and falls back to `ffmpeg.wasm` on older
+CE, with a `?videoBackend=server|wasm` override for testing (`src/lib/videoBackend.ts`).
 
 ## The locked pipeline
 

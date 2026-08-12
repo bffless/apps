@@ -1,0 +1,76 @@
+targetUrl: ""
+order: 57
+timeout: 120000
+pipeline:
+  name: Server audio extract (ffmpeg, async)
+  description: "sourceUrl (video already in bucket) -> ENQUEUE a job (kind 'video-extract'); the ffmpeg extract_audio op (16 kHz mono WAV, the transcription contract) runs in postSteps reading and writing the bucket directly. Result { url } polled via /api/studio/job. Mirrors /api/transcribe."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        fields:
+          kind: "'video-extract'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+    - id: extract
+      name: extract
+      handler: ffmpeg_handler
+      config:
+        operation: extract_audio
+        # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
+        # expression string passes through literally) — unlike spans/inputs, which are
+        # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
+        input: "{{steps.prep.input}}"
+        output: "projects/{{steps.prep.projectId}}/audio/server/{{uuid()}}.wav"
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.check.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.check.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.check.error
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:studio_jobs
+        condition: steps.check.notOk
+  validators: []
+description: "Server-side 16 kHz mono WAV extraction from an uploaded source video via CE's ffmpeg_handler (>= 0.4.25). No secrets. No validators yet (auth deferred to story 07, mirrors the set). Removes the browser's 2 GB decodeAudioData ceiling when active."

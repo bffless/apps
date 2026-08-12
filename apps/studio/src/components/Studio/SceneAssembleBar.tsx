@@ -3,6 +3,7 @@ import type { Scene } from '../../lib/scenes'
 import { effectiveCuts } from '../../lib/refiner'
 import { planScene } from '../../lib/export/assemble'
 import { assembleSceneBlob } from '../../lib/export/assembleScene'
+import { getVideoBackend } from '../../lib/videoBackend'
 import { useSignedBytes } from './useSignedBytes'
 import { useSignDownloadQuery } from '../../store/studioApi'
 import { skipToken } from '@reduxjs/toolkit/query'
@@ -14,6 +15,9 @@ type Props = {
   saving: boolean
   /** Upload the assembled scene blob → bucket; resolves to its serve URL. */
   onSave: (blob: Blob) => Promise<string>
+  /** Server-backend assemble: renders AND persists `assembledUrl` in one job —
+   *  no local blob, no separate save step. */
+  onAssembleServer: (sceneId: string) => Promise<void>
   /** Open the scene preview dialog (owned by the page — shared with the sticky tabs). */
   onPreview: () => void
 }
@@ -37,7 +41,7 @@ const fmtTime = (s: number) => {
  *
  * Mounted with `key={scene.id}` so switching tabs resets this transient state.
  */
-export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
+export function SceneAssembleBar({ scene, saving, onSave, onAssembleServer, onPreview }: Props) {
   // Serve-path-aware fetch: swaps `/api/uploads/...` for direct bucket URLs so
   // the big clip download doesn't crawl through (or OOM) the BFFless backend.
   const fetchBytes = useSignedBytes()
@@ -91,6 +95,16 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
     }
     setResultBlob(null)
     try {
+      if ((await getVideoBackend()) === 'server') {
+        // No granular progress — the poll is status-only until the job lands.
+        // The job persists `assembledUrl` itself, so there's no local blob and
+        // no separate "Save this scene" step: the card just re-reads the scene
+        // prop once the promise resolves.
+        setStage('Rendering on the server…')
+        await onAssembleServer(scene.id)
+        setStage('')
+        return
+      }
       const blob = await assembleSceneBlob({
         scene,
         fetchBytes,
@@ -106,7 +120,7 @@ export function SceneAssembleBar({ scene, saving, onSave, onPreview }: Props) {
     } finally {
       setRunning(false)
     }
-  }, [running, canAssemble, scene, resultUrl, fetchBytes])
+  }, [running, canAssemble, scene, resultUrl, fetchBytes, onAssembleServer])
 
   const save = useCallback(async () => {
     if (!resultBlob || saving) return
