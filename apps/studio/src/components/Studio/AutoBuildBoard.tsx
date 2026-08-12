@@ -109,6 +109,8 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
             <li key={scene.id} className="rounded-md border border-line">
               <button
                 type="button"
+                data-testid="auto-scene"
+                data-state={rolled}
                 onClick={() => onSelect(scene.id)}
                 className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[13px] ${
                   scene.id === selectedId ? 'bg-surface-dim' : ''
@@ -146,6 +148,8 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
                   {AUTO_STEPS.map((step) => (
                     <span
                       key={step.id}
+                      data-testid={`auto-step-${step.id}`}
+                      data-state={steps[step.id]}
                       className={
                         steps[step.id] === 'error'
                           ? 'text-accent-ink'
