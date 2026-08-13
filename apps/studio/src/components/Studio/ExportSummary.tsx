@@ -81,7 +81,11 @@ export function ExportSummary({
   }
 
   return (
-    <div className="flex flex-col gap-5 border rule bg-surface p-5">
+    <div
+      className="flex flex-col gap-5 border rule bg-surface p-5"
+      data-testid="export-summary"
+      data-state={generating ? 'generating' : description ? 'done' : 'idle'}
+    >
       {/* Recommended title — editable */}
       <div>
         <label htmlFor="export-title" className="meta-label">
@@ -89,6 +93,7 @@ export function ExportSummary({
         </label>
         <input
           id="export-title"
+          data-testid="export-title"
           value={description?.title ?? ''}
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder={generating ? 'Generating a title…' : 'Your video title'}
@@ -121,6 +126,7 @@ export function ExportSummary({
         <textarea
           key={ytDescription}
           ref={descRef}
+          data-testid="export-description"
           defaultValue={ytDescription}
           rows={Math.min(16, Math.max(5, 3 + chapters.length))}
           placeholder={

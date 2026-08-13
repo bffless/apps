@@ -11,6 +11,29 @@ export type RunnerConfig = {
   buildTimeoutMs: number
   prepTimeoutMs: number
   directorTimeoutMs: number
+  /** Free-text notes typed into the thumbnail card before drafting the prompt. */
+  thumbnailPrompt: string
+  /** Optional image URL downloaded and attached as the thumbnail reference. */
+  thumbnailReferenceUrl: string | null
+  /** Generate the blog post (and capture its bundle) after the thumbnail. */
+  generateBlog: boolean
+  /** Optional direction typed into the blog card before generating. */
+  blogDirection: string
+  describeTimeoutMs: number
+  thumbnailTimeoutMs: number
+  blogTimeoutMs: number
+}
+
+/** Validate an optional single http(s) URL input (e.g. the thumbnail reference). */
+export function parseOptionalUrl(raw: string | undefined, name: string): string | null {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return null
+  let parsed: URL
+  try { parsed = new URL(trimmed) } catch { throw new Error(`${name} is not a valid URL: ${trimmed}`) }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`${name} has an unsupported protocol (need http/https): ${trimmed}`)
+  }
+  return trimmed
 }
 
 export function parseVideoUrls(raw: string): string[] {
@@ -62,5 +85,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     prepTimeoutMs: minutes(env, 'PREP_TIMEOUT_MINUTES', 30),
     directorTimeoutMs: minutes(env, 'DIRECTOR_TIMEOUT_MINUTES', 10),
     buildTimeoutMs: minutes(env, 'BUILD_TIMEOUT_MINUTES', 90),
+    thumbnailPrompt: env.THUMBNAIL_PROMPT ?? '',
+    thumbnailReferenceUrl: parseOptionalUrl(env.THUMBNAIL_REFERENCE_URL, 'thumbnail_reference_url'),
+    generateBlog: env.GENERATE_BLOG === 'true',
+    blogDirection: env.BLOG_DIRECTION ?? '',
+    describeTimeoutMs: minutes(env, 'DESCRIBE_TIMEOUT_MINUTES', 5),
+    thumbnailTimeoutMs: minutes(env, 'THUMBNAIL_TIMEOUT_MINUTES', 10),
+    blogTimeoutMs: minutes(env, 'BLOG_TIMEOUT_MINUTES', 15),
   }
 }

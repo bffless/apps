@@ -106,6 +106,43 @@ describe('ThumbnailStudio reference image', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/403/))
   })
 
+  it('exposes the headless-contract test-ids and data-states', async () => {
+    const { rerender } = render(<ThumbnailStudio {...props()} />)
+    const card = screen.getByTestId('thumbnail-studio')
+    expect(card).toHaveAttribute('data-state', 'idle')
+    expect(screen.getByTestId('thumb-notes')).toBeInTheDocument()
+    expect(screen.getByTestId('thumb-draft')).toBeInTheDocument()
+    expect(screen.getByTestId('thumb-reference')).toBeInTheDocument()
+    expect(screen.getByTestId('thumb-prompt')).toBeInTheDocument()
+    expect(screen.getByTestId('thumb-render')).toBeInTheDocument()
+
+    rerender(<ThumbnailStudio {...props({ drafting: true })} />)
+    expect(card).toHaveAttribute('data-state', 'drafting')
+    rerender(<ThumbnailStudio {...props({ rendering: true })} />)
+    expect(card).toHaveAttribute('data-state', 'rendering')
+    rerender(
+      <ThumbnailStudio
+        {...props({ thumbnail: { notes: '', prompt: 'p', url: '/api/uploads/t.png' } })}
+      />,
+    )
+    expect(card).toHaveAttribute('data-state', 'done')
+    // The rendered result carries its own id so the runner can read the signed src.
+    await waitFor(() => expect(screen.getByTestId('thumb-result')).toHaveAttribute('src'))
+  })
+
+  it('marks the reference preview so the runner can await the upload', async () => {
+    render(
+      <ThumbnailStudio
+        {...props({
+          thumbnail: { notes: '', prompt: 'p', url: '', referenceUrl: '/api/uploads/thumbnails/saved.png' },
+        })}
+      />,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('thumb-reference-preview')).toHaveAttribute('src'),
+    )
+  })
+
   it('rejects a non-image file before uploading anything', async () => {
     const onUploadReference = vi.fn<(file: File) => Promise<string>>(async () => '')
     render(

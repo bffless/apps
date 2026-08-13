@@ -773,6 +773,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                   <button
                     type="button"
                     className="pill-cta"
+                    data-testid="continue-export"
                     disabled={!pipe.allBuilt}
                     onClick={() => navigatePhase('export')}
                   >

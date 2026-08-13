@@ -46,4 +46,36 @@ describe('loadConfig', () => {
     expect(loadConfig(base as never).ffmpegMt).toBe(false)
     expect(loadConfig({ ...base, FFMPEG_MT: 'true' } as never).ffmpegMt).toBe(true)
   })
+
+  it('defaults the export inputs off/empty', () => {
+    const cfg = loadConfig(base as never)
+    expect(cfg.thumbnailPrompt).toBe('')
+    expect(cfg.thumbnailReferenceUrl).toBeNull()
+    expect(cfg.generateBlog).toBe(false)
+    expect(cfg.blogDirection).toBe('')
+    expect(cfg.describeTimeoutMs).toBe(5 * 60_000)
+    expect(cfg.thumbnailTimeoutMs).toBe(10 * 60_000)
+    expect(cfg.blogTimeoutMs).toBe(15 * 60_000)
+  })
+
+  it('reads the export inputs', () => {
+    const cfg = loadConfig({
+      ...base,
+      THUMBNAIL_PROMPT: 'sketch of me, S01 EP28',
+      THUMBNAIL_REFERENCE_URL: 'https://files.example.dev/r/abc/face.png?token=t',
+      GENERATE_BLOG: 'true',
+      BLOG_DIRECTION: 'friendly tone, lead with the demo',
+    } as never)
+    expect(cfg.thumbnailPrompt).toBe('sketch of me, S01 EP28')
+    expect(cfg.thumbnailReferenceUrl).toBe('https://files.example.dev/r/abc/face.png?token=t')
+    expect(cfg.generateBlog).toBe(true)
+    expect(cfg.blogDirection).toBe('friendly tone, lead with the demo')
+  })
+
+  it('rejects a malformed or non-http thumbnail reference URL', () => {
+    expect(() => loadConfig({ ...base, THUMBNAIL_REFERENCE_URL: 'not a url' } as never))
+      .toThrow(/thumbnail_reference_url/)
+    expect(() => loadConfig({ ...base, THUMBNAIL_REFERENCE_URL: 'ftp://x/face.png' } as never))
+      .toThrow(/protocol/)
+  })
 })
