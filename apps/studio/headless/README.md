@@ -6,7 +6,8 @@
 > `output/console.log`.
 
 A Playwright scenario that drives the real Studio app end-to-end — login, project creation,
-media import, prep (per-source stages → director), and auto build — for unattended CI runs and
+media import, prep (per-source stages → director), auto build, and the Export step
+(title/description, YouTube thumbnail, optional blog post) — for unattended CI runs and
 local smoke checks. It talks to a live Studio origin (either a local dev server in mock mode, or
 the deployed app) exactly the way a human producer would: through the UI, via `data-testid`
 selectors.
@@ -23,12 +24,21 @@ selectors.
    global plan stage (clicking `stage-action` until the director panel appears), fills the
    director prompt, and runs the director.
 5. Starts auto build and waits for the build board to reach `done` (or throws on `halted`).
-6. Waits for the autosave indicator to report `saved`.
+6. Continues to Export: waits for the auto-generated title + description, drafts the
+   thumbnail prompt (steered by `THUMBNAIL_PROMPT` when set), attaches the optional
+   reference image (`THUMBNAIL_REFERENCE_URL`, downloaded up front), renders the
+   thumbnail (saved to `output/thumbnail.png`), and — when `GENERATE_BLOG=true` —
+   writes the blog post (steered by `BLOG_DIRECTION`) and captures the app's own
+   bundle download as `output/blog-bundle.zip` (+ `output/post.md` unzipped for the
+   job summary).
+7. Waits for the autosave indicator to report `saved`.
 
 Every wait targets a `data-testid` element's visibility or `data-state` attribute — no fixed
 sleeps gate progress (a short poll interval is used only while stepping through prep stage
 actions). On success or failure, `output/run-summary.json` is written from a `finally` block so a
-failed run still reports the phase it reached and the project's resumable build URL. Milestone
+failed run still reports the phase it reached and a resumable deep link (`openUrl`: the
+Export page once the run got that far, the Build page for earlier failures) plus the
+generated title/description when the run produced them. Milestone
 screenshots (`output/NN-*.png`) are attached to the Playwright report, and browser console
 messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/console.log`.
 
@@ -47,6 +57,13 @@ messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/con
 | `PREP_TIMEOUT_MINUTES`      | no (default `30`)     | Ceiling per prep stage / per source file. The workflow's `timeout_minutes` must exceed `PREP_TIMEOUT_MINUTES × number of videos + DIRECTOR_TIMEOUT_MINUTES + BUILD_TIMEOUT_MINUTES` — prep scales with `files.length`, not a flat 30 min. |
 | `DIRECTOR_TIMEOUT_MINUTES`  | no (default `10`)     | Ceiling for the master director run.                                         |
 | `BUILD_TIMEOUT_MINUTES`     | no (default `90`)     | Ceiling for the full auto build run.                                         |
+| `THUMBNAIL_PROMPT`          | no                    | Free-text notes typed into "What should the thumbnail be like?" before drafting the image prompt. |
+| `THUMBNAIL_REFERENCE_URL`   | no                    | Image URL (e.g. a Handoff share link) downloaded and attached as the thumbnail reference, so the render is built around it. |
+| `GENERATE_BLOG`             | no (`false` default)  | `true` also generates the blog post and captures its bundle.                 |
+| `BLOG_DIRECTION`            | no                    | Optional direction typed into the blog card before generating.               |
+| `DESCRIBE_TIMEOUT_MINUTES`  | no (default `5`)      | Ceiling for the auto-generated title + description.                          |
+| `THUMBNAIL_TIMEOUT_MINUTES` | no (default `10`)     | Ceiling each for the thumbnail prompt draft and the image render.            |
+| `BLOG_TIMEOUT_MINUTES`      | no (default `15`)     | Ceiling for the blog-post generation.                                        |
 | `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |
 | `FFMPEG_MT`                 | no (`false` default)  | `true` lands on `?ffmpegCore=mt` instead of `?ffmpegCore=st`. By default the runner asks Studio for its single-threaded ffmpeg core via the explicit `?ffmpegCore=st` override — the MT core hung indefinitely on its first exec in headless CI Firefox, and forcing ST by disabling SharedArrayBuffer at the browser level breaks *both* cores (even the ST build carries atomics opcodes the validator then rejects). |
 

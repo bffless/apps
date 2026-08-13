@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 import { mkdtemp, stat, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, isAbsolute } from 'node:path'
-import { fileNameFor, downloadAll } from '../download'
+import { fileNameFor, imageNameFor, downloadAll, downloadImage } from '../download'
 
 let server: Server
 let origin: string
@@ -12,6 +12,9 @@ beforeAll(async () => {
   server = createServer((req, res) => {
     if (req.url === '/ok/clip.mp4') { res.writeHead(200); res.end(Buffer.alloc(1024, 7)) }
     else if (req.url === '/empty.mp4') { res.writeHead(200); res.end() }
+    else if (req.url?.startsWith('/face')) {
+      res.writeHead(200, { 'content-type': 'image/jpeg' }); res.end(Buffer.alloc(64, 3))
+    }
     else { res.writeHead(404); res.end('nope') }
   })
   await new Promise<void>((r) => server.listen(0, () => r()))
@@ -26,6 +29,31 @@ describe('fileNameFor', () => {
   })
   it('falls back to source-N.mp4 for extensionless paths', () => {
     expect(fileNameFor('https://x/dl?id=123', 2)).toBe('source-2.mp4')
+  })
+})
+
+describe('imageNameFor', () => {
+  it('keeps an image filename from the URL path (query ignored)', () => {
+    expect(imageNameFor('https://x/r/abc/screenshot%20one.png?token=t', null)).toBe('screenshot one.png')
+  })
+  it('derives the extension from the content-type for extensionless paths', () => {
+    expect(imageNameFor('https://x/dl?id=123', 'image/jpeg')).toBe('reference.jpg')
+  })
+  it('defaults to png when neither path nor content-type help', () => {
+    expect(imageNameFor('https://x/dl?id=123', 'application/octet-stream')).toBe('reference.png')
+  })
+})
+
+describe('downloadImage', () => {
+  it('downloads and names the file from the content-type', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dl-'))
+    const p = await downloadImage(`${origin}/face?id=1`, dir)
+    expect(p.endsWith('reference.jpg')).toBe(true)
+    expect((await stat(p)).size).toBe(64)
+  })
+  it('fails on non-200', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dl-'))
+    await expect(downloadImage(`${origin}/missing.png`, dir)).rejects.toThrow(/404/)
   })
 })
 

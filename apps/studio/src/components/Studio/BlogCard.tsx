@@ -56,6 +56,17 @@ export function BlogCard({
 
   const ready = post?.status === 'done' && !!post.markdown
 
+  // Machine-readable card state for the headless runner (headless/, story 14).
+  const cardState = generating
+    ? 'running'
+    : post?.status === 'error'
+      ? 'error'
+      : ready
+        ? stale
+          ? 'stale'
+          : 'done'
+        : 'idle'
+
   /**
    * Assemble + download the Blog bundle (issue #71). The pure `planBlogBundle`
    * rewrites the post's image URLs to relative `images/frame-NN.jpg` paths and
@@ -96,7 +107,11 @@ export function BlogCard({
   }
 
   return (
-    <div className="flex flex-col gap-4 border rule bg-surface p-5">
+    <div
+      className="flex flex-col gap-4 border rule bg-surface p-5"
+      data-testid="blog-card"
+      data-state={cardState}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="meta-label">Blog post</p>
@@ -110,6 +125,7 @@ export function BlogCard({
             <button
               type="button"
               className="pill-ghost"
+              data-testid="blog-download"
               disabled={downloading}
               onClick={handleDownload}
             >
@@ -119,6 +135,7 @@ export function BlogCard({
           <button
             type="button"
             className="pill-ghost"
+            data-testid="blog-generate"
             disabled={generating}
             onClick={() => onGenerate(direction)}
           >
@@ -133,6 +150,7 @@ export function BlogCard({
         </label>
         <input
           id="blog-direction"
+          data-testid="blog-direction"
           value={direction}
           onChange={(e) => setDirection(e.target.value)}
           placeholder="e.g. friendly tone, lead with the demo, keep it short"

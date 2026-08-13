@@ -1,9 +1,11 @@
 name: Studio Headless Run
 
-# Unattended Import → Prep → Auto Build against the real Studio site.
+# Unattended Import → Prep → Auto Build → Export against the real Studio site.
 # Dispatch-only: every run spends real AI credits (transcribe, director,
-# refine, voice). The finished project appears in your own project list via
-# server sync; the job summary links straight to its Build page.
+# refine, voice, describe, thumbnail, optional blog). The finished project
+# appears in your own project list via server sync; the job summary links
+# straight to its Export page and carries the generated title, description,
+# and (opt-in) blog post; the artifact carries the thumbnail + blog bundle.
 on:
   workflow_dispatch:
     inputs:
@@ -27,15 +29,33 @@ on:
         type: string
         default: ''
       timeout_minutes:
-        description: 'Overall job timeout (must exceed runner phase ceilings: prep 30 min × number of videos + director 10 min + build 90 min)'
+        description: 'Overall job timeout (must exceed runner phase ceilings: prep 30 min × number of videos + director 10 min + build 90 min + export ~30 min)'
         required: false
         type: number
-        default: 180
-      ffmpeg_mt:
-        description: 'Use the multithreaded ffmpeg core (hung indefinitely in headless CI Firefox on first try; default is the single-threaded fallback)'
+        default: 210
+      thumbnail_prompt:
+        description: 'Optional direction for the YouTube thumbnail ("What should the thumbnail be like?")'
+        required: false
+        type: string
+        default: ''
+      thumbnail_reference_url:
+        description: 'Optional image URL (e.g. a Handoff share link) attached as the thumbnail reference'
+        required: false
+        type: string
+        default: ''
+      generate_blog:
+        description: 'Also generate the blog post (bundle lands in the artifact + summary)'
         required: false
         type: boolean
         default: false
+      blog_direction:
+        description: 'Optional direction for the blog post'
+        required: false
+        type: string
+        default: ''
+      # NOTE: workflow_dispatch caps at 10 inputs — the old ffmpeg_mt input made
+      # 11, so it moved to the STUDIO_FFMPEG_MT repo variable (rarely-used debug
+      # escape hatch; the proven default is Chrome + the single-threaded core).
       browser:
         description: 'Browser to drive the site with. Chrome is the proven default: Chrome+ST built 4 scenes in 25 min (run 31552803617) while Firefox+ST could not finish one scene cut.'
         required: false
@@ -75,9 +95,13 @@ jobs:
           VIDEO_URLS: ${{ inputs.video_urls }}
           DIRECTOR_PROMPT: ${{ inputs.director_prompt }}
           PROJECT_TITLE: ${{ inputs.project_title }}
+          THUMBNAIL_PROMPT: ${{ inputs.thumbnail_prompt }}
+          THUMBNAIL_REFERENCE_URL: ${{ inputs.thumbnail_reference_url }}
+          GENERATE_BLOG: ${{ inputs.generate_blog && 'true' || 'false' }}
+          BLOG_DIRECTION: ${{ inputs.blog_direction }}
           STUDIO_USER_EMAIL: ${{ secrets.STUDIO_USER_EMAIL }}
           STUDIO_USER_PASSWORD: ${{ secrets.STUDIO_USER_PASSWORD }}
-          FFMPEG_MT: ${{ inputs.ffmpeg_mt && 'true' || 'false' }}
+          FFMPEG_MT: ${{ vars.STUDIO_FFMPEG_MT == 'true' && 'true' || 'false' }}
           RUNNER_BROWSER: ${{ inputs.browser }}
         run: pnpm --filter studio-headless scenario
       - name: Job summary
@@ -85,15 +109,15 @@ jobs:
         run: |
           node -e '
             const fs = require("fs");
-            const p = "apps/studio/headless/output/run-summary.json";
-            let s = { ok: false, phase: "no-summary", buildUrl: null, projectId: null, error: null, timings: {} };
-            try { s = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
+            const out = "apps/studio/headless/output";
+            let s = { ok: false, phase: "no-summary", openUrl: null, projectId: null, error: null, title: null, description: null, thumbnail: false, blogBundle: false, timings: {} };
+            try { s = JSON.parse(fs.readFileSync(`${out}/run-summary.json`, "utf8")); } catch {}
             const lines = [
               s.ok ? "## ✅ Studio headless run complete" : `## ❌ Studio headless run failed (during: ${s.phase})`,
               "",
             ];
-            if (s.buildUrl) {
-              lines.push(`**Open the project:** ${s.buildUrl}`);
+            if (s.openUrl) {
+              lines.push(`**Open the project:** ${s.openUrl}`);
               if (s.projectId) lines.push(`**Project ID:** ${s.projectId}`);
             } else if (s.projectId) {
               lines.push(`**Project ID:** ${s.projectId}`);
@@ -101,7 +125,20 @@ jobs:
               lines.push("_No project was created._");
             }
             if (s.error) lines.push(`**Error:** ${s.error}`);
-            if (!s.ok && s.buildUrl) lines.push("\nThe project is resumable — open the link and continue from where the run halted.");
+            if (!s.ok && s.openUrl) lines.push("\nThe project is resumable — open the link and continue from where the run halted.");
+            if (s.title) lines.push("", `### ${s.title}`);
+            if (s.description) lines.push("", "**YouTube description**", "", "```", s.description, "```");
+            if (s.thumbnail) lines.push("", "**Thumbnail:** `thumbnail.png` in the run-output artifact.");
+            if (s.blogBundle) {
+              lines.push("", "**Blog bundle:** `blog-bundle.zip` (post.md + images) in the run-output artifact.");
+              try {
+                // Inline the post for reading here; its image links point at
+                // auth-gated serve paths, so they render only inside the app.
+                const post = fs.readFileSync(`${out}/post.md`, "utf8");
+                const clipped = post.length > 100_000 ? post.slice(0, 100_000) + "\n\n… (truncated — full post in the artifact)" : post;
+                lines.push("", "<details><summary>Blog post (post.md)</summary>", "", clipped, "", "</details>");
+              } catch {}
+            }
             lines.push("", "| Phase | Elapsed |", "| --- | --- |");
             lines.push(...Object.entries(s.timings).map(([k, v]) => `| ${k} | ${Math.round(v / 1000)}s |`));
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");

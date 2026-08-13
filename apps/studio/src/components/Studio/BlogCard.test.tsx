@@ -90,4 +90,42 @@ describe('BlogCard', () => {
     )
     expect(screen.getByRole('button', { name: /Download bundle/i })).toBeInTheDocument()
   })
+
+  // The headless runner (headless/, story 14) drives this card by these
+  // test-ids — a contract, not decoration (see CLAUDE.md).
+  it('exposes the headless-contract test-ids and data-states', () => {
+    const { rerender } = render(
+      <BlogCard post={null} generating={false} onGenerate={vi.fn()} />,
+    )
+    const card = screen.getByTestId('blog-card')
+    expect(card).toHaveAttribute('data-state', 'idle')
+    expect(screen.getByTestId('blog-direction')).toBeInTheDocument()
+    expect(screen.getByTestId('blog-generate')).toBeInTheDocument()
+
+    rerender(<BlogCard post={post({ status: 'running' })} generating onGenerate={vi.fn()} />)
+    expect(card).toHaveAttribute('data-state', 'running')
+
+    rerender(<BlogCard post={post({ status: 'error' })} generating={false} onGenerate={vi.fn()} />)
+    expect(card).toHaveAttribute('data-state', 'error')
+
+    rerender(
+      <BlogCard
+        post={post({ status: 'done', markdown: '# My Post' })}
+        generating={false}
+        onGenerate={vi.fn()}
+      />,
+    )
+    expect(card).toHaveAttribute('data-state', 'done')
+    expect(screen.getByTestId('blog-download')).toBeInTheDocument()
+
+    rerender(
+      <BlogCard
+        post={post({ status: 'done', markdown: '# My Post' })}
+        generating={false}
+        stale
+        onGenerate={vi.fn()}
+      />,
+    )
+    expect(card).toHaveAttribute('data-state', 'stale')
+  })
 })

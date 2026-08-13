@@ -1,11 +1,12 @@
 import { test, expect, type Locator } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
-import { mkdtemp, writeFile, appendFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, appendFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { unzipSync } from 'fflate'
 import { loadConfig } from './config'
-import { downloadAll } from './download'
+import { downloadAll, downloadImage } from './download'
 
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'output')
 mkdirSync(OUT, { recursive: true })
@@ -23,6 +24,10 @@ test('studio headless run', async ({ page }, testInfo) => {
   let phase = 'start'
   let projectId: string | null = null
   let cfg: ReturnType<typeof loadConfig> | null = null
+  let exportTitle: string | null = null
+  let exportDescription: string | null = null
+  let thumbnailSaved = false
+  let blogSaved = false
   const t0 = Date.now()
   const mark = (name: string) => { timings[name] = Date.now() - t0 }
   const shot = async (name: string) => {
@@ -83,6 +88,11 @@ test('studio headless run', async ({ page }, testInfo) => {
     const files = cfg.mockMode
       ? cfg.fixturePaths
       : await downloadAll(cfg.videoUrls, await mkdtemp(join(tmpdir(), 'studio-src-')))
+    // The optional thumbnail reference downloads up front too — a bad URL should
+    // fail the run before any credits are spent, not two hours in.
+    const referenceFile = cfg.thumbnailReferenceUrl
+      ? await downloadImage(cfg.thumbnailReferenceUrl, await mkdtemp(join(tmpdir(), 'studio-ref-')))
+      : null
     mark('download')
 
     // ---- login (real mode only; the site 302s /api/* to the admin relay) ----
@@ -276,6 +286,103 @@ test('studio headless run', async ({ page }, testInfo) => {
     progress('build: done — final cut stitched')
     mark('build')
 
+    // ---- export: title + description (auto-generated on arrival) ----
+    phase = 'export'
+    await page.getByTestId('continue-export').click()
+    progress('export: generating the title + description')
+    const summaryCard = page.getByTestId('export-summary')
+    await pollUntil(
+      'export: waiting for the title + description',
+      cfg.describeTimeoutMs,
+      async () => (await peek(summaryCard, 'data-state')) === 'done',
+      async () => `export: description ${(await peek(summaryCard, 'data-state')) ?? '?'}`,
+    )
+    exportTitle = await page.getByTestId('export-title').inputValue()
+    exportDescription = await page.getByTestId('export-description').inputValue()
+    progress(`export: title — ${exportTitle}`)
+    await shot('07-description')
+    mark('export-describe')
+
+    // ---- export: YouTube thumbnail (draft → optional reference → render) ----
+    phase = 'export-thumbnail'
+    const thumbCard = page.getByTestId('thumbnail-studio')
+    if (cfg.thumbnailPrompt) await page.getByTestId('thumb-notes').fill(cfg.thumbnailPrompt)
+    progress('export: drafting the thumbnail prompt')
+    await page.getByTestId('thumb-draft').click()
+    const promptBox = page.getByTestId('thumb-prompt')
+    await pollUntil(
+      'export: waiting for the drafted thumbnail prompt',
+      cfg.thumbnailTimeoutMs,
+      async () =>
+        (await peek(thumbCard, 'data-state')) !== 'drafting' &&
+        ((await promptBox.inputValue({ timeout: PEEK_MS }).catch(() => '')) ?? '').trim() !== '',
+      async () => 'export: drafting the thumbnail prompt',
+    )
+    if (referenceFile) {
+      progress('export: attaching the reference image')
+      await page.getByTestId('thumb-reference').setInputFiles(referenceFile)
+      // The preview only appears once the presigned upload finished and the
+      // serve path signed — generating before that would drop the reference.
+      await page.getByTestId('thumb-reference-preview').waitFor({ timeout: 120_000 })
+    }
+    progress('export: rendering the thumbnail')
+    await page.getByTestId('thumb-render').click()
+    await pollUntil(
+      'export: waiting for the rendered thumbnail',
+      cfg.thumbnailTimeoutMs,
+      async () => (await peek(thumbCard, 'data-state')) === 'done',
+      async () => `export: thumbnail ${(await peek(thumbCard, 'data-state')) ?? '?'}`,
+    )
+    // The result <img> carries a signed direct-bucket URL — fetchable from Node
+    // without cookies, so save a copy into the artifact.
+    const thumbSrc = await page.getByTestId('thumb-result').getAttribute('src')
+    if (thumbSrc) {
+      const res = await fetch(thumbSrc).catch(() => null)
+      if (res?.ok) {
+        await writeFile(join(OUT, 'thumbnail.png'), Buffer.from(await res.arrayBuffer()))
+        thumbnailSaved = true
+      } else {
+        progress(`export: thumbnail fetch failed (${res?.status ?? 'network error'}) — artifact will lack thumbnail.png`)
+      }
+    }
+    await shot('08-thumbnail')
+    progress('export: thumbnail rendered')
+    mark('export-thumbnail')
+
+    // ---- export: blog post (opt-in) ----
+    if (cfg.generateBlog) {
+      phase = 'export-blog'
+      const blogCard = page.getByTestId('blog-card')
+      if (cfg.blogDirection) await page.getByTestId('blog-direction').fill(cfg.blogDirection)
+      progress('export: writing the blog post')
+      await page.getByTestId('blog-generate').click()
+      await pollUntil(
+        'export: waiting for the blog post',
+        cfg.blogTimeoutMs,
+        async () => {
+          const st = (await peek(blogCard, 'data-state')) ?? ''
+          if (st === 'error') throw new Error('blog generation failed — see the 09 screenshot + console log')
+          return st === 'done' || st === 'stale'
+        },
+        async () => `export: blog ${(await peek(blogCard, 'data-state')) ?? '?'}`,
+      )
+      // Capture the app's own "Download bundle" (post.md + images zip) as an
+      // artifact, and unzip post.md next to it for the job summary.
+      progress('export: capturing the blog bundle')
+      const [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: 120_000 }),
+        page.getByTestId('blog-download').click(),
+      ])
+      const bundlePath = join(OUT, 'blog-bundle.zip')
+      await download.saveAs(bundlePath)
+      const post = unzipSync(new Uint8Array(await readFile(bundlePath)))['post.md']
+      if (post) await writeFile(join(OUT, 'post.md'), post)
+      blogSaved = true
+      await shot('09-blog')
+      progress('export: blog post written + bundle captured')
+      mark('export-blog')
+    }
+
     // ---- settle: autosave ----
     phase = 'settle'
     await expect(page.getByTestId('save-indicator')).toHaveAttribute('data-state', 'saved', { timeout: 120_000 })
@@ -286,14 +393,23 @@ test('studio headless run', async ({ page }, testInfo) => {
     errorMessage = e instanceof Error ? e.message : String(e)
     throw e
   } finally {
-    const buildUrl = cfg && projectId ? `${cfg.baseUrl}/project/${projectId}/build` : null
-    progress(phase === 'done' ? `run complete: ${buildUrl}` : `run failed during ${phase}${buildUrl ? ` — resume at ${buildUrl}` : ''}`)
+    // Deep-link to where the user should pick up: the Export page once the run
+    // got that far (or finished), the Build page for earlier failures.
+    const reachedExport = phase === 'done' || phase === 'settle' || phase.startsWith('export')
+    const openUrl = cfg && projectId
+      ? `${cfg.baseUrl}/project/${projectId}/${reachedExport ? 'export' : 'build'}`
+      : null
+    progress(phase === 'done' ? `run complete: ${openUrl}` : `run failed during ${phase}${openUrl ? ` — resume at ${openUrl}` : ''}`)
     await writeFile(join(OUT, 'run-summary.json'), JSON.stringify({
       ok: phase === 'done',
       projectId,
-      buildUrl,
+      openUrl,
       phase,
       error: phase === 'done' ? null : (errorMessage ?? `failed during: ${phase}`),
+      title: exportTitle,
+      description: exportDescription,
+      thumbnail: thumbnailSaved,
+      blogBundle: blogSaved,
       timings,
     }, null, 2))
   }
