@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/bffless/apps/compare/studio-v1.7.0...studio-v1.8.0) (2026-08-13)
+
+
+### Features
+
+* **studio:** headless run completes the Export step (thumbnail direction + reference, opt-in blog) ([#332](https://github.com/bffless/apps/issues/332)) ([68e8c02](https://github.com/bffless/apps/commit/68e8c02bc19eb53d397945958b453992ea865b0a))
+
 ## [1.7.0](https://github.com/bffless/apps/compare/studio-v1.6.0...studio-v1.7.0) (2026-08-12)
 
 
