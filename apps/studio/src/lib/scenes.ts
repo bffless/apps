@@ -31,6 +31,14 @@ export type Cut = { start: number; end: number }
 export type SceneRefinement = {
   cuts: Cut[]
   source: 'ai' | 'manual'
+  /**
+   * `false` when the refiner never heard this scene: the provider's audio input
+   * failed and the pipeline re-ran deaf (sheets + word timings + measured dead
+   * space only). The cuts are real but placed with less evidence, so the panel
+   * flags it. Absent on refinements from before this field existed, and on
+   * hand-edits, so only an explicit `false` means anything.
+   */
+  heardAudio?: boolean
 }
 
 export type Scene = {

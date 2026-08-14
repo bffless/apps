@@ -117,3 +117,20 @@ describe('SceneRefinePanel scene prompts (story 03l)', () => {
     expect(onToggle).toHaveBeenCalledWith(true)
   })
 })
+
+// When the provider's audio input fails, the pipeline re-runs the refiner deaf
+// instead of failing the scene — the cuts land, so nothing looks wrong. Say so.
+describe('SceneRefinePanel deaf-refine warning', () => {
+  it('warns when the refiner never heard the scene', () => {
+    renderPanel(makeScene({ refined: { cuts: [{ start: 1, end: 2 }], source: 'ai', heardAudio: false } }))
+    expect(screen.getByTestId('refine-deaf-warning')).toHaveTextContent(/without audio/i)
+  })
+
+  it('stays quiet for a normal refine, and for a pipeline that never reports it', () => {
+    renderPanel(makeScene({ refined: { cuts: [{ start: 1, end: 2 }], source: 'ai', heardAudio: true } }))
+    expect(screen.queryByTestId('refine-deaf-warning')).not.toBeInTheDocument()
+
+    renderPanel(makeScene({ refined: { cuts: [{ start: 1, end: 2 }], source: 'ai' } }))
+    expect(screen.queryByTestId('refine-deaf-warning')).not.toBeInTheDocument()
+  })
+})

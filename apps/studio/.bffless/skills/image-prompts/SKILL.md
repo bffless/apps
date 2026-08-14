@@ -151,6 +151,16 @@ When the user shares a reference:
 3. **Reuse the named anchors.** "In the style of [reference]" only works if you name what the reference *is* — "vintage technical manual" beats "the image I just looked at."
 4. **Don't copy the subject — copy the treatment.** The user wants a new thumbnail for *their* video, not a duplicate of the reference. Keep the style, swap the content.
 
+### When the reference is handed to the image model
+
+Some pipelines pass the reference to the generator itself (nano-banana's `image_input`, Imagen's reference input) rather than only to you. Then it is not a style source — the output is meant to **contain** it, usually the creator's own face. The model still ignores it unless the prompt says to use it, so:
+
+1. **Name it in the Subject section.** "Use the attached reference photo of the presenter — same face, same person, cut out from its background" — then place them ("right third, shoulders up, facing left").
+2. **Compose for a person.** Give them 30-40% of the canvas; keep the headline and any diagram out of that space.
+3. **Drop "photorealistic humans" from the negatives.** It is the single line that cancels the attachment, and it **overrides the "always avoid" list of whichever house style you picked.** Ban invented people instead: "extra people, invented faces, stock-photo models, altered likeness".
+
+Rule 3 is the one that gets missed: a prompt can attach a photo, describe a full illustration, and forbid humans all at once — and the result is a clean thumbnail with no creator in it.
+
 ## Output format
 
 When you produce a prompt, deliver it as one fenced code block the user can copy-paste directly into Midjourney/DALL-E/Gemini. No commentary inside the block. After the block, one short sentence offering tweaks (e.g. "swap the headline to X if you'd rather lead with Y").

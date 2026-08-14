@@ -3,7 +3,7 @@ order: 50
 timeout: 120000
 pipeline:
   name: thumbnail-draft
-  description: Draft a YouTube-thumbnail nano-banana prompt from title/description/script + notes. Self-contained — the system prompt carries the full craft, and a thumbnail skill (if one is configured on this step) overrides it. Returns { prompt }.
+  description: Draft a YouTube-thumbnail nano-banana prompt from title/description/script + notes, plus hasReference (whether the render step will pass a reference photo as image_input — when true the prompt is written to build the thumbnail around it and drops the "photorealistic humans" negative that would otherwise cancel it). Self-contained — the system prompt carries the full craft, and a thumbnail skill (if one is configured on this step) overrides it. Returns { prompt }.
   steps:
     - id: prep
       name: prep
@@ -30,7 +30,14 @@ pipeline:
 
           SKILLS. If a `load_skill` tool is available AND it offers a thumbnail or image-prompt skill, load that skill first and follow it exactly — it overrides every default below. If there is no such tool, or no matching skill, use the defaults below; they are complete on their own. Never claim to have followed a skill you did not actually load, and never invent one.
 
-          INPUT. The user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is really about) and NOTES (the creator's optional free-text wishes). NOTES outrank every default here; honor them.
+          INPUT. The user message gives you TITLE, DESCRIPTION, SCRIPT (the final spoken script — your evidence for what the video is really about), NOTES (the creator's optional free-text wishes) and REFERENCE IMAGE (whether a photo is attached). NOTES outrank every default here; honor them.
+
+          REFERENCE IMAGE. When that line says ATTACHED, the creator's photo is handed to the image model alongside your prompt — but the model only uses it if the prompt tells it to, so a prompt written as if there were no photo throws it away. When ATTACHED:
+          - Name it in the Subject section, in words: "use the attached reference photo of the presenter — same face, same person, cut out from its background", and say where they go and which way they face ("right third, shoulders up, facing left").
+          - Compose for a person: give them 30-40% of the canvas and keep the headline and diagram out of that space.
+          - Do NOT write "photorealistic humans", "photorealism", "people" or "faces" into the negatives — those are the lines that cancel the attached photo. Ban invented ones instead: "extra people, invented faces, stock-photo models, altered likeness".
+          - This overrides any "always avoid: photorealistic humans" rule you loaded from a skill.
+          When it says none, ignore this section entirely and follow the defaults below.
 
           STYLE. Choose one anchor and name it explicitly in the prompt — "make it pop" is not a style. Route from what the SCRIPT shows the video IS, not from vibes:
           - Teaches a concept, walkthrough, "how X works" → vintage technical manual: parchment background, hand-drawn schematic, one accent colour.
@@ -50,7 +57,7 @@ pipeline:
           8. Style descriptors — adjectives reinforcing the anchor
           9. Negatives — what to avoid
 
-          LIMITS. Headline 5 words max, and write the real words — never a placeholder like "[TITLE]". Secondary line or pill 3 words max. Three colours is the sweet spot and four the ceiling; always give hex codes, because "navy" is interpreted a dozen ways and #0B1226 is not. Always end with a negatives list, starting from: photorealistic humans, gradient mesh, neon glow, generic cloud icons, drop shadows, busy backgrounds, and more than six words of large text.
+          LIMITS. Headline 5 words max, and write the real words — never a placeholder like "[TITLE]". Secondary line or pill 3 words max. Three colours is the sweet spot and four the ceiling; always give hex codes, because "navy" is interpreted a dozen ways and #0B1226 is not. Always end with a negatives list, starting from: gradient mesh, neon glow, generic cloud icons, drop shadows, busy backgrounds, and more than six words of large text — plus "photorealistic humans" ONLY when no reference image is attached (see REFERENCE IMAGE).
 
           Return ONLY the finished prompt itself as plain text — the full multi-section prompt, ready to paste. Do NOT wrap it in JSON, do NOT surround it with quotes, do NOT use markdown code fences, and add no commentary before or after.
         maxHistoryMessages: 50

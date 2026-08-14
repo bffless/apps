@@ -303,10 +303,22 @@ test('studio headless run', async ({ page }, testInfo) => {
     await shot('07-description')
     mark('export-describe')
 
-    // ---- export: YouTube thumbnail (draft → optional reference → render) ----
+    // ---- export: YouTube thumbnail (optional reference → draft → render) ----
+    // The reference goes on BEFORE drafting: the draft call carries whether one
+    // is attached, and only then does the drafted prompt tell nano-banana to
+    // build around the photo. Attach it after drafting and the prompt describes
+    // a self-contained illustration (and bans photorealistic humans), so the
+    // photo is passed but ignored.
     phase = 'export-thumbnail'
     const thumbCard = page.getByTestId('thumbnail-studio')
     if (cfg.thumbnailPrompt) await page.getByTestId('thumb-notes').fill(cfg.thumbnailPrompt)
+    if (referenceFile) {
+      progress('export: attaching the reference image')
+      await page.getByTestId('thumb-reference').setInputFiles(referenceFile)
+      // The preview only appears once the presigned upload finished and the
+      // serve path signed — drafting before that would draft without it.
+      await page.getByTestId('thumb-reference-preview').waitFor({ timeout: 120_000 })
+    }
     progress('export: drafting the thumbnail prompt')
     await page.getByTestId('thumb-draft').click()
     const promptBox = page.getByTestId('thumb-prompt')
@@ -318,13 +330,6 @@ test('studio headless run', async ({ page }, testInfo) => {
         ((await promptBox.inputValue({ timeout: PEEK_MS }).catch(() => '')) ?? '').trim() !== '',
       async () => 'export: drafting the thumbnail prompt',
     )
-    if (referenceFile) {
-      progress('export: attaching the reference image')
-      await page.getByTestId('thumb-reference').setInputFiles(referenceFile)
-      // The preview only appears once the presigned upload finished and the
-      // serve path signed — generating before that would drop the reference.
-      await page.getByTestId('thumb-reference-preview').waitFor({ timeout: 120_000 })
-    }
     progress('export: rendering the thumbnail')
     await page.getByTestId('thumb-render').click()
     await pollUntil(

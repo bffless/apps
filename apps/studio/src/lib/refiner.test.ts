@@ -41,6 +41,19 @@ describe('toRefinement', () => {
     expect(r).toEqual({ cuts: [{ start: 35, end: 52 }], source: 'ai' })
   })
 
+  // The pipeline re-runs the refiner deaf when the provider's audio input fails,
+  // so the cuts arrive placed with less evidence. Carry that through so the UI
+  // can say so — but only when the pipeline actually reported it.
+  it('marks a refinement the model could not hear', () => {
+    const r = toRefinement({ cuts: [{ start: 35, end: 52 }], heardAudio: false }, scene())
+    expect(r.heardAudio).toBe(false)
+  })
+
+  it('leaves heardAudio absent when the pipeline heard the scene or never said', () => {
+    expect(toRefinement({ cuts: [], heardAudio: true }, scene())).not.toHaveProperty('heardAudio')
+    expect(toRefinement({ cuts: [] }, scene())).not.toHaveProperty('heardAudio')
+  })
+
   it('clamps cuts into the scene span', () => {
     const r = toRefinement({ cuts: [{ start: -10, end: 30 }] }, scene({ start: 0, end: 100 }))
     expect(r.cuts).toEqual([{ start: 0, end: 30 }])
