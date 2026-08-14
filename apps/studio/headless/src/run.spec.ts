@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
 import { loadConfig } from './config'
 import { downloadAll, downloadImage } from './download'
+import { JOB_POLL_PATH, transcribeWordCount } from './jobs'
 
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'output')
 mkdirSync(OUT, { recursive: true })
@@ -46,6 +47,24 @@ test('studio headless run', async ({ page }, testInfo) => {
   page.on('console', (m) => logLine(`[console:${m.type()}] ${m.text()}`))
   page.on('pageerror', (e) => logLine(`[pageerror] ${e.message}`))
   page.on('response', (r) => { if (r.status() >= 400) logLine(`[http ${r.status()}] ${r.url()}`) })
+
+  // Watch the app's job polls for finished transcribe jobs and remember each
+  // job's word count. The DOM only shows a "done" badge either way, but a
+  // silent recording (muted mic) transcribes to 0 words — and everything
+  // downstream (director cuts, refine, describe, thumbnail, blog) is built on
+  // those words, so the run must fail HERE, not 30 credit-burning minutes
+  // later at the export step.
+  const transcribeWords = new Map<string, number>()
+  page.on('response', (r) => {
+    if (!r.url().includes(JOB_POLL_PATH) || r.status() !== 200) return
+    void r
+      .json()
+      .then((body) => {
+        const count = transcribeWordCount(body)
+        if (count != null) transcribeWords.set(r.url(), count)
+      })
+      .catch(() => {})
+  })
 
   const peek = (l: Locator, attr: string) => l.getAttribute(attr, { timeout: PEEK_MS }).catch(() => null)
 
@@ -163,6 +182,28 @@ test('studio headless run', async ({ page }, testInfo) => {
     )
     await shot('03-sources-processed')
     progress('prep: all source clips processed')
+    // Fail fast on silent audio: a muted-mic recording transcribes to 0 words
+    // with a clean "done" badge, and every later stage (director cuts, refine,
+    // describe, thumbnail, blog) is built on those words. Real mode always
+    // polls at least one transcribe job per source; observing NONE would mean
+    // the wire-watch itself broke, so that fails too rather than passing blind.
+    // (Mock mode is exempt — MSW answers from a service worker the CDP response
+    // event doesn't reliably see, and its canned transcript is never silent.)
+    if (!cfg.mockMode) {
+      const counts = [...transcribeWords.values()]
+      if (counts.length < files.length) {
+        throw new Error(
+          `only ${counts.length} of ${files.length} transcribe jobs were observed on the wire — cannot confirm every source transcribed`,
+        )
+      }
+      if (counts.some((c) => c === 0)) {
+        throw new Error(
+          'transcription produced 0 words for a source — the recording’s audio track is silent or ' +
+            'undecodable (muted mic?). Fix the recording and dispatch again; nothing downstream is worth building without words.',
+        )
+      }
+      progress(`prep: transcribed ${counts.map((c) => c.toLocaleString()).join(' + ')} words`)
+    }
     mark('prep-sources')
 
     // ---- prep: global plan (contact sheets → director) ----
