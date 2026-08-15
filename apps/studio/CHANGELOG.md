@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/bffless/apps/compare/studio-v1.9.0...studio-v1.9.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **studio:** fail a wedged build fast instead of burning the run budget ([#340](https://github.com/bffless/apps/issues/340)) ([4e64d4c](https://github.com/bffless/apps/commit/4e64d4c91d9ba967f888b3277b6ddd75ae095587)), closes [#339](https://github.com/bffless/apps/issues/339)
+
 ## [1.9.0](https://github.com/bffless/apps/compare/studio-v1.8.0...studio-v1.9.0) (2026-08-15)
 
 
