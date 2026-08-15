@@ -63,7 +63,7 @@ on:
   workflow_dispatch:
     inputs:
       video_urls:
-        description: 'Source video URL(s), newline-separated'
+        description: 'Source video URL(s), comma-separated (the UI input is single-line; newlines also work when dispatched via API)'
         required: true
         type: string
       director_prompt:
