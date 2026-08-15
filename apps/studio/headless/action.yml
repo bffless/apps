@@ -1,0 +1,203 @@
+name: 'Studio Headless Run'
+description: >-
+  Drive an installed BFFless Studio deployment end-to-end (import → prep → auto
+  build → export) with Playwright, unattended. Spends real AI credits on the
+  target Studio. Writes a job summary, uploads the run output as an artifact
+  and exposes the project link/title/description as outputs. Requires a Linux
+  x64 runner with Google Chrome preinstalled (GitHub-hosted `ubuntu-latest`) —
+  or `browser: firefox`, which installs Firefox + ffmpeg via apt. Installs
+  Node 20 + pnpm 10 onto the job's PATH.
+author: 'bffless'
+branding:
+  icon: 'film'
+  color: 'purple'
+
+inputs:
+  base-url:
+    description: 'Origin of the Studio deployment to drive, e.g. https://studio.example.com'
+    required: true
+  video-urls:
+    description: 'Source video URL(s), comma or newline separated'
+    required: true
+  user-email:
+    description: 'Login email for the Studio admin auth relay (pass a secret)'
+    required: true
+  user-password:
+    description: 'Login password (pass a secret)'
+    required: true
+  director-prompt:
+    description: 'Optional guidance for the master director'
+    required: false
+    default: ''
+  project-title:
+    description: 'Optional project name (reserved; not yet applied by the runner)'
+    required: false
+    default: ''
+  thumbnail-prompt:
+    description: 'Optional direction for the YouTube thumbnail'
+    required: false
+    default: ''
+  thumbnail-reference-url:
+    description: 'Optional image URL attached as the thumbnail reference'
+    required: false
+    default: ''
+  generate-blog:
+    description: 'Also generate the blog post (true/false)'
+    required: false
+    default: 'false'
+  blog-direction:
+    description: 'Optional direction for the blog post'
+    required: false
+    default: ''
+  browser:
+    description: 'chrome (default, preinstalled on ubuntu-latest) or firefox'
+    required: false
+    default: 'chrome'
+  ffmpeg-mt:
+    description: 'true to ask Studio for its multithreaded ffmpeg core (?ffmpegCore=mt). Debug escape hatch.'
+    required: false
+    default: 'false'
+  prep-timeout-minutes:
+    description: 'Ceiling per prep stage, per source file'
+    required: false
+    default: '30'
+  director-timeout-minutes:
+    description: 'Ceiling for the master director run'
+    required: false
+    default: '10'
+  build-timeout-minutes:
+    description: 'Ceiling for the full auto build'
+    required: false
+    default: '90'
+  describe-timeout-minutes:
+    description: 'Ceiling for the auto-generated title + description'
+    required: false
+    default: '5'
+  thumbnail-timeout-minutes:
+    description: 'Ceiling each for the thumbnail prompt draft and the image render'
+    required: false
+    default: '10'
+  blog-timeout-minutes:
+    description: 'Ceiling for the blog-post generation'
+    required: false
+    default: '15'
+  upload-artifact:
+    description: 'Upload the run output (screenshots, thumbnail, blog bundle, logs) as a workflow artifact'
+    required: false
+    default: 'true'
+  artifact-name:
+    description: 'Name of the uploaded artifact'
+    required: false
+    default: 'studio-run-output'
+
+outputs:
+  ok:
+    description: '"true" when the run completed'
+    value: ${{ steps.summary.outputs.ok }}
+  phase:
+    description: 'Last phase reached (done on success)'
+    value: ${{ steps.summary.outputs.phase }}
+  project-url:
+    description: 'Deep link to the project (Export page on success, Build page otherwise)'
+    value: ${{ steps.summary.outputs.project-url }}
+  project-id:
+    description: 'Studio project id'
+    value: ${{ steps.summary.outputs.project-id }}
+  title:
+    description: 'Generated title'
+    value: ${{ steps.summary.outputs.title }}
+  description:
+    description: 'Generated YouTube description'
+    value: ${{ steps.summary.outputs.description }}
+  output-dir:
+    description: 'Absolute path of the run output directory'
+    value: ${{ steps.summary.outputs.output-dir }}
+
+runs:
+  using: 'composite'
+  steps:
+    # no `cache: pnpm` — the lockfile lives in the action's checkout, not the caller's cwd
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    # Toolchain is pinned here so the caller's repo needs no package.json/lockfile.
+    # pnpm is installed via npm rather than pnpm/action-setup: that action resolves
+    # `packageManager` from the CALLER's checkout (GITHUB_WORKSPACE) and throws if it
+    # doesn't match the version pinned here. The pnpm version below must match the
+    # root package.json `packageManager` in this repo — a unit test enforces it.
+    - name: Install runner
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm install -g pnpm@10.33.0
+        pnpm install --frozen-lockfile --filter studio-headless
+
+    # Chrome stable is preinstalled on ubuntu-latest and used via channel: 'chrome'.
+    # Firefox is the default (matches playwright.config.ts, which selects Chrome only
+    # on exactly browser: chrome) and needs the Playwright build + system ffmpeg for
+    # H.264/AAC decode.
+    - name: Install Firefox + ffmpeg
+      if: inputs.browser != 'chrome'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        sudo apt-get update && sudo apt-get install -y ffmpeg
+        pnpm exec playwright install firefox --with-deps
+
+    - name: Run scenario
+      id: run
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      continue-on-error: true
+      env:
+        STUDIO_BASE_URL: ${{ inputs.base-url }}
+        VIDEO_URLS: ${{ inputs.video-urls }}
+        STUDIO_USER_EMAIL: ${{ inputs.user-email }}
+        STUDIO_USER_PASSWORD: ${{ inputs.user-password }}
+        DIRECTOR_PROMPT: ${{ inputs.director-prompt }}
+        PROJECT_TITLE: ${{ inputs.project-title }}
+        THUMBNAIL_PROMPT: ${{ inputs.thumbnail-prompt }}
+        THUMBNAIL_REFERENCE_URL: ${{ inputs.thumbnail-reference-url }}
+        GENERATE_BLOG: ${{ inputs.generate-blog }}
+        BLOG_DIRECTION: ${{ inputs.blog-direction }}
+        RUNNER_BROWSER: ${{ inputs.browser }}
+        FFMPEG_MT: ${{ inputs.ffmpeg-mt }}
+        PREP_TIMEOUT_MINUTES: ${{ inputs.prep-timeout-minutes }}
+        DIRECTOR_TIMEOUT_MINUTES: ${{ inputs.director-timeout-minutes }}
+        BUILD_TIMEOUT_MINUTES: ${{ inputs.build-timeout-minutes }}
+        DESCRIBE_TIMEOUT_MINUTES: ${{ inputs.describe-timeout-minutes }}
+        THUMBNAIL_TIMEOUT_MINUTES: ${{ inputs.thumbnail-timeout-minutes }}
+        BLOG_TIMEOUT_MINUTES: ${{ inputs.blog-timeout-minutes }}
+      run: pnpm scenario
+
+    - name: Job summary
+      id: summary
+      if: always()
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        STUDIO_HEADLESS_OUT: ${{ github.action_path }}/output
+      run: node scripts/summary.mjs
+
+    - name: Upload run output
+      if: always() && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ github.action_path }}/output/
+        if-no-files-found: ignore
+
+    # No `if: always()` here: the run step used `continue-on-error`, so the job is
+    # still "success" at this point even if the scenario failed — the explicit
+    # condition below is what actually fails it. Adding `always()` would make this
+    # step evaluate even after a hard failure of an earlier step (e.g. Install
+    # runner), which would be a confusing double failure.
+    - name: Fail if the run failed
+      if: steps.run.outcome != 'success' || steps.summary.outputs.ok != 'true'
+      shell: bash
+      env:
+        PHASE: ${{ steps.summary.outputs.phase }}
+      run: |
+        echo "::error::Studio headless run failed during phase '$PHASE' — see the job summary and artifact."
+        exit 1
