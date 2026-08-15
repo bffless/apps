@@ -22,7 +22,10 @@ selectors.
 3. Creates a new project and imports the source files.
 4. Runs prep: kicks off per-source processing, waits for `sources-ready`, advances to the
    global plan stage (clicking `stage-action` until the director panel appears), fills the
-   director prompt, and runs the director.
+   director prompt, and runs the director. Real mode **fails fast if any source
+   transcribed to 0 words** (silent/muted-mic recording, read off the app's job-poll
+   traffic) — everything downstream is built on the words, so a silent source would
+   otherwise burn the whole build's AI credits and then stall the Export step.
 5. Starts auto build and waits for the build board to reach `done` (or throws on `halted`).
 6. Continues to Export: waits for the auto-generated title + description, drafts the
    thumbnail prompt (steered by `THUMBNAIL_PROMPT` when set), attaches the optional
