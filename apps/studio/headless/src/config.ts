@@ -9,6 +9,7 @@ export type RunnerConfig = {
   ffmpegMt: boolean
   credentials: { email: string; password: string } | null
   buildTimeoutMs: number
+  buildStallTimeoutMs: number
   prepTimeoutMs: number
   directorTimeoutMs: number
   /** Free-text notes typed into the thumbnail card before drafting the prompt. */
@@ -85,6 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     prepTimeoutMs: minutes(env, 'PREP_TIMEOUT_MINUTES', 30),
     directorTimeoutMs: minutes(env, 'DIRECTOR_TIMEOUT_MINUTES', 10),
     buildTimeoutMs: minutes(env, 'BUILD_TIMEOUT_MINUTES', 90),
+    // A frozen progress line for this long is a wedge, not slow progress:
+    // fail with the frozen state instead of burning the whole build budget.
+    buildStallTimeoutMs: minutes(env, 'BUILD_STALL_MINUTES', 20),
     thumbnailPrompt: env.THUMBNAIL_PROMPT ?? '',
     thumbnailReferenceUrl: parseOptionalUrl(env.THUMBNAIL_REFERENCE_URL, 'thumbnail_reference_url'),
     generateBlog: env.GENERATE_BLOG === 'true',

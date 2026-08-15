@@ -8,6 +8,7 @@ import { unzipSync } from 'fflate'
 import { loadConfig } from './config'
 import { downloadAll, downloadImage } from './download'
 import { JOB_POLL_PATH, transcribeWordCount } from './jobs'
+import { createStallWatch } from './stall'
 
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'output')
 mkdirSync(OUT, { recursive: true })
@@ -278,15 +279,24 @@ test('studio headless run', async ({ page }, testInfo) => {
     }
     // Scene/step-level progress: which scene is on which step, plus a stall
     // screenshot if nothing observable changes for 10 minutes (a silent wasm
-    // hang looks exactly like "running" forever — the screenshots and the
-    // frozen describe-line are the post-mortem evidence).
-    let lastBuildDesc = ''
-    let lastChangeAt = Date.now()
-    let stallShots = 0
+    // hang — or a server job that never settles — looks exactly like "running"
+    // forever; the screenshots and the frozen describe-line are the post-mortem
+    // evidence). Past `buildStallTimeoutMs` the freeze IS the verdict: fail with
+    // the frozen state rather than burn the rest of the build budget (apps#339).
+    const stallWatch = createStallWatch({
+      shotEveryMs: 10 * 60_000,
+      failAfterMs: cfg.buildStallTimeoutMs,
+      maxShots: 5,
+    })
+    let stallError: string | null = null
     await pollUntil(
       'build: waiting for auto build',
       cfg.buildTimeoutMs,
-      async () => /^(done|halted)$/.test((await peek(board, 'data-state')) ?? ''),
+      async () => {
+        // Thrown from done() — describe()'s errors are swallowed by pollUntil.
+        if (stallError) throw new Error(stallError)
+        return /^(done|halted)$/.test((await peek(board, 'data-state')) ?? '')
+      },
       async () => {
         const states: string[] = []
         for (const row of await sceneRows.all()) {
@@ -306,14 +316,16 @@ test('studio headless run', async ({ page }, testInfo) => {
         const desc = `build: ${built}/${states.length} scenes built` +
           (runningIdx >= 0 ? `, scene ${runningIdx + 1}${stepNote}` : '') +
           ` [board ${(await peek(board, 'data-state')) ?? '?'}]`
-        if (desc !== lastBuildDesc) {
-          lastBuildDesc = desc
-          lastChangeAt = Date.now()
-        } else if (Date.now() - lastChangeAt > 10 * 60_000 && stallShots < 5) {
-          stallShots += 1
-          progress(`build: no observable change for 10m — capturing stall screenshot ${stallShots}`)
-          await shot(`build-stall-${stallShots}`)
-          lastChangeAt = Date.now()
+        const stall = stallWatch.observe(desc, Date.now())
+        const stalledMin = Math.round(stall.stalledMs / 60_000)
+        if (stall.action === 'shot') {
+          progress(`build: no observable change for ${stalledMin}m — capturing stall screenshot ${stall.shot}`)
+          await shot(`build-stall-${stall.shot}`)
+        } else if (stall.action === 'fail') {
+          await shot('06-build-stalled')
+          stallError =
+            `build stalled: no observable change for ${stalledMin}m at "${desc}". ` +
+            'Nothing is progressing — this is a wedge, not slow work.'
         }
         return desc
       },

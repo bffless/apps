@@ -26,6 +26,12 @@ describe('loadConfig', () => {
     expect(cfg.mockMode).toBe(false)
     expect(cfg.credentials).toEqual({ email: 'u@example.com', password: 'pw' })
     expect(cfg.buildTimeoutMs).toBe(90 * 60_000) // default
+    expect(cfg.buildStallTimeoutMs).toBe(20 * 60_000) // default
+  })
+
+  it('takes a build stall ceiling from the environment', () => {
+    const cfg = loadConfig({ ...base, BUILD_STALL_MINUTES: '5' } as never)
+    expect(cfg.buildStallTimeoutMs).toBe(5 * 60_000)
   })
   it('requires credentials outside mock mode', () => {
     expect(() => loadConfig({ ...base, STUDIO_USER_EMAIL: '' } as never)).toThrow(/STUDIO_USER_EMAIL/)
