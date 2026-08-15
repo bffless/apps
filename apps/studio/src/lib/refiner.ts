@@ -27,9 +27,11 @@ import type { Cut, Scene, SceneRefinement } from './scenes'
 import type { DeadSpan } from './deadSpace'
 import type { TWord } from './transcriptGrid'
 
-/** The refiner's raw response: precise cuts, nothing else (story 13f). Legacy
- *  fields (`segments`) from a pre-13f pipeline may still appear — ignored. */
-export type RefineSceneRaw = { cuts?: Cut[] }
+/** The refiner's raw response: precise cuts, plus whether the model actually
+ *  heard the scene (`false` = the pipeline's deaf re-run placed these cuts).
+ *  Legacy fields (`segments`) from a pre-13f pipeline may still appear —
+ *  ignored, as is a missing `heardAudio` from a pipeline predating it. */
+export type RefineSceneRaw = { cuts?: Cut[]; heardAudio?: boolean }
 
 /** The request body the front end POSTs to `/api/refine-scene`. */
 export type RefineSceneRequest = {
@@ -147,7 +149,14 @@ export function toRefinement(raw: RefineSceneRaw, scene: Scene): SceneRefinement
   const cuts: Cut[] = (Array.isArray(raw?.cuts) ? raw.cuts : [])
     .map((c) => clampSpan(num(c?.start), num(c?.end), scene.start, scene.end))
     .filter((c): c is Cut => c !== null)
-  return { cuts: normalizeCuts(cuts), source: 'ai' }
+  return {
+    cuts: normalizeCuts(cuts),
+    source: 'ai',
+    // Only carried when the pipeline explicitly says the refiner went deaf, so
+    // an older pipeline (no `heardAudio`) never claims a problem it can't know
+    // about.
+    ...(raw?.heardAudio === false ? { heardAudio: false } : {}),
+  }
 }
 
 /**

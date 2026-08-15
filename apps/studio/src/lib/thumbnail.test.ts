@@ -43,12 +43,20 @@ describe('buildThumbnailDraftRequest', () => {
       description: 'A summary.\n\n0:00 Scene 1',
       script: 'Hello there.',
       notes: 'bold, dark navy',
+      hasReference: false,
     })
   })
 
   it('produces an empty script when a scene has no words at all', () => {
     const req = buildThumbnailDraftRequest([scene({ transcript: '' })], 'T', 'D', '', () => [])
     expect(req.script).toBe('')
+  })
+
+  // The drafting handler branches on this: with a reference attached it writes
+  // the photo into the prompt and drops the "photorealistic humans" negative.
+  it('carries the reference flag so the drafter writes the attached photo in', () => {
+    const req = buildThumbnailDraftRequest([scene()], 'T', 'D', '', wordsFor, true)
+    expect(req.hasReference).toBe(true)
   })
 })
 

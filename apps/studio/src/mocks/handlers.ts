@@ -404,19 +404,29 @@ const studioHandlers = [
     const body = (await request.json().catch(() => ({}))) as {
       title?: string
       notes?: string
+      hasReference?: boolean
     }
     const title = (body.title ?? 'Your Video').trim()
     const notes = (body.notes ?? '').trim()
     const headline = title.split(/\s+/).slice(0, 5).join(' ').toUpperCase()
+    // Mirror the real handler's REFERENCE IMAGE branch: with a photo attached the
+    // prompt names it and drops the "photorealistic humans" negative that would
+    // otherwise cancel it.
+    const ref = body.hasReference === true
     const prompt = [
       'A 16:9 YouTube thumbnail, modern-dev-tool house style: dark navy #0B1226 flat',
       'background with a faint dot grid.',
       `Headline in heavy white sans-serif: "${headline}".`,
       'Small "WATCH ME CODE" pill top-left; a tilted code-editor mock on the right',
       'with a thin cyan #22D3EE outline.',
+      ref
+        ? 'Use the attached reference photo of the presenter — same face, cut out from its background, right third, shoulders up, facing left.'
+        : '',
       notes ? `Creator notes: ${notes}.` : '',
       'Colors: navy #0B1226, off-white #F8FAFC, cyan #22D3EE. 3 colors max.',
-      'Avoid: photorealistic humans, generic cloud icons, drop shadows, gradient mesh.',
+      ref
+        ? 'Avoid: extra people, invented faces, stock-photo models, generic cloud icons, drop shadows, gradient mesh.'
+        : 'Avoid: photorealistic humans, generic cloud icons, drop shadows, gradient mesh.',
     ].filter(Boolean).join(' ')
     return HttpResponse.json({ prompt })
   }),
@@ -545,7 +555,7 @@ function mockRefiner(body: { start?: number; end?: number; wordTimings?: string;
     .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.start >= start && s.end <= end)
   if (dead.length) {
     const longest = dead.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a))
-    return { cuts: longest.end - longest.start > 0.05 ? [longest] : [] }
+    return { cuts: longest.end - longest.start > 0.05 ? [longest] : [], heardAudio: true }
   }
 
   // Fallback: the biggest gap between consecutive words in the scene span.
@@ -559,7 +569,7 @@ function mockRefiner(body: { start?: number; end?: number; wordTimings?: string;
         Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= start && w.start < end,
     )
 
-  if (words.length < 4) return { cuts: [] }
+  if (words.length < 4) return { cuts: [], heardAudio: true }
 
   let cutStart = words[0].end
   let cutEnd = words[1].start
@@ -570,7 +580,9 @@ function mockRefiner(body: { start?: number; end?: number; wordTimings?: string;
       cutEnd = words[i].start
     }
   }
-  return { cuts: cutEnd - cutStart > 0.05 ? [{ start: cutStart, end: cutEnd }] : [] }
+  // `heardAudio` mirrors the real pipeline's shape: true whenever the refiner
+  // heard the scene, false only for its deaf re-run (which the mock never does).
+  return { cuts: cutEnd - cutStart > 0.05 ? [{ start: cutStart, end: cutEnd }] : [], heardAudio: true }
 }
 
 

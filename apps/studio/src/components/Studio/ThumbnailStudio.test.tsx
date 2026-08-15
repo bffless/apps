@@ -143,6 +143,53 @@ describe('ThumbnailStudio reference image', () => {
     )
   })
 
+  // The render step always forwards the reference to nano-banana — but the model
+  // only uses it if the PROMPT says so, and a prompt drafted blind bans
+  // photorealistic humans. So the draft call has to carry the flag.
+  it('tells the drafter a reference is attached', async () => {
+    const onDraft = vi.fn<Props['onDraft']>(async () => 'drafted prompt')
+    render(<ThumbnailStudio {...props({ onDraft })} />)
+
+    fireEvent.change(screen.getByLabelText(/reference image/i), { target: { files: [pngFile()] } })
+    await waitFor(() => expect(screen.getByTestId('thumb-reference-preview')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('thumb-draft'))
+    await waitFor(() => expect(onDraft).toHaveBeenCalled())
+    expect(onDraft).toHaveBeenCalledWith(
+      'Vibe Coding Inline Comments',
+      'A video about comments',
+      '',
+      true,
+    )
+  })
+
+  it('passes false when drafting with no reference attached', async () => {
+    const onDraft = vi.fn<Props['onDraft']>(async () => 'drafted prompt')
+    render(<ThumbnailStudio {...props({ onDraft })} />)
+
+    fireEvent.click(screen.getByTestId('thumb-draft'))
+
+    await waitFor(() => expect(onDraft).toHaveBeenCalled())
+    expect(onDraft.mock.calls[0][3]).toBe(false)
+  })
+
+  // Attaching after drafting is the trap that shipped a thumbnail with no
+  // creator in it: the photo is uploaded and sent, and the prompt never mentions
+  // it. Warn instead of silently rendering the wrong image.
+  it('warns when the reference was attached after the prompt was drafted', async () => {
+    render(<ThumbnailStudio {...props()} />)
+
+    fireEvent.click(screen.getByTestId('thumb-draft'))
+    await waitFor(() => expect(screen.getByTestId('thumb-prompt')).toHaveValue('drafted prompt'))
+    expect(screen.queryByTestId('thumb-reference-stale')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/reference image/i), { target: { files: [pngFile()] } })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('thumb-reference-stale')).toHaveTextContent(/re-draft/i),
+    )
+  })
+
   it('rejects a non-image file before uploading anything', async () => {
     const onUploadReference = vi.fn<(file: File) => Promise<string>>(async () => '')
     render(

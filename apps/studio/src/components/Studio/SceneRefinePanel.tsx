@@ -117,6 +117,18 @@ export function SceneRefinePanel({
             )}
           </span>
 
+          {/* The refiner normally hears the scene. When the provider's audio
+              input fails, the pipeline re-runs it deaf rather than failing — the
+              cuts are real but placed from the sheets and word timings alone, so
+              say so instead of letting the scene look like every other one. */}
+          {refined?.heardAudio === false && (
+            <p data-testid="refine-deaf-warning" className="text-[12.5px] leading-relaxed text-accent-ink">
+              Refined <strong>without audio</strong> — the model couldn&apos;t hear this scene
+              (the provider&apos;s audio input failed), so it placed these cuts from the contact
+              sheets and word timings alone. Re-refine to try again with sound.
+            </p>
+          )}
+
           {(scene.brief ?? '').trim() !== '' && (
             <div className="flex flex-col gap-1">
               <p className="meta-label">The director&apos;s cutting brief — always sent with a refine</p>

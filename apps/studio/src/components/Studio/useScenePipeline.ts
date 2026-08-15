@@ -1555,9 +1555,18 @@ export function useScenePipeline() {
   // description + final script + the creator's notes. One sync call; the handler
   // loads the `image-prompts` skill to do the prompt-craft. Returns the drafted
   // prompt for the editable textarea (we don't persist until it's rendered).
+  // `hasReference` rides along so the handler writes the attached photo INTO the
+  // prompt — the render step passes it to nano-banana either way, but a prompt
+  // that doesn't mention it (and bans photorealistic humans) makes the model
+  // ignore it.
   const draftThumbnailPrompt = useCallback(
-    async (title: string, description: string, notes: string): Promise<string | null> => {
-      const req = buildThumbnailDraftRequest(scenes, title, description, notes, wordsFor)
+    async (
+      title: string,
+      description: string,
+      notes: string,
+      hasReference = false,
+    ): Promise<string | null> => {
+      const req = buildThumbnailDraftRequest(scenes, title, description, notes, wordsFor, hasReference)
       if (!req.script) {
         setSceneError('Build at least one scene before generating a thumbnail.')
         return null

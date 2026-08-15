@@ -16,8 +16,18 @@ type Props = {
   } | null
   drafting: boolean
   rendering: boolean
-  /** Draft a prompt; resolves to the drafted text (or null on failure). */
-  onDraft: (title: string, description: string, notes: string) => Promise<string | null>
+  /**
+   * Draft a prompt; resolves to the drafted text (or null on failure).
+   * `hasReference` tells the drafting handler a reference photo is attached, so
+   * the prompt is written to build the thumbnail around it — without it the
+   * prompt bans photorealistic humans and nano-banana drops the photo.
+   */
+  onDraft: (
+    title: string,
+    description: string,
+    notes: string,
+    hasReference: boolean,
+  ) => Promise<string | null>
   /** Render the image from the (edited) prompt + notes + optional reference. */
   onRender: (notes: string, prompt: string, referenceUrl: string | null) => void
   /** Upload a reference image to the bucket; resolves to its serve path. */
@@ -55,6 +65,11 @@ export function ThumbnailStudio({
     thumbnail?.referenceUrl ?? null,
   )
   const [referencePreview, setReferencePreview] = useState<string | null>(null)
+  // Whether the prompt in the box was drafted while a reference was attached.
+  // `null` = nothing drafted in THIS session, which covers a restored one (its
+  // prompt and reference were saved together) — so the stale hint only fires on
+  // the real mistake: draft here, then attach.
+  const [draftedWithReference, setDraftedWithReference] = useState<boolean | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
   const [referenceError, setReferenceError] = useState<string | null>(null)
 
@@ -116,9 +131,19 @@ export function ThumbnailStudio({
   }, [thumbnail?.url, signFor])
 
   async function handleDraft() {
-    const drafted = await onDraft(title, description, notes)
-    if (drafted != null) setPrompt(drafted)
+    const hasReference = referenceUrl != null
+    const drafted = await onDraft(title, description, notes, hasReference)
+    if (drafted != null) {
+      setPrompt(drafted)
+      setDraftedWithReference(hasReference)
+    }
   }
+
+  // The trap this whole ordering exists to prevent: a prompt drafted with no
+  // reference, then a photo attached, then Generate — nano-banana receives the
+  // photo and a prompt that never mentions it (and bans photorealistic humans),
+  // so the photo is silently ignored.
+  const referenceStale = referenceUrl != null && prompt.trim() !== '' && draftedWithReference === false
 
   // Force an actual file download. The signed URL is a cross-origin GCS link, so
   // an <a download> is ignored by the browser (it just navigates). Fetch the
@@ -157,7 +182,8 @@ export function ThumbnailStudio({
       <div>
         <p className="meta-label">YouTube thumbnail</p>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
-          Describe what you want, draft a prompt, tweak it, then generate the image.
+          Describe what you want, attach a reference photo if you want yourself in it,
+          draft a prompt, tweak it, then generate the image.
         </p>
       </div>
 
@@ -175,25 +201,21 @@ export function ThumbnailStudio({
           placeholder="e.g. bold, dark navy, show the terminal — excited energy"
           className="mt-1 w-full resize-y rounded-md border border-line bg-surface-dim/20 p-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
         />
-        <button
-          type="button"
-          className="pill-ghost mt-2"
-          data-testid="thumb-draft"
-          disabled={drafting}
-          onClick={handleDraft}
-        >
-          {drafting ? 'Drafting…' : 'Draft prompt'}
-        </button>
       </div>
 
-      {/* Optional reference image — fed to nano-banana alongside the prompt */}
+      {/* Optional reference image — fed to nano-banana alongside the prompt.
+          It sits ABOVE the Draft button on purpose: the drafter is told whether
+          a reference is attached, and writes the photo into the prompt when it
+          is. Attach it afterwards and the prompt describes a self-contained
+          illustration, so nano-banana ignores the photo (hence the re-draft
+          hint below). */}
       <div>
         <label htmlFor="thumb-reference" className="meta-label">
           Reference image (optional)
         </label>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
-          Upload a shot of your face (or a product) and it’s sent with the prompt, so the
-          thumbnail is built around it instead of a generic illustration.
+          Upload a shot of your face (or a product) <strong>before drafting</strong> and the
+          prompt is written around it, instead of a generic illustration.
         </p>
         <input
           id="thumb-reference"
@@ -228,6 +250,25 @@ export function ThumbnailStudio({
               Remove reference
             </button>
           </div>
+        )}
+      </div>
+
+      {/* Draft — after the reference picker, so the drafted prompt knows about it */}
+      <div>
+        <button
+          type="button"
+          className="pill-ghost"
+          data-testid="thumb-draft"
+          disabled={drafting}
+          onClick={handleDraft}
+        >
+          {drafting ? 'Drafting…' : prompt ? 'Re-draft prompt' : 'Draft prompt'}
+        </button>
+        {referenceStale && (
+          <p role="alert" data-testid="thumb-reference-stale" className="mt-2 text-[13px] text-accent-ink">
+            This prompt was drafted without your reference image, so the image model will
+            ignore it — re-draft (or edit the prompt to mention the attached photo).
+          </p>
         )}
       </div>
 

@@ -23,6 +23,15 @@ export type ThumbnailDraftRequest = {
   script: string
   /** The creator's free-text wishes; overrides style routing when present. */
   notes: string
+  /**
+   * Whether a reference image is attached — the render step hands it to
+   * nano-banana as `image_input`. The drafter has to know: a prompt written
+   * blind describes a complete illustration AND (per the house styles) bans
+   * "photorealistic humans", so the attached photo is simply ignored by the
+   * model. Told about it, the drafter writes the photo into the Subject section
+   * and drops that one negative.
+   */
+  hasReference: boolean
 }
 
 /** The draft handler's output: the ready-to-paste image prompt. */
@@ -40,12 +49,14 @@ export function buildThumbnailDraftRequest(
   description: string,
   notes: string,
   wordsFor: SceneWords,
+  hasReference = false,
 ): ThumbnailDraftRequest {
   return {
     title: title.trim(),
     description: description.trim(),
     script: videoScript(scenes, wordsFor),
     notes: notes.trim(),
+    hasReference,
   }
 }
 

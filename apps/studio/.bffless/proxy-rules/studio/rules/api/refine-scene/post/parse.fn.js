@@ -127,5 +127,10 @@ function handler({ steps }) {
   }
   cuts.sort(function (x, y) { return x.start - y.start })
 
-  return { ok: true, notOk: false, error: '', data: { cuts: cuts } }
+  // `heardAudio: false` means these cuts came from the DEAF re-run - the model
+  // read the sheets, word timings and measured dead space, but never heard the
+  // scene. That is a quiet quality drop (the provider's audio input failed), so
+  // it rides back with the cuts and the UI flags it. No schema change: the job
+  // row's `result` is already a json field.
+  return { ok: true, notOk: false, error: '', data: { cuts: cuts, heardAudio: got(withAudio) } }
 }
