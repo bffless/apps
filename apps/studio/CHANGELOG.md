@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.0](https://github.com/bffless/apps/compare/studio-v1.8.0...studio-v1.9.0) (2026-08-15)
+
+
+### Features
+
+* **studio:** headless run fails fast when a source transcribes to 0 words ([#334](https://github.com/bffless/apps/issues/334)) ([bc8b29c](https://github.com/bffless/apps/commit/bc8b29ca49d36bffc0c7672c7403ac1200580991))
+* **studio:** headless runner as a reusable GitHub Action ([#338](https://github.com/bffless/apps/issues/338)) ([c9c1159](https://github.com/bffless/apps/commit/c9c1159f0de4b55964f918dce5279d3f5a8446ae))
+
+
+### Bug Fixes
+
+* **studio:** draft the thumbnail prompt around the attached reference image, and flag deaf refines ([#336](https://github.com/bffless/apps/issues/336)) ([8c0c400](https://github.com/bffless/apps/commit/8c0c4007e40c1c16557544fc961cb6506b7dd84c))
+
 ## [1.8.0](https://github.com/bffless/apps/compare/studio-v1.7.0...studio-v1.8.0) (2026-08-13)
 
 

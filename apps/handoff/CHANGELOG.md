@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/bffless/apps/compare/handoff-v1.0.4...handoff-v1.1.0) (2026-08-15)
+
+
+### Features
+
+* **handoff:** show upload progress with an in-flight upload tray ([#335](https://github.com/bffless/apps/issues/335)) ([c0db6ef](https://github.com/bffless/apps/commit/c0db6ef71d9fadf53f59b8bebb2375c6d388d3d2))
+
 ## [1.0.4](https://github.com/bffless/apps/compare/handoff-v1.0.3...handoff-v1.0.4) (2026-08-06)
 
 
