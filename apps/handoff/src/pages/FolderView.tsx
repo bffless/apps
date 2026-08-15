@@ -34,6 +34,8 @@ import {
   useDeleteNodeMutation,
   useDeleteSubtreeMutation,
   useMyGroupsQuery,
+  isCanceledError,
+  mutationErrorText,
 } from '../store/handoffApi'
 import { useCopyFileShareLink } from '../store/useCopyFileShareLink'
 import { CopyLinkButton } from '../components/CopyLinkButton'
@@ -54,6 +56,12 @@ import { evaluateAccess, inShareMode, isEffectivelyPublic, childIsPublic } from 
 import { rootMetaNode } from '../lib/rootNode'
 import { isNameTaken, nameCollisionMessage } from '../lib/nameCollision'
 import { toast } from '../lib/toast'
+import {
+  beginUpload,
+  completeUpload,
+  failUpload,
+  isUploadCanceled,
+} from '../lib/uploads'
 import { ShareDialog } from '../components/ShareDialog'
 import { AncestorNodes } from '../components/AncestorNodes'
 import { FeedAutodiscovery } from '../components/FeedAutodiscovery'
@@ -187,6 +195,11 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       return `${n} ${word}${n !== 1 ? 's' : ''}`
     }
 
+    /** Bundle size for the tray's bar — a group's progress is aggregate bytes. */
+    function totalBytes(list: { file: File }[]) {
+      return list.reduce((sum, i) => sum + i.file.size, 0)
+    }
+
     function handleIngest(newItems: { relPath: string; file: File }[], baseName: string) {
       const folderPlan = planFolderImport(newItems)
       if (folderPlan.files.length === 0) {
@@ -223,17 +236,30 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       setPhase('uploading')
       setUploadProgress(`Uploading ${plural(siteItems.length, 'file')}…`)
       setUploadError(null)
-      const result = await uploadSite({ items: siteItems, entry, name: trimmedName, parentId: folderId, basePath: folderPath })
+      // One tray entry for the whole bundle: aggregate bytes across its files,
+      // so a many-file site still shows a bar that only moves forwards.
+      const uploadId = beginUpload({
+        name: trimmedName,
+        size: totalBytes(siteItems),
+        fileCount: siteItems.length,
+      })
+      const result = await uploadSite({
+        items: siteItems,
+        entry,
+        name: trimmedName,
+        parentId: folderId,
+        basePath: folderPath,
+        uploadId,
+      })
       if ('error' in result) {
-        const err = result.error
-        const msg =
-          'error' in (err as object)
-            ? (err as { error: string }).error
-            : `Upload failed (${(err as { status: string | number }).status})`
-        setUploadError(msg)
+        const canceled = isCanceledError(result.error)
+        const msg = mutationErrorText(result.error)
+        if (!canceled) failUpload(uploadId, msg)
+        setUploadError(canceled ? null : msg)
         setPhase('picking-entry')
         setUploadProgress(null)
       } else {
+        completeUpload(uploadId)
         handleReset()
         onDone('Site uploaded successfully.')
       }
@@ -243,27 +269,48 @@ const UploadFolderControl = forwardRef<UploadFolderControlHandle, UploadFolderCo
       setPhase('importing')
       setUploadProgress(`Importing ${plural(folderCount, 'folder')} and ${plural(fileCount, 'file')}…`)
       setUploadError(null)
-      const result = await importFolder({ items: rawItems, parentId: folderId, basePath: folderPath })
+      const uploadId = beginUpload({
+        name: siteName.trim() || 'Folder import',
+        size: totalBytes(rawItems),
+        fileCount: fileCount,
+      })
+      const result = await importFolder({
+        items: rawItems,
+        parentId: folderId,
+        basePath: folderPath,
+        uploadId,
+      })
       if ('error' in result) {
-        const err = result.error
-        const msg =
-          'error' in (err as object)
-            ? (err as { error: string }).error
-            : `Import failed (${(err as { status: string | number }).status})`
-        setUploadError(msg)
+        const canceled = isCanceledError(result.error)
+        const msg = mutationErrorText(result.error, 'Import failed')
+        if (!canceled) failUpload(uploadId, msg)
+        setUploadError(canceled ? null : msg)
         setPhase(hasHtml ? 'choosing' : 'confirm-folder')
         setUploadProgress(null)
         return
       }
       const data = result.data
+      // A cancel keeps whatever already landed — say so rather than pretending
+      // the import either finished or never happened.
+      if (data.canceled) {
+        resetFields()
+        onDone(
+          `Import canceled — ${plural(data.foldersCreated, 'folder')} and ${plural(data.filesUploaded, 'file')} were imported.`,
+        )
+        return
+      }
       const summary = `Imported ${plural(data.foldersCreated, 'folder')} and ${plural(data.filesUploaded, 'file')}.`
       if (data.failures.length > 0) {
+        // Which files failed is detail-bearing feedback, so it stays inline
+        // (ADR-0004); the tray row just records that the import was partial.
+        failUpload(uploadId, `${plural(data.failures.length, 'file')} failed`)
         resetFields()
         setUploadError(
           `${summary} ${plural(data.failures.length, 'file')} failed: ` +
             data.failures.map((f) => f.relPath).join(', '),
         )
       } else {
+        completeUpload(uploadId)
         handleReset()
         onDone(summary)
       }
@@ -1055,12 +1102,22 @@ export function FolderView({ folderId }: FolderViewProps) {
     setCreatingFolder(false)
   }, [folderId])
 
-  async function handleFile(file: File) {
+  /**
+   * Upload one file, reporting into the uploads store the whole way. The store
+   * entry is minted by the caller (`handleFiles`) *before* anything is awaited,
+   * so a drop is acknowledged instantly — a 300 MB file used to sit silent
+   * until the listing refetched.
+   */
+  async function handleFile(file: File, uploadId: string) {
+    // Cancelled while still queued behind an earlier file — never start it.
+    if (isUploadCanceled(uploadId)) return
+
     // In-Folder name uniqueness (structural storage, Slice 4): a name identifies
     // content within a Folder, so reject a File whose name duplicates an existing
     // sibling up front — never overwrite the sibling's bytes, never auto-suffix.
     // The pipeline enforces this authoritatively too; this is instant feedback.
     if (isNameTaken(rawNodes ?? [], folderId, file.name)) {
+      failUpload(uploadId, nameCollisionMessage(file.name))
       toast(nameCollisionMessage(file.name), 'error')
       return
     }
@@ -1071,15 +1128,34 @@ export function FolderView({ folderId }: FolderViewProps) {
     try {
       path = contentSubPath(currentFolderPath, file.name)
     } catch {
+      failUpload(uploadId, 'Unsupported file name.')
       toast(`Can’t upload “${file.name}”: unsupported name.`, 'error')
       return
     }
-    const result = await uploadFile({ file, parentId: folderId, path })
-    if (!('error' in result)) {
-      // Managers get the inline "copy a share link" panel; others a toast.
-      if (canManage) setUploadedNodes((prev) => [...prev, result.data])
-      else toast('File uploaded')
+    const result = await uploadFile({ file, parentId: folderId, path, uploadId })
+    if ('error' in result) {
+      // A cancel already put the entry in its final state; anything else is a
+      // real failure and the tray is where it belongs (with the message).
+      if (!isCanceledError(result.error)) failUpload(uploadId, mutationErrorText(result.error))
+      return
     }
+    completeUpload(uploadId)
+    // Managers get the inline "copy a share link" panel; others a toast.
+    if (canManage) setUploadedNodes((prev) => [...prev, result.data])
+    else toast('File uploaded')
+  }
+
+  /**
+   * Register every dropped/picked file up front, then upload them one at a
+   * time. Queuing first is the point: five files show five rows immediately,
+   * four of them "Queued", instead of four files looking like nothing happened.
+   */
+  async function handleFiles(files: File[]) {
+    const queued = files.map((file) => ({
+      file,
+      id: beginUpload({ name: file.name, size: file.size }),
+    }))
+    for (const { file, id } of queued) await handleFile(file, id)
   }
 
   function handleDragOver(e: React.DragEvent) {
@@ -1098,7 +1174,7 @@ export function FolderView({ folderId }: FolderViewProps) {
     setDragActive(false)
     const hasDir = dataTransferHasDirectory(e.dataTransfer)
     if (!hasDir) {
-      for (const f of Array.from(e.dataTransfer.files)) await handleFile(f)
+      await handleFiles(Array.from(e.dataTransfer.files))
       return
     }
     const items = await filesFromDataTransfer(e.dataTransfer)
@@ -1120,11 +1196,10 @@ export function FolderView({ folderId }: FolderViewProps) {
     }
   }
 
-  const uploadErrorMsg = uploadError
-    ? 'error' in uploadError
-      ? (uploadError as { error: string }).error
-      : `Upload failed (${(uploadError as { status: string | number }).status})`
-    : null
+  // The tray carries per-file failures; this banner is the folder-level echo of
+  // the last one. A cancel is a deliberate act, not an error — never banner it.
+  const uploadErrorMsg =
+    uploadError && !isCanceledError(uploadError) ? mutationErrorText(uploadError) : null
 
   // Filter (within-folder) then sort: folders grouped before leaves; within
   // each group, by the chosen key/direction.
@@ -1181,8 +1256,11 @@ export function FolderView({ folderId }: FolderViewProps) {
         aria-label="Files input"
         onChange={async (e) => {
           const fl = e.target.files
-          if (fl) for (const f of Array.from(fl)) await handleFile(f)
+          const picked = fl ? Array.from(fl) : []
+          // Clear the input before awaiting: the upload can outlive the event,
+          // and re-picking the same file must still fire a change.
           e.target.value = ''
+          await handleFiles(picked)
         }}
       />
 

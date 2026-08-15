@@ -7,6 +7,13 @@
  *   2. PUT  <uploadUrl>           → raw bytes straight to bucket (no proxy)
  *   3. POST /api/nodes            → register metadata → { node: Node }
  *
+ * Step 2 goes through `putWithProgress` (XHR) rather than `fetch`, because only
+ * XHR reports how many bytes of a request body have gone out. Each upload
+ * mutation optionally takes an `uploadId` minted by the caller from the uploads
+ * store (`lib/uploads`) and reports bytes into it; the `UploadTray` renders
+ * them. The caller owns the entry's terminal state — the mutation only reports
+ * progress and registers an abort handle so the tray's × can cancel.
+ *
  * Both the live BFFless pipeline responses and the MSW mocks pass through
  * `toNode`/`toNodeList` — one coercion seam shared by mock and real.
  */
@@ -20,6 +27,8 @@ import type { HandoffNode, PreparedUpload, RegisterBody } from '../lib/nodes'
 import { toSignedUrl } from '../lib/sign'
 import { planFolderImport } from '../lib/folderImport'
 import { contentSubPath } from '../lib/contentPath'
+import { putWithProgress, isAbortError } from '../lib/putWithProgress'
+import { setUploadProgress, registerAbort } from '../lib/uploads'
 import type { Grant } from '../lib/acl'
 import type { RootMeta } from '../lib/rootNode'
 import { toComment, toCommentList } from '../lib/comments'
@@ -71,6 +80,8 @@ export interface ImportFolderResult {
   failures: { relPath: string; error: string }[]
   /** Ids of every created sub-folder, used to invalidate their listings. */
   createdFolderIds: string[]
+  /** True when the user canceled mid-import — what landed still landed. */
+  canceled?: boolean
 }
 
 /**
@@ -125,6 +136,36 @@ function conflictMessage(err: unknown): string | null {
   if (e?.status !== 409) return null
   const data = e.data as { error?: unknown } | undefined
   return typeof data?.error === 'string' ? data.error : 'A sibling with that name already exists.'
+}
+
+/**
+ * The error an upload mutation returns when the user cancels it. Tagged in
+ * `data` so callers can tell a deliberate cancel from a real failure without
+ * matching on the message text — a cancel deserves silence, not a red banner.
+ */
+const CANCELED_ERROR = {
+  status: 'CUSTOM_ERROR' as const,
+  error: 'Upload canceled',
+  data: { canceled: true },
+}
+
+/** True for the error `CANCELED_ERROR` above — i.e. the user hit cancel. */
+export function isCanceledError(err: unknown): boolean {
+  const data = (err as { data?: { canceled?: unknown } } | undefined)?.data
+  return data?.canceled === true
+}
+
+/**
+ * Readable text for a mutation error, in order of usefulness: a `CUSTOM_ERROR`
+ * message written for a human (a bucket failure, a conflict explanation), then
+ * an `{ error }` the pipeline sent back with the status, and only failing both
+ * of those the bare `<fallback> (<status>)`.
+ */
+export function mutationErrorText(err: unknown, fallback = 'Upload failed'): string {
+  const e = err as { error?: unknown; status?: unknown; data?: { error?: unknown } } | undefined
+  if (typeof e?.error === 'string') return e.error
+  if (typeof e?.data?.error === 'string') return e.data.error
+  return e?.status === undefined ? fallback : `${fallback} (${String(e.status)})`
 }
 
 const rawBaseQuery = fetchBaseQuery({ baseUrl: '/', credentials: 'include' })
@@ -297,9 +338,21 @@ export const handoffApi = createApi({
         name: string
         parentId: string
         basePath?: string
+        uploadId?: string
       }
     >({
-      async queryFn({ items, entry, name, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
+      async queryFn(
+        { items, entry, name, parentId, basePath = '', uploadId },
+        _queryApi,
+        _extraOptions,
+        baseQuery,
+      ) {
+        const controller = new AbortController()
+        if (uploadId) registerAbort(uploadId, () => controller.abort())
+        // Group progress is aggregate bytes over the whole bundle, so a site of
+        // many small files still shows a bar that only moves forwards.
+        let settledBytes = 0
+        let filesDone = 0
         try {
           // The Site's content path prefix (owning-Folder path + name). An unsafe
           // name is rejected here — never sanitised — so the bundle's keys stay
@@ -338,11 +391,18 @@ export const handoffApi = createApi({
             const prepared = prepRes.data as PreparedUpload
 
             // 1b. PUT bytes directly to bucket
-            const putRes = await fetch(prepared.uploadUrl, {
-              method: 'PUT',
-              headers: { 'Content-Type': file.type || 'application/octet-stream' },
-              body: file,
-            })
+            const putRes = await putWithProgress(
+              prepared.uploadUrl,
+              file,
+              file.type || 'application/octet-stream',
+              {
+                signal: controller.signal,
+                onProgress: uploadId
+                  ? (loaded) =>
+                      setUploadProgress(uploadId, settledBytes + loaded, { fileIndex: filesDone })
+                  : undefined,
+              },
+            )
             if (!putRes.ok) {
               return {
                 error: {
@@ -351,6 +411,9 @@ export const handoffApi = createApi({
                 },
               }
             }
+            settledBytes += file.size
+            filesDone++
+            if (uploadId) setUploadProgress(uploadId, settledBytes, { fileIndex: filesDone })
           }
 
           // 2. Register site node at its path prefix (no manifest).
@@ -370,6 +433,7 @@ export const handoffApi = createApi({
           const node = toNode((siteRes.data as { node?: unknown }).node)
           return { data: node }
         } catch (e) {
+          if (isAbortError(e)) return { error: CANCELED_ERROR }
           return {
             error: {
               status: 'CUSTOM_ERROR' as const,
@@ -404,9 +468,27 @@ export const handoffApi = createApi({
      */
     importFolder: builder.mutation<
       ImportFolderResult,
-      { items: { relPath: string; file: File }[]; parentId: string; basePath?: string }
+      {
+        items: { relPath: string; file: File }[]
+        parentId: string
+        basePath?: string
+        uploadId?: string
+      }
     >({
-      async queryFn({ items, parentId, basePath = '' }, _queryApi, _extraOptions, baseQuery) {
+      async queryFn({ items, parentId, basePath = '', uploadId }, _queryApi, _extraOptions, baseQuery) {
+        const controller = new AbortController()
+        if (uploadId) registerAbort(uploadId, () => controller.abort())
+        // Files upload concurrently, so group progress = bytes of finished files
+        // plus the live byte count of everything currently in flight.
+        let settledBytes = 0
+        let finishedFiles = 0
+        const inFlightBytes = new Map<string, number>()
+        const reportGroup = () => {
+          if (!uploadId) return
+          let live = 0
+          for (const v of inFlightBytes.values()) live += v
+          setUploadProgress(uploadId, settledBytes + live, { fileIndex: finishedFiles })
+        }
         try {
           // planFolderImport carries each item's File through onto its planned
           // file, so the upload always uses the path the plan created folders for.
@@ -441,6 +523,9 @@ export const handoffApi = createApi({
           await runPool(plan.files, 4, async (f) => {
             const { file } = f
             const targetId = dirToId[f.dir] ?? parentId
+            // A cancel stops the queue: files not yet started are skipped
+            // silently rather than logged as failures the user didn't cause.
+            if (controller.signal.aborted) return
             try {
               // Verbatim structural key = owning-Folder path + the file's
               // normalised relative path, so the stored key mirrors the tree.
@@ -460,11 +545,20 @@ export const handoffApi = createApi({
               if (prepRes.error) throw new Error(`prepare failed (${JSON.stringify(prepRes.error)})`)
               const prepared = prepRes.data as PreparedUpload
 
-              const putRes = await fetch(prepared.uploadUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': file.type || 'application/octet-stream' },
-                body: file,
-              })
+              const putRes = await putWithProgress(
+                prepared.uploadUrl,
+                file,
+                file.type || 'application/octet-stream',
+                {
+                  signal: controller.signal,
+                  onProgress: uploadId
+                    ? (loaded) => {
+                        inFlightBytes.set(f.relPath, loaded)
+                        reportGroup()
+                      }
+                    : undefined,
+                },
+              )
               if (!putRes.ok) throw new Error(`bucket upload failed (${putRes.status})`)
 
               const regBody = buildRegisterBody(prepared, file, targetId, Date.now())
@@ -473,7 +567,17 @@ export const handoffApi = createApi({
 
               filesUploaded++
             } catch (e) {
-              failures.push({ relPath: f.relPath, error: e instanceof Error ? e.message : String(e) })
+              // An in-flight PUT killed by the cancel isn't a failure either.
+              if (!isAbortError(e)) {
+                failures.push({ relPath: f.relPath, error: e instanceof Error ? e.message : String(e) })
+              }
+            } finally {
+              // Settle this file's bytes whichever way it went, so a failure
+              // can't leave the group's bar stuck short of the total.
+              inFlightBytes.delete(f.relPath)
+              settledBytes += file.size
+              finishedFiles++
+              reportGroup()
             }
           })
 
@@ -483,6 +587,7 @@ export const handoffApi = createApi({
               filesUploaded,
               failures,
               createdFolderIds,
+              canceled: controller.signal.aborted,
             },
           }
         } catch (e) {
@@ -799,8 +904,13 @@ export const handoffApi = createApi({
      * arbitrary async and still exposes itself as a normal RTK mutation hook.
      * On success, invalidates the node list so the listing refetches.
      */
-    uploadFile: builder.mutation<HandoffNode, { file: File; parentId: string; path: string }>({
-      async queryFn({ file, parentId, path }, _queryApi, _extraOptions, baseQuery) {
+    uploadFile: builder.mutation<
+      HandoffNode,
+      { file: File; parentId: string; path: string; uploadId?: string }
+    >({
+      async queryFn({ file, parentId, path, uploadId }, _queryApi, _extraOptions, baseQuery) {
+        const controller = new AbortController()
+        if (uploadId) registerAbort(uploadId, () => controller.abort())
         try {
           // 1. Prepare — mint a presigned bucket PUT URL at the verbatim content
           //    sub-path (folder path + name), so the stored key mirrors the tree.
@@ -824,12 +934,17 @@ export const handoffApi = createApi({
           }
           const prepared = prepRes.data as PreparedUpload
 
-          // 2. PUT bytes directly to the bucket (no proxy, no credentials)
-          const putRes = await fetch(prepared.uploadUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': file.type || 'application/octet-stream' },
-            body: file,
-          })
+          // 2. PUT bytes directly to the bucket (no proxy, no credentials),
+          //    reporting bytes-on-the-wire into the uploads store as they go.
+          const putRes = await putWithProgress(
+            prepared.uploadUrl,
+            file,
+            file.type || 'application/octet-stream',
+            {
+              signal: controller.signal,
+              onProgress: uploadId ? (loaded) => setUploadProgress(uploadId, loaded) : undefined,
+            },
+          )
           if (!putRes.ok) {
             return {
               error: {
@@ -856,6 +971,7 @@ export const handoffApi = createApi({
           const node = toNode((regRes.data as { node?: unknown }).node)
           return { data: node }
         } catch (e) {
+          if (isAbortError(e)) return { error: CANCELED_ERROR }
           return {
             error: {
               status: 'CUSTOM_ERROR' as const,

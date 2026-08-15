@@ -15,6 +15,7 @@ import { useMediaQuery } from './lib/useMediaQuery'
 import { Menu } from './components/Menu'
 import { FolderTree } from './components/FolderTree'
 import { Toaster } from './components/Toaster'
+import { UploadTray } from './components/UploadTray'
 import { SunIcon, MoonIcon, ChevronDownIcon, XIcon } from './components/icons'
 
 function BarsIcon({ className = 'h-5 w-5' }: { className?: string }) {
@@ -278,6 +279,7 @@ function App() {
         </Route>
       </Routes>
       <Toaster />
+      <UploadTray />
     </>
   )
 }
