@@ -110,9 +110,14 @@ const mb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 5 * 60 * 1000 // give up on a wedged job rather than poll forever
 // Server-side ffmpeg jobs (slice/concat/extract) can legitimately run long on a
-// big source. CE's ffmpeg_handler has its own FFMPEG_MAX_SECONDS (1800s) watchdog,
-// so this just needs to outlast that — the server, not the client, decides wedged.
-const VIDEO_POLL_TIMEOUT_MS = 35 * 60 * 1000
+// big source, so the server — not the client — should decide "wedged". CE ≥ the
+// ffmpeg step-ceiling release (ce#670) now guarantees that: every step is
+// bounded (queue wait, each storage transfer at FFMPEG_IO_MAX_SECONDS ≈ 15m, the
+// process watchdog) and a wedged job lands as `error` on the row we poll. Before
+// that fix an unattended run burned 35 minutes on a job that would never report
+// anything (apps#339). 20m leaves CE room to report first while still failing
+// fast; Studio's real assembles run 15-30s.
+const VIDEO_POLL_TIMEOUT_MS = 20 * 60 * 1000
 
 /**
  * Job ids currently being polled, shared across hook instances (same rationale as
@@ -426,14 +431,23 @@ export function useScenePipeline() {
       jobId: string,
       opts?: { timeoutMs?: number },
     ): Promise<{ kind: 'scenes' | 'refine' | 'transcribe' | 'blog' | VideoJobKind; result: unknown }> => {
-      const deadline = Date.now() + (opts?.timeoutMs ?? POLL_TIMEOUT_MS)
+      const timeoutMs = opts?.timeoutMs ?? POLL_TIMEOUT_MS
+      const startedAt = Date.now()
+      const deadline = startedAt + timeoutMs
       for (;;) {
         const job = await dispatch(
           studioApi.endpoints.getStudioJob.initiate(jobId, { forceRefetch: true, subscribe: false }),
         ).unwrap()
         if (job.status === 'done') return { kind: job.kind, result: job.result ?? null }
         if (job.status === 'error') throw new Error(job.error || 'The job failed.')
-        if (Date.now() > deadline) throw new Error('Timed out waiting for the job to finish.')
+        if (Date.now() > deadline) {
+          // Name the job: a bare "timed out" is indistinguishable from any other
+          // stall in a CI log, which is exactly what made apps#339 hard to read.
+          throw new Error(
+            `Timed out after ${Math.round(timeoutMs / 60_000)}m waiting for the ${job.kind} job ` +
+              `(${jobId}, last status "${job.status}") to finish.`,
+          )
+        }
         await delay(POLL_INTERVAL_MS)
       }
     },
