@@ -45,6 +45,103 @@ generated title/description when the run produced them. Milestone
 screenshots (`output/NN-*.png`) are attached to the Playwright report, and browser console
 messages, page errors, and failed (4xx/5xx) HTTP responses stream to `output/console.log`.
 
+## Use as a GitHub Action
+
+This directory is also a **composite GitHub Action**. Anyone with a Studio
+installed from the app catalog can run unattended builds against it from their
+own repo — no fork, no checkout of this monorepo.
+
+Pin the ref to the **Studio version you installed** (release-please tags every
+Studio release `studio-vX.Y.Z`; the runner's selectors match that exact build).
+The action first ships in `studio-v1.9.0`; earlier tags predate `action.yml`
+and will fail with *Can't find 'action.yml'*.
+
+```yaml
+# .github/workflows/studio-run.yml (in YOUR repo)
+name: Studio Run
+on:
+  workflow_dispatch:
+    inputs:
+      video_urls:
+        description: 'Source video URL(s), comma-separated (the UI input is single-line; newlines also work when dispatched via API)'
+        required: true
+        type: string
+      director_prompt:
+        description: 'Optional guidance for the master director'
+        required: false
+        type: string
+        default: ''
+      generate_blog:
+        description: 'Also generate the blog post'
+        required: false
+        type: boolean
+        default: false
+      timeout_minutes:
+        description: 'Job timeout: prep 30 min × videos + director 10 + build 90 + export ~30'
+        required: false
+        type: number
+        default: 210
+
+concurrency:
+  group: studio-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) }}
+    steps:
+      - name: Studio headless run
+        id: studio
+        uses: bffless/apps/apps/studio/headless@studio-vX.Y.Z   # ← your installed Studio version
+        with:
+          base-url: https://studio.example.com                    # ← your Studio origin
+          video-urls: ${{ inputs.video_urls }}
+          director-prompt: ${{ inputs.director_prompt }}
+          generate-blog: ${{ inputs.generate_blog && 'true' || 'false' }}
+          user-email: ${{ secrets.STUDIO_USER_EMAIL }}
+          user-password: ${{ secrets.STUDIO_USER_PASSWORD }}
+      - run: echo "Project → ${{ steps.studio.outputs.project-url }}"
+```
+
+Add two repository secrets: `STUDIO_USER_EMAIL` and `STUDIO_USER_PASSWORD`
+(a Studio login on that deployment). Every dispatch **spends real AI credits**
+on your Studio.
+
+What the action does for you: pins Node 20 + pnpm, installs the runner,
+drives the site with Chrome (preinstalled on `ubuntu-latest`; `browser: firefox`
+installs Firefox + ffmpeg instead), writes a **job summary** (project link,
+title, description, blog post) and uploads `output/` (screenshots,
+`thumbnail.png`, `blog-bundle.zip`, `console.log`, `run-summary.json`) as the
+`studio-run-output` artifact (in a public repo the artifact is downloadable
+by anyone with read access — it contains screenshots and `console.log`,
+never credentials or traces).
+
+The action runs on a GitHub-hosted `ubuntu-latest` runner (Linux x64: apt +
+preinstalled Chrome). It puts Node 20 and pnpm 10.33.0 on the PATH for the
+rest of the job, so give it its own job (as in the starter above) if your
+other steps need a different toolchain.
+
+**Inputs** map 1:1 onto the environment variables below (kebab-case:
+`base-url` → `STUDIO_BASE_URL`, `video-urls` → `VIDEO_URLS`, `user-email` /
+`user-password` → `STUDIO_USER_EMAIL` / `STUDIO_USER_PASSWORD`,
+`director-prompt`, `project-title`, `thumbnail-prompt`,
+`thumbnail-reference-url`, `generate-blog`, `blog-direction`, `browser`
+(default `chrome` in the action, unlike the bare runner's Firefox default),
+`ffmpeg-mt`, and the six `*-timeout-minutes`), plus `upload-artifact`
+(default `true`) and `artifact-name` (default `studio-run-output`). Mock/smoke
+knobs are not exposed. See `action.yml` for descriptions.
+
+**Outputs:** `ok`, `phase`, `project-url`, `project-id`, `title`,
+`description`, `output-dir`.
+
+The job's `timeout-minutes` is yours to set: it must exceed
+`prep-timeout-minutes × number of videos + director-timeout-minutes +
+build-timeout-minutes + ~30 min export`. `workflow_dispatch` allows at most 10
+inputs — this repo's own `.github/workflows/studio-headless-run.yml` is the
+full-featured reference caller (it uses the local-path form
+`uses: ./apps/studio/headless`).
+
 ## Environment reference
 
 | Variable                  | Required            | Description                                                                 |
@@ -98,7 +195,7 @@ run isn't executing in your session) and your tab autosaves that, confusing
 anyone else reading the record. The CI browser is unaffected, but use the
 project *list*, the CI log, or `progress.mjs` to spectate.
 
-## Running it
+## Running it locally (from this monorepo)
 
 ### Mock mode (local dev server, no AI credits spent)
 
