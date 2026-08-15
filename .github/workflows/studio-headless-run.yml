@@ -74,78 +74,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) }}
     steps:
+      # The action lives in this repo, so use the local-path form. Other repos
+      # use `bffless/apps/apps/studio/headless@studio-vX.Y.Z` — see
+      # apps/studio/headless/README.md ("Use as a GitHub Action").
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Studio headless run
+        id: studio
+        uses: ./apps/studio/headless
         with:
-          node-version: '20'
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install ffmpeg (Firefox H.264/AAC decode)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Install Firefox for Playwright
-        if: inputs.browser != 'chrome'
-        run: pnpm --filter studio-headless exec playwright install firefox --with-deps
-      # Google Chrome stable is preinstalled on ubuntu-latest; Playwright's
-      # channel: 'chrome' uses it directly, so there is nothing to install.
-      - name: Run scenario
-        env:
-          STUDIO_BASE_URL: ${{ inputs.base_url != '' && inputs.base_url || vars.STUDIO_BASE_URL != '' && vars.STUDIO_BASE_URL || 'https://studio.j5s.dev' }}
-          VIDEO_URLS: ${{ inputs.video_urls }}
-          DIRECTOR_PROMPT: ${{ inputs.director_prompt }}
-          PROJECT_TITLE: ${{ inputs.project_title }}
-          THUMBNAIL_PROMPT: ${{ inputs.thumbnail_prompt }}
-          THUMBNAIL_REFERENCE_URL: ${{ inputs.thumbnail_reference_url }}
-          GENERATE_BLOG: ${{ inputs.generate_blog && 'true' || 'false' }}
-          BLOG_DIRECTION: ${{ inputs.blog_direction }}
-          STUDIO_USER_EMAIL: ${{ secrets.STUDIO_USER_EMAIL }}
-          STUDIO_USER_PASSWORD: ${{ secrets.STUDIO_USER_PASSWORD }}
-          FFMPEG_MT: ${{ vars.STUDIO_FFMPEG_MT == 'true' && 'true' || 'false' }}
-          RUNNER_BROWSER: ${{ inputs.browser }}
-        run: pnpm --filter studio-headless scenario
-      - name: Job summary
-        if: always()
-        run: |
-          node -e '
-            const fs = require("fs");
-            const out = "apps/studio/headless/output";
-            let s = { ok: false, phase: "no-summary", openUrl: null, projectId: null, error: null, title: null, description: null, thumbnail: false, blogBundle: false, timings: {} };
-            try { s = JSON.parse(fs.readFileSync(`${out}/run-summary.json`, "utf8")); } catch {}
-            const lines = [
-              s.ok ? "## ✅ Studio headless run complete" : `## ❌ Studio headless run failed (during: ${s.phase})`,
-              "",
-            ];
-            if (s.openUrl) {
-              lines.push(`**Open the project:** ${s.openUrl}`);
-              if (s.projectId) lines.push(`**Project ID:** ${s.projectId}`);
-            } else if (s.projectId) {
-              lines.push(`**Project ID:** ${s.projectId}`);
-            } else {
-              lines.push("_No project was created._");
-            }
-            if (s.error) lines.push(`**Error:** ${s.error}`);
-            if (!s.ok && s.openUrl) lines.push("\nThe project is resumable — open the link and continue from where the run halted.");
-            if (s.title) lines.push("", `### ${s.title}`);
-            if (s.description) lines.push("", "**YouTube description**", "", "```", s.description, "```");
-            if (s.thumbnail) lines.push("", "**Thumbnail:** `thumbnail.png` in the run-output artifact.");
-            if (s.blogBundle) {
-              lines.push("", "**Blog bundle:** `blog-bundle.zip` (post.md + images) in the run-output artifact.");
-              try {
-                // Inline the post for reading here; its image links point at
-                // auth-gated serve paths, so they render only inside the app.
-                const post = fs.readFileSync(`${out}/post.md`, "utf8");
-                const clipped = post.length > 100_000 ? post.slice(0, 100_000) + "\n\n… (truncated — full post in the artifact)" : post;
-                lines.push("", "<details><summary>Blog post (post.md)</summary>", "", clipped, "", "</details>");
-              } catch {}
-            }
-            lines.push("", "| Phase | Elapsed |", "| --- | --- |");
-            lines.push(...Object.entries(s.timings).map(([k, v]) => `| ${k} | ${Math.round(v / 1000)}s |`));
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
-          '
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: run-output
-          path: apps/studio/headless/output/
+          base-url: ${{ inputs.base_url != '' && inputs.base_url || vars.STUDIO_BASE_URL != '' && vars.STUDIO_BASE_URL || 'https://studio.j5s.dev' }}
+          video-urls: ${{ inputs.video_urls }}
+          user-email: ${{ secrets.STUDIO_USER_EMAIL }}
+          user-password: ${{ secrets.STUDIO_USER_PASSWORD }}
+          director-prompt: ${{ inputs.director_prompt }}
+          project-title: ${{ inputs.project_title }}
+          thumbnail-prompt: ${{ inputs.thumbnail_prompt }}
+          thumbnail-reference-url: ${{ inputs.thumbnail_reference_url }}
+          generate-blog: ${{ inputs.generate_blog && 'true' || 'false' }}
+          blog-direction: ${{ inputs.blog_direction }}
+          browser: ${{ inputs.browser }}
+          ffmpeg-mt: ${{ vars.STUDIO_FFMPEG_MT == 'true' && 'true' || 'false' }}
+          artifact-name: run-output
