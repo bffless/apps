@@ -15,7 +15,7 @@ Install Studio from Admin → Apps, then configure these in the project you inst
 | What | Where | Required? | What it powers |
 | --- | --- | --- | --- |
 | Replicate token | Settings → AI → **Replicate** ([get one](https://replicate.com/account/api-tokens)) | Yes | Transcription (WhisperX), scene direction and the per-scene refiner (Gemini), voice clone and speech (MiniMax), thumbnail rendering |
-| Anthropic key | Settings → AI → **LLM Providers** → Add Provider ([get one](https://console.anthropic.com/settings/keys)) | For thumbnails and the blog writer | Thumbnail prompt drafts (Claude Sonnet), companion blog writer (Claude Opus) |
+| Anthropic key | Settings → AI → **LLM Providers** → Add Provider ([get one](https://console.anthropic.com/settings/keys)) | For the Export description, thumbnails and the blog writer | Export title + description (Claude Opus, one-shot with the `video-description` skill), thumbnail prompt drafts (Claude Sonnet), companion blog writer (Claude Opus) |
 | Storage bucket | Settings → Storage | Yes | Presigned direct-to-bucket uploads; Studio writes under `<owner>/<repo>/uploads/…` |
 | Cross-origin isolation | Settings → Response Headers → Add Rule → **Cross-Origin Isolation** preset | Yes for fast export | `SharedArrayBuffer`, which multithreaded `ffmpeg.wasm` needs. Without it export still works, on a slower single-threaded encoder |
 | Access control | Settings → General → **Visibility** → **Private** | Yes | Studio's API rules carry no per-rule auth, so this is the only thing protecting the paid AI endpoints. Once Private, an **Access Control** card appears where you can set **Required Role** to **Admin or higher** |
@@ -44,7 +44,11 @@ skill, which defines the house styles, style routing, and negatives. Leave **Ski
 (Alias)** on **Auto (serving deployment)** — skills already resolve against the deployment
 serving the request, which is Studio. Without this the thumbnail drafter still returns a prompt,
 just a generic one; the skill is skipped silently. Note the path is stored **per project**, so
-setting it once on this step applies to every AI step.
+setting it once on this step applies to every AI step — including the Export step's title +
+description writer, which loads the `video-description` skill (the creator's first-person voice,
+canonical product spellings such as "BFFless", YouTube formatting) from the same path. Edit
+`.bffless/skills/video-description/SKILL.md` — its **Creator profile** section in particular —
+to make descriptions sound like you.
 
 **Sharing a project with other apps.** Scope access control to the `studio` alias (Aliases →
 `studio` → Private) instead of making the whole project private, which cascades to every alias

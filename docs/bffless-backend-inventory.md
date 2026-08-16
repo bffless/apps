@@ -125,7 +125,7 @@ All rules are `proxyType: pipeline`.
 | POST | `/api/voice/say` | Short TTS preview via minimax/speech → `{ audioUrl, durationSeconds }` |
 | POST | `/api/voice/narrate` | Scene-narration TTS persisted to the bucket → durable serve path |
 | POST | `/api/search-transcript` | Find-by-meaning over the transcript (sync Gemini) → `{ results }` |
-| POST | `/api/describe` | Export description from kept script + synopsis (sync Gemini) → `{ title, summary }` |
+| POST | `/api/describe` | Export description from kept script + synopsis (one-shot Claude `ai_handler` + `video-description` skill) → `{ title, summary }` |
 | POST | `/api/thumbnail/draft` | Draft a nano-banana image prompt via `ai_handler` → `{ prompt }` |
 | POST | `/api/thumbnail/render` | Render the prompt with google/nano-banana → `{ imageUrl }` |
 

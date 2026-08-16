@@ -84,8 +84,10 @@ how the rule sets consume each value.
   rule → its AI step → Skills → Skills Path**, set to `apps/studio/dist/bffless/skills` to load
   the `image-prompts` skill. Leave **Skills Source (Alias)** on **Auto (serving deployment)** —
   skills already resolve against the deployment serving the request. The value is stored
-  **per project**, so setting it on this one step applies to every AI step. Without it, thumbnail
-  drafting silently skips the skill and returns a generic prompt.
+  **per project**, so setting it on this one step applies to every AI step — `/api/describe`
+  (Export title + description) loads `video-description` from the same path. Without it, thumbnail
+  drafting and the description writer silently skip their skill and fall back to the generic
+  defaults baked into their system prompts.
 
 ## Prerequisites (provision these in the target project first)
 
@@ -93,7 +95,7 @@ In the BFFless dashboard → **Settings → AI**:
 
 1. **Replicate token** — under **Settings → AI → Replicate**, create an API token at
    [replicate.com](https://replicate.com/account/api-tokens) and paste it. Powers
-   `victor-upmeet/whisperx` (transcribe), `google/gemini-3.1-pro` (director / describe / search),
+   `victor-upmeet/whisperx` (transcribe), `google/gemini-3.1-pro` (director / search),
    `google/gemini-3.5-flash` (refiner), `minimax/voice-cloning` + `minimax/speech-2.8-turbo` (voice),
    and `google/nano-banana-2` (thumbnail render).
 2. **`HF_TOKEN` secret (optional)** — under **Settings → AI → Secrets**, add `HF_TOKEN` set to a
@@ -102,10 +104,13 @@ In the BFFless dashboard → **Settings → AI**:
    `secrets.HF_TOKEN`. The diarization model is **gated** on Hugging Face: beyond creating the
    token, you must also visit the model page and accept its terms once, or diarization fails with
    no clear error.
-3. **Anthropic key (optional — only for thumbnail drafts and the blog writer)** — under
-   **Settings → AI → LLM Providers → Add Provider**, for `/api/thumbnail/draft`
+3. **Anthropic key (for the Export description, thumbnail drafts and the blog writer)** — under
+   **Settings → AI → LLM Providers → Add Provider**, for `/api/describe` (`claude-opus-4-6`, one
+   sync completion — not a chat — with the `video-description` skill), `/api/thumbnail/draft`
    (`claude-sonnet-4-6`) and the companion blog writer (`claude-opus-4-6`). Studio's core pipeline
-   (upload, transcribe, direct, refine, voice, export) runs on Replicate and doesn't need it.
+   (upload, transcribe, direct, refine, voice, export video) runs on Replicate and doesn't need it;
+   without the key, "Generate description" on the Export step reports an error while chapters,
+   script and the video itself are unaffected.
 
 Also:
 

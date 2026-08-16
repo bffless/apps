@@ -1,0 +1,40 @@
+handler: ./parse.fn.js
+cases:
+  - name: reads the Claude ai_handler completion from .content
+    data:
+      steps:
+        describe:
+          content: '{"title": "Add cookie auth to a static site with BFFless", "summary": "In this video I add login to a static site with BFFless proxy rules."}'
+    expect:
+      result:
+        descriptionJson: '{"title":"Add cookie auth to a static site with BFFless","summary":"In this video I add login to a static site with BFFless proxy rules."}'
+  - name: tolerates fences and commentary around the JSON
+    data:
+      steps:
+        describe:
+          content: "Here you go:\n```json\n{\"title\": \"  A title \", \"summary\": \"Two sentences. Really.\"}\n```"
+    expect:
+      result:
+        descriptionJson: '{"title":"A title","summary":"Two sentences. Really."}'
+  - name: still reads the legacy replicate output shape
+    data:
+      steps:
+        describe:
+          output: ['{"title": "T', '", "summary": "S"}']
+    expect:
+      result:
+        descriptionJson: '{"title":"T","summary":"S"}'
+  - name: unparseable output degrades to empty strings, never throws
+    data:
+      steps:
+        describe:
+          content: "Sorry, I cannot help with that."
+    expect:
+      result:
+        descriptionJson: '{"title":"","summary":""}'
+  - name: missing step degrades to empty strings
+    data:
+      steps: {}
+    expect:
+      result:
+        descriptionJson: '{"title":"","summary":""}'

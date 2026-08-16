@@ -2,7 +2,8 @@ targetUrl: pipeline
 order: 27
 timeout: 120000
 pipeline:
-  name: Export description (sync Gemini)
+  name: Export description (sync Claude + skill)
+  description: One sync Claude completion (ai_handler, no chat/history) that writes { title, summary } from the final kept script + director synopsis. Loads the `video-description` skill (creator voice, canonical product spellings, YouTube formatting) when the project's Skills Path points at apps/studio/dist/bffless/skills; the system prompt's defaults are complete on their own when it doesn't.
   steps:
     - id: prep
       name: prep
@@ -10,16 +11,22 @@ pipeline:
       code: ./prep.fn.js
     - id: describe
       name: describe
-      handler: replicate
+      handler: ai_handler
       config:
-        input:
-          prompt: steps.prep.prompt
-          temperature: 0.3
-          thinking_level: "'low'"
-          max_output_tokens: 2000
-          system_instruction: steps.prep.system
-        model: google/gemini-3.1-pro
+        mode: completion
+        model: claude-opus-4-6
+        skills:
+          mode: selected
+          path: apps/studio/dist/bffless/skills
+          enabled:
+            - video-description
+        provider: anthropic
+        maxTokens: 2000
+        temperature: 0.3
         timeout: 110000
+        messageField: "{{steps.prep.prompt}}"
+        responseMode: message
+        systemPrompt: "{{steps.prep.system}}"
     - id: parse
       name: parse
       handler: function_handler
@@ -32,4 +39,4 @@ pipeline:
         status: 200
         contentType: application/json
   validators: []
-description: "Export description (sync Gemini): final kept script + director synopsis -> { title, summary }. Mirrors search-transcript."
+description: "Export description (sync Claude + video-description skill): final kept script + director synopsis -> { title, summary }. One-shot completion, not a chat. Point the step's Skills at your own description skill to override the house style."
