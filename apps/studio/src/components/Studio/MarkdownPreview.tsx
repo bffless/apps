@@ -1,6 +1,8 @@
 import { Fragment, type ReactNode } from 'react'
 import type { BlogImageRef } from '../../lib/blog'
 import { BlogFigure } from './BlogFigure'
+import { MermaidDiagram } from './MermaidDiagram'
+import { splitBlocks } from '../../lib/markdownBlocks'
 
 /** The optional wiring that turns a figure into a re-framable one (issue #91):
  *  the post's frame sidecar (URL → captured second) plus the capture/reframe
@@ -18,7 +20,9 @@ type Editing = {
  * dependency, and the blog post is generated text we only ever display — never
  * edit — so a focused block renderer is enough: YAML front-matter (shown as a
  * title/description header), ATX headings, unordered lists, blockquotes, and
- * paragraphs, with inline `**bold**`, `*italic*`, and `` `code` ``. Anything it
+ * paragraphs, with inline `**bold**`, `*italic*`, and `` `code` ``, plus fenced
+ * code blocks (the writer transcribes on-screen code into ```lang fences) and
+ * ```mermaid fences, which render as diagrams via `MermaidDiagram`. Anything it
  * doesn't recognize falls through as plain text, so a post always renders
  * SOMETHING rather than breaking. Not a prose editor — there is no text-editing
  * affordance.
@@ -83,11 +87,27 @@ function splitFrontMatter(md: string): {
 /** A line that is exactly a Markdown image: `![alt](url)`. */
 const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)]+)\)$/
 
-/** Render the body as a sequence of blocks split on blank lines. */
+/** Render the body as a sequence of blocks: fenced code (incl. mermaid diagrams)
+ *  and blank-line-separated text blocks. */
 function renderBlocks(body: string, editing: Editing | null): ReactNode[] {
   const timeByUrl = new Map((editing?.frames ?? []).map((f) => [f.url, f.time]))
-  const blocks = body.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean)
-  return blocks.map((block, i) => {
+  return splitBlocks(body).map((blk, i) => {
+    if (blk.kind === 'code') {
+      if (blk.lang === 'mermaid') return <MermaidDiagram key={i} code={blk.code} />
+      return (
+        <div key={i} className="relative">
+          {blk.lang && (
+            <span className="absolute right-2 top-1.5 rounded bg-surface-dim/50 px-1.5 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-ink-soft">
+              {blk.lang}
+            </span>
+          )}
+          <pre className="overflow-x-auto rounded-md border border-line bg-surface-dim/30 p-3 font-mono text-[12.5px] leading-snug">
+            <code data-lang={blk.lang || undefined}>{blk.code}</code>
+          </pre>
+        </div>
+      )
+    }
+    const block = blk.text
     const lines = block.split('\n')
 
     // A block of standalone image lines → one figure each, caption shown in italics.

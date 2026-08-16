@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { MarkdownPreview } from './MarkdownPreview'
 
 describe('MarkdownPreview inline images (issue #70)', () => {
@@ -51,5 +51,37 @@ describe('MarkdownPreview inline links', () => {
     render(<MarkdownPreview markdown={'![A frame](/api/uploads/blog/frame-03.jpg)'} />)
     expect(screen.getByRole('img', { name: 'A frame' })).toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+})
+
+vi.mock('mermaid', () => ({
+  default: {
+    initialize: vi.fn(),
+    render: vi.fn(async (_id: string, code: string) => {
+      if (/BROKEN/.test(code)) throw new Error('Parse error on line 1')
+      return { svg: '<svg data-testid="mmd-svg"><text>rendered</text></svg>' }
+    }),
+  },
+}))
+
+describe('MarkdownPreview fenced code + mermaid', () => {
+  it('renders a fenced code block as <pre><code> with a language chip, without splitting it', async () => {
+    render(<MarkdownPreview markdown={'Setup:\n\n```bash\nnpm i\n\nnpm run dev\n```\n\nDone.'} />)
+    const code = document.querySelector('pre code')
+    expect(code?.textContent).toBe('npm i\n\nnpm run dev')
+    expect(screen.getByText('bash')).toBeInTheDocument()
+    expect(screen.getByText('Done.')).toBeInTheDocument()
+  })
+
+  it('renders a ```mermaid fence as an SVG diagram', async () => {
+    render(<MarkdownPreview markdown={'Flow:\n\n```mermaid\nflowchart LR\n  A --> B\n```'} />)
+    expect(await screen.findByTestId('mmd-svg')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Diagram' })).toBeInTheDocument()
+  })
+
+  it('falls back to the diagram source with a note when mermaid cannot render it', async () => {
+    render(<MarkdownPreview markdown={'```mermaid\nBROKEN --> ???\n```'} />)
+    expect(await screen.findByText(/Diagram could not be rendered/)).toBeInTheDocument()
+    expect(document.querySelector('pre code')?.textContent).toBe('BROKEN --> ???')
   })
 })
