@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/bffless/apps/compare/studio-v1.9.1...studio-v1.10.0) (2026-08-16)
+
+
+### Features
+
+* **studio:** render fenced code and mermaid diagrams in the blog preview ([#343](https://github.com/bffless/apps/issues/343)) ([38a889a](https://github.com/bffless/apps/commit/38a889a859904a629b3fe384bc577c66cb2bd90d))
+* **studio:** write the export description with a one-shot Claude call + video-description skill ([#342](https://github.com/bffless/apps/issues/342)) ([2a2dafd](https://github.com/bffless/apps/commit/2a2dafd5dbcec3caf11e7cbe1237b3d8daf1c64a))
+
 ## [1.9.1](https://github.com/bffless/apps/compare/studio-v1.9.0...studio-v1.9.1) (2026-08-15)
 
 
