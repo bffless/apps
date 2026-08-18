@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/bffless/apps/compare/studio-v1.10.0...studio-v1.11.0) (2026-08-18)
+
+
+### Features
+
+* **studio:** video backend picker + parallel Auto Build on the Remote executor ([#347](https://github.com/bffless/apps/issues/347)) ([d587638](https://github.com/bffless/apps/commit/d587638ab235d31721d34ad967398f91a9e52926))
+
 ## [1.10.0](https://github.com/bffless/apps/compare/studio-v1.9.1...studio-v1.10.0) (2026-08-16)
 
 
