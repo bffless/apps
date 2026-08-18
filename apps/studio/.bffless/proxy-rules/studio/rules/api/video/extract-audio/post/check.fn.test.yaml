@@ -24,15 +24,6 @@ cases:
         notOk: true
         error: Server audio extraction failed
         data: null
-  - name: a failed step's code + message are carried into the job error when CE exposes them (ce#662)
-    data:
-      steps: {}
-      stepErrors:
-        extract: { code: FFMPEG_BUSY, message: "remote in-flight limit reached (8)" }
-      deployment: { owner: o, repo: r }
-    expect:
-      result:
-        ok: false
-        notOk: true
-        error: "Server audio extraction failed (FFMPEG_BUSY: remote in-flight limit reached (8))"
-        data: null
+  # NOTE: cases exercising `stepErrors` (ce#662 forward-compat in check.fn.js) are omitted until the
+  # bffless CLI's fixture schema (packages/cli/src/format/manifest.ts FnTestCaseDataSchema, .strict())
+  # accepts a `stepErrors` data root — see the CE follow-up filed from apps#346 Plan 3.
