@@ -88,7 +88,10 @@ export function stepExecutor(backend: VideoBackend): VideoExecutor | undefined {
 
 /**
  * Pure resolution. An override beats a stored choice, which beats the probe.
- * `remote`/`local` are honoured only when the probe lists them; otherwise they
+ * `remote`/`local` are honoured only when server ops are enabled AND the probe
+ * lists them (`{server:false, executors:['local']}` is a common real payload —
+ * CE reports `executors` from operator config while `server` also requires the
+ * feature flag on and readiness); otherwise they
  * fall back to `server` (auto) when the instance has server ops, else `wasm`,
  * with a note. `server`/`wasm` are always honoured as-is (an override "for
  * testing" must win even against a probe that disagrees — today's behaviour).
@@ -118,7 +121,7 @@ export function resolveVideoBackend(
   if (probe === null) {
     return finish('server', `${label} couldn't be verified (capability probe unavailable) — using Server (auto).`)
   }
-  if (probe.executors.includes(requested)) return finish(requested, null)
+  if (probe.server && probe.executors.includes(requested)) return finish(requested, null)
   const fallback: VideoBackend = probe.server ? 'server' : 'wasm'
   return finish(
     fallback,

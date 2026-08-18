@@ -60,7 +60,7 @@ import {
 import { assembleSceneBlob, assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { autoBuildError } from './useScenePipeline'
 import { useSignedBytes } from './useSignedBytes'
-import { getVideoBackend, getResolvedVideoBackend } from '../../lib/videoBackend'
+import { getVideoBackend, getResolvedVideoBackend, subscribeVideoBackend } from '../../lib/videoBackend'
 import type { Scene } from '../../lib/scenes'
 
 /** The slice of `useScenePipeline` the orchestrator drives. */
@@ -128,8 +128,9 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   const [tick, bump] = useReducer((n: number) => n + 1, 0)
   // The lane widths for THIS run, decided once at Start/Resume from the resolved
   // video backend (spec P6): the ffmpeg lane is 1 on wasm/local and min(8, scenes)
-  // on remote. Read by every `nextActions` pass; a picker change mid-run takes
-  // effect on the next Resume, never mid-flight.
+  // on remote. Read by every `nextActions` pass; a picker change mid-run narrows
+  // this immediately (below) but WIDENING always waits for an explicit Resume —
+  // never mid-flight.
   const capsRef = useRef<LaneCaps>(DEFAULT_LANE_CAPS)
   // Invalidates a Start/Resume that's still awaiting the backend probe. Both bump
   // this BEFORE dispatching, so if the user clicks Stop/Pause while a prior
@@ -137,6 +138,20 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   // generation is no longer current when the probe resolves and bails out instead
   // of resurrecting a run the user just stopped/paused.
   const startGenRef = useRef(0)
+
+  // A picker change mid-run must never leave the lane cap wide (spec P6: "never
+  // mid-flight"). Narrowing is always safe — it only slows admission of NEW
+  // steps, never cancels an in-flight one — so we apply it the instant the
+  // picker changes. Widening is different: it would let more scenes start
+  // concurrently on a backend `nextActions` hasn't accounted for yet, so it
+  // still requires an explicit Resume (which re-runs `decideCaps`).
+  useEffect(
+    () =>
+      subscribeVideoBackend(() => {
+        capsRef.current = DEFAULT_LANE_CAPS
+      }),
+    [],
+  )
 
   // Keep `pipe` in a ref so the runner reads the CURRENT actions/state while staying
   // keyed to just the signals that should re-trigger it (status, scenes, sceneErrors,
@@ -148,20 +163,26 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
     pipeRef.current = pipe
   })
 
-  const decideCaps = useCallback(async () => {
+  // Takes the CALLER's generation and only writes `capsRef` if it's still
+  // current when the probe resolves — otherwise a superseded Start/Resume
+  // (e.g. two rapid Starts, or a Start racing a Resume) can have its stale
+  // result land AFTER the current run's caps were already decided, silently
+  // clobbering them back to the wrong width.
+  const decideCaps = useCallback(async (gen: number) => {
     const resolved = await getResolvedVideoBackend()
+    if (gen !== startGenRef.current) return // superseded — don't clobber the current run's caps
     capsRef.current = laneCapsFor(resolved.executor, pipeRef.current.scenes.length)
   }, [])
   const start = useCallback(async () => {
     const gen = ++startGenRef.current
-    await decideCaps()
+    await decideCaps(gen)
     if (gen !== startGenRef.current) return // a Stop/Pause landed while we probed
     liveRef.current = true
     dispatch(startAutoBuild())
   }, [dispatch, decideCaps])
   const resume = useCallback(async () => {
     const gen = ++startGenRef.current
-    await decideCaps()
+    await decideCaps(gen)
     if (gen !== startGenRef.current) return // a Stop/Pause landed while we probed
     liveRef.current = true
     dispatch(resumeAutoBuild())

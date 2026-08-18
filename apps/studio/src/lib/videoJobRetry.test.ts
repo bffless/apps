@@ -49,6 +49,13 @@ describe('withBusyRetry', () => {
     expect(sleep).not.toHaveBeenCalled()
   })
 
+  it('rethrows the ORIGINAL rejection value, not an Error-wrapped copy (RTK serialized errors)', async () => {
+    const sleep = vi.fn()
+    const rtkError = { status: 401, data: { message: 'nope' } }
+    await expect(withBusyRetry(() => Promise.reject(rtkError), { sleep })).rejects.toEqual(rtkError)
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
   it('exports the locked ladder', () => {
     expect([...BUSY_RETRY_DELAYS_MS]).toEqual([15_000, 30_000, 60_000])
   })

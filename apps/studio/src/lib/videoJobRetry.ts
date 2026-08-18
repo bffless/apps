@@ -36,8 +36,12 @@ export async function withBusyRetry<T>(
     try {
       return await attempt()
     } catch (e) {
+      // Convert for the classifier/onRetry only — the THROWN value must stay the
+      // original rejection (RTK Query's serialized error objects, plain strings,
+      // …) or callers see a useless "[object Object]" Error instead of the real
+      // shape (e.g. `{ status, data }`).
       const error = e instanceof Error ? e : new Error(String(e))
-      if (i >= delays.length || !isTransientVideoJobError(error.message)) throw error
+      if (i >= delays.length || !isTransientVideoJobError(error.message)) throw e
       const delayMs = delays[i]
       opts.onRetry?.({ attempt: i + 1, delayMs, error })
       await sleep(delayMs)

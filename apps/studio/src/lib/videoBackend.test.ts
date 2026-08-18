@@ -88,6 +88,11 @@ describe('resolveVideoBackend (pure)', () => {
     expect(r).toMatchObject({ backend: 'wasm', executor: null })
     expect(r.note).toMatch(/Remote isn't enabled/)
   })
+  it('does not honour local/remote when server:false, even if executors lists them (operator-config-only payload)', () => {
+    const r = resolveVideoBackend('', 'local', { server: false, executors: ['local'], defaultExecutor: 'local', remote: null })
+    expect(r).toMatchObject({ backend: 'wasm', executor: null })
+    expect(r.note).toMatch(/Local server isn't enabled/)
+  })
   it('falls back to server (auto) when the probe failed (executors unknown)', () => {
     const r = resolveVideoBackend('', 'remote', null)
     expect(r).toMatchObject({ backend: 'server', executor: 'local' })
@@ -127,6 +132,16 @@ describe('getVideoBackend / getResolvedVideoBackend (session memo)', () => {
 
   it('never rejects: probe failure resolves wasm (older CE runs exactly as today)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+    await expect(getVideoBackend()).resolves.toBe('wasm')
+  })
+
+  it('a non-ok probe response (e.g. 404, no rule imported) resolves wasm', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 404 })))
+    await expect(getVideoBackend()).resolves.toBe('wasm')
+  })
+
+  it('a non-JSON 200 probe response resolves wasm', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>')))
     await expect(getVideoBackend()).resolves.toBe('wasm')
   })
 

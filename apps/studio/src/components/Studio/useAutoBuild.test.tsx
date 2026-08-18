@@ -38,13 +38,15 @@ vi.mock('./useSignedBytes', () => ({ useSignedBytes: () => vi.fn() }))
 // Which backend the assemble/stitch call sites see — defaults to 'wasm' so the
 // pre-existing (task 6-and-earlier) expectations hold unchanged; individual
 // tests below flip it to 'server'/'remote'.
-const { getVideoBackendMock, getResolvedVideoBackendMock } = vi.hoisted(() => ({
+const { getVideoBackendMock, getResolvedVideoBackendMock, subscribeVideoBackendMock } = vi.hoisted(() => ({
   getVideoBackendMock: vi.fn(),
   getResolvedVideoBackendMock: vi.fn(),
+  subscribeVideoBackendMock: vi.fn(),
 }))
 vi.mock('../../lib/videoBackend', () => ({
   getVideoBackend: getVideoBackendMock,
   getResolvedVideoBackend: getResolvedVideoBackendMock,
+  subscribeVideoBackend: subscribeVideoBackendMock,
 }))
 
 import { useAutoBuild } from './useAutoBuild'
@@ -189,12 +191,26 @@ function backend(
   getResolvedVideoBackendMock.mockResolvedValue({ backend: b, executor, source: 'stored', note: null, probe: null })
 }
 
+// The listeners the hook has registered via `subscribeVideoBackend` (reset per
+// test) — tests call `fireBackendChanged()` to simulate a mid-run picker change.
+let backendListeners: Array<() => void> = []
+function fireBackendChanged() {
+  backendListeners.forEach((cb) => cb())
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   assembleSceneBlobMock.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }))
   assembleFinalCutBlobMock.mockResolvedValue(new Blob(['final'], { type: 'video/mp4' }))
   getVideoBackendMock.mockResolvedValue('wasm')
   backend('wasm')
+  backendListeners = []
+  subscribeVideoBackendMock.mockImplementation((listener: () => void) => {
+    backendListeners.push(listener)
+    return () => {
+      backendListeners = backendListeners.filter((l) => l !== listener)
+    }
+  })
 })
 
 describe('useAutoBuild — a save that fails on the assemble step', () => {
@@ -506,6 +522,102 @@ describe('useAutoBuild — parallel launch', () => {
     await click('start')
     await waitFor(() => expect(scenesOf(store).every((s) => !!s.clipUrl)).toBe(true))
     expect(peak).toBe(1)
+  })
+
+  it('a picker change mid-run narrows the ffmpeg lane back to 1 — never widens mid-flight', async () => {
+    backend('remote') // cap = min(8, scenes) = 3 at Start
+    const bare = (id: string, i: number): Scene => ({
+      ...prepped(id, i),
+      clipUrl: undefined,
+      clipAudioUrl: undefined,
+      sheets: undefined,
+      refined: undefined,
+    })
+    const store = makeStore([bare('a', 0), bare('b', 1), bare('c', 2)])
+
+    // cut (ffmpeg lane): held open so we can observe the wide cap, then released
+    // all together once the lane has been narrowed.
+    let cutInFlight = 0
+    let cutPeak = 0
+    const cutGates: Array<() => void> = []
+    const sliceScene = (id: string) =>
+      new Promise<void>((resolve) => {
+        cutInFlight += 1
+        cutPeak = Math.max(cutPeak, cutInFlight)
+        cutGates.push(() => {
+          cutInFlight -= 1
+          store.dispatch(patchScene({ id, patch: { clipUrl: `${id}.mp4`, clipAudioUrl: `${id}.wav` } }))
+          resolve()
+        })
+      })
+    // sheets/refine settle synchronously — the test only cares about ffmpeg-lane
+    // concurrency (cut, then assemble).
+    const generateSceneSheets = (id: string) => {
+      store.dispatch(patchScene({ id, patch: { sheets: [{} as ContactSheet] } }))
+      return Promise.resolve()
+    }
+    const refineScene = (id: string) => {
+      store.dispatch(patchScene({ id, patch: { refined: { cuts: [], source: 'ai' } } }))
+      return Promise.resolve()
+    }
+    // assemble (also ffmpeg lane, remote backend routes through assembleSceneRemote):
+    // held open too, so we can see how many the (now-narrowed) lane admits at once.
+    let assembleInFlight = 0
+    let assemblePeak = 0
+    const assembleGates: Array<() => void> = []
+    const assembleSceneRemote = (id: string) =>
+      new Promise<void>((resolve) => {
+        assembleInFlight += 1
+        assemblePeak = Math.max(assemblePeak, assembleInFlight)
+        assembleGates.push(() => {
+          assembleInFlight -= 1
+          store.dispatch(patchScene({ id, patch: { assembledUrl: `${id}.mp4`, status: 'built' } }))
+          resolve()
+        })
+      })
+
+    render(
+      <Provider store={store}>
+        <Harness
+          upload={vi.fn()}
+          sliceScene={sliceScene}
+          generateSceneSheets={generateSceneSheets}
+          refineScene={refineScene}
+          assembleSceneRemote={assembleSceneRemote}
+        />
+      </Provider>,
+    )
+
+    await click('start')
+    // The lane is wide (remote, 3 scenes) while running — all three cuts launch.
+    await waitFor(() => expect(cutPeak).toBe(3))
+
+    // Simulate a mid-run picker change (VideoBackendPicker calls setVideoBackend,
+    // which notifies subscribers) — the lane must narrow immediately, not just on
+    // the next Resume.
+    await act(async () => {
+      fireBackendChanged()
+    })
+
+    // Release all three cuts together; sheets/refine settle synchronously and
+    // every scene arrives at assemble around the same pass.
+    await act(async () => {
+      cutGates.splice(0).forEach((g) => g())
+    })
+    await waitFor(() => expect(assembleInFlight).toBeGreaterThan(0))
+    expect(assemblePeak).toBe(1) // narrowed — at most one assemble in flight now
+
+    // The narrowed lane admits assembles one at a time — drain them one round
+    // per scene rather than releasing every gate at once (only one exists yet).
+    for (let round = 0; round < 3 && !scenesOf(store).every((s) => s.status === 'built'); round++) {
+      await act(async () => {
+        assembleGates.splice(0).forEach((g) => g())
+      })
+      if (!scenesOf(store).every((s) => s.status === 'built')) {
+        await waitFor(() => expect(assembleGates.length).toBeGreaterThan(0))
+      }
+    }
+    await waitFor(() => expect(scenesOf(store).every((s) => s.status === 'built')).toBe(true))
   })
 
   it('a Pause that lands while Resume is still awaiting the backend probe wins — the run does not resurrect', async () => {
