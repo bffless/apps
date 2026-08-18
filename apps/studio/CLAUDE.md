@@ -37,9 +37,7 @@ their own project (attach BOTH to the app's alias) — see
 rules, edit the source under `.bffless/proxy-rules/<set>/` and commit — CI syncs it to the project on
 deploy; check for drift with `npx bffless rules diff`.
 
-Server-side video ops (`/api/video/{capabilities,slice,concat,extract-audio}`, CE's `ffmpeg_handler`)
-unlock on CE ≥ 0.4.25; the client probes once per session and falls back to `ffmpeg.wasm` on older
-CE, with a `?videoBackend=server|wasm` override for testing (`src/lib/videoBackend.ts`).
+Server-side video ops (`/api/video/{capabilities,slice,concat,extract-audio}`, CE's `ffmpeg_handler`) unlock on CE ≥ 0.4.25; the client probes once per session and falls back to `ffmpeg.wasm` on older CE. On CE ≥ 0.4.31 the probe also lists `executors` (`local` = ffmpeg in the backend, `remote` = the Cloud Run Worker) and the picker on the Auto Build board / prep card chooses **Browser | Server (auto) | Local server | Remote** (`src/lib/videoBackend.ts`; `?videoBackend=wasm|server|local|remote` override, persisted). Explicit choices send `executor` on the job body (the video rules pass it through); Auto Build widens its ffmpeg lane to `min(8, scenes)` on Remote (`src/lib/autoBuild.ts`), and `FFMPEG_BUSY` job errors are retried (`src/lib/videoJobRetry.ts`; needs ce#662 for the code to reach the job row).
 
 ## The locked pipeline
 
