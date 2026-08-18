@@ -12,6 +12,10 @@ import {
   sceneRunStatus,
   isHaltStale,
   assembleInputsKey,
+  ffmpegLaneCapacity,
+  laneCapsFor,
+  DEFAULT_LANE_CAPS,
+  REMOTE_FFMPEG_MAX,
   type AutoBuildRun,
   type AutoHalt,
   type ActiveStep,
@@ -314,5 +318,56 @@ describe('nextActions (lane scheduler)', () => {
   it('skips built scenes entirely', () => {
     const actions = nextActions([built('s1', 0), atCut('s2', 1)], [])
     expect(stepsOf(actions)).toEqual(['s2:cut'])
+  })
+})
+
+describe('ffmpegLaneCapacity / laneCapsFor', () => {
+  it('is 1 for wasm (null executor) and local', () => {
+    expect(ffmpegLaneCapacity(null, 12)).toBe(1)
+    expect(ffmpegLaneCapacity('local', 12)).toBe(1)
+  })
+  it('is min(8, scenes) for remote', () => {
+    expect(ffmpegLaneCapacity('remote', 3)).toBe(3)
+    expect(ffmpegLaneCapacity('remote', 12)).toBe(REMOTE_FFMPEG_MAX)
+    expect(ffmpegLaneCapacity('remote', 0)).toBe(1) // never zero — a lone stitch/assemble must still run
+  })
+  it('leaves refine and sheets at 1', () => {
+    expect(laneCapsFor('remote', 5)).toEqual({ ffmpeg: 5, refine: 1, sheets: 1 })
+    expect(laneCapsFor(null, 5)).toEqual(DEFAULT_LANE_CAPS)
+  })
+})
+
+describe('nextActions with a wider ffmpeg lane', () => {
+  // Bare scenes: every one is on `cut` (ffmpeg lane).
+  const bare = (id: string, index: number): Scene => ({
+    id, index, sourceId: 'src', title: id, start: index * 10, end: index * 10 + 10, transcript: '', status: 'pending',
+  })
+  const scenes = [bare('a', 0), bare('b', 1), bare('c', 2), bare('d', 3)]
+
+  it('cap 1 (default) still admits exactly one ffmpeg step', () => {
+    const steps = nextActions(scenes, []).filter((a) => a.kind === 'step')
+    expect(steps.map((a) => a.kind === 'step' && a.scene.id)).toEqual(['a'])
+  })
+  it('cap 3 admits three cuts across scenes and holds the fourth', () => {
+    const caps = { ffmpeg: 3, refine: 1, sheets: 1 }
+    const steps = nextActions(scenes, [], caps).filter((a) => a.kind === 'step')
+    expect(steps.map((a) => a.kind === 'step' && a.scene.id)).toEqual(['a', 'b', 'c'])
+  })
+  it('counts in-flight ffmpeg steps against the cap', () => {
+    const caps = { ffmpeg: 3, refine: 1, sheets: 1 }
+    const inFlight = [{ sceneId: 'a', stepId: 'cut' as const }, { sceneId: 'b', stepId: 'cut' as const }]
+    const steps = nextActions(scenes, inFlight, caps).filter((a) => a.kind === 'step')
+    expect(steps.map((a) => a.kind === 'step' && a.scene.id)).toEqual(['c'])
+  })
+  it('cap min(8, scenes) admits every scene when there are fewer than 8', () => {
+    const steps = nextActions(scenes, [], laneCapsFor('remote', scenes.length)).filter((a) => a.kind === 'step')
+    expect(steps).toHaveLength(4)
+  })
+  it('a wider ffmpeg lane never widens refine or sheets', () => {
+    // two scenes both on `sheets` (cut done): only one sheets step is admitted
+    const cut = (s: Scene): Scene => ({ ...s, clipUrl: 'c.mp4', clipAudioUrl: 'c.wav' })
+    const twoOnSheets = [cut(bare('a', 0)), cut(bare('b', 1))]
+    const steps = nextActions(twoOnSheets, [], laneCapsFor('remote', 2)).filter((a) => a.kind === 'step')
+    expect(steps.map((a) => a.kind === 'step' && a.step)).toEqual(['sheets'])
   })
 })
