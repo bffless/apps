@@ -1,6 +1,6 @@
 {
   "apps/reader": "1.0.2",
   "apps/handoff": "1.1.0",
-  "apps/studio": "1.10.0",
+  "apps/studio": "1.11.0",
   "apps/recall": "0.3.1"
 }
