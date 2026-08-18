@@ -19,5 +19,6 @@ function handler({ request }) {
     input: sourceUrl, projectId: pid, spans: spans,
     wantAudio: wantAudio, noAudio: !wantAudio,
     audioFades: body.audioFades === true,
+    executor: body.executor === 'local' || body.executor === 'remote' ? body.executor : '',
   }
 }
