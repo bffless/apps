@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/bffless/apps/compare/studio-v1.11.1...studio-v1.12.0) (2026-08-18)
+
+
+### Features
+
+* **studio:** size the remote ffmpeg lane from the probe's remote.maxInflight instead of a hard-coded 8 ([#353](https://github.com/bffless/apps/issues/353)) ([2fa4f3b](https://github.com/bffless/apps/commit/2fa4f3bc6a2a51204d5c769ca30f517db1f385ee))
+
 ## [1.11.1](https://github.com/bffless/apps/compare/studio-v1.11.0...studio-v1.11.1) (2026-08-18)
 
 
