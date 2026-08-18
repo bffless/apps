@@ -27,8 +27,13 @@ jobs:
           node-version: '20'
           cache: pnpm
       - name: Install dependencies
+        timeout-minutes: 5
         run: pnpm install --frozen-lockfile
       - name: Install Firefox for Playwright
+        # Normally < 1 min. Its `apt-get update` once hung on a stalled Ubuntu mirror for
+        # 17 min (2026-08-18) — a step timeout fails fast instead of burning the whole
+        # 20-min job backstop; a rerun is the fix.
+        timeout-minutes: 5
         run: pnpm --filter studio-headless exec playwright install firefox --with-deps
       - name: Runner unit tests
         run: pnpm --filter studio-headless test

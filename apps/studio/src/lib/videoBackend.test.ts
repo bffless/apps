@@ -192,3 +192,25 @@ describe('getVideoBackend / getResolvedVideoBackend (session memo)', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('getResolvedVideoBackend — a failed probe is not memoised', () => {
+  afterEach(() => {
+    resetVideoBackendForTests()
+    vi.unstubAllGlobals()
+    window.localStorage.clear()
+  })
+
+  it('retries the probe on the next call after a failure (older CE / network / pre-login), and memoises the success', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockImplementation(async () =>
+        new Response(JSON.stringify({ server: true, executors: ['remote'], defaultExecutor: 'remote', remote: { ready: true } })),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    expect((await getResolvedVideoBackend()).probe).toBeNull()
+    expect((await getResolvedVideoBackend()).backend).toBe('server')
+    expect((await getResolvedVideoBackend()).backend).toBe('server')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})

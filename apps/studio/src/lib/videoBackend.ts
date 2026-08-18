@@ -171,6 +171,11 @@ export function getResolvedVideoBackend(): Promise<ResolvedVideoBackend> {
     } catch {
       /* older CE / no rule / network: probe stays null */
     }
+    // A FAILED probe is not a fact about the instance — it's usually a
+    // pre-login 401 (the rule is session-gated) or a blip — so don't memoise it:
+    // concurrent callers share this attempt, but the next call probes again.
+    // A successful probe (or a wasm decision) is memoised for the session.
+    if (probe === null) memo = null
     return resolveVideoBackend(search, stored, probe)
   })()
   return memo
