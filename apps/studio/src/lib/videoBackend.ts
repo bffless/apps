@@ -25,7 +25,8 @@ export type VideoCapabilities = {
   server: boolean
   executors: VideoExecutor[]
   defaultExecutor: VideoExecutor | null
-  remote: { ready: boolean; version?: string; reason?: string } | null
+  /** `maxInflight` = the instance's per-connection fuse (CE >= 0.4.31 Plan 4); absent on older CE. */
+  remote: { ready: boolean; version?: string; reason?: string; maxInflight?: number } | null
 }
 
 export type ResolvedVideoBackend = {
@@ -76,6 +77,9 @@ export function parseCapabilities(raw: unknown): VideoCapabilities {
           ready: rem.ready === true,
           ...(typeof rem.version === 'string' ? { version: rem.version } : {}),
           ...(typeof rem.reason === 'string' ? { reason: rem.reason } : {}),
+          ...(typeof rem.maxInflight === 'number' && Number.isFinite(rem.maxInflight)
+            ? { maxInflight: rem.maxInflight }
+            : {}),
         }
       : null
   return { server, executors, defaultExecutor, remote }

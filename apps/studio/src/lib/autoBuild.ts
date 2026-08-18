@@ -104,21 +104,35 @@ export type LaneCaps = Record<Lane, number>
 
 export const DEFAULT_LANE_CAPS: LaneCaps = { ffmpeg: 1, refine: 1, sheets: 1 }
 
-/** CE's remote in-flight fuse (FFMPEG_REMOTE_MAX_INFLIGHT default) — never ask for more than the server will take. */
+/**
+ * Fallback for CE's remote in-flight fuse when the capabilities probe does not
+ * report one (CE < 0.4.31 Plan 4). Newer CE sends `remote.maxInflight` — the
+ * operator's per-connection cap — and that value wins.
+ */
 export const REMOTE_FFMPEG_MAX = 8
 
 /**
  * The ffmpeg lane's width for a run: wasm (null) and local are single-slot;
- * remote is min(8, scenes) — one job per scene is the most useful parallelism
- * and 8 is CE's fuse. Never below 1 so a lone assemble/stitch still runs.
+ * remote is min(cap, scenes) — one job per scene is the most useful parallelism
+ * and `cap` is the instance's fuse (probe `remote.maxInflight`, else 8). Never
+ * below 1 so a lone assemble/stitch still runs, even on a bogus cap.
  */
-export function ffmpegLaneCapacity(executor: VideoExecutor | null, sceneCount: number): number {
+export function ffmpegLaneCapacity(
+  executor: VideoExecutor | null,
+  sceneCount: number,
+  remoteMaxInflight: number = REMOTE_FFMPEG_MAX,
+): number {
   if (executor !== 'remote') return 1
-  return Math.max(1, Math.min(REMOTE_FFMPEG_MAX, sceneCount))
+  const cap = Number.isFinite(remoteMaxInflight) && remoteMaxInflight > 0 ? remoteMaxInflight : REMOTE_FFMPEG_MAX
+  return Math.max(1, Math.min(cap, sceneCount))
 }
 
-export function laneCapsFor(executor: VideoExecutor | null, sceneCount: number): LaneCaps {
-  return { ...DEFAULT_LANE_CAPS, ffmpeg: ffmpegLaneCapacity(executor, sceneCount) }
+export function laneCapsFor(
+  executor: VideoExecutor | null,
+  sceneCount: number,
+  remoteMaxInflight: number = REMOTE_FFMPEG_MAX,
+): LaneCaps {
+  return { ...DEFAULT_LANE_CAPS, ffmpeg: ffmpegLaneCapacity(executor, sceneCount, remoteMaxInflight) }
 }
 
 export type AutoAction =
