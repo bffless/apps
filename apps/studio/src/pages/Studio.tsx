@@ -31,6 +31,7 @@ import { ThumbnailStudio } from '../components/Studio/ThumbnailStudio'
 import { useScenePipeline } from '../components/Studio/useScenePipeline'
 import { useProjectAutosave } from '../components/Studio/useProjectAutosave'
 import { AutoBuildBoard } from '../components/Studio/AutoBuildBoard'
+import { VideoBackendPicker } from '../components/Studio/VideoBackendPicker'
 import { useAutoBuild } from '../components/Studio/useAutoBuild'
 import { useSignDownloadQuery, useLazySignDownloadQuery, useSearchTranscriptMutation } from '../store/studioApi'
 import { buildSearchRequest, toSearchHits } from '../lib/search'
@@ -495,6 +496,10 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                  continue. The plan is one column — each step's artifact (contact
                  sheet, director result, voice studio) sits beneath its own card. */
               <div className="flex flex-col gap-8">
+                <div className="border rule bg-surface p-4">
+                  <VideoBackendPicker sceneCount={Math.max(1, pipe.scenes.length)} compact />
+                </div>
+
                 {pipe.sources.length > 0 && (
                   <SourceQueue
                     sources={[...pipe.sources].sort((a, b) => a.order - b.order)}
@@ -665,6 +670,7 @@ export function Studio({ projectId, phase }: { projectId: string; phase: UrlPhas
                     onPause={auto.pause}
                     onResume={auto.resume}
                     onStop={auto.stop}
+                    toolbar={<VideoBackendPicker sceneCount={pipe.scenes.length} compact />}
                   />
                 ) : (
                   <SceneTabs

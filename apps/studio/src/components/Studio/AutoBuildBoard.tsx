@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Scene } from '../../lib/scenes'
 import {
   AUTO_STEPS,
@@ -16,6 +17,8 @@ type Props = {
   onPause: () => void
   onResume: () => void
   onStop: () => void
+  /** Extra controls rendered in the header's right-hand cluster, before Start (e.g. the video backend picker). */
+  toolbar?: ReactNode
 }
 
 const STEP_ICON: Record<AutoStepStatus, string> = {
@@ -42,7 +45,7 @@ function Spinner({ className = '' }: { className?: string }) {
  * everything comes from `autoBuild` selectors over the durable scene state. Clicking
  * a scene row drills into the existing manual editor below (the page's detail view).
  */
-export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onPause, onResume, onStop }: Props) {
+export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onPause, onResume, onStop, toolbar }: Props) {
   const builtCount = scenes.filter((s) => s.status === 'built').length
   const activeSceneIds = new Set(run.active.map((a) => a.sceneId))
   // The final stitch has no scene — give it its own headline + spinner.
@@ -71,6 +74,7 @@ export function AutoBuildBoard({ scenes, run, selectedId, onSelect, onStart, onP
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {toolbar}
           {run.status === 'idle' || run.status === 'done' ? (
             <button type="button" className="pill-cta" data-testid="auto-build-start" onClick={onStart}>
               Start auto build
