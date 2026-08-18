@@ -37,9 +37,15 @@ vi.mock('./useSignedBytes', () => ({ useSignedBytes: () => vi.fn() }))
 
 // Which backend the assemble/stitch call sites see — defaults to 'wasm' so the
 // pre-existing (task 6-and-earlier) expectations hold unchanged; individual
-// tests below flip it to 'server'.
-const { getVideoBackendMock } = vi.hoisted(() => ({ getVideoBackendMock: vi.fn() }))
-vi.mock('../../lib/videoBackend', () => ({ getVideoBackend: getVideoBackendMock }))
+// tests below flip it to 'server'/'remote'.
+const { getVideoBackendMock, getResolvedVideoBackendMock } = vi.hoisted(() => ({
+  getVideoBackendMock: vi.fn(),
+  getResolvedVideoBackendMock: vi.fn(),
+}))
+vi.mock('../../lib/videoBackend', () => ({
+  getVideoBackend: getVideoBackendMock,
+  getResolvedVideoBackend: getResolvedVideoBackendMock,
+}))
 
 import { useAutoBuild } from './useAutoBuild'
 
@@ -172,11 +178,21 @@ async function dispatchAct(store: Store, action: Parameters<Store['dispatch']>[0
 const status = () => screen.getByTestId('status').textContent
 const error = () => screen.getByTestId('error').textContent
 
+/** Point both mocks at one backend (the hook reads the resolved shape at Start). */
+function backend(
+  b: 'wasm' | 'server' | 'remote',
+  executor: 'local' | 'remote' | null = b === 'remote' ? 'remote' : b === 'server' ? 'local' : null,
+) {
+  getVideoBackendMock.mockResolvedValue(b)
+  getResolvedVideoBackendMock.mockResolvedValue({ backend: b, executor, source: 'stored', note: null, probe: null })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   assembleSceneBlobMock.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }))
   assembleFinalCutBlobMock.mockResolvedValue(new Blob(['final'], { type: 'video/mp4' }))
   getVideoBackendMock.mockResolvedValue('wasm')
+  backend('wasm')
 })
 
 describe('useAutoBuild — a save that fails on the assemble step', () => {
@@ -405,6 +421,91 @@ describe('useAutoBuild — parallel launch', () => {
     expect(sliceScene).not.toHaveBeenCalled() // ffmpeg lane is busy with s1
   })
 
+  it('remote backend: cuts several scenes at once (cap = min(8, scenes))', async () => {
+    backend('remote')
+    const bare = (id: string, i: number): Scene => ({ ...prepped(id, i), clipUrl: undefined, clipAudioUrl: undefined, sheets: undefined, refined: undefined })
+    const store = makeStore([bare('a', 0), bare('b', 1), bare('c', 2)])
+    let inFlight = 0
+    let peak = 0
+    const gate: Array<() => void> = []
+    const sliceScene = (id: string) =>
+      new Promise<void>((resolve) => {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        gate.push(() => {
+          inFlight -= 1
+          store.dispatch(patchScene({ id, patch: { clipUrl: `${id}.mp4`, clipAudioUrl: `${id}.wav` } }))
+          resolve()
+        })
+      })
+    // The test only cares about cut-step concurrency; give sheets/refine real
+    // (if minimal) durable writes so the runner doesn't retry a no-op step forever
+    // once the cuts land.
+    const generateSceneSheets = (id: string) => {
+      store.dispatch(patchScene({ id, patch: { sheets: [{} as ContactSheet] } }))
+      return Promise.resolve()
+    }
+    const refineScene = (id: string) => {
+      store.dispatch(patchScene({ id, patch: { refined: { cuts: [], source: 'ai' } } }))
+      return Promise.resolve()
+    }
+    render(
+      <Provider store={store}>
+        <Harness
+          upload={vi.fn()}
+          sliceScene={sliceScene}
+          generateSceneSheets={generateSceneSheets}
+          refineScene={refineScene}
+        />
+      </Provider>,
+    )
+    await click('start')
+    await waitFor(() => expect(peak).toBe(3))
+    await act(async () => { gate.splice(0).forEach((g) => g()) })
+    await waitFor(() => expect(scenesOf(store).every((s) => !!s.clipUrl)).toBe(true))
+  })
+
+  it('local (server) backend keeps the ffmpeg lane at 1', async () => {
+    backend('server', 'local')
+    const bare = (id: string, i: number): Scene => ({ ...prepped(id, i), clipUrl: undefined, clipAudioUrl: undefined, sheets: undefined, refined: undefined })
+    const store = makeStore([bare('a', 0), bare('b', 1), bare('c', 2)])
+    let peak = 0
+    let inFlight = 0
+    const sliceScene = (id: string) =>
+      new Promise<void>((resolve) => {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        setTimeout(() => {
+          inFlight -= 1
+          store.dispatch(patchScene({ id, patch: { clipUrl: `${id}.mp4`, clipAudioUrl: `${id}.wav` } }))
+          resolve()
+        }, 5)
+      })
+    // Same as the remote test above: real (if minimal) sheets/refine writes so the
+    // runner doesn't retry a no-op step forever once the cuts land.
+    const generateSceneSheets = (id: string) => {
+      store.dispatch(patchScene({ id, patch: { sheets: [{} as ContactSheet] } }))
+      return Promise.resolve()
+    }
+    const refineScene = (id: string) => {
+      store.dispatch(patchScene({ id, patch: { refined: { cuts: [], source: 'ai' } } }))
+      return Promise.resolve()
+    }
+    render(
+      <Provider store={store}>
+        <Harness
+          upload={vi.fn()}
+          sliceScene={sliceScene}
+          generateSceneSheets={generateSceneSheets}
+          refineScene={refineScene}
+        />
+      </Provider>,
+    )
+    await click('start')
+    await waitFor(() => expect(scenesOf(store).every((s) => !!s.clipUrl)).toBe(true))
+    expect(peak).toBe(1)
+  })
+
   it('halts on the failing scene without blaming a concurrent healthy one', async () => {
     // s2's refine fails the way the real pipe fails: the action resolves
     // (swallowed error), writes NO durable `refined`, and the scene's entry in
@@ -438,7 +539,7 @@ describe('useAutoBuild — parallel launch', () => {
 
 describe('useAutoBuild — server video backend', () => {
   it('assemble step calls assembleSceneRemote, never the wasm render', async () => {
-    getVideoBackendMock.mockResolvedValue('server')
+    backend('server')
     const store = makeStore([prepped('s1', 0)])
     const assembleSceneRemote = vi.fn().mockImplementation(async (id: string) => {
       store.dispatch(patchScene({ id, patch: { assembledUrl: 'server-s1.mp4', status: 'built' } }))
@@ -457,7 +558,7 @@ describe('useAutoBuild — server video backend', () => {
   })
 
   it('a thrown assemble-step error halts the run (same regime as the wasm path)', async () => {
-    getVideoBackendMock.mockResolvedValue('server')
+    backend('server')
     const store = makeStore([prepped('s1', 0)])
     const assembleSceneRemote = vi.fn().mockRejectedValue(new Error('server render failed'))
     render(
@@ -477,7 +578,7 @@ describe('useAutoBuild — server video backend', () => {
   })
 
   it('stitch action calls stitchFinalCutRemote, never the wasm concat', async () => {
-    getVideoBackendMock.mockResolvedValue('server')
+    backend('server')
     // A single already-built, already-assembled scene: assemble is done, so the
     // only remaining action is the final stitch.
     const store = makeStore([{ ...prepped('s1', 0), status: 'built', assembledUrl: 's1.mp4' }])
@@ -498,7 +599,7 @@ describe('useAutoBuild — server video backend', () => {
   })
 
   it('a thrown stitch error halts the run (same regime as the wasm path)', async () => {
-    getVideoBackendMock.mockResolvedValue('server')
+    backend('server')
     const store = makeStore([{ ...prepped('s1', 0), status: 'built', assembledUrl: 's1.mp4' }])
     const stitchFinalCutRemote = vi.fn().mockRejectedValue(new Error('concat job timed out'))
     render(
