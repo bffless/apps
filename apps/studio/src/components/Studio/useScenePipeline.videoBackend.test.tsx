@@ -253,3 +253,38 @@ describe('sliceScene — executor in the request body', () => {
     expect('executor' in (await capturedSliceBody('remote', localOnly))).toBe(false)
   }, 10000)
 })
+
+describe('sliceScene — FFMPEG_BUSY is retried, not surfaced', () => {
+  it('re-enqueues after a busy job error and lands the second job', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.localStorage.setItem('videoBackend', 'server')
+      let starts = 0
+      server.use(
+        http.post('/api/video/slice', () => {
+          starts += 1
+          return HttpResponse.json({ jobId: `job-${starts}`, status: 'pending' })
+        }),
+        http.get('/api/studio/job', ({ request }) => {
+          const id = new URL(request.url).searchParams.get('id')
+          if (id === 'job-1')
+            return HttpResponse.json({ status: 'error', kind: 'video-slice', error: 'Server slice failed (FFMPEG_BUSY: fuse)' })
+          return HttpResponse.json({
+            status: 'done', kind: 'video-slice',
+            result: { url: '/api/uploads/projects/p1/scene-clip/server/x.mp4', audioUrl: '/api/uploads/projects/p1/audio/server/x.wav' },
+          })
+        }),
+      )
+      const store = makeStore()
+      render(<Provider store={store}><Harness /></Provider>)
+      await cut()
+      // first job → busy → 15 s backoff → second job → done
+      await vi.advanceTimersByTimeAsync(20_000)
+      await waitFor(() => expect(sceneOf(store)?.clipUrl).toMatch(/x\.mp4$/), { timeout: 8000 })
+      expect(starts).toBe(2)
+      expect(screen.getByTestId('error').textContent).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  }, 15000)
+})
