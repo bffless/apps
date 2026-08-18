@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/bffless/apps/compare/studio-v1.11.0...studio-v1.11.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* **studio:** show the Firefox banner only when video ops run in the browser ([#350](https://github.com/bffless/apps/issues/350)) ([47557b2](https://github.com/bffless/apps/commit/47557b2d9953ac1cc60049df17929404d3642f0b))
+
 ## [1.11.0](https://github.com/bffless/apps/compare/studio-v1.10.0...studio-v1.11.0) (2026-08-18)
 
 
