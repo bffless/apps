@@ -121,7 +121,7 @@ function Harness({
   const finalCutUrl = useSelector((s: { studio: unknown }) =>
     selectActive(s as Parameters<typeof selectActive>[0]).finalCutUrl,
   )
-  const { run, start, resume } = useAutoBuild({
+  const { run, start, resume, pause, stop } = useAutoBuild({
     scenes,
     sceneErrors,
     finalCutUrl,
@@ -157,12 +157,14 @@ function Harness({
       <span data-testid="error">{run.halt?.message ?? ''}</span>
       <button onClick={start}>start</button>
       <button onClick={resume}>resume</button>
+      <button onClick={pause}>pause</button>
+      <button onClick={stop}>stop</button>
     </div>
   )
 }
 
 /** Click a harness button and let the runner's promise chain settle. */
-async function click(name: 'start' | 'resume') {
+async function click(name: 'start' | 'resume' | 'pause' | 'stop') {
   await act(async () => {
     screen.getByText(name).click()
   })
@@ -504,6 +506,58 @@ describe('useAutoBuild — parallel launch', () => {
     await click('start')
     await waitFor(() => expect(scenesOf(store).every((s) => !!s.clipUrl)).toBe(true))
     expect(peak).toBe(1)
+  })
+
+  it('a Pause that lands while Resume is still awaiting the backend probe wins — the run does not resurrect', async () => {
+    // Reach a paused run first, with the probe resolving normally. The cut step
+    // hangs (never resolves) so `start` leaves the run genuinely `running` —
+    // otherwise this one-scene fixture would finish and Pause would be a no-op.
+    const store = makeStore([{ ...prepped('s1', 0), clipUrl: undefined, clipAudioUrl: undefined }])
+    const sliceScene = () => new Promise<void>(() => {}) // never resolves
+    render(
+      <Provider store={store}>
+        <Harness upload={vi.fn()} sliceScene={sliceScene} />
+      </Provider>,
+    )
+    await click('start')
+    await waitFor(() => expect(status()).toBe('running'))
+    await click('pause')
+    await waitFor(() => expect(status()).toBe('paused'))
+    const activeBeforeRace = runOf(store).active
+
+    // Now make Resume's probe hang, so a second Pause can land while it's still
+    // in flight. Racing with Pause (not Stop) here is the discriminating case:
+    // `stopAutoBuild` unconditionally resets to `idle`, and `resumeAutoBuild`'s
+    // OWN guard (`status === 'paused' || 'halted'`) already no-ops against `idle`
+    // — so a Resume/Stop race can't actually resurrect anything, guard or no
+    // guard. But `pauseAutoBuild` only transitions FROM `running`; clicking Pause
+    // while already `paused` is a no-op on Redux status, so without the
+    // generation guard the stale Resume's `dispatch(resumeAutoBuild())` still
+    // sees `status === 'paused'` when it finally lands and flips it to
+    // `running` — resurrecting the paused run. This is exactly what
+    // `startGenRef` exists to prevent (bumped by Pause even when its own
+    // dispatch is a status no-op).
+    const probeGate = deferred<{
+      backend: 'wasm'
+      executor: null
+      source: 'stored'
+      note: null
+      probe: null
+    }>()
+    getResolvedVideoBackendMock.mockReturnValueOnce(probeGate.promise)
+
+    await click('resume') // fires off decideCaps(); doesn't wait for it to settle
+    await click('pause') // lands first — status stays 'paused' (pause is a no-op here)
+    expect(status()).toBe('paused')
+
+    // The stale Resume's probe finally resolves — it must see its generation is
+    // no longer current and bail out instead of resurrecting the paused run.
+    await act(async () => {
+      probeGate.resolve({ backend: 'wasm', executor: null, source: 'stored', note: null, probe: null })
+    })
+
+    expect(status()).toBe('paused')
+    expect(runOf(store).active).toEqual(activeBeforeRace) // no NEW step launched
   })
 
   it('halts on the failing scene without blaming a concurrent healthy one', async () => {

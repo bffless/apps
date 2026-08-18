@@ -131,6 +131,12 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   // on remote. Read by every `nextActions` pass; a picker change mid-run takes
   // effect on the next Resume, never mid-flight.
   const capsRef = useRef<LaneCaps>(DEFAULT_LANE_CAPS)
+  // Invalidates a Start/Resume that's still awaiting the backend probe. Both bump
+  // this BEFORE dispatching, so if the user clicks Stop/Pause while a prior
+  // Start/Resume's `decideCaps()` is still in flight, the stale call sees its
+  // generation is no longer current when the probe resolves and bails out instead
+  // of resurrecting a run the user just stopped/paused.
+  const startGenRef = useRef(0)
 
   // Keep `pipe` in a ref so the runner reads the CURRENT actions/state while staying
   // keyed to just the signals that should re-trigger it (status, scenes, sceneErrors,
@@ -147,21 +153,27 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
     capsRef.current = laneCapsFor(resolved.executor, pipeRef.current.scenes.length)
   }, [])
   const start = useCallback(async () => {
+    const gen = ++startGenRef.current
     await decideCaps()
+    if (gen !== startGenRef.current) return // a Stop/Pause landed while we probed
     liveRef.current = true
     dispatch(startAutoBuild())
   }, [dispatch, decideCaps])
   const resume = useCallback(async () => {
+    const gen = ++startGenRef.current
     await decideCaps()
+    if (gen !== startGenRef.current) return // a Stop/Pause landed while we probed
     liveRef.current = true
     dispatch(resumeAutoBuild())
   }, [dispatch, decideCaps])
   const pause = useCallback(() => {
+    startGenRef.current += 1 // invalidate any Start/Resume still awaiting the probe
     liveRef.current = false
     attemptRef.current.clear()
     dispatch(pauseAutoBuild())
   }, [dispatch])
   const stop = useCallback(() => {
+    startGenRef.current += 1 // invalidate any Start/Resume still awaiting the probe
     liveRef.current = false
     attemptRef.current.clear()
     dispatch(stopAutoBuild())
