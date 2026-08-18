@@ -87,5 +87,6 @@ Where Studio's ffmpeg work runs this session: **Browser** (ffmpeg.wasm in the ta
 (auto)** (CE's `ffmpeg_handler`, CE picks its default executor), **Local server** (CE, forcing
 the Local executor) or **Remote** (CE, forcing the Remote executor — a Cloud Run Worker). Chosen
 per browser (`?videoBackend=` / localStorage), validated against the capability probe's
-`executors`; only Remote widens Auto Build's ffmpeg lane (min(8, scenes)).
+`executors`; Auto Build's ffmpeg lane widens to min(8, scenes) when the *effective* executor
+is Remote (Remote chosen, or Server (auto) on an instance whose default executor is Remote).
 _Avoid_: "wasm mode" / "server mode" as user-facing labels

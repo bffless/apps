@@ -148,9 +148,12 @@ the browser via `ffmpeg.wasm`. The client calls `GET /api/video/capabilities` on
 cheap, synchronous probe that never fails — and only uses the server path when it reports
 `server: true`. On CE < 0.4.25 the rule fails to import or the handler type doesn't exist, the probe
 comes back non-200, and the client transparently stays on the wasm path it already uses today; no
-separate opt-in is required. A `?videoBackend=server|wasm` query param overrides the probe result for
-one session, for testing either path deliberately. **No new secrets or provider tokens** — these
-rules read/write the same storage bucket as the rest of the set and don't call any external API.
+separate opt-in is required. A `?videoBackend=wasm|server|local|remote` query param overrides the
+probe result for one session, for testing any path deliberately. To use **Local server** or
+**Remote**, enable them on the instance first: Admin Settings → Features → Server video ops →
+Executor (CE ≥ 0.4.31); Remote additionally needs a deployed Worker (see docs.bffless.dev → Features
+→ Server video ops). **No new secrets or provider tokens** — these rules read/write the same storage
+bucket as the rest of the set and don't call any external API.
 
 ## First-success checkpoint
 
