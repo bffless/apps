@@ -67,7 +67,7 @@ import {
   type UploadKind,
   type VideoJobKind,
 } from '../../store/studioApi'
-import { getVideoBackend } from '../../lib/videoBackend'
+import { getVideoBackend, stepExecutor } from '../../lib/videoBackend'
 import {
   patchStage,
   failActiveStage,
@@ -1087,13 +1087,18 @@ export function useScenePipeline() {
         stage = 'extract'
         dispatch(patchSourceStage({ id, stage, patch: { status: 'active' } }))
         let aUrl: string
-        if ((await getVideoBackend()) === 'server') {
+        const extractBackend = await getVideoBackend()
+        if (extractBackend !== 'wasm') {
           // Server path (task 8): `srcUrl` is this source's just-uploaded serve
           // path (the upload stage above ran first, same function scope) — the
           // source video is never decoded in the browser on this path. Derive the
           // visual artifacts (waveform + dead space) from the small 16k WAV the
           // job returns, the same helpers the pre-13c backfill already uses.
-          const { jobId } = await videoExtractStartReq({ sourceUrl: srcUrl, projectId: activeProjectId ?? '' }).unwrap()
+          const { jobId } = await videoExtractStartReq({
+            sourceUrl: srcUrl,
+            projectId: activeProjectId ?? '',
+            executor: stepExecutor(extractBackend),
+          }).unwrap()
           const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
           aUrl = toVideoResult(job.result).url
           const [peaks, dead] = await Promise.all([peaksFromUrl(aUrl), deadSpaceFromUrl(aUrl)])
@@ -1386,7 +1391,8 @@ export function useScenePipeline() {
         if (!src.audioUrl) throw new Error('No extracted audio to cut the scene soundtrack from.')
         if (!src.sourceUrl) throw new Error('No source clip available to cut from.')
 
-        if ((await getVideoBackend()) === 'server') {
+        const sliceBackend = await getVideoBackend()
+        if (sliceBackend !== 'wasm') {
           // Server path: the source never leaves the bucket. One job cuts the
           // clip AND emits its 16k WAV (audioOutput) — replacing the wasm slice
           // + WebAudio sliceAudioWav + two uploads.
@@ -1396,6 +1402,7 @@ export function useScenePipeline() {
             wantAudio: true,
             audioFades: false, // cut parity: slice.ts has no fades
             projectId: activeProjectId ?? '',
+            executor: stepExecutor(sliceBackend),
           }).unwrap()
           const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
           const out = toVideoResult(job.result)
@@ -1687,9 +1694,11 @@ export function useScenePipeline() {
   const stitchFinalCutRemote = useCallback(async (): Promise<void> => {
     const missing = scenes.findIndex((s) => !s.assembledUrl)
     if (missing !== -1) throw new Error(`Scene ${missing + 1} isn't assembled yet.`)
+    const backend = await getVideoBackend()
     const { jobId } = await videoConcatStartReq({
       parts: scenes.map((s) => s.assembledUrl as string),
       projectId: activeProjectId ?? '',
+      executor: stepExecutor(backend),
     }).unwrap()
     const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
     const out = toVideoResult(job.result)
@@ -1734,12 +1743,14 @@ export function useScenePipeline() {
       if (!scene?.clipUrl) throw new Error("Cut this scene first — assemble works on the scene's own clip.")
       const plan = planScene({ cuts: effectiveCuts(scene), start: scene.start, end: scene.end })
       if (plan.video.length === 0) throw new Error('Nothing to assemble — the whole scene is cut.')
+      const backend = await getVideoBackend()
       const { jobId } = await videoSliceStartReq({
         sourceUrl: scene.clipUrl,
         spans: plan.video,
         wantAudio: false,
         audioFades: true, // assemble parity: buildFfmpegCommand's ~10ms edge fades
         projectId: activeProjectId ?? '',
+        executor: stepExecutor(backend),
       }).unwrap()
       const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
       const out = toVideoResult(job.result)

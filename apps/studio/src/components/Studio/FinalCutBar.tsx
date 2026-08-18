@@ -80,7 +80,7 @@ export function FinalCutBar({ scenes, title, finalCutUrl, saving, onSave, onStit
     }
     setResultBlob(null)
     try {
-      if ((await getVideoBackend()) === 'server') {
+      if ((await getVideoBackend()) !== 'wasm') {
         // No granular progress — the poll is status-only until the job lands.
         // The job persists `finalCutUrl` itself, so there's no local blob and
         // no separate "Save to my library" step: the card just re-reads the

@@ -211,3 +211,45 @@ describe('sliceScene — wasm backend (unchanged path)', () => {
     expect(sceneOf(store)?.clipAudioUrl).toMatch(/^\/api\/uploads\/projects\/p1\/audio\/mock\//)
   })
 })
+
+describe('sliceScene — executor in the request body', () => {
+  async function capturedSliceBody(stored: string, probe: object) {
+    window.localStorage.setItem('videoBackend', stored)
+    let body: Record<string, unknown> | null = null
+    server.use(
+      http.get('/api/video/capabilities', () => HttpResponse.json(probe)),
+      http.post('/api/video/slice', async ({ request }) => {
+        body = (await request.clone().json()) as Record<string, unknown>
+        // Hand back a job the mock poll endpoint knows nothing about → fail fast.
+        return HttpResponse.json({ jobId: 'captured', status: 'pending' })
+      }),
+      http.get('/api/studio/job', () =>
+        HttpResponse.json({ status: 'error', kind: 'video-slice', error: 'stop here' }),
+      ),
+    )
+    const store = makeStore()
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    await cut()
+    await waitFor(() => expect(body).not.toBeNull(), { timeout: 8000 })
+    return body!
+  }
+  const BOTH = { server: true, ops: ['slice'], version: null, executors: ['local', 'remote'], defaultExecutor: 'local', remote: { ready: true } }
+
+  it('remote → executor:"remote"', async () => {
+    expect((await capturedSliceBody('remote', BOTH)).executor).toBe('remote')
+  }, 10000)
+  it('local → executor:"local"', async () => {
+    expect((await capturedSliceBody('local', BOTH)).executor).toBe('local')
+  }, 10000)
+  it('server (auto) → no executor field', async () => {
+    expect('executor' in (await capturedSliceBody('server', BOTH))).toBe(false)
+  }, 10000)
+  it('remote that the instance lacks falls back to server (auto) → no executor field', async () => {
+    const localOnly = { ...BOTH, executors: ['local'], remote: undefined }
+    expect('executor' in (await capturedSliceBody('remote', localOnly))).toBe(false)
+  }, 10000)
+})

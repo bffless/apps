@@ -116,20 +116,20 @@ export const studioApi = createApi({
     }),
 
     // Video extraction (extract audio from a source video).
-    videoExtractStart: builder.mutation<StartJobResponse, { sourceUrl: string; projectId: string }>({
+    videoExtractStart: builder.mutation<StartJobResponse, { sourceUrl: string; projectId: string; executor?: 'local' | 'remote' }>({
       query: (body) => ({ url: 'api/video/extract-audio', method: 'POST', body }),
     }),
 
     // Video slicing (extract spans from a source video, optionally with audio).
     videoSliceStart: builder.mutation<
       StartJobResponse,
-      { sourceUrl: string; spans: { start: number; end: number }[]; wantAudio: boolean; audioFades: boolean; projectId: string }
+      { sourceUrl: string; spans: { start: number; end: number }[]; wantAudio: boolean; audioFades: boolean; projectId: string; executor?: 'local' | 'remote' }
     >({
       query: (body) => ({ url: 'api/video/slice', method: 'POST', body }),
     }),
 
     // Video concatenation (join multiple video parts).
-    videoConcatStart: builder.mutation<StartJobResponse, { parts: string[]; projectId: string }>({
+    videoConcatStart: builder.mutation<StartJobResponse, { parts: string[]; projectId: string; executor?: 'local' | 'remote' }>({
       query: (body) => ({ url: 'api/video/concat', method: 'POST', body }),
     }),
 

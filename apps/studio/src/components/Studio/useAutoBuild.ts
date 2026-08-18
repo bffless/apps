@@ -208,7 +208,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
         ;(async () => {
           try {
             if (!p.finalCutUrl) {
-              if ((await getVideoBackend()) === 'server') {
+              if ((await getVideoBackend()) !== 'wasm') {
                 await p.stitchFinalCutRemote()
               } else {
                 const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
@@ -272,9 +272,10 @@ async function runStep(
   if (step === 'sheets') return p.generateSceneSheets(scene.id)
   if (step === 'refine') return p.refineScene(scene.id)
 
-  // assemble, server backend: one job does the render AND the persist — no
-  // separate blob to hold across a halt, so `renderRef` never enters play.
-  if ((await getVideoBackend()) === 'server') return p.assembleSceneRemote(scene.id)
+  // assemble, server backend (any non-wasm choice): one job does the render
+  // AND the persist — no separate blob to hold across a halt, so `renderRef`
+  // never enters play.
+  if ((await getVideoBackend()) !== 'wasm') return p.assembleSceneRemote(scene.id)
 
   // assemble, wasm backend: render the scene MP4 then save it (both throw on
   // failure). Reuse the render we already paid for if this is a retry of a save
