@@ -95,7 +95,7 @@ export function SceneAssembleBar({ scene, saving, onSave, onAssembleServer, onPr
     }
     setResultBlob(null)
     try {
-      if ((await getVideoBackend()) === 'server') {
+      if ((await getVideoBackend()) !== 'wasm') {
         // No granular progress — the poll is status-only until the job lands.
         // The job persists `assembledUrl` itself, so there's no local blob and
         // no separate "Save this scene" step: the card just re-reads the scene

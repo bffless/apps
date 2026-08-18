@@ -83,10 +83,13 @@ const enqueueJob = (
  * server path should call `setMockVideoServerCapability(true)` — most don't
  * need to: they resolve the backend directly via `localStorage.videoBackend`
  * or by mocking `getVideoBackend`, which never consults this probe at all.
+ * `executors` lets the picker be demoed offline (`setMockVideoServerCapability(true, ['local','remote'])`).
  */
 let mockVideoServer = false
-export function setMockVideoServerCapability(on: boolean): void {
+let mockVideoExecutors: Array<'local' | 'remote'> = ['local']
+export function setMockVideoServerCapability(on: boolean, executors: Array<'local' | 'remote'> = ['local']): void {
   mockVideoServer = on
+  mockVideoExecutors = executors
 }
 
 const studioHandlers = [
@@ -262,8 +265,12 @@ const studioHandlers = [
   http.get('/api/video/capabilities', () =>
     HttpResponse.json(
       mockVideoServer
-        ? { server: true, ops: ['probe', 'extract_audio', 'slice', 'concat'], version: 'ffmpeg 7.0-mock' }
-        : { server: false, ops: [], version: null },
+        ? {
+            server: true, ops: ['probe', 'extract_audio', 'slice', 'concat'], version: 'ffmpeg 7.0-mock',
+            executors: mockVideoExecutors, defaultExecutor: mockVideoExecutors[0] ?? 'local',
+            ...(mockVideoExecutors.includes('remote') ? { remote: { ready: true, version: 'mock' } } : {}),
+          }
+        : { server: false, ops: [], version: null, executors: [], defaultExecutor: 'local' },
     ),
   ),
 

@@ -3,7 +3,7 @@ order: 58
 timeout: 120000
 pipeline:
   name: Server video slice (ffmpeg, async)
-  description: "sourceUrl (video already in bucket) + spans -> ENQUEUE a job (kind 'video-slice'); the ffmpeg slice op runs in postSteps, cutting the kept spans and (when wantAudio) emitting a second 16 kHz mono WAV pass. Result { url, audioUrl, duration } polled via /api/studio/job. Mirrors /api/transcribe."
+  description: "sourceUrl (video already in bucket) + spans -> ENQUEUE a job (kind 'video-slice'); the ffmpeg slice op runs in postSteps, cutting the kept spans and (when wantAudio) emitting a second 16 kHz mono WAV pass. Result { url, audioUrl, duration } polled via /api/studio/job. Mirrors /api/transcribe. Optional body `executor: 'local'|'remote'` forces the CE executor (Remote executor, CE >= 0.4.31); omitted ⇒ instance default."
   steps:
     - id: prep
       name: prep
@@ -44,6 +44,10 @@ pipeline:
       config:
         condition: steps.prep.wantAudio
         operation: slice
+        # Which CE executor runs this job (CE >= 0.4.31: 'local' | 'remote'; template-evaluated).
+        # Empty string ⇒ CE's configured default (its selector does `requested?.trim() || default`),
+        # so clients that omit `executor` behave exactly as before. Older CE ignores the key.
+        executor: "{{steps.prep.executor}}"
         # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
         # expression string passes through literally) — unlike spans/inputs, which are
         # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.
@@ -58,6 +62,10 @@ pipeline:
       config:
         condition: steps.prep.noAudio
         operation: slice
+        # Which CE executor runs this job (CE >= 0.4.31: 'local' | 'remote'; template-evaluated).
+        # Empty string ⇒ CE's configured default (its selector does `requested?.trim() || default`),
+        # so clients that omit `executor` behave exactly as before. Older CE ignores the key.
+        executor: "{{steps.prep.executor}}"
         # input/output are template-resolved (evaluateTemplate: ONLY substitutes {{...}}, a bare
         # expression string passes through literally) — unlike spans/inputs, which are
         # expression-evaluated and accept bare expressions. Always wrap input/output in {{}}.

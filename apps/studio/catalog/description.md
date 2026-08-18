@@ -12,8 +12,7 @@ you said.
 3. **Build** is where you produce: tune each scene's cuts on the transcript
    grid, optionally run the per-scene refiner, and assemble kept spans with the
    clip's own audio.
-4. **Export** stitches the final cut entirely in your browser with ffmpeg.wasm
-   — no render farm, nothing leaves your machine.
+4. **Export** stitches the final cut — in your browser with ffmpeg.wasm by default, or on your BFFless server (Local or Remote executor) when the instance offers it, with parallel scene builds on Remote.
 
 There's also a companion blog writer that drafts a post (with pulled stills)
 from the finished video's transcript, and an AI thumbnail workflow.

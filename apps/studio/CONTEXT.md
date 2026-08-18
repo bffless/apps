@@ -81,3 +81,12 @@ The take-away artifact for a [[Companion blog post]]: a single Markdown document
 `images/` folder of the illustrating frames, referenced by relative path, packaged so the
 user can host it anywhere. Self-contained, not served by Studio.
 _Avoid_: Export, download, zip (as the concept name)
+
+**Video backend**:
+Where Studio's ffmpeg work runs this session: **Browser** (ffmpeg.wasm in the tab), **Server
+(auto)** (CE's `ffmpeg_handler`, CE picks its default executor), **Local server** (CE, forcing
+the Local executor) or **Remote** (CE, forcing the Remote executor — a Cloud Run Worker). Chosen
+per browser (`?videoBackend=` / localStorage), validated against the capability probe's
+`executors`; Auto Build's ffmpeg lane widens to min(8, scenes) when the *effective* executor
+is Remote (Remote chosen, or Server (auto) on an instance whose default executor is Remote).
+_Avoid_: "wasm mode" / "server mode" as user-facing labels

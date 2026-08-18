@@ -7,9 +7,11 @@
  *
  * Concurrency is a **lane scheduler**, not a step pointer: `nextActions` admits one
  * step per scene, capped by the shared resource each step occupies (`STEP_LANE` —
- * cut/assemble share the single ffmpeg.wasm instance; refine is a server poll;
- * sheets is main-thread canvas capture). So scene 2 can refine while scene 1
- * assembles, but two ffmpeg steps never overlap. `inFlightRef` is the runner's own
+ * cut/assemble share the ffmpeg lane, whose width is decided once per Start/Resume
+ * from the resolved video backend — 1 on wasm/local, min(8, scenes) on remote;
+ * refine is a server poll; sheets is main-thread canvas capture). So scene 2 can
+ * refine while scene 1 assembles, and on the remote executor several scenes can
+ * even cut/assemble at once. `inFlightRef` is the runner's own
  * source of truth for what's executing (Redux `active` mirrors it for the board,
  * but a rehydrated `active` is stale by definition, so we never read it back).
  *
@@ -48,14 +50,17 @@ import {
   nextStep,
   isHaltStale,
   assembleInputsKey,
+  laneCapsFor,
+  DEFAULT_LANE_CAPS,
   type AutoStepId,
   type AutoBuildRun,
   type ActiveStep,
+  type LaneCaps,
 } from '../../lib/autoBuild'
 import { assembleSceneBlob, assembleFinalCutBlob } from '../../lib/export/assembleScene'
 import { autoBuildError } from './useScenePipeline'
 import { useSignedBytes } from './useSignedBytes'
-import { getVideoBackend } from '../../lib/videoBackend'
+import { getVideoBackend, getResolvedVideoBackend, subscribeVideoBackend } from '../../lib/videoBackend'
 import type { Scene } from '../../lib/scenes'
 
 /** The slice of `useScenePipeline` the orchestrator drives. */
@@ -78,9 +83,9 @@ type Pipe = {
 
 export type AutoBuildControls = {
   run: AutoBuildRun
-  start: () => void
+  start: () => Promise<void>
   pause: () => void
-  resume: () => void
+  resume: () => Promise<void>
   stop: () => void
 }
 
@@ -105,8 +110,10 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   // the upload is realistically flaky. Holding the rendered blob across the halt
   // means Resume after a failed save retries just the upload instead of re-paying
   // for the render (issue #220). One slot is enough even under the parallel runner:
-  // assemble sits in the ffmpeg lane (capacity 1), so at most one scene is ever
-  // rendering, and a successful save drops it (an MP4 is heavy). `key` is the
+  // the wasm assemble path is the only one that renders a blob here, and on wasm
+  // the ffmpeg lane is 1, so at most one scene is ever rendering (remote/local
+  // assemble is one server job with no blob), and a successful save drops it (an
+  // MP4 is heavy). `key` is the
   // fingerprint of the render's inputs — if the producer re-cut the scene while the
   // run was halted, it no longer matches and we render again rather than upload a
   // clip of the wrong timeline.
@@ -119,25 +126,32 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   // done. So each step bumps `tick` AFTER removing itself from `inFlightRef`,
   // guaranteeing exactly one re-run with the lane already free.
   const [tick, bump] = useReducer((n: number) => n + 1, 0)
+  // The lane widths for THIS run, decided once at Start/Resume from the resolved
+  // video backend (spec P6): the ffmpeg lane is 1 on wasm/local and min(8, scenes)
+  // on remote. Read by every `nextActions` pass; a picker change mid-run narrows
+  // this immediately (below) but WIDENING always waits for an explicit Resume —
+  // never mid-flight.
+  const capsRef = useRef<LaneCaps>(DEFAULT_LANE_CAPS)
+  // Invalidates a Start/Resume that's still awaiting the backend probe. Both bump
+  // this BEFORE dispatching, so if the user clicks Stop/Pause while a prior
+  // Start/Resume's `decideCaps()` is still in flight, the stale call sees its
+  // generation is no longer current when the probe resolves and bails out instead
+  // of resurrecting a run the user just stopped/paused.
+  const startGenRef = useRef(0)
 
-  const start = useCallback(() => {
-    liveRef.current = true
-    dispatch(startAutoBuild())
-  }, [dispatch])
-  const resume = useCallback(() => {
-    liveRef.current = true
-    dispatch(resumeAutoBuild())
-  }, [dispatch])
-  const pause = useCallback(() => {
-    liveRef.current = false
-    attemptRef.current.clear()
-    dispatch(pauseAutoBuild())
-  }, [dispatch])
-  const stop = useCallback(() => {
-    liveRef.current = false
-    attemptRef.current.clear()
-    dispatch(stopAutoBuild())
-  }, [dispatch])
+  // A picker change mid-run must never leave the lane cap wide (spec P6: "never
+  // mid-flight"). Narrowing is always safe — it only slows admission of NEW
+  // steps, never cancels an in-flight one — so we apply it the instant the
+  // picker changes. Widening is different: it would let more scenes start
+  // concurrently on a backend `nextActions` hasn't accounted for yet, so it
+  // still requires an explicit Resume (which re-runs `decideCaps`).
+  useEffect(
+    () =>
+      subscribeVideoBackend(() => {
+        capsRef.current = DEFAULT_LANE_CAPS
+      }),
+    [],
+  )
 
   // Keep `pipe` in a ref so the runner reads the CURRENT actions/state while staying
   // keyed to just the signals that should re-trigger it (status, scenes, sceneErrors,
@@ -148,6 +162,43 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   useLayoutEffect(() => {
     pipeRef.current = pipe
   })
+
+  // Takes the CALLER's generation and only writes `capsRef` if it's still
+  // current when the probe resolves — otherwise a superseded Start/Resume
+  // (e.g. two rapid Starts, or a Start racing a Resume) can have its stale
+  // result land AFTER the current run's caps were already decided, silently
+  // clobbering them back to the wrong width.
+  const decideCaps = useCallback(async (gen: number) => {
+    const resolved = await getResolvedVideoBackend()
+    if (gen !== startGenRef.current) return // superseded — don't clobber the current run's caps
+    capsRef.current = laneCapsFor(resolved.executor, pipeRef.current.scenes.length)
+  }, [])
+  const start = useCallback(async () => {
+    const gen = ++startGenRef.current
+    await decideCaps(gen)
+    if (gen !== startGenRef.current) return // a Stop/Pause landed while we probed
+    liveRef.current = true
+    dispatch(startAutoBuild())
+  }, [dispatch, decideCaps])
+  const resume = useCallback(async () => {
+    const gen = ++startGenRef.current
+    await decideCaps(gen)
+    if (gen !== startGenRef.current) return // a Stop/Pause landed while we probed
+    liveRef.current = true
+    dispatch(resumeAutoBuild())
+  }, [dispatch, decideCaps])
+  const pause = useCallback(() => {
+    startGenRef.current += 1 // invalidate any Start/Resume still awaiting the probe
+    liveRef.current = false
+    attemptRef.current.clear()
+    dispatch(pauseAutoBuild())
+  }, [dispatch])
+  const stop = useCallback(() => {
+    startGenRef.current += 1 // invalidate any Start/Resume still awaiting the probe
+    liveRef.current = false
+    attemptRef.current.clear()
+    dispatch(stopAutoBuild())
+  }, [dispatch])
 
   // A halt names one failed step. The producer can fix that step by hand — assemble
   // + save the scene from the editor below the board — and when they do, the halt is
@@ -190,7 +241,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
       }
     }
 
-    const actions = nextActions(p.scenes, [...inFlightRef.current.values()])
+    const actions = nextActions(p.scenes, [...inFlightRef.current.values()], capsRef.current)
 
     // Mark-built is instant bookkeeping — do ONE per pass (it reads the scenes
     // snapshot for the selection advance) and let the state change re-run us.
@@ -208,7 +259,7 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
         ;(async () => {
           try {
             if (!p.finalCutUrl) {
-              if ((await getVideoBackend()) === 'server') {
+              if ((await getVideoBackend()) !== 'wasm') {
                 await p.stitchFinalCutRemote()
               } else {
                 const blob = await assembleFinalCutBlob({ scenes: p.scenes, fetchBytes })
@@ -272,9 +323,10 @@ async function runStep(
   if (step === 'sheets') return p.generateSceneSheets(scene.id)
   if (step === 'refine') return p.refineScene(scene.id)
 
-  // assemble, server backend: one job does the render AND the persist — no
-  // separate blob to hold across a halt, so `renderRef` never enters play.
-  if ((await getVideoBackend()) === 'server') return p.assembleSceneRemote(scene.id)
+  // assemble, server backend (any non-wasm choice): one job does the render
+  // AND the persist — no separate blob to hold across a halt, so `renderRef`
+  // never enters play.
+  if ((await getVideoBackend()) !== 'wasm') return p.assembleSceneRemote(scene.id)
 
   // assemble, wasm backend: render the scene MP4 then save it (both throw on
   // failure). Reuse the render we already paid for if this is a retry of a save

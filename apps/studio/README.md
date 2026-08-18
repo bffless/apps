@@ -3,7 +3,7 @@
 Turn one long, rambly screen recording into a short, watchable video — in your own recorded
 voice. Nothing is re-voiced and the AI never rewrites what you said. Import a recording, let the
 AI director split it into scenes and propose cuts, tune those cuts on the transcript grid, and
-export in your browser with ffmpeg.wasm.
+export in your browser with ffmpeg.wasm. On a CE ≥ 0.4.31 instance with server video ops enabled, cut/assemble/stitch can instead run on the server — locally in the backend or on the Remote executor (Cloud Run) — and Auto Build runs up to 8 scenes in parallel on Remote. Pick it from the **Video backend** control on the Auto Build board.
 
 Studio is a static app with no server. Every backend step is a BFFless pipeline running on your
 own instance, so you bring the credentials.
@@ -20,6 +20,7 @@ Install Studio from Admin → Apps, then configure these in the project you inst
 | Cross-origin isolation | Settings → Response Headers → Add Rule → **Cross-Origin Isolation** preset | Yes for fast export | `SharedArrayBuffer`, which multithreaded `ffmpeg.wasm` needs. Without it export still works, on a slower single-threaded encoder |
 | Access control | Settings → General → **Visibility** → **Private** | Yes | Studio's API rules carry no per-rule auth, so this is the only thing protecting the paid AI endpoints. Once Private, an **Access Control** card appears where you can set **Required Role** to **Admin or higher** |
 | `HF_TOKEN` secret | Settings → AI → **Secrets** ([get one](https://huggingface.co/settings/tokens)) | Optional | **Speaker diarization** only — labelling who is talking. Transcription works without it |
+| Server video ops (optional) | Admin Settings → Features → Server video ops (Local and/or Remote executor) | No | Moves ffmpeg off the browser; Remote parallelises Auto Build (see docs.bffless.dev → Features → Server video ops) |
 
 The diarization model on Hugging Face is **gated**: beyond creating a token, you must visit the
 model page and accept its terms once, or diarization fails with no clear error.

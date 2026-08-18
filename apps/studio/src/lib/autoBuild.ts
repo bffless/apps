@@ -11,6 +11,7 @@
 
 import type { Scene } from './scenes'
 import { effectiveCuts } from './refiner'
+import type { VideoExecutor } from './videoBackend'
 
 /**
  * The patch to stamp onto any edit that changes a scene's **assemble inputs** —
@@ -80,17 +81,44 @@ export function isSceneComplete(scene: Scene): boolean {
 /** One step currently executing. `sceneId: null` only for the final `'stitch'`. */
 export type ActiveStep = { sceneId: string | null; stepId: AutoStepId | 'stitch' }
 
+export type Lane = 'ffmpeg' | 'refine' | 'sheets'
+
 /**
- * Which shared resource each step occupies. cut + assemble both `exec` on the
- * ONE ffmpeg.wasm instance (and the MT core already saturates every CPU core,
- * with a fixed 3 GiB heap), so they share a lane of capacity 1. refine is a
- * server job the browser merely polls; sheets is main-thread canvas capture.
+ * Which shared resource each step occupies. cut + assemble both run ffmpeg —
+ * on the wasm backend that's the ONE ffmpeg.wasm instance (the MT core already
+ * saturates every core, with a fixed 3 GiB heap), and on CE's Local executor
+ * it's the backend's single ffmpeg slot, so the lane holds capacity 1 there.
+ * On the Remote executor each job is its own Cloud Run instance, so the lane
+ * widens to `ffmpegLaneCapacity` (spec P6). refine is a server job the browser
+ * merely polls; sheets is main-thread canvas capture — both stay at 1.
  */
-export const STEP_LANE: Record<AutoStepId, 'ffmpeg' | 'refine' | 'sheets'> = {
+export const STEP_LANE: Record<AutoStepId, Lane> = {
   cut: 'ffmpeg',
   assemble: 'ffmpeg',
   refine: 'refine',
   sheets: 'sheets',
+}
+
+/** How many steps each lane may hold at once. */
+export type LaneCaps = Record<Lane, number>
+
+export const DEFAULT_LANE_CAPS: LaneCaps = { ffmpeg: 1, refine: 1, sheets: 1 }
+
+/** CE's remote in-flight fuse (FFMPEG_REMOTE_MAX_INFLIGHT default) — never ask for more than the server will take. */
+export const REMOTE_FFMPEG_MAX = 8
+
+/**
+ * The ffmpeg lane's width for a run: wasm (null) and local are single-slot;
+ * remote is min(8, scenes) — one job per scene is the most useful parallelism
+ * and 8 is CE's fuse. Never below 1 so a lone assemble/stitch still runs.
+ */
+export function ffmpegLaneCapacity(executor: VideoExecutor | null, sceneCount: number): number {
+  if (executor !== 'remote') return 1
+  return Math.max(1, Math.min(REMOTE_FFMPEG_MAX, sceneCount))
+}
+
+export function laneCapsFor(executor: VideoExecutor | null, sceneCount: number): LaneCaps {
+  return { ...DEFAULT_LANE_CAPS, ffmpeg: ffmpegLaneCapacity(executor, sceneCount) }
 }
 
 export type AutoAction =
@@ -105,8 +133,9 @@ export type AutoAction =
  * → assemble dependency is enforced by derivation, exactly as in the
  * sequential runner). A step is admitted only if:
  *  - its scene has nothing in flight,
- *  - its lane (see `STEP_LANE`) is free — counting both `inFlight` and steps
- *    admitted earlier in this same pass (earlier scene wins the lane),
+ *  - its lane (see `STEP_LANE`) has a free slot under `caps` — counting both
+ *    `inFlight` and steps admitted earlier in this same pass (earlier scene
+ *    wins the slot),
  *  - for `refine`: every earlier scene is built or already has `refined` — the
  *    seam-context ordering (story 03r: scene N's refine reads scene N−1's
  *    refined tail).
@@ -114,12 +143,13 @@ export type AutoAction =
  * only when no scene work remains AND nothing is in flight (it concats every
  * scene's saved cut).
  */
-export function nextActions(scenes: Scene[], inFlight: ActiveStep[]): AutoAction[] {
-  const busyLanes = new Set(
-    inFlight
-      .filter((a): a is ActiveStep & { stepId: AutoStepId } => a.stepId !== 'stitch')
-      .map((a) => STEP_LANE[a.stepId]),
-  )
+export function nextActions(
+  scenes: Scene[],
+  inFlight: ActiveStep[],
+  caps: LaneCaps = DEFAULT_LANE_CAPS,
+): AutoAction[] {
+  const laneLoad: Record<Lane, number> = { ffmpeg: 0, refine: 0, sheets: 0 }
+  for (const a of inFlight) if (a.stepId !== 'stitch') laneLoad[STEP_LANE[a.stepId]] += 1
   const busyScenes = new Set(inFlight.map((a) => a.sceneId))
   const actions: AutoAction[] = []
   let sceneWorkRemains = false
@@ -136,8 +166,8 @@ export function nextActions(scenes: Scene[], inFlight: ActiveStep[]): AutoAction
     if (step === 'refine' && !scenes.slice(0, i).every((p) => p.status === 'built' || !!p.refined))
       continue
     const lane = STEP_LANE[step]
-    if (busyLanes.has(lane)) continue
-    busyLanes.add(lane)
+    if (laneLoad[lane] >= caps[lane]) continue
+    laneLoad[lane] += 1
     actions.push({ kind: 'step', scene: sc, step })
   }
 

@@ -10,5 +10,8 @@ function handler({ request }) {
     }
   }
   var ok = pid !== '' && pid.indexOf('..') === -1 && pid.indexOf('/') === -1 && partsOk
-  return { ok: ok, notOk: !ok, parts: parts, projectId: pid }
+  return {
+    ok: ok, notOk: !ok, parts: parts, projectId: pid,
+    executor: body.executor === 'local' || body.executor === 'remote' ? body.executor : '',
+  }
 }

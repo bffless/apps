@@ -3,7 +3,7 @@ order: 59
 timeout: 120000
 pipeline:
   name: Server video concat (ffmpeg, async)
-  description: "parts (uploaded clip serve URLs, in order) -> ENQUEUE a job (kind 'video-concat'); the ffmpeg concat op (stream-copy-first stitch) runs in postSteps reading and writing the bucket directly. Result { url } polled via /api/studio/job. Mirrors /api/transcribe."
+  description: "parts (uploaded clip serve URLs, in order) -> ENQUEUE a job (kind 'video-concat'); the ffmpeg concat op (stream-copy-first stitch) runs in postSteps reading and writing the bucket directly. Result { url } polled via /api/studio/job. Mirrors /api/transcribe. Optional body `executor: 'local'|'remote'` forces the CE executor (Remote executor, CE >= 0.4.31); omitted ⇒ instance default."
   steps:
     - id: prep
       name: prep
@@ -43,6 +43,10 @@ pipeline:
       handler: ffmpeg_handler
       config:
         operation: concat
+        # Which CE executor runs this job (CE >= 0.4.31: 'local' | 'remote'; template-evaluated).
+        # Empty string ⇒ CE's configured default (its selector does `requested?.trim() || default`),
+        # so clients that omit `executor` behave exactly as before. Older CE ignores the key.
+        executor: "{{steps.prep.executor}}"
         inputs: steps.prep.parts
         output: "projects/{{steps.prep.projectId}}/export/server/{{uuid()}}.mp4"
     - id: check
