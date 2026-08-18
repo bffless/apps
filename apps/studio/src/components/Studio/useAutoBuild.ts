@@ -171,7 +171,8 @@ export function useAutoBuild(pipe: Pipe): AutoBuildControls {
   const decideCaps = useCallback(async (gen: number) => {
     const resolved = await getResolvedVideoBackend()
     if (gen !== startGenRef.current) return // superseded — don't clobber the current run's caps
-    capsRef.current = laneCapsFor(resolved.executor, pipeRef.current.scenes.length)
+    // The instance's remote fuse (probe remote.maxInflight, CE >= 0.4.31) sizes the lane; older CE → 8.
+    capsRef.current = laneCapsFor(resolved.executor, pipeRef.current.scenes.length, resolved.probe?.remote?.maxInflight)
   }, [])
   const start = useCallback(async () => {
     const gen = ++startGenRef.current

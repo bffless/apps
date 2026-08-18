@@ -37,6 +37,14 @@ describe('parseCapabilities', () => {
       parseCapabilities({ server: true, ops: ['probe'], version: null, executors: ['remote'], defaultExecutor: 'remote', remote: { ready: true, version: 'v' } }),
     ).toEqual({ server: true, executors: ['remote'], defaultExecutor: 'remote', remote: { ready: true, version: 'v' } })
   })
+  it('reads remote.maxInflight (CE >= 0.4.31 Plan 4) and ignores a non-numeric one', () => {
+    expect(
+      parseCapabilities({ server: true, executors: ['remote'], defaultExecutor: 'remote', remote: { ready: true, maxInflight: 4 } }).remote,
+    ).toEqual({ ready: true, maxInflight: 4 })
+    expect(
+      parseCapabilities({ server: true, executors: ['remote'], defaultExecutor: 'remote', remote: { ready: true, maxInflight: 'lots' } }).remote,
+    ).toEqual({ ready: true })
+  })
   it('tolerates the pre-remote payload (no executors): server:true means local only', () => {
     expect(parseCapabilities({ server: true, ops: ['probe'], version: 'ffmpeg 7' })).toEqual({
       server: true, executors: ['local'], defaultExecutor: 'local', remote: null,

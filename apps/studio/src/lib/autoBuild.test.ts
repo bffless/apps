@@ -326,10 +326,18 @@ describe('ffmpegLaneCapacity / laneCapsFor', () => {
     expect(ffmpegLaneCapacity(null, 12)).toBe(1)
     expect(ffmpegLaneCapacity('local', 12)).toBe(1)
   })
-  it('is min(8, scenes) for remote', () => {
+  it('is min(8, scenes) for remote when the instance does not report a cap', () => {
     expect(ffmpegLaneCapacity('remote', 3)).toBe(3)
     expect(ffmpegLaneCapacity('remote', 12)).toBe(REMOTE_FFMPEG_MAX)
     expect(ffmpegLaneCapacity('remote', 0)).toBe(1) // never zero — a lone stitch/assemble must still run
+  })
+  it("uses the instance's remote.maxInflight when the probe reports one (apps#352)", () => {
+    expect(ffmpegLaneCapacity('remote', 12, 4)).toBe(4)
+    expect(ffmpegLaneCapacity('remote', 2, 4)).toBe(2)
+    expect(ffmpegLaneCapacity('remote', 12, 16)).toBe(12) // scenes still cap it
+    expect(ffmpegLaneCapacity('remote', 12, 0)).toBe(REMOTE_FFMPEG_MAX) // a bogus cap falls back to the default, never zeroes the lane
+    expect(ffmpegLaneCapacity('local', 12, 4)).toBe(1)
+    expect(laneCapsFor('remote', 12, 4)).toEqual({ ffmpeg: 4, refine: 1, sheets: 1 })
   })
   it('leaves refine and sheets at 1', () => {
     expect(laneCapsFor('remote', 5)).toEqual({ ffmpeg: 5, refine: 1, sheets: 1 })

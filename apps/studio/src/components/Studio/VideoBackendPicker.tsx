@@ -53,7 +53,8 @@ export function VideoBackendPicker({ sceneCount, compact = false }: { sceneCount
   if (resolved) {
     const parts = [VIDEO_BACKEND_LABEL[resolved.backend]]
     if (resolved.executor) parts.push(resolved.executor)
-    if (resolved.executor === 'remote') parts.push(`up to ${ffmpegLaneCapacity('remote', sceneCount)} parallel`)
+    if (resolved.executor === 'remote')
+      parts.push(`up to ${ffmpegLaneCapacity('remote', sceneCount, resolved.probe?.remote?.maxInflight)} parallel`)
     status = parts.join(' · ')
   }
 
