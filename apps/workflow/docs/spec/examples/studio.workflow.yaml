@@ -1,0 +1,249 @@
+# The reference port: `workflow-studio`, alias `studio`. Mirrors Studio's locked pipeline
+# (Import → Prep → Build → Export, plus the companion blog and a cover) as a workflow.
+# Pipelines are Studio's rules ported path-in/path-out under /api/studio/*; the cut editor is
+# an island; contact sheets and the blog bundle are browser scripts.
+# Every step kind, matrix fan-out/fan-in, poll+retry, island, form, script, summaries,
+# annotations, headless modes and top-level outputs are exercised here.
+
+spec: 1
+name: Long recording to published short
+description: >
+  Turn one or more long screen recordings into a short video in your own recorded voice —
+  cut-first, never re-voiced — plus a companion blog post and a cover image.
+
+on:
+  manual:
+    inputs:
+      recordings: { type: file, accept: "video/*", list: true, required: true, maxSize: 5GB, label: Recordings }
+      length:     { type: choice, label: Finished length, default: medium,
+                    options: [{value: short, label: "≈ 3 minutes"}, {value: medium, label: "≈ 8 minutes"}, {value: long, label: "≈ 15 minutes"}] }
+      direction:  { type: string, format: textarea, label: Note to the director }
+      write_blog: { type: boolean, default: true, label: Write a blog post }
+      cover:      { type: boolean, default: true, label: Draw a cover }
+      executor:   { type: choice, options: [auto, local, remote], default: auto, label: Video backend }
+
+jobs:
+
+  # ── Prep: for each recording ───────────────────────────────────────────────
+  per-video:
+    name: For each video
+    strategy:
+      matrix: { video: "${{ inputs.recordings }}" }
+      max-parallel: 3
+    steps:
+      - id: audio
+        name: Pull the audio out
+        uses: pipeline
+        with:
+          path: video/extract-audio
+          body: { source: "${{ matrix.video.path }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          wav: { type: file, value: "${{ response.result.audioPath }}" }
+
+      - id: transcribe
+        name: Write the transcript
+        uses: pipeline
+        with:
+          path: transcribe
+          body: { audioPath: "${{ steps.audio.outputs.wav.path }}", diarize: false }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 30m }
+        outputs:
+          words: { type: json, value: "${{ response.result.words }}", render: transcript }
+          text:  { type: string, value: "${{ response.result.text }}" }
+        summary: |
+          Transcribed **${{ matrix.video.name }}** — ${{ length(steps.transcribe.outputs.words) }} words.
+        annotations:
+          - { level: warning, if: "${{ length(steps.transcribe.outputs.words) < 50 }}", message: "Very short transcript for ${{ matrix.video.name }} — is the audio silent?" }
+
+      - id: sheet
+        name: Grab still frames
+        uses: script
+        with:
+          src: scripts/contact-sheet.js
+          video: ${{ matrix.video }}
+          words: ${{ steps.transcribe.outputs.words }}
+        outputs:
+          sheets: { type: file, list: true, render: images }
+    outputs:
+      source: { type: file, value: "${{ matrix.video }}" }
+      words:  ${{ steps.transcribe.outputs.words }}
+      text:   ${{ steps.transcribe.outputs.text }}
+      sheets: ${{ steps.sheet.outputs.sheets }}
+
+  # ── Director ───────────────────────────────────────────────────────────────
+  director:
+    name: Director's take
+    needs: per-video
+    steps:
+      - id: scenes
+        uses: pipeline
+        with:
+          path: scenes
+          body:
+            transcripts: ${{ needs.per-video.outputs.words }}
+            sheets:      ${{ pluck(needs.per-video.outputs.sheets, 'path') }}   # list of lists of paths
+            length:      ${{ inputs.length }}
+            direction:   ${{ inputs.direction }}
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
+        outputs:
+          synopsis: { type: markdown, value: "${{ response.result.synopsis }}" }
+          scenes:   { type: table, value: "${{ response.result.scenes }}",
+                      columns: [{key: title}, {key: start, type: number}, {key: end, type: number}, {key: source}] }
+        summary: |
+          ### Director's take
+          ${{ steps.scenes.outputs.synopsis }}
+
+          ${{ length(steps.scenes.outputs.scenes.rows) }} scenes proposed.
+    outputs:
+      synopsis: ${{ steps.scenes.outputs.synopsis }}
+      scenes:   { type: json, list: true, value: "${{ steps.scenes.outputs.scenes.rows }}" }   # → matrix below
+
+  # ── Build: for each scene ──────────────────────────────────────────────────
+  per-scene:
+    name: For each scene
+    needs: director
+    strategy:
+      matrix: { scene: "${{ needs.director.outputs.scenes }}" }
+      max-parallel: 5
+      fail-fast: false
+    steps:
+      - id: cut
+        name: Cut the scene
+        uses: pipeline
+        with:
+          path: video/slice
+          body: { source: "${{ matrix.scene.source }}", start: "${{ matrix.scene.start }}", end: "${{ matrix.scene.end }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          clip: { type: file, value: "${{ response.result.clipPath }}" }
+
+      - id: refine
+        name: Refine the cuts
+        uses: pipeline
+        with:
+          path: refine-scene
+          body: { clip: "${{ steps.cut.outputs.clip.path }}", scene: "${{ matrix.scene }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
+        outputs:
+          cuts: { type: json, value: "${{ response.result.cuts }}" }
+
+      - id: trim
+        name: Trim to the screen
+        uses: island
+        with:
+          src: islands/cut-editor.html
+          title: "Trim: ${{ matrix.scene.title }}"
+          display: fullscreen
+          clip:  ${{ steps.cut.outputs.clip }}
+          scene: ${{ matrix.scene }}
+          cuts:  ${{ steps.refine.outputs.cuts }}
+        outputs:
+          cuts: { type: json, schema: { type: array, items: { type: object, required: [start, end], properties: { start: {type: number}, end: {type: number} } } } }
+        headless: { mode: auto }                    # the island accepts the refiner's cuts unchanged
+        summary: "Kept ${{ length(steps.trim.outputs.cuts) }} spans in *${{ matrix.scene.title }}*."
+
+      - id: assemble
+        name: Assemble
+        uses: pipeline
+        with:
+          path: video/concat
+          body: { source: "${{ steps.cut.outputs.clip.path }}", keep: "${{ steps.trim.outputs.cuts }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          clip: { type: file, value: "${{ response.result.clipPath }}" }
+    outputs:
+      clips: ${{ steps.assemble.outputs.clip }}     # collected: file[] in scene order
+      cuts:  ${{ steps.trim.outputs.cuts }}
+
+  # ── Export ─────────────────────────────────────────────────────────────────
+  stitch:
+    name: Stitch it together
+    needs: per-scene
+    steps:
+      - id: concat
+        uses: pipeline
+        with:
+          path: video/concat
+          body: { clips: "${{ pluck(needs.per-scene.outputs.clips, 'path') }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 30m }
+        outputs:
+          short: { type: file, value: "${{ response.result.clipPath }}" }
+          script: { type: string, value: "${{ response.result.finalTranscript }}" }
+        summary: |
+          ### The short
+          ${{ length(needs.per-scene.outputs.clips) }} scenes joined — [download](${{ steps.concat.outputs.short.url }}).
+    outputs:
+      short:  ${{ steps.concat.outputs.short }}
+      script: ${{ steps.concat.outputs.script }}
+
+  # ── Companion blog (optional) ─────────────────────────────────────────────
+  blog:
+    name: Blog post
+    needs: [stitch, per-video]
+    if: ${{ inputs.write_blog }}
+    steps:
+      - id: write
+        uses: pipeline
+        with:
+          path: blog
+          body: { script: "${{ needs.stitch.outputs.script }}", sheets: "${{ pluck(needs.per-video.outputs.sheets, 'path') }}", direction: "${{ inputs.direction }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
+        outputs:
+          post: { type: markdown, value: "${{ response.result.markdown }}" }
+
+      - id: edit
+        uses: form
+        with:
+          title: Edit the post
+          fields:
+            post: { type: markdown, default: "${{ steps.write.outputs.post }}", required: true }
+          submit: Looks good
+        headless: { mode: skip, outputs: { post: "${{ steps.write.outputs.post }}" } }
+
+      - id: bundle
+        uses: script
+        with: { src: scripts/blog-bundle.js, markdown: "${{ steps.edit.outputs.post }}", sheets: "${{ needs.per-video.outputs.sheets }}" }
+        outputs:
+          zip: { type: file }
+        summary: |
+          Blog bundle **${{ steps.bundle.outputs.zip.name }}** (${{ steps.bundle.outputs.zip.size }} bytes) — [download](${{ steps.bundle.outputs.zip.url }})
+    outputs:
+      post: ${{ steps.edit.outputs.post }}
+      zip:  ${{ steps.bundle.outputs.zip }}
+
+  # ── Cover (optional) ──────────────────────────────────────────────────────
+  cover:
+    name: Cover
+    needs: stitch
+    if: ${{ inputs.cover }}
+    steps:
+      - id: brief
+        uses: pipeline
+        with: { path: describe, body: { script: "${{ needs.stitch.outputs.script }}", direction: "${{ inputs.direction }}" } }
+        outputs:
+          prompt: { type: string, format: textarea, value: "${{ response.prompt }}" }
+      - id: draw
+        uses: pipeline
+        with: { path: thumbnail/render, body: { prompt: "${{ steps.brief.outputs.prompt }}", count: 4, outPrefix: "${{ step.prefix }}" } }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 10m }
+        outputs:
+          options: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
+      - id: pick
+        uses: form
+        with:
+          title: Pick a cover
+          fields:
+            cover: { type: choice, options: "${{ steps.draw.outputs.options }}", required: true }
+          submit: Use this cover
+        headless: { mode: skip, outputs: { cover: "${{ steps.draw.outputs.options[0].path }}" } }
+    outputs:
+      cover: { type: file, value: "${{ steps.pick.outputs.cover }}" }   # the chosen path → File ref
+
+outputs:
+  short: ${{ jobs.stitch.outputs.short }}
+  blog:  ${{ jobs.blog.outputs.zip }}
+  cover: ${{ jobs.cover.outputs.cover }}
