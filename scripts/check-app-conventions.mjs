@@ -72,6 +72,15 @@ function listAppDirs() {
     .sort()
 }
 
+// A directory under apps/ with no package.json is not an app yet — a spec/docs
+// folder for one being designed (e.g. apps/workflow during its spec phase).
+// Skip it (announced, so a typo'd real app doesn't vanish silently): the app
+// conventions bind when the first buildable code lands, which starts with its
+// package.json.
+function isSpecOnly(app) {
+  return !existsSync(join(appsDir, app, 'package.json'))
+}
+
 // An authored set passes if at least one apps/<app>/.bffless/proxy-rules/<set>/
 // directory has a ruleset.yaml (readdirSync, not fs.globSync — this runs on
 // plain Node 20 in CI).
@@ -324,6 +333,10 @@ function main() {
 
   const failures = []
   for (const app of apps) {
+    if (isSpecOnly(app)) {
+      console.log(`- ${app} (spec-only, no package.json — skipped)`)
+      continue
+    }
     const errors = checkApp(app)
     if (errors.length === 0) {
       console.log(`✓ ${app}`)

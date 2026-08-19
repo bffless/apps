@@ -1,0 +1,97 @@
+# The M1 test implementation: `workflow-hello`, alias `hello`.
+# Three pipelines (echo, slow job + poll, fail-on-purpose), one form, no islands/scripts.
+# Exercises: inputs, needs, matrix + collected outputs, poll, retry, continue-on-error,
+# summary/annotations, file output registration, top-level outputs, headless skip.
+
+spec: 1
+name: Hello workflow
+description: Smoke-tests every non-interactive feature of the harness.
+
+on:
+  manual:
+    inputs:
+      greeting: { type: string, default: "Hello", required: true, label: Greeting }
+      names:    { type: choice, options: [world, studio, reader], list: true, default: [world], label: Who }
+      photo:    { type: file, accept: "image/*", label: A photo (optional) }
+      shout:    { type: boolean, default: false }
+
+jobs:
+  greet:
+    name: Greet each name
+    strategy:
+      matrix: { who: "${{ inputs.names }}" }
+      max-parallel: 2
+    steps:
+      - id: say
+        uses: pipeline
+        with:
+          path: echo
+          body: { text: "${{ inputs.greeting }}, ${{ matrix.who }}!", upper: "${{ inputs.shout }}" }
+        outputs:
+          line: { type: string, value: "${{ response.text }}" }
+        summary: "Said **${{ steps.say.outputs.line }}**"
+    outputs:
+      lines: ${{ steps.say.outputs.line }}          # collected: string[]
+
+  slow:
+    name: A slow server job
+    needs: greet
+    steps:
+      - id: start
+        uses: pipeline
+        with: { path: slow, body: { lines: "${{ needs.greet.outputs.lines }}", photo: "${{ inputs.photo.path }}", outPrefix: "${{ step.prefix }}" } }   # photo is null when not uploaded
+        poll:
+          path: job
+          query: { id: "${{ response.jobId }}" }
+          until: ${{ response.status == 'done' }}
+          fail:  ${{ response.status == 'error' }}
+          every: 2s
+          timeout: 2m
+        retry: { max: 2, delay: 3s, if: "${{ error.code == 'BUSY' }}" }
+        outputs:
+          report: { type: markdown, value: "${{ response.result.markdown }}" }
+          poster: { type: file, value: "${{ response.result.posterPath }}" }     # bare path → File ref
+        annotations:
+          - { level: notice, message: "Job ${{ response.id }} took ${{ response.result.ms }} ms" }
+    outputs:
+      report: ${{ steps.start.outputs.report }}
+      poster: ${{ steps.start.outputs.poster }}
+
+  flaky:
+    name: Fails on purpose
+    needs: greet
+    steps:
+      - id: boom
+        uses: pipeline
+        continue-on-error: true
+        with: { path: fail, body: { code: TEAPOT } }
+      - id: after
+        uses: pipeline
+        if: ${{ steps.boom.outcome == 'failure' }}
+        with: { path: echo, body: { text: "boom failed with ${{ steps.boom.error.code }}" } }
+        outputs:
+          note: { type: string, value: "${{ response.text }}" }
+        annotations:
+          - { level: warning, message: "${{ steps.after.outputs.note }}" }
+
+  confirm:
+    name: Confirm the report
+    needs: [slow, flaky]
+    steps:
+      - id: review
+        uses: form
+        with:
+          title: Does the report look right?
+          fields:
+            approved: { type: boolean, default: true, required: true }
+            report:   { type: markdown, default: "${{ needs.slow.outputs.report }}" }
+          submit: Finish
+        headless: { mode: skip, outputs: { approved: true, report: "${{ needs.slow.outputs.report }}" } }
+    outputs:
+      approved: ${{ steps.review.outputs.approved }}
+      report:   ${{ steps.review.outputs.report }}
+
+outputs:
+  report: ${{ jobs.confirm.outputs.report }}
+  poster: ${{ jobs.slow.outputs.poster }}
+  lines:  ${{ jobs.greet.outputs.lines }}
