@@ -1,0 +1,16 @@
+# Broken: step `one` reads a later step, and references itself outside summary/annotations.
+name: forward refs
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: one
+        uses: pipeline
+        with: { path: e, body: { later: "${{ steps.two.outputs.x }}", self: "${{ steps.one.outputs.x }}" } }
+        outputs:
+          x: { type: string, value: "${{ response.x }}" }
+      - id: two
+        uses: pipeline
+        with: { path: e }
+        outputs:
+          x: { type: string, value: "${{ response.x }}" }

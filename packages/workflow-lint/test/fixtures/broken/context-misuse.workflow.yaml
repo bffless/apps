@@ -1,0 +1,18 @@
+# Broken: response in a form summary, matrix outside a matrix job, jobs inside a
+# step, a typo'd function, a status function outside if.
+name: context misuse
+on: { manual: { inputs: { a: { type: string } } } }
+jobs:
+  j:
+    steps:
+      - id: ask
+        uses: form
+        with: { fields: { ok: { type: boolean } } }
+        headless: auto
+        summary: "got ${{ response.x }} and ${{ always() }}"
+      - id: s
+        uses: pipeline
+        if: "${{ succes() }}"
+        with: { path: e, body: { m: "${{ matrix.item }}", j: "${{ jobs.j.outputs.x }}" } }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }
+    outputs: { x: "${{ steps.s.outputs.x }}" }

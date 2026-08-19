@@ -1,0 +1,6 @@
+export { type Expr, type BinOp, type Span, ExprSyntaxError } from './ast.js'
+export { tokenize, type Token } from './lexer.js'
+export { parseExpression } from './parser.js'
+export { scanTemplates, isSingleExpression, parseIfExpression, type TemplateSpan } from './template.js'
+export { evaluate, renderTemplate, interpolate, truthy, looseEq, EvalError, type EvalOptions } from './evaluate.js'
+export { FUNCTIONS, KNOWN_FUNCTIONS, STATUS_FUNCTIONS } from './functions.js'

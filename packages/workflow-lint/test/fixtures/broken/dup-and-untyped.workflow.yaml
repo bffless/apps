@@ -1,0 +1,16 @@
+# Broken: duplicate step id; a pipeline without outputs; a computed job output
+# that should declare the object form.
+name: dup and untyped
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: a
+        uses: pipeline
+        with: { path: e }
+        outputs: { x: { type: json, value: "${{ response.x }}" } }
+      - id: a
+        uses: pipeline
+        with: { path: e }
+    outputs:
+      count: "${{ length(steps.a.outputs.x) }}"

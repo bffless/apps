@@ -1,0 +1,5 @@
+# Broken: missing `name`, spec must be 1, job `a` has no steps.
+spec: 2
+on: { manual: {} }
+jobs:
+  a: {}

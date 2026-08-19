@@ -1,0 +1,15 @@
+# Broken: absolute paths into another implementation's API (the harness path is fine).
+name: cross impl paths
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: a
+        uses: pipeline
+        with: { path: /api/studio/transcribe }
+        poll: { path: /api/other/job, until: "${{ response.done }}" }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }
+      - id: b
+        uses: pipeline
+        with: { path: /api/workflow/files/list }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }

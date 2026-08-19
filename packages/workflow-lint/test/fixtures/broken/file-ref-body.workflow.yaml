@@ -1,0 +1,10 @@
+# Broken: whole File refs (single and list) placed in a pipeline body.
+name: file refs in body
+on: { manual: { inputs: { rec: { type: file }, recs: { type: file, list: true } } } }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e, body: { one: "${{ inputs.rec }}", many: "${{ inputs.recs }}", ok: "${{ inputs.rec.path }}" } }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }

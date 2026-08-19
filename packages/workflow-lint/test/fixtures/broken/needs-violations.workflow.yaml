@@ -1,0 +1,40 @@
+# Broken: reads a job it doesn't need; needs a ghost job; a needs cycle.
+name: needs violations
+on: { manual: {} }
+jobs:
+  a:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }
+    outputs: { x: "${{ steps.s.outputs.x }}" }
+  b:
+    needs: a
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e, body: { v: "${{ needs.c.outputs.x }}" } }
+        outputs: { y: { type: string, value: "${{ response.y }}" } }
+  c:
+    needs: ghost
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }
+    outputs: { x: "${{ steps.s.outputs.x }}" }
+  d:
+    needs: e
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }
+  e:
+    needs: d
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }

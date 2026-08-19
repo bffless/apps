@@ -31,7 +31,9 @@
     "sandcastle": "sh .sandcastle/prep.sh && npx tsx .sandcastle/main.ts",
     "store:dev": "pnpm --filter store dev",
     "store:build": "pnpm --filter store build",
-    "store:assets": "node scripts/build-store-artifact.mjs --stage-only"
+    "store:assets": "node scripts/build-store-artifact.mjs --stage-only",
+    "workflow-lint:build": "pnpm --filter @bffless/workflow-lint build",
+    "workflow-lint:test": "pnpm --filter @bffless/workflow-lint test:run"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
