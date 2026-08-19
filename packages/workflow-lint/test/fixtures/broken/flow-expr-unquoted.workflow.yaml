@@ -1,0 +1,11 @@
+# Broken: unquoted ${{ }} inside a flow mapping — the classic YAML gotcha (01).
+name: flow gotcha
+on: { manual: {} }
+jobs:
+  a:
+    steps:
+      - id: s
+        uses: pipeline
+        with:
+          path: echo
+          body: { id: ${{ response.jobId }} }

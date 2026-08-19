@@ -1,0 +1,20 @@
+# Broken: headless-skip steps whose referenced outputs have no skip value.
+name: skip missing outputs
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: pick
+        uses: form
+        with: { fields: { choice: { type: string } } }
+        headless: skip
+      - id: confirm
+        uses: form
+        with: { fields: { note: { type: string } } }
+        headless: { mode: skip, outputs: {} }
+      - id: use
+        uses: pipeline
+        with: { path: e, body: { n: "${{ steps.confirm.outputs.note }}" } }
+        outputs: { x: { type: string, value: "${{ response.x }}" } }
+    outputs:
+      choice: ${{ steps.pick.outputs.choice }}

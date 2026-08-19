@@ -1,0 +1,11 @@
+# Not headless-safe: an island step with no headless declaration (notice, not error).
+name: no headless
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: trim
+        uses: island
+        with: { src: islands/trim.html }
+        outputs:
+          cuts: { type: json }

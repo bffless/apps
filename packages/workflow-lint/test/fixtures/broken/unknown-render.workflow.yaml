@@ -1,0 +1,11 @@
+# Broken: an unknown render name, and render: island without a src.
+name: bad renderers
+on: { manual: { inputs: { a: { type: string, render: fancy } } } }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs:
+          cuts: { type: json, render: island }

@@ -1,0 +1,13 @@
+# Broken: a dangling operator in an if, and an unclosed ${{ in a summary.
+name: bad expressions
+on: { manual: { inputs: { a: { type: string } } } }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        if: "${{ inputs.a && }}"
+        with: { path: echo }
+        outputs:
+          x: { type: string, value: "${{ response.x }}" }
+        summary: "unclosed ${{ steps.s.outputs.x"
