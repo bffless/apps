@@ -1,0 +1,49 @@
+name: workflow-lint
+
+# Builds and tests @bffless/workflow-lint (the M0 `workflow lint` prototype) and
+# runs the built CLI over the spec's two example workflows, so the linter, the
+# schema copy (drift-fenced by a test) and the examples can never diverge
+# silently. See apps/workflow/docs/spec/00-overview.md (M0) and
+# packages/workflow-lint/README.md.
+
+on:
+  pull_request:
+    paths:
+      - 'packages/workflow-lint/**'
+      - 'apps/workflow/docs/spec/workflow.schema.json'
+      - 'apps/workflow/docs/spec/examples/**'
+      - '.github/workflows/workflow-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter @bffless/workflow-lint build
+
+      - name: Lint (eslint)
+        run: pnpm --filter @bffless/workflow-lint lint
+
+      - name: Test
+        run: pnpm --filter @bffless/workflow-lint test:run
+
+      - name: Lint the spec examples with the built CLI
+        run: node packages/workflow-lint/dist/cli.js lint apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/studio.workflow.yaml

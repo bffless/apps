@@ -68,7 +68,7 @@ export class TypeEnv {
   constructor(private def: Definition) {}
 
   /** Type of a step output by declaration (03's per-kind conventions). */
-  private stepOutputType(job: Job, stepId: string, name: string, depth: number): VType {
+  private stepOutputType(job: Job, stepId: string, name: string): VType {
     const step = job.steps.find((s) => s.id === stepId)
     if (!step) return UNKNOWN
     if (step.uses === 'form') return fromDecl(step.raw.with?.fields?.[name])
@@ -174,7 +174,7 @@ export class TypeEnv {
     if (root === 'steps' && job) {
       const [stepId, kind, name, ...rest] = path
       if (typeof stepId !== 'string' || kind !== 'outputs' || typeof name !== 'string') return UNKNOWN
-      let t = this.stepOutputType(job, stepId, name, depth)
+      let t = this.stepOutputType(job, stepId, name)
       if (t.base === 'choice') t = { base: 'string', list: t.list }
       for (const seg of rest) t = descend(t, seg)
       return t
