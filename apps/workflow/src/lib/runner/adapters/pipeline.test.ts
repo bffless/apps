@@ -276,14 +276,16 @@ function runSlow(h: ReturnType<typeof harness>, state: RunState) {
 
 describe('runPipelineStep — poll (hello slow.start)', () => {
   it('emits polling with the initial response, ticks until `until`, and keeps `initial` readable', async () => {
+    // The ticks are shaped like a real status endpoint: they answer with the
+    // job's state, NOT with a copy of the job id — the poll `query` keeps
+    // working because it is bound to the initial response.
     const { http, calls } = fakeHttp([
       { status: 200, body: { jobId: 'j1' } },
-      { status: 200, body: { jobId: 'j1', status: 'pending' } },
-      { status: 200, body: { jobId: 'j1', status: 'pending' } },
+      { status: 200, body: { status: 'pending' } },
+      { status: 200, body: { status: 'pending' } },
       {
         status: 200,
         body: {
-          jobId: 'j1',
           id: 'j1',
           status: 'done',
           result: { markdown: '# report', posterPath: 'shots/poster.png', ms: 1200 },
@@ -310,7 +312,9 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
     // step.polling carries the UNTRIMMED initial response (rows.ts caps the row).
     expect(polling(h.events[1]!).initial).toEqual({ jobId: 'j1' })
 
-    // GET /api/hello/job?id=j1, once per tick, `every: 2s` between ticks.
+    // GET /api/hello/job?id=j1, once per tick — `id` stays `j1` on every tick
+    // because `query` reads the initial response (01:149, 03:33) — `every: 2s`
+    // between ticks.
     expect(calls.slice(1)).toEqual([
       { path: '/api/hello/job', method: 'GET', query: { id: 'j1' }, body: undefined },
       { path: '/api/hello/job', method: 'GET', query: { id: 'j1' }, body: undefined },
@@ -340,8 +344,8 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
   it('fails with the tick error when the `fail` expression holds', async () => {
     const { http } = fakeHttp([
       { status: 200, body: { jobId: 'j1' } },
-      { status: 200, body: { jobId: 'j1', status: 'pending' } },
-      { status: 200, body: { jobId: 'j1', status: 'error', code: 'BAD_INPUT', message: 'no photo' } },
+      { status: 200, body: { status: 'pending' } },
+      { status: 200, body: { status: 'error', code: 'BAD_INPUT', message: 'no photo' } },
     ])
     const state = slowState()
     const h = harness(state, http)
@@ -356,8 +360,8 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
   it('emits step.cancelled when the run is aborted mid-poll', async () => {
     const { http, calls } = fakeHttp([
       { status: 200, body: { jobId: 'j1' } },
-      { status: 200, body: { jobId: 'j1', status: 'pending' } },
-      { status: 200, body: { jobId: 'j1', status: 'pending' } },
+      { status: 200, body: { status: 'pending' } },
+      { status: 200, body: { status: 'pending' } },
     ])
     const state = slowState()
     const h: ReturnType<typeof harness> = harness(state, http, {
@@ -371,7 +375,7 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
     expect(h.state().steps[SLOW_KEY]!.status).toBe('cancelled')
   })
 
-  it('re-evaluates the poll query against the latest tick response', async () => {
+  it('binds the poll query to the initial response, not to the latest tick', async () => {
     const chain = toDefinition({
       name: 'Chain',
       jobs: {
@@ -409,9 +413,13 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
       h.rt,
     )
 
+    // 01:149 / 03:33 — `query`/`body` see the INITIAL response; only `fail`,
+    // `until` and `outputs` see the tick's own response.
     expect(h.types()).toEqual(['step.started', 'step.polling', 'step.succeeded'])
-    expect(calls[1]!.query).toEqual({ cursor: 'c1' }) // first tick: the initial response
-    expect(calls[2]!.query).toEqual({ cursor: 'c2' }) // second tick: tick 1's response
+    expect(calls[1]!.query).toEqual({ cursor: 'c1' })
+    expect(calls[2]!.query).toEqual({ cursor: 'c1' }) // NOT c2, tick 1's `next`
+    // ...while `until` did read tick 2's own response to end the poll.
+    expect(succeeded(h.events[2]!).outputs).toEqual({ response: { next: 'c3', status: 'done' } })
   })
 
   it('fails with POLL_TIMEOUT once the poll budget is spent', async () => {
@@ -507,7 +515,7 @@ describe('runPipelineStep — retry (hello slow.start, `retry.if` on BUSY)', () 
     const { http, calls } = fakeHttp([
       { status: 503, body: { code: 'BUSY', message: 'server busy' } },
       { status: 200, body: { jobId: 'j2' } },
-      { status: 200, body: { jobId: 'j2', id: 'j2', status: 'done', result: { markdown: '# r', posterPath: null, ms: 5 } } },
+      { status: 200, body: { id: 'j2', status: 'done', result: { markdown: '# r', posterPath: null, ms: 5 } } },
     ])
     const state = slowState()
     const h = harness(state, http)
@@ -530,6 +538,57 @@ describe('runPipelineStep — retry (hello slow.start, `retry.if` on BUSY)', () 
     expect(calls[1]!.path).toBe('/api/hello/slow') // the whole step re-ran
     expect(h.state().steps[SLOW_KEY]!.attempt).toBe(2)
     expect(succeeded(h.events[4]!).outputs).toMatchObject({ report: '# r' })
+  })
+
+  it('gives `retry.if` the last response alongside the error', async () => {
+    const onResponse = toDefinition({
+      name: 'Retry on response',
+      jobs: {
+        j: {
+          steps: [
+            {
+              id: 's',
+              uses: 'pipeline',
+              with: { path: 'start' },
+              poll: {
+                path: 'tick',
+                until: "${{ response.status == 'done' }}",
+                fail: "${{ response.status == 'error' }}",
+                every: '1s',
+                timeout: '1m',
+              },
+              retry: { max: 1, delay: '1s', if: "${{ response.status == 'error' }}" },
+            },
+          ],
+          outputs: {},
+        },
+      },
+      outputs: {},
+    }) as Definition
+    const { http } = fakeHttp([
+      { status: 200, body: { jobId: 'j1' } },
+      { status: 200, body: { status: 'error' } },
+      { status: 200, body: { jobId: 'j2' } },
+      { status: 200, body: { status: 'done' } },
+    ])
+    const k = stepKey('j', 0, 's')
+    const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+    const h = harness(state, http)
+
+    await runPipelineStep(
+      { step: stepOf(onResponse, 'j', 's'), key: k, job: 'j', index: 0, def: onResponse, state },
+      h.rt,
+    )
+
+    expect(h.types()).toEqual([
+      'step.started',
+      'step.polling',
+      'step.retrying',
+      'step.started',
+      'step.polling',
+      'step.succeeded',
+    ])
+    expect(retrying(h.events[2]!).error.code).toBe('POLL_FAILED')
   })
 
   it('does not retry a failure that `retry.if` rejects', async () => {
@@ -572,6 +631,73 @@ describe('runPipelineStep — retry (hello slow.start, `retry.if` on BUSY)', () 
 // ---------------------------------------------------------------------------
 // Output typing and cancellation before the first request
 // ---------------------------------------------------------------------------
+
+describe('runPipelineStep — annotations on the failure path', () => {
+  function annotated(entries: unknown[]): Definition {
+    return toDefinition({
+      name: 'Annotated',
+      jobs: {
+        j: {
+          steps: [{ id: 's', uses: 'pipeline', with: { path: 'boom' }, annotations: entries }],
+          outputs: {},
+        },
+      },
+      outputs: {},
+    }) as Definition
+  }
+
+  async function runAnnotated(def: Definition) {
+    const { http } = fakeHttp([{ status: 503, body: { code: 'BUSY', message: 'busy' } }])
+    const k = stepKey('j', 0, 's')
+    const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+    const h = harness(state, http)
+    await runPipelineStep(
+      { step: stepOf(def, 'j', 's'), key: k, job: 'j', index: 0, def, state },
+      h.rt,
+    )
+    return h
+  }
+
+  it('evaluates annotations with `error` in scope when the step fails', async () => {
+    // `error` is only populated on a failure — annotations are the site that
+    // reads it (01: contexts table).
+    const h = await runAnnotated(
+      annotated([{ level: 'error', message: 'pipeline said ${{ error.code }}' }]),
+    )
+
+    expect(h.types()).toEqual(['step.started', 'step.failed'])
+    expect(failed(h.events[1]!).annotations).toEqual([
+      { level: 'error', message: 'pipeline said BUSY' },
+    ])
+    expect(h.state().steps[stepKey('j', 0, 's')]!.annotations).toEqual([
+      { level: 'error', message: 'pipeline said BUSY' },
+    ])
+  })
+
+  it('drops an annotation it cannot evaluate rather than masking the step error', async () => {
+    const h = await runAnnotated(
+      annotated([
+        { level: 'warning', message: 'broken ${{ error.code == }}' },
+        { level: 'error', message: 'kept ${{ error.code }}' },
+      ]),
+    )
+
+    expect(h.types()).toEqual(['step.started', 'step.failed'])
+    expect(failed(h.events[1]!).error.code).toBe('BUSY')
+    expect(failed(h.events[1]!).annotations).toEqual([{ level: 'error', message: 'kept BUSY' }])
+  })
+
+  it('applies an annotation `if` on the failure path', async () => {
+    const h = await runAnnotated(
+      annotated([
+        { level: 'notice', message: 'never', if: "${{ error.code == 'OTHER' }}" },
+        { level: 'error', message: 'always' },
+      ]),
+    )
+
+    expect(failed(h.events[1]!).annotations).toEqual([{ level: 'error', message: 'always' }])
+  })
+})
 
 describe('runPipelineStep — failure mapping', () => {
   const typed = toDefinition({

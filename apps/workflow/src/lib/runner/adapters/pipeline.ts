@@ -20,7 +20,16 @@ import { buildContexts, evalDeep, evalValue } from '../contexts'
 import { parseDuration } from '../durations'
 import { coerceOutputs, OutputTypeError } from '../outputs'
 import { evalAnnotations, evalSummary, trimResponse } from '../results'
-import type { Definition, FileRef, RunEvent, RunState, Step, StepError, StepKey } from '../types'
+import type {
+  Annotation,
+  Definition,
+  FileRef,
+  RunEvent,
+  RunState,
+  Step,
+  StepError,
+  StepKey,
+} from '../types'
 
 // ---------------------------------------------------------------------------
 // The runtime the middleware injects (Task 17); tests pass fakes.
@@ -126,12 +135,13 @@ function toStepError(err: unknown): StepError {
 
 type Fetched =
   | { kind: 'ok'; body: unknown }
-  | { kind: 'error'; error: StepError }
+  /** `response`: the last response this attempt did see — `retry.if` reads it (01). */
+  | { kind: 'error'; error: StepError; response?: unknown }
   | { kind: 'cancelled' }
 
 type AttemptResult =
   | { kind: 'success'; event: Extract<RunEvent, { type: 'step.succeeded' }> }
-  | { kind: 'error'; error: StepError }
+  | { kind: 'error'; error: StepError; response?: unknown }
   | { kind: 'cancelled' }
 
 interface RequestSpec {
@@ -206,6 +216,10 @@ async function runAttempt(
   rt.emit({ type: 'step.started', key: a.key, inputs, at: rt.clock.now() })
   if (inputsError) return { kind: 'error', error: inputsError }
 
+  // The last response this attempt saw, carried on every failure so `retry.if`
+  // can read `response` alongside `error` (01).
+  let seen: unknown
+
   try {
     const initialPath = str(inputs.path)
     if (!initialPath) {
@@ -221,7 +235,10 @@ async function runAttempt(
     })
     if (first.kind !== 'ok') return first
     const initial = first.body
-    if (timedOut(deadline, rt.clock.now())) return { kind: 'error', error: timeoutError() }
+    seen = initial
+    if (timedOut(deadline, rt.clock.now())) {
+      return { kind: 'error', error: timeoutError(), response: initial }
+    }
 
     const pollDecl = raw.poll === undefined || raw.poll === null ? undefined : obj(raw.poll)
     let last: unknown = initial
@@ -231,6 +248,7 @@ async function runAttempt(
       const polled = await runPoll(a, rt, pollDecl, initialPath, initial, scope, deadline)
       if (polled.kind !== 'ok') return polled
       last = polled.body
+      seen = last
     }
 
     // Terminal success: outputs against the *final* response, then summary and
@@ -257,7 +275,7 @@ async function runAttempt(
       },
     }
   } catch (err) {
-    return { kind: 'error', error: toStepError(err) }
+    return { kind: 'error', error: toStepError(err), response: seen }
   }
 }
 
@@ -284,33 +302,40 @@ async function runPoll(
   const method = (str(poll.method) ?? DEFAULT_POLL_METHOD).toUpperCase()
   const path = str(poll.path) ?? initialPath
 
-  // `response` is the latest tick's response — the initial one until a tick has
-  // answered, which is what makes `query: { id: ${{ response.jobId }} }` work.
+  // Two different `response` bindings live in a poll (01 contexts table, 03):
+  // the tick **request** (`query`/`body`) always reads the *initial* response —
+  // that is what makes `query: { id: ${{ response.jobId }} }` keep working once
+  // ticks stop echoing the job id — while `fail`/`until` (and, later, `outputs`)
+  // read the *latest tick's* response.
+  const requestCtx = scope({ response: initial })
   let last: unknown = initial
 
   for (;;) {
     if (rt.signal.aborted) return { kind: 'cancelled' }
     const now = rt.clock.now()
-    if (timedOut(deadline, now)) return { kind: 'error', error: timeoutError() }
+    if (timedOut(deadline, now)) return { kind: 'error', error: timeoutError(), response: last }
     if (now >= pollDeadline) {
-      return { kind: 'error', error: { code: 'POLL_TIMEOUT', message: `poll timed out after ${timeout}` } }
+      return {
+        kind: 'error',
+        error: { code: 'POLL_TIMEOUT', message: `poll timed out after ${timeout}` },
+        response: last,
+      }
     }
 
-    const tickCtx = scope({ response: last })
     const tick = await request(rt, a.state.impl, {
       path,
       method,
-      query: poll.query === undefined ? undefined : obj(evalDeep(poll.query, tickCtx)),
-      body: poll.body === undefined ? undefined : evalDeep(poll.body, tickCtx),
+      query: poll.query === undefined ? undefined : obj(evalDeep(poll.query, requestCtx)),
+      body: poll.body === undefined ? undefined : evalDeep(poll.body, requestCtx),
     })
-    if (tick.kind !== 'ok') return tick
+    if (tick.kind !== 'ok') return tick.kind === 'error' ? { ...tick, response: last } : tick
     last = tick.body
 
     // `fail` is evaluated before `until` (03).
     const answered = scope({ response: last })
     const fail = str(poll.fail)
     if (fail && truthy(evalValue(fail, answered))) {
-      return { kind: 'error', error: pollFailError(last) }
+      return { kind: 'error', error: pollFailError(last), response: last }
     }
     const until = str(poll.until)
     if (until && truthy(evalValue(until, answered))) return { kind: 'ok', body: last }
@@ -354,8 +379,14 @@ export async function runPipelineStep(a: PipelineStepArgs, rt: StepRuntime): Pro
     if (result.kind === 'success') return rt.emit(result.event)
 
     const error = result.error
-    if (!shouldRetry(a, rt, retry, maxExtra, attempt - first, error, deadline)) {
-      return rt.emit({ type: 'step.failed', key: a.key, error, at: rt.clock.now() })
+    if (!shouldRetry(a, rt, retry, maxExtra, attempt - first, error, result.response, deadline)) {
+      return rt.emit({
+        type: 'step.failed',
+        key: a.key,
+        error,
+        annotations: failureAnnotations(a, attempt, error),
+        at: rt.clock.now(),
+      })
     }
 
     rt.emit({ type: 'step.retrying', key: a.key, error, at: rt.clock.now() })
@@ -369,10 +400,41 @@ export async function runPipelineStep(a: PipelineStepArgs, rt: StepRuntime): Pro
 }
 
 /**
+ * The step's `annotations:`, evaluated once the step reaches its terminal
+ * *failure* (01): `error` is in scope — the only site where it is populated —
+ * and the step has no outputs to read. Each entry is evaluated on its own so a
+ * template that cannot be evaluated drops that entry instead of masking the
+ * failure that is being reported.
+ */
+function failureAnnotations(a: PipelineStepArgs, attempt: number, error: StepError): Annotation[] {
+  const list = obj(a.step.raw).annotations
+  if (!Array.isArray(list)) return []
+
+  const contexts = buildContexts(a.def, a.state, {
+    job: a.job,
+    index: a.index,
+    stepId: a.step.id,
+    attempt,
+    error,
+  })
+
+  const out: Annotation[] = []
+  for (const entry of list) {
+    try {
+      out.push(...evalAnnotations({ ...a.step, raw: { annotations: [entry] } }, contexts))
+    } catch {
+      // A broken annotation template is a lint problem; it must not replace the
+      // step's own error on the way out.
+    }
+  }
+  return out
+}
+
+/**
  * `retry` re-runs the whole step (request + poll) at most `max` **extra** times
- * while `if` holds — evaluated with this failure in the `error` context, and
- * defaulting to any failure (03). A spent `timeout-minutes` budget ends the
- * retries whatever `if` says: another attempt could only time out again.
+ * while `if` holds — evaluated over `error` and the last `response` this attempt
+ * saw, and defaulting to any failure (01/03). A spent `timeout-minutes` budget
+ * ends the retries whatever `if` says: another attempt could only time out again.
  */
 function shouldRetry(
   a: PipelineStepArgs,
@@ -381,6 +443,7 @@ function shouldRetry(
   maxExtra: number,
   used: number,
   error: StepError,
+  response: unknown,
   deadline: number | undefined,
 ): boolean {
   if (!retry || used >= maxExtra) return false
@@ -398,6 +461,7 @@ function shouldRetry(
           stepId: a.step.id,
           attempt: used + 1,
           error,
+          response,
         }),
       ),
     )
