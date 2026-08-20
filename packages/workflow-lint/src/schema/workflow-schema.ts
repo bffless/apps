@@ -1,0 +1,857 @@
+// Generated from ../../schema/workflow.schema.json — do not hand-edit.
+// schema/workflow.schema.json stays the canonical file for external consumers;
+// this module is a static (fs-free) mirror so the /lint import graph stays browser-safe.
+// test/schema-generated.test.ts asserts the two never diverge.
+const workflowSchema: Record<string, any> = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bffless.dev/schemas/workflow/v1.json",
+  "title": "BFFless Workflow",
+  "description": "A workflow definition shipped under .bffless/workflows/ by an implementation. See 01-workflow-yaml.md.",
+  "type": "object",
+  "required": [
+    "name",
+    "on",
+    "jobs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "spec": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "on": {
+      "type": "object",
+      "required": [
+        "manual"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "manual": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "inputs": {
+              "$ref": "#/$defs/inputMap"
+            }
+          }
+        }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/identifier"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/job"
+      }
+    },
+    "outputs": {
+      "$ref": "#/$defs/outputMap"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "expression": {
+      "description": "A scalar that may contain ${{ }} expressions. Validated by the expression parser, not this schema.",
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "null",
+        "array",
+        "object"
+      ]
+    },
+    "exprString": {
+      "type": "string"
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h)$"
+    },
+    "level": {
+      "enum": [
+        "notice",
+        "warning",
+        "error"
+      ]
+    },
+    "type": {
+      "enum": [
+        "string",
+        "number",
+        "boolean",
+        "choice",
+        "file",
+        "table",
+        "markdown",
+        "json"
+      ]
+    },
+    "typeDef": {
+      "description": "Shared shape of an input definition and an output declaration (02-types-and-renderers.md).",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/type"
+        },
+        "list": {
+          "type": "boolean",
+          "default": false
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "render": {
+          "type": "string",
+          "description": "Renderer override: transcript | chart | images | code | island"
+        },
+        "src": {
+          "type": "string",
+          "pattern": "^(/w/|[a-z0-9_\\-./]+$)",
+          "description": "Relative to the implementation (islands/x.html → /w/<alias>/islands/x.html) or absolute /w/…"
+        },
+        "format": {
+          "enum": [
+            "text",
+            "textarea",
+            "url",
+            "email",
+            "date",
+            "datetime",
+            "password"
+          ]
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "minLength": {
+          "type": "integer"
+        },
+        "maxLength": {
+          "type": "integer"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "step": {
+          "type": "number"
+        },
+        "options": {
+          "description": "choice: literal list, or an expression yielding a list of strings, {value,label,preview?} objects, or File refs (shorthand: value=path, label=name, preview=ref)",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "preview": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "accept": {
+          "type": "string",
+          "description": "file: MIME pattern(s), e.g. video/*,audio/wav"
+        },
+        "maxSize": {
+          "type": "string",
+          "description": "file: e.g. 5GB"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            }
+          }
+        },
+        "schema": {
+          "type": "object",
+          "description": "json: a JSON Schema for the value"
+        },
+        "mapping": {
+          "type": "object",
+          "description": "render-specific hints, e.g. chart axes"
+        }
+      }
+    },
+    "inputDef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/typeDef"
+        }
+      ],
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "default": {}
+      }
+    },
+    "inputMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/identifier"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/inputDef"
+      }
+    },
+    "outputDecl": {
+      "description": "Either a bare expression (type inferred) or a typed object with an optional value expression.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/exprString"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/typeDef"
+            }
+          ],
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "#/$defs/expression"
+            }
+          }
+        }
+      ]
+    },
+    "outputMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/identifier"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/outputDecl"
+      }
+    },
+    "job": {
+      "type": "object",
+      "required": [
+        "steps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "needs": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/identifier"
+              },
+              "uniqueItems": true
+            }
+          ]
+        },
+        "if": {
+          "$ref": "#/$defs/exprString"
+        },
+        "timeout-minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "strategy": {
+          "type": "object",
+          "required": [
+            "matrix"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "matrix": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {
+                "$ref": "#/$defs/identifier"
+              },
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/exprString"
+                  },
+                  {
+                    "type": "array"
+                  }
+                ]
+              }
+            },
+            "max-parallel": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "fail-fast": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "outputs": {
+          "$ref": "#/$defs/outputMap"
+        }
+      }
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pipelineStep"
+        },
+        {
+          "$ref": "#/$defs/islandStep"
+        },
+        {
+          "$ref": "#/$defs/formStep"
+        },
+        {
+          "$ref": "#/$defs/scriptStep"
+        }
+      ]
+    },
+    "pipelineStep": {
+      "type": "object",
+      "required": [
+        "id",
+        "uses",
+        "with"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "type": "string"
+        },
+        "uses": {
+          "const": "pipeline"
+        },
+        "if": {
+          "$ref": "#/$defs/exprString"
+        },
+        "continue-on-error": {
+          "type": "boolean",
+          "default": false
+        },
+        "timeout-minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outputs": {
+          "$ref": "#/$defs/typedOutputMap"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Markdown template over ${{ }}"
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "level",
+              "message"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "$ref": "#/$defs/level"
+              },
+              "if": {
+                "$ref": "#/$defs/exprString"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "with": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^(/api/|[a-z0-9_\\-./]+$)",
+              "description": "Relative to the implementation (transcribe → /api/<alias>/transcribe) or absolute /api/…"
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ],
+              "default": "POST"
+            },
+            "query": {
+              "type": "object"
+            },
+            "body": {
+              "$ref": "#/$defs/expression"
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "poll": {
+          "type": "object",
+          "required": [
+            "path",
+            "until"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^(/api/|[a-z0-9_\\-./]+$)",
+              "description": "Relative to the implementation (transcribe → /api/<alias>/transcribe) or absolute /api/…"
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST"
+              ],
+              "default": "GET"
+            },
+            "query": {
+              "type": "object"
+            },
+            "body": {
+              "$ref": "#/$defs/expression"
+            },
+            "until": {
+              "$ref": "#/$defs/exprString",
+              "description": "Success condition over `response`"
+            },
+            "fail": {
+              "$ref": "#/$defs/exprString",
+              "description": "Failure condition over `response`"
+            },
+            "every": {
+              "$ref": "#/$defs/duration",
+              "default": "3s"
+            },
+            "timeout": {
+              "$ref": "#/$defs/duration",
+              "default": "10m"
+            }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "required": [
+            "max"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "delay": {
+              "$ref": "#/$defs/duration",
+              "default": "5s"
+            },
+            "if": {
+              "$ref": "#/$defs/exprString",
+              "description": "Condition over `error`/`response`; default: any failure"
+            }
+          }
+        }
+      }
+    },
+    "headless": {
+      "description": "Behaviour of an interactive step when run.headless (07-headless.md).",
+      "oneOf": [
+        {
+          "enum": [
+            "skip",
+            "auto"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "skip",
+                "auto"
+              ]
+            },
+            "outputs": {
+              "type": "object",
+              "description": "skip: literal outputs to use"
+            }
+          }
+        }
+      ]
+    },
+    "islandStep": {
+      "type": "object",
+      "required": [
+        "id",
+        "uses",
+        "with",
+        "outputs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "type": "string"
+        },
+        "uses": {
+          "const": "island"
+        },
+        "if": {
+          "$ref": "#/$defs/exprString"
+        },
+        "continue-on-error": {
+          "type": "boolean",
+          "default": false
+        },
+        "timeout-minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outputs": {
+          "$ref": "#/$defs/typedOutputMap"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Markdown template over ${{ }}"
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "level",
+              "message"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "$ref": "#/$defs/level"
+              },
+              "if": {
+                "$ref": "#/$defs/exprString"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "with": {
+          "type": "object",
+          "required": [
+            "src"
+          ],
+          "properties": {
+            "src": {
+              "type": "string",
+              "pattern": "^(/w/|[a-z0-9_\\-./]+$)",
+              "description": "Relative to the implementation (islands/x.html → /w/<alias>/islands/x.html) or absolute /w/…"
+            },
+            "title": {
+              "type": "string"
+            },
+            "display": {
+              "enum": [
+                "inline",
+                "fullscreen"
+              ],
+              "default": "inline"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/expression"
+          }
+        },
+        "headless": {
+          "$ref": "#/$defs/headless"
+        }
+      }
+    },
+    "formStep": {
+      "type": "object",
+      "required": [
+        "id",
+        "uses",
+        "with"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "type": "string"
+        },
+        "uses": {
+          "const": "form"
+        },
+        "if": {
+          "$ref": "#/$defs/exprString"
+        },
+        "continue-on-error": {
+          "type": "boolean",
+          "default": false
+        },
+        "timeout-minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "summary": {
+          "type": "string",
+          "description": "Markdown template over ${{ }}"
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "level",
+              "message"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "$ref": "#/$defs/level"
+              },
+              "if": {
+                "$ref": "#/$defs/exprString"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "with": {
+          "type": "object",
+          "required": [
+            "fields"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "fields": {
+              "$ref": "#/$defs/inputMap"
+            },
+            "submit": {
+              "type": "string"
+            }
+          }
+        },
+        "headless": {
+          "$ref": "#/$defs/headless"
+        }
+      }
+    },
+    "scriptStep": {
+      "type": "object",
+      "required": [
+        "id",
+        "uses",
+        "with",
+        "outputs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "type": "string"
+        },
+        "uses": {
+          "const": "script"
+        },
+        "if": {
+          "$ref": "#/$defs/exprString"
+        },
+        "continue-on-error": {
+          "type": "boolean",
+          "default": false
+        },
+        "timeout-minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outputs": {
+          "$ref": "#/$defs/typedOutputMap"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Markdown template over ${{ }}"
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "level",
+              "message"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "$ref": "#/$defs/level"
+              },
+              "if": {
+                "$ref": "#/$defs/exprString"
+              },
+              "title": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "with": {
+          "type": "object",
+          "required": [
+            "src"
+          ],
+          "properties": {
+            "src": {
+              "type": "string",
+              "pattern": "^(/w/|[a-z0-9_\\-./]+$)",
+              "description": "Relative to the implementation (islands/x.html → /w/<alias>/islands/x.html) or absolute /w/…"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/expression"
+          }
+        }
+      }
+    },
+    "typedOutputMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/identifier"
+      },
+      "additionalProperties": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/typeDef"
+          }
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "$ref": "#/$defs/expression"
+          }
+        }
+      }
+    }
+  }
+}
+
+export default workflowSchema
