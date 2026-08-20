@@ -2,9 +2,11 @@
  * Past runs of one workflow (08).
  *
  * Everything in a row comes from the **run row alone** — the list endpoint
- * returns no step rows, so the annotation count is the run-level one and the
- * outputs cell counts the run's own outputs. Anything else would mean N+1
- * fetches to fill a table.
+ * returns no step rows, so the outputs cell counts the run's own outputs.
+ * Anything else would mean N+1 fetches to fill a table, which is also why there
+ * is no annotations column in M1: annotations live on the *step* rows, so an
+ * honest count needs an `annotationCounts` rollup persisted onto the run row at
+ * `run.finished` — a write-path change, and therefore Phase 3.
  *
  * The status filter is client-side (Decision 6): a workflow's runs are a short
  * list, and filtering in the browser keeps one cached query instead of one per
@@ -13,6 +15,7 @@
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { Link, useParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
+import { LoadError } from '../components/LoadError'
 import { StatusPill } from '../components/StatusPill'
 import { formatDuration } from '../lib/duration'
 import { isFileRef } from '../components/values/fileRef'
@@ -46,7 +49,7 @@ export function RunsPage() {
   const dispatch = useAppDispatch()
   const filter = useAppSelector((state) => state.ui.runsStatusFilter)
 
-  const { data: runs, isLoading } = useListRunsQuery(
+  const { data: runs, isLoading, isError, error, refetch } = useListRunsQuery(
     impl && workflow ? { impl, workflow } : skipToken,
   )
 
@@ -78,7 +81,12 @@ export function RunsPage() {
 
       {isLoading && <p className="note">Loading…</p>}
 
-      {!isLoading && (runs ?? []).length === 0 && (
+      {/* A list that failed to load is not a workflow that has never run. */}
+      {isError && !runs && (
+        <LoadError title="Couldn't load runs" error={error} onRetry={() => void refetch()} />
+      )}
+
+      {!isLoading && !isError && (runs ?? []).length === 0 && (
         <EmptyState title="No runs yet">
           <p>
             Nothing has run this workflow. <Link to={`${base}/run`}>Start a run</Link>
@@ -86,7 +94,7 @@ export function RunsPage() {
         </EmptyState>
       )}
 
-      {!isLoading && (runs ?? []).length > 0 && shown.length === 0 && (
+      {!isLoading && !isError && (runs ?? []).length > 0 && shown.length === 0 && (
         <EmptyState title="No runs with that status" />
       )}
 
@@ -100,7 +108,6 @@ export function RunsPage() {
               <th scope="col">Started</th>
               <th scope="col">Duration</th>
               <th scope="col">Outputs</th>
-              <th scope="col">Annotations</th>
               <th scope="col">
                 <span className="visually-hidden">Actions</span>
               </th>
@@ -121,7 +128,6 @@ export function RunsPage() {
                   {run.finishedAt == null ? '—' : formatDuration(run.finishedAt - run.startedAt)}
                 </td>
                 <td>{outputsCell(run)}</td>
-                <td>{(run.annotations ?? []).length}</td>
                 <td>
                   <Link to={`${base}/run?from=${run.runId}`}>Re-run</Link>
                 </td>

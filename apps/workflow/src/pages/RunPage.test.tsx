@@ -9,12 +9,14 @@
  * changing that selector, not by a sixth chip.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
 import { db, nextId, seedFinishedRun } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
+import { server } from '../mocks/server'
 import { makeStore } from '../store'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
@@ -156,6 +158,22 @@ describe('RunPage', () => {
 
     const page = screen.getByRole('main')
     expect(await within(page).findByText('No such run')).toBeInTheDocument()
+  })
+
+  it('tells a failed read apart from a run that does not exist', async () => {
+    seedFinishedRun()
+    server.use(
+      http.get('/api/workflow/run', () =>
+        HttpResponse.json({ error: 'boom' }, { status: 500 }),
+      ),
+    )
+
+    renderApp()
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText("Couldn't load this run")).toBeInTheDocument()
+    expect(within(page).queryByText('No such run')).not.toBeInTheDocument()
+    expect(within(page).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
   it('still shows the record when the definition snapshot is missing', async () => {

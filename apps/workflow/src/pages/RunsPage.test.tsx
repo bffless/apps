@@ -3,12 +3,14 @@
  * the two ways out of a row — the run itself, and a re-run pre-filled from it.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
 import { seedFinishedRun } from '../mocks/db'
 import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
+import { server } from '../mocks/server'
 import { makeStore } from '../store'
 
 function renderApp(path = '/hello/hello/runs') {
@@ -57,6 +59,22 @@ describe('RunsPage', () => {
 
     expect(within(page).queryByRole('row', { name: fixtureRow() })).not.toBeInTheDocument()
     expect(within(page).getByText('No runs with that status')).toBeInTheDocument()
+  })
+
+  it('tells a failed read apart from a workflow that has never run', async () => {
+    seedFinishedRun()
+    server.use(
+      http.get('/api/workflow/runs', () =>
+        HttpResponse.json({ error: 'boom' }, { status: 500 }),
+      ),
+    )
+
+    renderApp()
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText("Couldn't load runs")).toBeInTheDocument()
+    expect(within(page).queryByText('No runs yet')).not.toBeInTheDocument()
+    expect(within(page).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
   it('says so when the workflow has never run', async () => {

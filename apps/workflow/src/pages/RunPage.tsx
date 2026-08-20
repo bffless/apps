@@ -21,6 +21,7 @@ import { useParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { AnnotationList } from '../components/AnnotationList'
 import { EmptyState } from '../components/EmptyState'
+import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
 import { RunHeader } from '../components/run/RunHeader'
 import { RunOutputs } from '../components/run/RunOutputs'
@@ -106,7 +107,7 @@ export function RunPage() {
   // starts a timer, and the one render where the status is still unknown polls
   // no faster than not at all.
   const known = workflowApi.endpoints.getRun.useQueryState(arg)
-  const { data, isLoading, isFetching } = useGetRunQuery(arg, {
+  const { data, isLoading, isFetching, isError, error, refetch } = useGetRunQuery(arg, {
     pollingInterval: known.data?.run?.status === 'running' ? POLL_MS : 0,
   })
 
@@ -126,7 +127,13 @@ export function RunPage() {
 
   const annotations = useMemo(() => (state ? collectAnnotations(state) : []), [state])
 
-  if (isLoading || (isFetching && !data)) return <p className="note">Loading…</p>
+  if (isLoading || (isFetching && !data && !isError)) return <p className="note">Loading…</p>
+
+  // A read that failed says nothing about whether the run exists — reporting it
+  // as "no such run" would invent a fact the server never gave us.
+  if (isError && !data) {
+    return <LoadError title="Couldn't load this run" error={error} onRetry={() => void refetch()} />
+  }
 
   if (!run) {
     return (
