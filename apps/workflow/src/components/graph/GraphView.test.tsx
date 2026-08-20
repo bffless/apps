@@ -62,6 +62,22 @@ describe('GraphView (definition mode)', () => {
     expect(within(say).getByText('string')).toBeInTheDocument()
   })
 
+  it('shows the outputs each kind exposes, not only a declared `outputs` map (03)', () => {
+    const { container } = render(<GraphView def={hello} mode="definition" />)
+
+    // A form's outputs *are* its fields, and it declares no `outputs` map.
+    const review = chip(container, 'confirm/0/review')
+    expect(within(review).getByText('approved')).toBeInTheDocument()
+    expect(within(review).getByText('boolean')).toBeInTheDocument()
+    expect(within(review).getByText('report')).toBeInTheDocument()
+    expect(within(review).getByText('markdown')).toBeInTheDocument()
+
+    // A pipeline step with no outputs map still exposes `response` (json).
+    const boom = chip(container, 'flaky/0/boom')
+    expect(within(boom).getByText('response')).toBeInTheDocument()
+    expect(within(boom).getByText('json')).toBeInTheDocument()
+  })
+
   it('notes a matrix job and a step that can run headless', () => {
     const { container } = render(<GraphView def={hello} mode="definition" />)
 
@@ -102,6 +118,27 @@ describe('GraphView (run mode)', () => {
     fireEvent.change(screen.getByLabelText('Matrix item of greet'), { target: { value: '1' } })
     expect(chip(container, 'greet/0/say')).toBeNull()
     expect(chip(container, 'greet/1/say')).toBeTruthy()
+  })
+
+  it('shows the matrix item its owner has selected, and reports a change on the same channel', () => {
+    const onSelect = vi.fn()
+    const { container } = render(
+      <GraphView
+        def={hello}
+        mode="run"
+        state={state}
+        selectedKey="greet/1/say"
+        onSelect={onSelect}
+      />,
+    )
+
+    // The card follows the selection rather than private state: item 1 is shown.
+    expect(chip(container, 'greet/1/say')).toHaveAttribute('aria-pressed', 'true')
+    expect(chip(container, 'greet/0/say')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Matrix item of greet'), { target: { value: '0' } })
+
+    expect(onSelect).toHaveBeenCalledWith('greet/0/say')
   })
 
   it('reports the clicked step to its owner instead of opening the declaration', () => {

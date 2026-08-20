@@ -8,6 +8,7 @@
  * which try this is). Both are the same chip so a driver written against one
  * screen keeps working on the other.
  */
+import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { StatusPill } from '../StatusPill'
 import type { Step, StepKey, StepKind, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
@@ -20,13 +21,30 @@ const KIND_ICON: Record<StepKind, string> = {
   script: '⌘',
 }
 
-/** `line: { type: string }` → `line · string`; a bare expression is untyped json (02). */
+/**
+ * What a step promises, per kind (03) — and the linter owns that answer, so the
+ * chip asks `stepOutputNames` rather than reading `outputs` and calling a form
+ * or a bare pipeline step outputless: a form's outputs *are* its `with.fields`,
+ * and a pipeline step with no `outputs` map still exposes `response`.
+ *
+ * Types follow the same three conventions: the declaration's `type`, a form
+ * field's `type`, otherwise untyped json (02).
+ */
 function declaredOutputs(step: Step): Array<[string, string]> {
-  const raw: unknown = step.raw?.outputs
-  if (raw === null || typeof raw !== 'object') return []
-  return Object.entries(raw as Record<string, unknown>).map(([name, decl]) => {
-    const type = (decl as { type?: unknown } | null)?.type
-    return [name, typeof type === 'string' ? type : 'json']
+  const names = stepOutputNames(step)
+  if (!names) return []
+
+  const declared = (step.raw?.outputs ?? null) as Record<string, { type?: unknown }> | null
+  const fields =
+    step.uses === 'form'
+      ? ((step.raw?.with?.fields ?? null) as Record<string, { type?: unknown }> | null)
+      : null
+
+  return names.map((name) => {
+    const declaredType = declared?.[name]?.type
+    if (typeof declaredType === 'string') return [name, declaredType]
+    const fieldType = fields?.[name]?.type
+    return [name, typeof fieldType === 'string' ? fieldType : 'json']
   })
 }
 

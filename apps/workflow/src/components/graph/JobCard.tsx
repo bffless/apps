@@ -6,6 +6,13 @@
  * ("2 of 2") and an item selector that swaps which expansion index the chips
  * below show. That keeps the layout a function of the *definition* — the graph
  * never grows or reflows as a run fans out.
+ *
+ * Which item is showing is *derived from `selectedKey`* whenever the selection
+ * belongs to this job, and changing the selector reports the new key through
+ * `onPick`. So there is exactly one place the card and the run page's pane can
+ * disagree about — the key — and a run page that restores a selection or
+ * deep-links to `greet/1/say` gets a card showing item 1, with that very chip
+ * on it. The local index is only the fallback for a job nothing has selected.
  */
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -27,6 +34,14 @@ function matrixNote(job: Job): string | null {
   if (vars.length === 0) return null
   const parallel = strategy?.['max-parallel']
   return `For each ${vars.join(', ')}${parallel ? ` · max ${parallel} at once` : ''}`
+}
+
+/** `greet/1/say` → its parts; step ids cannot contain `/`, so the split is exact. */
+function parseKey(key: StepKey): { job: string; index: number; stepId: string } | null {
+  const [job, index, ...rest] = key.split('/')
+  if (job === undefined || index === undefined || rest.length === 0) return null
+  const parsed = Number(index)
+  return Number.isInteger(parsed) ? { job, index: parsed, stepId: rest.join('/') } : null
 }
 
 /** `who: world` — how one matrix item names itself in the selector. */
@@ -53,8 +68,20 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style
   const expansion = state?.expansions[job.id]
   const items = expansion?.items ?? [{}]
   const total = expansion?.total ?? items.length
-  // A run can shrink the expansion under a selection (resume with fewer items).
-  const index = picked < total ? picked : 0
+
+  const selection = selectedKey ? parseKey(selectedKey) : null
+  const selectedHere = selection?.job === job.id ? selection : null
+  // The selection wins; the local index is the fallback for an unselected job.
+  // Either can outrun the expansion (a resume with fewer items), hence the clamp.
+  const preferred = selectedHere ? selectedHere.index : picked
+  const index = preferred < total ? preferred : 0
+
+  /** Switching item is a *selection* change, reported on the one channel. */
+  const pickItem = (next: number) => {
+    setPicked(next)
+    const step = job.steps.find((candidate) => candidate.id === selectedHere?.stepId) ?? job.steps[0]
+    if (step) onPick(stepKey(job.id, next, step.id), step)
+  }
 
   const done = Array.from({ length: total }).filter((_, i) =>
     job.steps.every((step) => TERMINAL.has(state?.steps[stepKey(job.id, i, step.id)]?.status ?? 'queued')),
@@ -88,7 +115,7 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style
           className="job-items"
           aria-label={`Matrix item of ${job.id}`}
           value={index}
-          onChange={(event) => setPicked(Number(event.target.value))}
+          onChange={(event) => pickItem(Number(event.target.value))}
         >
           {items.map((item, i) => (
             <option key={i} value={i}>
