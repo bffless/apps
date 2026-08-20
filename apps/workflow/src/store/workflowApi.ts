@@ -69,10 +69,17 @@ function publishedPath(impl: string, file: string): string {
 }
 
 /**
- * One alias probed for an `index.json`. 404 means "an ordinary deploy, not an
- * implementation" (ADR-0004) and drops the alias; anything reachable but
- * unusable stays on the list carrying its error, because a broken publish the
- * user cannot see is worse than one they can (08).
+ * One alias probed for an `index.json`.
+ *
+ * "Not an implementation" (ADR-0004) is not only a 404: a BFFless SPA answers
+ * *any* unknown path with its `index.html`, 200 and all, and that is the common
+ * shape of an ordinary alias in these projects. So the answer only counts as a
+ * publish when the server says it is JSON — otherwise the alias is dropped
+ * exactly like a 404, rather than being listed as somebody's broken workflow.
+ *
+ * Anything that *is* a publish but cannot be used — JSON that will not parse, a
+ * future `spec`, no `workflows` — stays on the list carrying its error, because
+ * a broken publish the user cannot see is worse than one they can (08).
  */
 async function probe(alias: string, preview: boolean): Promise<Implementation | null> {
   const unusable = (error: string): Implementation => ({
@@ -92,6 +99,7 @@ async function probe(alias: string, preview: boolean): Promise<Implementation | 
 
   if (res.status === 404) return null
   if (!res.ok) return unusable(`index.json answered ${res.status}`)
+  if (!(res.headers.get('content-type') ?? '').includes('json')) return null
 
   try {
     return toImplementation(alias, preview, await res.json())

@@ -44,7 +44,8 @@ describe('discover', () => {
           { name: 'broken', isAutoPreview: true },
         ]),
       ),
-      http.get('/w/broken/.bffless/workflows/index.json', () => HttpResponse.text('<html>nope</html>')),
+      // JSON, so it *is* a publish — just not one this harness can read.
+      http.get('/w/broken/.bffless/workflows/index.json', () => HttpResponse.json('nope')),
     )
 
     const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
@@ -54,6 +55,51 @@ describe('discover', () => {
     expect(broken.error).toBeTruthy()
     expect(broken.preview).toBe(true)
     expect(broken.workflows).toEqual([])
+  })
+
+  it('drops an ordinary SPA deploy that answers its index.html (ADR-0004)', async () => {
+    server.use(
+      http.get('/api/aliases', () =>
+        HttpResponse.json([
+          { name: 'hello', isAutoPreview: false },
+          { name: 'spa', isAutoPreview: false },
+        ]),
+      ),
+      // What a BFFless SPA serves for any unknown path: 200, but HTML.
+      http.get('/w/spa/.bffless/workflows/index.json', () =>
+        HttpResponse.html('<!doctype html><html><body>app</body></html>'),
+      ),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(res.data?.map((i) => i.alias)).toEqual(['hello'])
+  })
+
+  it('keeps a JSON index it cannot use', async () => {
+    server.use(
+      http.get('/api/aliases', () => HttpResponse.json([{ name: 'future', isAutoPreview: false }])),
+      http.get('/w/future/.bffless/workflows/index.json', () => HttpResponse.json({ spec: 2 })),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(res.data).toHaveLength(1)
+    expect(res.data?.[0]).toMatchObject({ alias: 'future', workflows: [] })
+    expect(res.data?.[0].error).toContain('spec')
+  })
+
+  it('keeps an alias whose JSON index does not parse', async () => {
+    server.use(
+      http.get('/api/aliases', () => HttpResponse.json([{ name: 'torn', isAutoPreview: false }])),
+      http.get('/w/torn/.bffless/workflows/index.json', () =>
+        HttpResponse.text('{"spec": 1, "workflows": [', { headers: { 'content-type': 'application/json' } }),
+      ),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(res.data?.[0].error).toBe('index.json is not valid JSON')
   })
 
   it('surfaces the aliases request failing as a query error', async () => {
