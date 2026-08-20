@@ -1,0 +1,448 @@
+import { describe, expect, it } from 'vitest'
+import { toDefinition } from '@bffless/workflow-lint/definition'
+import { initialRunState, runReducer } from './reducer'
+import { nextActions, type NextAction } from './next'
+import type { Annotation, Definition, RunEvent, RunState, StepKey } from './types'
+import { stepKey } from './types'
+import { eventToWrites, type PersistWrite, type RunRow, type StepRow } from './rows'
+import { replayRun, rowsToEvents } from './replay'
+
+// ---------------------------------------------------------------------------
+// Fixture — three jobs: a seed, a matrix fan-out (with a skipped step), a tail.
+// ---------------------------------------------------------------------------
+
+const pipe = (id: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  uses: 'pipeline',
+  with: { path: 'echo' },
+  ...extra,
+})
+
+const def: Definition = toDefinition({
+  name: 'Replay',
+  jobs: {
+    seed: {
+      steps: [pipe('make')],
+      outputs: { names: '${{ steps.make.outputs.names }}' },
+    },
+    fan: {
+      needs: 'seed',
+      strategy: { matrix: { who: '${{ needs.seed.outputs.names }}' } },
+      steps: [pipe('work'), pipe('never', { if: '${{ false }}' })],
+      outputs: { line: '${{ steps.work.outputs.line }}' },
+    },
+    tail: { needs: 'fan', steps: [pipe('done')] },
+  },
+})
+
+const RUN_ID = 'run_REPLAY'
+const YAML = '# the workflow file\n'
+
+// ---------------------------------------------------------------------------
+// A tiny in-memory {runs, steps} store driven purely by `eventToWrites`.
+// ---------------------------------------------------------------------------
+
+interface Store {
+  runs: Record<string, RunRow>
+  steps: Record<string, StepRow>
+}
+
+const newStore = (): Store => ({ runs: {}, steps: {} })
+
+function applyWrite(store: Store, write: PersistWrite): void {
+  if (write.table === 'runs') {
+    if (write.op === 'create') {
+      store.runs[write.row.runId] = { ...write.row }
+      return
+    }
+    const existing = store.runs[write.id]
+    if (!existing) throw new Error(`patch of unknown run ${write.id}`)
+    store.runs[write.id] = { ...existing, ...write.patch }
+    return
+  }
+  const id = `${write.runId}::${write.key}`
+  const existing = store.steps[id]
+  store.steps[id] = {
+    ...(existing ?? {}),
+    ...write.patch,
+    runId: write.runId,
+    key: write.key,
+  } as StepRow
+}
+
+let clock = 10_000
+const now = () => (clock += 1)
+
+function makeRunRow(state: RunState): RunRow {
+  return {
+    runId: state.runId,
+    impl: state.impl,
+    workflow: state.workflow,
+    workflowName: def.name,
+    workflowVersion: 'dep_123@abc1234',
+    definition: def.raw,
+    yaml: YAML,
+    inputs: state.inputs,
+    status: state.status,
+    headless: state.headless,
+    startedBy: 'user_bob',
+    startedAt: state.startedAt,
+    leaseOwner: 'tab_1',
+    leaseUntil: state.startedAt + 60_000,
+  }
+}
+
+/** Fold one event through the real reducer, then persist it through the real write path. */
+function dispatch(store: Store, state: RunState, event: RunEvent): RunState {
+  const next = runReducer(state, event)
+  for (const write of eventToWrites(event, { state: next, runRow: () => makeRunRow(next) })) {
+    applyWrite(store, write)
+  }
+  return next
+}
+
+function startRun(store: Store): RunState {
+  const seed = initialRunState({
+    runId: RUN_ID,
+    impl: 'demo',
+    workflow: 'replay',
+    inputs: { note: 'hi' },
+    headless: false,
+    startedAt: now(),
+  })
+  return dispatch(store, seed, {
+    type: 'run.started',
+    runId: RUN_ID,
+    impl: 'demo',
+    workflow: 'replay',
+    inputs: { note: 'hi' },
+    headless: false,
+    at: seed.startedAt,
+  })
+}
+
+const storedSteps = (store: Store): StepRow[] => Object.values(store.steps)
+
+// ---------------------------------------------------------------------------
+// A scheduler-driven run: every started step is taken to a terminal state.
+// ---------------------------------------------------------------------------
+
+interface Outcome {
+  retry?: boolean
+  fail?: boolean
+  outputs?: Record<string, unknown>
+  summary?: string
+}
+type Plan = Record<StepKey, Outcome>
+
+function kindOf(job: string, stepId: string) {
+  const found = def.jobs[job]?.steps.find((s) => s.id === stepId)
+  if (!found) throw new Error(`no step ${job}/${stepId}`)
+  return found.uses
+}
+
+function runStep(
+  store: Store,
+  state: RunState,
+  job: string,
+  index: number,
+  stepId: string,
+  plan: Plan,
+): RunState {
+  const key = stepKey(job, index, stepId)
+  const outcome = plan[key] ?? {}
+  const inputs = { path: 'echo', who: index }
+
+  state = dispatch(store, state, {
+    type: 'step.queued',
+    key,
+    job,
+    index,
+    stepId,
+    kind: kindOf(job, stepId),
+    at: now(),
+  })
+  state = dispatch(store, state, { type: 'step.started', key, inputs, at: now() })
+
+  if (outcome.retry) {
+    state = dispatch(store, state, {
+      type: 'step.retrying',
+      key,
+      error: { code: 'FLAKY', message: 'transient', status: 502 },
+      at: now(),
+    })
+    state = dispatch(store, state, { type: 'step.started', key, inputs, at: now() })
+  }
+
+  if (outcome.fail) {
+    return dispatch(store, state, {
+      type: 'step.failed',
+      key,
+      error: { code: 'BOOM', message: 'on purpose' },
+      at: now(),
+    })
+  }
+
+  return dispatch(store, state, {
+    type: 'step.succeeded',
+    key,
+    outputs: outcome.outputs ?? {},
+    response: { initial: { ok: true }, last: { ok: true } },
+    summary: outcome.summary,
+    at: now(),
+  })
+}
+
+function applyAction(store: Store, state: RunState, action: NextAction, plan: Plan): RunState {
+  switch (action.kind) {
+    case 'expand':
+      return dispatch(store, state, {
+        type: 'job.expanded',
+        job: action.job,
+        total: action.total,
+        items: action.items,
+      })
+    case 'skip':
+      for (const s of action.steps) {
+        state = dispatch(store, state, {
+          type: 'step.skipped',
+          key: s.key,
+          job: s.job,
+          index: s.index,
+          stepId: s.stepId,
+          kind: s.stepKind,
+          at: now(),
+        })
+      }
+      return state
+    case 'start':
+      return runStep(store, state, action.job, action.index, action.stepId, plan)
+    case 'finish':
+      return dispatch(store, state, {
+        type: 'run.finished',
+        status: action.status,
+        outputs: { greeting: 'done' },
+        at: now(),
+      })
+  }
+}
+
+function drive(store: Store, state: RunState, plan: Plan): RunState {
+  for (let guard = 0; guard < 200; guard++) {
+    const actions = nextActions(def, state)
+    if (actions.length === 0) return state
+    for (const action of actions) state = applyAction(store, state, action, plan)
+  }
+  throw new Error('scheduler did not settle')
+}
+
+// ---------------------------------------------------------------------------
+// 1. Round-trip: live run → rows → replay
+// ---------------------------------------------------------------------------
+
+describe('replayRun — round-trip against a live run', () => {
+  const annotation: Annotation = { level: 'notice', message: 'kicked off by hand' }
+
+  const plan: Plan = {
+    'seed/0/make': { outputs: { names: ['ada', 'grace'] } },
+    'fan/0/work': { retry: true, outputs: { line: 'hi ada' }, summary: 'greeted ada' },
+    'fan/1/work': { outputs: { line: 'hi grace' }, summary: 'greeted grace' },
+    'tail/0/done': { outputs: { count: 2 } },
+  }
+
+  function live() {
+    const store = newStore()
+    let state = startRun(store)
+    state = dispatch(store, state, { type: 'run.annotation', annotation, at: now() })
+    state = drive(store, state, plan)
+    return { store, state }
+  }
+
+  it('drives a matrix + retry + skip run to completion', () => {
+    const { state } = live()
+    expect(state.status).toBe('succeeded')
+    expect(state.expansions.fan.total).toBe(2)
+    expect(state.steps['fan/0/work'].attempt).toBe(2)
+    expect(state.steps['fan/0/never'].status).toBe('skipped')
+    expect(state.steps['fan/1/never'].status).toBe('skipped')
+  })
+
+  it('replays every step to the same status/attempt/outputs/error/summary', () => {
+    const { store, state } = live()
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+
+    expect(Object.keys(replayed.steps).sort()).toEqual(Object.keys(state.steps).sort())
+    for (const key of Object.keys(state.steps)) {
+      const a = state.steps[key]
+      const b = replayed.steps[key]
+      expect({
+        key,
+        status: b.status,
+        attempt: b.attempt,
+        outputs: b.outputs,
+        error: b.error,
+        summary: b.summary,
+      }).toEqual({
+        key,
+        status: a.status,
+        attempt: a.attempt,
+        outputs: a.outputs,
+        error: a.error,
+        summary: a.summary,
+      })
+    }
+  })
+
+  it('replays the expansions, the run status, outputs and annotations', () => {
+    const { store, state } = live()
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+
+    expect(replayed.expansions).toEqual(state.expansions)
+    expect(replayed.status).toBe(state.status)
+    expect(replayed.outputs).toEqual(state.outputs)
+    expect(replayed.annotations).toEqual([annotation])
+    expect(replayed.inputs).toEqual(state.inputs)
+  })
+
+  it('seeds startedBy from the run row (the run.started event does not carry it)', () => {
+    const { store } = live()
+    expect(replayRun(store.runs[RUN_ID], storedSteps(store), def).startedBy).toBe('user_bob')
+  })
+
+  it('schedules nothing more for a replayed finished run', () => {
+    const { store } = live()
+    expect(nextActions(def, replayRun(store.runs[RUN_ID], storedSteps(store), def))).toEqual([])
+  })
+
+  it('emits exactly one creation event per step row', () => {
+    const { store } = live()
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), def)
+    const created = events.flatMap((e) =>
+      e.type === 'step.queued' || e.type === 'step.skipped' ? [e.key] : [],
+    )
+    expect(created.length).toBe(new Set(created).size)
+    expect(created.sort()).toEqual(storedSteps(store).map((r) => r.key).sort())
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2. In-flight replay (rows up to a polling step)
+// ---------------------------------------------------------------------------
+
+describe('replayRun — an in-flight run', () => {
+  const initial = { job: 'job_42', state: 'pending' }
+
+  function inFlight() {
+    const store = newStore()
+    let state = startRun(store)
+
+    state = dispatch(store, state, { type: 'job.expanded', job: 'seed', total: 1, items: [{}] })
+    state = runStep(store, state, 'seed', 0, 'make', {
+      'seed/0/make': { outputs: { names: ['ada', 'grace'] } },
+    })
+
+    state = dispatch(store, state, {
+      type: 'job.expanded',
+      job: 'fan',
+      total: 2,
+      items: [{ who: 'ada' }, { who: 'grace' }],
+    })
+    const key = stepKey('fan', 0, 'work')
+    state = dispatch(store, state, {
+      type: 'step.queued',
+      key,
+      job: 'fan',
+      index: 0,
+      stepId: 'work',
+      kind: 'pipeline',
+      at: now(),
+    })
+    state = dispatch(store, state, {
+      type: 'step.started',
+      key,
+      inputs: { path: 'echo' },
+      at: now(),
+    })
+    state = dispatch(store, state, { type: 'step.polling', key, initial, at: now() })
+    return { store, state }
+  }
+
+  it('restores the polling step with its recorded initial response', () => {
+    const { store } = inFlight()
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+
+    expect(replayed.status).toBe('running')
+    expect(replayed.steps['seed/0/make'].status).toBe('succeeded')
+    expect(replayed.steps['seed/0/make'].outputs).toEqual({ names: ['ada', 'grace'] })
+    expect(replayed.steps['fan/0/work'].status).toBe('polling')
+    expect(replayed.steps['fan/0/work'].response?.initial).toEqual(initial)
+    expect(replayed.expansions.fan).toEqual({
+      total: 2,
+      items: [{ who: 'ada' }, { who: 'grace' }],
+    })
+  })
+
+  it('proposes nothing new for the terminal or in-flight steps', () => {
+    const { store } = inFlight()
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    const actions = nextActions(def, replayed)
+
+    // Only the untouched second matrix item is scheduled.
+    expect(actions).toEqual([
+      { kind: 'start', key: 'fan/1/work', job: 'fan', index: 1, stepId: 'work' },
+    ])
+
+    const proposed = actions.flatMap((a) =>
+      a.kind === 'start' ? [a.key] : a.kind === 'skip' ? a.steps.map((s) => s.key) : [],
+    )
+    for (const key of proposed) expect(replayed.steps[key]).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3. Derived events are never persisted
+// ---------------------------------------------------------------------------
+
+describe('eventToWrites', () => {
+  const state = initialRunState({
+    runId: RUN_ID,
+    impl: 'demo',
+    workflow: 'replay',
+    inputs: {},
+    headless: false,
+    startedAt: 1,
+  })
+
+  it('returns no writes for job.expanded (job state is derived, 05)', () => {
+    expect(
+      eventToWrites({ type: 'job.expanded', job: 'fan', total: 2, items: [{}, {}] }, { state }),
+    ).toEqual([])
+  })
+
+  it('clears the lease when the run finishes', () => {
+    const finished = runReducer(state, {
+      type: 'run.finished',
+      status: 'succeeded',
+      outputs: { a: 1 },
+      at: 9,
+    })
+    expect(
+      eventToWrites({ type: 'run.finished', status: 'succeeded', outputs: { a: 1 }, at: 9 }, {
+        state: finished,
+      }),
+    ).toEqual([
+      {
+        table: 'runs',
+        op: 'patch',
+        id: RUN_ID,
+        patch: {
+          status: 'succeeded',
+          outputs: { a: 1 },
+          finishedAt: 9,
+          leaseOwner: null,
+          leaseUntil: null,
+        },
+      },
+    ])
+  })
+})
