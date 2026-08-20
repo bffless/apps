@@ -26,6 +26,8 @@ export interface StepState {
 export interface RunState {
   runId: string; impl: string; workflow: string
   status: RunStatus; headless: boolean
+  /** Session user that pressed Start; surfaced as `run.started_by` (01). */
+  startedBy?: string
   inputs: Record<string, unknown>
   steps: Record<StepKey, StepState>
   /** matrix expansion per job: total items + the per-index variable bindings (derived, Decision 12) */
