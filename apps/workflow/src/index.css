@@ -1,4 +1,5 @@
-/* Small reset + theme tokens. Plain CSS — no Tailwind (M1 harness UI lands in Task 11). */
+/* Small reset, theme tokens and the harness layout. Plain CSS — no Tailwind.
+   Information architecture only; the visual pass is a separate `/impeccable` run (08). */
 
 :root {
   color-scheme: light;
@@ -37,4 +38,231 @@ body {
   background-color: var(--color-surface-dim);
   color: var(--color-ink);
   font-family: var(--font-sans);
+}
+
+/* --------------------------------------------------------------------------
+   Shell: header + rail + page
+   -------------------------------------------------------------------------- */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.shell-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.brand {
+  color: var(--color-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
+.crumbs > * + *::before {
+  content: '/';
+  margin-right: 0.4rem;
+  color: var(--color-line);
+}
+
+.shell-body {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+}
+
+.rail {
+  flex: 0 0 15rem;
+  padding: 1rem;
+  border-right: 1px solid var(--color-line);
+}
+
+.rail-note {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
+.rail-tree,
+.rail-workflows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-workflows {
+  padding-left: 0.75rem;
+}
+
+.rail-impl,
+.rail-workflow {
+  display: block;
+  padding: 0.25rem 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.rail-impl {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.rail-impl.is-error {
+  color: var(--color-ink-mute);
+}
+
+.rail-impl.active,
+.rail-workflow.active {
+  color: var(--color-accent);
+}
+
+.content {
+  flex: 1;
+  padding: 1.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   Pages: cards, rows, badges, empty states
+   -------------------------------------------------------------------------- */
+
+.page-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.page-actions {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.note {
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 44rem;
+}
+
+.card,
+.row {
+  padding: 0.875rem 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.card-head,
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-title,
+.row-title {
+  color: var(--color-ink);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.card-name,
+.card-desc,
+.row-desc {
+  margin: 0.25rem 0 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 44rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.8125rem;
+  list-style: none;
+}
+
+.badge {
+  padding: 0.05rem 0.4rem;
+  color: var(--color-ink-soft);
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+}
+
+.pill {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.pill[data-state='succeeded'] {
+  color: #166534;
+  border-color: #bbf7d0;
+  background-color: #f0fdf4;
+}
+
+.pill[data-state='failed'] {
+  color: #991b1b;
+  border-color: #fecaca;
+  background-color: #fef2f2;
+}
+
+.pill[data-state='running'],
+.pill[data-state='polling'],
+.pill[data-state='waiting'] {
+  color: #1e40af;
+  border-color: #bfdbfe;
+  background-color: #eff6ff;
+}
+
+.empty {
+  max-width: 32rem;
+  padding: 0.75rem 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+}
+
+.empty-title {
+  margin: 0 0 0.25rem;
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.empty-detail {
+  font-family: var(--font-mono);
 }
