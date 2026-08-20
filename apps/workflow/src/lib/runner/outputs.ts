@@ -87,6 +87,20 @@ async function materializeFile(v: unknown, registerFile: RegisterFile): Promise<
   return v // already File-ref shaped (or malformed — validateValue below catches it)
 }
 
+/**
+ * `table`-typed values only: the documented pattern (02, and studio.workflow.yaml's
+ * `scenes` output) declares `columns` on the decl and lets `value` evaluate to a
+ * bare rows array — assemble the canonical `{ columns, rows }` shape from the two
+ * before validation. A value that already arrives `{ columns, rows }` shaped (or
+ * isn't a bare array at all) passes through untouched.
+ */
+function assembleTable(decl: Record<string, unknown>, raw: unknown): unknown {
+  if (!Array.isArray(raw)) return raw
+  const columns = decl.columns
+  if (!Array.isArray(columns)) return raw
+  return { columns, rows: raw }
+}
+
 /** `file`-typed values only: register a bare path string into a File ref. */
 async function materialize(
   type: string | undefined,
@@ -112,7 +126,8 @@ async function coerceOne(
 
   // Omitted `value` → null (03: a step outputs map with no value for a name).
   const raw = decl.value === undefined ? null : evalDeep(decl.value, contexts)
-  const value = await materialize(decl.type, decl.list, raw, registerFile)
+  const shaped = decl.type === 'table' ? assembleTable(decl, raw) : raw
+  const value = await materialize(decl.type, decl.list, shaped, registerFile)
 
   if (decl.type && !validateValue(decl.type, decl.list, value)) {
     throw new OutputTypeError(name, decl.list ? `${decl.type}[]` : decl.type, value)

@@ -103,6 +103,42 @@ describe('coerceOutputs — omitted decls', () => {
   })
 })
 
+describe('coerceOutputs — table (decl columns + evaluated rows array)', () => {
+  // studio.workflow.yaml's `scenes` output: value evaluates to a bare rows
+  // array; `columns` lives on the decl, not the evaluated value (02).
+  const decls = {
+    scenes: {
+      type: 'table',
+      value: '${{ response.result.scenes }}',
+      columns: [{ key: 'title' }, { key: 'start', type: 'number' }],
+    },
+  }
+
+  it('assembles { columns, rows } from the decl columns + a bare rows array', async () => {
+    const { registerFile } = fakeRegisterFile()
+    const rows = [{ title: 'Intro', start: 0 }, { title: 'Body', start: 12 }]
+    const out = await coerceOutputs(decls, { response: { result: { scenes: rows } } }, registerFile)
+    expect(out.scenes).toEqual({
+      columns: [{ key: 'title' }, { key: 'start', type: 'number' }],
+      rows,
+    })
+  })
+
+  it('passes an already { columns, rows }-shaped value through unchanged', async () => {
+    const { registerFile } = fakeRegisterFile()
+    const shaped = { columns: [{ key: 'x' }], rows: [{ x: 1 }] }
+    const out = await coerceOutputs(decls, { response: { result: { scenes: shaped } } }, registerFile)
+    expect(out.scenes).toEqual(shaped)
+  })
+
+  it('throws OutputTypeError when a table decl with columns receives a non-array', async () => {
+    const { registerFile } = fakeRegisterFile()
+    await expect(
+      coerceOutputs(decls, { response: { result: { scenes: 'not a table' } } }, registerFile),
+    ).rejects.toThrow(OutputTypeError)
+  })
+})
+
 describe('validateValue — the closed vocabulary (02)', () => {
   it('validates each scalar type', () => {
     expect(validateValue('string', undefined, 'hi')).toBe(true)
