@@ -4,6 +4,7 @@ import { initialRunState, runReducer } from './reducer'
 import { nextActions, type NextAction } from './next'
 import type { Annotation, Definition, RunEvent, RunState, StepKey } from './types'
 import { stepKey } from './types'
+import { completeFormStep } from './adapters/form'
 import { eventToWrites, type PersistWrite, type RunRow, type StepRow } from './rows'
 import { replayRun, rowsToEvents } from './replay'
 
@@ -73,14 +74,14 @@ function applyWrite(store: Store, write: PersistWrite): void {
 let clock = 10_000
 const now = () => (clock += 1)
 
-function makeRunRow(state: RunState): RunRow {
+function makeRunRow(state: RunState, d: Definition): RunRow {
   return {
     runId: state.runId,
     impl: state.impl,
     workflow: state.workflow,
-    workflowName: def.name,
+    workflowName: d.name,
     workflowVersion: 'dep_123@abc1234',
-    definition: def.raw,
+    definition: d.raw,
     yaml: YAML,
     inputs: state.inputs,
     status: state.status,
@@ -93,15 +94,15 @@ function makeRunRow(state: RunState): RunRow {
 }
 
 /** Fold one event through the real reducer, then persist it through the real write path. */
-function dispatch(store: Store, state: RunState, event: RunEvent): RunState {
+function dispatch(store: Store, state: RunState, event: RunEvent, d: Definition = def): RunState {
   const next = runReducer(state, event)
-  for (const write of eventToWrites(event, { state: next, runRow: () => makeRunRow(next) })) {
+  for (const write of eventToWrites(event, { state: next, runRow: () => makeRunRow(next, d) })) {
     applyWrite(store, write)
   }
   return next
 }
 
-function startRun(store: Store): RunState {
+function startRun(store: Store, d: Definition = def): RunState {
   const seed = initialRunState({
     runId: RUN_ID,
     impl: 'demo',
@@ -110,15 +111,20 @@ function startRun(store: Store): RunState {
     headless: false,
     startedAt: now(),
   })
-  return dispatch(store, seed, {
-    type: 'run.started',
-    runId: RUN_ID,
-    impl: 'demo',
-    workflow: 'replay',
-    inputs: { note: 'hi' },
-    headless: false,
-    at: seed.startedAt,
-  })
+  return dispatch(
+    store,
+    seed,
+    {
+      type: 'run.started',
+      runId: RUN_ID,
+      impl: 'demo',
+      workflow: 'replay',
+      inputs: { note: 'hi' },
+      headless: false,
+      at: seed.startedAt,
+    },
+    d,
+  )
 }
 
 const storedSteps = (store: Store): StepRow[] => Object.values(store.steps)
@@ -404,7 +410,149 @@ describe('replayRun — an in-flight run', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 3. Derived events are never persisted
+// 3. The form path — the one step kind that never passes through `running`
+// ---------------------------------------------------------------------------
+
+/** hello's `confirm`/`review` in miniature: one job, one `form` step. */
+const formDef: Definition = toDefinition({
+  name: 'FormReplay',
+  jobs: {
+    confirm: {
+      steps: [
+        {
+          id: 'review',
+          uses: 'form',
+          with: {
+            title: 'Does the report look right?',
+            fields: {
+              approved: { type: 'boolean', default: true, required: true },
+              report: { type: 'markdown', default: 'draft' },
+            },
+            submit: 'Finish',
+          },
+          summary: 'approved=${{ steps.review.outputs.approved }}',
+        },
+      ],
+      outputs: { approved: '${{ steps.review.outputs.approved }}' },
+    },
+  },
+})
+
+const REVIEW = stepKey('confirm', 0, 'review')
+
+function reviewStep() {
+  const found = formDef.jobs.confirm?.steps[0]
+  if (!found) throw new Error('no confirm/review step')
+  return found
+}
+
+/** Run the form step as the harness really does: queued → waiting → (submit). */
+function openForm(store: Store): RunState {
+  let state = startRun(store, formDef)
+  state = dispatch(
+    store,
+    state,
+    { type: 'job.expanded', job: 'confirm', total: 1, items: [{}] },
+    formDef,
+  )
+  state = dispatch(
+    store,
+    state,
+    {
+      type: 'step.queued',
+      key: REVIEW,
+      job: 'confirm',
+      index: 0,
+      stepId: 'review',
+      kind: 'form',
+      at: now(),
+    },
+    formDef,
+  )
+  // No `step.started`: a form goes straight from queued to waiting for a human,
+  // so its row never gets a `startedAt`.
+  return dispatch(store, state, { type: 'step.waiting', key: REVIEW, at: now() }, formDef)
+}
+
+function submitForm(store: Store, state: RunState, values: Record<string, unknown>): RunState {
+  const result = completeFormStep({
+    step: reviewStep(),
+    key: REVIEW,
+    job: 'confirm',
+    index: 0,
+    def: formDef,
+    state,
+    values,
+  })
+  if (!result.ok) throw new Error(`form rejected: ${JSON.stringify(result.errors)}`)
+  return dispatch(store, state, result.event, formDef)
+}
+
+describe('replayRun — a form step', () => {
+  it('leaves a finished form row with no startedAt (the shape replay must handle)', () => {
+    const store = newStore()
+    submitForm(store, openForm(store), { approved: true, report: 'looks good' })
+
+    const row = store.steps[`${RUN_ID}::${REVIEW}`]
+    expect(row.status).toBe('succeeded')
+    expect(row.startedAt ?? null).toBeNull()
+  })
+
+  it('replays queued → waiting → succeeded, never queued → succeeded', () => {
+    const store = newStore()
+    submitForm(store, openForm(store), { approved: true, report: 'looks good' })
+
+    const types = rowsToEvents(store.runs[RUN_ID], storedSteps(store), formDef)
+      .filter((e) => 'key' in e && e.key === REVIEW)
+      .map((e) => e.type)
+    // `queued → succeeded` is not in STEP_TRANSITIONS: without the waiting hop
+    // the reducer would throw IllegalTransition on Resume.
+    expect(types).toEqual(['step.queued', 'step.waiting', 'step.succeeded'])
+  })
+
+  it('round-trips a submitted form: status, outputs and summary', () => {
+    const store = newStore()
+    let state = submitForm(store, openForm(store), { approved: true, report: 'looks good' })
+    state = dispatch(
+      store,
+      state,
+      { type: 'run.finished', status: 'succeeded', outputs: { approved: true }, at: now() },
+      formDef,
+    )
+
+    expect(state.steps[REVIEW].summary).toBe('approved=true')
+
+    let replayed!: RunState
+    expect(() => {
+      replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
+    }).not.toThrow()
+
+    expect(replayed.steps[REVIEW].status).toBe('succeeded')
+    expect(replayed.steps[REVIEW].outputs).toEqual({ approved: true, report: 'looks good' })
+    expect(replayed.steps[REVIEW].summary).toBe(state.steps[REVIEW].summary)
+    expect(replayed.status).toBe('succeeded')
+    expect(nextActions(formDef, replayed)).toEqual([])
+  })
+
+  it('replays an in-flight form row (waiting, no startedAt) back to waiting', () => {
+    const store = newStore()
+    openForm(store)
+
+    const row = store.steps[`${RUN_ID}::${REVIEW}`]
+    expect(row.status).toBe('waiting')
+    expect(row.startedAt ?? null).toBeNull()
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
+    expect(replayed.steps[REVIEW].status).toBe('waiting')
+    expect(replayed.steps[REVIEW].startedAt).toBeUndefined()
+    expect(replayed.status).toBe('running')
+    // The form is still open: the scheduler must not re-propose the step.
+    expect(nextActions(formDef, replayed)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 4. Derived events are never persisted
 // ---------------------------------------------------------------------------
 
 describe('eventToWrites', () => {
