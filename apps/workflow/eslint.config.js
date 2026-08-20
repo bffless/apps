@@ -25,7 +25,12 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [
-          { group: ['react', 'react-*', '@reduxjs/*', 'react-redux', 'msw*', '../../store/*', '../../components/*', '../../pages/*', '../../mocks/*'],
+          // The relative groups are repeated one level deeper so the fence also
+          // covers `lib/runner/adapters/*` — a pattern is matched against the
+          // specifier as written, not against the resolved path.
+          { group: ['react', 'react-*', '@reduxjs/*', 'react-redux', 'msw*',
+            '../../store/*', '../../components/*', '../../pages/*', '../../mocks/*',
+            '../../../store/*', '../../../components/*', '../../../pages/*', '../../../mocks/*'],
             message: 'lib/runner is pure (spec 09): no React, Redux, MSW, or app modules.' },
         ],
       }],
