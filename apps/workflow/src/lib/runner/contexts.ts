@@ -24,7 +24,7 @@ import { stepKey } from './types'
 
 type Status = NonNullable<EvalOptions['status']>
 /** Terminal step/job result as read by `steps.<id>.outcome` / `needs.<job>.result`. */
-type Outcome = 'success' | 'failure' | 'skipped' | 'cancelled'
+export type Outcome = 'success' | 'failure' | 'skipped' | 'cancelled'
 
 export interface CtxScope {
   job: string
@@ -112,8 +112,14 @@ function outcomeOf(s: StepState): Outcome | null {
   return OUTCOMES[s.status] ?? null
 }
 
-/** As `outcome`, but `success` when the failure was tolerated by continue-on-error (01). */
-function conclusionOf(def: Definition, s: StepState): Outcome | null {
+/**
+ * As `outcome`, but `success` when the failure was tolerated by continue-on-error (01).
+ *
+ * Exported because the scheduler (`next.ts`) asks the same question — "did this
+ * item really fail?" — and a second reading of `continue-on-error` would be a
+ * second source of truth.
+ */
+export function stepConclusion(def: Definition, s: StepState): Outcome | null {
   const outcome = outcomeOf(s)
   if (outcome === 'failure' && continueOnError(def, s.job, s.stepId)) return 'success'
   return outcome
@@ -130,7 +136,7 @@ function stepEntry(def: Definition, s: StepState): Record<string, unknown> {
   return {
     outputs: s.outputs ?? null,
     outcome: outcomeOf(s),
-    conclusion: conclusionOf(def, s),
+    conclusion: stepConclusion(def, s),
     error: s.error ?? null,
     response: s.response ?? null,
   }
@@ -141,19 +147,24 @@ function stepEntry(def: Definition, s: StepState): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 /**
- * The job result as `needs.<job>.result` / `jobs.<job>.result` see it.
+ * The *terminal* job result as `needs.<job>.result` / `jobs.<job>.result` see it.
  *
- * Deliberately local to the contexts module: Task 7's `graph.jobResult` is the
- * scheduler's richer view (it also reports `pending`/`running`) and it consumes
- * this module, so importing it here would be circular.
+ * The single implementation: `graph.jobResult` is the scheduler's richer view
+ * (it also reports `pending`/`running`) and delegates here once the job is
+ * complete, so a run's schedule and its expressions can never disagree about
+ * whether a job succeeded. The dependency runs graph → contexts (contexts never
+ * imports graph), which keeps the pair acyclic.
+ *
+ * Only meaningful for a job whose steps are all terminal — the scheduler never
+ * asks for a need that is still running (see `graph.isTerminal`).
  */
-function resultOf(def: Definition, state: RunState, job: string): Outcome {
+export function jobOutcome(def: Definition, state: RunState, job: string): Outcome {
   const states = Object.values(state.steps).filter((s) => s.job === job)
   if (states.length === 0) return 'skipped'
   // `failure` outranks `cancelled`: with the default `fail-fast: true` a failing
   // matrix job ends with one failed step *and* cancelled siblings (01), and the
   // run — plus any downstream `if: failure()` — must still see a failure.
-  if (states.some((s) => conclusionOf(def, s) === 'failure')) return 'failure'
+  if (states.some((s) => stepConclusion(def, s) === 'failure')) return 'failure'
   if (states.some((s) => s.status === 'cancelled')) return 'cancelled'
   if (states.every((s) => s.status === 'skipped')) return 'skipped'
   return 'success'
@@ -164,7 +175,7 @@ function itemProduced(def: Definition, state: RunState, job: string, index: numb
   const states = itemSteps(def, state, job, index)
   if (states.length === 0) return false
   if (states.some((s) => s.status === 'cancelled')) return false
-  return !states.some((s) => conclusionOf(def, s) === 'failure')
+  return !states.some((s) => stepConclusion(def, s) === 'failure')
 }
 
 /** Both `OutputDecl` forms: a bare expression string, or `{ type?, value }`. */
@@ -214,7 +225,7 @@ function jobRef(
   job: string,
   stack: Set<string>,
 ): { outputs: Record<string, unknown> | null; result: Outcome } {
-  const result = resultOf(def, state, job)
+  const result = jobOutcome(def, state, job)
   // Outputs of a job that was skipped, failed or cancelled are null (01).
   // `stack` guards against a definition that (illegally) cycles through needs.
   if (result !== 'success' || stack.has(job)) return { outputs: null, result }
@@ -363,14 +374,24 @@ export function buildRunContexts(def: Definition, state: RunState): Record<strin
 // Status functions
 // ---------------------------------------------------------------------------
 
-/** success()/failure()/always()/cancelled() for a job-if or step-if site. */
+/**
+ * success()/failure()/always()/cancelled() for a job-`if` or step-`if` site.
+ *
+ * GitHub scopes the first two to the **site**, and so do we:
+ * - a **job** `if` (no `beforeStep`) asks about `needs` — the default `if` is
+ *   `success()`, which is exactly "every need succeeded";
+ * - a **step** `if` asks about *this job so far* — has an earlier step of this
+ *   matrix item failed untolerated? The needs already decided whether the job
+ *   runs at all, so a job that opted in with `always()`/`failure()` after a
+ *   failed need must still run its own default-`if` steps.
+ */
 export function statusFns(
   def: Definition,
   state: RunState,
   scope: { job: string; index?: number; beforeStep?: string },
 ): Status {
   const needs = def.jobs[scope.job]?.needs ?? []
-  const needResults = () => needs.map((n) => resultOf(def, state, n))
+  const needResults = () => needs.map((n) => jobOutcome(def, state, n))
 
   const earlierFailed = (): boolean => {
     if (!scope.beforeStep) return false
@@ -378,13 +399,15 @@ export function statusFns(
     if (pos < 0) return false
     return itemSteps(def, state, scope.job, scope.index ?? 0).some(
       (s) =>
-        stepPos(def, scope.job, s.stepId) < pos && conclusionOf(def, s) === 'failure',
+        stepPos(def, scope.job, s.stepId) < pos && stepConclusion(def, s) === 'failure',
     )
   }
 
+  const atStep = scope.beforeStep !== undefined
+
   return {
-    success: () => needResults().every((r) => r === 'success') && !earlierFailed(),
-    failure: () => needResults().some((r) => r === 'failure') || earlierFailed(),
+    success: () => (atStep ? !earlierFailed() : needResults().every((r) => r === 'success')),
+    failure: () => (atStep ? earlierFailed() : needResults().some((r) => r === 'failure')),
     always: () => true,
     cancelled: () => state.status === 'cancelled',
   }
