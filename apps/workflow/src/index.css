@@ -133,6 +133,9 @@ body {
 
 .content {
   flex: 1;
+  /* A flex item defaults to min-width:auto, so one wide child (the source view,
+     a long finding) would stretch the page instead of scrolling inside itself. */
+  min-width: 0;
   padding: 1.25rem;
 }
 
@@ -422,4 +425,281 @@ body {
 
 .markdown-view :last-child {
   margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   The graph (08): derived layout — columns from topoLayers, edges drawn over
+   the same arithmetic. Cell sizes are mirrored in GraphView.tsx; change both.
+   -------------------------------------------------------------------------- */
+
+.graph {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin: 0.75rem 0 1rem;
+  overflow-x: auto;
+}
+
+.graph-canvas {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.graph-edge {
+  fill: none;
+  stroke: var(--color-line);
+  stroke-width: 2;
+}
+
+.graph-grid {
+  position: relative;
+  display: grid;
+}
+
+.job-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  overflow: auto;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.job-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.job-name {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.job-fraction,
+.job-note {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.75rem;
+}
+
+.job-items {
+  font-size: 0.75rem;
+}
+
+.job-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.step-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.step-chip[aria-pressed='true'] {
+  border-color: var(--color-accent);
+}
+
+.step-chip[data-state='failed'] {
+  border-color: #fecaca;
+}
+
+.step-chip[data-state='succeeded'] {
+  border-color: #bbf7d0;
+}
+
+.step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.step-kind {
+  color: var(--color-accent);
+}
+
+.step-id {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.step-meta,
+.step-outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  color: var(--color-ink-mute);
+  font-size: 0.75rem;
+}
+
+.step-output {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.out-name {
+  color: var(--color-ink-soft);
+}
+
+.out-type {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+}
+
+.graph-panel {
+  flex: 0 1 24rem;
+  padding: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.graph-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.graph-panel-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.link-button {
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.declaration,
+.source {
+  max-height: 30rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  overflow: auto;
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* --------------------------------------------------------------------------
+   Lint report + the source view (08)
+   -------------------------------------------------------------------------- */
+
+.section-title {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.9375rem;
+}
+
+.lint-counts {
+  gap: 0.75rem;
+}
+
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finding {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.finding-pos {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+}
+
+.finding-rule {
+  font-family: var(--font-mono);
+}
+
+.finding-severity {
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.finding[data-severity='error'] .finding-severity {
+  color: #991b1b;
+}
+
+.finding[data-severity='warning'] .finding-severity {
+  color: #92400e;
+}
+
+.finding[data-severity='notice'] .finding-severity {
+  color: var(--color-ink-mute);
+}
+
+.finding[data-severity='error'] .finding-rule {
+  color: #991b1b;
+}
+
+.finding[data-severity='warning'] .finding-rule {
+  color: #92400e;
+}
+
+.finding[data-severity='notice'] .finding-rule {
+  color: var(--color-ink-mute);
+}
+
+.finding-hint {
+  flex-basis: 100%;
+  color: var(--color-ink-mute);
+}
+
+.source-line {
+  display: block;
+}
+
+.source-no {
+  display: inline-block;
+  width: 3ch;
+  margin-right: 1ch;
+  color: var(--color-ink-mute);
+  text-align: right;
+  user-select: none;
+}
+
+.source-text {
+  white-space: pre;
+}
+
+.recent .rows {
+  margin-top: 0.25rem;
 }

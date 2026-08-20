@@ -5,7 +5,7 @@ import { loadWorkflow } from './definition'
 import { buildJobContexts, evalValue } from './contexts'
 import type { Definition, RunState, StepState } from './types'
 import { stepKey } from './types'
-import { expandMatrix, isTerminal, jobResult, needsEdges, topoLayers } from './graph'
+import { expandMatrix, isTerminal, jobResult, needsEdges, refsIn, topoLayers } from './graph'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -315,5 +315,56 @@ describe('jobResult', () => {
       const ctx = buildJobContexts(hello, state, 'slow')
       expect(evalValue('${{ needs.greet.result }}', ctx)).toBe(jobResult(hello, state, 'greet'))
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// refsIn
+// ---------------------------------------------------------------------------
+
+describe('refsIn', () => {
+  it('collects the upstream values a step reads, in encounter order', () => {
+    expect(refsIn(hello.jobs.slow!.steps[0]!.raw.with)).toEqual([
+      { context: 'needs', name: 'greet', output: 'lines' },
+      { context: 'inputs', name: 'photo' },
+    ])
+  })
+
+  it('reads a step output out of a summary string', () => {
+    expect(refsIn(hello.jobs.greet!.steps[0]!.raw.summary)).toEqual([
+      { context: 'steps', name: 'say', output: 'line' },
+    ])
+  })
+
+  it('ignores roots that are not upstream data (matrix, step, response)', () => {
+    expect(refsIn(hello.jobs.greet!.steps[0]!.raw.with)).toEqual([
+      { context: 'inputs', name: 'greeting' },
+      { context: 'inputs', name: 'shout' },
+    ])
+    expect(refsIn(hello.jobs.greet!.steps[0]!.raw.outputs)).toEqual([])
+  })
+
+  it('walks nested structures once and de-duplicates', () => {
+    expect(
+      refsIn({
+        a: '${{ inputs.a }}',
+        b: ['${{ inputs.a }} and ${{ steps.s.outputs.o }}', { c: '${{ needs.j.outputs.o }}' }],
+      }),
+    ).toEqual([
+      { context: 'inputs', name: 'a' },
+      { context: 'steps', name: 's', output: 'o' },
+      { context: 'needs', name: 'j', output: 'o' },
+    ])
+  })
+
+  it('skips an expression that does not parse rather than throwing', () => {
+    expect(() => refsIn('${{ inputs. }}')).not.toThrow()
+    expect(refsIn(['${{ inputs. }}', '${{ inputs.ok }}'])).toEqual([
+      { context: 'inputs', name: 'ok' },
+    ])
+  })
+
+  it('collects only `outputs` reads of steps and needs', () => {
+    expect(refsIn('${{ steps.boom.error.code }} ${{ needs.greet.result }}')).toEqual([])
   })
 })
