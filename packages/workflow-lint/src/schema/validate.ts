@@ -1,12 +1,7 @@
-import { readFileSync } from 'node:fs'
 import Ajv2020 from 'ajv/dist/2020.js'
 import type { ErrorObject, ValidateFunction } from 'ajv'
 import type { Finding } from '../findings.js'
-
-// Resolves from both src/ (vitest) and dist/ (built) — same directory depth.
-const schema = JSON.parse(
-  readFileSync(new URL('../../schema/workflow.schema.json', import.meta.url), 'utf8'),
-) as Record<string, any>
+import schema from './workflow-schema.js'
 
 const ajv = new Ajv2020.default({ allErrors: true, allowUnionTypes: true, strict: false })
 const validate = ajv.compile(schema)

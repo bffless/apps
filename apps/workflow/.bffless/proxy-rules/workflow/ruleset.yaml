@@ -1,0 +1,2 @@
+name: workflow
+description: Workflow harness backend — run records (event-sourced rows), lease, and the files trio (prepare/register/serve). Spec: apps/workflow/docs/spec/05 + 06.

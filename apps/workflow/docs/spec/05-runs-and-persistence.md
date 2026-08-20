@@ -59,7 +59,7 @@ paused with an error banner rather than continuing unrecorded).
 | event | persisted as |
 |---|---|
 | `run.started` | insert `workflow_runs` (status `running`, lease set) |
-| `step.queued` / `step.started` / `step.polling` / `step.waiting` | upsert step row status (+ `inputs` on start) |
+| `step.queued` / `step.started` / `step.polling` / `step.waiting` | upsert step row status (+ `inputs` on start, `response.initial` (trimmed) on polling) |
 | `step.succeeded` | row: status, `outputs`, `response`, `summary`, `annotations`, `finished_at` |
 | `step.failed` / `step.skipped` / `step.cancelled` | row: status, `error`, `finished_at` |
 | `step.retrying` | row: `attempt++`, status `queued` |

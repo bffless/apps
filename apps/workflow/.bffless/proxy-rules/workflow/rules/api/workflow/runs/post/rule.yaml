@@ -1,0 +1,38 @@
+targetUrl: pipeline
+order: 10
+pipeline:
+  name: Create workflow run
+  description: "Insert the workflow_runs row at run start (event run.started, spec 05). The client sends the full row: runId, definition snapshot, yaml text, inputs (File refs), lease fields."
+  steps:
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        schemaId: $schema:workflow_runs
+        fields:
+          runId: request.body.runId
+          impl: request.body.impl
+          workflow: request.body.workflow
+          workflowName: request.body.workflowName
+          workflowVersion: request.body.workflowVersion
+          definition: request.body.definition
+          yaml: request.body.yaml
+          inputs: request.body.inputs
+          status: request.body.status
+          headless: request.body.headless
+          startedBy: user.id
+          startedAt: request.body.startedAt
+          leaseOwner: request.body.leaseOwner
+          leaseUntil: request.body.leaseUntil
+          annotations: request.body.annotations
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.create}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Create a workflow run row (run.started). auth_required; startedBy from the session."

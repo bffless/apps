@@ -1,0 +1,25 @@
+targetUrl: pipeline
+order: 20
+pipeline:
+  name: Prepare workflow file upload
+  description: "Mint a presigned PUT under workflows/<impl>/<workflow>/<scope>/ (D7/D18). Per-input accept/maxSize are enforced client-side in M1; the static 100 MB cap is the server backstop."
+  steps:
+    - id: prepare
+      name: prepare
+      handler: presigned_upload
+      config:
+        subDir: workflows/{{request.body.impl}}/{{request.body.workflow}}/{{request.body.scope}}
+        filename: request.body.filename
+        expiresIn: 3600
+        maxFileSize: 104857600
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.prepare}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Files trio 1/3: presigned PUT for kickoff/form uploads and registered pipeline outputs."

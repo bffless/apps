@@ -1,0 +1,15 @@
+targetUrl: pipeline
+order: 22
+pipeline:
+  name: Serve workflow files
+  description: "Files trio 3/3: Range-aware serve of the workflows/ prefix (video seeking); Content-Disposition attachment on ?download=1."
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: workflows
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "auth_required file serving from the harness-owned run storage."

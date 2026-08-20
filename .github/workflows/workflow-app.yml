@@ -1,0 +1,20 @@
+name: workflow-app
+on:
+  pull_request:
+    paths: ['apps/workflow/**', 'packages/workflow-lint/**', '.github/workflows/workflow-app.yml']
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bffless/workflow-lint build
+      - run: pnpm --filter workflow lint
+      - run: pnpm --filter workflow test:run
+      - run: pnpm --filter workflow build
+      # e2e steps added in Task 21
