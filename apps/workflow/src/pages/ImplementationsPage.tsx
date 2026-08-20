@@ -6,7 +6,10 @@
  * it carries no links, because there is nothing behind them.
  */
 import { Link } from 'react-router-dom'
+import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
+import { LastRunPill } from '../components/LastRunPill'
+import { workflowId } from '../lib/coerce'
 import { pluralize } from '../lib/plural'
 import type { Implementation } from '../lib/coerce'
 import { useDiscoverQuery } from '../store/workflowApi'
@@ -41,6 +44,14 @@ function ImplementationCard({ impl }: { impl: Implementation }) {
             {impl.version && <li>v{impl.version}</li>}
             <li>{pluralize(impl.workflows.length, 'workflow')}</li>
           </ul>
+          <ul className="card-workflows">
+            {impl.workflows.map((listing) => (
+              <li key={listing.file}>
+                <span className="card-workflow">{listing.name}</span>
+                <LastRunPill impl={impl.alias} workflow={workflowId(listing.file)} />
+              </li>
+            ))}
+          </ul>
         </>
       )}
     </article>
@@ -48,9 +59,13 @@ function ImplementationCard({ impl }: { impl: Implementation }) {
 }
 
 export function ImplementationsPage() {
-  const { data: implementations, isLoading } = useDiscoverQuery()
+  const { data: implementations, isLoading, isError, error } = useDiscoverQuery()
 
   if (isLoading) return <p className="note">Looking for implementations…</p>
+
+  // A project whose alias list could not be read has not "published nothing" —
+  // saying so would send the user off to fix a publish that is already fine (08).
+  if (isError) return <DiscoveryError error={error} />
 
   if (!implementations?.length) {
     return (

@@ -16,16 +16,19 @@ export interface ResolvedWorkflow {
   /** The listing `:workflow` names — absent for `/:impl`, or for an unknown id. */
   listing?: WorkflowListing
   isLoading: boolean
+  /** Discovery failed — the alias is unresolved, not unknown (08). */
+  isError: boolean
+  error?: unknown
 }
 
 export function useWorkflowListing(): ResolvedWorkflow {
   const { impl: alias, workflow } = useParams()
-  const { data, isLoading } = useDiscoverQuery()
+  const { data, isLoading, isError, error } = useDiscoverQuery()
 
   const impl = data?.find((candidate) => candidate.alias === alias)
   const listing = workflow
     ? impl?.workflows.find((candidate) => workflowId(candidate.file) === workflow)
     : undefined
 
-  return { impl, listing, isLoading }
+  return { impl, listing, isLoading, isError, error }
 }

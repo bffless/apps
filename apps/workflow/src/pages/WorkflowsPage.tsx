@@ -3,6 +3,7 @@
  * it is, whether it can run headless, and how its last run went.
  */
 import { Link } from 'react-router-dom'
+import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { LastRunPill } from '../components/LastRunPill'
 import { workflowId } from '../lib/coerce'
@@ -10,9 +11,12 @@ import { pluralize } from '../lib/plural'
 import { useWorkflowListing } from '../store/useWorkflowListing'
 
 export function WorkflowsPage() {
-  const { impl, isLoading } = useWorkflowListing()
+  const { impl, isLoading, isError, error } = useWorkflowListing()
 
   if (isLoading) return <p className="note">Loading…</p>
+
+  // Without the alias list there is no "no such implementation" to report (08).
+  if (isError) return <DiscoveryError error={error} />
 
   if (!impl) {
     return (

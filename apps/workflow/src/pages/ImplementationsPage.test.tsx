@@ -34,6 +34,15 @@ describe('ImplementationsPage', () => {
     expect(within(list).getByText('1 workflow')).toBeInTheDocument()
   })
 
+  it('shows how the last run of each published workflow went', async () => {
+    seedFinishedRun()
+    renderApp()
+
+    const list = await screen.findByTestId('implementations')
+    expect(within(list).getByText('Hello workflow')).toBeInTheDocument()
+    expect(await within(list).findByText('Succeeded')).toHaveAttribute('data-state', 'succeeded')
+  })
+
   it('explains how to publish one when there are none', async () => {
     server.use(http.get('/api/aliases', () => HttpResponse.json([])))
 
@@ -44,6 +53,17 @@ describe('ImplementationsPage', () => {
       'href',
       expect.stringContaining('06-discovery-publishing-files.md'),
     )
+  })
+
+  it('says discovery failed rather than "you published nothing"', async () => {
+    server.use(http.get('/api/aliases', () => HttpResponse.json({ error: 'boom' }, { status: 500 })))
+
+    renderApp()
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText("Couldn't reach the server")).toBeInTheDocument()
+    expect(within(page).getByText(/answered 500/)).toBeInTheDocument()
+    expect(within(page).queryByText('No implementations found')).not.toBeInTheDocument()
   })
 
   it('opens an implementation on its workflows', async () => {

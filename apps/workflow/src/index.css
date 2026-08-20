@@ -194,6 +194,26 @@ body {
   font-size: 0.875rem;
 }
 
+.card-workflows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-workflows li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.card-workflow {
+  color: var(--color-ink-soft);
+}
+
 .rows {
   display: flex;
   flex-direction: column;

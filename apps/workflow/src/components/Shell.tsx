@@ -12,9 +12,12 @@ import { workflowId } from '../lib/coerce'
 import { useDiscoverQuery } from '../store/workflowApi'
 
 function Rail() {
-  const { data: implementations, isLoading } = useDiscoverQuery()
+  const { data: implementations, isLoading, isError } = useDiscoverQuery()
 
   if (isLoading) return <p className="rail-note">Loading…</p>
+  // Distinct from "nothing published": a failed alias list says nothing about
+  // what this project has (08). The pages carry the detail; the rail is 15rem.
+  if (isError) return <p className="rail-note">Couldn't reach the server</p>
   if (!implementations?.length) return <p className="rail-note">No implementations</p>
 
   return (
