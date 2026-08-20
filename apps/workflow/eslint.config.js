@@ -20,4 +20,15 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/lib/runner/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['react', 'react-*', '@reduxjs/*', 'react-redux', 'msw*', '../../store/*', '../../components/*', '../../pages/*', '../../mocks/*'],
+            message: 'lib/runner is pure (spec 09): no React, Redux, MSW, or app modules.' },
+        ],
+      }],
+    },
+  },
 ])
