@@ -114,4 +114,25 @@ describe('ValueView', () => {
     expect(screen.getByText('Greeting')).toBeInTheDocument()
     expect(screen.getByText('from greet/say')).toBeInTheDocument()
   })
+
+  it('renders a bare path string under a file decl without throwing', () => {
+    expect(() =>
+      render(<ValueView decl={{ type: 'file' }} value="workflows/hello/hello/inputs/u1/cat.png" />),
+    ).not.toThrow()
+    expect(screen.getByText('workflows/hello/hello/inputs/u1/cat.png')).toBeInTheDocument()
+  })
+
+  it('renders a file object with no contentType as a download card, not a crash', () => {
+    const ref = { path: 'p', name: 'take.mov', url: '/api/workflow/files/p' }
+    expect(() => render(<ValueView decl={{ type: 'file' }} value={ref} />)).not.toThrow()
+    expect(screen.getByText('take.mov')).toBeInTheDocument()
+    expect(screen.getByText('unknown type')).toBeInTheDocument()
+    const download = screen.getByText('Download') as HTMLAnchorElement
+    expect(download.getAttribute('href')).toBe('/api/workflow/files/p?download=1')
+  })
+
+  it('falls through to JsonTree for a file value that is neither a File ref nor a bare string', () => {
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={{ nope: true }} />)
+    expect(container.querySelector('details')).toBeTruthy()
+  })
 })

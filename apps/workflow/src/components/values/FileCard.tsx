@@ -7,8 +7,8 @@ import type { FileRef } from '../../lib/runner/types'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
-function humanSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+function humanSize(bytes: unknown): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '0 B'
   let n = bytes
   let i = 0
   while (n >= 1024 && i < UNITS.length - 1) {
@@ -23,7 +23,8 @@ function downloadHref(url: string): string {
   return url + (url.includes('?') ? '&' : '?') + 'download=1'
 }
 
-function Player({ contentType, url, name }: { contentType: string; url: string; name: string }) {
+function Player({ contentType, url, name }: { contentType?: string; url: string; name: string }) {
+  if (!contentType) return null
   if (contentType.startsWith('video/')) return <video controls src={url} />
   if (contentType.startsWith('audio/')) return <audio controls src={url} />
   if (contentType.startsWith('image/')) return <img src={url} alt={name} />
@@ -38,7 +39,7 @@ export function FileCard({ refValue }: { refValue: FileRef }) {
       <Player contentType={contentType} url={url} name={name} />
       <div className="file-card-meta">
         <span className="file-card-name">{name}</span>
-        <span className="file-card-type">{contentType}</span>
+        <span className="file-card-type">{contentType || 'unknown type'}</span>
         <span className="file-card-size">{humanSize(size)}</span>
         <a className="file-card-download" href={downloadHref(url)} download>
           Download

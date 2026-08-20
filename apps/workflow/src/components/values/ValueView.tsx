@@ -7,8 +7,8 @@
  * implemented yet, so it shows a placeholder badge above the base viewer
  * instead of silently falling back (Decision 10).
  */
-import type { FileRef } from '../../lib/runner/types'
 import { FileCard } from './FileCard'
+import { isFileRef } from './fileRef'
 import { JsonTree } from './JsonTree'
 import { MarkdownView } from './MarkdownView'
 import { TableView } from './TableView'
@@ -38,7 +38,9 @@ function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
 
   switch (decl.type) {
     case 'file':
-      return <FileCard refValue={value as FileRef} />
+      if (isFileRef(value)) return <FileCard refValue={value} />
+      if (typeof value === 'string') return <span className="chip">{value}</span>
+      return <JsonTree value={value} />
     case 'table':
       return <TableView decl={decl} value={value} />
     case 'markdown':

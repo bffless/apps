@@ -34,4 +34,31 @@ describe('renderMarkdown', () => {
     const html = renderMarkdown('[link](https://example.com)')
     expect(html).toContain('href="https://example.com"')
   })
+
+  it('drops an HTML-entity-encoded javascript: scheme (decodes only after DOM parse)', () => {
+    const html = renderMarkdown('[link](javascript&#58;alert(1))')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const a = div.querySelector('a')
+    expect(a === null || a.protocol !== 'javascript:').toBe(true)
+  })
+
+  it('does not let a crafted href break out of the href attribute', () => {
+    const html = renderMarkdown('[link](<https://a.com" onmouseover="alert(1)>)')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const a = div.querySelector('a')
+    expect(a).not.toBeNull()
+    expect(a?.hasAttribute('onmouseover')).toBe(false)
+    const attrNames = a ? Array.from(a.attributes).map((attr) => attr.name) : []
+    expect(attrNames.every((name) => name === 'href' || name === 'title' || name === 'rel')).toBe(true)
+  })
+
+  it('drops a tab-split javascript: scheme', () => {
+    const html = renderMarkdown('[link](java\tscript:alert(1))')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const a = div.querySelector('a')
+    expect(a === null || a.protocol !== 'javascript:').toBe(true)
+  })
 })
