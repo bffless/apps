@@ -1,0 +1,147 @@
+/**
+ * One job of the graph: its name, what it fans out over, and its steps stacked
+ * in declaration order (08).
+ *
+ * A matrix job is one card, not N: in run mode it carries the progress fraction
+ * ("2 of 2") and an item selector that swaps which expansion index the chips
+ * below show. That keeps the layout a function of the *definition* — the graph
+ * never grows or reflows as a run fans out.
+ *
+ * Which item is showing is *derived from `selectedKey`* whenever the selection
+ * belongs to this job, and changing the selector reports the new key through
+ * `onPick`. So there is exactly one place the card and the run page's pane can
+ * disagree about — the key — and a run page that restores a selection or
+ * deep-links to `greet/1/say` gets a card showing item 1, with that very chip
+ * on it. The local index is only the fallback for a job nothing has selected.
+ */
+import { useState } from 'react'
+import type { CSSProperties } from 'react'
+import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
+import { stepKey } from '../../lib/runner/types'
+import { StepChip } from './StepChip'
+
+const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
+  'succeeded',
+  'failed',
+  'skipped',
+  'cancelled',
+])
+
+/** "For each who · max 2 at once" — the strategy, as the prototype phrases it. */
+function matrixNote(job: Job): string | null {
+  const strategy = job.raw?.strategy as { matrix?: object; 'max-parallel'?: number } | undefined
+  const vars = strategy?.matrix ? Object.keys(strategy.matrix) : []
+  if (vars.length === 0) return null
+  const parallel = strategy?.['max-parallel']
+  return `For each ${vars.join(', ')}${parallel ? ` · max ${parallel} at once` : ''}`
+}
+
+/** `greet/1/say` → its parts; step ids cannot contain `/`, so the split is exact. */
+function parseKey(key: StepKey): { job: string; index: number; stepId: string } | null {
+  const [job, index, ...rest] = key.split('/')
+  if (job === undefined || index === undefined || rest.length === 0) return null
+  const parsed = Number(index)
+  return Number.isInteger(parsed) ? { job, index: parsed, stepId: rest.join('/') } : null
+}
+
+/** `who: world` — how one matrix item names itself in the selector. */
+function itemLabel(item: Record<string, unknown>, index: number): string {
+  const bindings = Object.entries(item).map(([name, value]) => `${name}: ${String(value)}`)
+  return bindings.length > 0 ? bindings.join(', ') : `Item ${index + 1}`
+}
+
+export interface JobCardProps {
+  job: Job
+  /** Layout position: topological layer, and the slot within it. */
+  col: number
+  row: number
+  mode: 'definition' | 'run'
+  state?: RunState
+  selectedKey?: StepKey | null
+  onPick: (key: StepKey, step: Step) => void
+  style?: CSSProperties
+}
+
+export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style }: JobCardProps) {
+  const [picked, setPicked] = useState(0)
+
+  const expansion = state?.expansions[job.id]
+  const items = expansion?.items ?? [{}]
+  const total = expansion?.total ?? items.length
+
+  const selection = selectedKey ? parseKey(selectedKey) : null
+  const selectedHere = selection?.job === job.id ? selection : null
+  // The selection wins; the local index is the fallback for an unselected job.
+  // Either can outrun the expansion (a resume with fewer items), hence the clamp.
+  const preferred = selectedHere ? selectedHere.index : picked
+  const index = preferred < total ? preferred : 0
+
+  /** Switching item is a *selection* change, reported on the one channel. */
+  const pickItem = (next: number) => {
+    setPicked(next)
+    const step = job.steps.find((candidate) => candidate.id === selectedHere?.stepId) ?? job.steps[0]
+    if (step) onPick(stepKey(job.id, next, step.id), step)
+  }
+
+  const done = Array.from({ length: total }).filter((_, i) =>
+    job.steps.every((step) => TERMINAL.has(state?.steps[stepKey(job.id, i, step.id)]?.status ?? 'queued')),
+  ).length
+
+  const note = matrixNote(job)
+  const isMatrix = job.matrix !== undefined && mode === 'run'
+
+  return (
+    <article
+      className="job-card"
+      data-testid="job"
+      data-job={job.id}
+      data-col={col}
+      data-row={row}
+      style={style}
+    >
+      <header className="job-head">
+        <h3 className="job-name">{job.raw?.name ?? job.id}</h3>
+        {isMatrix && (
+          <span className="job-fraction">
+            {done} of {total}
+          </span>
+        )}
+      </header>
+
+      {note && <p className="job-note">{note}</p>}
+
+      {isMatrix && total > 1 && (
+        <select
+          className="job-items"
+          aria-label={`Matrix item of ${job.id}`}
+          value={index}
+          onChange={(event) => pickItem(Number(event.target.value))}
+        >
+          {items.map((item, i) => (
+            <option key={i} value={i}>
+              {itemLabel(item, i)}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <div className="job-steps">
+        {job.steps.map((step) => {
+          const key = stepKey(job.id, mode === 'run' ? index : 0, step.id)
+          return (
+            <StepChip
+              key={step.id}
+              job={job.id}
+              index={mode === 'run' ? index : 0}
+              step={step}
+              mode={mode}
+              state={state?.steps[key]}
+              selected={selectedKey === key}
+              onPick={onPick}
+            />
+          )
+        })}
+      </div>
+    </article>
+  )
+}

@@ -1,4 +1,5 @@
-/* Small reset + theme tokens. Plain CSS — no Tailwind (M1 harness UI lands in Task 11). */
+/* Small reset, theme tokens and the harness layout. Plain CSS — no Tailwind.
+   Information architecture only; the visual pass is a separate `/impeccable` run (08). */
 
 :root {
   color-scheme: light;
@@ -37,4 +38,938 @@ body {
   background-color: var(--color-surface-dim);
   color: var(--color-ink);
   font-family: var(--font-sans);
+}
+
+/* --------------------------------------------------------------------------
+   Shell: header + rail + page
+   -------------------------------------------------------------------------- */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.shell-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.brand {
+  color: var(--color-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
+.crumbs > * + *::before {
+  content: '/';
+  margin-right: 0.4rem;
+  color: var(--color-line);
+}
+
+.shell-body {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+}
+
+.rail {
+  flex: 0 0 15rem;
+  padding: 1rem;
+  border-right: 1px solid var(--color-line);
+}
+
+.rail-note {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
+.rail-tree,
+.rail-workflows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-workflows {
+  padding-left: 0.75rem;
+}
+
+.rail-impl,
+.rail-workflow {
+  display: block;
+  padding: 0.25rem 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.rail-impl {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.rail-impl.is-error {
+  color: var(--color-ink-mute);
+}
+
+.rail-impl.active,
+.rail-workflow.active {
+  color: var(--color-accent);
+}
+
+.content {
+  flex: 1;
+  /* A flex item defaults to min-width:auto, so one wide child (the source view,
+     a long finding) would stretch the page instead of scrolling inside itself. */
+  min-width: 0;
+  padding: 1.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   Pages: cards, rows, badges, empty states
+   -------------------------------------------------------------------------- */
+
+.page-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.page-actions {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.note {
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 44rem;
+}
+
+.card,
+.row {
+  padding: 0.875rem 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.card-head,
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-title,
+.row-title {
+  color: var(--color-ink);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.card-name,
+.card-desc,
+.row-desc {
+  margin: 0.25rem 0 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+}
+
+.card-workflows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-workflows li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.card-workflow {
+  color: var(--color-ink-soft);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 44rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.8125rem;
+  list-style: none;
+}
+
+.badge {
+  padding: 0.05rem 0.4rem;
+  color: var(--color-ink-soft);
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+}
+
+.pill {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.pill[data-state='succeeded'] {
+  color: #166534;
+  border-color: #bbf7d0;
+  background-color: #f0fdf4;
+}
+
+.pill[data-state='failed'] {
+  color: #991b1b;
+  border-color: #fecaca;
+  background-color: #fef2f2;
+}
+
+.pill[data-state='running'],
+.pill[data-state='polling'],
+.pill[data-state='waiting'] {
+  color: #1e40af;
+  border-color: #bfdbfe;
+  background-color: #eff6ff;
+}
+
+.empty {
+  max-width: 32rem;
+  padding: 0.75rem 0;
+  color: var(--color-ink-soft);
+  font-size: 0.875rem;
+}
+
+.empty-title {
+  margin: 0 0 0.25rem;
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.empty-detail {
+  font-family: var(--font-mono);
+}
+
+/* --------------------------------------------------------------------------
+   Value renderers (02): ValueView + FileCard/TableView/JsonTree/MarkdownView
+   -------------------------------------------------------------------------- */
+
+.value {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.value-label {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.value-empty {
+  color: var(--color-ink-mute);
+}
+
+.value-renderer-badge {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 0.75rem;
+}
+
+.value-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.chip {
+  display: inline-flex;
+  padding: 0.05rem 0.5rem;
+  color: var(--color-ink-soft);
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+}
+
+.value-origin {
+  color: var(--color-ink-mute);
+  font-style: italic;
+}
+
+.file-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 28rem;
+}
+
+.file-card video,
+.file-card audio,
+.file-card img,
+.file-card object {
+  /* The card is a flex column, so a media element would otherwise be *stretched*
+     to its width — blowing a small image up past its own resolution. */
+  align-self: flex-start;
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+
+.file-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-ink-mute);
+  font-size: 0.8125rem;
+}
+
+.file-card-name {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.file-card-download {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+/* A `FileRef.url` that failed the lib/url allow-list: shown, never linked. */
+.file-card-blocked {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.value-table {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.value-table th,
+.value-table td {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--color-line);
+  text-align: left;
+}
+
+.value-table th {
+  color: var(--color-ink-soft);
+  background-color: var(--color-surface-dim);
+  font-weight: 600;
+}
+
+.json-node > summary {
+  cursor: pointer;
+  color: var(--color-ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.json-children {
+  margin-left: 1rem;
+  padding-left: 0.5rem;
+  border-left: 1px dashed var(--color-line);
+}
+
+.json-leaf {
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.json-key {
+  color: var(--color-ink-mute);
+}
+
+.markdown-view {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.markdown-view :first-child {
+  margin-top: 0;
+}
+
+.markdown-view :last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   The graph (08): derived layout — columns from topoLayers, edges drawn over
+   the same arithmetic. Cell sizes are mirrored in GraphView.tsx; change both.
+   -------------------------------------------------------------------------- */
+
+.graph {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin: 0.75rem 0 1rem;
+  overflow-x: auto;
+}
+
+.graph-canvas {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.graph-edge {
+  fill: none;
+  stroke: var(--color-line);
+  stroke-width: 2;
+}
+
+.graph-grid {
+  position: relative;
+  display: grid;
+}
+
+.job-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  overflow: auto;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.job-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.job-name {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.job-fraction,
+.job-note {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 0.75rem;
+}
+
+.job-items {
+  font-size: 0.75rem;
+}
+
+.job-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.step-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.step-chip[aria-pressed='true'] {
+  border-color: var(--color-accent);
+}
+
+.step-chip[data-state='failed'] {
+  border-color: #fecaca;
+}
+
+.step-chip[data-state='succeeded'] {
+  border-color: #bbf7d0;
+}
+
+.step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.step-kind {
+  color: var(--color-accent);
+}
+
+.step-id {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.step-meta,
+.step-outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  color: var(--color-ink-mute);
+  font-size: 0.75rem;
+}
+
+.step-output {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.out-name {
+  color: var(--color-ink-soft);
+}
+
+.out-type {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+}
+
+.graph-panel {
+  flex: 0 1 24rem;
+  padding: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.graph-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.graph-panel-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.link-button {
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.declaration,
+.source {
+  max-height: 30rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  overflow: auto;
+  background-color: var(--color-surface-dim);
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* --------------------------------------------------------------------------
+   Lint report + the source view (08)
+   -------------------------------------------------------------------------- */
+
+.section-title {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.9375rem;
+}
+
+.lint-counts {
+  gap: 0.75rem;
+}
+
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finding {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.finding-pos {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+}
+
+.finding-rule {
+  font-family: var(--font-mono);
+}
+
+.finding-severity {
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.finding[data-severity='error'] .finding-severity {
+  color: #991b1b;
+}
+
+.finding[data-severity='warning'] .finding-severity {
+  color: #92400e;
+}
+
+.finding[data-severity='notice'] .finding-severity {
+  color: var(--color-ink-mute);
+}
+
+.finding[data-severity='error'] .finding-rule {
+  color: #991b1b;
+}
+
+.finding[data-severity='warning'] .finding-rule {
+  color: #92400e;
+}
+
+.finding[data-severity='notice'] .finding-rule {
+  color: var(--color-ink-mute);
+}
+
+.finding-hint {
+  flex-basis: 100%;
+  color: var(--color-ink-mute);
+}
+
+.source-line {
+  display: block;
+}
+
+.source-no {
+  display: inline-block;
+  width: 3ch;
+  margin-right: 1ch;
+  color: var(--color-ink-mute);
+  text-align: right;
+  user-select: none;
+}
+
+.source-text {
+  white-space: pre;
+}
+
+.recent .rows {
+  margin-top: 0.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   Run page: header, canvas + step pane, outputs, summary, annotations
+   -------------------------------------------------------------------------- */
+
+.run-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.run-head-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.run-head-title .page-title {
+  margin: 0;
+}
+
+.run-meta .run-id {
+  font-family: var(--font-mono);
+}
+
+.badge[data-severity='error'] {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.badge[data-severity='warning'] {
+  border-color: #fcd34d;
+  color: #b45309;
+}
+
+.badge[data-severity='notice'] {
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.run-canvas {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  overflow-x: auto;
+}
+
+/* The graph's width is derived from the layout, not measured (GraphView), so it
+   must never be shrunk to fit beside the pane — a squeezed flex item clips the
+   last job card instead of scrolling. */
+.run-canvas > .graph {
+  flex: 0 0 auto;
+}
+
+.step-pane {
+  flex: 0 0 22rem;
+  align-self: stretch;
+  padding: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.tab {
+  padding: 0.35rem 0.6rem;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.pane-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pane-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.timeline-label {
+  color: var(--color-ink-soft);
+}
+
+.timeline-at {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.details dt {
+  color: var(--color-ink-mute);
+}
+
+.details dd {
+  margin: 0;
+}
+
+.step-error {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-line);
+  border-left-width: 3px;
+  border-radius: 0.35rem;
+}
+
+.step-error[data-severity='error'] {
+  border-left-color: #dc2626;
+}
+
+.step-error[data-severity='warning'] {
+  border-left-color: #d97706;
+}
+
+.step-error-head,
+.step-error-message {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.step-error-head {
+  font-weight: 600;
+}
+
+.raw-response > summary {
+  cursor: pointer;
+  color: var(--color-ink-soft);
+  font-size: 0.85rem;
+}
+
+.outputs,
+.run-summary,
+.annotations-section,
+.raw-rows {
+  margin-top: 1.5rem;
+}
+
+.output-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.summary-entry {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.summary-step {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.annotations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.annotation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.annotation-title {
+  font-weight: 600;
+}
+
+.annotation-jump {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.filter {
+  color: var(--color-ink-soft);
+  font-size: 0.85rem;
+}
+
+.runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.runs-table th,
+.runs-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--color-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.runs-table th {
+  color: var(--color-ink-mute);
+  font-weight: 600;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
