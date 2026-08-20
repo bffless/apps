@@ -183,11 +183,28 @@ describe('evalIf', () => {
     expect(evalIf(undefined, ctx, status)).toBe(true)
   })
 
+  it('defaults to success() — which is false once a need failed', () => {
+    // `slow` needs `greet`; greet's only step failed untolerated.
+    const state = withSteps(
+      makeState(),
+      step('greet', 0, 'say', { status: 'failed', error: { code: 'BOOM', message: 'x' } }),
+    )
+    const ctx = buildJobContexts(hello, state, 'slow')
+    const status = statusFns(hello, state, { job: 'slow' })
+    expect(status.success()).toBe(false)
+    expect(evalIf(undefined, ctx, status)).toBe(false)
+    expect(evalIf('failure()', ctx, status)).toBe(true)
+  })
+
   it('parses a bare (un-templated) string as one whole expression', () => {
     const state = makeState()
     const ctx = buildContexts(smallDef, state, { job: 'a', index: 0, stepId: 's2' })
     const status = statusFns(smallDef, state, { job: 'a', index: 0, beforeStep: 's2' })
     expect(evalIf("inputs.greeting == 'Hello'", ctx, status)).toBe(true)
+    // A comparison that is false must stay false: an implementation that routed
+    // a bare string through renderTemplate would hand back the literal source
+    // (a truthy non-empty string) and pass the assertion above.
+    expect(evalIf("inputs.greeting == 'Nope'", ctx, status)).toBe(false)
     expect(evalIf('${{ inputs.shout }}', ctx, status)).toBe(false)
     expect(evalIf('always()', ctx, status)).toBe(true)
   })
@@ -235,6 +252,35 @@ describe('continue-on-error', () => {
   it('exposes the last failed step of the item on the `error` root', () => {
     const ctx = buildContexts(smallDef, state, { job: 'a', index: 0, stepId: 's2' })
     expect(evalValue('${{ error.code }}', ctx)).toBe('TEAPOT')
+  })
+})
+
+describe('fail-fast — failure outranks cancelled', () => {
+  // `fail-fast: true` is the default (01): a failing matrix job ends with one
+  // failed step AND cancelled siblings. The job result must still be `failure`,
+  // or a downstream `if: failure()` cleanup job would never run.
+  const state = withSteps(
+    makeState({
+      expansions: { greet: { total: 2, items: [{ who: 'world' }, { who: 'studio' }] } },
+    }),
+    step('greet', 0, 'say', { status: 'failed', error: { code: 'BOOM', message: 'x' } }),
+    step('greet', 1, 'say', { status: 'cancelled' }),
+  )
+
+  it('reports the job as failed, not cancelled', () => {
+    const ctx = buildJobContexts(hello, state, 'slow')
+    expect(evalValue('${{ needs.greet.result }}', ctx)).toBe('failure')
+    expect(evalValue("${{ needs.greet.result == 'failure' }}", ctx)).toBe(true)
+    expect(evalValue('${{ needs.greet.outputs.lines }}', ctx)).toBeNull()
+  })
+
+  it('lets a downstream `if: failure()` job run', () => {
+    const ctx = buildJobContexts(hello, state, 'slow')
+    const status = statusFns(hello, state, { job: 'slow' })
+    expect(status.failure()).toBe(true)
+    expect(status.success()).toBe(false)
+    expect(evalIf('failure()', ctx, status)).toBe(true)
+    expect(evalIf(undefined, ctx, status)).toBe(false)
   })
 })
 

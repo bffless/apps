@@ -150,8 +150,11 @@ function stepEntry(def: Definition, s: StepState): Record<string, unknown> {
 function resultOf(def: Definition, state: RunState, job: string): Outcome {
   const states = Object.values(state.steps).filter((s) => s.job === job)
   if (states.length === 0) return 'skipped'
-  if (states.some((s) => s.status === 'cancelled')) return 'cancelled'
+  // `failure` outranks `cancelled`: with the default `fail-fast: true` a failing
+  // matrix job ends with one failed step *and* cancelled siblings (01), and the
+  // run — plus any downstream `if: failure()` — must still see a failure.
   if (states.some((s) => conclusionOf(def, s) === 'failure')) return 'failure'
+  if (states.some((s) => s.status === 'cancelled')) return 'cancelled'
   if (states.every((s) => s.status === 'skipped')) return 'skipped'
   return 'success'
 }
