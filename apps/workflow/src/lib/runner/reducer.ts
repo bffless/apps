@@ -10,7 +10,7 @@
  * loader — replay (Task 9) folds raw events through this module alone).
  */
 import type { RunEvent, RunState, StepKey, StepState } from './types'
-import { assertTransition } from './transitions'
+import { assertTransition, IllegalTransition } from './transitions'
 
 export function initialRunState(a: {
   runId: string
@@ -46,6 +46,19 @@ function withStep(state: RunState, key: StepKey, step: StepState): RunState {
   return { ...state, steps: { ...state.steps, [key]: step } }
 }
 
+/**
+ * `step.queued`/`step.skipped` create a brand-new StepState — never legally
+ * re-emitted for a key that already exists (retry re-queues via
+ * `step.retrying`, not a second `step.queued`). A duplicate/stray event on
+ * an existing key would otherwise silently reset an in-flight or terminal
+ * step back to queued/skipped, wiping its outputs/error/response/timestamps.
+ */
+function assertNewStep(state: RunState, key: StepKey, eventType: string): void {
+  if (state.steps[key]) {
+    throw new IllegalTransition(`${key}: duplicate ${eventType} for existing step`)
+  }
+}
+
 export function runReducer(state: RunState, event: RunEvent): RunState {
   switch (event.type) {
     case 'run.started':
@@ -68,6 +81,7 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
       }
 
     case 'step.queued':
+      assertNewStep(state, event.key, 'step.queued')
       return withStep(state, event.key, {
         key: event.key,
         job: event.job,
@@ -80,6 +94,7 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
       })
 
     case 'step.skipped':
+      assertNewStep(state, event.key, 'step.skipped')
       return withStep(state, event.key, {
         key: event.key,
         job: event.job,

@@ -230,6 +230,39 @@ describe('illegal transitions', () => {
       runReducer(state, { type: 'step.started', key: stepKey('a', 0, 'nope'), inputs: {}, at: 1_002 }),
     ).toThrow()
   })
+
+  it('step.queued on an existing succeeded step throws IllegalTransition, without wiping it', () => {
+    let state = baseline()
+    state = runReducer(state, { type: 'step.started', key: KEY, inputs: {}, at: 1_002 })
+    state = runReducer(state, {
+      type: 'step.succeeded',
+      key: KEY,
+      outputs: { x: 'ok' },
+      at: 1_003,
+    })
+
+    expect(() => runReducer(state, queued())).toThrow(IllegalTransition)
+    // A rejected duplicate must not have mutated the state it was rejected against.
+    expect(state.steps[KEY]).toMatchObject({ status: 'succeeded', outputs: { x: 'ok' } })
+  })
+
+  it('step.skipped on an existing running step throws IllegalTransition, without wiping it', () => {
+    let state = baseline()
+    state = runReducer(state, { type: 'step.started', key: KEY, inputs: { path: 'echo' }, at: 1_002 })
+
+    expect(() =>
+      runReducer(state, {
+        type: 'step.skipped',
+        key: KEY,
+        job: 'a',
+        index: 0,
+        stepId: 's1',
+        kind: 'pipeline',
+        at: 1_003,
+      }),
+    ).toThrow(IllegalTransition)
+    expect(state.steps[KEY]).toMatchObject({ status: 'running', inputs: { path: 'echo' } })
+  })
 })
 
 // ---------------------------------------------------------------------------
