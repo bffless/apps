@@ -1,0 +1,27 @@
+targetUrl: pipeline
+order: 11
+pipeline:
+  name: List workflow runs
+  description: "Latest 50 workflow_runs rows for one (impl, workflow). Status filtering and sorting are client-side in M1 (Decision 6)."
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        pageSize: 50
+        filters:
+          impl: { op: eq, value: request.query.impl }
+          workflow: { op: eq, value: request.query.workflow }
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.query}}}"
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "List runs of one workflow (members see all runs, D14). no-store: run lists must never be stale."

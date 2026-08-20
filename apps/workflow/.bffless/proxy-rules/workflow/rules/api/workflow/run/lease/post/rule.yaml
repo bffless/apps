@@ -1,0 +1,40 @@
+targetUrl: pipeline
+order: 15
+pipeline:
+  name: Acquire or renew run lease
+  description: "POST { id, owner, takeover? }. Grants when unheld, expired, already ours, or takeover — sets lease_until = now + 60s (spec 05 Resume)."
+  steps:
+    - id: find
+      name: find
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        pageSize: 1
+        filters:
+          runId: { op: eq, value: request.body.id }
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    - id: grant
+      name: grant
+      handler: data_update
+      config:
+        schemaId: $schema:workflow_runs
+        condition: steps.gate.ok
+        recordId: steps.gate.recordId
+        fields:
+          leaseOwner: steps.gate.owner
+          leaseUntil: steps.gate.leaseUntil
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.gate.result}}}"
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Lease acquire/heartbeat/release-by-expiry. Response { ok, leaseUntil, heldBy }."

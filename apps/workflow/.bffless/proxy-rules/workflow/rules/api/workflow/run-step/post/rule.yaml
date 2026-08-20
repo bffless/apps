@@ -1,0 +1,73 @@
+targetUrl: pipeline
+order: 14
+pipeline:
+  name: Upsert workflow run step
+  description: "POST { runId, key, patch } — one row per (job, matrix index, step); spec 05 write path. Query by (runId,key), then create or read-merge-write."
+  steps:
+    - id: find
+      name: find
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_run_steps
+        pageSize: 1
+        filters:
+          runId: { op: eq, value: request.body.runId }
+          key: { op: eq, value: request.body.key }
+    - id: merge
+      name: merge
+      handler: function_handler
+      code: ./merge.fn.js
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        schemaId: $schema:workflow_run_steps
+        condition: steps.merge.create
+        fields:
+          runId: steps.merge.fields.runId
+          key: steps.merge.fields.key
+          job: steps.merge.fields.job
+          index: steps.merge.fields.index
+          step: steps.merge.fields.step
+          kind: steps.merge.fields.kind
+          status: steps.merge.fields.status
+          attempt: steps.merge.fields.attempt
+          inputs: steps.merge.fields.inputs
+          response: steps.merge.fields.response
+          outputs: steps.merge.fields.outputs
+          error: steps.merge.fields.error
+          summary: steps.merge.fields.summary
+          annotations: steps.merge.fields.annotations
+          startedAt: steps.merge.fields.startedAt
+          finishedAt: steps.merge.fields.finishedAt
+          heartbeatAt: steps.merge.fields.heartbeatAt
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        schemaId: $schema:workflow_run_steps
+        condition: steps.merge.update
+        recordId: steps.merge.recordId
+        fields:
+          status: steps.merge.fields.status
+          attempt: steps.merge.fields.attempt
+          inputs: steps.merge.fields.inputs
+          response: steps.merge.fields.response
+          outputs: steps.merge.fields.outputs
+          error: steps.merge.fields.error
+          summary: steps.merge.fields.summary
+          annotations: steps.merge.fields.annotations
+          startedAt: steps.merge.fields.startedAt
+          finishedAt: steps.merge.fields.finishedAt
+          heartbeatAt: steps.merge.fields.heartbeatAt
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true}'
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Upsert one step row keyed <job>/<index>/<step>. The lease serializes writers, so query-then-write is race-safe in practice."

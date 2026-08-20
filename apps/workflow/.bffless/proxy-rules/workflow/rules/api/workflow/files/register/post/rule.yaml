@@ -1,0 +1,30 @@
+targetUrl: pipeline
+order: 21
+pipeline:
+  name: Register workflow file
+  description: "Verify the uploaded object and return the File ref { path, name, contentType, size, url } (spec 02). The record row lands in workflow_files."
+  steps:
+    - id: register
+      name: register
+      handler: register_upload
+      config:
+        subDir: workflows/{{request.body.impl}}/{{request.body.workflow}}/{{request.body.scope}}
+        schemaId: $schema:workflow_files
+        storageKey: request.body.storageKey
+        originalName: request.body.originalName
+        maxFileSize: 104857600
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Files trio 2/3: finalize a direct-to-bucket upload into a File ref."

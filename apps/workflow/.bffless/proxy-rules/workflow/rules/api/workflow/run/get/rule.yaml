@@ -1,0 +1,38 @@
+targetUrl: pipeline
+order: 12
+pipeline:
+  name: Get workflow run record
+  description: "One run row + every step row — what the run page, Resume and read-only views rebuild state from (spec 05)."
+  steps:
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        pageSize: 1
+        filters:
+          runId: { op: eq, value: request.query.id }
+    - id: steps
+      name: steps
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_run_steps
+        pageSize: 1000
+        filters:
+          runId: { op: eq, value: request.query.id }
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Run record: { run, steps } or { run: null, steps: [] } when the id is unknown."

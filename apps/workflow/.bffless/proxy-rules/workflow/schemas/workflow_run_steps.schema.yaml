@@ -1,0 +1,19 @@
+name: workflow_run_steps
+fields:
+  - { name: runId, type: string, required: true }
+  - { name: key, type: string, required: true }
+  - { name: job, type: string, required: true }
+  - { name: index, type: number, required: true }
+  - { name: step, type: string, required: true }
+  - { name: kind, type: string, required: true }
+  - { name: status, type: string, required: true }
+  - { name: attempt, type: number, required: false }
+  - { name: inputs, type: json, required: false }
+  - { name: response, type: json, required: false }
+  - { name: outputs, type: json, required: false }
+  - { name: error, type: json, required: false }
+  - { name: summary, type: text, required: false }
+  - { name: annotations, type: json, required: false }
+  - { name: startedAt, type: number, required: false }
+  - { name: finishedAt, type: number, required: false }
+  - { name: heartbeatAt, type: number, required: false }

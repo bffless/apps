@@ -1,0 +1,19 @@
+name: workflow_runs
+fields:
+  - { name: runId, type: string, required: true }
+  - { name: impl, type: string, required: true }
+  - { name: workflow, type: string, required: true }
+  - { name: workflowName, type: string, required: true }
+  - { name: workflowVersion, type: string, required: false }
+  - { name: definition, type: json, required: true }
+  - { name: yaml, type: text, required: true }
+  - { name: inputs, type: json, required: false }
+  - { name: status, type: string, required: true }
+  - { name: headless, type: boolean, required: false }
+  - { name: startedBy, type: string, required: false }
+  - { name: startedAt, type: number, required: true }
+  - { name: finishedAt, type: number, required: false }
+  - { name: leaseOwner, type: string, required: false }
+  - { name: leaseUntil, type: number, required: false }
+  - { name: outputs, type: json, required: false }
+  - { name: annotations, type: json, required: false }

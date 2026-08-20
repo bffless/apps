@@ -1,0 +1,51 @@
+targetUrl: pipeline
+order: 13
+pipeline:
+  name: Update workflow run
+  description: "POST { id, patch } — read-merge-write the workflow_runs row. Writing the full merged column set keeps data_update deterministic (no partial-field semantics to rely on)."
+  steps:
+    - id: find
+      name: find
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        pageSize: 1
+        filters:
+          runId: { op: eq, value: request.body.id }
+    - id: merge
+      name: merge
+      handler: function_handler
+      code: ./merge.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        schemaId: $schema:workflow_runs
+        recordId: steps.merge.recordId
+        condition: steps.merge.found
+        fields:
+          status: steps.merge.fields.status
+          finishedAt: steps.merge.fields.finishedAt
+          leaseOwner: steps.merge.fields.leaseOwner
+          leaseUntil: steps.merge.fields.leaseUntil
+          outputs: steps.merge.fields.outputs
+          annotations: steps.merge.fields.annotations
+    - id: notFound
+      name: notFound
+      handler: response_handler
+      config:
+        condition: steps.merge.missing
+        body: '{"error":"run not found","code":"NOT_FOUND"}'
+        status: 404
+        contentType: application/json
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true}'
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Patch a run row (status, finishedAt, lease, outputs, annotations). Two terminal response branches — fine in rules-as-code (the admin UI bug ce#502 does not apply)."
