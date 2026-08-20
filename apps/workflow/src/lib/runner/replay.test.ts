@@ -123,6 +123,10 @@ function startRun(store: Store): RunState {
 
 const storedSteps = (store: Store): StepRow[] => Object.values(store.steps)
 
+/** The 05 response budget, measured the way `trimResponse` measures it. */
+const BUDGET = 256 * 1024
+const serializedSize = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
+
 // ---------------------------------------------------------------------------
 // A scheduler-driven run: every started step is taken to a terminal state.
 // ---------------------------------------------------------------------------
@@ -417,6 +421,44 @@ describe('eventToWrites', () => {
     expect(
       eventToWrites({ type: 'job.expanded', job: 'fan', total: 2, items: [{}, {}] }, { state }),
     ).toEqual([])
+  })
+
+  // A step that dies mid-poll never reaches the terminal write that would trim
+  // its response — and that untrimmed row is exactly the row Resume reads.
+  it('caps the persisted polling response at the 256 KB budget (05)', () => {
+    const store = newStore()
+    let live = startRun(store)
+    live = dispatch(store, live, { type: 'job.expanded', job: 'seed', total: 1, items: [{}] })
+
+    const key = stepKey('seed', 0, 'make')
+    live = dispatch(store, live, {
+      type: 'step.queued',
+      key,
+      job: 'seed',
+      index: 0,
+      stepId: 'make',
+      kind: 'pipeline',
+      at: now(),
+    })
+    live = dispatch(store, live, { type: 'step.started', key, inputs: {}, at: now() })
+
+    const huge = { rows: 'x'.repeat(300 * 1024) }
+    expect(serializedSize(huge)).toBeGreaterThan(BUDGET)
+    live = dispatch(store, live, { type: 'step.polling', key, initial: huge, at: now() })
+
+    // The live Redux state keeps the full initial; only the row is capped.
+    expect(live.steps[key].response?.initial).toEqual(huge)
+
+    const row = store.steps[`${RUN_ID}::${key}`]
+    const persisted = row.response as { initial?: unknown; truncated?: boolean }
+    expect(persisted.truncated).toBe(true)
+    expect(persisted.initial).toEqual({ note: 'truncated', size: serializedSize(huge) })
+    expect(serializedSize(persisted)).toBeLessThan(BUDGET)
+
+    // …and Resume reads the trimmed stub back as the polling step's initial.
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    expect(replayed.steps[key].status).toBe('polling')
+    expect(replayed.steps[key].response?.initial).toEqual(persisted.initial)
   })
 
   it('clears the lease when the run finishes', () => {

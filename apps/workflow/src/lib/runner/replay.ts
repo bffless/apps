@@ -236,6 +236,14 @@ export function rowsToEvents(run: RunRow, steps: StepRow[], def: Definition): Ru
  * Rebuild the run state from its rows. `startedBy` is a run-row column that the
  * `run.started` event does not carry, so it is stamped onto the reduced state
  * rather than reached through the reducer.
+ *
+ * NOTE (controller ruling, Task 9): stamping it *after* the fold is deliberate —
+ * it keeps replay's expression contexts identical to the live run's, which also
+ * derived its matrices with `run.started_by` absent. If `startedBy` is ever
+ * seeded into `initialRunState` at kickoff, or carried on `run.started`, then
+ * `rowsToEvents` must seed it into its internal fold **in the same commit**:
+ * otherwise a `strategy.matrix` or job `if` that reads `run.started_by` would
+ * expand one way live and another way on Resume.
  */
 export function replayRun(run: RunRow, steps: StepRow[], def: Definition): RunState {
   const state = rowsToEvents(run, steps, def).reduce(

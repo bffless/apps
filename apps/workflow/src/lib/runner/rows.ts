@@ -18,6 +18,7 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
+import { trimResponse } from './results'
 import type {
   Annotation,
   RunEvent,
@@ -151,9 +152,14 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       ]
     }
 
+    // The 256 KB response budget (05) is a *persistence* cap, and polling is
+    // where it bites: a step that dies mid-poll never reaches the terminal
+    // write that would otherwise trim it, and its untrimmed row is exactly the
+    // row Resume reads back. Live state keeps the full `initial`; only the row
+    // is capped.
     case 'step.polling': {
       const s = after(state, event.key)
-      return [upsert(runId, event.key, { status: 'polling', response: s.response })]
+      return [upsert(runId, event.key, { status: 'polling', response: trimResponse(s.response ?? {}) })]
     }
 
     case 'step.waiting':
