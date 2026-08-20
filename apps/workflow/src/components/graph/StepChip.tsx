@@ -9,6 +9,7 @@
  * screen keeps working on the other.
  */
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
+import { formatDuration } from '../../lib/duration'
 import { StatusPill } from '../StatusPill'
 import type { Step, StepKey, StepKind, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
@@ -46,12 +47,6 @@ function declaredOutputs(step: Step): Array<[string, string]> {
     const fieldType = fields?.[name]?.type
     return [name, typeof fieldType === 'string' ? fieldType : 'json']
   })
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)} ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
-  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`
 }
 
 export interface StepChipProps {

@@ -703,3 +703,256 @@ body {
 .recent .rows {
   margin-top: 0.25rem;
 }
+
+/* --------------------------------------------------------------------------
+   Run page: header, canvas + step pane, outputs, summary, annotations
+   -------------------------------------------------------------------------- */
+
+.run-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.run-head-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.run-head-title .page-title {
+  margin: 0;
+}
+
+.run-meta .run-id {
+  font-family: var(--font-mono);
+}
+
+.badge[data-severity='error'] {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.badge[data-severity='warning'] {
+  border-color: #fcd34d;
+  color: #b45309;
+}
+
+.badge[data-severity='notice'] {
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.run-canvas {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  overflow-x: auto;
+}
+
+.step-pane {
+  flex: 0 0 22rem;
+  align-self: stretch;
+  padding: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.tab {
+  padding: 0.35rem 0.6rem;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.pane-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pane-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.timeline-label {
+  color: var(--color-ink-soft);
+}
+
+.timeline-at {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.details dt {
+  color: var(--color-ink-mute);
+}
+
+.details dd {
+  margin: 0;
+}
+
+.step-error {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-line);
+  border-left-width: 3px;
+  border-radius: 0.35rem;
+}
+
+.step-error[data-severity='error'] {
+  border-left-color: #dc2626;
+}
+
+.step-error[data-severity='warning'] {
+  border-left-color: #d97706;
+}
+
+.step-error-head,
+.step-error-message {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.step-error-head {
+  font-weight: 600;
+}
+
+.raw-response > summary {
+  cursor: pointer;
+  color: var(--color-ink-soft);
+  font-size: 0.85rem;
+}
+
+.outputs,
+.run-summary,
+.annotations-section,
+.raw-rows {
+  margin-top: 1.5rem;
+}
+
+.output-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.summary-entry {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.summary-step {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.annotations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.annotation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.annotation-title {
+  font-weight: 600;
+}
+
+.annotation-jump {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.filter {
+  color: var(--color-ink-soft);
+  font-size: 0.85rem;
+}
+
+.runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.runs-table th,
+.runs-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--color-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.runs-table th {
+  color: var(--color-ink-mute);
+  font-weight: 600;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
