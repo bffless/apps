@@ -19,11 +19,16 @@ function normalizeColumn(entry: unknown): Column | null {
   return null
 }
 
-function resolveColumns(decl: ValueDecl, rows: Record<string, unknown>[]): Column[] {
+/** A row is only a row if it is an object — anything else has no cells. */
+function asRow(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
+}
+
+function resolveColumns(decl: ValueDecl, rows: unknown[]): Column[] {
   if (Array.isArray(decl.columns)) {
     return decl.columns.map(normalizeColumn).filter((c): c is Column => c !== null)
   }
-  return Object.keys(rows[0] ?? {}).map((key) => ({ key }))
+  return Object.keys(asRow(rows[0]) ?? {}).map((key) => ({ key }))
 }
 
 function formatCell(value: unknown): string {
@@ -33,7 +38,9 @@ function formatCell(value: unknown): string {
 }
 
 export function TableView({ decl, value }: { decl: ValueDecl; value: unknown }) {
-  const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : []
+  // A `table` value is whatever a step actually emitted, so a null or scalar
+  // row is a value to render (as empty cells), not an exception to throw.
+  const rows: unknown[] = Array.isArray(value) ? value : []
   const columns = resolveColumns(decl, rows)
   return (
     <table className="value-table">
@@ -48,7 +55,7 @@ export function TableView({ decl, value }: { decl: ValueDecl; value: unknown }) 
         {rows.map((row, i) => (
           <tr key={i}>
             {columns.map((c) => (
-              <td key={c.key}>{formatCell(row[c.key])}</td>
+              <td key={c.key}>{formatCell(asRow(row)?.[c.key])}</td>
             ))}
           </tr>
         ))}

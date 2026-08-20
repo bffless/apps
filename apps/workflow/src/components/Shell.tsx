@@ -8,6 +8,7 @@
  * layout route matches before its children and so sees none of their params.
  */
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { ErrorBoundary } from './ErrorBoundary'
 import { workflowId } from '../lib/coerce'
 import { useDiscoverQuery } from '../store/workflowApi'
 
@@ -65,6 +66,11 @@ function Breadcrumb() {
 }
 
 export function Shell() {
+  // Keying the boundary on the path makes navigation a reset: a screen that
+  // threw is not still throwing on the next route, and the user always has a
+  // way out of the failure card.
+  const { pathname } = useLocation()
+
   return (
     <div className="shell">
       <header className="shell-header">
@@ -78,7 +84,9 @@ export function Shell() {
           <Rail />
         </nav>
         <main className="content">
-          <Outlet />
+          <ErrorBoundary key={pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

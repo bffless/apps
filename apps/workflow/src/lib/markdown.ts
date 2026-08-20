@@ -2,8 +2,9 @@
  * The one seam that turns markdown into an HTML string safe for
  * `dangerouslySetInnerHTML` (values/MarkdownView, the only consumer). 05:
  * "Summaries are markdown; HTML is not interpreted" — so raw HTML in the
- * source is escaped to text rather than injected, and unsafe link protocols
- * (`javascript:`, `vbscript:`, …) never reach an `href`.
+ * source is escaped to text rather than injected, and unsafe link and image
+ * urls (`javascript:`, `vbscript:`, …) never reach an `href`/`src` — the
+ * allow-list itself lives in `lib/url` (`isSafeUrl`), shared with FileCard.
  *
  * A dedicated `Marked` instance (not the global `marked` singleton) so this
  * config can't leak into, or be leaked into by, anything else importing
@@ -11,6 +12,7 @@
  */
 import { Marked } from 'marked'
 import type { Tokens } from 'marked'
+import { isSafeUrl, normalizeForSchemeCheck } from './url'
 
 function escapeHtml(text: string): string {
   return text
@@ -19,45 +21,6 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-}
-
-/**
- * WHATWG URL parsing strips ASCII tab/newline/CR from anywhere in the string
- * (not just the ends) before a scheme is ever read — `java\tscript:` parses
- * as `javascript:`. Also trims the usual leading/trailing whitespace/control
- * characters, so both are gone before the scheme allow-list check below.
- */
-function normalizeForSchemeCheck(href: string): string {
-  let out = ''
-  for (let i = 0; i < href.length; i++) {
-    const code = href.charCodeAt(i)
-    if (code > 32) out += href[i]
-  }
-  return out
-}
-
-// An HTML entity (numeric or named, e.g. `&#58;`, `&#x3a;`, `&colon;`) inside
-// an href can decode to a colon *after* this string is written into the DOM,
-// smuggling a `javascript:` scheme past a check that only ever sees the raw,
-// still-encoded token text. `&amp;` is excluded — it's the ordinary way to
-// write a literal `&` in a query string and decodes to nothing dangerous.
-const SUSPICIOUS_ENTITY = /&(?!amp;)(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);/i
-
-const SAFE_SCHEME = /^(https?:|mailto:)/i
-const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
-
-/**
- * Allow-list: `http:`/`https:`/`mailto:`, and anything with no scheme at all
- * (relative, root-relative, or a `#fragment`). Everything else — including
- * any href that carries an HTML entity — is unsafe; the caller falls back to
- * rendering the link text with no `<a>` at all.
- */
-function isSafeHref(rawHref: string): boolean {
-  if (SUSPICIOUS_ENTITY.test(rawHref)) return false
-  const href = normalizeForSchemeCheck(rawHref)
-  if (SAFE_SCHEME.test(href)) return true
-  if (/^[#/.]/.test(href)) return true
-  return !HAS_SCHEME.test(href)
 }
 
 /**
@@ -87,12 +50,30 @@ const instance = new Marked({
     },
     link({ href, title, tokens }: Tokens.Link) {
       const text = this.parser.parseInline(tokens)
-      if (!isSafeHref(href)) return text
+      if (!isSafeUrl(href)) return text
       const attr = safeHrefAttr(href)
       if (attr === null) return text
       let out = `<a href="${attr}"`
       if (title) out += ` title="${escapeHtml(title)}"`
       out += `>${text}</a>`
+      return out
+    },
+    /**
+     * marked's default `image` renderer runs the alt tokens through its
+     * `TextRenderer`, whose `text()` hands back the raw string — so
+     * `![" onerror="alert(1)](x.png)` ships an `onerror` attribute straight
+     * into the summary. The alt is escaped from the token's raw `text` here
+     * (never re-parsed), and the src goes through the same allow-list a link
+     * href does: an image is a fetch the browser makes unprompted.
+     */
+    image({ href, title, text }: Tokens.Image) {
+      const alt = escapeHtml(text)
+      if (!isSafeUrl(href)) return alt
+      const attr = safeHrefAttr(href)
+      if (attr === null) return alt
+      let out = `<img src="${attr}" alt="${alt}"`
+      if (title) out += ` title="${escapeHtml(title)}"`
+      out += '>'
       return out
     },
   },

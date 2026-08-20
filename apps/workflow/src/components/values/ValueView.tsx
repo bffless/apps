@@ -7,18 +7,14 @@
  * implemented yet, so it shows a placeholder badge above the base viewer
  * instead of silently falling back (Decision 10).
  */
+import type { ValueDecl } from '../../lib/valueDecl'
 import { FileCard } from './FileCard'
 import { isFileRef } from './fileRef'
 import { JsonTree } from './JsonTree'
 import { MarkdownView } from './MarkdownView'
 import { TableView } from './TableView'
 
-export interface ValueDecl {
-  type: string
-  list?: boolean
-  render?: string
-  columns?: unknown
-}
+export type { ValueDecl }
 
 function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
   if (value === null || value === undefined) return <span className="value-empty">—</span>

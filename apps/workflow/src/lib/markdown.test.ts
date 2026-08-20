@@ -61,4 +61,80 @@ describe('renderMarkdown', () => {
     const a = div.querySelector('a')
     expect(a === null || a.protocol !== 'javascript:').toBe(true)
   })
+  it('escapes an alt-text injection payload instead of letting it become an attribute', () => {
+    const html = renderMarkdown('![" onerror="alert(1)](x.png)')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const img = div.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img?.hasAttribute('onerror')).toBe(false)
+    expect(div.querySelectorAll('*').length).toBe(2) // <p><img>, nothing smuggled in
+  })
+
+  it('escapes an alt-text injection payload nested inside emphasis (hello\'s say summary)', () => {
+    const html = renderMarkdown('Said **![" onerror="alert(1)](x)**')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const img = div.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img?.hasAttribute('onerror')).toBe(false)
+  })
+
+  it('drops a javascript: image src instead of emitting an <img>', () => {
+    const html = renderMarkdown('![a](javascript:alert(1))')
+    expect(html).not.toContain('javascript:')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    expect(div.querySelector('img')).toBeNull()
+    expect(div.textContent).toContain('a')
+  })
+
+  it('renders a normal image with exactly src and alt', () => {
+    const html = renderMarkdown('![a](/api/workflow/files/x.png)')
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const img = div.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img?.getAttribute('src')).toBe('/api/workflow/files/x.png')
+    expect(img?.getAttribute('alt')).toBe('a')
+    expect(Array.from(img!.attributes).map((a) => a.name).sort()).toEqual(['alt', 'src'])
+  })
+
+  it('emits no event-handler attribute and no unsafe url anywhere in a hostile document', () => {
+    const source = [
+      '# Report',
+      '',
+      '[ok](https://example.com) [js](javascript:alert(1)) [entity](javascript&#58;alert(2))',
+      '',
+      '![shot" onerror="alert(3)](/api/workflow/files/a.png)',
+      '',
+      '![js](javascript:alert(4))',
+      '',
+      '<img src=x onerror="alert(5)">',
+      '',
+      'Said **![" onerror="alert(6)](x)** and *[t](vbscript:alert(7))*',
+      '',
+      '| a | b |',
+      '| --- | --- |',
+      '| <script>alert(8)</script> | [c](javascript:alert(9)) |',
+    ].join('\n')
+
+    const div = document.createElement('div')
+    div.innerHTML = renderMarkdown(source)
+
+    for (const el of Array.from(div.querySelectorAll('*'))) {
+      const handlers = Array.from(el.attributes)
+        .map((attr) => attr.name)
+        .filter((name) => name.toLowerCase().startsWith('on'))
+      expect(handlers).toEqual([])
+    }
+
+    for (const el of Array.from(div.querySelectorAll('[href], [src]'))) {
+      const raw = el.getAttribute('href') ?? el.getAttribute('src') ?? ''
+      expect(['http:', 'https:', 'mailto:']).toContain(new URL(raw, 'https://harness.test/base/').protocol)
+    }
+
+    expect(div.querySelector('script')).toBeNull()
+    expect(div.innerHTML).not.toMatch(/javascript:|vbscript:/i)
+  })
 })

@@ -21,7 +21,7 @@
 import { scanTemplates } from '@bffless/workflow-lint/expressions'
 import type { Expr } from '@bffless/workflow-lint/expressions'
 import type { Definition, OutputDecl, Step } from '@bffless/workflow-lint/definition'
-import type { ValueDecl } from '../components/values/ValueView'
+import type { ValueDecl } from './valueDecl'
 
 /** Where an output was declared: the workflow's own `outputs`, or one job's. */
 export type OutputScope = { kind: 'run' } | { kind: 'job'; job: string }

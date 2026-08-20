@@ -135,4 +135,49 @@ describe('ValueView', () => {
     const { container } = render(<ValueView decl={{ type: 'file' }} value={{ nope: true }} />)
     expect(container.querySelector('details')).toBeTruthy()
   })
+  it('renders no player, no link and no download for a File ref whose url is not allow-listed', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'evil.png',
+      contentType: 'image/png',
+      size: 10,
+      url: 'javascript:alert(1)',
+    }
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('video')).toBeNull()
+    expect(container.querySelector('object')).toBeNull()
+    // The card still says what it saw, as text.
+    expect(screen.getByText('evil.png')).toBeInTheDocument()
+    expect(screen.getByText('javascript:alert(1)')).toBeInTheDocument()
+  })
+
+  it('still renders the Download link for a root-relative File ref url', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'poster.png',
+      contentType: 'image/png',
+      size: 10,
+      url: '/api/workflow/files/hello/hello/runs/run_1/poster.png',
+    }
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(ref.url)
+    expect((screen.getByText('Download') as HTMLAnchorElement).getAttribute('href')).toBe(
+      `${ref.url}?download=1`,
+    )
+  })
+
+  it('renders a null row in a table as an em dash instead of throwing', () => {
+    expect(() =>
+      render(
+        <ValueView
+          decl={{ type: 'table', columns: [{ key: 'title' }] }}
+          value={[null, { title: 'Intro' }, 'nope']}
+        />,
+      ),
+    ).not.toThrow()
+    expect(screen.getByText('Intro')).toBeInTheDocument()
+    expect(screen.getAllByText('—')).toHaveLength(2)
+  })
 })

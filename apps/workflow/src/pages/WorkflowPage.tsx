@@ -9,7 +9,7 @@
  */
 import { useMemo } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { StatusPill } from '../components/StatusPill'
@@ -23,6 +23,7 @@ import { useGetWorkflowYamlQuery, useListRunsQuery } from '../store/workflowApi'
 const RECENT = 5
 
 export function WorkflowPage() {
+  const { impl: alias } = useParams()
   const { impl, listing, isLoading, isError, error } = useWorkflowListing()
 
   const target = impl && listing ? { impl: impl.alias, file: listing.file } : skipToken
@@ -44,7 +45,9 @@ export function WorkflowPage() {
       <EmptyState title="No such workflow">
         <p>
           This implementation published no workflow by that name.{' '}
-          <Link to="..">Back to its workflows</Link>
+          {/* Absolute: `Shell` is a pathless layout route, so a relative `..`
+              resolves against it and lands on `/`, not on the implementation. */}
+          <Link to={`/${alias}`}>Back to its workflows</Link>
         </p>
       </EmptyState>
     )

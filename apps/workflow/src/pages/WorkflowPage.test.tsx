@@ -64,4 +64,15 @@ describe('WorkflowPage', () => {
     expect(within(page).queryByTestId('job')).not.toBeInTheDocument()
     expect(within(page).getByRole('link', { name: 'View workflow file' })).toBeInTheDocument()
   })
+  it('reports an unknown workflow id with a link back to the implementation', async () => {
+    renderApp('/hello/nope')
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText('No such workflow')).toBeInTheDocument()
+    // Not `..`: under the pathless Shell layout route that resolves to `/`.
+    expect(within(page).getByRole('link', { name: 'Back to its workflows' })).toHaveAttribute(
+      'href',
+      '/hello',
+    )
+  })
 })

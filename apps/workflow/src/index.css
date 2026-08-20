@@ -376,6 +376,13 @@ body {
   text-decoration: none;
 }
 
+/* A `FileRef.url` that failed the lib/url allow-list: shown, never linked. */
+.file-card-blocked {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
 .value-table {
   border-collapse: collapse;
   font-size: 0.875rem;

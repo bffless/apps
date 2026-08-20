@@ -2,7 +2,14 @@
  * The `file` type's default viewer (02): a player chosen by `contentType`
  * prefix, with name/size/contentType/Download always shown regardless of
  * whether a player could be rendered.
+ *
+ * `url` arrives from a run row's JSON, which any authenticated member can
+ * write — so it goes through the same allow-list a markdown link href does
+ * (`lib/url`) before it reaches an `src`/`data`/`href`. A url that fails it
+ * is shown as text: the card still reports what it saw, it just refuses to
+ * be the thing that navigates or fetches it.
  */
+import { isSafeUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -34,16 +41,23 @@ function Player({ contentType, url, name }: { contentType?: string; url: string;
 
 export function FileCard({ refValue }: { refValue: FileRef }) {
   const { name, contentType, size, url } = refValue
+  const safe = typeof url === 'string' && isSafeUrl(url)
   return (
     <div className="file-card">
-      <Player contentType={contentType} url={url} name={name} />
+      {safe && <Player contentType={contentType} url={url} name={name} />}
       <div className="file-card-meta">
         <span className="file-card-name">{name}</span>
         <span className="file-card-type">{contentType || 'unknown type'}</span>
         <span className="file-card-size">{humanSize(size)}</span>
-        <a className="file-card-download" href={downloadHref(url)} download>
-          Download
-        </a>
+        {safe ? (
+          <a className="file-card-download" href={downloadHref(url)} download>
+            Download
+          </a>
+        ) : (
+          <span className="file-card-blocked" title="This file url is not a safe link">
+            {String(url)}
+          </span>
+        )}
       </div>
     </div>
   )

@@ -25,7 +25,7 @@ async function enableMocks() {
   await worker.start({ onUnhandledRequest: 'bypass' })
 }
 
-enableMocks().then(() => {
+function render() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <Provider store={store}>
@@ -35,4 +35,11 @@ enableMocks().then(() => {
       </Provider>
     </StrictMode>,
   )
-})
+}
+
+// `finally`, not `then`: a service worker that refuses to register (an
+// unsupported browser, a hard-reload race, a stale worker file) is a reason to
+// run against the real backend — never a reason to render nothing at all.
+enableMocks()
+  .catch((error) => console.error('[mocks] worker did not start', error))
+  .finally(render)
