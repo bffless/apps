@@ -1,0 +1,179 @@
+/**
+ * The pure, event-sourced run reducer (01/09): folds a `RunEvent` onto a
+ * `RunState`, producing a new state with structural sharing — untouched
+ * subtrees (other steps, the annotations array, ...) keep their prior
+ * object identity so callers can cheaply diff renders.
+ *
+ * Pure: no imports beyond ./types and ./transitions (spec 09, enforced by
+ * eslint's lib/runner fence, and deliberately kept narrower here so the
+ * reducer never grows a dependency on the expression engine or definition
+ * loader — replay (Task 9) folds raw events through this module alone).
+ */
+import type { RunEvent, RunState, StepKey, StepState } from './types'
+import { assertTransition } from './transitions'
+
+export function initialRunState(a: {
+  runId: string
+  impl: string
+  workflow: string
+  inputs: Record<string, unknown>
+  headless: boolean
+  startedAt: number
+}): RunState {
+  return {
+    runId: a.runId,
+    impl: a.impl,
+    workflow: a.workflow,
+    status: 'running',
+    headless: a.headless,
+    inputs: a.inputs,
+    steps: {},
+    expansions: {},
+    annotations: [],
+    startedAt: a.startedAt,
+  }
+}
+
+/** Look up a step or throw — a `RunEvent` referencing an unknown key is a bug (09: bugs throw). */
+function getStep(state: RunState, key: StepKey): StepState {
+  const step = state.steps[key]
+  if (!step) throw new Error(`Unknown step: ${key}`)
+  return step
+}
+
+/** Replace one step, sharing every other step and the rest of the state by reference. */
+function withStep(state: RunState, key: StepKey, step: StepState): RunState {
+  return { ...state, steps: { ...state.steps, [key]: step } }
+}
+
+export function runReducer(state: RunState, event: RunEvent): RunState {
+  switch (event.type) {
+    case 'run.started':
+      return initialRunState({
+        runId: event.runId,
+        impl: event.impl,
+        workflow: event.workflow,
+        inputs: event.inputs,
+        headless: event.headless,
+        startedAt: event.at,
+      })
+
+    case 'job.expanded':
+      return {
+        ...state,
+        expansions: {
+          ...state.expansions,
+          [event.job]: { total: event.total, items: event.items },
+        },
+      }
+
+    case 'step.queued':
+      return withStep(state, event.key, {
+        key: event.key,
+        job: event.job,
+        index: event.index,
+        stepId: event.stepId,
+        kind: event.kind,
+        status: 'queued',
+        attempt: 1,
+        annotations: [],
+      })
+
+    case 'step.skipped':
+      return withStep(state, event.key, {
+        key: event.key,
+        job: event.job,
+        index: event.index,
+        stepId: event.stepId,
+        kind: event.kind,
+        status: 'skipped', // terminal
+        attempt: 1,
+        annotations: [],
+      })
+
+    case 'step.started': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'running', event.key)
+      return withStep(state, event.key, {
+        ...step,
+        status: 'running',
+        inputs: event.inputs,
+        startedAt: event.at,
+      })
+    }
+
+    case 'step.polling': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'polling', event.key)
+      return withStep(state, event.key, {
+        ...step,
+        status: 'polling',
+        response: { ...step.response, initial: event.initial },
+      })
+    }
+
+    case 'step.waiting': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'waiting', event.key)
+      return withStep(state, event.key, { ...step, status: 'waiting' })
+    }
+
+    case 'step.retrying': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'queued', event.key)
+      return withStep(state, event.key, {
+        ...step,
+        status: 'queued',
+        attempt: step.attempt + 1,
+        error: event.error, // kept for the pane
+      })
+    }
+
+    case 'step.succeeded': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'succeeded', event.key)
+      return withStep(state, event.key, {
+        ...step,
+        status: 'succeeded',
+        outputs: event.outputs,
+        response: event.response ?? step.response,
+        summary: event.summary ?? step.summary,
+        annotations: event.annotations ?? step.annotations,
+        finishedAt: event.at,
+      })
+    }
+
+    case 'step.failed': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'failed', event.key)
+      return withStep(state, event.key, {
+        ...step,
+        status: 'failed',
+        error: event.error,
+        annotations: event.annotations ?? step.annotations,
+        finishedAt: event.at,
+      })
+    }
+
+    case 'step.cancelled': {
+      const step = getStep(state, event.key)
+      assertTransition(step.status, 'cancelled', event.key)
+      return withStep(state, event.key, {
+        ...step,
+        status: 'cancelled', // terminal
+        finishedAt: event.at,
+      })
+    }
+
+    case 'run.annotation':
+      return { ...state, annotations: [...state.annotations, event.annotation] }
+
+    case 'run.finished':
+      return { ...state, status: event.status, outputs: event.outputs, finishedAt: event.at }
+
+    default: {
+      const exhaustive: never = event
+      throw new Error(`Unknown run event: ${JSON.stringify(exhaustive)}`)
+    }
+  }
+}
