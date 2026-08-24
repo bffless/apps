@@ -32,7 +32,7 @@ jobs:
           path: apps/workflow/dist
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
-          project: bffless/workflow
+          repository: bffless/workflow
           alias: workflow
           proxy-rule-set-names: workflow,hello
       - name: Deploy the hello implementation
@@ -41,6 +41,6 @@ jobs:
           path: apps/workflow/hello-dist
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
-          project: bffless/workflow
+          repository: bffless/workflow
           alias: hello
           proxy-rule-set-names: hello
