@@ -15,12 +15,15 @@
   "msw": { "workerDirectory": ["public"] },
   "dependencies": {
     "@bffless/workflow-lint": "workspace:*",
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@reduxjs/toolkit": "^2.12.0",
     "marked": "^16.4.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-redux": "^9.3.0",
-    "react-router-dom": "^7.9.0"
+    "react-router-dom": "^7.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -41,6 +44,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.7",
     "yaml": "^2.8.0"
   }
