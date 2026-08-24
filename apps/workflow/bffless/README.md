@@ -63,11 +63,11 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
 - [x] **Rule-set isolation** — the sets are not in `.bffless/config.json` (see Manual setup).
 - [x] **`ruleset.yaml` descriptions are quoted** — an unquoted `Spec: …` inside a plain scalar
   is a nested mapping to the YAML parser; `bffless rules validate <dir>` catches it locally.
-- [x] **The hello bundle is dot-only.** `upload-artifact` skips every dot-entry it walks, so
-  `path: apps/workflow/hello-dist` uploads zero files. The workflow roots the walk inside
-  `hello-dist/.bffless` with `base-path: /apps/workflow/hello-dist`; CE serves
-  `/.bffless/workflows/*` fine once the files exist. Presigned uploads only — CE's zip
-  fallback strips nested `.bffless/` (`deployments.service.ts` `isHiddenFile`).
+- [x] **The hello bundle is dot-only.** `upload-artifact` < 1.4.2 skipped every dot-entry it
+  walked, so `path: apps/workflow/hello-dist` uploaded zero files, and CE < 0.4.33 stripped
+  nested `.bffless/` from zip uploads. Both fixed upstream (upload-artifact#21 → v1.4.2,
+  ce#699 → v0.4.33; apps#361); the deploy uses the plain `path:` again. CE serves
+  `/.bffless/workflows/*` fine once the files exist.
 - [x] **`data_query` answers a bare array.** Every rule's `rows()` helper expected a
   `{ records | data | rows }` envelope, so `find` never matched: `run-step` always took the
   create branch with a partial patch (400 "job is required"), and `lease`/`run` said "run

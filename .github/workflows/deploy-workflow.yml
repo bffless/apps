@@ -40,16 +40,11 @@ jobs:
           alias: workflow
           proxy-rule-set-names: workflow,hello
       - name: Deploy the hello implementation
-        # The bundle is only `.bffless/workflows/*` and upload-artifact skips every dot-entry
-        # it walks (bffless/upload-artifact src/files.ts), so root the walk INSIDE `.bffless`
-        # and pin base-path to the bundle dir: files land at
-        # apps/workflow/hello-dist/.bffless/workflows/* and hello.<domain> serves them at
-        # /.bffless/workflows/*. Presigned uploads only — CE's zip fallback strips nested
-        # `.bffless/` (deployments.service.ts isHiddenFile).
+        # The bundle is only `.bffless/workflows/*`; upload-artifact >= 1.4.2 keeps `.bffless/`
+        # directories while walking (and CE >= 0.4.33 keeps them in the zip fallback).
         uses: bffless/upload-artifact@v1
         with:
-          path: apps/workflow/hello-dist/.bffless
-          base-path: /apps/workflow/hello-dist
+          path: apps/workflow/hello-dist
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
           repository: bffless/workflow
