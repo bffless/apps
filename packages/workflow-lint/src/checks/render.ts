@@ -26,6 +26,22 @@ export function checkRender(def: Definition): Finding[] {
         path: pointer,
       })
     }
+    if (d.render === 'chart' || d.render === 'code') {
+      const mapping = (d.mapping ?? {}) as Record<string, unknown>
+      const missing =
+        d.render === 'chart'
+          ? typeof mapping.x !== 'string' || typeof mapping.y !== 'string'
+          : typeof mapping.language !== 'string'
+      if (missing) {
+        const need = d.render === 'chart' ? '`mapping.x` and `mapping.y`' : '`mapping.language`'
+        findings.push({
+          rule: 'render-mapping',
+          severity: 'warning',
+          message: `render: ${d.render} needs ${need} (02)`,
+          path: `${pointer}/mapping`,
+        })
+      }
+    }
   }
 
   function checkMap(map: Record<string, unknown> | undefined, pointer: string): void {

@@ -100,6 +100,68 @@ jobs:
   expect(render).toEqual([])
 })
 
+test('render: chart without mapping.x/mapping.y warns; with both is clean', () => {
+  const { render: bad } = run(`
+name: x
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs:
+          v: { type: table, render: chart }
+`)
+  expect(bad.map((f) => f.rule)).toEqual(['render-mapping'])
+  expect(bad[0]!.severity).toBe('warning')
+
+  const { render: good } = run(`
+name: x
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs:
+          v: { type: table, render: chart, mapping: { x: a, y: b } }
+`)
+  expect(good).toEqual([])
+})
+
+test('render: code without mapping.language warns; with it is clean', () => {
+  const { render: bad } = run(`
+name: x
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs:
+          v: { type: string, render: code }
+`)
+  expect(bad.map((f) => f.rule)).toEqual(['render-mapping'])
+  expect(bad[0]!.severity).toBe('warning')
+
+  const { render: good } = run(`
+name: x
+on: { manual: {} }
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: e }
+        outputs:
+          v: { type: string, render: code, mapping: { language: js } }
+`)
+  expect(good).toEqual([])
+})
+
 test('cross-impl absolute paths warn; harness and relative paths are clean', () => {
   const { paths } = run(`
 name: x
