@@ -14,30 +14,14 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
-import type { InputDef, OutputDecl } from '@bffless/workflow-lint/definition'
+import type { OutputDecl } from '@bffless/workflow-lint/definition'
 import { buildContexts, evalDeep } from '../contexts'
-import { validateInputConstraints } from '../inputConstraints'
-import { validateValue } from '../outputs'
-import { evalAnnotations, evalSummary } from '../results'
 import type { Annotation, Definition, RunEvent, RunState, Step, StepKey } from '../types'
-
-function obj(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-}
+import { obj, succeededEvent, validateDeclared } from './declared'
 
 /** A JSON object — an array is not a bag of named values. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-/** "Unanswered" for the purposes of `required` — `false` and `0` are answers. */
-function blank(value: unknown, list: boolean): boolean {
-  if (value === null || value === undefined || value === '') return true
-  return list && Array.isArray(value) && value.length === 0
-}
-
-function article(type: string, list: boolean): string {
-  return list ? `a list of ${type} values` : `a ${type} value`
 }
 
 /**
@@ -104,22 +88,53 @@ export function islandInputs(a: IslandStepArgs): IslandInputs {
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
 /**
+ * The two things a raw segment scan cannot see, because the *browser* resolves
+ * the URL, not this module: a percent-escape (`%2e%2e/` is `../` by the time it
+ * is fetched) and a backslash (WHATWG treats `\` as `/` for http(s) URLs). No
+ * legitimate bundle path or tool name needs either, so both are refused outright
+ * rather than decoded and re-checked.
+ */
+const ENCODED_OR_BACKSLASH = /[\\%]/
+
+/**
+ * Does the built path really land inside `prefix`? The check the fetch itself
+ * will apply: resolve it the way the browser would (which normalises `.`/`..`,
+ * their percent-escaped spellings and backslashes) and look at the result. The
+ * segment scans above are the readable first line; this is the one that holds.
+ */
+function inside(url: string, prefix: string): boolean {
+  try {
+    return new URL(url, 'https://harness.invalid').pathname.startsWith(prefix)
+  } catch {
+    return false
+  }
+}
+
+/**
  * The island HTML's URL. A relative `src` is implementation-scoped —
  * `islands/x.html` → `/w/<impl>/islands/x.html` — and an already-absolute
- * bundle path (`/w/…`) is used verbatim, the same own-implementation rule the
- * pipeline adapter applies to `/api/<impl>/<path>`. Anything else (another
- * alias, an absolute `/api/…`, a protocol-relative `//host`, an off-site URL)
+ * bundle path under `/w/<impl>/` is used verbatim, the same own-implementation
+ * rule the pipeline adapter applies to `/api/<impl>/<path>`. Anything else
+ * (another implementation's bundle, an absolute `/api/…`, a protocol-relative
+ * `//host`, an off-site URL, a path that traverses out however it is spelled)
  * is a definition bug and throws.
  */
 export function resolveSrc(impl: string, src: string): string {
-  if (src.startsWith('/w/')) return src
-  if (src.startsWith('/') || HAS_SCHEME.test(src)) {
-    throw new Error(`island src ${src}: must be relative to the implementation bundle or under /w/`)
+  const bad = (why: string): never => {
+    throw new Error(`island src ${src}: ${why}`)
   }
-  if (src.split('/').includes('..')) {
-    throw new Error(`island src ${src}: must not escape the implementation bundle`)
+
+  if (src === '') bad('must not be empty')
+  if (ENCODED_OR_BACKSLASH.test(src)) bad('must not contain a backslash or a percent-escape')
+  if (!src.startsWith('/w/') && (src.startsWith('/') || HAS_SCHEME.test(src))) {
+    bad('must be relative to the implementation bundle or under /w/')
   }
-  return `/w/${impl}/${src}`
+
+  const url = src.startsWith('/w/') ? src : `/w/${impl}/${src}`
+  if (src.split('/').includes('..') || !inside(url, `/w/${impl}/`)) {
+    bad(`must resolve inside /w/${impl}/`)
+  }
+  return url
 }
 
 export type ToolTarget =
@@ -170,13 +185,18 @@ export function resolveToolName(impl: string, name: string, meta?: unknown): Too
     return rejected(`tool "${name}": absolute paths are not callable from an island`)
   }
 
+  if (ENCODED_OR_BACKSLASH.test(name)) {
+    return rejected(`tool "${name}": a tool name may not contain a backslash or a percent-escape`)
+  }
+
   const path = name.includes('/') ? name : name.split('.').join('/')
   const segments = path.split('/')
-  if (segments.some((s) => s === '' || s === '.' || s === '..')) {
+  const url = `/api/${impl}/${path}`
+  if (segments.some((s) => s === '' || s === '.' || s === '..') || !inside(url, `/api/${impl}/`)) {
     return rejected(`tool "${name}": resolves outside /api/${impl}/`)
   }
 
-  return { kind: 'pipeline', path, method: methodOf(meta), url: `/api/${impl}/${path}` }
+  return { kind: 'pipeline', path, method: methodOf(meta), url }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,69 +226,17 @@ export function completeIslandStep(a: IslandStepArgs & { outputs: unknown }): Is
   if (!isPlainObject(a.outputs)) {
     return { ok: false, errors: { outputs: 'Expected an object of outputs' } }
   }
-  const submitted = a.outputs
 
-  const errors: Record<string, string> = {}
-  const outputs: Record<string, unknown> = {}
-
-  for (const [name, declared] of Object.entries(outputDecls(a.step))) {
-    // The bare-string form of an OutputDecl is an *expression* (02) — it only
-    // makes sense where the harness computes the value (pipeline/job/run
-    // outputs). An island's values come from the island, so a string
-    // declaration is read as "declared, untyped".
-    const decl = typeof declared === 'string' ? {} : obj(declared)
-    // No `type` declared → `json`, the vocabulary's "anything" (02).
-    const type = typeof decl.type === 'string' ? decl.type : 'json'
-    const list = decl.list === true
-    // Anything not submitted is unanswered, not undefined: outputs are JSON.
-    const value = Object.hasOwn(submitted, name) && submitted[name] !== undefined
-      ? submitted[name]
-      : null
-
-    if (decl.required === true && blank(value, list)) {
-      errors[name] = 'This field is required'
-      continue
-    }
-    if (!validateValue(type, list, value)) {
-      errors[name] = `Expected ${article(type, list)}`
-      continue
-    }
-    // The same constraint keys the form step applies on top of the type
-    // (min/max, pattern, minLength/maxLength, choice membership) — a
-    // declaration that carries them means them wherever the value came from.
-    const constraintError = validateInputConstraints({ ...decl, type } as InputDef, value)
-    if (constraintError) {
-      errors[name] = constraintError
-      continue
-    }
-    // NOTE (M2, flagged deviation): a declaration's `schema` key is accepted
-    // and IGNORED here. 02 specifies JSON-Schema validation as "one function
-    // over that schema"; M2 validates the type/list shape only and defers the
-    // schema pass to M3, so a `schema`-carrying output is type-checked but not
-    // structure-checked.
-    outputs[name] = value
-  }
+  // An island's outputs are named and typed by the step; an untyped one is
+  // `json`, the vocabulary's "anything" (02). The walk itself — required, type,
+  // constraints, drop-the-undeclared — is the one the form step uses.
+  const { outputs, errors } = validateDeclared(outputDecls(a.step), a.outputs, {
+    defaultType: 'json',
+  })
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  const contexts = buildContexts(a.def, a.state, {
-    job: a.job,
-    index: a.index,
-    stepId: a.step.id,
-    selfOutputs: outputs,
-  })
-
-  return {
-    ok: true,
-    event: {
-      type: 'step.succeeded',
-      key: a.key,
-      outputs,
-      summary: evalSummary(a.step, contexts),
-      annotations: evalAnnotations(a.step, contexts),
-      at: Date.now(),
-    },
-  }
+  return { ok: true, event: succeededEvent(a, outputs) }
 }
 
 const LEVELS = new Set<Annotation['level']>(['notice', 'warning', 'error'])

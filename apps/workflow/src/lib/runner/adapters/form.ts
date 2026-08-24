@@ -5,7 +5,10 @@
  * typed by their own definitions (02/03) — so this module is exactly two
  * functions: the initial values the form UI opens with (defaults may be
  * expressions, which is how an upstream output becomes an editable field), and
- * the validation + `step.succeeded` event a submit produces.
+ * the validation + `step.succeeded` event a submit produces. Both halves of
+ * that second function are the declaration walk shared with the island adapter
+ * (`./declared`); a form's declarations are its fields, untyped meaning
+ * `string` (02).
  *
  * Unlike the pipeline adapter there is nothing asynchronous here and no
  * effects: the caller emits the returned event. Rejected input comes back as
@@ -14,33 +17,13 @@
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
 import type { InputDef } from '@bffless/workflow-lint/definition'
-import { buildContexts, evalDeep } from '../contexts'
-import { validateInputConstraints } from '../inputConstraints'
-import { validateValue } from '../outputs'
-import { evalAnnotations, evalSummary } from '../results'
+import { evalDeep, buildContexts } from '../contexts'
 import type { Definition, RunEvent, RunState, Step, StepKey } from '../types'
-
-function obj(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-}
+import { obj, succeededEvent, validateDeclared } from './declared'
 
 /** `with.fields` — the field definitions, which double as the output types. */
 function fieldsOf(step: Step): Record<string, InputDef> {
   return obj(obj(obj(step.raw).with).fields) as Record<string, InputDef>
-}
-
-function typeOf(field: InputDef): string {
-  return typeof field.type === 'string' ? field.type : 'string'
-}
-
-/** "Unanswered" for the purposes of `required` — `false` and `0` are answers. */
-function blank(value: unknown, list: boolean): boolean {
-  if (value === null || value === undefined || value === '') return true
-  return list && Array.isArray(value) && value.length === 0
-}
-
-function article(type: string, list: boolean): string {
-  return list ? `a list of ${type} values` : `a ${type} value`
 }
 
 export interface FormStepArgs {
@@ -59,58 +42,14 @@ export type FormResult =
 
 /** Validate submitted field values against the form's field defs; evaluate summary/annotations. */
 export function completeFormStep(a: FormStepArgs): FormResult {
-  const errors: Record<string, string> = {}
-  const outputs: Record<string, unknown> = {}
-
-  for (const [name, decl] of Object.entries(fieldsOf(a.step))) {
-    const field = obj(decl) as InputDef
-    const type = typeOf(field)
-    const list = field.list === true
-    // Anything not submitted is unanswered, not undefined: outputs are JSON.
-    const value = a.values[name] === undefined ? null : a.values[name]
-
-    if (field.required === true && blank(value, list)) {
-      errors[name] = 'This field is required'
-      continue
-    }
-    if (!validateValue(type, list, value)) {
-      errors[name] = `Expected ${article(type, list)}`
-      continue
-    }
-    // Same input-specific constraints the kickoff form applies (min/max,
-    // pattern, minLength/maxLength, choice membership) — `validateValue`
-    // above only checks the type-shape, the closed vocabulary (02); a
-    // mid-run form is "the same renderer as the kickoff form" (03), so it
-    // owes its fields the same constraint checks, not a looser pass.
-    const constraintError = validateInputConstraints(field, value)
-    if (constraintError) {
-      errors[name] = constraintError
-      continue
-    }
-    // Keys the form does not declare are dropped: the outputs are the fields.
-    outputs[name] = value
-  }
+  // A form's fields *are* its declarations; an untyped field is a string (02).
+  const { outputs, errors } = validateDeclared(fieldsOf(a.step), a.values, {
+    defaultType: 'string',
+  })
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  const contexts = buildContexts(a.def, a.state, {
-    job: a.job,
-    index: a.index,
-    stepId: a.step.id,
-    selfOutputs: outputs,
-  })
-
-  return {
-    ok: true,
-    event: {
-      type: 'step.succeeded',
-      key: a.key,
-      outputs,
-      summary: evalSummary(a.step, contexts),
-      annotations: evalAnnotations(a.step, contexts),
-      at: Date.now(),
-    },
-  }
+  return { ok: true, event: succeededEvent(a, outputs) }
 }
 
 /** Evaluated initial field values (expression defaults) for the form UI. */

@@ -141,6 +141,13 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         status: 'queued',
         attempt: step.attempt + 1,
         error: event.error, // kept for the pane
+        // A retry is a fresh attempt: whatever the failed attempt annotated
+        // (or summarised) describes work that is being thrown away, and the
+        // failure itself already rides on this event. Clearing here is also
+        // what keeps Resume a fixed point — a `queued` row carries no
+        // annotations, so replay has nothing to put back (Decision 12).
+        annotations: [],
+        summary: undefined,
       })
     }
 

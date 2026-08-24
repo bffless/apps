@@ -720,6 +720,50 @@ describe('step.annotated (Decision 12)', () => {
     expect(replayed.steps[REVIEW].annotations).toEqual(state.steps[REVIEW].annotations)
   })
 
+  // A retry throws the attempt away, notes included — and replay must agree:
+  // the `queued` row carries no annotations, so there is nothing to put back.
+  it('is a fixed point across a retry (running → annotated → retrying)', () => {
+    const store = newStore()
+    let state = startRun(store)
+    state = dispatch(store, state, { type: 'job.expanded', job: 'seed', total: 1, items: [{}] })
+
+    const key = stepKey('seed', 0, 'make')
+    state = dispatch(store, state, {
+      type: 'step.queued',
+      key,
+      job: 'seed',
+      index: 0,
+      stepId: 'make',
+      kind: 'pipeline',
+      at: now(),
+    })
+    state = dispatch(store, state, { type: 'step.started', key, inputs: {}, at: now() })
+    state = dispatch(store, state, {
+      type: 'step.annotated',
+      key,
+      annotations: [{ level: 'notice', message: 'half way' }],
+      summary: 'half',
+      at: now(),
+    })
+    state = dispatch(store, state, {
+      type: 'step.retrying',
+      key,
+      error: { code: 'HTTP_503', message: 'busy' },
+      at: now(),
+    })
+
+    const row = store.steps[`${RUN_ID}::${key}`]
+    expect(row.status).toBe('queued')
+    expect(row.annotations).toEqual([])
+    expect(row.summary).toBeNull()
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    expect(replayed.steps[key].status).toBe('queued')
+    expect(replayed.steps[key].attempt).toBe(state.steps[key].attempt)
+    expect(replayed.steps[key].annotations).toEqual(state.steps[key].annotations)
+    expect(replayed.steps[key].summary).toBe(state.steps[key].summary)
+  })
+
   // Decision 12's union, end to end: dynamic + declared, live and on Resume.
   it('round-trips the union of dynamic and declared annotations (replay is a fixed point)', () => {
     const DECLARED: Annotation = { level: 'warning', message: 'check the cuts' }

@@ -385,6 +385,30 @@ describe('step.annotated', () => {
     expect(failed.steps[KEY].annotations).toEqual([a, b])
   })
 
+  it('is cleared by a retry: a fresh attempt starts with no progress notes', () => {
+    let state = runReducer(baseline(), { type: 'step.started', key: KEY, inputs: {}, at: 1_002 })
+    state = runReducer(state, {
+      type: 'step.annotated',
+      key: KEY,
+      annotations: [{ level: 'notice', message: 'attempt 1 got half way' }],
+      summary: 'half',
+      at: 1_003,
+    })
+
+    state = runReducer(state, {
+      type: 'step.retrying',
+      key: KEY,
+      error: { code: 'HTTP_503', message: 'busy' },
+      at: 1_004,
+    })
+
+    expect(state.steps[KEY]).toMatchObject({ status: 'queued', attempt: 2 })
+    expect(state.steps[KEY].annotations).toEqual([])
+    expect(state.steps[KEY].summary).toBeUndefined()
+    // The failure itself is what survives a retry.
+    expect(state.steps[KEY].error).toEqual({ code: 'HTTP_503', message: 'busy' })
+  })
+
   it.each(['running', 'polling', 'waiting'] as const)('is legal while %s', (status) => {
     let state = baseline()
     if (status === 'waiting') {

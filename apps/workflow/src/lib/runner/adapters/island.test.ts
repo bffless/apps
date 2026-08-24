@@ -142,12 +142,24 @@ describe('resolveSrc', () => {
     expect(resolveSrc('studio', '/w/studio/islands/x.html')).toBe('/w/studio/islands/x.html')
   })
 
-  it.each(['/api/studio/x.html', '//evil.example/x.html', 'http://evil.example/x.html'])(
-    'rejects %s',
-    (src) => {
-      expect(() => resolveSrc('studio', src)).toThrow()
-    },
-  )
+  it.each([
+    '',
+    '/api/studio/x.html',
+    '//evil.example/x.html',
+    'http://evil.example/x.html',
+    'data:text/html,<b>hi',
+    // Traversal, in every spelling the browser normalises before fetching:
+    // a raw `..`, its percent-escape, and a backslash (WHATWG treats `\` as
+    // `/` for http(s) URLs).
+    '../other/x.html',
+    'a/%2e%2e/%2e%2e/x.html',
+    'a\\..\\..\\x.html',
+    // Another implementation's bundle is not this island's to load (04).
+    '/w/other/islands/x.html',
+    '/w/studio/../other/x.html',
+  ])('rejects %j', (src) => {
+    expect(() => resolveSrc('studio', src)).toThrow()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -187,7 +199,19 @@ describe('resolveToolName', () => {
     expect(resolveToolName('studio', 'video.status', 'nonsense')).toMatchObject({ method: 'POST' })
   })
 
-  it.each(['', '/api/other/x', '../x', 'a/../../b', 'video slice'])('rejects %j', (name) => {
+  it.each([
+    '',
+    '/api/other/x',
+    '../x',
+    'a/../../b',
+    'video slice',
+    // Percent-escaped and backslash traversal: the browser decodes and
+    // normalises before it fetches, so a raw segment scan is not enough.
+    '%2e%2e/%2e%2e/x',
+    'a/..\\..\\x',
+    'a\\b',
+    '%2fetc%2fpasswd',
+  ])('rejects %j', (name) => {
     const target = resolveToolName('studio', name)
     expect(target.kind).toBe('rejected')
     if (target.kind !== 'rejected') return
