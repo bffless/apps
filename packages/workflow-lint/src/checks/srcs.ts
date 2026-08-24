@@ -1,14 +1,16 @@
 import type { Finding } from '../findings.js'
 import type { Definition } from '../model/definition.js'
+import { walkDecls } from './decls.js'
 
 /**
  * `src` extensions for the interactive kinds (Decision 17), plus the one
  * reserved `with` key that would collide with an island's tool-input
- * envelope. `island`/`script` steps go through the first pass below; a
+ * envelope. `island`/`script` steps are checked directly below; a
  * `render: island` declaration (input, step output, form field, job/run
- * output) is checked wherever `checkRender` already walks — a missing `src`
- * is `island-render-src`'s job, not this rule's, so we only look at the
- * extension when `src` is present as a string.
+ * output) is checked via the shared `walkDecls` walker — the same site list
+ * `checkRender` walks for `island-render-src`/`unknown-render`/`render-mapping`
+ * — so a `src` missing entirely stays `island-render-src`'s job, not this
+ * rule's: we only look at the extension when `src` is present as a string.
  */
 export function checkSrcs(def: Definition): Finding[] {
   const findings: Finding[] = []
@@ -29,15 +31,11 @@ export function checkSrcs(def: Definition): Finding[] {
     })
   }
 
-  function checkDecl(decl: unknown, pointer: string): void {
+  walkDecls(def, (decl, pointer) => {
     if (decl === null || typeof decl !== 'object') return
     const d = decl as Record<string, unknown>
     if (d.render === 'island') checkExt(d.src, `${pointer}/src`, 'island-src-ext', ['.html'])
-  }
-
-  function checkMap(map: Record<string, unknown> | undefined, pointer: string): void {
-    for (const [name, decl] of Object.entries(map ?? {})) checkDecl(decl, `${pointer}/${name}`)
-  }
+  })
 
   for (const job of Object.values(def.jobs)) {
     for (const step of job.steps) {
@@ -59,13 +57,8 @@ export function checkSrcs(def: Definition): Finding[] {
       } else if (step.uses === 'script') {
         checkExt(step.raw.with?.src, `${base}/with/src`, 'script-src-ext', ['.js', '.mjs'])
       }
-      checkMap(step.raw.outputs, `${base}/outputs`)
-      if (step.uses === 'form') checkMap(step.raw.with?.fields, `${base}/with/fields`)
     }
-    checkMap(job.outputs, `/jobs/${job.id}/outputs`)
   }
-  checkMap(def.inputs, '/on/manual/inputs')
-  checkMap(def.outputs, '/outputs')
 
   return findings
 }
