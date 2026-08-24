@@ -121,6 +121,7 @@ export function RunHeader({
       </ul>
 
       <nav className="page-actions">
+        <Link to={`${base}/runs`}>Past runs</Link>
         <Link to={`${base}/file`} state={{ yaml, runId }}>
           View workflow file
         </Link>
