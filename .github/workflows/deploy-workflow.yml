@@ -1,6 +1,9 @@
 name: Deploy Workflow harness to BFFless
 on:
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ['apps/workflow/**']
 concurrency: { group: deploy-workflow, cancel-in-progress: false }
 jobs:
   build-and-deploy:

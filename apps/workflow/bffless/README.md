@@ -11,6 +11,14 @@ Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail)
 - **Aliases + domains**: alias `workflow` (the harness SPA) on `workflow.<domain>`, alias
   `hello` (the test implementation bundle) on `hello.<domain>`. Attach rule set `workflow`
   to alias `workflow`; attach rule set `hello` to BOTH aliases (ADR-0001 single origin).
+  The deploy workflow creates both aliases (and attaches the sets) on its first run — the
+  domains are the manual half: `workflow.<domain>` → alias `workflow`, path
+  `/apps/workflow/dist`, **SPA fallback on**, `unauthorizedBehavior: redirect_login` +
+  `requiredRole: authenticated` (a signed-out member lands on the login page instead of a
+  404); `hello.<domain>` → alias `hello`, path `/apps/workflow/hello-dist`, no SPA fallback.
+- **Rule-set isolation**: these two sets live in project `bffless/workflow`, NOT in
+  `.bffless/config.json`'s `ruleSets` globs — that file drives the nightly drift check against
+  project `bffless/apps`. Keep them out of it.
 - **Storage**: a default storage backend must be configured (bucket or local ≥ CE 0.3.15) —
   the files trio (presigned PUT → register → serve) is the upload path.
 - **External connections / AI tokens**: none. **Secrets**: none.
@@ -27,7 +35,40 @@ run status **succeeded** with `report`, `poster`, `lines` under Outputs.
 
 ## Live verification checklist
 
-- [ ] **Decision 4**: `GET https://workflow.j5s.dev/api/aliases` returns the alias list under a member session (else: build the designed `/api/workflow/aliases` relay rule from Task 1's note).
-- [ ] **Decision 8**: upload a kickoff photo → the returned ref's `url` serves the bytes (files-trio `subDir` mapping) — else adjust the serve rule's `subDir`/url minting together.
-- [ ] **`project:` input names**: confirm both actions accept `project:` for a non-default project (memory: the two deploy actions have different project fallbacks) — else set repo var scoping.
-- [ ] **Rule set isolation**: do **not** add these sets to `.bffless/config.json`'s `ruleSets` globs — that file drives the nightly drift check against project `bffless/apps`; the workflow sets live in `bffless/workflow` (note this in the README).
+Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
+`fix/workflow-ruleset-yaml`). Each item is a Decision that assumed something:
+
+- [x] **Decision 4 — DISPROVED, fallback built.** `GET workflow.j5s.dev/api/aliases` falls
+  through to the SPA's `index.html` (the harness host has no CE alias API of its own), so the
+  designed relay `rules/api/workflow/aliases/get/rule.yaml` (forwarding rule →
+  `http://localhost:3000/api/aliases`, `forwardCookies`) is now the discovery call. The
+  query string is preserved, so `?repository=owner/name` scopes it; without it CE answers
+  every alias the member can see. CE's `SessionAuthGuard` answers the anonymous 401. The
+  `/w/hello/[...path]` forwarder needed `forwardCookies: true` too — without it the private
+  hello alias 404s every `index.json` probe.
+- [x] **Decision 8 — DISPROVED as authored, fixed.** Two faults: CE's `file_serve_handler`
+  derives the object only from a `/api/uploads/<subDir>/` request path (the
+  `/api/workflow/files/[...path]` route answered 500 "No file path specified"), and
+  `shape.fn.js` read fields `register_upload` never emits (the ref came back as
+  `{ path: '', url: '/api/workflow/files/' }`). The serve rule now lives at
+  `/api/uploads/workflows/[...path]` — also the `publicPath` `presigned_upload` mints — and
+  the ref's `url` is that path. Verified: prepare → PUT → register → GET serves the exact
+  bytes, `Range` → 206. Still open: `?download=1` gets no `Content-Disposition`
+  (`file_serve_handler` has no attachment support — CE follow-up).
+- [x] **`project:` input names — DISPROVED for upload-artifact.** `bffless/upload-artifact@v1`
+  has no `project:` input (it logs "Unexpected input(s)" and falls back to the calling repo —
+  the deploy was refused with "rule set workflow not found for this project", which is the
+  guard working). It takes `repository: bffless/workflow`; `bffless/deploy-proxy-rules@v1`
+  takes `project:`. The workflow uses each action's own name.
+- [x] **Rule-set isolation** — the sets are not in `.bffless/config.json` (see Manual setup).
+- [x] **`ruleset.yaml` descriptions are quoted** — an unquoted `Spec: …` inside a plain scalar
+  is a nested mapping to the YAML parser; `bffless rules validate <dir>` catches it locally.
+- [x] **The hello bundle is dot-only.** `upload-artifact` skips every dot-entry it walks, so
+  `path: apps/workflow/hello-dist` uploads zero files. The workflow roots the walk inside
+  `hello-dist/.bffless` with `base-path: /apps/workflow/hello-dist`; CE serves
+  `/.bffless/workflows/*` fine once the files exist. Presigned uploads only — CE's zip
+  fallback strips nested `.bffless/` (`deployments.service.ts` `isHiddenFile`).
+- [ ] **First-success checkpoint under a member session** — pending: j5s's SuperTokens core
+  currently fails every signup (`app_id_to_user_id.time_joined` missing, the ce#658 class),
+  so no `workflow-ci` member could be created. `localdev-tools/workflow-live.mjs` drives the
+  checkpoint headlessly once `~/.config/bffless/workflow-ci.env` holds a member login.
