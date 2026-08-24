@@ -301,6 +301,108 @@ describe('run.annotation', () => {
 })
 
 // ---------------------------------------------------------------------------
+// step.annotated (Decision 12) — an in-place update, not a status transition
+// ---------------------------------------------------------------------------
+
+describe('step.annotated', () => {
+  /** queued -> waiting: an island/form step parked on a human. */
+  function waiting(): RunState {
+    return runReducer(baseline(), { type: 'step.waiting', key: KEY, at: 1_002 })
+  }
+
+  it('appends annotations to a waiting step without changing its status', () => {
+    let state = waiting()
+    state = runReducer(state, {
+      type: 'step.annotated',
+      key: KEY,
+      annotations: [{ level: 'notice', message: 'first' }],
+      at: 1_003,
+    })
+    state = runReducer(state, {
+      type: 'step.annotated',
+      key: KEY,
+      annotations: [{ level: 'warning', message: 'second' }],
+      at: 1_004,
+    })
+
+    expect(state.steps[KEY].status).toBe('waiting')
+    expect(state.steps[KEY].annotations).toEqual([
+      { level: 'notice', message: 'first' },
+      { level: 'warning', message: 'second' },
+    ])
+  })
+
+  it('replaces the summary when one is given, and keeps it when one is not', () => {
+    let state = waiting()
+    state = runReducer(state, { type: 'step.annotated', key: KEY, summary: 'half', at: 1_003 })
+    expect(state.steps[KEY].summary).toBe('half')
+
+    state = runReducer(state, { type: 'step.annotated', key: KEY, summary: 'most', at: 1_004 })
+    expect(state.steps[KEY].summary).toBe('most')
+
+    state = runReducer(state, {
+      type: 'step.annotated',
+      key: KEY,
+      annotations: [{ level: 'notice', message: 'm' }],
+      at: 1_005,
+    })
+    expect(state.steps[KEY].summary).toBe('most')
+  })
+
+  it.each(['running', 'polling', 'waiting'] as const)('is legal while %s', (status) => {
+    let state = baseline()
+    if (status === 'waiting') {
+      state = runReducer(state, { type: 'step.waiting', key: KEY, at: 1_002 })
+    } else {
+      state = runReducer(state, { type: 'step.started', key: KEY, inputs: {}, at: 1_002 })
+      if (status === 'polling') {
+        state = runReducer(state, { type: 'step.polling', key: KEY, initial: null, at: 1_003 })
+      }
+    }
+
+    const next = runReducer(state, {
+      type: 'step.annotated',
+      key: KEY,
+      annotations: [{ level: 'notice', message: 'm' }],
+      at: 1_004,
+    })
+    expect(next.steps[KEY].status).toBe(status)
+    expect(next.steps[KEY].annotations).toHaveLength(1)
+  })
+
+  it.each(['queued', 'succeeded', 'failed', 'cancelled'] as const)(
+    'throws IllegalTransition on a %s step',
+    (status) => {
+      let state = baseline()
+      if (status === 'succeeded') {
+        state = runReducer(state, { type: 'step.started', key: KEY, inputs: {}, at: 1_002 })
+        state = runReducer(state, { type: 'step.succeeded', key: KEY, outputs: {}, at: 1_003 })
+      } else if (status === 'failed') {
+        state = runReducer(state, { type: 'step.started', key: KEY, inputs: {}, at: 1_002 })
+        state = runReducer(state, {
+          type: 'step.failed',
+          key: KEY,
+          error: { code: 'X', message: 'x' },
+          at: 1_003,
+        })
+      } else if (status === 'cancelled') {
+        state = runReducer(state, { type: 'step.cancelled', key: KEY, at: 1_002 })
+      }
+
+      expect(state.steps[KEY].status).toBe(status)
+      expect(() =>
+        runReducer(state, {
+          type: 'step.annotated',
+          key: KEY,
+          annotations: [{ level: 'notice', message: 'm' }],
+          at: 1_004,
+        }),
+      ).toThrow(IllegalTransition)
+    },
+  )
+})
+
+// ---------------------------------------------------------------------------
 // job.expanded and step.skipped, exercised for reducer completeness
 // ---------------------------------------------------------------------------
 

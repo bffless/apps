@@ -201,6 +201,14 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       return [upsert(runId, event.key, { status: 'cancelled', finishedAt: s.finishedAt })]
     }
 
+    // Dynamic progress from a step that has not finished (Decision 12): the
+    // reducer already merged the append/replace, so the row is simply the
+    // post-event columns — "appended to the same columns" (05), no new table.
+    case 'step.annotated': {
+      const s = after(state, event.key)
+      return [upsert(runId, event.key, { annotations: s.annotations, summary: s.summary ?? null })]
+    }
+
     // Run-level annotations are an append-only column; the post-event state
     // already holds the whole array, so the patch is the array (05).
     case 'run.annotation':

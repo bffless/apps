@@ -30,8 +30,10 @@ export default defineConfig([
           // specifier as written, not against the resolved path.
           { group: ['react', 'react-*', '@reduxjs/*', 'react-redux', 'msw*',
             '../../store/*', '../../components/*', '../../pages/*', '../../mocks/*',
-            '../../../store/*', '../../../components/*', '../../../pages/*', '../../../mocks/*'],
-            message: 'lib/runner is pure (spec 09): no React, Redux, MSW, or app modules.' },
+            '../../islands/*', '../../scripts/*',
+            '../../../store/*', '../../../components/*', '../../../pages/*', '../../../mocks/*',
+            '../../../islands/*', '../../../scripts/*'],
+            message: 'lib/runner is pure (spec 09): no React, Redux, MSW, islands, scripts, or app modules.' },
         ],
       }],
     },
