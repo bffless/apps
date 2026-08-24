@@ -50,9 +50,14 @@ describe('KickoffPage', () => {
     expect(run.meta?.workflowName).toBe('Hello workflow')
     expect(run.state?.inputs).toEqual({ greeting: 'Hello', names: ['world'], photo: null, shout: false })
 
-    // Navigated to the new run's own page. Task 17 (not this task) persists
-    // the row, so at this phase the run page reads it back as unrecorded.
-    expect(await within(page).findByText('No such run')).toBeInTheDocument()
+    // Navigated to the new run's own page — rendered live, straight off the
+    // run slice (Task 18), never depending on the row Task 17's middleware
+    // may still be mid-write on. The old expectation here ("No such run")
+    // was exactly the race Task 18 closes: a `GET` issued this early can
+    // land before the row's own `create`, and reporting that as "no such
+    // run" would invent a fact the server never gave us.
+    expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'running')
+    expect(within(page).queryByText('No such run')).not.toBeInTheDocument()
   })
 
   it('reports the lint errors and offers no kickoff form when the workflow does not validate', async () => {

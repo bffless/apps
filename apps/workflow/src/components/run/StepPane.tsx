@@ -15,6 +15,11 @@
  * with a time (a row keeps `startedAt`/`finishedAt` and nothing else), the
  * retried error stays visible on a step that went on to succeed, and the raw
  * response sits behind a disclosure because it can be 256 KB.
+ *
+ * A `form` step in `waiting` is the one exception to all of the above (08:
+ * "the pane is the form") — its pane *is* `FormStepPane`, tabs and all,
+ * whether this run is the one this tab is driving or a read-only replay of a
+ * step someone else's tab has not answered yet.
  */
 import { useState } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
@@ -27,6 +32,7 @@ import { MarkdownView } from '../values/MarkdownView'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
+import { FormStepPane } from './FormStepPane'
 
 type Tab = 'Input' | 'Output' | 'Details'
 const TABS: Tab[] = ['Input', 'Output', 'Details']
@@ -210,6 +216,10 @@ export function StepPane({ def, state, stepKey }: StepPaneProps) {
         <p className="note">This run has no record of that step.</p>
       </aside>
     )
+  }
+
+  if (declared?.uses === 'form' && step.status === 'waiting') {
+    return <FormStepPane def={def} state={state} stepKey={stepKey} />
   }
 
   return (
