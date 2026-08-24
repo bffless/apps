@@ -38,7 +38,7 @@ describe('discover', () => {
 
   it('keeps a reachable-but-invalid implementation, with its error (08)', async () => {
     server.use(
-      http.get('/api/aliases', () =>
+      http.get('/api/workflow/aliases', () =>
         HttpResponse.json([
           { name: 'hello', isAutoPreview: false },
           { name: 'broken', isAutoPreview: true },
@@ -59,7 +59,7 @@ describe('discover', () => {
 
   it('drops an ordinary SPA deploy that answers its index.html (ADR-0004)', async () => {
     server.use(
-      http.get('/api/aliases', () =>
+      http.get('/api/workflow/aliases', () =>
         HttpResponse.json([
           { name: 'hello', isAutoPreview: false },
           { name: 'spa', isAutoPreview: false },
@@ -78,7 +78,7 @@ describe('discover', () => {
 
   it('keeps a JSON index it cannot use', async () => {
     server.use(
-      http.get('/api/aliases', () => HttpResponse.json([{ name: 'future', isAutoPreview: false }])),
+      http.get('/api/workflow/aliases', () => HttpResponse.json([{ name: 'future', isAutoPreview: false }])),
       http.get('/w/future/.bffless/workflows/index.json', () => HttpResponse.json({ spec: 2 })),
     )
 
@@ -91,7 +91,7 @@ describe('discover', () => {
 
   it('keeps an alias whose JSON index does not parse', async () => {
     server.use(
-      http.get('/api/aliases', () => HttpResponse.json([{ name: 'torn', isAutoPreview: false }])),
+      http.get('/api/workflow/aliases', () => HttpResponse.json([{ name: 'torn', isAutoPreview: false }])),
       http.get('/w/torn/.bffless/workflows/index.json', () =>
         HttpResponse.text('{"spec": 1, "workflows": [', { headers: { 'content-type': 'application/json' } }),
       ),
@@ -103,7 +103,7 @@ describe('discover', () => {
   })
 
   it('surfaces the aliases request failing as a query error', async () => {
-    server.use(http.get('/api/aliases', () => new HttpResponse(null, { status: 500 })))
+    server.use(http.get('/api/workflow/aliases', () => new HttpResponse(null, { status: 500 })))
 
     const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
 

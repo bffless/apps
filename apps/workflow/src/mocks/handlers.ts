@@ -68,7 +68,7 @@ export const HELLO_INDEX = {
 }
 
 const discovery = [
-  http.get('/api/aliases', () => HttpResponse.json(ALIASES)),
+  http.get('/api/workflow/aliases', () => HttpResponse.json(ALIASES)),
 
   // Only `hello` publishes workflows; every other alias 404s, which is exactly
   // how the harness tells an implementation from an ordinary deploy (ADR-0004).

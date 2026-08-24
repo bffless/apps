@@ -44,7 +44,7 @@ describe('ImplementationsPage', () => {
   })
 
   it('explains how to publish one when there are none', async () => {
-    server.use(http.get('/api/aliases', () => HttpResponse.json([])))
+    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
 
     renderApp()
 
@@ -56,7 +56,7 @@ describe('ImplementationsPage', () => {
   })
 
   it('says discovery failed rather than "you published nothing"', async () => {
-    server.use(http.get('/api/aliases', () => HttpResponse.json({ error: 'boom' }, { status: 500 })))
+    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json({ error: 'boom' }, { status: 500 })))
 
     renderApp()
 
