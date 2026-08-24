@@ -127,10 +127,29 @@ function RawRows({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) 
  * that drives this component's own re-renders already refreshes `run`. The
  * `setState` itself is deferred through a microtask, same as `useNow`, so the
  * effect body never calls it synchronously (react-hooks/set-state-in-effect).
+ *
+ * `pending` disables both buttons for the duration of one attempt (fix round
+ * 1, finding 1 — `adopt()` itself also guards against a genuinely concurrent
+ * double click; this is the visible half of that, and covers the ordinary
+ * case of a slow lease round-trip too). `lost` is fix round 1, finding 2's
+ * "surface lost-takeover feedback in the UI" ask: an attempt that finishes
+ * without this run ending up `live` in the slice — the lease was already
+ * gone by the time it landed, or (this tab driving a different run) the
+ * adoption was deliberately skipped to avoid disturbing it — reads the same
+ * from here, "still not yours," so one message covers both.
  */
 function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) {
   const dispatch = useAppDispatch()
   const [held, setHeld] = useState<boolean | null>(null)
+  const [pending, setPending] = useState(false)
+  // Set once an attempt has finished; `lost` below is derived from it plus
+  // the slice's *current* mode/runId on every render, never a value
+  // captured at click time — the dispatch's own reducer updates land
+  // synchronously inside it, so by the render this flips on, the selectors
+  // below already read the adoption's real outcome.
+  const [attempted, setAttempted] = useState(false)
+  const sliceMode = useAppSelector((state) => state.run.mode)
+  const sliceRunId = useAppSelector((state) => state.run.state?.runId)
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -139,6 +158,18 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
   }, [run.leaseOwner, run.leaseUntil])
 
   const args = { runId: run.runId, run, steps }
+  const adoptedLive = sliceMode === 'live' && sliceRunId === run.runId
+  const lost = attempted && !pending && !adoptedLive
+
+  async function attempt(thunk: (a: typeof args) => ReturnType<typeof openRun>) {
+    setPending(true)
+    try {
+      await dispatch(thunk(args))
+    } finally {
+      setPending(false)
+      setAttempted(true)
+    }
+  }
 
   return (
     <p className="note">
@@ -147,18 +178,25 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
         <button
           type="button"
           data-testid="run-take-over"
+          disabled={pending}
           onClick={() => {
             if (window.confirm('Another tab is driving this run. Take over anyway?')) {
-              void dispatch(takeOver(args))
+              void attempt(takeOver)
             }
           }}
         >
           Take over
         </button>
       ) : (
-        <button type="button" data-testid="run-resume" onClick={() => void dispatch(openRun(args))}>
+        <button type="button" data-testid="run-resume" disabled={pending} onClick={() => void attempt(openRun)}>
           Resume
         </button>
+      )}
+      {lost && (
+        <span className="note" data-testid="run-adopt-lost">
+          {' '}
+          Could not take this run over — it&apos;s still held elsewhere.
+        </span>
       )}
     </p>
   )

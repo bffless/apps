@@ -83,6 +83,25 @@ function messageOf(err: unknown): string {
 const controllers = new Map<string, AbortController>()
 let currentRunId: string | null = null
 
+/**
+ * Bumped every `resetRunnerState()` (fix round 1, finding 1): the same
+ * `runId` can become current twice in a row — the same run adopted (`openRun`
+ * / `takeOver`) a second time in this tab before its first adoption's
+ * relaunched steps have all reached a terminal state. `scopedDispatch`'s
+ * `runId === currentRunId` check alone can't tell those two adoptions apart
+ * (it's the *same* run both times), so a stale emit from the first
+ * adoption's now-abandoned adapter — its own `cancel()` on the abort
+ * `resetRunnerState` just fired — would otherwise still pass the runId check
+ * and land on the identical step key the second adoption owns (already
+ * terminal by then in the common case, which `assertTransition`'s
+ * `cancelled`/self-transition path only papers over for *that* particular
+ * pair of statuses — a stale `step.succeeded` racing a fresh `step.
+ * cancelled` the other way round still throws `IllegalTransition`). Each
+ * `scopedDispatch` closure captures the generation live at its own creation;
+ * a reset — same run or not — invalidates every closure made before it.
+ */
+let currentGeneration = 0
+
 function controllerKey(runId: string, key: StepKey): string {
   return `${runId}:${key}`
 }
@@ -247,6 +266,7 @@ function resetRunnerState(): void {
   writeQueues.clear()
   finishing.clear()
   currentRunId = null
+  currentGeneration += 1
 }
 
 const NON_TERMINAL_STEP = new Set(['queued', 'running', 'polling', 'waiting'])
@@ -330,24 +350,50 @@ function runPrefixOf(state: RunState): string {
 
 /**
  * Wraps `dispatch` so it only ever forwards an action while `runId` is still
- * `currentRunId`. The pipeline adapter's own async chain (`rt.emit`, and any
- * dispatch reachable from it, e.g. `registerFile`'s out-of-prefix warning) is
- * fire-and-forget by design (`StepRuntime.emit` is `void`, not awaited) and
- * keeps running past an abort in at least one path: `runPipelineStep`'s own
- * `cancel()` unconditionally calls `rt.emit({type:'step.cancelled', ...})`
- * even when the abort *is* what triggered it. `resetRunnerState` aborting the
+ * `currentRunId`, this closure's own adoption generation is still the live
+ * one, and the run hasn't already reached a terminal status. The pipeline
+ * adapter's own async chain (`rt.emit`, and any dispatch reachable from it,
+ * e.g. `registerFile`'s out-of-prefix warning) is fire-and-forget by design
+ * (`StepRuntime.emit` is `void`, not awaited) and keeps running past an
+ * abort in at least one path: `runPipelineStep`'s own `cancel()`
+ * unconditionally calls `rt.emit({type:'step.cancelled', ...})` even when
+ * the abort *is* what triggered it. `resetRunnerState` aborting the
  * controller (so the adapter stops making progress) is necessary but not
- * sufficient on its own — this is the belt that makes a stale terminal event
- * for an abandoned run's step key structurally unable to reach the reducer,
- * whether or not some future code path remembers to abort first. A step key
- * repeats identically across runs of the same workflow (`<job>/<index>/
- * <step>`), so without this a stale event doesn't just risk an
- * IllegalTransition throw — it can silently overwrite the *new* run's
- * identically-keyed step.
+ * sufficient on its own — this is the belt that makes a stale event for an
+ * abandoned run's step key structurally unable to reach the reducer,
+ * whether or not some future code path remembers to abort first:
+ *
+ * - runId: a step key repeats identically across runs of the same workflow
+ *   (`<job>/<index>/<step>`), so without this a stale event doesn't just
+ *   risk an IllegalTransition throw — it can silently overwrite a
+ *   *different* run's identically-keyed step.
+ * - generation (fix round 1, finding 1): the *same* run can become current
+ *   twice — a second `openRun`/`takeOver` adoption of a run whose first
+ *   adoption's relaunched steps haven't all finished yet — and the runId
+ *   check alone can't distinguish "my adoption" from "the one that replaced
+ *   me" when both are the same run. `resetRunnerState()` bumps the
+ *   generation on every adoption (see its declaration); a closure made
+ *   before that bump is permanently stale even though `runId ===
+ *   currentRunId` still reads true.
+ * - run status (fix round 1, finding 3): a `cancelRun`/finish dispatch can
+ *   land — and move the run off `running` — *while* an aborted adapter's own
+ *   unwind is still mid-flight (its `cancel()` fires on a later microtask).
+ *   That stale event would otherwise still pass both checks above (same
+ *   run, same generation — nothing reset in between) and persist as a
+ *   spurious extra row write *after* the run's own final patch, breaking
+ *   the write-ahead order the record promises. Once the run is no longer
+ *   `running`, nothing more from it is legitimate to fold.
  */
-function scopedDispatch(runId: string, dispatch: (action: unknown) => unknown): (action: unknown) => unknown {
+function scopedDispatch(
+  runId: string,
+  dispatch: (action: unknown) => unknown,
+  getRunState: () => RunState | undefined,
+): (action: unknown) => unknown {
+  const generation = currentGeneration
   return (action) => {
-    if (runId !== currentRunId) return undefined
+    if (runId !== currentRunId || generation !== currentGeneration) return undefined
+    const runState = getRunState()
+    if (runState?.runId === runId && runState.status !== 'running') return undefined
     return dispatch(action)
   }
 }
@@ -446,7 +492,7 @@ async function handleNextAction(
         // Scoped, not the raw `dispatch`: this launches a fire-and-forget
         // async chain that can still be mid-flight after the run it belongs
         // to has been abandoned for a new one (see `scopedDispatch`).
-        const scoped = scopedDispatch(runState.runId, dispatch)
+        const scoped = scopedDispatch(runState.runId, dispatch, getRunState)
         const rt: StepRuntime = {
           emit: (e) => scoped(runEvent(e)),
           http: deps.http,
@@ -582,6 +628,29 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
   listener.startListening({
     actionCreator: runReplaced,
     effect: async (action, listenerApi) => {
+      const { state, mode } = action.payload
+
+      // Rule (fix round 1, finding 2): resetting is only ever correct when
+      // this dispatch is about to become — or already was — the run this
+      // tab is actually driving. A `readonly` adoption of some OTHER run
+      // (an `openRun`/`takeOver` lease attempt that lost, for a run this tab
+      // does not currently drive) must never touch it: `currentRunId` still
+      // names the run genuinely being driven, and tearing its controllers/
+      // heartbeat/write-queue down here would silently orphan it — steps
+      // abort, their terminal events get dropped (`scopedDispatch`'s runId
+      // guard), rows sit non-terminal until the lease expires — with no
+      // error and no UI signal (exactly what the finding described). The one
+      // `readonly` case that *does* still reset is adopting readonly for the
+      // SAME run this tab already drives (a lease it just lost, e.g. a
+      // missed heartbeat, `runModeChanged`'s sibling path) — that tab
+      // genuinely can no longer drive it, so tearing its now-stale
+      // controllers/heartbeat down is exactly right. `lifecycleActions.ts`'s
+      // `adopt()` carries the same rule one level up (it skips the dispatch
+      // entirely rather than reach this point) — this check is the
+      // belt-and-suspenders backstop for any other path that might dispatch
+      // `runReplaced` without it.
+      if (mode === 'readonly' && currentRunId !== null && state.runId !== currentRunId) return
+
       // A fresh run.started's own `currentRunId` assignment (above) makes
       // this the only other place a run *becomes* current, so it gets the
       // same reset — otherwise a run adopted here would inherit whatever
@@ -589,11 +658,12 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // behind (05 Resume: "the heartbeat restarts; lease_owner becomes this
       // tab" — only for a `live` adoption; a `readonly` view drives nothing).
       resetRunnerState()
-      if (action.payload.mode !== 'live') return
+      if (mode !== 'live') return
 
-      const { state } = action.payload
       currentRunId = state.runId
       startHeartbeat(state.runId, deps, listenerApi.dispatch, listenerApi.getState)
+
+      const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
 
       // Resume (05 item 3, Decision 3): a step that was non-terminal when
       // this row's driving tab went away has no scheduler proposal coming —
@@ -607,7 +677,9 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // re-mounts straight off the replayed state (08). Every relaunch is
       // registered in the same `controllers` map a scheduler-started step
       // would use, so `cancelRun`'s `runnerControllers.abortAll()` reaches
-      // it exactly the same way.
+      // it exactly the same way, and every relaunch's `scopedDispatch` is
+      // built the normal way (runId + generation + run-status guarded) so a
+      // second adoption of this same run supersedes this one cleanly.
       const def = (listenerApi.getState() as HasRunSlice).run.meta?.def
       if (def) {
         for (const step of Object.values(state.steps)) {
@@ -618,7 +690,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
 
           const controller = new AbortController()
           controllers.set(controllerKey(state.runId, step.key), controller)
-          const scoped = scopedDispatch(state.runId, listenerApi.dispatch)
+          const scoped = scopedDispatch(state.runId, listenerApi.dispatch, getRunState)
           const rt: StepRuntime = {
             emit: (e) => scoped(runEvent(e)),
             http: deps.http,
@@ -652,7 +724,6 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // pass — so this listener runs that pass once itself, off the
       // freshest state (relaunching above dispatches no events
       // synchronously; `state` is still current).
-      const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
       if (def && state.status === 'running') {
         for (const a of nextActions(def, state)) {
           await handleNextAction(a, def, state, deps, listenerApi.dispatch, getRunState)

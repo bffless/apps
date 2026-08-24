@@ -23,7 +23,7 @@ import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepStatus } from '../lib/runner/types'
 import { createRunStore } from '../lib/runStore'
 import type { RunStore } from '../lib/runStore'
-import type { AppThunk } from './index'
+import type { AppThunk, RootState } from './index'
 import { runnerControllers } from './runnerMiddleware'
 import { getOwnerId } from './runnerActions'
 import { runEvent, runOpened, runReplaced } from './runSlice'
@@ -82,22 +82,59 @@ function metaFrom(run: RunRow, def: Definition): RunMeta {
   }
 }
 
+/**
+ * In-flight guard (fix round 1, finding 1): `openRun`/`takeOver` have no
+ * disabled-while-pending affordance of their own (the caller — `RunPage.tsx`
+ * — adds one too, but a thunk shouldn't depend on its caller for
+ * correctness). Without this, two adopt attempts fired close together for
+ * the *same* run (a double click, or a stale click landing after a first
+ * attempt already resolved but before its UI re-render disables the
+ * button) would both reach `runStore.lease` and, since the lease is granted
+ * again to the same owner, both succeed — the second's `runReplaced`
+ * supersedes the first mid-flight (see `runnerMiddleware.ts`'s generation
+ * counter for what makes that safe *once it happens*; this just stops the
+ * pointless double adoption in the common case where the two calls are
+ * genuinely concurrent, not merely close together).
+ */
+const adopting = new Set<string>()
+
 /** The shared adopt-live-or-fall-back-readonly path behind `openRun`/`takeOver` (05 Resume). */
 async function adopt(
   a: { runId: string; run: RunRow; steps: StepRow[] },
   dispatch: (action: unknown) => unknown,
+  getState: () => RootState,
   takeover: boolean,
 ): Promise<void> {
-  const def = toDefinition(a.run.definition) as Definition
-  const state = replayRun(a.run, a.steps, def)
-  const owner = getOwnerId()
-  const l = await runStore.lease(a.runId, owner, takeover)
+  if (adopting.has(a.runId)) return
+  adopting.add(a.runId)
+  try {
+    const def = toDefinition(a.run.definition) as Definition
+    const state = replayRun(a.run, a.steps, def)
+    const owner = getOwnerId()
+    const l = await runStore.lease(a.runId, owner, takeover)
 
-  if (l.ok) {
-    dispatch(runOpened({ meta: metaFrom(a.run, def) }))
-    dispatch(runReplaced({ state, mode: 'live' }))
-  } else {
+    if (l.ok) {
+      dispatch(runOpened({ meta: metaFrom(a.run, def) }))
+      dispatch(runReplaced({ state, mode: 'live' }))
+      return
+    }
+
+    // Rule (fix round 1, finding 2): a lost lease attempt must never clobber
+    // a DIFFERENT run this tab is actively driving. `run` in the slice is
+    // singular (one run's state per tab) — dispatching `runReplaced` here
+    // unconditionally would overwrite it with *this* run's read-only replay,
+    // flipping the actually-live run's own page to "not live" the moment
+    // anything re-renders off the slice, on top of the teardown
+    // `runnerMiddleware.ts`'s own guard prevents at the effect level. If
+    // nothing else is live, or this failed attempt was for the SAME run
+    // already live (a lease this tab itself just lost, e.g. a missed
+    // heartbeat), the dispatch is safe and still lands so the read-only view
+    // has fresh replayed state to show.
+    const current = getState().run
+    if (current.mode === 'live' && current.state && current.state.runId !== a.runId) return
     dispatch(runReplaced({ state, mode: 'readonly' }))
+  } finally {
+    adopting.delete(a.runId)
   }
 }
 
@@ -109,14 +146,14 @@ async function adopt(
  * the attempt — the caller shows Take over.
  */
 export function openRun(a: { runId: string; run: RunRow; steps: StepRow[] }): AppThunk<Promise<void>> {
-  return async (dispatch) => {
-    await adopt(a, dispatch, false)
+  return async (dispatch, getState) => {
+    await adopt(a, dispatch, getState, false)
   }
 }
 
 /** Force the lease away from whoever holds it, then the same adopt-live path as `openRun`. */
 export function takeOver(a: { runId: string; run: RunRow; steps: StepRow[] }): AppThunk<Promise<void>> {
-  return async (dispatch) => {
-    await adopt(a, dispatch, true)
+  return async (dispatch, getState) => {
+    await adopt(a, dispatch, getState, true)
   }
 }
