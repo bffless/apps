@@ -28,7 +28,7 @@ import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
 import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
 import { getOwnerId } from './runnerActions'
-import { runClosed, runEvent, runModeChanged, runPaused } from './runSlice'
+import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
 
 /**
@@ -68,11 +68,24 @@ function messageOf(err: unknown): string {
 
 // ---------------------------------------------------------------------------
 // Controllers — one AbortController per in-flight step, exposed for
-// Task 18/19 (cancel, resume). A module-level singleton: only one live run is
-// ever driven per tab (one `run` slice), so one map is the whole story.
+// Task 18/19 (cancel, resume). A module-level singleton (only one live run is
+// ever driven per tab), but keyed by `<runId>:<StepKey>` — a step key
+// (`<job>/<index>/<step>`) repeats identically across every run of the same
+// workflow, so a bare `StepKey` map would let a stale entry from a previous
+// run of the same workflow shadow the identical key in a brand-new run (a
+// re-run would see `runnerControllers.has(a.key)` true for a step it never
+// started, and the scheduler would silently never start it). The public
+// surface stays exactly `abort(key)`/`abortAll()`/`has(key)` — Task 18/19's
+// contract — scoped internally to whichever run is currently driving
+// (`currentRunId`, set on `run.started` and on `runReplaced` mode `live`).
 // ---------------------------------------------------------------------------
 
-const controllers = new Map<StepKey, AbortController>()
+const controllers = new Map<string, AbortController>()
+let currentRunId: string | null = null
+
+function controllerKey(runId: string, key: StepKey): string {
+  return `${runId}:${key}`
+}
 
 /**
  * Guards `finish` against a narrow race: two independent terminal-producing
@@ -88,15 +101,17 @@ const finishing = new Set<string>()
 
 export const runnerControllers = {
   abort(key: StepKey): void {
-    controllers.get(key)?.abort()
-    controllers.delete(key)
+    if (!currentRunId) return
+    const k = controllerKey(currentRunId, key)
+    controllers.get(k)?.abort()
+    controllers.delete(k)
   },
   abortAll(): void {
     for (const c of controllers.values()) c.abort()
     controllers.clear()
   },
   has(key: StepKey): boolean {
-    return controllers.has(key)
+    return currentRunId !== null && controllers.has(controllerKey(currentRunId, key))
   },
 }
 
@@ -211,6 +226,23 @@ function stopHeartbeat(runId: string): void {
   heartbeats.delete(runId)
 }
 
+/**
+ * Every module-level structure this middleware keeps outside the Redux
+ * store, wiped clean. Called whenever a *new* run is about to become the one
+ * this tab drives (`runOpened` — fresh kickoff — and `runReplaced` — resume
+ * adoption), so a previous run's abandoned heartbeat/controllers/write-queue
+ * can never bleed into the new one. `runClosed` alone is not a reliable
+ * enough hook for this: nothing in the app dispatches it today, and even if
+ * it did, `runOpened` fires *before* the old run's state is torn down.
+ */
+function resetRunnerState(): void {
+  for (const runId of [...heartbeats.keys()]) stopHeartbeat(runId)
+  controllers.clear()
+  writeQueues.clear()
+  finishing.clear()
+  currentRunId = null
+}
+
 const NON_TERMINAL_STEP = new Set(['queued', 'running', 'polling', 'waiting'])
 
 function startHeartbeat(
@@ -241,16 +273,28 @@ function startHeartbeat(
       }
       if (controller.signal.aborted) return
 
+      // Whether *this* heartbeat's run is still the one actually driving the
+      // tab. A heartbeat whose run was superseded (a new run opened, or this
+      // one got replaced) without its own controller being aborted first —
+      // belt-and-suspenders alongside `resetRunnerState` — must never act on
+      // behalf of whatever run *is* current now; both branches below read
+      // this the same way (the previous `ok:true` path already did; the
+      // `ok:false` path used to skip the check and could flip the *current*
+      // run readonly / abort its controllers on an abandoned run's say-so).
+      const slice = (getState() as HasRunSlice).run
+      const runState = slice.state
+      const isCurrent = runState?.runId === runId
+
       if (!result.ok) {
-        dispatch(runModeChanged('readonly'))
-        runnerControllers.abortAll()
+        if (isCurrent) {
+          dispatch(runModeChanged('readonly'))
+          runnerControllers.abortAll()
+        }
         heartbeats.delete(runId)
         return
       }
 
-      const slice = (getState() as HasRunSlice).run
-      const runState = slice.state
-      if (runState && runState.runId === runId) {
+      if (isCurrent && runState) {
         const now = deps.clock.now()
         for (const step of Object.values(runState.steps)) {
           if (!NON_TERMINAL_STEP.has(step.status)) continue
@@ -310,6 +354,7 @@ async function handleNextAction(
   runState: RunState,
   deps: RunnerDeps,
   dispatch: (action: unknown) => unknown,
+  getRunState: () => RunState | undefined,
 ): Promise<void> {
   switch (a.kind) {
     case 'expand':
@@ -317,7 +362,19 @@ async function handleNextAction(
       return
 
     case 'skip':
+      // `a.steps` is a snapshot computed from `runState` at the top of the
+      // schedule loop. Dispatching one skip re-enters this same listener
+      // (nested, asynchronously) — which can independently compute its own
+      // `nextActions` and reach the *same* target before we get to it here
+      // (e.g. two matrix items failing close together, each fail-fast-
+      // cascading the same still-pending sibling). `step.skipped` is a
+      // creation event (`assertNewStep`, reducer.ts): a second one for a key
+      // that already has state — from any status, not just `skipped` — is an
+      // illegal transition and throws out of `dispatch()`, aborting the rest
+      // of this loop and stalling the run. Re-check against the freshest
+      // state, not the stale snapshot, immediately before each dispatch.
       for (const s of a.steps) {
+        if (getRunState()?.steps[s.key]) continue
         dispatch(
           runEvent({
             type: 'step.skipped',
@@ -341,7 +398,7 @@ async function handleNextAction(
       if (!step) return
 
       const controller = new AbortController()
-      controllers.set(a.key, controller)
+      controllers.set(controllerKey(runState.runId, a.key), controller)
 
       dispatch(
         runEvent({
@@ -367,12 +424,17 @@ async function handleNextAction(
       } else if (step.uses === 'form') {
         dispatch(runEvent({ type: 'step.waiting', key: a.key, at: deps.clock.now() }))
       } else {
+        // `queued -> failed` is not a legal transition (transitions.ts): every
+        // kind's failure passes through `running` first, same as a pipeline
+        // step's own terminal-failure path (`step.started` then `step.failed`).
+        const at = deps.clock.now()
+        dispatch(runEvent({ type: 'step.started', key: a.key, inputs: {}, at }))
         dispatch(
           runEvent({
             type: 'step.failed',
             key: a.key,
             error: { code: 'UNSUPPORTED_KIND_M1', message: `${step.uses} steps arrive in M2` },
-            at: deps.clock.now(),
+            at,
           }),
         )
       }
@@ -446,12 +508,20 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         }
       }
 
+      // `run.started` is always the first event of a run (runnerActions.ts),
+      // so `currentRunId` is set here before anything below — including this
+      // same event's own terminal-cleanup line, which never applies to
+      // `run.started` itself, and the schedule step a few lines down, which
+      // can be the very first thing that registers a controller — can rely
+      // on it being current.
+      if (event.type === 'run.started') {
+        currentRunId = runState.runId
+        startHeartbeat(runState.runId, deps, listenerApi.dispatch, listenerApi.getState)
+      }
+
       // Bookkeeping cleanup — harmless even on a natural (non-abort) terminal.
       if (isTerminalStepEvent(event)) runnerControllers.abort(event.key)
 
-      if (event.type === 'run.started') {
-        startHeartbeat(runState.runId, deps, listenerApi.dispatch, listenerApi.getState)
-      }
       if (event.type === 'run.finished') {
         stopHeartbeat(runState.runId)
         writeQueues.delete(runState.runId)
@@ -460,9 +530,34 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
 
       const after = (listenerApi.getState() as HasRunSlice).run
       if (after.mode === 'live' && !after.paused && after.meta && after.state?.status === 'running') {
+        const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
         for (const a of nextActions(after.meta.def, after.state)) {
-          await handleNextAction(a, after.meta.def, after.state, deps, listenerApi.dispatch)
+          await handleNextAction(a, after.meta.def, after.state, deps, listenerApi.dispatch, getRunState)
         }
+      }
+    },
+  })
+
+  listener.startListening({
+    actionCreator: runOpened,
+    effect: () => {
+      resetRunnerState()
+    },
+  })
+
+  listener.startListening({
+    actionCreator: runReplaced,
+    effect: (action, listenerApi) => {
+      // A fresh run.started's own `currentRunId` assignment (above) makes
+      // this the only other place a run *becomes* current, so it gets the
+      // same reset — otherwise a run adopted here would inherit whatever
+      // controllers/heartbeat/write-queue a previous run in this tab left
+      // behind (05 Resume: "the heartbeat restarts; lease_owner becomes this
+      // tab" — only for a `live` adoption; a `readonly` view drives nothing).
+      resetRunnerState()
+      if (action.payload.mode === 'live') {
+        currentRunId = action.payload.state.runId
+        startHeartbeat(action.payload.state.runId, deps, listenerApi.dispatch, listenerApi.getState)
       }
     },
   })
@@ -470,7 +565,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
   listener.startListening({
     actionCreator: runClosed,
     effect: () => {
-      for (const runId of [...heartbeats.keys()]) stopHeartbeat(runId)
+      resetRunnerState()
     },
   })
 

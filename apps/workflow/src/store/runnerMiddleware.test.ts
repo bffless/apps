@@ -134,6 +134,13 @@ function virtualClock(start = 1_000) {
   return { clock, advance }
 }
 
+/** Flush pending microtasks/macrotasks without moving the virtual clock — lets an
+ *  already-dispatched cascade (e.g. `run.started`'s own listener effect registering
+ *  the heartbeat's first `sleep`) settle before the clock starts moving. */
+async function flush(rounds = 10): Promise<void> {
+  for (let i = 0; i < rounds; i++) await new Promise((r) => setTimeout(r, 0))
+}
+
 /** Advance the virtual clock in small steps, flushing real ticks, until `predicate` holds. */
 async function pumpUntil(
   advance: (ms: number) => Promise<void>,
@@ -198,6 +205,64 @@ const TWO_JOBS = toDefinition({
 
 const ONE_KEY = stepKey('a', 0, 'one')
 const ASK_KEY = stepKey('b', 0, 'ask')
+
+// ---------------------------------------------------------------------------
+// A one-job definition with top-level outputs — one that evaluates, one that
+// doesn't (a malformed expression, parse error) — so the run actually
+// reaches `finish` instead of stalling on a form.
+// ---------------------------------------------------------------------------
+
+const WITH_OUTPUTS = toDefinition({
+  name: 'With outputs',
+  jobs: {
+    a: {
+      steps: [
+        {
+          id: 'one',
+          uses: 'pipeline',
+          with: { path: 'x' },
+          outputs: { v: { type: 'string', value: '${{ response.v }}' } },
+        },
+      ],
+      outputs: { v: '${{ steps.one.outputs.v }}' },
+    },
+  },
+  outputs: {
+    good: '${{ jobs.a.outputs.v }}',
+    // A malformed expression (dangling operator) — parse error, guaranteed
+    // to throw (same pattern pipeline.test.ts uses for the same reason).
+    bad: '${{ jobs.a.outputs.v == }}',
+  },
+}) as Definition
+
+// ---------------------------------------------------------------------------
+// A one-job definition using an `island` step — unsupported in M1.
+// ---------------------------------------------------------------------------
+
+const ISLAND_JOB = toDefinition({
+  name: 'Unsupported kind',
+  jobs: { a: { steps: [{ id: 'i', uses: 'island', with: {} }], outputs: {} } },
+  outputs: {},
+}) as Definition
+const ISLAND_KEY = stepKey('a', 0, 'i')
+
+// ---------------------------------------------------------------------------
+// A 3-item matrix, `max-parallel: 2`, fail-fast: two items run concurrently,
+// one pending sibling is a fail-fast skip target for *both* if they fail
+// close enough together (finding 3's race window).
+// ---------------------------------------------------------------------------
+
+const MATRIX_FAIL_FAST = toDefinition({
+  name: 'Matrix fail-fast',
+  jobs: {
+    m: {
+      strategy: { matrix: { i: [1, 2, 3] }, 'max-parallel': 2 },
+      steps: [{ id: 's', uses: 'pipeline', with: { path: 'x' } }],
+      outputs: {},
+    },
+  },
+  outputs: {},
+}) as Definition
 
 // ---------------------------------------------------------------------------
 // Scenario 1: the recorded write sequence, in order
@@ -308,6 +373,10 @@ describe('createRunnerMiddleware — write-ahead failure', () => {
     // schedule step).
     expect(store.getState().run.state?.steps[ASK_KEY]).toBeUndefined()
     expect(writes).toEqual([{ op: 'create', row: expect.anything() }])
+    // `abortAll()` fires synchronously in the same block that sets `paused`,
+    // before the step's own fire-and-forget adapter run has any chance to
+    // matter — the controller ONE_KEY was registered under is gone either way.
+    expect(runnerControllers.has(ONE_KEY)).toBe(false)
   })
 })
 
@@ -328,13 +397,203 @@ describe('createRunnerMiddleware — heartbeat', () => {
       startRun({ impl: 'test', workflow: 'twojobs', def: TWO_JOBS, yaml: 'name: Two jobs', workflowName: 'Two jobs', values: {} }),
     )
 
-    // A single big jump can outrun the heartbeat's *first* `sleep(15_000)` even
-    // registering (it only does once the `run.started` listener effect has
-    // actually run) — advance in small steps, same as `pumpUntil`, so the
-    // heartbeat is never racing the virtual clock.
+    // TWO_JOBS's own progression (`a/0/one` succeeding, `b/0/ask` reaching
+    // `waiting`) needs no clock advance at all — it is pure microtask-driven
+    // dispatch. Settle it (and, with it, `run.started`'s own listener effect
+    // registering the heartbeat's first `sleep(15_000)`) *before* the virtual
+    // clock moves at all, so that `sleep` is registered at the pristine start
+    // value and its due time is exactly pinned.
+    const startedAt = clock.now()
+    await flush()
+
+    // Advance in small steps, same as `pumpUntil`, so the heartbeat is never
+    // racing the virtual clock (a single big jump can land past the point
+    // `sleep`'s resolution needs to be observed and re-register the next one).
     await pumpUntil(advance, () => leaseCalls.length > 0, { stepMs: 1_000, maxSteps: 30 })
 
     expect(leaseCalls[0]).toEqual({ id: store.getState().run.state?.runId, owner: getOwnerId(), takeover: undefined })
+    // Pins the 15 s period (05): the first lease call lands exactly one
+    // heartbeat interval after the run started, not sooner or later.
+    expect(clock.now()).toBe(startedAt + 15_000)
     expect(store.getState().run.mode).toBe('readonly')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scenario 5: 'finish' — top-level outputs, the final row write, heartbeat stop
+// ---------------------------------------------------------------------------
+
+describe('createRunnerMiddleware — finish', () => {
+  it('evaluates top-level outputs (errors → null + annotation), writes the final patch once, and stops the heartbeat', async () => {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: 'hi' } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes, leaseCalls } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({
+        impl: 'test',
+        workflow: 'withoutputs',
+        def: WITH_OUTPUTS,
+        yaml: 'name: With outputs',
+        workflowName: 'With outputs',
+        values: {},
+      }),
+    )
+
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+
+    const state = store.getState().run.state!
+    expect(state.status).toBe('succeeded')
+    // `good` reads a real job output; `bad` is a malformed expression — a
+    // parse error, caught per-output (null) rather than failing `finish`.
+    expect(state.outputs).toEqual({ good: 'hi', bad: null })
+    expect(state.annotations).toEqual([
+      expect.objectContaining({ level: 'warning', message: expect.stringContaining('bad') }),
+    ])
+
+    // The `finishing` guard: exactly one `run.finished` write ever lands,
+    // never a duplicate.
+    const finishedPatches = writes.filter(
+      (w): w is Extract<Recorded, { op: 'patch' }> => w.op === 'patch' && w.patch.status === 'succeeded',
+    )
+    expect(finishedPatches).toHaveLength(1)
+    expect(finishedPatches[0]!.id).toBe(state.runId)
+    expect(finishedPatches[0]!.patch).toMatchObject({
+      status: 'succeeded',
+      outputs: { good: 'hi', bad: null },
+      leaseOwner: null,
+      leaseUntil: null,
+    })
+    expect(finishedPatches[0]!.patch.finishedAt).toEqual(expect.any(Number))
+
+    // The output-eval failure's own annotation write, separate from the
+    // run.finished write (eventToWrites: `run.annotation` → its own patch).
+    const annotationPatch = writes.find(
+      (w): w is Extract<Recorded, { op: 'patch' }> => w.op === 'patch' && Array.isArray(w.patch.annotations),
+    )
+    expect(annotationPatch?.patch.annotations).toEqual(state.annotations)
+
+    // Heartbeat stopped: advancing well past another interval calls lease no further.
+    const leaseCallsAtFinish = leaseCalls.length
+    await advance(20_000)
+    await flush()
+    expect(leaseCalls.length).toBe(leaseCallsAtFinish)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scenario 6: heartbeat ok branch — heartbeatAt on non-terminal steps
+// ---------------------------------------------------------------------------
+
+describe('createRunnerMiddleware — heartbeat (ok branch)', () => {
+  it('upserts heartbeatAt for every non-terminal step on a successful lease, and leaves the run live', async () => {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: 'hi' } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes, leaseCalls } = fakeRunStore() // default lease: { ok: true }
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'twojobs', def: TWO_JOBS, yaml: 'name: Two jobs', workflowName: 'Two jobs', values: {} }),
+    )
+
+    // `b/0/ask` (a form) stays `waiting` — non-terminal — until Task 18
+    // completes it, which is exactly the step the heartbeat should keep
+    // fresh.
+    await pumpUntil(advance, () => store.getState().run.state?.steps[ASK_KEY]?.status === 'waiting')
+    await pumpUntil(advance, () => leaseCalls.length > 0, { stepMs: 1_000, maxSteps: 30 })
+
+    const heartbeatWrite = writes.find(
+      (w): w is Extract<Recorded, { op: 'upsert' }> =>
+        w.op === 'upsert' && w.key === ASK_KEY && w.patch.heartbeatAt !== undefined,
+    )
+    expect(heartbeatWrite?.patch.heartbeatAt).toEqual(expect.any(Number))
+
+    // `a/0/one` is already `succeeded` (terminal) by the time the heartbeat
+    // fires — it must not get a heartbeatAt write.
+    expect(
+      writes.some((w) => w.op === 'upsert' && w.key === ONE_KEY && w.patch.heartbeatAt !== undefined),
+    ).toBe(false)
+
+    expect(store.getState().run.mode).toBe('live')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scenario 7: an unsupported step kind fails fast (island/script, M1)
+// ---------------------------------------------------------------------------
+
+describe('createRunnerMiddleware — unsupported step kinds (M1)', () => {
+  it('fails an island step immediately with UNSUPPORTED_KIND_M1', async () => {
+    // Chosen over the "file outside the run prefix" annotation branch: it
+    // needs no file-registration plumbing to set up, and covers a scheduler
+    // branch (`handleNextAction`'s 'start' case, the non-pipeline/non-form
+    // arm) that otherwise had zero coverage at all.
+    const { http } = scriptedHttp({})
+    const { clock, advance } = virtualClock()
+    const { store: runStore } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'island', def: ISLAND_JOB, yaml: 'name: Unsupported kind', workflowName: 'Unsupported kind', values: {} }),
+    )
+
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+
+    const step = store.getState().run.state?.steps[ISLAND_KEY]
+    expect(step?.status).toBe('failed')
+    expect(step?.error).toEqual({ code: 'UNSUPPORTED_KIND_M1', message: 'island steps arrive in M2' })
+    expect(store.getState().run.state?.status).toBe('failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scenario 8 (finding 3 regression): concurrent fail-fast skips never throw
+// ---------------------------------------------------------------------------
+
+describe('createRunnerMiddleware — fail-fast skip does not stall the run', () => {
+  it('completes even when two concurrently-failing matrix items can both try to skip the same pending sibling', async () => {
+    // `max-parallel: 2` starts items 0 and 1 together, leaving item 2
+    // pending; both 0 and 1 are scripted to fail, so their two independent
+    // `step.failed` events can each compute their own `nextActions` and
+    // both propose skipping item 2's step before either dispatch has
+    // landed — the exact nested-listener race finding 3 flagged. This is a
+    // best-effort reproduction (JS's microtask ordering doesn't *guarantee*
+    // the two failures interleave that closely on every run); its real
+    // value is the observable property that must hold either way: the run
+    // completes cleanly to a final state, never stalls, and the reducer
+    // never throws an IllegalTransition out of a listener effect.
+    const { http } = scriptedHttp({
+      '/api/test/x': [
+        { status: 500, body: { code: 'BOOM' } },
+        { status: 500, body: { code: 'BOOM' } },
+      ],
+    })
+    const { clock, advance } = virtualClock()
+    const { store: runStore } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({
+        impl: 'test',
+        workflow: 'matrix',
+        def: MATRIX_FAIL_FAST,
+        yaml: 'name: Matrix fail-fast',
+        workflowName: 'Matrix fail-fast',
+        values: {},
+      }),
+    )
+
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+
+    const state = store.getState().run.state!
+    expect(state.status).toBe('failed')
+    expect(state.steps[stepKey('m', 0, 's')]?.status).toBe('failed')
+    expect(state.steps[stepKey('m', 1, 's')]?.status).toBe('failed')
+    expect(state.steps[stepKey('m', 2, 's')]?.status).toBe('skipped')
   })
 })
