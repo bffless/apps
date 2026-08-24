@@ -1,5 +1,5 @@
 targetUrl: pipeline
-order: 13
+order: 33
 pipeline:
   name: Hello fail (on purpose)
   description: "POST { code } -> 418 { code, error: 'fails on purpose' }. Exercises continue-on-error + the workflow's failure-recovery branch."

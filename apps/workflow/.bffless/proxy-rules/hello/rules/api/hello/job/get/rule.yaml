@@ -1,5 +1,5 @@
 targetUrl: pipeline
-order: 12
+order: 32
 pipeline:
   name: Hello job poll
   description: "GET ?id=<jobId> -> { status } while pending/running, { id, status, result } when done, { id, status, error } when errored. What the workflow's `poll` step reads on every tick until `response.status == 'done'`."

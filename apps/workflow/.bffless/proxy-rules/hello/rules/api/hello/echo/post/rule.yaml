@@ -1,5 +1,5 @@
 targetUrl: pipeline
-order: 10
+order: 30
 pipeline:
   name: Hello echo
   description: "POST { text, upper } -> { text } (optionally uppercased). The simplest possible pipeline step (spec 01 walkthrough)."

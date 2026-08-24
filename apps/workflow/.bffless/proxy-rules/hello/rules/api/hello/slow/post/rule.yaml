@@ -1,8 +1,8 @@
 targetUrl: pipeline
-order: 11
+order: 31
 pipeline:
   name: Hello slow job (enqueue + poll)
-  description: "POST { lines, photo, outPrefix } -> { jobId, status: 'pending' } immediately; the report renders in postSteps (studio enqueue+postSteps pattern) and the client polls GET /api/hello/job?id=. The real service never answers 503 BUSY — retry.if in the workflow's slow step simply never fires live (mock-only, exercised by unit tests)."
+  description: "POST { lines, photo, outPrefix } -> { jobId, status: 'pending' } immediately; the report renders in postSteps (studio enqueue+postSteps pattern) and the client polls GET /api/hello/job?id=. The real service never answers 503 BUSY — retry.if in the workflow's slow step simply never fires live (mock-only, exercised by unit tests). startedMs: now() writes the ISO string into a number-typed field; data_create's schema coercion stores it as epoch ms (same pattern as handoff's grants rule, createdMs: now())."
   steps:
     - id: createJob
       name: createJob
@@ -12,7 +12,7 @@ pipeline:
         fields:
           status: "'pending'"
           request: request.body
-          startedMs: now_ms()
+          startedMs: now()
     - id: respond
       name: respond
       handler: response_handler
