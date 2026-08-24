@@ -35,6 +35,8 @@ export interface FakeIsland {
   teardownParams: unknown[]
   /** True once the host closed the connection. */
   closed: boolean
+  /** Every `ui/notifications/host-context-changed` diff the host sent. */
+  contextChanges: Record<string, unknown>[]
   /** Run the View's `ui/initialize` handshake; resolves once the host has it. */
   connect(): Promise<void>
   /** Close the View side (an island whose page went away). */
@@ -69,6 +71,7 @@ export function createFakeIsland(options: FakeIslandOptions = {}): FakeIsland {
     app,
     frames: [],
     toolInputs: [],
+    contextChanges: [],
     teardowns: 0,
     teardownParams: [],
     closed: false,
@@ -86,6 +89,13 @@ export function createFakeIsland(options: FakeIslandOptions = {}): FakeIsland {
   app.onclose = () => {
     island.closed = true
   }
+  // The App merges a host-context diff into `getHostContext()` only when the
+  // `hostcontextchanged` event slot exists — the SDK creates notification
+  // handlers lazily, on the first listener. A real island that cares about the
+  // theme or the display mode registers one; so does this fake.
+  app.addEventListener('hostcontextchanged', (params) => {
+    island.contextChanges.push(params as Record<string, unknown>)
+  })
   if (options.teardown !== false) {
     app.onteardown = (params) => {
       island.teardowns += 1

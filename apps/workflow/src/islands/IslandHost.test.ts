@@ -320,14 +320,57 @@ describe('the host surface', () => {
     expect(h.iframe.style.height).toBe(`${Math.round(window.innerHeight * 0.8)}px`)
   })
 
-  it('leaves the frame height alone in fullscreen', async () => {
+  it('clears the inline height on the way into fullscreen and ignores size-changed there', async () => {
     const h = await mounted()
-    await h.island.app.requestDisplayMode({ mode: 'fullscreen' })
 
     await h.island.app.sendSizeChanged({ height: 320 })
     await tick()
+    expect(h.iframe.style.height).toBe('320px')
 
+    // The inline height is an inline style: left in place it would beat
+    // `.island-fullscreen .island-frame { height: 100% }`.
+    await h.island.app.requestDisplayMode({ mode: 'fullscreen' })
     expect(h.iframe.style.height).toBe('')
+
+    await h.island.app.sendSizeChanged({ height: 400 })
+    await tick()
+    expect(h.iframe.style.height).toBe('')
+  })
+
+  it('lets the page put the island back inline, and tells the View it happened', async () => {
+    const h = await mounted()
+    await h.island.app.requestDisplayMode({ mode: 'fullscreen' })
+    await tick()
+    expect(h.island.app.getHostContext()?.displayMode).toBe('fullscreen')
+
+    h.host.setDisplayMode('inline')
+    await tick()
+
+    expect(h.island.app.getHostContext()?.displayMode).toBe('inline')
+    expect(h.island.contextChanges.at(-1)).toEqual({ displayMode: 'inline' })
+    // ...and the frame follows size-changed again.
+    await h.island.app.sendSizeChanged({ height: 200 })
+    await tick()
+    expect(h.iframe.style.height).toBe('200px')
+  })
+
+  it('setDisplayMode is a no-op when nothing changed, before a mount, and after teardown', async () => {
+    const before = makeHarness()
+    expect(() => before.host.setDisplayMode('fullscreen')).not.toThrow()
+
+    const h = await mounted()
+    h.host.setDisplayMode('inline')
+    await tick()
+    expect(h.island.contextChanges).toEqual([])
+
+    h.host.setDisplayMode('fullscreen')
+    await tick()
+    expect(h.island.contextChanges).toEqual([{ displayMode: 'fullscreen' }])
+
+    await h.host.teardown('completed')
+    h.host.setDisplayMode('inline')
+    await tick()
+    expect(h.island.contextChanges).toEqual([{ displayMode: 'fullscreen' }])
   })
 })
 
@@ -413,6 +456,76 @@ describe('teardown', () => {
 
     await expect(h.host.teardown('cancelled')).resolves.toBeUndefined()
     expect(island.closed).toBe(true)
+  })
+
+  it('rejects an already-aborted mount without fetching the HTML', async () => {
+    const h = makeHarness()
+    const controller = new AbortController()
+    controller.abort()
+
+    const err = await h.host
+      .mount(h.iframe, { ...MOUNT, signal: controller.signal })
+      .catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(IslandLoadError)
+    expect(h.fetchText).not.toHaveBeenCalled()
+    expect(h.iframe.srcdoc).toBe('')
+  })
+
+  it('a teardown during the HTML fetch abandons the mount before it can connect', async () => {
+    const island = createFakeIsland()
+    let deliver: (html: { ok: boolean; status: number; text: string }) => void = () => {}
+    const fetchText = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; status: number; text: string }>((resolve) => {
+          deliver = resolve
+        }),
+    )
+    const h = makeHarness({ fetchText: fetchText as unknown as IslandHostDeps['fetchText'] }, island)
+
+    const settled = h.host.mount(h.iframe, MOUNT).catch((e: unknown) => e)
+    await tick()
+    await h.host.teardown('cancelled')
+    deliver({ ok: true, status: 200, text: HTML })
+
+    expect(await settled).toBeInstanceOf(IslandLoadError)
+    expect(h.iframe.srcdoc).toBe('')
+    // The transport is only built at `connect()` time: never reached.
+    expect(island.frames).toEqual([])
+  })
+
+  it('a mount superseded while its HTML is in flight never connects its bridge', async () => {
+    const survivor = createFakeIsland()
+    const pending: ((html: { ok: boolean; status: number; text: string }) => void)[] = []
+    const fetchText = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; status: number; text: string }>((resolve) => {
+          pending.push(resolve)
+        }),
+    )
+    const h = makeHarness(
+      { fetchText: fetchText as unknown as IslandHostDeps['fetchText'] },
+      survivor,
+    )
+
+    const first = h.host.mount(h.iframe, MOUNT).catch((e: unknown) => e)
+    await tick()
+    const second = h.host.mount(h.iframe, MOUNT)
+    await tick()
+    expect(pending).toHaveLength(2)
+
+    pending[0]({ ok: true, status: 200, text: HTML })
+    expect(await first).toBeInstanceOf(IslandLoadError)
+
+    pending[1]({ ok: true, status: 200, text: HTML })
+    await survivor.connect()
+    await second
+
+    // Exactly one bridge ever connected, and it is the second one.
+    expect(survivor.frames).toEqual([h.iframe])
+    expect(survivor.closed).toBe(false)
+    const result = await survivor.app.callServerTool({ name: 'echo', arguments: {} })
+    expect(result.isError).toBeFalsy()
   })
 
   it('a second mount supersedes the first rather than leaving two bridges connected', async () => {

@@ -32,6 +32,11 @@ export interface IslandFrameProps {
    * island is served as a real MCP resource (04 "Later").
    */
   permissions?: McpUiResourcePermissions
+  /**
+   * Must be **referentially stable** for the life of the step: it is an effect
+   * dependency, so a host rebuilt on every render would re-mount the island on
+   * every render.
+   */
   host: IslandHost
   onLoadError: (err: { code: 'ISLAND_LOAD'; message: string }) => void
 }
@@ -47,13 +52,15 @@ export function IslandFrame(props: IslandFrameProps) {
   // business, not the frame's.
   const argsRef = useRef(props.arguments)
   const errorRef = useRef(onLoadError)
+  const displayRef = useRef(props.display)
 
-  // Both refs are seeded by `useRef` for the first render, so the mount effect
-  // below (which runs before this one only on later renders) always reads a
-  // current value.
+  // All three refs are seeded by `useRef` for the first render, so the mount
+  // effect below (which runs before this one only on later renders) always
+  // reads a current value.
   useEffect(() => {
     argsRef.current = props.arguments
     errorRef.current = onLoadError
+    displayRef.current = props.display
   })
 
   useEffect(() => {
@@ -72,6 +79,12 @@ export function IslandFrame(props: IslandFrameProps) {
         headless,
         signal: controller.signal,
       })
+      .then(() => {
+        // The mode effect below cannot reach a session that did not exist yet
+        // when it ran, so a step that opens straight into fullscreen applies it
+        // here. Idempotent: `setDisplayMode` no-ops when nothing changed.
+        if (live) host.setDisplayMode(displayRef.current)
+      })
       .catch((err: unknown) => {
         // A mount the cleanup already abandoned is not a load error.
         if (!live) return
@@ -85,6 +98,13 @@ export function IslandFrame(props: IslandFrameProps) {
       void host.teardown('unmounted')
     }
   }, [host, impl, src, viewer, headless])
+
+  // The page's half of `ui/request-display-mode`: the island *asks*, the store
+  // decides, and the answer flows back down here. Without it the bridge would
+  // keep telling the island it is fullscreen after the user left fullscreen.
+  useEffect(() => {
+    host.setDisplayMode(props.display)
+  }, [host, props.display])
 
   return (
     <iframe

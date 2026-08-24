@@ -17,6 +17,7 @@ interface FakeHost extends IslandHost {
   teardowns: string[]
   live: number
   peak: number
+  modes: string[]
 }
 
 function fakeHost(mount?: IslandHost['mount']): FakeHost {
@@ -25,12 +26,16 @@ function fakeHost(mount?: IslandHost['mount']): FakeHost {
     teardowns: [],
     live: 0,
     peak: 0,
+    modes: [],
     async mount(iframe, a) {
       host.mounts += 1
       host.live += 1
       host.peak = Math.max(host.peak, host.live)
       if (mount) await mount(iframe, a)
       else await Promise.resolve()
+    },
+    setDisplayMode(mode) {
+      host.modes.push(mode)
     },
     async teardown(reason) {
       host.teardowns.push(reason)
@@ -88,6 +93,20 @@ describe('IslandFrame', () => {
     await waitFor(() => expect(host.mounts).toBeGreaterThan(0))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(host.peak).toBe(1)
+  })
+
+  it('pushes the page\'s display mode down to the host when the prop changes', async () => {
+    const host = fakeHost()
+    const { rerender } = render(<IslandFrame {...PROPS} host={host} />)
+
+    await waitFor(() => expect(host.mounts).toBe(1))
+    expect(host.modes).toEqual(['inline', 'inline'])
+
+    rerender(<IslandFrame {...PROPS} host={host} display="fullscreen" />)
+    expect(host.modes.at(-1)).toBe('fullscreen')
+
+    rerender(<IslandFrame {...PROPS} host={host} display="inline" />)
+    expect(host.modes.at(-1)).toBe('inline')
   })
 
   it('reports an ISLAND_LOAD rejection through onLoadError', async () => {

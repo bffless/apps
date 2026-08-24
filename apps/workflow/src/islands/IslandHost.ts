@@ -126,6 +126,14 @@ export interface IslandHost {
    * a non-2xx fetch / an abort).
    */
   mount(iframe: HTMLIFrameElement, a: IslandMountArgs): Promise<void>
+  /**
+   * The *page* changed the display mode (the user left fullscreen, a run moved
+   * on). The island only ever **asks** through `ui/request-display-mode`; the
+   * store is the source of truth, so the answer has to flow back down or the
+   * bridge keeps telling the island it is fullscreen — which also leaves the
+   * size-changed handler disabled. No-op with no session, or when unchanged.
+   */
+  setDisplayMode(mode: IslandDisplayMode): void
   /** `ui/resource-teardown` then disconnect; idempotent, and safe before a mount. */
   teardown(reason: 'cancelled' | 'completed' | 'unmounted'): Promise<void>
 }
@@ -220,6 +228,32 @@ const CAPABILITIES: McpUiHostCapabilities = {
   message: { text: {} },
   // Accepted and ignored in v1 (04).
   updateModelContext: { text: {}, structuredContent: {} },
+}
+
+/**
+ * Move a live session to `mode`, telling the View through `host-context-changed`.
+ * Returns false when nothing changed, so the two callers — the island's own
+ * request and the page's `setDisplayMode` — can both be idempotent and cannot
+ * ping-pong (the page's answer to a request arrives here as "unchanged").
+ *
+ * Entering fullscreen clears the inline height: it is an *inline style*, so a
+ * stale `height: 320px` from the last size-changed beats
+ * `.island-fullscreen .island-frame { height: 100% }`. Entering inline leaves
+ * the height empty for the next size-changed to set (`min-height` covers a
+ * silent island).
+ */
+function applyDisplayMode(current: Session, mode: IslandDisplayMode): boolean {
+  if (current.disposed || current.displayMode === mode) return false
+  current.displayMode = mode
+  current.hostContext = { ...current.hostContext, displayMode: mode }
+  current.bridge.setHostContext(current.hostContext)
+  if (mode === 'fullscreen') current.iframe.style.height = ''
+  return true
+}
+
+/** The one message every "the step went away mid-load" path rejects with. */
+function cancelledWhileLoading(url: string): IslandLoadError {
+  return new IslandLoadError(`island ${url}: the step was cancelled while loading`)
 }
 
 /** One mounted island: its bridge, and the frame/flags its handlers close over. */
@@ -340,13 +374,8 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
     // `inline` ↔ `fullscreen` only (04). Anything else — `pip` — is answered
     // with the mode already in force, which is what the spec asks a host to do.
     bridge.onrequestdisplaymode = async ({ mode }) => {
-      if (mode === 'inline' || mode === 'fullscreen') {
-        if (mode !== current.displayMode) {
-          current.displayMode = mode
-          current.hostContext = { ...current.hostContext, displayMode: mode }
-          bridge.setHostContext(current.hostContext)
-          deps.onDisplayMode(mode)
-        }
+      if ((mode === 'inline' || mode === 'fullscreen') && applyDisplayMode(current, mode)) {
+        deps.onDisplayMode(mode)
       }
       return { mode: current.displayMode }
     }
@@ -390,7 +419,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       const onAbort = () => {
         if (settled) return
         cleanup()
-        reject(new IslandLoadError(`island ${url}: the step was cancelled while loading`))
+        reject(cancelledWhileLoading(url))
       }
 
       const timer = setTimeout(() => {
@@ -408,24 +437,13 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
 
   return {
     async mount(iframe, a) {
-      // A second mount supersedes the first: two live bridges on one step would
-      // both answer `tools/call`. (React StrictMode's dev double-mount already
-      // tears the first down through `IslandFrame`; this is the backstop.)
-      if (session) await discard(session)
-
       // `resolveSrc` throws on a `src` that escapes the bundle — a definition
       // bug, not a runtime state (09), so it is not dressed up as ISLAND_LOAD.
       const url = resolveSrc(a.impl, a.src)
 
-      let html: { ok: boolean; status: number; text: string }
-      try {
-        html = await deps.fetchText(url)
-      } catch (err) {
-        throw new IslandLoadError(`island ${url}: ${messageOf(err)}`)
-      }
-      if (!html.ok) {
-        throw new IslandLoadError(`island ${url}: failed with status ${html.status}`)
-      }
+      // Cheapest checkpoint of all: a step cancelled before its pane rendered
+      // never opens a socket or a request.
+      if (a.signal.aborted) throw cancelledWhileLoading(url)
 
       const hostContext: McpUiHostContext = {
         theme: currentTheme(),
@@ -443,7 +461,39 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         disposed: false,
       }
       install(current, a)
+
+      // Registered *before* the first await, so `teardown()` and a second
+      // `mount()` can both find and dispose an in-flight mount. Everything
+      // after an await therefore re-checks `settled()`: the session may have
+      // been superseded or torn down while we were suspended, and connecting a
+      // bridge or writing `srcdoc` after that leaks a live island.
+      const previous = session
       session = current
+
+      const settled = () => current.disposed || session !== current || a.signal.aborted
+      const abandon = async (): Promise<never> => {
+        await discard(current)
+        throw cancelledWhileLoading(url)
+      }
+
+      // A second mount supersedes the first: two live bridges on one step would
+      // both answer `tools/call`. (React StrictMode's dev double-mount already
+      // tears the first down through `IslandFrame`; this is the backstop.)
+      if (previous) await discard(previous)
+      if (settled()) return abandon()
+
+      let html: { ok: boolean; status: number; text: string }
+      try {
+        html = await deps.fetchText(url)
+      } catch (err) {
+        await discard(current)
+        throw new IslandLoadError(`island ${url}: ${messageOf(err)}`)
+      }
+      if (settled()) return abandon()
+      if (!html.ok) {
+        await discard(current)
+        throw new IslandLoadError(`island ${url}: failed with status ${html.status}`)
+      }
 
       // Order matters, and this is the raceless one: connect *first* so the
       // bridge is already listening, then hand the frame its HTML. Setting
@@ -456,6 +506,8 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         await discard(current)
         throw new IslandLoadError(`island ${url}: ${messageOf(err)}`)
       }
+      // The last checkpoint before the frame is allowed to run any script.
+      if (settled()) return abandon()
 
       iframe.srcdoc = html.text
 
@@ -469,10 +521,19 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       // The step's `with` (minus `src`/`title`/`display`), verbatim — and in
       // viewer mode the caller's `{ value }`. See the `_meta` note at the top:
       // the stamp is sent, but ext-apps 1.7.5's View strips it.
-      await current.bridge.sendToolInput({
-        arguments: a.arguments,
-        _meta: { bffless: { headless: a.headless } },
-      } as Parameters<AppBridge['sendToolInput']>[0])
+      try {
+        await current.bridge.sendToolInput({
+          arguments: a.arguments,
+          _meta: { bffless: { headless: a.headless } },
+        } as Parameters<AppBridge['sendToolInput']>[0])
+      } catch (err) {
+        await discard(current)
+        throw new IslandLoadError(`island ${url}: ${messageOf(err)}`)
+      }
+    },
+
+    setDisplayMode(mode) {
+      if (session) applyDisplayMode(session, mode)
     },
 
     async teardown(reason) {
