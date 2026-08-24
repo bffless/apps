@@ -357,6 +357,104 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
     expect(failed(h.events[2]!).error).toEqual({ code: 'BAD_INPUT', message: 'no photo' })
   })
 
+  // -------------------------------------------------------------------------
+  // Resume of a `polling` row (Task 19; 05 Resume item 3, Decision 3)
+  // -------------------------------------------------------------------------
+
+  /** A `slow/0/start` row already `polling`, as replay would rebuild it. */
+  function resumedSlowState(): RunState {
+    return baseState({
+      expansions: { greet: { total: 1, items: [{ who: 'world' }] } },
+      steps: {
+        [stepKey('greet', 0, 'say')]: succeededStep('greet', 0, 'say', { line: 'Hello, world!' }),
+        [SLOW_KEY]: {
+          ...queuedStep('slow', 0, 'start'),
+          status: 'polling',
+          inputs: {
+            path: 'slow',
+            body: { lines: ['Hello, world!'], photo: null, outPrefix: 'workflows/hello/hello/runs/run_TEST/slow/0/start' },
+          },
+          response: { initial: { jobId: 'j1' } },
+          startedAt: 1_000,
+        },
+      },
+    })
+  }
+
+  it('resume (poll-only): skips the initial request and re-enters the poll loop with the recorded initial response', async () => {
+    const { http, calls } = fakeHttp([
+      { status: 200, body: { status: 'pending' } },
+      {
+        status: 200,
+        body: { id: 'j1', status: 'done', result: { markdown: '# report', posterPath: null, ms: 500 } },
+      },
+    ])
+    const state = resumedSlowState()
+    const h = harness(state, http)
+
+    await runPipelineStep(
+      {
+        step: stepOf(hello, 'slow', 'start'),
+        key: SLOW_KEY,
+        job: 'slow',
+        index: 0,
+        def: hello,
+        state,
+        resume: { mode: 'poll-only', initial: { jobId: 'j1' } },
+      },
+      h.rt,
+    )
+
+    // No `step.started` — that would be `polling -> running`, illegal; only
+    // the self-transition `step.polling` re-affirms the recorded status.
+    expect(h.types()).toEqual(['step.polling', 'step.succeeded'])
+    expect(polling(h.events[0]!).initial).toEqual({ jobId: 'j1' })
+    // The initial POST is never re-issued — only the poll ticks are.
+    expect(calls).toEqual([
+      { path: '/api/hello/job', method: 'GET', query: { id: 'j1' }, body: undefined },
+      { path: '/api/hello/job', method: 'GET', query: { id: 'j1' }, body: undefined },
+    ])
+    expect(succeeded(h.events[1]!).outputs).toEqual({ report: '# report', poster: null })
+  })
+
+  it('resume (poll-only): a retry after the resumed poll fails re-issues the initial request', async () => {
+    const { http, calls } = fakeHttp([
+      { status: 200, body: { status: 'error', code: 'BUSY' } }, // the resumed poll's first tick
+      { status: 200, body: { jobId: 'j2' } }, // the retry's fresh POST
+      { status: 200, body: { status: 'pending' } },
+      {
+        status: 200,
+        body: { id: 'j2', status: 'done', result: { markdown: '# ok', posterPath: null, ms: 10 } },
+      },
+    ])
+    const state = resumedSlowState()
+    const h = harness(state, http)
+
+    await runPipelineStep(
+      {
+        step: stepOf(hello, 'slow', 'start'),
+        key: SLOW_KEY,
+        job: 'slow',
+        index: 0,
+        def: hello,
+        state,
+        resume: { mode: 'poll-only', initial: { jobId: 'j1' } },
+      },
+      h.rt,
+    )
+
+    expect(h.types()).toEqual([
+      'step.polling', // the resumed self-transition
+      'step.retrying', // `error.code == 'BUSY'` from the resumed poll's `fail`
+      'step.started', // the retry re-evaluates `with` and re-POSTs — no `resume` carries over
+      'step.polling',
+      'step.succeeded',
+    ])
+    expect(calls[0]).toEqual({ path: '/api/hello/job', method: 'GET', query: { id: 'j1' }, body: undefined })
+    expect(calls[1]?.path).toBe('/api/hello/slow')
+    expect(calls[1]?.method).toBe('POST')
+  })
+
   it('emits step.cancelled when the run is aborted mid-poll', async () => {
     const { http, calls } = fakeHttp([
       { status: 200, body: { jobId: 'j1' } },

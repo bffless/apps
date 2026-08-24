@@ -65,6 +65,8 @@ export interface RunHeaderProps {
   progress?: { done: number; total: number }
   /** This tab is the one driving the run — the Cancel slot only applies here (Task 19). */
   live?: boolean
+  /** Present, and rendered as the Cancel button, only while there is a running live run to cancel. */
+  onCancel?: () => void
 }
 
 export function RunHeader({
@@ -80,6 +82,7 @@ export function RunHeader({
   base,
   progress,
   live = false,
+  onCancel,
 }: RunHeaderProps) {
   const inFlight = finishedAt === null
   const now = useNow(inFlight)
@@ -122,8 +125,15 @@ export function RunHeader({
           View workflow file
         </Link>
         <Link to={`${base}/run?from=${runId}`}>Re-run</Link>
-        {/* The Cancel button lands here — Task 19 wires it against `runnerControllers`. */}
-        {live && <span className="page-actions-live" data-testid="run-actions-live" />}
+        {live && (
+          <span className="page-actions-live" data-testid="run-actions-live">
+            {onCancel && (
+              <button type="button" data-testid="run-cancel" onClick={onCancel}>
+                Cancel
+              </button>
+            )}
+          </span>
+        )}
       </nav>
     </header>
   )

@@ -30,7 +30,7 @@
  * Phase 3), and a row whose definition snapshot cannot be used at all — which
  * still renders as a record.
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { useParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
@@ -48,6 +48,7 @@ import { replayRun } from '../lib/runner/replay'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { cancelRun, openRun, takeOver } from '../store/lifecycleActions'
 import { stepSelected } from '../store/uiSlice'
 import { workflowApi, useGetRunQuery } from '../store/workflowApi'
 
@@ -109,6 +110,57 @@ function RawRows({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) 
       <h2 className="section-title">Run inputs</h2>
       <pre className="declaration">{JSON.stringify(run.inputs, null, 2)}</pre>
     </section>
+  )
+}
+
+/**
+ * A `running` row this tab does not hold (08 degraded state): held live by
+ * another tab (a heartbeat within the last 60 s) offers a confirm-gated Take
+ * over; an expired lease offers Resume outright. Both call into
+ * `lifecycleActions.ts`'s adopt-live path — whether they land as `live` or
+ * fall back to `readonly` is that thunk's call, not this component's (a
+ * takeover race can still lose).
+ *
+ * `held` is read off the wall clock, so it is computed in an effect rather
+ * than at render time (react-hooks/purity, same posture as `RunHeader`'s
+ * `useNow`) — it only needs to be *current*, not ticking, since the 5 s poll
+ * that drives this component's own re-renders already refreshes `run`. The
+ * `setState` itself is deferred through a microtask, same as `useNow`, so the
+ * effect body never calls it synchronously (react-hooks/set-state-in-effect).
+ */
+function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) {
+  const dispatch = useAppDispatch()
+  const [held, setHeld] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setHeld(Boolean(run.leaseOwner) && typeof run.leaseUntil === 'number' && run.leaseUntil > Date.now())
+    })
+  }, [run.leaseOwner, run.leaseUntil])
+
+  const args = { runId: run.runId, run, steps }
+
+  return (
+    <p className="note">
+      This run is still in flight — it is held by the tab driving it, and resumable from here.{' '}
+      {held === null ? null : held ? (
+        <button
+          type="button"
+          data-testid="run-take-over"
+          onClick={() => {
+            if (window.confirm('Another tab is driving this run. Take over anyway?')) {
+              void dispatch(takeOver(args))
+            }
+          }}
+        >
+          Take over
+        </button>
+      ) : (
+        <button type="button" data-testid="run-resume" onClick={() => void dispatch(openRun(args))}>
+          Resume
+        </button>
+      )}
+    </p>
   )
 }
 
@@ -211,14 +263,10 @@ export function RunPage() {
         base={base}
         progress={state ? stepProgress(state) : undefined}
         live={isLive}
+        onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
       />
 
-      {!isLive && run!.status === 'running' && (
-        <p className="note">
-          This run is still in flight — it is held by the tab driving it, and resumable from here.
-          Cancel, Resume and Take over arrive in Phase 3.
-        </p>
-      )}
+      {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
 
       {!state || !def ? (
         <RawRows run={run!} steps={steps} />

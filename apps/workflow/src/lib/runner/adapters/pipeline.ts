@@ -69,6 +69,15 @@ export interface PipelineStepArgs {
   /** Snapshot at start; step-local contexts are built inside. */
   def: Definition
   state: RunState
+  /**
+   * Resume of a `polling` row (05 Resume item 3, Decision 3): skip the
+   * initial request and re-enter the poll loop with the recorded initial
+   * response. Applies only to the first attempt — a retry re-runs the whole
+   * step (request + poll, 01), same as any other attempt. A `queued`/
+   * `running` row has no resume hint in M1: it is relaunched by calling this
+   * adapter with `resume` absent, which re-issues the initial request.
+   */
+  resume?: { mode: 'poll-only'; initial: unknown }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +202,7 @@ async function runAttempt(
   rt: StepRuntime,
   attempt: number,
   deadline: number | undefined,
+  resuming: boolean,
 ): Promise<AttemptResult> {
   const raw = obj(a.step.raw)
   const scope = (over: { response?: unknown; selfOutputs?: Record<string, unknown> } = {}) =>
@@ -207,14 +217,23 @@ async function runAttempt(
   // `step.started` must be emitted before anything else can go wrong: `queued`
   // has no edge to `failed` (transitions.ts), only to `running`/`cancelled`.
   let inputs: Record<string, unknown> = {}
-  let inputsError: StepError | undefined
-  try {
-    inputs = obj(evalDeep(raw.with, scope()))
-  } catch (err) {
-    inputsError = toStepError(err)
+  if (resuming) {
+    // A resumed `polling` row already carries the `with` its original
+    // `step.started` evaluated (replayed onto the step); re-emitting
+    // `step.started` here would be `polling -> running`, which is not a
+    // legal transition (only `polling -> polling`, the self-transition
+    // no-op below, is) — nothing new to evaluate or announce.
+    inputs = a.state.steps[a.key]?.inputs ?? {}
+  } else {
+    let inputsError: StepError | undefined
+    try {
+      inputs = obj(evalDeep(raw.with, scope()))
+    } catch (err) {
+      inputsError = toStepError(err)
+    }
+    rt.emit({ type: 'step.started', key: a.key, inputs, at: rt.clock.now() })
+    if (inputsError) return { kind: 'error', error: inputsError }
   }
-  rt.emit({ type: 'step.started', key: a.key, inputs, at: rt.clock.now() })
-  if (inputsError) return { kind: 'error', error: inputsError }
 
   // The last response this attempt saw, carried on every failure so `retry.if`
   // can read `response` alongside `error` (01).
@@ -226,15 +245,20 @@ async function runAttempt(
       return { kind: 'error', error: { code: 'STEP', message: 'pipeline step has no `with.path`' } }
     }
 
-    const first = await request(rt, a.state.impl, {
-      path: initialPath,
-      method: (str(inputs.method) ?? 'POST').toUpperCase(),
-      query: inputs.query === undefined ? undefined : obj(inputs.query),
-      body: inputs.body,
-      headers: inputs.headers === undefined ? undefined : (obj(inputs.headers) as Record<string, string>),
-    })
-    if (first.kind !== 'ok') return first
-    const initial = first.body
+    let initial: unknown
+    if (resuming) {
+      initial = a.resume!.initial
+    } else {
+      const first = await request(rt, a.state.impl, {
+        path: initialPath,
+        method: (str(inputs.method) ?? 'POST').toUpperCase(),
+        query: inputs.query === undefined ? undefined : obj(inputs.query),
+        body: inputs.body,
+        headers: inputs.headers === undefined ? undefined : (obj(inputs.headers) as Record<string, string>),
+      })
+      if (first.kind !== 'ok') return first
+      initial = first.body
+    }
     seen = initial
     if (timedOut(deadline, rt.clock.now())) {
       return { kind: 'error', error: timeoutError(), response: initial }
@@ -244,11 +268,24 @@ async function runAttempt(
     let last: unknown = initial
 
     if (pollDecl) {
+      // `step.polling` re-affirms the status the resumed row already has
+      // (the self-transition no-op, transitions.ts) when resuming, or moves
+      // it there for the first time on a fresh attempt — either way this is
+      // the same single emit.
       rt.emit({ type: 'step.polling', key: a.key, initial, at: rt.clock.now() })
       const polled = await runPoll(a, rt, pollDecl, initialPath, initial, scope, deadline)
       if (polled.kind !== 'ok') return polled
       last = polled.body
       seen = last
+    } else if (resuming) {
+      // A row only ever persists `polling` when the step declares `poll:`
+      // (rows.ts) — resuming one for a step whose definition no longer does
+      // is a data inconsistency the adapter should fail closed on, not paper
+      // over with a fabricated success nobody validated.
+      return {
+        kind: 'error',
+        error: { code: 'STEP', message: 'resumed a polling row but the step has no `poll:`' },
+      }
     }
 
     // Terminal success: outputs against the *final* response, then summary and
@@ -370,11 +407,16 @@ export async function runPipelineStep(a: PipelineStepArgs, rt: StepRuntime): Pro
   // number so `step.attempt` reads the same value inside expressions.
   const first = a.state.steps[a.key]?.attempt ?? 1
   let attempt = first
+  // Resume (05 item 3, Decision 3): only the very first loop iteration of a
+  // resumed run can skip the initial request — a retry re-runs the whole
+  // step (request + poll), same as any other attempt.
+  let resuming = a.resume?.mode === 'poll-only'
 
   for (;;) {
     if (rt.signal.aborted) return cancel()
 
-    const result = await runAttempt(a, rt, attempt, deadline)
+    const result = await runAttempt(a, rt, attempt, deadline, resuming)
+    resuming = false
     if (result.kind === 'cancelled') return cancel()
     if (result.kind === 'success') return rt.emit(result.event)
 

@@ -581,7 +581,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
 
   listener.startListening({
     actionCreator: runReplaced,
-    effect: (action, listenerApi) => {
+    effect: async (action, listenerApi) => {
       // A fresh run.started's own `currentRunId` assignment (above) makes
       // this the only other place a run *becomes* current, so it gets the
       // same reset — otherwise a run adopted here would inherit whatever
@@ -589,9 +589,74 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // behind (05 Resume: "the heartbeat restarts; lease_owner becomes this
       // tab" — only for a `live` adoption; a `readonly` view drives nothing).
       resetRunnerState()
-      if (action.payload.mode === 'live') {
-        currentRunId = action.payload.state.runId
-        startHeartbeat(action.payload.state.runId, deps, listenerApi.dispatch, listenerApi.getState)
+      if (action.payload.mode !== 'live') return
+
+      const { state } = action.payload
+      currentRunId = state.runId
+      startHeartbeat(state.runId, deps, listenerApi.dispatch, listenerApi.getState)
+
+      // Resume (05 item 3, Decision 3): a step that was non-terminal when
+      // this row's driving tab went away has no scheduler proposal coming —
+      // `nextActions` only ever proposes `start` for a key with *no* state
+      // yet (next.ts: `itemView` marks an existing non-terminal step
+      // `active`, and the scheduler leaves an active item alone). So
+      // relaunching those is this listener's job, not the schedule loop's:
+      // `polling` resumes the poll loop against its recorded
+      // `response.initial`; `queued`/`running` re-issue the whole request
+      // (no `resume:` hint in M1); `waiting` needs nothing — the pane
+      // re-mounts straight off the replayed state (08). Every relaunch is
+      // registered in the same `controllers` map a scheduler-started step
+      // would use, so `cancelRun`'s `runnerControllers.abortAll()` reaches
+      // it exactly the same way.
+      const def = (listenerApi.getState() as HasRunSlice).run.meta?.def
+      if (def) {
+        for (const step of Object.values(state.steps)) {
+          if (step.kind !== 'pipeline') continue
+          if (step.status !== 'queued' && step.status !== 'running' && step.status !== 'polling') continue
+          const stepDecl = stepOf(def, step.job, step.stepId)
+          if (!stepDecl) continue
+
+          const controller = new AbortController()
+          controllers.set(controllerKey(state.runId, step.key), controller)
+          const scoped = scopedDispatch(state.runId, listenerApi.dispatch)
+          const rt: StepRuntime = {
+            emit: (e) => scoped(runEvent(e)),
+            http: deps.http,
+            clock: deps.clock,
+            signal: controller.signal,
+            registerFile: registerFileForStep(deps, state, step.key, scoped),
+          }
+          const resume =
+            step.status === 'polling'
+              ? { mode: 'poll-only' as const, initial: step.response?.initial }
+              : undefined
+          void runPipelineStep(
+            {
+              step: stepDecl,
+              key: step.key,
+              job: step.job,
+              index: step.index,
+              def,
+              state,
+              ...(resume ? { resume } : {}),
+            },
+            rt,
+          )
+        }
+      }
+
+      // A resumed run may already be fully resolvable (every job terminal
+      // bar the missing `run.finished`, or a not-yet-reached job whose
+      // `needs` are already all terminal) with nothing above having emitted
+      // anything to trigger the normal `runEvent` listener's own schedule
+      // pass — so this listener runs that pass once itself, off the
+      // freshest state (relaunching above dispatches no events
+      // synchronously; `state` is still current).
+      const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
+      if (def && state.status === 'running') {
+        for (const a of nextActions(def, state)) {
+          await handleNextAction(a, def, state, deps, listenerApi.dispatch, getRunState)
+        }
       }
     },
   })
