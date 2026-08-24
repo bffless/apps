@@ -48,7 +48,7 @@ import { replayRun } from '../lib/runner/replay'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { cancelRun, openRun, takeOver } from '../store/lifecycleActions'
+import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
 import { stepSelected } from '../store/uiSlice'
 import { workflowApi, useGetRunQuery } from '../store/workflowApi'
 
@@ -137,6 +137,14 @@ function RawRows({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) 
  * gone by the time it landed, or (this tab driving a different run) the
  * adoption was deliberately skipped to avoid disturbing it — reads the same
  * from here, "still not yours," so one message covers both.
+ *
+ * `failed` (fix round 3, finding 3) is the separate case: the lease
+ * *request* itself never got an answer — a network error or a non-2xx from
+ * `runStore.lease`, surfaced as `LeaseTransportError` out of `adopt()`. That
+ * is not the same fact as "still held elsewhere" (which `lost` reports), so
+ * it gets its own message and its own catch — an uncaught rejection here
+ * would otherwise both leave `attempt`'s promise unhandled and tell the user
+ * something the server never actually said.
  */
 function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) {
   const dispatch = useAppDispatch()
@@ -148,6 +156,7 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
   // synchronously inside it, so by the render this flips on, the selectors
   // below already read the adoption's real outcome.
   const [attempted, setAttempted] = useState(false)
+  const [failed, setFailed] = useState(false)
   const sliceMode = useAppSelector((state) => state.run.mode)
   const sliceRunId = useAppSelector((state) => state.run.state?.runId)
 
@@ -159,12 +168,16 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
 
   const args = { runId: run.runId, run, steps }
   const adoptedLive = sliceMode === 'live' && sliceRunId === run.runId
-  const lost = attempted && !pending && !adoptedLive
+  const lost = attempted && !pending && !adoptedLive && !failed
 
   async function attempt(thunk: (a: typeof args) => ReturnType<typeof openRun>) {
     setPending(true)
+    setFailed(false)
     try {
       await dispatch(thunk(args))
+    } catch (err) {
+      if (!(err instanceof LeaseTransportError)) throw err
+      setFailed(true)
     } finally {
       setPending(false)
       setAttempted(true)
@@ -191,6 +204,12 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
         <button type="button" data-testid="run-resume" disabled={pending} onClick={() => void attempt(openRun)}>
           Resume
         </button>
+      )}
+      {failed && (
+        <span className="note" data-testid="run-adopt-failed">
+          {' '}
+          Couldn&apos;t reach the server — try again.
+        </span>
       )}
       {lost && (
         <span className="note" data-testid="run-adopt-lost">

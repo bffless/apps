@@ -4,6 +4,7 @@
  * `test/helloHarness.ts`: only the clock is faked, everything else (the
  * hello pipelines, the run record, the lease) is the actual mock rule set.
  */
+import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
 import { httpJson } from '../lib/http'
 import { completeFormStep, formInitialValues } from '../lib/runner/adapters/form'
@@ -25,7 +26,7 @@ import {
   virtualClock,
 } from '../test/helloHarness'
 import { makeStore } from './index'
-import { cancelRun, openRun, takeOver } from './lifecycleActions'
+import { LeaseTransportError, cancelRun, openRun, takeOver } from './lifecycleActions'
 import { getOwnerId, startRun } from './runnerActions'
 import { createRegisterFile } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
@@ -394,5 +395,55 @@ describe('openRun — a lost adoption of a different run', () => {
     await flush()
 
     expect(store.getState().run.state?.status).toBe('succeeded')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (fix round 3, finding 3) A failed lease *request* is not a denial: it must
+// not leak as an unhandled rejection, and the slice must stay untouched
+// rather than get silently misread as "still held elsewhere."
+// ---------------------------------------------------------------------------
+
+describe('openRun — a failed lease request (transport failure)', () => {
+  it('rejects with LeaseTransportError instead of a bare error, and never dispatches runReplaced', async () => {
+    const runId = 'run_lease_transport_fail'
+    const run: RunRow = {
+      runId,
+      impl: 'hello',
+      workflow: 'hello',
+      workflowName: 'Hello workflow',
+      definition: hello.raw,
+      yaml: HELLO_YAML,
+      inputs: { greeting: 'Hello', names: ['world'], photo: null, shout: false },
+      status: 'running',
+      headless: false,
+      startedAt: 1_000,
+      finishedAt: null,
+      leaseOwner: null,
+      leaseUntil: null,
+      outputs: null,
+      annotations: [],
+    }
+    db.runs.set(runId, { ...run, _id: nextId() })
+
+    // A 500 from the lease rule (`gate.fn.js`'s real-world equivalent of a
+    // 502/network blip) — `runStore.lease` (runStore.ts's `post()`) throws on
+    // any non-2xx, same as a genuine network failure would.
+    server.use(
+      http.post('/api/workflow/run/lease', () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
+    )
+
+    const { store } = trackedHelloStore()
+
+    await expect(store.dispatch(openRun({ runId, run, steps: [] }))).rejects.toThrow(LeaseTransportError)
+
+    // Neither the live-adopt path nor the readonly fallback ran — the slice
+    // is exactly as untouched as it was before the attempt.
+    expect(store.getState().run.mode).toBeNull()
+    expect(store.getState().run.state).toBeNull()
+
+    // The lease rule was never reached successfully, so nothing changed
+    // server-side either.
+    expect(db.runs.get(runId)?.leaseOwner).toBeNull()
   })
 })

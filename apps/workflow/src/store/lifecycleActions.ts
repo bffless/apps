@@ -98,6 +98,17 @@ function metaFrom(run: RunRow, def: Definition): RunMeta {
  */
 const adopting = new Set<string>()
 
+/**
+ * Thrown by `adopt()` when the lease *request* itself fails — a network
+ * error or a non-2xx answer from `runStore.lease` — as opposed to a normal
+ * `{ ok: false }` response, which just means someone else genuinely holds
+ * the lease (fix round 3, finding 3). `RunPage.tsx`'s `ResumeBanner` catches
+ * this specifically so it can say "couldn't reach the server" instead of the
+ * misleading "still held elsewhere," which is what an unhandled rejection
+ * from here used to leave the UI implying.
+ */
+export class LeaseTransportError extends Error {}
+
 /** The shared adopt-live-or-fall-back-readonly path behind `openRun`/`takeOver` (05 Resume). */
 async function adopt(
   a: { runId: string; run: RunRow; steps: StepRow[] },
@@ -111,7 +122,12 @@ async function adopt(
     const def = toDefinition(a.run.definition) as Definition
     const state = replayRun(a.run, a.steps, def)
     const owner = getOwnerId()
-    const l = await runStore.lease(a.runId, owner, takeover)
+    let l: { ok: boolean; leaseUntil?: number; heldBy?: string }
+    try {
+      l = await runStore.lease(a.runId, owner, takeover)
+    } catch (err) {
+      throw new LeaseTransportError(err instanceof Error ? err.message : String(err))
+    }
 
     if (l.ok) {
       dispatch(runOpened({ meta: metaFrom(a.run, def) }))

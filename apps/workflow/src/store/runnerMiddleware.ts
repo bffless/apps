@@ -30,6 +30,7 @@ import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../
 import { getOwnerId } from './runnerActions'
 import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
+import { workflowApi } from './workflowApi'
 
 /**
  * The one slice this middleware reads. Deliberately *not* the app's `RootState`
@@ -281,6 +282,17 @@ function startHeartbeat(
   const controller = new AbortController()
   heartbeats.set(runId, controller)
   const owner = getOwnerId()
+  // The best-known expiry of the lease this tab currently holds — seeded at
+  // the same `LEASE_MS` window `rowFromSlice`/the lease response itself
+  // grants, and refreshed from every successful renewal below. This is the
+  // yardstick a *transport* failure (finding 1, fix round 3) is measured
+  // against: `deps.runStore.lease` throwing (a 502, a network blip) answers
+  // nothing about who holds the lease — it is not the same fact as a
+  // genuine `{ ok: false }` denial — so it must not demote this tab on its
+  // own. The lease window is 3x the heartbeat period (60s vs 15s), so a
+  // single failed request always has at least two more tries left before
+  // the lease could plausibly have actually expired server-side.
+  let leaseUntil = deps.clock.now() + LEASE_MS
 
   void (async () => {
     for (;;) {
@@ -291,11 +303,14 @@ function startHeartbeat(
       }
       if (controller.signal.aborted) return
 
-      let result: { ok: boolean }
+      // `undefined` marks a transport failure (the request itself threw);
+      // any resolved value — including `{ ok: false }` — is the server's own
+      // answer about the lease, denial included.
+      let result: { ok: boolean; leaseUntil?: number } | undefined
       try {
         result = await deps.runStore.lease(runId, owner)
       } catch {
-        result = { ok: false }
+        result = undefined
       }
       if (controller.signal.aborted) return
 
@@ -311,6 +326,19 @@ function startHeartbeat(
       const runState = slice.state
       const isCurrent = runState?.runId === runId
 
+      if (!result) {
+        // A failed *request*, not a lost lease (finding 1): try again next
+        // tick, same as any other missed beat, as long as the lease this tab
+        // last knew about hasn't actually run out yet.
+        if (deps.clock.now() < leaseUntil) continue
+        if (isCurrent) {
+          dispatch(runModeChanged('readonly'))
+          runnerControllers.abortAll()
+        }
+        heartbeats.delete(runId)
+        return
+      }
+
       if (!result.ok) {
         if (isCurrent) {
           dispatch(runModeChanged('readonly'))
@@ -319,6 +347,8 @@ function startHeartbeat(
         heartbeats.delete(runId)
         return
       }
+
+      leaseUntil = result.leaseUntil ?? deps.clock.now() + LEASE_MS
 
       if (isCurrent && runState) {
         const now = deps.clock.now()
@@ -597,6 +627,12 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       if (event.type === 'run.started') {
         currentRunId = runState.runId
         startHeartbeat(runState.runId, deps, listenerApi.dispatch, listenerApi.getState)
+        // Finding 2 (fix round 3): the runner writes the run record
+        // imperatively through `RunStore`, never through RTK Query itself, so
+        // without this the Past-runs list (`workflowApi`'s own `Runs`-tagged
+        // cache) never learns a new run exists until its `keepUnusedDataFor`
+        // window happens to lapse.
+        listenerApi.dispatch(workflowApi.util.invalidateTags(['Runs']))
       }
 
       // Bookkeeping cleanup — harmless even on a natural (non-abort) terminal.
@@ -606,6 +642,13 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         stopHeartbeat(runState.runId)
         writeQueues.delete(runState.runId)
         finishing.delete(runState.runId)
+        // Same reasoning as `run.started` above, plus the specific `Run` this
+        // finish just patched (`workflowApi.ts`'s `getRun` `providesTags`
+        // keys it by run id) — a page already viewing this run's record stays
+        // stale otherwise.
+        listenerApi.dispatch(
+          workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: runState.runId }]),
+        )
       }
 
       const after = (listenerApi.getState() as HasRunSlice).run
@@ -722,8 +765,14 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // `needs` are already all terminal) with nothing above having emitted
       // anything to trigger the normal `runEvent` listener's own schedule
       // pass — so this listener runs that pass once itself, off the
-      // freshest state (relaunching above dispatches no events
-      // synchronously; `state` is still current).
+      // freshest state. Relaunching above *can* emit synchronously (a
+      // queued/running relaunch's `runPipelineStep` fires `step.started`
+      // before its first await; a poll-only resume fires `step.polling`) —
+      // what actually keeps this safe is `nextActions` itself: it only ever
+      // proposes `start` for a key with *no* state yet, and every proposal
+      // below is re-checked against the freshest state immediately before
+      // it dispatches (`handleNextAction`'s own guards), so a step relaunch
+      // already emitted above can never be re-proposed here.
       if (def && state.status === 'running') {
         for (const a of nextActions(def, state)) {
           await handleNextAction(a, def, state, deps, listenerApi.dispatch, getRunState)

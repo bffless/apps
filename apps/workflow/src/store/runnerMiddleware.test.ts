@@ -9,6 +9,7 @@
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { afterEach, describe, expect, it } from 'vitest'
 import { httpJson } from '../lib/http'
+import { server } from '../mocks/server'
 import { loadWorkflow } from '../lib/runner/definition'
 import type { Clock, HttpJson } from '../lib/runner/adapters/pipeline'
 import type { RunRow, StepRow } from '../lib/runner/rows'
@@ -19,10 +20,12 @@ import { createRunStore } from '../lib/runStore'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import type { AppStore } from './index'
 import { makeStore } from './index'
+import { cancelRun } from './lifecycleActions'
 import { createRegisterFile, runnerControllers } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
 import { getOwnerId, startRun } from './runnerActions'
 import { runClosed } from './runSlice'
+import { workflowApi } from './workflowApi'
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -56,6 +59,8 @@ interface FakeRunStore {
   writes: Recorded[]
   leaseCalls: { id: string; owner: string; takeover?: boolean }[]
   setLease(answer: { ok: boolean; leaseUntil?: number; heldBy?: string }): void
+  /** The next `n` `lease()` calls throw (a transport failure) instead of resolving. */
+  setLeaseFailures(n: number): void
 }
 
 /** A `RunStore` fake that records every write; `failUpsertKey` rejects that step's upserts forever (both attempts of the retry). */
@@ -63,6 +68,7 @@ function fakeRunStore(opts: { failUpsertKey?: StepKey } = {}): FakeRunStore {
   const writes: Recorded[] = []
   const leaseCalls: FakeRunStore['leaseCalls'] = []
   let lease: { ok: boolean; leaseUntil?: number; heldBy?: string } = { ok: true, leaseUntil: Date.now() + 60_000 }
+  let leaseFailuresRemaining = 0
 
   const store: RunStore = {
     async createRun(row) {
@@ -77,11 +83,21 @@ function fakeRunStore(opts: { failUpsertKey?: StepKey } = {}): FakeRunStore {
     },
     async lease(id, owner, takeover) {
       leaseCalls.push({ id, owner, takeover })
+      if (leaseFailuresRemaining > 0) {
+        leaseFailuresRemaining -= 1
+        throw new Error('lease: simulated transport failure')
+      }
       return lease
     },
   }
 
-  return { store, writes, leaseCalls, setLease: (a) => (lease = a) }
+  return {
+    store,
+    writes,
+    leaseCalls,
+    setLease: (a) => (lease = a),
+    setLeaseFailures: (n) => (leaseFailuresRemaining = n),
+  }
 }
 
 /** A manually-driven virtual clock: `sleep` only resolves once `advance` has moved `now` past its deadline. */
@@ -518,6 +534,111 @@ describe('createRunnerMiddleware — heartbeat (ok branch)', () => {
     ).toBe(false)
 
     expect(store.getState().run.mode).toBe('live')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scenario 6b (fix round 3, finding 1): the heartbeat survives a failed lease
+// *request* — a transport failure, not a denial — and only actually demotes
+// once the lease window it last knew about has passed.
+// ---------------------------------------------------------------------------
+
+describe('createRunnerMiddleware — heartbeat tolerates a transport failure', () => {
+  it('keeps the run live through failed lease requests inside the lease window, and only demotes once it expires', async () => {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: 'hi' } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, leaseCalls, setLeaseFailures } = fakeRunStore()
+    // Every heartbeat request from here on throws — a 502/network blip on
+    // every subsequent beat, not just one.
+    setLeaseFailures(Number.POSITIVE_INFINITY)
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'twojobs', def: TWO_JOBS, yaml: 'name: Two jobs', workflowName: 'Two jobs', values: {} }),
+    )
+
+    // Settle `run.started`'s own effect (registers the heartbeat's first
+    // `sleep(15_000)`) before the virtual clock moves at all — same posture
+    // as scenario 4.
+    await flush()
+
+    // The lease window (60 s) is 3x the heartbeat period (15 s): the first
+    // three failed requests (+15 s, +30 s, +45 s) land entirely inside the
+    // window this tab last knew it held, so none of them may demote the run.
+    await pumpUntil(advance, () => leaseCalls.length >= 3, { stepMs: 1_000, maxSteps: 60 })
+    expect(store.getState().run.mode).toBe('live')
+
+    // The fourth failed request lands exactly as the window runs out — only
+    // now is there nothing left to give the tab the benefit of the doubt.
+    await pumpUntil(advance, () => store.getState().run.mode === 'readonly', { stepMs: 1_000, maxSteps: 30 })
+    expect(leaseCalls.length).toBeGreaterThanOrEqual(4)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scenario 6c (fix round 3, finding 2): the runner's own writes invalidate
+// the RTK Query cache the Past-runs list and the run record read from —
+// otherwise a page holding either open never learns a run started/finished.
+// ---------------------------------------------------------------------------
+
+describe('createRunnerMiddleware — RTK Query cache invalidation', () => {
+  it('invalidates the Runs list on run.started, and Runs + the specific Run on run.finished', async () => {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: 'hi' } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+
+    const listCalls: string[] = []
+    const runCalls: string[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      if (request.method !== 'GET') return
+      const path = new URL(request.url).pathname
+      if (path === '/api/workflow/runs') listCalls.push(path)
+      if (path === '/api/workflow/run') runCalls.push(path)
+    }
+    server.events.on('request:start', onRequestStart)
+
+    try {
+      // Subscribe both queries — an open Past-runs list and an open run
+      // record — the way the real pages would, so an invalidation actually
+      // triggers a refetch rather than just marking an unsubscribed entry
+      // stale. `TWO_JOBS` (not `WITH_OUTPUTS`): it parks on `b/0/ask`
+      // (`waiting`) rather than finishing on its own, which is what gives
+      // `run.started`'s own invalidation a moment to observe distinct from
+      // `run.finished`'s.
+      await store.dispatch(workflowApi.endpoints.listRuns.initiate({ impl: 'test', workflow: 'twojobs' })).unwrap()
+      expect(listCalls).toHaveLength(1)
+
+      store.dispatch(
+        startRun({ impl: 'test', workflow: 'twojobs', def: TWO_JOBS, yaml: 'name: Two jobs', workflowName: 'Two jobs', values: {} }),
+      )
+      await pumpUntil(advance, () => store.getState().run.state?.steps[ASK_KEY]?.status === 'waiting')
+      await flush(30)
+
+      // `run.started`: the runner's own `createRun` write never goes through
+      // RTK Query, so without the middleware's own invalidation the
+      // subscribed list would never learn this run exists.
+      expect(listCalls).toHaveLength(2)
+
+      const runId = store.getState().run.state!.runId
+      await store.dispatch(workflowApi.endpoints.getRun.initiate(runId)).unwrap()
+      expect(runCalls).toHaveLength(1)
+
+      // Cancel (rather than let the form complete) is the simplest way to
+      // reach `run.finished` deterministically from here — this test cares
+      // about the invalidation, not the finish path.
+      await store.dispatch(cancelRun())
+      await flush(30)
+
+      // `run.finished`: both the list and this run's own cache entry refetch.
+      expect(listCalls).toHaveLength(3)
+      expect(runCalls).toHaveLength(2)
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+    }
   })
 })
 
