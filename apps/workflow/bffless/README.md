@@ -68,7 +68,13 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   `hello-dist/.bffless` with `base-path: /apps/workflow/hello-dist`; CE serves
   `/.bffless/workflows/*` fine once the files exist. Presigned uploads only — CE's zip
   fallback strips nested `.bffless/` (`deployments.service.ts` `isHiddenFile`).
-- [ ] **First-success checkpoint under a member session** — pending: j5s's SuperTokens core
-  currently fails every signup (`app_id_to_user_id.time_joined` missing, the ce#658 class),
-  so no `workflow-ci` member could be created. `localdev-tools/workflow-live.mjs` drives the
-  checkpoint headlessly once `~/.config/bffless/workflow-ci.env` holds a member login.
+- [x] **`data_query` answers a bare array.** Every rule's `rows()` helper expected a
+  `{ records | data | rows }` envelope, so `find` never matched: `run-step` always took the
+  create branch with a partial patch (400 "job is required"), and `lease`/`run` said "run
+  not found". CE's `data-query.handler.ts` returns `results` (or `results[0]` with
+  `returnSingle`) directly — the helpers now accept the array.
+- [x] **First-success checkpoint — PASSED 2026-08-24** as member `workflow-ci@bffless.app`
+  (`localdev-tools/workflow-live.mjs`, run `run_01M0TKB4MDDDD22FX3WJMVFDWA`): hello listed →
+  run with defaults → greet / slow poll / flaky fail-then-recover → Finish → **Succeeded** with
+  `report`, `poster`, `lines` and the TEAPOT annotation. (Creating that member first needed
+  the SuperTokens pre-flight DDL on j5s — bffless/ce#695.)
