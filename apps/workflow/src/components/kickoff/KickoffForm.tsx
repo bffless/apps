@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { InputDef } from '@bffless/workflow-lint/definition'
+import { validateInputConstraints } from '../../lib/runner/inputConstraints'
 import { validateValue } from '../../lib/runner/outputs'
 import type { FileRef } from '../../lib/runner/types'
 import { FieldControl } from './FieldControl'
@@ -78,7 +79,10 @@ export function KickoffForm({ inputs, initial, uploading, onStart }: KickoffForm
       }
       if (!validateValue(type, list, value)) {
         nextErrors[name] = `Expected a valid ${type} value`
+        continue
       }
+      const constraintError = validateInputConstraints(def, value)
+      if (constraintError) nextErrors[name] = constraintError
     }
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)

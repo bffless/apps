@@ -6,6 +6,7 @@
 import { act } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import type { InputDef } from '@bffless/workflow-lint/definition'
 import helloYaml from '../../../docs/spec/examples/hello.workflow.yaml?raw'
 import { loadWorkflow } from '../../lib/runner/definition'
 import type { FileRef } from '../../lib/runner/types'
@@ -16,6 +17,7 @@ if (!loaded.def) throw new Error('hello.workflow.yaml no longer parses')
 const inputs = loaded.def.inputs
 
 function renderForm(overrides: {
+  inputs?: Record<string, InputDef>
   initial?: Record<string, unknown>
   uploading?: (file: File, onProgress: (f: number) => void) => Promise<FileRef>
   onStart?: (values: Record<string, unknown>) => void
@@ -24,7 +26,7 @@ function renderForm(overrides: {
   const uploading = overrides.uploading ?? vi.fn()
   render(
     <KickoffForm
-      inputs={inputs}
+      inputs={overrides.inputs ?? inputs}
       initial={overrides.initial}
       uploading={uploading}
       onStart={onStart}
@@ -133,5 +135,84 @@ describe('KickoffForm', () => {
     expect(within(form).getByLabelText('reader')).toBeChecked()
     expect(within(form).getByLabelText('shout')).toBeChecked()
     expect(uploading).not.toHaveBeenCalled()
+  })
+
+  describe('input-specific constraints on submit (02: min/max, pattern/length, choice membership)', () => {
+    it('blocks submit and shows an inline error when a number is outside min/max', () => {
+      const numberInputs: Record<string, InputDef> = { count: { type: 'number', min: 1, max: 5, default: 1 } }
+      const { form, onStart } = renderForm({ inputs: numberInputs })
+
+      fireEvent.change(within(form).getByLabelText('count'), { target: { value: '9' } })
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+      expect(within(form).getByText(/at most 5/)).toBeInTheDocument()
+      expect(onStart).not.toHaveBeenCalled()
+    })
+
+    it('blocks submit when a string is shorter than minLength or longer than maxLength', () => {
+      const stringInputs: Record<string, InputDef> = {
+        code: { type: 'string', minLength: 3, maxLength: 5, default: '' },
+      }
+      const { form, onStart } = renderForm({ inputs: stringInputs })
+
+      fireEvent.change(within(form).getByLabelText('code'), { target: { value: 'ab' } })
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+      expect(within(form).getByText(/at least 3/)).toBeInTheDocument()
+      expect(onStart).not.toHaveBeenCalled()
+    })
+
+    it('blocks submit when a string does not match pattern', () => {
+      const patternInputs: Record<string, InputDef> = {
+        slug: { type: 'string', pattern: '^[a-z0-9-]+$', default: '' },
+      }
+      const { form, onStart } = renderForm({ inputs: patternInputs })
+
+      fireEvent.change(within(form).getByLabelText('slug'), { target: { value: 'Not A Slug!' } })
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+      expect(within(form).getByText(/format/)).toBeInTheDocument()
+      expect(onStart).not.toHaveBeenCalled()
+    })
+
+    it('lets a value back through once it is fixed to satisfy the constraint', () => {
+      const numberInputs: Record<string, InputDef> = { count: { type: 'number', min: 1, max: 5, default: 1 } }
+      const { form, onStart } = renderForm({ inputs: numberInputs })
+
+      fireEvent.change(within(form).getByLabelText('count'), { target: { value: '9' } })
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+      expect(onStart).not.toHaveBeenCalled()
+
+      fireEvent.change(within(form).getByLabelText('count'), { target: { value: '3' } })
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+      expect(onStart).toHaveBeenCalledWith({ count: 3 })
+    })
+
+    it('blocks submit on a stale prefilled choice value that is no longer a valid option', () => {
+      // The exact scenario the review flagged: a `?from=` prefill (or any
+      // `initial`) can carry a value from before the workflow's options
+      // changed — membership must still be checked at submit time.
+      const choiceInputs: Record<string, InputDef> = {
+        length: { type: 'choice', options: ['short', 'medium'], default: 'short' },
+      }
+      const { form, onStart } = renderForm({ inputs: choiceInputs, initial: { length: 'long-removed-option' } })
+
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+      expect(within(form).getByText(/not one of/)).toBeInTheDocument()
+      expect(onStart).not.toHaveBeenCalled()
+    })
+
+    it('blocks submit when any item of a choice list is not a valid option', () => {
+      const choiceInputs: Record<string, InputDef> = {
+        who: { type: 'choice', list: true, options: ['world', 'studio'], default: ['world'] },
+      }
+      const { form, onStart } = renderForm({ inputs: choiceInputs, initial: { who: ['world', 'stale'] } })
+
+      fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+      expect(within(form).getByText(/not one of/)).toBeInTheDocument()
+      expect(onStart).not.toHaveBeenCalled()
+    })
   })
 })
