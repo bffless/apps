@@ -1,0 +1,3 @@
+targetUrl: https://hello.j5s.dev
+order: 5
+description: 'Single-origin forwarding (ADR-0001): /w/hello/[...path] on the harness host → the hello alias. targetUrl is per-install until CE grows targetUrl: alias://hello.'

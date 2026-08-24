@@ -15,6 +15,19 @@
  * with a time (a row keeps `startedAt`/`finishedAt` and nothing else), the
  * retried error stays visible on a step that went on to succeed, and the raw
  * response sits behind a disclosure because it can be 256 KB.
+ *
+ * A `form` step in `waiting` is the one exception to all of the above (08:
+ * "the pane is the form") — but only while `live` is true, i.e. this run is
+ * the one this tab is actually driving. A *read-only* replay of a waiting
+ * form step (another tab's in-flight run, or one this tab used to drive and
+ * has since navigated away from) falls back to the ordinary tabbed view
+ * instead: `runEvent` carries no `runId` (`lib/runner/types.ts`), so a submit
+ * from a read-only pane would dispatch into whatever run the *global*
+ * `runSlice` currently holds live — silently mutating an unrelated run if
+ * this tab happens to be driving a different one that shares the step key
+ * (near-certain for two runs of the same workflow). Per this file's own
+ * philosophy: an action that cannot be honoured is worse than an action that
+ * is not offered yet.
  */
 import { useState } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
@@ -27,6 +40,7 @@ import { MarkdownView } from '../values/MarkdownView'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
+import { FormStepPane } from './FormStepPane'
 
 type Tab = 'Input' | 'Output' | 'Details'
 const TABS: Tab[] = ['Input', 'Output', 'Details']
@@ -192,9 +206,11 @@ export interface StepPaneProps {
   def: Definition
   state: RunState
   stepKey: StepKey
+  /** This run is the one this tab is driving (`RunPage`'s own `isLive`) — gates the `FormStepPane` delegation below. */
+  live: boolean
 }
 
-export function StepPane({ def, state, stepKey }: StepPaneProps) {
+export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
   const [tab, setTab] = useState<Tab>('Input')
 
   const parts = parseKey(stepKey)
@@ -210,6 +226,10 @@ export function StepPane({ def, state, stepKey }: StepPaneProps) {
         <p className="note">This run has no record of that step.</p>
       </aside>
     )
+  }
+
+  if (live && declared?.uses === 'form' && step.status === 'waiting') {
+    return <FormStepPane def={def} state={state} stepKey={stepKey} />
   }
 
   return (

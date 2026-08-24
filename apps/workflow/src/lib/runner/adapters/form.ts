@@ -15,6 +15,7 @@
  */
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import { buildContexts, evalDeep } from '../contexts'
+import { validateInputConstraints } from '../inputConstraints'
 import { validateValue } from '../outputs'
 import { evalAnnotations, evalSummary } from '../results'
 import type { Definition, RunEvent, RunState, Step, StepKey } from '../types'
@@ -74,6 +75,16 @@ export function completeFormStep(a: FormStepArgs): FormResult {
     }
     if (!validateValue(type, list, value)) {
       errors[name] = `Expected ${article(type, list)}`
+      continue
+    }
+    // Same input-specific constraints the kickoff form applies (min/max,
+    // pattern, minLength/maxLength, choice membership) — `validateValue`
+    // above only checks the type-shape, the closed vocabulary (02); a
+    // mid-run form is "the same renderer as the kickoff form" (03), so it
+    // owes its fields the same constraint checks, not a looser pass.
+    const constraintError = validateInputConstraints(field, value)
+    if (constraintError) {
+      errors[name] = constraintError
       continue
     }
     // Keys the form does not declare are dropped: the outputs are the fields.

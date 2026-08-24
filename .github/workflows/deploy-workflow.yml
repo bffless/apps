@@ -1,0 +1,46 @@
+name: Deploy Workflow harness to BFFless
+on:
+  workflow_dispatch: {}
+concurrency: { group: deploy-workflow, cancel-in-progress: false }
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bffless/workflow-lint build
+      - run: pnpm --filter workflow build
+      - run: pnpm --filter workflow test:run
+      - name: Stage the hello implementation bundle
+        run: node apps/workflow/scripts/stage-hello.mjs
+      - name: Sync proxy rules (workflow + hello)
+        uses: bffless/deploy-proxy-rules@v1
+        with:
+          path: |
+            apps/workflow/.bffless/proxy-rules/workflow
+            apps/workflow/.bffless/proxy-rules/hello
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
+          project: bffless/workflow
+          summary-title: Workflow Proxy Rules
+      - name: Deploy the harness
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/workflow/dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
+          project: bffless/workflow
+          alias: workflow
+          proxy-rule-set-names: workflow,hello
+      - name: Deploy the hello implementation
+        uses: bffless/upload-artifact@v1
+        with:
+          path: apps/workflow/hello-dist
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
+          project: bffless/workflow
+          alias: hello
+          proxy-rule-set-names: hello

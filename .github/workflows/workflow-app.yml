@@ -17,4 +17,7 @@ jobs:
       - run: pnpm --filter workflow lint
       - run: pnpm --filter workflow test:run
       - run: pnpm --filter workflow build
-      # e2e steps added in Task 21
+      - name: Install Playwright Chromium
+        run: pnpm --filter workflow exec playwright install chromium --with-deps
+      - name: Playwright smoke
+        run: pnpm --filter workflow test:e2e

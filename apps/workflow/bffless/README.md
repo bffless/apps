@@ -24,3 +24,10 @@ Open `workflow.<domain>`, sign in as a project member: the Implementations scree
 **hello**. Open *Hello workflow* → Start a run with the defaults → the run page shows
 `greet` fan out, `slow` poll to done, `flaky` fail-then-recover, submit the confirm form →
 run status **succeeded** with `report`, `poster`, `lines` under Outputs.
+
+## Live verification checklist
+
+- [ ] **Decision 4**: `GET https://workflow.j5s.dev/api/aliases` returns the alias list under a member session (else: build the designed `/api/workflow/aliases` relay rule from Task 1's note).
+- [ ] **Decision 8**: upload a kickoff photo → the returned ref's `url` serves the bytes (files-trio `subDir` mapping) — else adjust the serve rule's `subDir`/url minting together.
+- [ ] **`project:` input names**: confirm both actions accept `project:` for a non-default project (memory: the two deploy actions have different project fallbacks) — else set repo var scoping.
+- [ ] **Rule set isolation**: do **not** add these sets to `.bffless/config.json`'s `ruleSets` globs — that file drives the nightly drift check against project `bffless/apps`; the workflow sets live in `bffless/workflow` (note this in the README).

@@ -1,0 +1,7 @@
+name: hello_jobs
+fields:
+  - { name: status, type: string, required: true }
+  - { name: request, type: json, required: false }
+  - { name: result, type: json, required: false }
+  - { name: error, type: string, required: false }
+  - { name: startedMs, type: number, required: false }

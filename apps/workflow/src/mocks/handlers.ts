@@ -43,8 +43,10 @@ if (!helloDefinition) throw new Error('mock handlers: the hello workflow no long
 /**
  * `index.json` as the implementation's CI would have generated it — counted off
  * the real definition so the listing can never drift from the YAML it describes.
+ * Exported so `hello-stage.test.ts` can assert the staged bundle's counts never
+ * drift from this mock's (Task 20 parity test).
  */
-const HELLO_INDEX = {
+export const HELLO_INDEX = {
   spec: 1,
   impl: 'hello',
   name: 'Hello',
@@ -88,6 +90,13 @@ const discovery = [
 /** Patchable post-create; everything else is the immutable start snapshot (D16). */
 const RUN_PATCHABLE = ['status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations']
 
+/** The 11 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
+const STEP_MUTABLE = [
+  'status', 'attempt', 'inputs', 'response', 'outputs', 'error', 'summary',
+  'annotations', 'startedAt', 'finishedAt', 'heartbeatAt',
+]
+const STEP_IDENTITY = ['job', 'index', 'step', 'kind']
+
 const LEASE_MS = 60_000
 
 /** A step row as `merge.fn.js` invents it when the upsert is the first write. */
@@ -95,11 +104,19 @@ function baseStepRow(runId: string, key: string): ServerStepRow {
   return toStepRow({ runId, key })
 }
 
+function pick(fields: Record<string, unknown>, columns: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const column of columns) if (column in fields) out[column] = fields[column]
+  return out
+}
+
 const runRecord = [
-  // The client sends the whole row; `startedBy` is the session's, not the body's.
+  // The client sends the whole row, but `startedBy` is the *session's*, never
+  // the body's — the real rule stamps it server-side (05 access: "started_by
+  // is recorded"), so a client-supplied value must never be trusted.
   http.post('/api/workflow/runs', async ({ request }) => {
     const row = toRunRow(await body(request))
-    const stored = { ...row, startedBy: row.startedBy ?? 'user_mock', _id: nextId() }
+    const stored = { ...row, startedBy: 'user_mock', _id: nextId() }
     db.runs.set(stored.runId, stored)
     return HttpResponse.json(toRecord(stored))
   }),
@@ -140,14 +157,17 @@ const runRecord = [
   }),
 
   // Read-merge-write on (runId, key) — the lease serialises writers, so a plain
-  // query-then-write is race-safe in practice.
+  // query-then-write is race-safe in practice. Mirrors the real rule's column
+  // list: only the 11 mutable step columns are ever patched; `job`/`index`/
+  // `step`/`kind` are identity, set once on the row's first write.
   http.post('/api/workflow/run-step', async ({ request }) => {
     const { runId, key, patch } = await body(request)
     const id = stepRowKey(String(runId), String(key))
     const existing = db.steps.get(id)
+    const fields = obj(patch)
     const merged = {
-      ...(existing ?? baseStepRow(String(runId), String(key))),
-      ...obj(patch),
+      ...(existing ?? { ...baseStepRow(String(runId), String(key)), ...pick(fields, STEP_IDENTITY) }),
+      ...pick(fields, STEP_MUTABLE),
       runId: String(runId),
       key: String(key),
       _id: existing?._id ?? nextId(),
