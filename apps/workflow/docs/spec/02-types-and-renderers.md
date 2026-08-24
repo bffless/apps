@@ -39,7 +39,7 @@ schema. A pipeline `outputs` value that does not match its declared type fails t
 ```json
 { "path": "workflows/studio/long-to-short/run_01J…/per-video/0/upload/take-2.mov",
   "name": "take-2.mov", "contentType": "video/quicktime", "size": 3328599040,
-  "url": "/api/workflow/files/workflows/studio/…/take-2.mov" }
+  "url": "/api/uploads/workflows/studio/…/take-2.mov" }
 ```
 
 `path` is the storage key (what pipelines take and return); `url` is the same-origin

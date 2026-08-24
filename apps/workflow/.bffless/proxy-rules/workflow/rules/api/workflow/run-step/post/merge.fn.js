@@ -1,5 +1,8 @@
 function handler({ steps, request }) {
-  const rows = (r) => (r && (r.records || r.data || r.rows)) || []
+  // data_query answers a bare array (or one record with returnSingle) — CE's
+  // data-query.handler.ts `output = returnSingle ? results[0] : results`; the envelope
+  // forms are kept for older CE versions.
+  const rows = (r) => (Array.isArray(r) ? r : (r && (r.records || r.data || r.rows)) || [])
   const row = rows(steps.find)[0] || null
   const patch = request.body.patch || {}
   const base = row || {

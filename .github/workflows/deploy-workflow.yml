@@ -1,6 +1,9 @@
 name: Deploy Workflow harness to BFFless
 on:
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ['apps/workflow/**']
 concurrency: { group: deploy-workflow, cancel-in-progress: false }
 jobs:
   build-and-deploy:
@@ -26,21 +29,29 @@ jobs:
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
           project: bffless/workflow
           summary-title: Workflow Proxy Rules
+          prune: true
       - name: Deploy the harness
         uses: bffless/upload-artifact@v1
         with:
           path: apps/workflow/dist
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
-          project: bffless/workflow
+          repository: bffless/workflow
           alias: workflow
           proxy-rule-set-names: workflow,hello
       - name: Deploy the hello implementation
+        # The bundle is only `.bffless/workflows/*` and upload-artifact skips every dot-entry
+        # it walks (bffless/upload-artifact src/files.ts), so root the walk INSIDE `.bffless`
+        # and pin base-path to the bundle dir: files land at
+        # apps/workflow/hello-dist/.bffless/workflows/* and hello.<domain> serves them at
+        # /.bffless/workflows/*. Presigned uploads only — CE's zip fallback strips nested
+        # `.bffless/` (deployments.service.ts isHiddenFile).
         uses: bffless/upload-artifact@v1
         with:
-          path: apps/workflow/hello-dist
+          path: apps/workflow/hello-dist/.bffless
+          base-path: /apps/workflow/hello-dist
           api-url: ${{ vars.BFFLESS_URL }}
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
-          project: bffless/workflow
+          repository: bffless/workflow
           alias: hello
           proxy-rule-set-names: hello

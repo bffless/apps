@@ -116,10 +116,13 @@ export const workflowApi = createApi({
     /**
      * Discovery: the project's aliases, each probed in parallel. The harness's
      * own alias is not special-cased — it simply has no `index.json`.
+     * `api/workflow/aliases` is the harness relay rule (Decision 4 fallback: the
+     * harness host has no CE alias API of its own — an unmatched `/api/*` falls
+     * through to the SPA's `index.html`).
      */
     discover: builder.query<Implementation[], void>({
       async queryFn(_arg, _api, _extraOptions, baseQuery) {
-        const aliases = await baseQuery('api/aliases')
+        const aliases = await baseQuery('api/workflow/aliases')
         if (aliases.error) return { error: aliases.error }
         const probed = await Promise.all(
           toAliasList(aliases.data).map((alias) => probe(alias.name, alias.isAutoPreview)),

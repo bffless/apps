@@ -1,0 +1,4 @@
+targetUrl: http://localhost:3000/api/aliases
+order: 24
+forwardCookies: true
+description: "Discovery relay (spec 06, Decision 4 fallback): the harness host has no CE alias API — an unmatched /api/* falls through to the SPA's index.html — so GET /api/workflow/aliases forwards to the CE backend with the member's session cookie. The query string is preserved (?repository=owner/name scopes it); CE's own SessionAuthGuard answers 401 for anonymous callers."

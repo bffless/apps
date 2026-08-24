@@ -129,7 +129,7 @@ describe('the files trio', () => {
       name: 'cat.png',
       contentType: 'image/png',
       size: 4,
-      url: '/api/workflow/files/hello/hello/inputs/u1/cat.png',
+      url: '/api/uploads/workflows/hello/hello/inputs/u1/cat.png',
     })
 
     const served = await fetch(ref.url)
@@ -137,7 +137,7 @@ describe('the files trio', () => {
     expect(served.headers.get('content-type')).toBe('image/png')
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]))
 
-    expect((await fetch('/api/workflow/files/hello/nope.png')).status).toBe(404)
+    expect((await fetch('/api/uploads/workflows/hello/nope.png')).status).toBe(404)
   })
 })
 

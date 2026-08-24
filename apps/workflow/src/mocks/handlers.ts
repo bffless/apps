@@ -68,7 +68,7 @@ export const HELLO_INDEX = {
 }
 
 const discovery = [
-  http.get('/api/aliases', () => HttpResponse.json(ALIASES)),
+  http.get('/api/workflow/aliases', () => HttpResponse.json(ALIASES)),
 
   // Only `hello` publishes workflows; every other alias 404s, which is exactly
   // how the harness tells an implementation from an ordinary deploy (ADR-0004).
@@ -237,10 +237,10 @@ const files = [
     )
   }),
 
-  // The serve rule reads the `workflows/` prefix off the storage path, so the
-  // route is the path minus that prefix (see `fileUrl`).
-  http.get('/api/workflow/files/*', ({ params }) => {
-    const stored = db.files.get(`workflows/${decodeURIComponent(String(params['0'] ?? ''))}`)
+  // The serve rule is CE's file_serve_handler at /api/uploads/<subDir>/…, so the
+  // route is the uploads-relative storage path itself (see `fileUrl`).
+  http.get('/api/uploads/*', ({ params }) => {
+    const stored = db.files.get(decodeURIComponent(String(params['0'] ?? '')))
     if (!stored) return new HttpResponse(null, { status: 404 })
     return new HttpResponse(stored.bytes, { headers: { 'content-type': stored.contentType } })
   }),

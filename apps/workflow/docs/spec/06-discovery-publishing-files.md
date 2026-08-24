@@ -115,8 +115,11 @@ standalone UI can ship the same three with its own prefix):
   `maxSize`, MIME from `accept`);
 - `POST /api/workflow/files/register` `{ path }` → verifies the object, returns the
   **File ref** `{ path, name, contentType, size, url }`;
-- `GET /api/workflow/files/[...path]` → `file_serve_handler`, `auth_required`, Range-aware
-  (video seeking), `Content-Disposition: attachment` when `?download=1`.
+- `GET /api/uploads/workflows/[...path]` → `file_serve_handler`, `auth_required`, Range-aware
+  (video seeking), `Content-Disposition: attachment` when `?download=1`. (Live-verified at M1:
+  CE's `file_serve_handler` derives the object from a `/api/uploads/<subDir>/` request path
+  only, and that is also the `publicPath` `presigned_upload` mints — so the serve route is
+  CE's, not a `/api/workflow/files/` one, and a File ref's `url` is `/api/uploads/` + `path`.)
 
 The runner uses these for kickoff uploads, `form` uploads, `script` Blobs and for registering
 bare paths a pipeline returns where a `file` is declared. Run deletion removes the run prefix
@@ -140,7 +143,7 @@ file's bytes read storage by path (Replicate/ffmpeg handlers already do).
 
 ## The harness's own rule set (`workflow`)
 
-`/api/workflow/runs*`, `/api/workflow/run*` (05), `/api/workflow/files/*` (above),
+`/api/workflow/runs*`, `/api/workflow/run*` (05), `/api/workflow/files/*` + `/api/uploads/workflows/*` (above),
 `/api/workflow/aliases` (only if the assumption in Discovery fails). Tables:
 `workflow_runs`, `workflow_run_steps`. Two schemas, ~10 rules — authored as rules-as-code in
 `apps/workflow/.bffless/proxy-rules/workflow/`, like Studio.

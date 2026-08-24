@@ -192,9 +192,13 @@ export function workflowId(file: string): string {
   return base.replace(/\.workflow\.ya?ml$/i, '').replace(/\.ya?ml$/i, '')
 }
 
-/** The serve route a storage path is reachable at — mirrors the rule's `shape.fn.js` (06). */
+/**
+ * The serve route a storage path is reachable at — mirrors the rule's `shape.fn.js` (06):
+ * CE's `file_serve_handler` serves `/api/uploads/<subDir>/…`, and `path` is the
+ * uploads-relative key, so the url is simply `/api/uploads/` + path.
+ */
 export function fileUrl(path: string): string {
-  return `/api/workflow/files/${path.replace(/^workflows\//, '')}`
+  return `/api/uploads/${path.replace(/^\/+/, '')}`
 }
 
 /** The alias list, whether CE answered with a bare array, `{ aliases }` or `{ data }`. */
