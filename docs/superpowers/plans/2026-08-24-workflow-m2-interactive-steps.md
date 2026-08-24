@@ -45,6 +45,29 @@ Locked D1–D18 and the M1 decisions are not re-litigated. The eight ⚑ items *
 - `response` offload (only `outputs` are offloaded, Decision 5).
 - Script `ctx.log` persistence (live-only, Decision 12).
 
+## M1 review minors (PR #367 comment, 2026-08-24) → disposition
+
+Each was re-checked against `origin/main` before being placed. "resolved" = already on main; the rest name the task that folds them in.
+
+| Minor | Disposition |
+|---|---|
+| No ticking elapsed time for in-flight runs | **resolved** — `RunHeader.useNow` (1 s tick while `finishedAt === null`) |
+| `uiSlice.selectedStep` not cleared on runId change | **resolved** — `RunPage` clears it in a `[runId]` effect |
+| `isSafeUrl` accepts protocol-relative `//host` | Task 23 |
+| Past-runs **Annotations** column dropped (needs an `annotationCounts` rollup) | **add it** — Task 20 (`workflow_runs.annotationCounts` written at `run.finished`, column restored) |
+| Discovery probe is a raw `fetch`, no reauth | Task 23 (probes go through `baseQueryWithReauth`) |
+| `runReplaced` leaving a run `paused` | **resolved** — `runSlice.runReplaced` resets `paused` |
+| `refsIn`/`outputDecls` duplicate walkers `workflow-lint` keeps internal (`collectRefs`, `TypeEnv`) | Task 22 (lint exports `collectRefs` on `./expressions`; `graph.refsIn` consumes it; `TypeEnv` stays lint-internal — `outputDecls` follows declarations, not expression types, so there is nothing to share) |
+| Resume when a persisted `response.initial` was truncated | Task 13 (a `polling` row whose `initial` is the `{ note: 'truncated' }` stub resumes as a full re-request, annotated) |
+| `uploadFile` has no reauth path | Task 9 (`uploadBlob`/`uploadFile` use `httpJsonWithReauth`) |
+| Missing tests: `httpJsonWithReauth`, cancel-after-resume | Task 9 (`http.test.ts`), Task 13 (`lifecycleActions.test.ts`) |
+| Hello `GET /api/hello/job?id=<unknown>` answers 500 live vs 404 in the mock | Task 6 (rule answers 404 `{ status: 'error', error: 'unknown job' }`) |
+| `POST /api/hello/fail` builds its error JSON by string interpolation | Task 6 (a `function_handler` step builds the object) |
+| `FieldControl` never sets `aria-invalid` | Task 18 |
+| #357 cancel semantics | Deferred to M3 (⚑ Decision 4) |
+| Waiting `review` form card renders a `headless` chip that reads as a status | Task 22 (badge reads `headless: skip\|auto`, definition mode only) |
+| `hello.<domain>/` is a 404 (bundle-only alias) | Task 7 (`stage-hello.mjs` writes a one-line `index.html`) |
+
 ## Global Constraints
 
 - Monorepo: pnpm 10 workspace `bffless-apps`; Node `>=20`; ESM only; TypeScript `~6.0.2`.
@@ -141,6 +164,7 @@ docs/superpowers/plans/2026-08-24-workflow-m2-interactive-steps.md   (this plan)
 | apps#362 `?download=1` (contract kept; ce#697) | 06 | 16 (FileCard unchanged), 24 (checklist) |
 | apps#363 scoped discovery (`?repository=`) | 06, README | 23 |
 | Lint keeps pace (src extensions, mapping, tool names) | 09 | 2 |
+| M1 review minors (PR #367 comment) — see the disposition table | M1 reviews | 6, 7, 9, 13, 18, 20, 22, 23 |
 | Hello M2 fixture (`interactive.workflow.yaml`, islands, script, analyze rule) | Decision 3 | 6, 7, 14, 21 |
 | Live j5s verification (member login, headless runner) | 06 phase 1 | 24 |
 
@@ -355,11 +379,13 @@ The pane/middleware split: the middleware cannot create DOM; it creates the `Isl
 
 `analyze.fn.js` is a `function_handler` over `request.body`; `response_handler` returns `{{{steps.analyze}}}`. `validators: auth_required { allowApiKey: true }`. The mock mirrors it byte-for-byte in shape.
 
-- [ ] **Step 1: Write the failing mock test** — POST with `lines: ['Hello, world!']` → `words.length === 2`, `counts.rows[0].chars === 13`, `snippet` contains `Hello, world!`.
+Two M1 minors ride along in the same rule set: (a) `rules/api/hello/job/get/` — `shape.fn.js` returns `{ ok: false }` when `steps.query` has no record, and a `condition:`-gated `response_handler` answers **404** `{ "status": "error", "error": "unknown job" }` (what the mock already does; the runner's poll treats a non-2xx as the step's failure, 03); (b) `rules/api/hello/fail/post/` — the 418 body is built by a `function_handler` (`fail.fn.js` → `{ code: String(request.body.code ?? 'FAIL'), error: 'fails on purpose' }`) and returned as `{{{steps.fail}}}`, no string interpolation of request data.
+
+- [ ] **Step 1: Write the failing mock tests** — analyze: POST with `lines: ['Hello, world!']` → `words.length === 2`, `counts.rows[0].chars === 13`, `snippet` contains `Hello, world!`; fail: `code: '"}evil'` comes back as the literal string in `code` (the mock mirrors the fn step).
 - [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Author the rule + fn + mock**; `bffless rules validate apps/workflow/.bffless/proxy-rules/hello`.
+- [ ] **Step 3: Author the rules + fns + mock**; `bffless rules validate apps/workflow/.bffless/proxy-rules/hello`.
 - [ ] **Step 4: Run green** (`pnpm --filter workflow test:run`, `pnpm apps:check`).
-- [ ] **Step 5: Commit** — `git commit -am "feat(workflow): hello analyze pipeline (rule + mock)"`
+- [ ] **Step 5: Commit** — `git commit -am "feat(workflow): hello analyze pipeline; job 404 + fail fn-step (M1 minors)"`
 
 ### Task 7: The M2 test workflow — Phase-1 slice — islands, staging, index.json
 
@@ -425,7 +451,7 @@ outputs:
   view: ${{ jobs.pick.outputs.view }}
 ```
 
-`pick-line` island (`main.ts`, built single-file by Vite): `new App({ name: 'pick-line', version: '1.0.0' })`; on `tool-input` renders one button per line; clicking calls `app.callTool({ name: 'echo', arguments: { text: line, upper: true } })` (proves pipelines-as-tools: shows the SHOUTED line), then `app.callTool({ name: 'workflow.annotate', arguments: { annotations: [{ level: 'notice', message: `Previewed ${line}` }] } })`, then `workflow.submit` with `{ line, index }`; a "submit nothing" button submits `{}` and shows the returned error (proves rejection keeps the step waiting). `line-viewer` island: renders `arguments.value` read-only. `vite.islands.config.ts`: `build.rollupOptions.input` = both `index.html`s, `vite-plugin-singlefile`, `outDir: hello-dist/islands`, output file names `<name>.html`.
+`pick-line` island (`main.ts`, built single-file by Vite): `new App({ name: 'pick-line', version: '1.0.0' })`; on `tool-input` renders one button per line; clicking calls `app.callTool({ name: 'echo', arguments: { text: line, upper: true } })` (proves pipelines-as-tools: shows the SHOUTED line), then `app.callTool({ name: 'workflow.annotate', arguments: { annotations: [{ level: 'notice', message: `Previewed ${line}` }] } })`, then `workflow.submit` with `{ line, index }`; a "submit nothing" button submits `{}` and shows the returned error (proves rejection keeps the step waiting). `line-viewer` island: renders `arguments.value` read-only. `vite.islands.config.ts`: `build.rollupOptions.input` = both `index.html`s, `vite-plugin-singlefile`, `outDir: hello-dist/islands`, output file names `<name>.html`. The stager also writes a one-line `hello-dist/index.html` ("workflow-hello — a bundle-only alias; open the harness" with a link to `https://workflow.<same domain>`) so `hello.<domain>/` is no longer a 404 (M1 minor).
 
 - [ ] **Step 1: Write the failing test** (`hello-stage.test.ts` additions: two workflows, two islands, lint-clean for both YAMLs — Task 2 rules included).
 - [ ] **Step 2: Run to verify failure.**
@@ -474,8 +500,8 @@ PRBODY
 **Files:**
 - Create: `packages/workflow-script/package.json` (`"name": "@bffless/workflow-script", "private": true, "types": "./index.d.ts", "files": ["index.d.ts"]`, no `main`), `packages/workflow-script/index.d.ts`, `packages/workflow-script/README.md`
 - Create: `apps/workflow/src/lib/runner/adapters/script.ts`
-- Modify: `apps/workflow/package.json` (devDependency `@bffless/workflow-script: workspace:*`), `apps/workflow/src/lib/upload.ts` (`uploadBlob`)
-- Test: `apps/workflow/src/lib/runner/adapters/script.test.ts`, extend `upload.test.ts`
+- Modify: `apps/workflow/package.json` (devDependency `@bffless/workflow-script: workspace:*`), `apps/workflow/src/lib/upload.ts` (`uploadBlob`; `prepare`/`register` switch from `httpJson` to `httpJsonWithReauth` — M1 minor: a kickoff upload after an expired session refreshed nothing), `apps/workflow/src/lib/http.ts` (no change — gains tests)
+- Test: `apps/workflow/src/lib/runner/adapters/script.test.ts`, extend `upload.test.ts`, extend `http.test.ts` (M1 minor: `httpJsonWithReauth` had no tests)
 
 **Interfaces:**
 
@@ -503,7 +529,7 @@ export function blobFileName(output: string, blob: Blob): string   // File.name,
 export async function uploadBlob(a: Omit<UploadFileArgs, 'file'> & { blob: Blob; name: string }): Promise<FileRef>   // same prepare → PUT → register; `uploadFile` becomes a one-liner over it
 ```
 
-- [ ] **Step 1: Write the failing tests** — `scriptInputs` strips `src` and evaluates expressions; `coerceScriptOutputs` with declared `{ zip: { type: file }, n: { type: number } }`: `{ zip: new Blob(['x'], { type: 'application/zip' }), n: 1 }` → `uploadBlob` called with name `zip.zip`, output is the returned ref; a `File` keeps its name; `{ zip: 'workflows/…/x.zip' }` → `registerFile`; `{ zip: 42 }` → `OutputTypeError`; `file, list: true` with `[Blob, Blob]` → two uploads in order; missing declared output → `OutputTypeError`. `uploadBlob` drives the three calls against MSW with the `runs/<runId>/<key>` scope.
+- [ ] **Step 1: Write the failing tests** — `scriptInputs` strips `src` and evaluates expressions; `coerceScriptOutputs` with declared `{ zip: { type: file }, n: { type: number } }`: `{ zip: new Blob(['x'], { type: 'application/zip' }), n: 1 }` → `uploadBlob` called with name `zip.zip`, output is the returned ref; a `File` keeps its name; `{ zip: 'workflows/…/x.zip' }` → `registerFile`; `{ zip: 42 }` → `OutputTypeError`; `file, list: true` with `[Blob, Blob]` → two uploads in order; missing declared output → `OutputTypeError`. `uploadBlob` drives the three calls against MSW with the `runs/<runId>/<key>` scope; `upload.test.ts` adds: `prepare` answering 401 once → one `POST /api/auth/session/refresh` then the retried `prepare` succeeds. `http.test.ts` adds `httpJsonWithReauth`: 401 → refresh → retry once (200); refresh failing → the original 401 is returned; two concurrent 401s share one refresh call (`refreshInFlight`).
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run green.**
@@ -594,11 +620,12 @@ Middleware: `store` = `uploadBlob(new Blob([json], { type: 'application/json' })
 
 **Files:**
 - Modify: `apps/workflow/src/store/workflowApi.ts` (`getRun` `transformResponse` becomes an async `queryFn` that hydrates every step row's `outputs` and the run row's `outputs`), `src/store/lifecycleActions.ts` (`openRun`/`takeOver` receive already-hydrated rows — nothing to do once `getRun` hydrates; assert with a test), `src/lib/coerce.ts` (`toStepRow` keeps `$file` values as-is), `src/mocks/handlers.ts` (`GET /api/uploads/*` already serves bytes)
-- Test: extend `workflowApi.test.ts`, `RunPage.test.tsx` (a seeded row with a `$file` output renders the hydrated value; the fetch failing renders a "payload unavailable" chip, not a crash), `lifecycleActions.test.ts` (resume of a run whose succeeded step had a `$file` output evaluates a downstream expression against the hydrated value)
+- Modify (M1 minors): `src/lib/runner/results.ts` (export `isTruncatedStub(v)` — `{ note: 'truncated', size }`), `src/store/runnerMiddleware.ts` (`runReplaced` resume: a `polling` row whose `response.initial` is a stub relaunches as a **full re-request** instead of poll-only, with a run annotation `notice: "step <key> resumed from scratch — its initial response was truncated in the record"`)
+- Test: extend `workflowApi.test.ts`, `RunPage.test.tsx` (a seeded row with a `$file` output renders the hydrated value; the fetch failing renders a "payload unavailable" chip, not a crash), `lifecycleActions.test.ts` (resume of a run whose succeeded step had a `$file` output evaluates a downstream expression against the hydrated value; **truncated-initial resume** re-POSTs `/api/hello/slow` once and annotates; **cancel-after-resume** — `openRun` then `cancelRun` → every relaunched step `cancelled`, run `cancelled`, the last write is the run patch, no stale event lands afterwards)
 
 - [ ] **Step 1: Write the failing tests** (seed `db` with a step row whose `outputs.big = { $file: ref }` and `db.files` with the JSON).
 - [ ] **Step 2: Run to verify failure.** **Step 3: Implement** (`hydrateOutputs` with `fetchJson = (ref) => fetch(ref.url, { credentials: 'same-origin' }).then(r => r.json())`; a failed fetch leaves a sentinel `{ $file: ref, $error: message }` that `ValueView` renders as an "unavailable" chip with a Download link). **Step 4: Run green.**
-- [ ] **Step 5: Commit** — `git commit -am "feat(workflow): hydrate {\"$file\"} payloads on read (run page, resume)"`
+- [ ] **Step 5: Commit** — `git commit -am "feat(workflow): hydrate {\"$file\"} payloads on read; truncated-initial resume fallback"`
 
 ### Task 14: Hello Phase-2 slice — the `poster-card` script + smoke + PR
 
@@ -715,9 +742,10 @@ export function useMediaSeek(): MediaSeek
 **Interfaces:**
 - Tile picker: rendered when `options` is a list of File refs (02 shorthand: `value = ref.path`, `label = ref.name`, `preview = ref`) or any option object has `preview` (a File ref or a same-origin url string); `list: true` → multi-select tiles; `data-testid="tile-picker"`. Image previews use `<img src>` gated by the same-origin check; other refs show the file card thumbnail.
 - Markdown: `format`-less `markdown` field shows a "Preview" toggle rendering `MarkdownView` beside the textarea (`data-testid="markdown-preview"`).
+- Every control sets `aria-invalid={Boolean(shownError)}` and `aria-describedby` to the error id when an error is shown (M1 minor).
 - `file` field in a mid-run form uploads with `scope: 'inputs'`; the submitted value is the File ref (list for `list: true`); `completeFormStep` accepts File refs for `file` (via `validateValue('file')`).
 
-- [ ] **Step 1: Write the failing tests** — `formFieldDefs` evaluates `options: "${{ steps.draw.outputs.options }}"` to the upstream File-ref list; `completeFormStep` accepts a path that is one of the evaluated options and rejects another; `FieldControl` with File-ref options renders `tile-picker` with 2 tiles, click selects (value = path); markdown preview toggle renders the markdown; `FormStepPane` with a `file` field renders a file input (no "not supported" notice) and, with a fake `upload`, submits the ref.
+- [ ] **Step 1: Write the failing tests** — `formFieldDefs` evaluates `options: "${{ steps.draw.outputs.options }}"` to the upstream File-ref list; `completeFormStep` accepts a path that is one of the evaluated options and rejects another; `FieldControl` with File-ref options renders `tile-picker` with 2 tiles, click selects (value = path); markdown preview toggle renders the markdown; a field with an error has `aria-invalid="true"` and none without; `FormStepPane` with a `file` field renders a file input (no "not supported" notice) and, with a fake `upload`, submits the ref.
 - [ ] **Step 2: Run to verify failure.** **Step 3: Implement.** **Step 4: Run green.**
 - [ ] **Step 5: Commit** — `git commit -am "feat(workflow): mid-run form file fields, tile picker, markdown preview"`
 
@@ -756,14 +784,15 @@ Alongside, one tiny read rule the header needs (Task 20) — `GET /api/workflow/
 - [ ] **Step 2: Run to verify failure.** **Step 3: Author rule + fns + mocks + `runStore.deleteRun`**; `bffless rules validate apps/workflow/.bffless/proxy-rules/workflow`. **Step 4: Run green** (`pnpm apps:check` too).
 - [ ] **Step 5: Commit** — `git commit -am "feat(workflow): run delete rule (rows + file-prefix GC) and mock"`
 
-### Task 20: Delete in the run header
+### Task 20: Delete in the run header + the Past-runs Annotations column
 
 **Files:**
 - Modify: `apps/workflow/src/components/run/RunHeader.tsx` (`onDelete?` → `data-testid="run-delete"` behind `window.confirm`; rendered only when `status !== 'running'` and `canDelete`), `src/pages/RunPage.tsx` (`canDelete = run.startedBy === me.id || ['admin','owner'].includes(me.role)` from the new `useWhoamiQuery` — M1 had no current-user endpoint; Task 19's `whoami` rule is it), `src/store/workflowApi.ts` (`whoami: builder.query<{ id: string; email?: string; role?: string }, void>`, `deleteRun` invalidation), `src/components/Shell.tsx` (08: the header shows the user — render `whoami.email` there too), `src/store/lifecycleActions.ts` (`deleteRun(id)`: `runStore.deleteRun` → invalidate `Runs` → navigate to `/<impl>/<workflow>/runs`)
-- Test: `RunHeader` test (button absent while running, present when terminal), `RunPage` test (confirm → delete called → navigates; a 403 shows the error and stays)
+- Modify (M1 minor — the dropped Annotations column): `.bffless/proxy-rules/workflow/schemas/workflow_runs.schema.yaml` (`annotationCounts: json`), `rules/api/workflow/run/update/post/merge.fn.js` (patchable column), `src/lib/runner/rows.ts` (`run.finished` patch adds `annotationCounts: { error, warning, notice }` counted over run-level + every step's annotations in the post-event state), `src/lib/coerce.ts` (`toRunRow` reads it), `src/pages/RunsPage.tsx` (Annotations column restored: three badges, `—` for pre-M2 rows), `src/mocks/handlers.ts` (`RUN_PATCHABLE` + fixture)
+- Test: `RunHeader` test (button absent while running, present when terminal), `RunPage` test (confirm → delete called → navigates; a 403 shows the error and stays), `rows.test.ts` (the finish patch carries the counts for the hello fixture: 1 warning, 1 notice), `RunsPage.test.tsx` (column renders counts; a row without the field renders `—`)
 
 - [ ] **Step 1: Write the failing tests.** **Step 2: Run to verify failure.** **Step 3: Implement.** **Step 4: Run green.**
-- [ ] **Step 5: Commit** — `git commit -am "feat(workflow): Delete run action in the run header"`
+- [ ] **Step 5: Commit** — `git commit -am "feat(workflow): Delete run action; annotationCounts rollup + Past-runs column"`
 
 ### Task 21: Hello Phase-3 slice — renderers + the upgraded form
 
@@ -806,8 +835,8 @@ outputs:
 ### Task 22: Graph data-flow hover-highlight
 
 **Files:**
-- Modify: `apps/workflow/src/lib/runner/graph.ts` (export `dataFlowEdges(def): Array<{ from: { job; step?; output }, to: { job; step } }>` built on `refsIn` — pure), `src/store/uiSlice.ts` (`hoveredValue: { job: string; step?: string; output?: string } | null`), `src/components/graph/GraphView.tsx` + `StepChip.tsx` (`data-flow="source|target"` classes from the hovered value), `src/components/values/ValueView.tsx` (`onHover` optional; `StepPane` passes the value's identity), `src/index.css`
-- Test: `graph.test.ts` (edges for hello: `slow/start` reads `greet` job output → edge greet→slow/start; `confirm/review` default reads `slow`), `GraphView.test.tsx` (hover a chip → source/target attributes on the right cards)
+- Modify: `packages/workflow-lint/src/expressions/index.ts` (+ `export { collectRefs, type Ref } from '../checks/refs.js'` — M1 minor: the harness kept a copy), `apps/workflow/src/lib/runner/graph.ts` (`refsIn` drops its private `collect` walker for lint's `collectRefs`, mapping `Ref` → `ValueRef`; export `dataFlowEdges(def): Array<{ from: { job; step?; output }, to: { job; step } }>` built on `refsIn` — pure), `src/components/graph/StepChip.tsx` (M1 minor: the `headless` badge reads `headless: skip` / `headless: auto` and renders in **definition mode only** — in run mode it read as a status), `src/store/uiSlice.ts` (`hoveredValue: { job: string; step?: string; output?: string } | null`), `src/components/graph/GraphView.tsx` + `StepChip.tsx` (`data-flow="source|target"` classes from the hovered value), `src/components/values/ValueView.tsx` (`onHover` optional; `StepPane` passes the value's identity), `src/index.css`
+- Test: `graph.test.ts` (edges for hello: `slow/start` reads `greet` job output → edge greet→slow/start; `confirm/review` default reads `slow`; `refsIn` results unchanged after the switch — the existing cases are the regression), `GraphView.test.tsx` (hover a chip → source/target attributes on the right cards), `StepChip` test (run-mode chip has no `headless` badge; definition-mode badge text `headless: skip`)
 
 - [ ] **Step 1: Write the failing tests.** **Step 2: Run to verify failure.** **Step 3: Implement.** **Step 4: Run green.**
 - [ ] **Step 5: Commit** — `git commit -am "feat(workflow): data-flow hover-highlight on the graph"`
@@ -815,8 +844,8 @@ outputs:
 ### Task 23: Minors — `isSafeUrl` / same-origin, scoped discovery, README
 
 **Files:**
-- Modify: `apps/workflow/src/lib/url.ts` (reject protocol-relative; add `isSameOriginUrl`), `src/components/values/FileCard.tsx`, `renderers/ImagesView.tsx`, `renderers/IslandView.tsx` + `islands/IslandHost.ts` (`openLink` gate), `scripts/ScriptHost.ts` (`fetchBytes` gate), `src/lib/discovery.ts` (new: `projectRepository()` reads `import.meta.env.VITE_BFFLESS_PROJECT`, `aliasesUrl()`), `src/store/workflowApi.ts` (`discover` uses `aliasesUrl()`), `src/mocks/handlers.ts` (`/api/workflow/aliases` filters by `?repository=` when present — the mock `ALIASES` gain `repository`), `.github/workflows/deploy-workflow.yml` (`env: { VITE_BFFLESS_PROJECT: bffless/workflow }` on the build step), `apps/workflow/bffless/README.md` (Manual setup: the env var; the delete rule; the M2 rows in the checklist), `.github/workflows/workflow-app.yml` (no env → unscoped in CI)
-- Test: `url.test.ts` (`//evil.com`, `/\evil.com`, `/ /evil.com` (tab-stripped) → unsafe; `/api/uploads/x` safe + same-origin; `https://<location.origin>/x` same-origin; `https://other/x` safe but not same-origin), `workflowApi.test.ts` (with `VITE_BFFLESS_PROJECT` stubbed via `vi.stubEnv`, the request carries `?repository=`; without, it does not)
+- Modify: `apps/workflow/src/lib/url.ts` (reject protocol-relative; add `isSameOriginUrl`), `src/components/values/FileCard.tsx`, `renderers/ImagesView.tsx`, `renderers/IslandView.tsx` + `islands/IslandHost.ts` (`openLink` gate), `scripts/ScriptHost.ts` (`fetchBytes` gate), `src/lib/discovery.ts` (new: `projectRepository()` reads `import.meta.env.VITE_BFFLESS_PROJECT`, `aliasesUrl()`), `src/store/workflowApi.ts` (`discover` uses `aliasesUrl()`; **probes go through `baseQueryWithReauth`** with `responseHandler: 'text'` instead of a raw `fetch` — M1 minor: an expired session mid-discovery read as "no implementations"; a 404 still maps to `null`, a non-JSON 200 to `null`, other errors to the `unusable` entry), `src/mocks/handlers.ts` (`/api/workflow/aliases` filters by `?repository=` when present — the mock `ALIASES` gain `repository`), `.github/workflows/deploy-workflow.yml` (`env: { VITE_BFFLESS_PROJECT: bffless/workflow }` on the build step), `apps/workflow/bffless/README.md` (Manual setup: the env var; the delete rule; the M2 rows in the checklist), `.github/workflows/workflow-app.yml` (no env → unscoped in CI)
+- Test: `url.test.ts` (`//evil.com`, `/\evil.com`, `/ /evil.com` (tab-stripped) → unsafe; `/api/uploads/x` safe + same-origin; `https://<location.origin>/x` same-origin; `https://other/x` safe but not same-origin), `workflowApi.test.ts` (with `VITE_BFFLESS_PROJECT` stubbed via `vi.stubEnv`, the request carries `?repository=`; without, it does not; a probe answering 401 once → one refresh, the retried probe lists hello)
 
 - [ ] **Step 1: Write the failing tests.** **Step 2: Run to verify failure.** **Step 3: Implement.** **Step 4: Run green.**
 - [ ] **Step 5: Commit** — `git commit -am "fix(workflow): reject protocol-relative urls, same-origin media sinks, scoped discovery"`
@@ -863,7 +892,7 @@ PRBODY
 
 ## Self-review (writing-plans checklist, applied)
 
-**Spec coverage.** Every #359 M2 checkbox maps to tasks (traceability table). 03 `island` → 3/4/5; 04's mapping table rows: tool-input → 4, tools/call → 3/4, submit/annotate → 3/4, hostContext/size/display → 4, teardown → 4/5, viewer → 5; 04 host capabilities (`ui/message`, `ui/open-link`, `ui/request-display-mode`, `resources/read`, `ui/update-model-context` ignored) → 4; 03 `script` contract → 9/10/11 (Blob → 9, `ctx` → 10, failure codes → 11); 02 renderers table → 15/16/17; 02 tile-picker shorthand → 18; 05 `{"$file"}` → 12/13; 05 retention & deletion → 19/20 (minus the inputs tick, Decision 7); 05 dynamic annotations → 3 (`step.annotated`); 08 "the pane is the island / fullscreen takes over" → 5; 08 header Delete → 20; 08 hover-highlight → 22; 06 `step.prefix` for script files → 9/11; README follow-ups #362/#363 → 23/24. Deliberate gaps are all in "Deferred out of M2".
+**Spec coverage.** Every #359 M2 checkbox maps to tasks (traceability table). 03 `island` → 3/4/5; 04's mapping table rows: tool-input → 4, tools/call → 3/4, submit/annotate → 3/4, hostContext/size/display → 4, teardown → 4/5, viewer → 5; 04 host capabilities (`ui/message`, `ui/open-link`, `ui/request-display-mode`, `resources/read`, `ui/update-model-context` ignored) → 4; 03 `script` contract → 9/10/11 (Blob → 9, `ctx` → 10, failure codes → 11); 02 renderers table → 15/16/17; 02 tile-picker shorthand → 18; 05 `{"$file"}` → 12/13; 05 retention & deletion → 19/20 (minus the inputs tick, Decision 7); 05 dynamic annotations → 3 (`step.annotated`); 08 "the pane is the island / fullscreen takes over" → 5; 08 header Delete → 20; 08 hover-highlight → 22; 06 `step.prefix` for script files → 9/11; README follow-ups #362/#363 → 23/24; the sixteen M1 review minors each have a row in the disposition table (three resolved on main, twelve placed, one deferred). Deliberate gaps are all in "Deferred out of M2".
 
 **Placeholder scan.** No TBD/TODO. One execution-time check is named as such (Task 19: whether `response_handler.status` takes an expression) with the literal-steps fallback; the `function_handler` throw behaviour and the missing current-user endpoint were resolved during planning (gate returns `{ok,status}`; a `whoami` rule is added). Task 3 flags one deviation (JSON-`schema` validation of island outputs deferred).
 
