@@ -29,6 +29,7 @@ jobs:
           api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
           project: bffless/workflow
           summary-title: Workflow Proxy Rules
+          prune: true
       - name: Deploy the harness
         uses: bffless/upload-artifact@v1
         with:
