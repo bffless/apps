@@ -5,7 +5,9 @@
  * and a named `render` shows the M2 placeholder badge above the base viewer.
  */
 import { render, screen } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
+import { server } from '../../mocks/server'
 import { ValueView } from './ValueView'
 import type { FileRef } from '../../lib/runner/types'
 
@@ -95,6 +97,37 @@ describe('ValueView', () => {
   it('shows a renderer badge above the base viewer for a named decl.render', () => {
     render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={[{ text: 'hi', start: 0, end: 1 }]} />)
     expect(screen.getByText('renderer: transcript (M2)')).toBeInTheDocument()
+  })
+
+  it('renders a render: island declaration through the island viewer instead of the badge', () => {
+    server.use(
+      http.get('/w/hello/islands/v.html', () => HttpResponse.text('<!doctype html><p>viewer</p>')),
+    )
+
+    render(
+      <ValueView
+        decl={{ type: 'json', render: 'island', src: 'islands/v.html' }}
+        value={{ a: 1 }}
+        impl="hello"
+      />,
+    )
+
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'island')
+    expect(screen.getByTestId('island-frame')).toBeInTheDocument()
+    expect(screen.queryByText('renderer: island (M2)')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the M2 badge for render: island when no implementation is known', () => {
+    render(<ValueView decl={{ type: 'json', render: 'island', src: 'islands/v.html' }} value={{ a: 1 }} />)
+    expect(screen.getByText('renderer: island (M2)')).toBeInTheDocument()
+    expect(screen.queryByTestId('island-frame')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the M2 badge for render: island with no src', () => {
+    render(<ValueView decl={{ type: 'json', render: 'island' }} value={{ a: 1 }} impl="hello" />)
+    expect(screen.getByText('renderer: island (M2)')).toBeInTheDocument()
+    expect(screen.queryByTestId('island-frame')).not.toBeInTheDocument()
   })
 
   it('renders a markdown value through renderMarkdown, with no raw <script> reaching the DOM', () => {

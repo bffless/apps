@@ -13,4 +13,6 @@ export interface ValueDecl {
   list?: boolean
   render?: string
   columns?: unknown
+  /** `render: island` only: the island file, relative to the implementation bundle (04). */
+  src?: string
 }

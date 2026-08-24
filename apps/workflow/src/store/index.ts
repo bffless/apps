@@ -5,6 +5,7 @@
  * rebuilds from rows rather than from localStorage.
  */
 import { configureStore } from '@reduxjs/toolkit'
+import { createIslandHost } from '../islands/IslandHost'
 import { httpJsonWithReauth } from '../lib/http'
 import { createRunStore } from '../lib/runStore'
 import { createRegisterFile, createRunnerMiddleware, realClock } from './runnerMiddleware'
@@ -20,6 +21,7 @@ export function defaultRunnerDeps(): RunnerDeps {
     clock: realClock,
     runStore: createRunStore(httpJsonWithReauth),
     registerFile: createRegisterFile(httpJsonWithReauth),
+    islandHost: createIslandHost,
   }
 }
 

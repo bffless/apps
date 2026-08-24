@@ -71,6 +71,9 @@ function typed(decl: unknown): ValueDecl | null {
     ...(d.list === true ? { list: true } : {}),
     ...(typeof d.render === 'string' ? { render: d.render } : {}),
     ...(d.columns === undefined ? {} : { columns: d.columns }),
+    // `render: island` needs the island file to travel with the declaration —
+    // the renderer is chosen from `render`, but only `src` says *which* island.
+    ...(typeof d.src === 'string' ? { src: d.src } : {}),
   }
 }
 

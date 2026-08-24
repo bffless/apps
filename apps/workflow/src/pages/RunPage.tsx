@@ -42,6 +42,7 @@ import { RunHeader } from '../components/run/RunHeader'
 import { RunOutputs } from '../components/run/RunOutputs'
 import { RunSummary } from '../components/run/RunSummary'
 import { StepPane } from '../components/run/StepPane'
+import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
@@ -49,7 +50,7 @@ import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
-import { stepSelected } from '../store/uiSlice'
+import { islandDisplayChanged, stepSelected } from '../store/uiSlice'
 import { workflowApi, useGetRunQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
@@ -278,10 +279,37 @@ export function RunPage() {
   // A `waiting` step opens as its own pane the moment the run reaches it —
   // first by topo order (08: "the pane is the form") — as long as nothing
   // else is already selected, so a click elsewhere is never fought back over.
+  //
+  // A live island counts from `running`, not from `waiting`: the pane owns the
+  // iframe, so the step cannot *reach* `waiting` until its pane has rendered
+  // (Decision 11). Waiting still wins when both exist — an island loading in
+  // the background must not steal the pane from a form being filled in.
   const waitingStep = def && state ? firstWaitingStep(def, state) : null
+  const loadingIsland =
+    isLive && state
+      ? (Object.values(state.steps).find(
+          (step) => step.kind === 'island' && step.status === 'running',
+        )?.key ?? null)
+      : null
+  const openStep = waitingStep ?? loadingIsland
   useEffect(() => {
-    if (waitingStep && !selectedStep) dispatch(stepSelected(waitingStep))
-  }, [waitingStep, selectedStep, dispatch])
+    if (openStep && !selectedStep) dispatch(stepSelected(openStep))
+  }, [openStep, selectedStep, dispatch])
+
+  // Fullscreen is a mode of the *mounted island*, so it only holds while the
+  // selected step really is one (08). Anything else — the run moved on, the
+  // user picked another step, the page changed run — puts the page back inline
+  // rather than leaving a fixed overlay over a step with no island in it.
+  const islandDisplay = useAppSelector((s) => s.ui.islandDisplay)
+  const selectedStepState = selectedStep && state ? state.steps[selectedStep] : undefined
+  const islandOpen =
+    isLive &&
+    selectedStepState?.kind === 'island' &&
+    (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')
+  const fullscreen = islandDisplay === 'fullscreen' && islandOpen
+  useEffect(() => {
+    if (!islandOpen && islandDisplay === 'fullscreen') dispatch(islandDisplayChanged('inline'))
+  }, [islandOpen, islandDisplay, dispatch])
 
   if (!isLive && (isLoading || (isFetching && !data && !isError))) {
     return <p className="note">Loading…</p>
@@ -305,53 +333,74 @@ export function RunPage() {
     ? `/${impl ?? sliceState!.impl}/${workflow ?? sliceState!.workflow}`
     : `/${impl ?? run!.impl}/${workflow ?? run!.workflow}`
 
+  // `render: island` needs to know which bundle an island file lives in,
+  // and this page is the last place that fact is unambiguous.
   return (
-    <section className="page">
-      <RunHeader
-        workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
-        runId={isLive ? sliceState!.runId : run!.runId}
-        startedBy={isLive ? undefined : run!.startedBy}
-        startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
-        finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
-        headless={isLive ? sliceState!.headless : run!.headless}
-        yaml={isLive ? sliceMeta!.yaml : run!.yaml}
-        status={state?.status ?? run!.status}
-        annotations={annotations}
-        base={base}
-        progress={state ? stepProgress(state) : undefined}
-        live={isLive}
-        onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
-      />
+    <ImplContext.Provider value={isLive ? sliceState!.impl : run!.impl}>
+      <section className="page">
+        <RunHeader
+          workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
+          runId={isLive ? sliceState!.runId : run!.runId}
+          startedBy={isLive ? undefined : run!.startedBy}
+          startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
+          finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
+          headless={isLive ? sliceState!.headless : run!.headless}
+          yaml={isLive ? sliceMeta!.yaml : run!.yaml}
+          status={state?.status ?? run!.status}
+          annotations={annotations}
+          base={base}
+          progress={state ? stepProgress(state) : undefined}
+          live={isLive}
+          onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
+        />
 
-      {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
+        {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
 
-      {!state || !def ? (
-        <RawRows run={run!} steps={steps} />
-      ) : (
-        <>
-          <div className="run-canvas">
-            <GraphView
-              def={def}
-              mode="run"
-              state={state}
-              selectedKey={selectedStep}
-              onSelect={(key) => dispatch(stepSelected(key))}
+        {!state || !def ? (
+          <RawRows run={run!} steps={steps} />
+        ) : (
+          <>
+            <div className={fullscreen ? 'run-canvas island-fullscreen' : 'run-canvas'}>
+              {fullscreen ? (
+                // The page's half of `ui/request-display-mode`: the graph
+                // collapses to a strip, and leaving is the page's decision, not
+                // the island's — the store flips, and the new mode flows back
+                // down to the bridge through `IslandFrame`.
+                <div className="island-strip">
+                  <span className="island-strip-title">{selectedStep}</span>
+                  <button
+                    type="button"
+                    data-testid="island-exit-fullscreen"
+                    onClick={() => dispatch(islandDisplayChanged('inline'))}
+                  >
+                    Exit fullscreen
+                  </button>
+                </div>
+              ) : (
+                <GraphView
+                  def={def}
+                  mode="run"
+                  state={state}
+                  selectedKey={selectedStep}
+                  onSelect={(key) => dispatch(stepSelected(key))}
+                />
+              )}
+              {selectedStep ? (
+                <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} live={isLive} />
+              ) : (
+                <p className="note">Pick a step to see what went in and what came out.</p>
+              )}
+            </div>
+
+            <RunOutputs def={def} state={state} />
+            <RunSummary def={def} state={state} />
+            <AnnotationList
+              annotations={annotations}
+              onJump={(key) => dispatch(stepSelected(key))}
             />
-            {selectedStep ? (
-              <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} live={isLive} />
-            ) : (
-              <p className="note">Pick a step to see what went in and what came out.</p>
-            )}
-          </div>
-
-          <RunOutputs def={def} state={state} />
-          <RunSummary def={def} state={state} />
-          <AnnotationList
-            annotations={annotations}
-            onJump={(key) => dispatch(stepSelected(key))}
-          />
-        </>
-      )}
-    </section>
+          </>
+        )}
+      </section>
+    </ImplContext.Provider>
   )
 }

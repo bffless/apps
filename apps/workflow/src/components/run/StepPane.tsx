@@ -41,6 +41,7 @@ import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
 import { FormStepPane } from './FormStepPane'
+import { IslandStepPane } from './IslandStepPane'
 
 type Tab = 'Input' | 'Output' | 'Details'
 const TABS: Tab[] = ['Input', 'Output', 'Details']
@@ -230,6 +231,15 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
 
   if (live && declared?.uses === 'form' && step.status === 'waiting') {
     return <FormStepPane def={def} state={state} stepKey={stepKey} />
+  }
+
+  // An island is the pane from the moment it starts loading, not only once it
+  // is `waiting`: the pane owns the iframe, so nothing can *reach* `waiting`
+  // until it has rendered (Decision 11). Read-only falls back to tabs for the
+  // same reason a read-only form does — a submit from here would land on
+  // whatever run the global slice holds live.
+  if (live && declared?.uses === 'island' && (step.status === 'running' || step.status === 'waiting')) {
+    return <IslandStepPane def={def} state={state} stepKey={stepKey} />
   }
 
   return (
