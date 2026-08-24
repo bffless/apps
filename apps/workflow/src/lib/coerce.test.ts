@@ -194,7 +194,7 @@ describe('toFileRef', () => {
       name: 'cat.png',
       contentType: 'application/octet-stream',
       size: 0,
-      url: '/api/workflow/files/hello/hello/inputs/u1/cat.png',
+      url: '/api/uploads/workflows/hello/hello/inputs/u1/cat.png',
     })
   })
 
@@ -206,7 +206,7 @@ describe('toFileRef', () => {
 
   it('maps a storage path onto the serve route the same way the rule does', () => {
     expect(fileUrl('workflows/hello/hello/runs/run_1/slow/0/start/poster.png')).toBe(
-      '/api/workflow/files/hello/hello/runs/run_1/slow/0/start/poster.png',
+      '/api/uploads/workflows/hello/hello/runs/run_1/slow/0/start/poster.png',
     )
   })
 })

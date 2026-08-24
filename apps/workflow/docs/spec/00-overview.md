@@ -53,7 +53,7 @@ lists the project's aliases and probes `/w/<alias>/.bffless/workflows/index.json
 | Step kinds | [03-step-kinds.md](03-step-kinds.md) | `pipeline` (+ `poll`, `retry`), `island`, `form`, `script`. |
 | Islands | [04-islands.md](04-islands.md) | Islands are MCP Apps (`text/html;profile=mcp-app`); the harness is the host via `@modelcontextprotocol/ext-apps`; host tools `workflow/submit`, `workflow/annotate`. |
 | Runs & persistence | [05-runs-and-persistence.md](05-runs-and-persistence.md) | `workflow_runs` + `workflow_run_steps`, event-sourced; Resume with lease; summaries & annotations; definition snapshot. |
-| Discovery, publishing, files | [06-discovery-publishing-files.md](06-discovery-publishing-files.md) | Alias probing, `index.json`, implementation CI obligations, `publish-workflow` action/CLI, harness-owned run storage (`/api/workflow/files/*`), the reusable `files` rule-set template. |
+| Discovery, publishing, files | [06-discovery-publishing-files.md](06-discovery-publishing-files.md) | Alias probing, `index.json`, implementation CI obligations, `publish-workflow` action/CLI, harness-owned run storage (`/api/workflow/files/{prepare,register}` + `/api/uploads/workflows/*`), the reusable `files` rule-set template. |
 | Headless | [07-headless.md](07-headless.md) | `?auto=1&inputs=` contract, `window.__workflow`, `headless: skip\|auto`, the Playwright CLI. |
 | Harness UI | [08-harness-ui.md](08-harness-ui.md) | Screens derived from the prototype: implementations, workflow graph, kickoff form, run page with Input/Output panes, past runs. |
 | State management | [09-state-management.md](09-state-management.md) | Redux Toolkit + RTK Query; the run engine as a pure event-sourced reducer (ADR-0003). |

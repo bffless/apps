@@ -1,0 +1,15 @@
+targetUrl: pipeline
+order: 22
+pipeline:
+  name: Serve workflow files
+  description: "Files trio 3/3: Range-aware serve of the workflows/ prefix (video seeking); Content-Disposition attachment on ?download=1. Lives at /api/uploads/workflows/* because CE's file_serve_handler derives the object from a /api/uploads/<subDir>/ request path only — it is also the publicPath presigned_upload mints, so the File ref url is CE's own."
+  steps:
+    - id: serve
+      name: serve
+      handler: file_serve_handler
+      config:
+        subDir: workflows
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "auth_required file serving from the harness-owned run storage."

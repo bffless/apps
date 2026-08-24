@@ -19,7 +19,7 @@ function ruleFiles(dir: string): string[] {
 const SURFACE: Record<string, string[]> = {
   workflow: [
     '/runs/post/', '/runs/get/', '/run/get/', '/run/update/post/', '/run-step/post/',
-    '/run/lease/post/', '/files/prepare/post/', '/files/register/post/', '/files/[...path]/',
+    '/run/lease/post/', '/files/prepare/post/', '/files/register/post/', '/uploads/workflows/[...path]/',
     '/api/auth/',
   ],
   hello: [
