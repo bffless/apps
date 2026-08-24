@@ -1,0 +1,2 @@
+name: hello
+description: "The `hello` M1 test implementation's backend: echo, slow job + poll, fail-on-purpose — the pipelines docs/spec/examples/hello.workflow.yaml calls. Spec: apps/workflow/docs/spec/06."

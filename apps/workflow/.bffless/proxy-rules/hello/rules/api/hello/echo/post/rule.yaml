@@ -1,0 +1,21 @@
+targetUrl: pipeline
+order: 10
+pipeline:
+  name: Hello echo
+  description: "POST { text, upper } -> { text } (optionally uppercased). The simplest possible pipeline step (spec 01 walkthrough)."
+  steps:
+    - id: echo
+      name: echo
+      handler: function_handler
+      code: ./echo.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.echo}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 1/4: echo."

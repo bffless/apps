@@ -1,0 +1,28 @@
+targetUrl: pipeline
+order: 12
+pipeline:
+  name: Hello job poll
+  description: "GET ?id=<jobId> -> { status } while pending/running, { id, status, result } when done, { id, status, error } when errored. What the workflow's `poll` step reads on every tick until `response.status == 'done'`."
+  steps:
+    - id: query
+      name: query
+      handler: data_query
+      config:
+        schemaId: $schema:hello_jobs
+        recordId: request.query.id
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.shape}}}"
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 3/4: job poll."

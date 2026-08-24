@@ -43,8 +43,10 @@ if (!helloDefinition) throw new Error('mock handlers: the hello workflow no long
 /**
  * `index.json` as the implementation's CI would have generated it — counted off
  * the real definition so the listing can never drift from the YAML it describes.
+ * Exported so `hello-stage.test.ts` can assert the staged bundle's counts never
+ * drift from this mock's (Task 20 parity test).
  */
-const HELLO_INDEX = {
+export const HELLO_INDEX = {
   spec: 1,
   impl: 'hello',
   name: 'Hello',

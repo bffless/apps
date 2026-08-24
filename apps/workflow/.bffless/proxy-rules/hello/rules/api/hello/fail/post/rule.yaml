@@ -1,0 +1,17 @@
+targetUrl: pipeline
+order: 13
+pipeline:
+  name: Hello fail (on purpose)
+  description: "POST { code } -> 418 { code, error: 'fails on purpose' }. Exercises continue-on-error + the workflow's failure-recovery branch."
+  steps:
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"code":"{{request.body.code}}","error":"fails on purpose"}'
+        status: 418
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 4/4: fails on purpose (418)."
