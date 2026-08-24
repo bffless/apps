@@ -597,3 +597,100 @@ describe('createRunnerMiddleware — fail-fast skip does not stall the run', () 
     expect(state.steps[stepKey('m', 2, 's')]?.status).toBe('skipped')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Scenario 9 (fix round 2 regression): resetRunnerState aborts, not just
+// drops, a genuinely in-flight step, and a stale emit can never land on the
+// run that replaced it.
+// ---------------------------------------------------------------------------
+
+// Same `a/0/one` key as TWO_JOBS — deliberately, so a stale event from this
+// definition's run would land on an *existing* step of the same key in the
+// run that replaces it, rather than throwing "unknown step" (the silent-
+// corruption half of the finding, not just the throwing half).
+const RETRY_SAME_KEY = toDefinition({
+  name: 'Retryable, same key as TWO_JOBS',
+  jobs: {
+    a: {
+      steps: [
+        {
+          id: 'one',
+          uses: 'pipeline',
+          with: { path: 'x' },
+          retry: { max: 1, delay: '5s', if: "${{ error.code == 'BUSY' }}" },
+        },
+      ],
+      outputs: {},
+    },
+  },
+  outputs: {},
+}) as Definition
+
+describe('createRunnerMiddleware — resetRunnerState aborts genuinely in-flight work', () => {
+  it('a stale emit from an abandoned, in-flight step never lands on the run that replaced it', async () => {
+    const { http, calls } = scriptedHttp({
+      '/api/test/x': [
+        { status: 503, body: { code: 'BUSY' } }, // the abandoned run's one real attempt
+        { status: 200, body: { v: 'hi' } }, // the new run's own attempt
+      ],
+    })
+    const { clock, advance } = virtualClock()
+    const { store: runStore } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({
+        impl: 'test',
+        workflow: 'retryable',
+        def: RETRY_SAME_KEY,
+        yaml: 'name: Retryable',
+        workflowName: 'Retryable',
+        values: {},
+      }),
+    )
+
+    // Let the first attempt fail and park **genuinely in-flight** — inside
+    // `clock.sleep(retry.delay)`, not yet terminal. `step.retrying` (which
+    // bumps `attempt` to 2) is emitted synchronously right before the sleep
+    // call, in the same tick — by the time this predicate is true, the sleep
+    // is already registered.
+    await pumpUntil(
+      advance,
+      () =>
+        store.getState().run.state?.steps[ONE_KEY]?.attempt === 2 &&
+        store.getState().run.state?.steps[ONE_KEY]?.status === 'queued',
+    )
+    expect(calls).toHaveLength(1)
+
+    // Abandon it for a brand-new run of TWO_JOBS — same `a/0/one` key — in
+    // the same tab. `startRun` dispatches `runOpened` then `run.started`
+    // synchronously; let `runOpened`'s `resetRunnerState()` (and the new
+    // run's own — clock-advance-free — progression) settle *before* moving
+    // the virtual clock, so the abandoned run's sleep is aborted before it
+    // would otherwise resolve.
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'twojobs', def: TWO_JOBS, yaml: 'name: Two jobs', workflowName: 'Two jobs', values: {} }),
+    )
+    await flush()
+
+    const newRunId = store.getState().run.state?.runId
+    expect(newRunId).toBeDefined()
+    expect(store.getState().run.state?.steps[ONE_KEY]?.status).toBe('succeeded')
+    expect(calls).toHaveLength(2) // the new run's own attempt already landed
+
+    // Let the abandoned run's parked retry sleep resolve. If its controller
+    // was properly aborted, the sleep rejects and the adapter cancels
+    // quietly — no third HTTP call, no dispatch reaching the new run.
+    await advance(5_000)
+    await flush()
+
+    expect(calls).toHaveLength(2) // the retry never actually re-fired
+    const state = store.getState().run.state!
+    expect(state.runId).toBe(newRunId)
+    // The new run's own step, untouched by whatever the old run's adapter
+    // eventually did with its (identical, but no-longer-current) key.
+    expect(state.steps[ONE_KEY]?.status).toBe('succeeded')
+    expect(state.steps[ONE_KEY]?.outputs).toEqual({ v: 'hi' })
+  })
+})

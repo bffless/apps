@@ -237,7 +237,13 @@ function stopHeartbeat(runId: string): void {
  */
 function resetRunnerState(): void {
   for (const runId of [...heartbeats.keys()]) stopHeartbeat(runId)
-  controllers.clear()
+  // Abort, don't just drop: a genuinely in-flight step (an HTTP call, a
+  // retry/poll parked in `clock.sleep`) is not stopped by clearing the map
+  // out from under it — nothing observes `controllers` again once it's
+  // gone. `runnerControllers.abortAll()` fires every controller's signal
+  // *and* clears the map, so the adapter's own `rt.signal.aborted` checks
+  // (pipeline.ts) actually see the abort and cancel rather than running on.
+  runnerControllers.abortAll()
   writeQueues.clear()
   finishing.clear()
   currentRunId = null
@@ -320,6 +326,30 @@ function stepOf(def: Definition, job: string, stepId: string): Step | undefined 
 /** `workflows/<impl>/<workflow>/runs/<run-id>` (06). */
 function runPrefixOf(state: RunState): string {
   return `workflows/${state.impl}/${state.workflow}/runs/${state.runId}`
+}
+
+/**
+ * Wraps `dispatch` so it only ever forwards an action while `runId` is still
+ * `currentRunId`. The pipeline adapter's own async chain (`rt.emit`, and any
+ * dispatch reachable from it, e.g. `registerFile`'s out-of-prefix warning) is
+ * fire-and-forget by design (`StepRuntime.emit` is `void`, not awaited) and
+ * keeps running past an abort in at least one path: `runPipelineStep`'s own
+ * `cancel()` unconditionally calls `rt.emit({type:'step.cancelled', ...})`
+ * even when the abort *is* what triggered it. `resetRunnerState` aborting the
+ * controller (so the adapter stops making progress) is necessary but not
+ * sufficient on its own — this is the belt that makes a stale terminal event
+ * for an abandoned run's step key structurally unable to reach the reducer,
+ * whether or not some future code path remembers to abort first. A step key
+ * repeats identically across runs of the same workflow (`<job>/<index>/
+ * <step>`), so without this a stale event doesn't just risk an
+ * IllegalTransition throw — it can silently overwrite the *new* run's
+ * identically-keyed step.
+ */
+function scopedDispatch(runId: string, dispatch: (action: unknown) => unknown): (action: unknown) => unknown {
+  return (action) => {
+    if (runId !== currentRunId) return undefined
+    return dispatch(action)
+  }
 }
 
 /** Wraps `deps.registerFile` with the 06 "outside the run prefix" warning. */
@@ -413,12 +443,16 @@ async function handleNextAction(
       )
 
       if (step.uses === 'pipeline') {
+        // Scoped, not the raw `dispatch`: this launches a fire-and-forget
+        // async chain that can still be mid-flight after the run it belongs
+        // to has been abandoned for a new one (see `scopedDispatch`).
+        const scoped = scopedDispatch(runState.runId, dispatch)
         const rt: StepRuntime = {
-          emit: (e) => dispatch(runEvent(e)),
+          emit: (e) => scoped(runEvent(e)),
           http: deps.http,
           clock: deps.clock,
           signal: controller.signal,
-          registerFile: registerFileForStep(deps, runState, a.key, dispatch),
+          registerFile: registerFileForStep(deps, runState, a.key, scoped),
         }
         void runPipelineStep({ step, key: a.key, job: a.job, index: a.index, def, state: runState }, rt)
       } else if (step.uses === 'form') {
