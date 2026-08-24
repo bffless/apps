@@ -117,6 +117,18 @@ export function RunPage() {
   const dispatch = useAppDispatch()
   const selectedStep = useAppSelector((state) => state.ui.selectedStep)
 
+  // Selection is scoped to the run being viewed (fix round 1): `uiSlice.
+  // selectedStep` is process-global and step keys repeat identically across
+  // runs of the same workflow (`<job>/<index>/<step>`, no `runId` component)
+  // — and this page never remounts across a run-to-run navigation
+  // (react-router keeps the same `RunPage` instance for a `:runId` param
+  // change, there is no `key` forcing a fresh one). Left uncleared, a
+  // selection made on the run just left would survive onto the next one and
+  // block *that* run's own waiting-step auto-select below (`!selectedStep`).
+  useEffect(() => {
+    dispatch(stepSelected(null))
+  }, [runId, dispatch])
+
   // The live path (Task 18): this tab is driving `runId` right now.
   const sliceMode = useAppSelector((state) => state.run.mode)
   const sliceMeta = useAppSelector((state) => state.run.meta)
@@ -221,7 +233,7 @@ export function RunPage() {
               onSelect={(key) => dispatch(stepSelected(key))}
             />
             {selectedStep ? (
-              <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} />
+              <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} live={isLive} />
             ) : (
               <p className="note">Pick a step to see what went in and what came out.</p>
             )}
