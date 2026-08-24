@@ -713,7 +713,45 @@ describe('step.annotated (Decision 12)', () => {
     )
     expect(events.map((e) => e.type)).toEqual(['step.queued', 'step.waiting', 'step.succeeded'])
 
+    // The form declares no `annotations:`, so its submit evaluates to `[]` —
+    // which must not wipe what `workflow.annotate` already appended.
+    expect(state.steps[REVIEW].annotations).toEqual([NOTICE])
     const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
     expect(replayed.steps[REVIEW].annotations).toEqual(state.steps[REVIEW].annotations)
+  })
+
+  // Decision 12's union, end to end: dynamic + declared, live and on Resume.
+  it('round-trips the union of dynamic and declared annotations (replay is a fixed point)', () => {
+    const DECLARED: Annotation = { level: 'warning', message: 'check the cuts' }
+    const store = newStore()
+    let state = annotatedForm(store)
+    state = dispatch(
+      store,
+      state,
+      {
+        type: 'step.succeeded',
+        key: REVIEW,
+        outputs: { approved: true, report: 'ok' },
+        summary: 'approved=true',
+        annotations: [DECLARED],
+        at: now(),
+      },
+      formDef,
+    )
+
+    expect(state.steps[REVIEW].annotations).toEqual([NOTICE, DECLARED])
+    // rows.ts writes the post-event state, so the column is already the union…
+    expect(store.steps[`${RUN_ID}::${REVIEW}`].annotations).toEqual([NOTICE, DECLARED])
+
+    // …and replaying it onto a fresh step (annotations `[]`) appends to nothing:
+    // one `step.succeeded` carrying the whole column, no extra `step.annotated`.
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), formDef).filter(
+      (e) => 'key' in e && e.key === REVIEW,
+    )
+    expect(events.map((e) => e.type)).toEqual(['step.queued', 'step.waiting', 'step.succeeded'])
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
+    expect(replayed.steps[REVIEW].annotations).toEqual([NOTICE, DECLARED])
+    expect(replayed.steps[REVIEW].summary).toBe(state.steps[REVIEW].summary)
   })
 })

@@ -349,6 +349,42 @@ describe('step.annotated', () => {
     expect(state.steps[KEY].summary).toBe('most')
   })
 
+  it('survives the step finishing: a terminal event appends, it does not replace', () => {
+    const a = { level: 'notice' as const, message: 'previewed' }
+    const b = { level: 'notice' as const, message: 'declared' }
+
+    let state = waiting()
+    state = runReducer(state, { type: 'step.annotated', key: KEY, annotations: [a], at: 1_003 })
+
+    const succeeded = runReducer(state, {
+      type: 'step.succeeded',
+      key: KEY,
+      outputs: {},
+      annotations: [b],
+      at: 1_004,
+    })
+    expect(succeeded.steps[KEY].annotations).toEqual([a, b])
+
+    // A step that declares none evaluates to `[]` — which must keep, not wipe.
+    const bare = runReducer(state, {
+      type: 'step.succeeded',
+      key: KEY,
+      outputs: {},
+      annotations: [],
+      at: 1_004,
+    })
+    expect(bare.steps[KEY].annotations).toEqual([a])
+
+    const failed = runReducer(state, {
+      type: 'step.failed',
+      key: KEY,
+      error: { code: 'X', message: 'x' },
+      annotations: [b],
+      at: 1_004,
+    })
+    expect(failed.steps[KEY].annotations).toEqual([a, b])
+  })
+
   it.each(['running', 'polling', 'waiting'] as const)('is legal while %s', (status) => {
     let state = baseline()
     if (status === 'waiting') {

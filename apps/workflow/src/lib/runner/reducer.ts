@@ -153,7 +153,11 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         outputs: event.outputs,
         response: event.response ?? step.response,
         summary: event.summary ?? step.summary,
-        annotations: event.annotations ?? step.annotations,
+        // Appended, never replaced (Decision 12): a step's declared
+        // `annotations:` join whatever `step.annotated` already appended while
+        // it was in flight — otherwise an island's `workflow.annotate` would
+        // vanish at the moment its own `workflow.submit` lands.
+        annotations: [...step.annotations, ...(event.annotations ?? [])],
         finishedAt: event.at,
       })
     }
@@ -165,7 +169,8 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         ...step,
         status: 'failed',
         error: event.error,
-        annotations: event.annotations ?? step.annotations,
+        // Appended, never replaced (Decision 12) — see `step.succeeded` above.
+        annotations: [...step.annotations, ...(event.annotations ?? [])],
         finishedAt: event.at,
       })
     }
