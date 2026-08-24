@@ -178,8 +178,13 @@ function itemProduced(def: Definition, state: RunState, job: string, index: numb
   return !states.some((s) => stepConclusion(def, s) === 'failure')
 }
 
-/** Both `OutputDecl` forms: a bare expression string, or `{ type?, value }`. */
-function evalOutputDecl(decl: OutputDecl, contexts: Record<string, unknown>): unknown {
+/**
+ * Both `OutputDecl` forms: a bare expression string, or `{ type?, value }`.
+ * Exported for the top-level `outputs:` evaluation on `run.finished`
+ * (`store/runnerMiddleware.ts`, Task 17) — the same rule job outputs use, so
+ * there is exactly one reading of an `OutputDecl`.
+ */
+export function evalOutputDecl(decl: OutputDecl, contexts: Record<string, unknown>): unknown {
   if (typeof decl === 'string') return evalValue(decl, contexts)
   if (decl.value === undefined) return null
   return evalDeep(decl.value, contexts)

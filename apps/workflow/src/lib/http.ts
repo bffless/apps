@@ -57,3 +57,51 @@ export const httpJson: HttpJson = async (path, init) => {
 
   return { status: res.status, ok: res.ok, body: await readBody(res) }
 }
+
+// ---------------------------------------------------------------------------
+// Reauth (R5) — owned by the runner (Phase 3), not by `httpJson` itself.
+// ---------------------------------------------------------------------------
+
+/** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
+const REFRESH_URL = '/api/auth/session/refresh'
+
+/**
+ * SuperTokens *rotates* the refresh token, so two concurrent refreshes race on
+ * the same cookie: the first rotation invalidates the token the others hold. A
+ * run fans out into many parallel writes/steps that can all 401 at once, so the
+ * shared in-flight promise is the common path, not the edge case — the same
+ * shape as `workflowApi.ts`'s read-side `baseQueryWithReauth`.
+ */
+let refreshInFlight: Promise<boolean> | null = null
+
+async function requestRefresh(): Promise<boolean> {
+  try {
+    const res = await fetch(REFRESH_URL, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { rid: 'session' },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+function attemptRefresh(): Promise<boolean> {
+  refreshInFlight ??= requestRefresh().finally(() => {
+    refreshInFlight = null
+  })
+  return refreshInFlight
+}
+
+/**
+ * `httpJson` wrapped with the app's 401-refresh-retry policy: a run outlives
+ * the SuperTokens access token, so both the runner's write path (`runStore`)
+ * and its pipeline-step calls need one reauth-and-retry, same as the read side.
+ * This is what `RunnerDeps.http` is built from (Phase 3, `store/index.ts`).
+ */
+export const httpJsonWithReauth: HttpJson = async (path, init) => {
+  const res = await httpJson(path, init)
+  if (res.status !== 401) return res
+  return (await attemptRefresh()) ? httpJson(path, init) : res
+}

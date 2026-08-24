@@ -66,10 +66,15 @@ export const runSlice = createSlice({
       state.state = runReducer(plain(state.state as RunState), event)
     },
 
-    /** Adopt a state rebuilt from rows: Resume (`live`) or the read-only view. */
+    /**
+     * Adopt a state rebuilt from rows: Resume (`live`) or the read-only view.
+     * A replaced run has no driver yet, so any stale persistence-pause banner
+     * from the state being replaced must not survive onto it.
+     */
     runReplaced(state, action: PayloadAction<{ state: RunState; mode: RunMode }>) {
       state.state = action.payload.state
       state.mode = action.payload.mode
+      state.paused = undefined
     },
 
     runModeChanged(state, action: PayloadAction<RunMode>) {
