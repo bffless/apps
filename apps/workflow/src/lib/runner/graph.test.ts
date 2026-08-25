@@ -5,7 +5,16 @@ import { loadWorkflow } from './definition'
 import { buildJobContexts, evalValue } from './contexts'
 import type { Definition, RunState, StepState } from './types'
 import { stepKey } from './types'
-import { expandMatrix, isTerminal, jobResult, needsEdges, refsIn, topoLayers } from './graph'
+import {
+  expandMatrix,
+  firstStepWhere,
+  isTerminal,
+  jobOrder,
+  jobResult,
+  needsEdges,
+  refsIn,
+  topoLayers,
+} from './graph'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -366,5 +375,62 @@ describe('refsIn', () => {
 
   it('collects only `outputs` reads of steps and needs', () => {
     expect(refsIn('${{ steps.boom.error.code }} ${{ needs.greet.result }}')).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// firstStepWhere (apps#370): the topological pick behind `firstWaitingStep`
+// ---------------------------------------------------------------------------
+
+describe('firstStepWhere', () => {
+  /** Two layer-0 jobs feeding a tail; the tail is inserted into the state first. */
+  const parallel: Definition = toDefinition({
+    name: 'Parallel',
+    jobs: {
+      z: { steps: [step('s')] },
+      a: { steps: [step('s')] },
+      tail: { needs: ['z', 'a'], steps: [step('s')] },
+    },
+  })
+
+  function running(job: string): StepState {
+    return {
+      key: stepKey(job, 0, 's'),
+      job,
+      index: 0,
+      stepId: 's',
+      kind: 'island',
+      status: 'running',
+      attempt: 1,
+      annotations: [],
+    }
+  }
+
+  const stateWith = (steps: Record<string, StepState>): RunState => ({
+    runId: 'r',
+    impl: 'i',
+    workflow: 'w',
+    status: 'running',
+    headless: false,
+    inputs: {},
+    steps,
+    expansions: {},
+    annotations: [],
+    startedAt: 0,
+  })
+
+  it('walks jobs in topological order, not in the order the state happens to hold them', () => {
+    const state = stateWith({
+      [stepKey('tail', 0, 's')]: running('tail'),
+      [stepKey('z', 0, 's')]: running('z'),
+      [stepKey('a', 0, 's')]: running('a'),
+    })
+    const pick = firstStepWhere(parallel, state, (s) => s.status === 'running')
+    expect(pick).toBe(stepKey(jobOrder(parallel)[0]!, 0, 's'))
+    expect(pick).not.toBe(stepKey('tail', 0, 's'))
+  })
+
+  it('returns null when nothing matches', () => {
+    expect(firstStepWhere(parallel, stateWith({}), () => true)).toBeNull()
   })
 })

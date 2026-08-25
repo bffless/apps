@@ -130,6 +130,11 @@ export function resolveSrc(impl: string, src: string): string {
     bad('must be relative to the implementation bundle or under /w/')
   }
 
+  // A bare `.`, a trailing `/` or `/.` all normalise to a *directory* — the
+  // bundle root, at worst — which is never an island (apps#370).
+  const last = src.split('/').at(-1)
+  if (last === '' || last === '.') bad('must name a file')
+
   const url = src.startsWith('/w/') ? src : `/w/${impl}/${src}`
   if (src.split('/').includes('..') || !inside(url, `/w/${impl}/`)) {
     bad(`must resolve inside /w/${impl}/`)
@@ -222,7 +227,9 @@ function outputDecls(step: Step): Record<string, OutputDecl> {
  * On success `summary`/`annotations` are evaluated with the step's own outputs
  * in scope and ride on the returned `step.succeeded`. Never throws.
  */
-export function completeIslandStep(a: IslandStepArgs & { outputs: unknown }): IslandSubmitResult {
+export function completeIslandStep(
+  a: IslandStepArgs & { outputs: unknown; at: number },
+): IslandSubmitResult {
   if (!isPlainObject(a.outputs)) {
     return { ok: false, errors: { outputs: 'Expected an object of outputs' } }
   }
@@ -236,7 +243,7 @@ export function completeIslandStep(a: IslandStepArgs & { outputs: unknown }): Is
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  return { ok: true, event: succeededEvent(a, outputs) }
+  return { ok: true, event: succeededEvent(a, outputs, a.at) }
 }
 
 const LEVELS = new Set<Annotation['level']>(['notice', 'warning', 'error'])
@@ -246,16 +253,40 @@ function isLevel(value: unknown): value is Annotation['level'] {
 }
 
 /**
+ * What one step may accumulate through `workflow.annotate` (apps#370): the
+ * `annotations` and `summary` columns are persisted with every upsert and are
+ * *not* offloaded the way Phase 2 offloads `outputs` at 256 KB, so a looping
+ * island must hit a wall well before that budget. Exported as the one place
+ * these numbers live, for Phase 2's persistence work to budget against.
+ */
+export const ANNOTATION_BUDGET = {
+  /** Annotations per step, the recorded ones included. */
+  count: 100,
+  /** JSON bytes of a step's annotations, the recorded ones included. */
+  bytes: 64 * 1024,
+  /** JSON bytes of one summary. */
+  summaryBytes: 16 * 1024,
+} as const
+
+function byteSize(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length
+}
+
+/**
  * Validate a `workflow.annotate` call into a `step.annotated` event
  * (Decision 12): `annotations` (a list of `{ level, message, title? }`) and/or
  * `summary`, at least one of the two. Bad input comes back as `{ error }` — the
  * bridge turns it into an MCP tool error, so a sloppy island cannot poison the
  * run record.
+ *
+ * `existing` is what the step already holds, so the budget is enforced over
+ * the step's total, not per call (apps#370).
  */
 export function annotateEvent(
   key: StepKey,
   args: unknown,
   at: number,
+  existing: readonly Annotation[] = [],
 ): Extract<RunEvent, { type: 'step.annotated' }> | { error: string } {
   if (!isPlainObject(args)) {
     return { error: 'Expected an object with `annotations` and/or `summary`' }
@@ -265,6 +296,11 @@ export function annotateEvent(
 
   if (args.annotations !== undefined) {
     if (!Array.isArray(args.annotations)) return { error: '`annotations` must be a list' }
+    if (existing.length + args.annotations.length > ANNOTATION_BUDGET.count) {
+      return {
+        error: `\`annotations\`: a step holds at most ${ANNOTATION_BUDGET.count} (${existing.length} already recorded)`,
+      }
+    }
 
     const annotations: Annotation[] = []
     for (let i = 0; i < args.annotations.length; i++) {
@@ -280,11 +316,23 @@ export function annotateEvent(
       if (typeof entry.title === 'string') annotation.title = entry.title
       annotations.push(annotation)
     }
-    if (annotations.length > 0) event.annotations = annotations
+    if (annotations.length > 0) {
+      if (byteSize([...existing, ...annotations]) > ANNOTATION_BUDGET.bytes) {
+        return {
+          error: `\`annotations\`: a step's annotations may not exceed ${ANNOTATION_BUDGET.bytes / 1024} KB`,
+        }
+      }
+      event.annotations = annotations
+    }
   }
 
   if (args.summary !== undefined) {
     if (typeof args.summary !== 'string') return { error: '`summary` must be a string' }
+    if (new TextEncoder().encode(args.summary).length > ANNOTATION_BUDGET.summaryBytes) {
+      return {
+        error: `\`summary\`: may not exceed ${ANNOTATION_BUDGET.summaryBytes / 1024} KB`,
+      }
+    }
     event.summary = args.summary
   }
 

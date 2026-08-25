@@ -123,6 +123,47 @@ export const FORM_AND_ISLAND_DEF = toDefinition({
 export const FORM_KEY: StepKey = stepKey('ask', 0, 'confirm')
 export const PARALLEL_ISLAND_KEY: StepKey = stepKey('pick', 0, 'choose')
 
+/**
+ * A waiting form beside two parallel jobs of islands: `a` = `x` then `y`,
+ * `b` = `z`. The form owns the pane (it is `waiting`, and waiting wins), so
+ * the islands load unclaimed; the scheduler starts `a/x` and `b/z` together
+ * and `a/y` only after `a/x` submits — so the run state holds `b/z` *before*
+ * `a/y`, while scheduling order (topo, then job id) puts `a/y` first. The one
+ * shape where "which loading island opens" can distinguish insertion order
+ * from scheduling order (apps#370).
+ */
+const islandStep = (id: string) => ({
+  id,
+  uses: 'island',
+  with: { src: `islands/${id}.html`, title: id, mode: 'quick' },
+  outputs: { choice: { type: 'string' } },
+})
+
+export const FORM_AND_TWO_ISLANDS_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    ask: {
+      steps: [
+        {
+          id: 'confirm',
+          uses: 'form',
+          with: {
+            title: 'Does this look right?',
+            fields: { approved: { type: 'boolean', default: true } },
+            submit: 'Finish',
+          },
+        },
+      ],
+    },
+    a: { steps: [islandStep('x'), islandStep('y')] },
+    b: { steps: [islandStep('z')] },
+  },
+}) as Definition
+
+export const A_X_KEY: StepKey = stepKey('a', 0, 'x')
+export const A_Y_KEY: StepKey = stepKey('a', 0, 'y')
+export const B_Z_KEY: StepKey = stepKey('b', 0, 'z')
+
 // ---------------------------------------------------------------------------
 // The M2 interactive workflow — a real pipeline step *and* an island step
 // ---------------------------------------------------------------------------
@@ -142,8 +183,10 @@ export const CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
 export interface FakeIslandHost {
   /** Pass as `RunnerDeps.islandHost`. */
   factory: (deps: IslandHostDeps) => IslandHost
-  /** The deps the middleware built the host with — `onSubmit`/`onAnnotate` live here. */
+  /** The deps the middleware built the *latest* host with — `onSubmit`/`onAnnotate` live here. */
   deps: IslandHostDeps | null
+  /** The deps of every host built, in launch order — for runs with more than one island. */
+  allDeps: IslandHostDeps[]
   /** Every `mount` the handle made, in order. */
   mounts: IslandMountArgs[]
   frames: HTMLIFrameElement[]
@@ -172,6 +215,7 @@ export function fakeIslandHost(): FakeIslandHost {
 
   const fake: FakeIslandHost = {
     deps: null,
+    allDeps: [],
     mounts: [],
     frames: [],
     teardowns: [],
@@ -189,6 +233,7 @@ export function fakeIslandHost(): FakeIslandHost {
     },
     factory: (deps) => {
       fake.deps = deps
+      fake.allDeps.push(deps)
       return {
         mount(iframe, a) {
           // A second mount supersedes the first, exactly as the real host does.
@@ -205,6 +250,11 @@ export function fakeIslandHost(): FakeIslandHost {
         },
         setDisplayMode(mode) {
           fake.displayModes.push(mode)
+        },
+        async sendToolInput() {
+          // A step's island is never re-sent tool-input (apps#370); the pane's
+          // adapter only ever reaches this for a viewer, which no step is.
+          throw new Error('fakeIslandHost: sendToolInput is not expected on a step island')
         },
         async teardown(reason) {
           fake.teardowns.push(reason)
@@ -226,9 +276,19 @@ type Recorded =
   | { op: 'patch'; id: string; patch: Partial<RunRow> }
   | { op: 'upsert'; runId: string; key: StepKey; patch: Partial<StepRow> }
 
-/** An in-memory `RunStore` that records every write and never fails. */
-export function memoryRunStore(): { store: RunStore; writes: Recorded[] } {
+type LeaseAnswer = { ok: boolean; leaseUntil?: number; heldBy?: string }
+
+/**
+ * An in-memory `RunStore` that records every write and never fails. `setLease`
+ * flips what the next heartbeats hear — `{ ok: false }` is a lost lease.
+ */
+export function memoryRunStore(): {
+  store: RunStore
+  writes: Recorded[]
+  setLease: (answer: LeaseAnswer) => void
+} {
   const writes: Recorded[] = []
+  let lease: LeaseAnswer = { ok: true, leaseUntil: Date.now() + 60_000 }
   const store: RunStore = {
     async createRun(row) {
       writes.push({ op: 'create', row })
@@ -240,10 +300,10 @@ export function memoryRunStore(): { store: RunStore; writes: Recorded[] } {
       writes.push({ op: 'upsert', runId, key, patch })
     },
     async lease() {
-      return { ok: true, leaseUntil: Date.now() + 60_000 }
+      return lease
     },
   }
-  return { store, writes }
+  return { store, writes, setLease: (answer) => (lease = answer) }
 }
 
 const noHttp: HttpJson = async (path) => {
@@ -262,13 +322,15 @@ export interface IslandRun {
   runId: string
   host: FakeIslandHost
   writes: Recorded[]
+  /** What the run store answers the next heartbeats with. */
+  setLease: (answer: LeaseAnswer) => void
 }
 
 /** Builds a store around a fresh fake host, without starting anything. */
-export function islandStore(): { store: AppStore; advance: (ms: number) => Promise<void>; host: FakeIslandHost; writes: Recorded[] } {
+export function islandStore(): Omit<IslandRun, 'runId'> {
   const host = fakeIslandHost()
   const { clock, advance } = virtualClock()
-  const { store: runStore, writes } = memoryRunStore()
+  const { store: runStore, writes, setLease } = memoryRunStore()
   const deps: RunnerDeps = {
     http: noHttp,
     clock,
@@ -278,7 +340,7 @@ export function islandStore(): { store: AppStore; advance: (ms: number) => Promi
   }
   const store = makeStore(deps)
   trackedStores.push(store)
-  return { store, advance, host, writes }
+  return { store, advance, host, writes, setLease }
 }
 
 /**
@@ -290,7 +352,7 @@ export async function startIslandRun(
   def: Definition = ISLAND_DEF,
   islandKey: StepKey = ISLAND_KEY,
 ): Promise<IslandRun> {
-  const { store, advance, host, writes } = islandStore()
+  const { store, advance, host, writes, setLease } = islandStore()
   store.dispatch(
     startRun({
       impl: 'test',
@@ -304,7 +366,7 @@ export async function startIslandRun(
 
   await pumpUntil(advance, () => store.getState().run.state?.steps[islandKey]?.status === 'running')
 
-  return { store, advance, host, writes, runId: store.getState().run.state!.runId }
+  return { store, advance, host, writes, setLease, runId: store.getState().run.state!.runId }
 }
 
 /**

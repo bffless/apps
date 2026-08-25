@@ -67,6 +67,7 @@ function args(values: Record<string, unknown>) {
     def: hello,
     state,
     values,
+    at: 1_000,
   }
 }
 
@@ -142,6 +143,7 @@ describe('completeFormStep (hello confirm.review)', () => {
       def: withSummary,
       state,
       values: { note: 'hi' },
+      at: 1_000,
     })
 
     expect(result.ok).toBe(true)
@@ -172,7 +174,7 @@ describe('completeFormStep (hello confirm.review)', () => {
       ...confirmState(),
       steps: { [key]: stepState('j', 0, 'f', { kind: 'form', status: 'waiting' }) },
     }
-    const base = { step: stepOf(listy, 'j', 'f'), key, job: 'j', index: 0, def: listy, state }
+    const base = { step: stepOf(listy, 'j', 'f'), key, job: 'j', index: 0, def: listy, state, at: 1 }
 
     expect(completeFormStep({ ...base, values: { tags: ['a', 'b'] } }).ok).toBe(true)
     expect(completeFormStep({ ...base, values: { tags: 'a' } }).ok).toBe(false)
@@ -217,5 +219,48 @@ describe('formInitialValues (hello confirm.review)', () => {
         index: 0,
       }),
     ).toEqual({ note: null })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// apps#370 — host polish follow-ups
+// ---------------------------------------------------------------------------
+
+describe('completeFormStep — clock injection (#370)', () => {
+  it('stamps the caller-supplied `at` rather than reading the wall clock', () => {
+    const result = completeFormStep({ ...args({ approved: true, report: '# r' }), at: 42 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.event.at).toBe(42)
+  })
+
+  it('reads a submitted field named after an Object.prototype member by own key only', () => {
+    const proto: Definition = toDefinition({
+      name: 'Proto',
+      jobs: {
+        confirm: {
+          steps: [
+            {
+              id: 'review',
+              uses: 'form',
+              with: { fields: { constructor: { type: 'string' }, toString: {} } },
+            },
+          ],
+        },
+      },
+    }) as Definition
+    const base = { ...args({}), def: proto, step: stepOf(proto, 'confirm', 'review'), at: 1 }
+
+    const omitted = completeFormStep({ ...base, values: {} })
+    expect(omitted).toMatchObject({
+      ok: true,
+      event: { outputs: { constructor: null, toString: null } },
+    })
+
+    const given = completeFormStep({ ...base, values: { constructor: 'c', toString: 't' } })
+    expect(given).toMatchObject({
+      ok: true,
+      event: { outputs: { constructor: 'c', toString: 't' } },
+    })
   })
 })

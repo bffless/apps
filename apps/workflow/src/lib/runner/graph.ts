@@ -13,7 +13,7 @@
 import { scanTemplates } from '@bffless/workflow-lint/expressions'
 import type { Expr } from '@bffless/workflow-lint/expressions'
 import { evalDeep, jobOutcome } from './contexts'
-import type { Definition, Job, RunState, StepKey, StepStatus } from './types'
+import type { Definition, Job, RunState, StepKey, StepState, StepStatus } from './types'
 import { stepKey } from './types'
 
 export type JobResult = 'pending' | 'running' | 'success' | 'failure' | 'skipped' | 'cancelled'
@@ -79,24 +79,37 @@ export function jobOrder(def: Definition): string[] {
 }
 
 /**
- * The first step whose current status is `waiting`, in scheduling order —
- * topo job order, then declaration order, then matrix index — so a form the
- * run just parked on is the one the run page opens (08: "the pane is the
- * form"). `null` when nothing is waiting.
+ * The first step (that has a state) satisfying `pred`, in scheduling order —
+ * topo job order, then declaration order, then matrix index. `null` when none
+ * does. The one walk every "which step does the page open" question shares,
+ * so they cannot disagree about order (apps#370).
  */
-export function firstWaitingStep(def: Definition, state: RunState): StepKey | null {
+export function firstStepWhere(
+  def: Definition,
+  state: RunState,
+  pred: (step: StepState) => boolean,
+): StepKey | null {
   for (const job of jobOrder(def)) {
     const steps = def.jobs[job]?.steps ?? []
     const total = state.expansions[job]?.total ?? 1
     for (const step of steps) {
       for (let index = 0; index < total; index++) {
-        if (state.steps[stepKey(job, index, step.id)]?.status === 'waiting') {
-          return stepKey(job, index, step.id)
-        }
+        const key = stepKey(job, index, step.id)
+        const current = state.steps[key]
+        if (current && pred(current)) return key
       }
     }
   }
   return null
+}
+
+/**
+ * The first step whose current status is `waiting`, in scheduling order, so a
+ * form the run just parked on is the one the run page opens (08: "the pane is
+ * the form"). `null` when nothing is waiting.
+ */
+export function firstWaitingStep(def: Definition, state: RunState): StepKey | null {
+  return firstStepWhere(def, state, (step) => step.status === 'waiting')
 }
 
 /** "k of n done" (08): terminal steps against every step the run currently knows about. */

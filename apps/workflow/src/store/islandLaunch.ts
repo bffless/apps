@@ -48,8 +48,12 @@ export interface IslandHandle {
   /** The tool `arguments` — and the step's persisted `inputs`, verbatim (Decision 11). */
   arguments: Record<string, unknown>
   headless: boolean
-  /** `ui/message` lines. Live only — never persisted (Decision 12). */
-  log: string[]
+  /**
+   * `ui/message` lines. Live only — never persisted (Decision 12). Replaced
+   * with a fresh array per line, never pushed to: the pane reads it as a
+   * `useSyncExternalStore` snapshot (apps#370).
+   */
+  log: readonly string[]
 }
 
 /**
@@ -70,10 +74,8 @@ export interface IslandLaunchDeps {
 
 const handles = new Map<string, IslandHandle>()
 const listeners = new Set<() => void>()
-let version = 0
 
 function bump(): void {
-  version += 1
   for (const listener of [...listeners]) listener()
 }
 
@@ -85,16 +87,12 @@ export function getIslandHandle(runId: string, key: StepKey): IslandHandle | und
   return handles.get(handleKey(runId, key))
 }
 
-/** `useSyncExternalStore` pair for the pane: a registration or a log line bumps the version. */
+/** `useSyncExternalStore` subscribe: a registration, a disposal or a log line notifies. */
 export function subscribeIslandHandles(listener: () => void): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
   }
-}
-
-export function islandHandlesVersion(): number {
-  return version
 }
 
 /** A step reached a terminal state: close its bridge and forget it. */
@@ -111,9 +109,13 @@ export async function disposeIslandHandle(
   await handle.host.teardown(reason)
 }
 
-/** The run went away (closed, replaced, superseded): nothing may stay live. */
+/**
+ * The run went away (closed, replaced, superseded) or this tab stopped driving
+ * it (`unmounted`: the record is untouched, the frames are going): nothing may
+ * stay live.
+ */
 export async function disposeAllIslandHandles(
-  reason: 'cancelled' | 'completed' = 'cancelled',
+  reason: 'cancelled' | 'completed' | 'unmounted' = 'cancelled',
 ): Promise<void> {
   const all = [...handles.values()]
   if (all.length === 0) return
@@ -178,7 +180,6 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
   }
 
   const args = a.recordedInputs ?? inputs.arguments
-  const log: string[] = []
 
   /**
    * This step's status — but only while the run it belongs to is still the one
@@ -221,6 +222,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
         def: a.def,
         state,
         outputs,
+        at: a.deps.now(),
       })
       if (!submitted.ok) return submitted
       a.scoped(runEvent(submitted.event))
@@ -230,7 +232,10 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
       // `step.annotated` is legal only on a non-terminal step (reducer.ts), so
       // the same guard the submit path needs applies here.
       if (!isOpen()) return { ok: false, error: 'This step is no longer accepting annotations.' }
-      const event = annotateEvent(a.key, annotateArgs, a.deps.now())
+      // The budget is per step, so the call is judged against what the row
+      // already holds (apps#370).
+      const existing = a.getRunState()?.steps[a.key]?.annotations ?? []
+      const event = annotateEvent(a.key, annotateArgs, a.deps.now(), existing)
       if ('error' in event) return { ok: false, error: event.error }
       a.scoped(runEvent(event))
       return { ok: true }
@@ -239,7 +244,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
       a.dispatch(islandDisplayChanged(mode))
     },
     onLog: (line) => {
-      log.push(line)
+      handle.log = [...handle.log, line]
       bump()
     },
     openLink,
@@ -256,7 +261,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
     impl: a.state.impl,
     arguments: args,
     headless: a.state.headless,
-    log,
+    log: [],
     async mount(iframe) {
       try {
         await host.mount(iframe, {

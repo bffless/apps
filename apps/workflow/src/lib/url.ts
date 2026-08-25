@@ -35,15 +35,25 @@ const SAFE_SCHEME = /^(https?:|mailto:)/i
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
 /**
+ * `//host/…` is an *absolute* url in disguise — it inherits the page's scheme
+ * and goes off-site — and WHATWG reads `\` as `/` for http(s), so `/\host` is
+ * the same thing. Checked after `normalizeForSchemeCheck`, which has already
+ * stripped the whitespace an attacker would pad the second slash with.
+ */
+const PROTOCOL_RELATIVE = /^[/\\]{2}/
+
+/**
  * Allow-list: `http:`/`https:`/`mailto:`, and anything with no scheme at all
  * (root-relative `/…`, `./`/`../`-relative, a bare path, or a `#fragment`).
- * Everything else — `javascript:`, `data:`, `vbscript:`, and any url carrying
- * an HTML entity — is unsafe, and the caller renders text instead of a sink.
+ * Everything else — `javascript:`, `data:`, `vbscript:`, a protocol-relative
+ * `//host`, and any url carrying an HTML entity — is unsafe, and the caller
+ * renders text instead of a sink.
  */
 export function isSafeUrl(rawUrl: string): boolean {
   if (typeof rawUrl !== 'string') return false
   if (SUSPICIOUS_ENTITY.test(rawUrl)) return false
   const url = normalizeForSchemeCheck(rawUrl)
+  if (PROTOCOL_RELATIVE.test(url)) return false
   if (SAFE_SCHEME.test(url)) return true
   if (/^[#/.]/.test(url)) return true
   return !HAS_SCHEME.test(url)

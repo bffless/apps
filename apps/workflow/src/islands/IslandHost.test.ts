@@ -616,3 +616,179 @@ describe('teardown', () => {
     expect(second.closed).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// apps#370 — host polish follow-ups
+// ---------------------------------------------------------------------------
+
+/** Collect unhandled rejections for the duration of `run`. */
+async function withRejections(run: () => Promise<void>): Promise<unknown[]> {
+  const rejections: unknown[] = []
+  const onRejection = (err: unknown) => rejections.push(err)
+  process.on('unhandledRejection', onRejection)
+  try {
+    await run()
+    await tick()
+    await tick()
+  } finally {
+    process.off('unhandledRejection', onRejection)
+  }
+  return rejections
+}
+
+describe('sendToolInput (#370)', () => {
+  it('re-sends tool-input to a viewer without remounting', async () => {
+    const h = await mounted({}, { viewer: true, arguments: { value: 1 } })
+    await tick()
+
+    await h.host.sendToolInput({ value: 2 })
+    await tick()
+
+    expect(h.island.toolInputs.map((t) => t.arguments)).toEqual([{ value: 1 }, { value: 2 }])
+    expect(h.fetchText).toHaveBeenCalledTimes(1)
+    expect(h.island.frames).toHaveLength(1)
+  })
+
+  it("never re-sends to a step's island", async () => {
+    const h = await mounted()
+    await tick()
+
+    await expect(h.host.sendToolInput({ lines: [] })).rejects.toThrow(/viewer/)
+    await tick()
+    expect(h.island.toolInputs).toHaveLength(1)
+  })
+
+  it('is a no-op before a mount and after teardown', async () => {
+    const before = makeHarness()
+    await expect(before.host.sendToolInput({ value: 1 })).resolves.toBeUndefined()
+
+    const h = await mounted({}, { viewer: true })
+    await h.host.teardown('unmounted')
+    await expect(h.host.sendToolInput({ value: 1 })).resolves.toBeUndefined()
+  })
+
+  it('is a no-op while the mount is still delivering its own tool-input, so order holds', async () => {
+    // Between `bridge.connect` and the mount's own send there is a transport
+    // to notify over — but sending here would put the new value *before* the
+    // mount's, leaving the island on the stale one. The frame re-checks after
+    // the mount resolves, so dropping the call loses nothing.
+    const h = makeHarness()
+    const mounting = h.host.mount(h.iframe, { ...MOUNT, viewer: true, arguments: { value: 1 } })
+    await tick()
+    await tick()
+    await h.host.sendToolInput({ value: 2 })
+
+    await h.island.connect()
+    await mounting
+    await tick()
+
+    expect(h.island.toolInputs.map((t) => t.arguments)).toEqual([{ value: 1 }])
+  })
+
+  it("rejects for a step's island even before it is connected", async () => {
+    const h = makeHarness()
+    const mounting = h.host.mount(h.iframe, MOUNT)
+    await tick()
+    await expect(h.host.sendToolInput({ lines: [] })).rejects.toThrow(/viewer/)
+    await h.island.connect()
+    await mounting
+  })
+})
+
+describe('host context follows the page (#370)', () => {
+  interface FakeMediaQuery {
+    matches: boolean
+    listeners: ((e: { matches: boolean }) => void)[]
+    addEventListener(type: string, fn: (e: { matches: boolean }) => void): void
+    removeEventListener(type: string, fn: (e: { matches: boolean }) => void): void
+  }
+
+  function stubMatchMedia(matches: boolean): FakeMediaQuery {
+    const query: FakeMediaQuery = {
+      matches,
+      listeners: [],
+      addEventListener: (_type, fn) => query.listeners.push(fn),
+      removeEventListener: (_type, fn) => {
+        query.listeners = query.listeners.filter((l) => l !== fn)
+      },
+    }
+    vi.stubGlobal('matchMedia', () => query)
+    return query
+  }
+
+  class FakeResizeObserver {
+    static instances: FakeResizeObserver[] = []
+    observed: Element[] = []
+    disconnected = false
+    callback: () => void
+    constructor(callback: () => void) {
+      this.callback = callback
+      FakeResizeObserver.instances.push(this)
+    }
+    observe(el: Element) {
+      this.observed.push(el)
+    }
+    disconnect() {
+      this.disconnected = true
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    FakeResizeObserver.instances = []
+  })
+
+  it('tells a connected island when the OS theme flips', async () => {
+    const query = stubMatchMedia(false)
+    const h = await mounted()
+    expect(h.island.app.getHostContext()?.theme).toBe('light')
+
+    query.matches = true
+    for (const fn of query.listeners) fn({ matches: true })
+    await tick()
+
+    expect(h.island.contextChanges.at(-1)).toEqual({ theme: 'dark' })
+    expect(h.island.app.getHostContext()?.theme).toBe('dark')
+  })
+
+  it('tells a connected island when the frame is resized', async () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    const h = await mounted()
+    const observer = FakeResizeObserver.instances.at(-1)
+    expect(observer?.observed).toEqual([h.iframe])
+
+    h.iframe.getBoundingClientRect = () => ({ width: 640 }) as DOMRect
+    observer!.callback()
+    await tick()
+
+    expect(h.island.contextChanges.at(-1)).toEqual({
+      containerDimensions: { width: 640, maxHeight: Math.round(window.innerHeight * 0.8) },
+    })
+  })
+
+  it('stops observing on teardown', async () => {
+    const query = stubMatchMedia(false)
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    const h = await mounted()
+    expect(query.listeners).toHaveLength(1)
+
+    await h.host.teardown('completed')
+
+    expect(query.listeners).toHaveLength(0)
+    expect(FakeResizeObserver.instances.at(-1)?.disconnected).toBe(true)
+  })
+})
+
+describe('an out-of-band transport death (#370)', () => {
+  it('clears the connected flag, so a later setDisplayMode neither notifies nor rejects', async () => {
+    const h = await mounted()
+
+    const rejections = await withRejections(async () => {
+      await h.island.killHostTransport()
+      h.host.setDisplayMode('fullscreen')
+    })
+
+    expect(rejections).toEqual([])
+    expect(h.island.contextChanges).toEqual([])
+  })
+})

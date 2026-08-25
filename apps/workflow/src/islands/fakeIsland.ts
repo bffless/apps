@@ -41,6 +41,11 @@ export interface FakeIsland {
   connect(): Promise<void>
   /** Close the View side (an island whose page went away). */
   close(): Promise<void>
+  /**
+   * Kill the *host's* transport out of band — the frame yanked from the DOM
+   * with no `teardown()` — so the bridge learns of it only through `onclose`.
+   */
+  killHostTransport(): Promise<void>
 }
 
 export interface FakeIslandOptions {
@@ -81,6 +86,7 @@ export function createFakeIsland(options: FakeIslandOptions = {}): FakeIsland {
     },
     connect: () => app.connect(appTransport),
     close: () => app.close(),
+    killHostTransport: () => hostTransport.close(),
   }
 
   app.ontoolinput = (params) => {

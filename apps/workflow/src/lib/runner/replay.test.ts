@@ -483,6 +483,7 @@ function submitForm(store: Store, state: RunState, values: Record<string, unknow
     def: formDef,
     state,
     values,
+    at: now(),
   })
   if (!result.ok) throw new Error(`form rejected: ${JSON.stringify(result.errors)}`)
   return dispatch(store, state, result.event, formDef)

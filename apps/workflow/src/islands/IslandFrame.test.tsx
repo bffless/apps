@@ -18,6 +18,8 @@ interface FakeHost extends IslandHost {
   live: number
   peak: number
   modes: string[]
+  /** Every `sendToolInput` after the mount, in order. */
+  inputs: Record<string, unknown>[]
 }
 
 function fakeHost(mount?: IslandHost['mount']): FakeHost {
@@ -27,6 +29,7 @@ function fakeHost(mount?: IslandHost['mount']): FakeHost {
     live: 0,
     peak: 0,
     modes: [],
+    inputs: [],
     async mount(iframe, a) {
       host.mounts += 1
       host.live += 1
@@ -36,6 +39,9 @@ function fakeHost(mount?: IslandHost['mount']): FakeHost {
     },
     setDisplayMode(mode) {
       host.modes.push(mode)
+    },
+    async sendToolInput(args) {
+      host.inputs.push(args)
     },
     async teardown(reason) {
       host.teardowns.push(reason)
@@ -137,5 +143,53 @@ describe('IslandFrame', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(onLoadError).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// apps#370 — a viewer's value changes without a remount
+// ---------------------------------------------------------------------------
+
+describe('IslandFrame — viewer tool-input (#370)', () => {
+  it('re-sends tool-input when a viewer\'s arguments change, without a second mount', async () => {
+    const host = fakeHost()
+    const { rerender } = render(<IslandFrame {...PROPS} host={host} viewer arguments={{ value: 1 }} />)
+    await waitFor(() => expect(host.mounts).toBe(1))
+
+    rerender(<IslandFrame {...PROPS} host={host} viewer arguments={{ value: 2 }} />)
+    await waitFor(() => expect(host.inputs).toEqual([{ value: 2 }]))
+
+    // A structurally identical, freshly allocated value (every poll of a live
+    // run) is not a change.
+    rerender(<IslandFrame {...PROPS} host={host} viewer arguments={{ value: 2 }} />)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(host.inputs).toEqual([{ value: 2 }])
+    expect(host.mounts).toBe(1)
+  })
+
+  it("never re-sends to a step's island", async () => {
+    const host = fakeHost()
+    const { rerender } = render(<IslandFrame {...PROPS} host={host} arguments={{ value: 1 }} />)
+    await waitFor(() => expect(host.mounts).toBe(1))
+
+    rerender(<IslandFrame {...PROPS} host={host} arguments={{ value: 2 }} />)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    expect(host.inputs).toEqual([])
+    expect(host.mounts).toBe(1)
+  })
+
+  it('delivers a value that changed while the island was still loading, once it is up', async () => {
+    let release!: () => void
+    const host = fakeHost(() => new Promise<void>((resolve) => (release = resolve)))
+    const { rerender } = render(<IslandFrame {...PROPS} host={host} viewer arguments={{ value: 1 }} />)
+    await waitFor(() => expect(host.mounts).toBe(1))
+
+    rerender(<IslandFrame {...PROPS} host={host} viewer arguments={{ value: 2 }} />)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(host.inputs).toEqual([])
+
+    release()
+    await waitFor(() => expect(host.inputs).toEqual([{ value: 2 }]))
   })
 })

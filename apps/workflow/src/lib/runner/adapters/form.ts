@@ -34,6 +34,8 @@ export interface FormStepArgs {
   def: Definition
   state: RunState
   values: Record<string, unknown>
+  /** The caller's clock — the `at` the `step.succeeded` is stamped with. */
+  at: number
 }
 
 export type FormResult =
@@ -49,7 +51,7 @@ export function completeFormStep(a: FormStepArgs): FormResult {
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  return { ok: true, event: succeededEvent(a, outputs) }
+  return { ok: true, event: succeededEvent(a, outputs, a.at) }
 }
 
 /** Evaluated initial field values (expression defaults) for the form UI. */

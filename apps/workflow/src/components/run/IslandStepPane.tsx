@@ -19,14 +19,13 @@
 import { useMemo } from 'react'
 import { IslandFrame } from '../../islands/IslandFrame'
 import type { IslandHost } from '../../islands/IslandHost'
-import { useIslandHandle } from '../../islands/useIslandHandle'
-import type { Definition, RunState, StepKey } from '../../lib/runner/types'
+import { useIslandHandle, useIslandLog } from '../../islands/useIslandHandle'
+import type { RunState, StepKey } from '../../lib/runner/types'
 import { useAppSelector } from '../../store/hooks'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
 
 export interface IslandStepPaneProps {
-  def: Definition
   state: RunState
   stepKey: StepKey
 }
@@ -34,6 +33,7 @@ export interface IslandStepPaneProps {
 export function IslandStepPane({ state, stepKey: key }: IslandStepPaneProps) {
   const display = useAppSelector((s) => s.ui.islandDisplay)
   const handle = useIslandHandle(state.runId, key)
+  const log = useIslandLog(state.runId, key)
   const step = state.steps[key]
 
   /**
@@ -43,6 +43,8 @@ export function IslandStepPane({ state, stepKey: key }: IslandStepPaneProps) {
    * own mount arguments: the middleware already decided every one of them, and
    * its `AbortController` (not the frame's) is what `cancelRun` reaches. The
    * frame's cleanup still stops an in-flight mount, through `teardown`.
+   * `sendToolInput` is delegated for the interface's sake only — the frame
+   * never calls it for a step's island.
    */
   const frameHost = useMemo<IslandHost | null>(
     () =>
@@ -50,6 +52,7 @@ export function IslandStepPane({ state, stepKey: key }: IslandStepPaneProps) {
         ? {
             mount: (iframe) => handle.mount(iframe),
             setDisplayMode: (mode) => handle.host.setDisplayMode(mode),
+            sendToolInput: (args) => handle.host.sendToolInput(args),
             teardown: (reason) => handle.host.teardown(reason),
           }
         : null,
@@ -93,9 +96,9 @@ export function IslandStepPane({ state, stepKey: key }: IslandStepPaneProps) {
           )}
         </div>
 
-        {handle && handle.log.length > 0 && (
+        {log.length > 0 && (
           <ul className="island-log" data-testid="island-log">
-            {handle.log.map((line, i) => (
+            {log.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
           </ul>

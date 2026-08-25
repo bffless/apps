@@ -108,10 +108,14 @@ export interface StepScope {
 /**
  * The `step.succeeded` an accepted submit produces: the step's `summary` and
  * `annotations` templates evaluated with its own outputs in scope (01).
+ *
+ * `at` is the caller's clock, like every other event this layer builds — a
+ * pure adapter reads no wall clock of its own (apps#370).
  */
 export function succeededEvent(
   a: StepScope,
   outputs: Record<string, unknown>,
+  at: number,
 ): Extract<RunEvent, { type: 'step.succeeded' }> {
   const contexts = buildContexts(a.def, a.state, {
     job: a.job,
@@ -126,6 +130,6 @@ export function succeededEvent(
     outputs,
     summary: evalSummary(a.step, contexts),
     annotations: evalAnnotations(a.step, contexts),
-    at: Date.now(),
+    at,
   }
 }
