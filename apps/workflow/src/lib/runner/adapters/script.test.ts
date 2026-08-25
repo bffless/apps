@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Definition, FileRef, RunState, Step, StepState } from '../types'
 import { stepKey } from '../types'
 import { OutputTypeError } from '../outputs'
-import { blobFileName, coerceScriptOutputs, scriptInputs } from './script'
+import { blobFileName, coerceScriptOutputs, resolveScriptSrc, scriptInputs } from './script'
 
 // ---------------------------------------------------------------------------
 // Fixture — one job, one script step with an expression `with` key and two
@@ -237,5 +237,18 @@ describe('coerceScriptOutputs', () => {
 
     await expect(coerceScriptOutputs(args('zip'), undefined, d)).rejects.toThrow(OutputTypeError)
     expect(d.uploadBlob).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveScriptSrc', () => {
+  it('scopes a relative src to the implementation bundle', () => {
+    expect(resolveScriptSrc('hello', 'scripts/bundle.js')).toBe('/w/hello/scripts/bundle.js')
+    expect(resolveScriptSrc('hello', '/w/hello/scripts/bundle.js')).toBe('/w/hello/scripts/bundle.js')
+  })
+
+  it('refuses anything that leaves it, and says `script` when it does', () => {
+    for (const src of ['../other/steal.js', '/w/other/steal.js', 'https://evil.example/x.js', '/api/hello/x']) {
+      expect(() => resolveScriptSrc('hello', src)).toThrow(/^script src /)
+    }
   })
 })

@@ -16,6 +16,7 @@
  */
 import type { OutputDecl } from '@bffless/workflow-lint/definition'
 import { buildContexts, evalDeep } from '../contexts'
+import { resolveSrc } from './island'
 import { OutputTypeError } from '../outputs'
 import type { FileRef, Step } from '../types'
 import { obj, validateDeclared, type StepScope } from './declared'
@@ -48,6 +49,19 @@ export function scriptInputs(a: ScriptStepArgs): { src: string; inputs: Record<s
   delete inputs.src
 
   return { src, inputs }
+}
+
+/**
+ * The script module's URL — `scripts/bundle.js` → `/w/<impl>/scripts/bundle.js`,
+ * the *same* own-implementation rule an island's `src` passes through, so a
+ * script cannot reach another implementation's bundle or an off-site module
+ * however the path is spelled. Delegates to `resolveSrc` rather than repeating
+ * the traversal checks; only the error label differs (an author whose script
+ * `src` is wrong should not be told about islands). Throws on an escaping
+ * `src`: a definition bug, not a runtime state (09).
+ */
+export function resolveScriptSrc(impl: string, src: string): string {
+  return resolveSrc(impl, src, 'script')
 }
 
 // ---------------------------------------------------------------------------
