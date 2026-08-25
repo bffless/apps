@@ -23,7 +23,12 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
 - **Storage**: a default storage backend must be configured (bucket or local ≥ CE 0.3.15) —
   the files trio (presigned PUT → register → serve) is the upload path.
 - **External connections / AI tokens**: none. **Secrets**: none.
-- **Response-header rules**: none in M1 (COOP/COEP only becomes relevant with M2 scripts).
+- **Response-header rules**: one, required from M2 Phase 1 — **`**/islands/*.html` →
+  `Cache-Control: no-transform, no-cache`** (project `bffless/workflow`, rule "Islands: no
+  Cloudflare script injection", created via MCP `create_response_header_rule`). Why: see
+  *Islands (M2) → Cloudflare* below. It is a project setting, not part of the rule sets, so
+  every new install has to add it by hand until bffless/ce#700 lets rules-as-code carry it.
+  (COOP/COEP only becomes relevant with M2 scripts.)
 - The `/w/hello/[...path]` forwarding rule bakes `targetUrl: https://hello.j5s.dev` — edit it
   for a different install domain (CE follow-up `targetUrl: alias://hello` removes this).
 
@@ -39,6 +44,20 @@ gets, and pipelines-as-tools are restricted to the implementation's own `/api/<i
 namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
 addition — and the staged bundle now carries `islands/*.html` (`pick-line.html`,
 `line-viewer.html`) alongside `index.html` and the two workflow YAMLs.
+
+**Cloudflare.** On a Cloudflare zone with Bot Fight Mode (the Free plan), the edge injects its
+JavaScript-Detections `<script>` into **every** `text/html` response — including the island
+HTML the harness fetches. Inside the opaque-origin frame that script (it creates a hidden
+iframe and reads `contentWindow.document`) throws
+`SecurityError: Failed to read a named property 'document' from 'Window'` at
+`about:srcdoc:<line>`, once per proxy hop (the `/w/hello` forwarder re-fetches through the
+edge, so twice). The island still works — the error is the injected script's, not ours — but
+the fix is the response-header rule above: Cloudflare skips the injection when the origin
+answers `Cache-Control: no-transform`
+([docs](https://developers.cloudflare.com/bots/additional-configurations/javascript-detections/)),
+and the forwarder passes the header through so both hops come back clean. Cache rules cannot
+express `no-transform` (they only take max-age numbers). Seen and fixed 2026-08-25;
+rules-as-code follow-up: bffless/ce#700.
 
 **Trust boundary.** Which bundle an island loads from is the run's `impl`, and on the
 read-only run page that value comes from the **run row** — a field any project member can
@@ -102,5 +121,13 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   run with defaults → greet / slow poll / flaky fail-then-recover → Finish → **Succeeded** with
   `report`, `poster`, `lines` and the TEAPOT annotation. (Creating that member first needed
   the SuperTokens pre-flight DDL on j5s — bffless/ce#695.)
-- [ ] **M2 Phase 1 — interactive hello runs on `workflow.j5s.dev` as `workflow-ci`** (island
-  loads, echo tool call, annotate, submit, viewer).
+- [x] **M2 Phase 1 — interactive hello runs on `workflow.j5s.dev`** — walked 2026-08-25 after
+  the #368 deploy: island loads in the sandboxed srcdoc host, `echo` tool call shouts the line,
+  `workflow.annotate` shows as a step notice, "Submit nothing" is rejected with the step still
+  `waiting`, submit finishes the run, the `render: island` viewer renders the picked line
+  (Decision 9 holds live). **One finding:** five
+  `SecurityError … Blocked a frame with origin "null"` console errors from `about:srcdoc` —
+  Cloudflare's injected JS-detection script, not the island (see *Islands (M2) → Cloudflare*);
+  fixed with the `no-transform` response-header rule, verified through both hops with a
+  member session (zero `challenge-platform` scripts, bytes identical to the local build).
+  Also confirmed: `hello.<domain>/` now serves the landing `index.html` (M1 minor closed).
