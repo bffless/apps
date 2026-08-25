@@ -1,6 +1,8 @@
 function handler({ request }) {
+  // A bodyless POST has no `request.body`; the default code still applies.
+  const body = request.body ?? {}
   return {
-    code: String(request.body.code ?? 'FAIL'),
+    code: String(body.code ?? 'FAIL'),
     error: 'fails on purpose',
   }
 }

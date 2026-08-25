@@ -52,9 +52,12 @@ describe.each(['workflow', 'hello'])('%s rule set fence', (name) => {
     for (const s of [...(doc.pipeline.steps ?? []), ...(doc.pipeline.postSteps ?? [])]) {
       expect(KNOWN.has(s.handler), `${file}: ${s.handler}`).toBe(true)
     }
-    const validators = doc.pipeline.validators ?? []
-    expect(validators.some((v: { type: string }) => v.type === 'auth_required'),
-      `${file} must be auth_required (D14)`).toBe(true)
+    const validators: { type: string; config?: { allowApiKey?: unknown } }[] = doc.pipeline.validators ?? []
+    const auth = validators.find((v) => v.type === 'auth_required')
+    expect(auth, `${file} must be auth_required (D14)`).toBeDefined()
+    // The global constraint names `allowApiKey` explicitly: CI (`workflow-ci`)
+    // and the headless runner call every route with an API key, not a cookie.
+    expect(auth!.config?.allowApiKey, `${file} must allow API keys (D14)`).toBe(true)
   })
 
   it('ships its schemas', () => {

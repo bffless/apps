@@ -60,7 +60,15 @@ const workflows = WORKFLOWS.map((file) => {
   }
 })
 
+// Every directory this script owns is cleared before it is written, so a
+// renamed or deleted YAML / script / island never lingers in a re-used local
+// `hello-dist` (CI is always fresh). Only these three — never `<out>` itself,
+// which `--out` lets the caller point anywhere.
 const workflowDir = join(out, '.bffless', 'workflows')
+const islandDir = join(out, 'islands')
+const scriptOut = join(out, 'scripts')
+for (const dir of [workflowDir, islandDir, scriptOut]) rmSync(dir, { recursive: true, force: true })
+
 mkdirSync(workflowDir, { recursive: true })
 for (const workflow of workflows) copyFileSync(workflow.source, join(workflowDir, workflow.file))
 
@@ -68,15 +76,15 @@ for (const workflow of workflows) copyFileSync(workflow.source, join(workflowDir
 // Islands — one single-file Vite build each (see hello/vite.islands.config.ts)
 // ---------------------------------------------------------------------------
 
-const islandDir = join(out, 'islands')
-rmSync(islandDir, { recursive: true, force: true })
 mkdirSync(islandDir, { recursive: true })
 
 // The islands are type-checked *here*, by the thing that publishes them, and
 // deliberately **not** by the harness's `tsc -b`: `pnpm --filter workflow build`
-// must never fail because a bundle file has a type error (deploy-workflow.yml
-// runs that build before this script). `tsconfig.islands.json` is therefore not
-// referenced from `tsconfig.json`.
+// and `test:run` must never fail because a bundle file has a type error, so
+// `tsconfig.islands.json` is not referenced from `tsconfig.json` and the suite
+// that runs this script is its own `test:stage`. An island type error still
+// fails a CI job at the `stage` step — before anything is uploaded — which is
+// the right place: a bundle that does not build is not published (06).
 execFileSync(bin('tsc'), ['-p', 'tsconfig.islands.json'], { cwd: appDir, stdio: 'inherit' })
 
 for (const island of ISLANDS) {
@@ -103,7 +111,6 @@ const scriptFiles = existsSync(scriptSrc)
   : []
 
 if (scriptFiles.length > 0) {
-  const scriptOut = join(out, 'scripts')
   mkdirSync(scriptOut, { recursive: true })
   for (const file of scriptFiles) copyFileSync(join(scriptSrc, file), join(scriptOut, file))
 }
@@ -118,7 +125,8 @@ const commit = process.env.GITHUB_SHA?.slice(0, 7) ?? execSync('git rev-parse --
 
 writeFileSync(join(workflowDir, 'index.json'), JSON.stringify({
   spec: 1, impl: 'hello', name: 'Hello',
-  description: 'M1 test implementation: echo, slow job + poll, fail-on-purpose.',
+  // Shown on the Implementations screen — keep it true to what the bundle holds.
+  description: 'M2 test implementation: hello (echo, slow job + poll, fail-on-purpose) and an interactive island round-trip; two islands (pick-line, line-viewer); analyze.',
   version, commit, generatedAt: new Date().toISOString(),
   workflows: workflows.map(({ file, name, description, inputs, jobs, headlessSafe }) => ({
     file, name, description, inputs, jobs, headlessSafe,

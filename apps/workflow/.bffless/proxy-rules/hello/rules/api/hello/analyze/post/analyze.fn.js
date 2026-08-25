@@ -3,7 +3,10 @@
 // sync by src/mocks/analyze.fn.parity.test.ts (reads this file, runs it, and
 // diffs the output against analyzeLines()).
 function handler({ request }) {
-  const raw = request.body.lines
+  // A bodyless POST has no `request.body` at all; treat it as empty input
+  // rather than throwing inside the pipeline (a 500 with no clean status).
+  const body = request.body ?? {}
+  const raw = body.lines
   const lines = Array.isArray(raw) ? raw.map(String) : []
 
   const words = []

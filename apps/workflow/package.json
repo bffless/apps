@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:stage": "vitest run -c vitest.stage.config.ts",
     "test:e2e": "playwright test"
   },
   "msw": { "workerDirectory": ["public"] },

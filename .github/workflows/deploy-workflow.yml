@@ -15,10 +15,16 @@ jobs:
         with: { node-version: '20', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-lint build
+      # Same order as workflow-app.yml, so the harness deployed here is the
+      # artefact CI tested: the MSW mock inlines `hello-dist/islands/*.html`
+      # through an `import.meta.glob` at build time (mocks-only chunk, loaded
+      # under `?mocks=on`), which is empty unless the bundle is staged first.
+      # An island type error fails the job here, before anything is uploaded.
+      - name: Stage the hello implementation bundle
+        run: pnpm --filter workflow stage
       - run: pnpm --filter workflow build
       - run: pnpm --filter workflow test:run
-      - name: Stage the hello implementation bundle
-        run: node apps/workflow/scripts/stage-hello.mjs
+      - run: pnpm --filter workflow test:stage
       - name: Sync proxy rules (workflow + hello)
         uses: bffless/deploy-proxy-rules@v1
         with:
