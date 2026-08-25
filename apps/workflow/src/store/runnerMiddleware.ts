@@ -660,7 +660,10 @@ async function handleNextAction(
           runEvent({
             type: 'step.failed',
             key: a.key,
-            error: { code: 'UNSUPPORTED_KIND_M1', message: `${step.uses} steps arrive in M2` },
+            error: {
+              code: 'UNSUPPORTED_KIND',
+              message: `${step.uses} is not a step kind this harness runs`,
+            },
             at,
           }),
         )

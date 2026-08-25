@@ -130,8 +130,14 @@ function pollFailError(response: unknown): StepError {
   }
 }
 
-/** A thrown value from anywhere in the attempt, mapped onto the step's error vocabulary. */
-function toStepError(err: unknown): StepError {
+/**
+ * A thrown value from anywhere in the attempt, mapped onto the step's error
+ * vocabulary. Exported because it is the *step* error vocabulary, not the
+ * pipeline's: the script runtime maps the identical throws (a malformed
+ * `summary:` template, a wrong-typed output) the identical way, and two copies
+ * of this table would drift.
+ */
+export function toStepError(err: unknown): StepError {
   if (err instanceof OutputTypeError) return { code: 'OUTPUT_TYPE', message: err.message }
   if (err instanceof EvalError) return { code: 'EXPRESSION', message: err.message }
   if (err instanceof RangeError) return { code: 'DURATION', message: err.message }
@@ -316,7 +322,8 @@ async function runAttempt(
   }
 }
 
-function timeoutError(): StepError {
+/** One budget, one sentence — shared with the script runtime, which owns its own timer. */
+export function timeoutError(): StepError {
   return { code: 'TIMEOUT', message: 'the step exceeded its `timeout-minutes` budget' }
 }
 

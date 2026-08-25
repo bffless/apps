@@ -19,6 +19,7 @@
  */
 import { fetchText } from '../islands/hostDeps'
 import { annotateEvent } from '../lib/runner/adapters/island'
+import { timeoutError, toStepError } from '../lib/runner/adapters/pipeline'
 import type { Clock } from '../lib/runner/adapters/pipeline'
 import { succeededEvent } from '../lib/runner/adapters/declared'
 import {
@@ -26,8 +27,7 @@ import {
   scriptInputs,
   type ScriptStepArgs,
 } from '../lib/runner/adapters/script'
-import { OutputTypeError } from '../lib/runner/outputs'
-import type { Definition, FileRef, RunState, Step, StepKey } from '../lib/runner/types'
+import type { Definition, FileRef, RunState, Step, StepError, StepKey } from '../lib/runner/types'
 import { uploadBlob } from '../lib/upload'
 import { createScriptHost, fetchBytes } from '../scripts/ScriptHost'
 import type { ScriptHost, ScriptHostDeps, ScriptRun } from '../scripts/ScriptHost'
@@ -76,6 +76,19 @@ function codeOf(err: unknown): string {
   return typeof code === 'string' && code !== '' ? code : 'SCRIPT'
 }
 
+/**
+ * A thrown value from anywhere after `step.started`, on the step error
+ * vocabulary. The pipeline adapter's own table does the work — a malformed
+ * `summary:` template is an `EXPRESSION` failure here exactly as it is there,
+ * and a wrong-typed output an `OUTPUT_TYPE` one — with the single difference
+ * 03 asks for: where a pipeline's catch-all is `STEP`, a script's is the
+ * module's own `err.code`, or `SCRIPT`.
+ */
+function toScriptError(err: unknown): StepError {
+  const mapped = toStepError(err)
+  return mapped.code === 'STEP' ? { code: codeOf(err), message: mapped.message } : mapped
+}
+
 /** Cancellation is not a `ScriptError` — the host rejects with a plain `AbortError`. */
 function isAbort(err: unknown): boolean {
   return (err as { name?: unknown } | null)?.name === 'AbortError'
@@ -86,9 +99,6 @@ function budgetMs(step: Step): number | undefined {
   const minutes = ((step.raw ?? {}) as Record<string, unknown>)['timeout-minutes']
   return typeof minutes === 'number' ? minutes * 60_000 : undefined
 }
-
-/** Word-for-word the pipeline adapter's `timeoutError()` — one budget, one sentence. */
-const TIMEOUT_MESSAGE = 'the step exceeded its `timeout-minutes` budget'
 
 /**
  * Evaluate the step's `with`, run the module, and fold whatever comes back
@@ -111,8 +121,8 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     state: a.state,
   }
 
-  const fail = (code: string, message: string) => {
-    a.scoped(runEvent({ type: 'step.failed', key: a.key, error: { code, message }, at: now() }))
+  const fail = (error: StepError) => {
+    a.scoped(runEvent({ type: 'step.failed', key: a.key, error, at: now() }))
   }
 
   let evaluated: { src: string; inputs: Record<string, unknown> }
@@ -123,7 +133,7 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     // kind's failure passes through `running` first. There are no inputs to
     // show, because computing them is exactly what failed.
     a.scoped(runEvent({ type: 'step.started', key: a.key, inputs: {}, at: now() }))
-    fail('SCRIPT_LOAD', messageOf(err))
+    fail({ code: 'SCRIPT_LOAD', message: messageOf(err) })
     return
   }
 
@@ -179,7 +189,7 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     // `ScriptHost.run` throws synchronously only on a `src` that escapes the
     // implementation's own bundle — a definition bug (09), same class as a
     // missing `src` above.
-    fail('SCRIPT_LOAD', messageOf(err))
+    fail({ code: 'SCRIPT_LOAD', message: messageOf(err) })
     return
   }
 
@@ -220,7 +230,7 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     } catch (err) {
       timer.abort()
       if (timedOut) {
-        fail('TIMEOUT', TIMEOUT_MESSAGE)
+        fail(timeoutError())
         return
       }
       if (isAbort(err)) {
@@ -236,13 +246,17 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
         // another tab now owns.
         return
       }
-      fail(codeOf(err), messageOf(err))
+      fail(toScriptError(err))
       return
     }
 
     let outputs: Record<string, unknown>
     try {
       outputs = await coerceScriptOutputs(scope, returned, {
+        // The upload is the one part of a script step that keeps talking to
+        // the network *after* the module is done, so it gets the step's own
+        // signal: without it a lease lost mid-upload would still finish and
+        // record a `succeeded` row for a run this tab no longer owns.
         uploadBlob: (blob, name) =>
           uploadBlob({
             impl: a.state.impl,
@@ -250,18 +264,40 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
             scope: `runs/${a.state.runId}/${a.key}`,
             blob,
             name,
+            signal: a.signal,
           }),
         registerFile: a.registerFile,
       })
     } catch (err) {
-      fail(err instanceof OutputTypeError ? 'OUTPUT_TYPE' : codeOf(err), messageOf(err))
+      // Silent on an abort, for the same reason the module's own abort is
+      // (above) — and `a.signal.aborted` as well as the thrown shape, because
+      // an aborted `fetch`/`XHR` surfaces as a `DOMException` whose `code` is
+      // a *number*, which would otherwise be dressed up as a `SCRIPT` failure.
+      if (isAbort(err) || a.signal.aborted) return
+      fail(toScriptError(err))
       return
     }
+
+    // The record's last chance to notice it is no longer ours to write: the
+    // upload may have completed in the same tick the lease went away.
+    if (a.signal.aborted) return
 
     // `succeededEvent` — the same builder a form/island submit uses — so the
     // step's own `summary:`/`annotations:` templates are evaluated against the
     // outputs it just produced, and join whatever `ctx.annotate` already
-    // appended (Decision 12; the reducer does the joining).
-    a.scoped(runEvent(succeededEvent(scope, outputs, now())))
+    // appended (Decision 12; the reducer does the joining). Inside the try
+    // because those templates are author-written expressions: one malformed
+    // `summary:` would otherwise throw out of this floating async function as
+    // an unhandled rejection, leaving the step `running` and the run stalled
+    // forever (the pipeline adapter wraps the identical call for the identical
+    // reason).
+    let succeeded
+    try {
+      succeeded = succeededEvent(scope, outputs, now())
+    } catch (err) {
+      fail(toScriptError(err))
+      return
+    }
+    a.scoped(runEvent(succeeded))
   })()
 }

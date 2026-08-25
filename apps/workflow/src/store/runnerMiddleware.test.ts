@@ -671,7 +671,10 @@ describe('createRunnerMiddleware — unsupported step kinds', () => {
 
     const step = store.getState().run.state?.steps[UNKNOWN_KIND_KEY]
     expect(step?.status).toBe('failed')
-    expect(step?.error).toEqual({ code: 'UNSUPPORTED_KIND_M1', message: 'sorcery steps arrive in M2' })
+    expect(step?.error).toEqual({
+      code: 'UNSUPPORTED_KIND',
+      message: 'sorcery is not a step kind this harness runs',
+    })
     expect(store.getState().run.state?.status).toBe('failed')
   })
 })

@@ -450,6 +450,78 @@ describe('script steps — lease loss', () => {
     expect(stepRow(runId)!.status).toBe('running')
     expect(stepRow(runId)!.finishedAt ?? null).toBeNull()
   })
+
+  it('leaves the row alone when the lease goes away mid-upload', async () => {
+    // The upload is the one part of a script step still talking to the network
+    // after the module is done. Without the step's signal on it, it would run
+    // to completion and write a `succeeded` row for a run another tab now
+    // owns — `scopedDispatch` cannot catch that (same run, same generation,
+    // status still `running`).
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    server.use(
+      http.put('/mock-upload/*', async () => {
+        await gate
+        return new HttpResponse(null, { status: 200 })
+      }),
+      http.post('/api/workflow/run/lease', () =>
+        HttpResponse.json({ ok: false, heldBy: 'tab_other' }),
+      ),
+    )
+
+    const { store, advance, host, runId } = await startScriptRun()
+    host.settle({ poster: new Blob(['<svg/>'], { type: 'image/svg+xml' }), count: 3 })
+    await flush()
+
+    await pumpUntil(advance, () => store.getState().run.mode === 'readonly', {
+      stepMs: 1_000,
+      maxSteps: 30,
+    })
+    // Whether or not the PUT ever answers, nothing more may be written.
+    release()
+    await flush(30)
+
+    expect(host.runs[0].signal.aborted).toBe(true)
+    expect(store.getState().run.state!.steps[SCRIPT_KEY].status).toBe('running')
+    expect(stepRow(runId)!.status).toBe('running')
+    expect(stepRow(runId)!.outputs ?? null).toBeNull()
+    expect(stepRow(runId)!.error ?? null).toBeNull()
+  })
+})
+
+describe('script steps — a throwing `summary:` template', () => {
+  /**
+   * `succeededEvent` evaluates the step's own author-written templates. One
+   * bad expression used to throw out of the launcher's floating async
+   * function: no event, no unhandled-rejection handler, the step stuck
+   * `running` and the run never finishing. Both flavours of throw are checked
+   * because they map to *different* codes — the same two the pipeline adapter
+   * records for the same two throws (`toStepError`), bar the catch-all, which
+   * is `SCRIPT` for a script where it is `STEP` for a pipeline (03).
+   */
+  async function failedWith(summary: string) {
+    const { store, advance, host } = await startScriptRun(scriptDef({ summary }))
+    host.settle({ poster: new Blob(['<svg/>'], { type: 'image/svg+xml' }), count: 3 })
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+    return { step: store.getState().run.state!.steps[SCRIPT_KEY], store }
+  }
+
+  it('fails EXPRESSION on a template that fails to evaluate', async () => {
+    const { step, store } = await failedWith('${{ unknownFn() }}')
+
+    expect(step.status).toBe('failed')
+    expect(step.error?.code).toBe('EXPRESSION')
+    expect(step.error?.message).toContain('unknownFn')
+    expect(store.getState().run.state!.status).toBe('failed')
+  })
+
+  it('fails SCRIPT on a template that fails to parse, rather than stalling the run', async () => {
+    const { step, store } = await failedWith('${{ steps.poster.outputs.count == }}')
+
+    expect(step.status).toBe('failed')
+    expect(step.error?.code).toBe('SCRIPT')
+    expect(store.getState().run.state!.status).toBe('failed')
+  })
 })
 
 describe('script steps — resume (Decision 13)', () => {
