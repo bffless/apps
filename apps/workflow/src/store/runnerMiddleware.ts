@@ -25,9 +25,11 @@ import { runPipelineStep } from '../lib/runner/adapters/pipeline'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
 import { nextActions } from '../lib/runner/next'
 import type { NextAction } from '../lib/runner/next'
+import { offloadOutputs } from '../lib/runner/payload'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
 import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
+import { uploadBlob } from '../lib/upload'
 import type { ScriptHost, ScriptHostDeps } from '../scripts/ScriptHost'
 import { clearAllScriptLogs } from '../scripts/logStore'
 import { disposeAllIslandHandles, disposeIslandHandle, launchIslandStep } from './islandLaunch'
@@ -246,6 +248,25 @@ function pauseMessage(event: RunEvent, error: unknown): string {
   const key = 'key' in event ? event.key : undefined
   const detail = messageOf(error)
   return key ? `Could not save step ${key}: ${detail}` : `Could not save the run: ${detail}`
+}
+
+// ---------------------------------------------------------------------------
+// `{"$file"}` payload offload (Task 12) — the `offloadOutputs` `store`
+// function for a `step.succeeded`/`run.finished` write, scoped under the run
+// (`runs/<runId>/<key>` for a step, `runs/<runId>/outputs` for the run
+// itself; `uploadBlob`'s prepare rule takes any scope string).
+// ---------------------------------------------------------------------------
+
+function offloadStore(runState: RunState, key?: StepKey): (name: string, json: string) => Promise<FileRef> {
+  const scope = key ? `runs/${runState.runId}/${key}` : `runs/${runState.runId}/outputs`
+  return (name, json) =>
+    uploadBlob({
+      impl: runState.impl,
+      workflow: runState.workflow,
+      scope,
+      blob: new Blob([json], { type: 'application/json' }),
+      name: `${name}.json`,
+    })
 }
 
 /** The `run.started` insert row (05); the lease is set at creation — this tab drives it. */
@@ -727,7 +748,29 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // own rule); nothing to persist or schedule either.
       if (!runState) return
 
-      const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice) })
+      // Offload an oversized `step.succeeded`/`run.finished` output to
+      // storage *before* building the row write — the row gets the `{$file}`
+      // pointer, the reducer's own state (already applied, above) keeps the
+      // inline value. A failed offload is a persist failure like any other:
+      // the run pauses rather than falling back to writing the giant inline
+      // value or silently dropping the output.
+      let outputsOverride: Record<string, unknown> | undefined
+      if (event.type === 'step.succeeded' || event.type === 'run.finished') {
+        const outputs = event.type === 'step.succeeded' ? runState.steps[event.key]?.outputs : runState.outputs
+        if (outputs) {
+          const store = event.type === 'step.succeeded' ? offloadStore(runState, event.key) : offloadStore(runState)
+          try {
+            outputsOverride = await offloadOutputs(outputs, store)
+          } catch (error) {
+            listenerApi.dispatch(runPaused(pauseMessage(event, error)))
+            runnerControllers.abortAll()
+            stopHeartbeat(runState.runId)
+            return
+          }
+        }
+      }
+
+      const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice), outputsOverride })
       for (const write of writes) {
         const result = await enqueue(runState.runId, () => persistWrite(deps.runStore, write))
         if (!result.ok) {

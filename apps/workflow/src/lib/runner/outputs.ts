@@ -31,7 +31,8 @@ export class OutputTypeError extends Error {
 
 export type RegisterFile = (path: string) => Promise<FileRef>
 
-function isFileRef(v: unknown): v is FileRef {
+/** Exported for reuse by `payload.ts`'s `isFilePayload` — the same File-ref shape check. */
+export function isFileRef(v: unknown): v is FileRef {
   if (v === null || typeof v !== 'object') return false
   const r = v as Record<string, unknown>
   return (
