@@ -255,9 +255,18 @@ function pauseMessage(event: RunEvent, error: unknown): string {
 // function for a `step.succeeded`/`run.finished` write, scoped under the run
 // (`runs/<runId>/<key>` for a step, `runs/<runId>/outputs` for the run
 // itself; `uploadBlob`'s prepare rule takes any scope string).
+//
+// The upload is threaded a real `AbortSignal` so a cancel / lease loss
+// (`runnerControllers.abortAll()`, fired by `resetRunnerState`/`loseLease`/
+// the effect's own pause path) interrupts the round trip rather than leaving
+// it to run to completion on behalf of a run this tab may no longer drive.
 // ---------------------------------------------------------------------------
 
-function offloadStore(runState: RunState, key?: StepKey): (name: string, json: string) => Promise<FileRef> {
+function offloadStore(
+  runState: RunState,
+  key: StepKey | undefined,
+  signal: AbortSignal,
+): (name: string, json: string) => Promise<FileRef> {
   const scope = key ? `runs/${runState.runId}/${key}` : `runs/${runState.runId}/outputs`
   return (name, json) =>
     uploadBlob({
@@ -266,7 +275,111 @@ function offloadStore(runState: RunState, key?: StepKey): (name: string, json: s
       scope,
       blob: new Blob([json], { type: 'application/json' }),
       name: `${name}.json`,
+      signal,
     })
+}
+
+/** The synthetic `controllers` map key for a run-level (`run.finished`) offload — no step to hang it off, so a fresh controller is registered under this key instead. Never collides with a real `StepKey` (`<job>/<index>/<step>` always contains `/`). */
+function runOutputsControllerKey(runId: string): string {
+  return `${runId}:__outputs__`
+}
+
+/**
+ * The controller an offload's upload should watch. For a step, this reuses
+ * the step's own controller — already registered by `handleNextAction`'s
+ * `start` case and not yet removed (that happens later in this same effect,
+ * in the terminal-cleanup block below) — so `runnerControllers.abort(key)`/
+ * `abortAll()` cancel the offload exactly like any other in-flight step
+ * work, with no separate bookkeeping. A run-level offload has no step to
+ * reuse, so a fresh controller is registered into the same shared map under
+ * `runOutputsControllerKey` — `abortAll()` (cancel, lease loss, a fresh
+ * `resetRunnerState()`) still reaches it that way.
+ */
+function offloadController(runId: string, key: StepKey | undefined): AbortController {
+  if (!key) {
+    const k = runOutputsControllerKey(runId)
+    const existing = controllers.get(k)
+    if (existing) return existing
+    const fresh = new AbortController()
+    controllers.set(k, fresh)
+    return fresh
+  }
+  const existing = controllers.get(controllerKey(runId, key))
+  if (existing) return existing
+  // A step's controller is normally already registered by the time its own
+  // `step.succeeded` reaches here (`handleNextAction`'s `start` case); a
+  // missing one means something already aborted/cleared it (e.g. a lease
+  // loss's `abortAll()` beat this task to the front of the run's write
+  // queue). Hand back an already-aborted stand-in rather than a fresh,
+  // unsupervised one, so the offload below gives up immediately instead of
+  // running to completion on behalf of a run this tab no longer drives.
+  const stale = new AbortController()
+  stale.abort()
+  return stale
+}
+
+/** Forgets a run-level offload's synthetic controller once its own call settles. A step's controller is left alone — it is owned by the normal step lifecycle (the terminal-cleanup block's `runnerControllers.abort`), not by this call. */
+function releaseOffloadController(runId: string, key: StepKey | undefined): void {
+  if (key) return
+  controllers.delete(runOutputsControllerKey(runId))
+}
+
+type WriteOutcome = { ok: true } | { ok: false; error: unknown } | { ok: 'stale' }
+
+/**
+ * The full write for one event — offload (if any) *then* `eventToWrites`
+ * *then* every `persistWrite` — run as a single task inside the run's own
+ * write-ahead queue (`enqueue`, called synchronously by the caller before
+ * this ever starts). Folding the offload in here, rather than awaiting it
+ * ahead of `enqueue()`, is what keeps write order equal to event order even
+ * when one event's offload is slow and a later, offload-free event's write
+ * would otherwise be free to race ahead of it (Task 12 fix round 1 —
+ * `enqueue`'s promise chain only orders calls made *before* any await, and
+ * parallel/matrix steps dispatch their `runEvent`s through concurrently
+ * running listener effects).
+ *
+ * `{ ok: 'stale' }` means the offload's own upload was aborted (a cancel,
+ * or a lease loss aborting the step's/run's controller — see
+ * `offloadController`) or the run stopped being the one this tab drives
+ * partway through the round trip (`runId`/`generation`, the same pair
+ * `scopedDispatch` checks) — the write is dropped silently: not persisted,
+ * and not a `runPaused` failure either, since nothing about the offload
+ * genuinely failed on its own terms.
+ */
+async function writeEvent(
+  event: RunEvent,
+  runState: RunState,
+  slice: RunSliceState,
+  runStore: RunStore,
+  generation: number,
+): Promise<WriteOutcome> {
+  const runId = runState.runId
+  let outputsOverride: Record<string, unknown> | undefined
+
+  if (event.type === 'step.succeeded' || event.type === 'run.finished') {
+    const outputs = event.type === 'step.succeeded' ? runState.steps[event.key]?.outputs : runState.outputs
+    if (outputs) {
+      const key = event.type === 'step.succeeded' ? event.key : undefined
+      const controller = offloadController(runId, key)
+      try {
+        outputsOverride = await offloadOutputs(outputs, offloadStore(runState, key, controller.signal))
+      } catch (error) {
+        releaseOffloadController(runId, key)
+        return controller.signal.aborted ? { ok: 'stale' } : { ok: false, error }
+      }
+      releaseOffloadController(runId, key)
+      if (controller.signal.aborted || runId !== currentRunId || generation !== currentGeneration) {
+        return { ok: 'stale' }
+      }
+    }
+  }
+
+  const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice), outputsOverride })
+  for (const write of writes) {
+    const result = await persistWrite(runStore, write)
+    if (!result.ok) return { ok: false, error: result.error }
+  }
+  return { ok: true }
 }
 
 /** The `run.started` insert row (05); the lease is set at creation — this tab drives it. */
@@ -748,37 +861,23 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // own rule); nothing to persist or schedule either.
       if (!runState) return
 
-      // Offload an oversized `step.succeeded`/`run.finished` output to
-      // storage *before* building the row write — the row gets the `{$file}`
-      // pointer, the reducer's own state (already applied, above) keeps the
-      // inline value. A failed offload is a persist failure like any other:
-      // the run pauses rather than falling back to writing the giant inline
-      // value or silently dropping the output.
-      let outputsOverride: Record<string, unknown> | undefined
-      if (event.type === 'step.succeeded' || event.type === 'run.finished') {
-        const outputs = event.type === 'step.succeeded' ? runState.steps[event.key]?.outputs : runState.outputs
-        if (outputs) {
-          const store = event.type === 'step.succeeded' ? offloadStore(runState, event.key) : offloadStore(runState)
-          try {
-            outputsOverride = await offloadOutputs(outputs, store)
-          } catch (error) {
-            listenerApi.dispatch(runPaused(pauseMessage(event, error)))
-            runnerControllers.abortAll()
-            stopHeartbeat(runState.runId)
-            return
-          }
-        }
-      }
+      // `enqueue()` is called synchronously here, before any `await` in this
+      // effect — its promise chain only orders calls made in that window
+      // (Task 12 fix round 1). The offload (when `step.succeeded`/
+      // `run.finished` carries an oversized output) happens *inside*
+      // `writeEvent`'s queued task, not ahead of this call, so a slow upload
+      // can never let a later event's write land first.
+      const generation = currentGeneration
+      const outcome = await enqueue(runState.runId, () =>
+        writeEvent(event, runState, slice, deps.runStore, generation),
+      )
 
-      const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice), outputsOverride })
-      for (const write of writes) {
-        const result = await enqueue(runState.runId, () => persistWrite(deps.runStore, write))
-        if (!result.ok) {
-          listenerApi.dispatch(runPaused(pauseMessage(event, result.error)))
-          runnerControllers.abortAll()
-          stopHeartbeat(runState.runId)
-          return
-        }
+      if (outcome.ok === 'stale') return
+      if (!outcome.ok) {
+        listenerApi.dispatch(runPaused(pauseMessage(event, outcome.error)))
+        runnerControllers.abortAll()
+        stopHeartbeat(runState.runId)
+        return
       }
 
       // `run.started` is always the first event of a run (runnerActions.ts),

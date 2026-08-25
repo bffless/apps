@@ -35,18 +35,25 @@ export function isFilePayload(v: unknown): v is FilePayload {
   return keys.length === 1 && keys[0] === '$file' && isFileRef((v as Record<string, unknown>).$file)
 }
 
+/** UTF-8 byte length of an already-serialized string. */
+function utf8Length(s: string): number {
+  return new TextEncoder().encode(s).length
+}
+
 /** UTF-8 byte length of `JSON.stringify(v)` — the same measure `results.ts`'s `trimResponse` uses for `response`. */
 export function byteSize(v: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(v)).length
+  return utf8Length(JSON.stringify(v))
 }
 
 /**
- * For each output (top level of the map only) whose `byteSize` exceeds the
- * budget: JSON-serialize it, hand it to `store` as `<name>.json`, and
- * substitute `{ $file: ref }`. Returns a **new** map — the input is
- * untouched, so the caller's live state stays inline. A nested `$file`-shaped
- * value deeper inside a kept (under-budget) output is left exactly as-is;
- * offload is decided per top-level output, not recursively.
+ * For each output (top level of the map only) whose serialized size exceeds
+ * the budget: hand the JSON it was measured from to `store` as `<name>.json`,
+ * and substitute `{ $file: ref }`. Serializes each value exactly once — the
+ * same `json` string is measured and, only if it's over budget, uploaded.
+ * Returns a **new** map — the input is untouched, so the caller's live state
+ * stays inline. A nested `$file`-shaped value deeper inside a kept
+ * (under-budget) output is left exactly as-is; offload is decided per
+ * top-level output, not recursively.
  */
 export async function offloadOutputs(
   outputs: Record<string, unknown>,
@@ -54,8 +61,8 @@ export async function offloadOutputs(
 ): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...outputs }
   for (const [name, value] of Object.entries(outputs)) {
-    if (byteSize(value) <= PAYLOAD_BUDGET_BYTES) continue
     const json = JSON.stringify(value)
+    if (utf8Length(json) <= PAYLOAD_BUDGET_BYTES) continue
     const ref = await store(name, json)
     out[name] = { $file: ref }
   }

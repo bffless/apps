@@ -55,8 +55,13 @@ type Recorded =
   | { op: 'patch'; id: string; patch: Partial<RunRow> }
   | { op: 'upsert'; runId: string; key: StepKey; patch: Partial<StepRow> }
 
-function fakeRunStore(): { store: RunStore; writes: Recorded[] } {
+function fakeRunStore(): {
+  store: RunStore
+  writes: Recorded[]
+  setLease: (answer: { ok: boolean; leaseUntil?: number; heldBy?: string }) => void
+} {
   const writes: Recorded[] = []
+  let lease: { ok: boolean; leaseUntil?: number; heldBy?: string } = { ok: true, leaseUntil: Date.now() + 60_000 }
   const store: RunStore = {
     async createRun(row) {
       writes.push({ op: 'create', row })
@@ -68,10 +73,19 @@ function fakeRunStore(): { store: RunStore; writes: Recorded[] } {
       writes.push({ op: 'upsert', runId, key, patch })
     },
     async lease() {
-      return { ok: true, leaseUntil: Date.now() + 60_000 }
+      return lease
     },
   }
-  return { store, writes }
+  return { store, writes, setLease: (a) => (lease = a) }
+}
+
+/** A promise the test controls the settlement of — used to gate a PUT/HTTP call mid-flight. */
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
 }
 
 async function registerFileFake(): Promise<{ path: string; name: string; contentType: string; size: number; url: string }> {
@@ -108,6 +122,30 @@ const ONE_KEY = stepKey('a', 0, 'one')
 
 const BIG = 'x'.repeat(PAYLOAD_BUDGET_BYTES + 1024)
 const SMALL = 'y'.repeat(10 * 1024)
+
+// ---------------------------------------------------------------------------
+// Two independent (no `needs`) single-pipeline-step jobs — `a`'s output is
+// oversized (offloaded), `b`'s is a plain small value. Used to prove write
+// order under a slow offload (fix round 1).
+// ---------------------------------------------------------------------------
+
+const PARALLEL_DEF = toDefinition({
+  name: 'Parallel payload offload',
+  jobs: {
+    a: {
+      steps: [{ id: 'one', uses: 'pipeline', with: { path: 'a' }, outputs: { big: { type: 'string', value: '${{ response.v }}' } } }],
+      outputs: {},
+    },
+    b: {
+      steps: [{ id: 'two', uses: 'pipeline', with: { path: 'b' }, outputs: { v: { type: 'string', value: '${{ response.v }}' } } }],
+      outputs: {},
+    },
+  },
+  outputs: {},
+}) as Definition
+
+const A_KEY = stepKey('a', 0, 'one')
+const B_KEY = stepKey('b', 0, 'two')
 
 let stores: AppStore[] = []
 
@@ -215,5 +253,99 @@ describe('payload offload — a failing store pauses the run', () => {
     // pointer was ever persisted for it.
     const succeeded = writes.find((w) => w.op === 'upsert' && w.key === ONE_KEY && w.patch.status === 'succeeded')
     expect(succeeded).toBeUndefined()
+  })
+})
+
+describe('payload offload — write order under a slow offload (fix round 1)', () => {
+  it("keeps a slower step's write ahead of a later, faster step's — `enqueue()` is called before the offload, not after", async () => {
+    const putGate = deferred<void>()
+    server.use(
+      http.put('/mock-upload/*', async ({ request }) => {
+        await putGate.promise
+        const key = decodeURIComponent(new URL(request.url).pathname.slice('/mock-upload/'.length))
+        db.files.set(key, {
+          bytes: new Uint8Array(await request.arrayBuffer()),
+          contentType: request.headers.get('content-type') ?? 'application/octet-stream',
+        })
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    const bGate = deferred<{ status: number; ok: boolean; body: unknown }>()
+    const http_: HttpJson = async (path) => {
+      if (path === '/api/test/a') return { status: 200, ok: true, body: { v: BIG } }
+      if (path === '/api/test/b') return bGate.promise
+      throw new Error(`unexpected call to ${path}`)
+    }
+
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes } = fakeRunStore()
+    const deps: RunnerDeps = { http: http_, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'parallel', def: PARALLEL_DEF, yaml: 'name: Parallel', workflowName: 'Parallel', values: {} }),
+    )
+
+    // `a`'s oversized output succeeds; its offload starts, and the PUT is
+    // gated — the run's write queue still has `a`'s task pending.
+    await pumpUntil(advance, () => store.getState().run.state?.steps[A_KEY]?.status === 'succeeded')
+
+    // Release `b` now: its event dispatches (and its listener effect calls
+    // its own `enqueue()`) strictly *after* `a`'s already did.
+    bGate.resolve({ status: 200, ok: true, body: { v: 'small' } })
+    await pumpUntil(advance, () => store.getState().run.state?.steps[B_KEY]?.status === 'succeeded')
+
+    // `b` has succeeded in live state, but its write cannot have executed
+    // yet — it is chained behind `a`'s still-in-flight (gated) offload in
+    // the run's own write queue. If the offload were awaited *before*
+    // `enqueue()` (the bug), nothing would stop `b`'s offload-free write
+    // from landing here already.
+    expect(writes.some((w) => w.op === 'upsert' && w.key === B_KEY && w.patch.status === 'succeeded')).toBe(false)
+
+    putGate.resolve()
+    await pumpUntil(advance, () => writes.some((w) => w.op === 'upsert' && w.key === B_KEY && w.patch.status === 'succeeded'))
+
+    const succeededOrder = writes
+      .filter((w): w is Extract<Recorded, { op: 'upsert' }> => w.op === 'upsert' && w.patch.status === 'succeeded')
+      .map((w) => w.key)
+    expect(succeededOrder.indexOf(A_KEY)).toBeLessThan(succeededOrder.indexOf(B_KEY))
+  })
+})
+
+describe('payload offload — a lease loss aborts the offload; the write is skipped, not paused (fix round 1)', () => {
+  it('drops the write silently when the run stops being the one this tab drives partway through the upload', async () => {
+    const putGate = deferred<void>()
+    server.use(http.put('/mock-upload/*', async () => putGate.promise.then(() => new HttpResponse(null, { status: 200 }))))
+
+    const { http: pipelineHttp } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: BIG, s: SMALL } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes, setLease } = fakeRunStore()
+    const deps: RunnerDeps = { http: pipelineHttp, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'payload', def: DEF, yaml: 'name: Payload offload', workflowName: 'Payload offload', values: {} }),
+    )
+
+    // `one` succeeds; its offload starts and is stuck on the gated PUT.
+    await pumpUntil(advance, () => store.getState().run.state?.steps[ONE_KEY]?.status === 'succeeded')
+
+    // The lease is lost on the next heartbeat tick — `loseLease` aborts
+    // every live controller, including the step's own (reused by the
+    // offload's upload).
+    setLease({ ok: false, heldBy: 'tab_other' })
+    await pumpUntil(advance, () => store.getState().run.mode === 'readonly', { stepMs: 1_000, maxSteps: 30 })
+
+    expect(store.getState().run.paused).toBeUndefined()
+    expect(writes.some((w) => w.op === 'upsert' && w.key === ONE_KEY && w.patch.status === 'succeeded')).toBe(false)
+
+    // Release the gate — the mocked PUT would now happily finish, but the
+    // client side already aborted the request; nothing more should land.
+    putGate.resolve()
+    await flush()
+
+    expect(store.getState().run.paused).toBeUndefined()
+    expect(writes.some((w) => w.op === 'upsert' && w.key === ONE_KEY && w.patch.status === 'succeeded')).toBe(false)
   })
 })
