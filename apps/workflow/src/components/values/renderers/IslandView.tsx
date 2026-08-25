@@ -15,6 +15,17 @@
  * on a re-render would restart the island under the reader. `useState`'s lazy
  * initialiser is the stable-forever slot for it (a `useMemo` is allowed to be
  * discarded and recomputed).
+ *
+ * ...which is exactly why `IslandView` is two components. Tool input is sent
+ * **once**, at mount — a step's island must never be restarted under the user's
+ * hands — but a *viewer's* value routinely arrives after its first render: a
+ * live run renders its declared outputs before it has recorded any of them, so
+ * the first value a run-output viewer ever sees is `null`. A changed value is
+ * therefore a **new mount**: the outer component keys the inner one on the
+ * value's identity, and the inner one is the single-mount viewer described
+ * above. Identity, not deep equality — the store hands back the same object for
+ * an unchanged recorded value, and a viewer is cheap to re-mount but must not
+ * flicker on every unrelated run event.
  */
 import { useEffect, useState } from 'react'
 import { IslandFrame } from '../../../islands/IslandFrame'
@@ -27,15 +38,29 @@ const READ_ONLY = 'This island is a read-only viewer.'
 
 const now = () => Date.now()
 
-export function IslandView({
-  decl,
-  value,
-  impl,
-}: {
+export interface IslandViewProps {
   decl: ValueDecl & { src: string }
   value: unknown
   impl: string
-}) {
+}
+
+export function IslandView(props: IslandViewProps) {
+  const [shown, setShown] = useState(props.value)
+  const [generation, setGeneration] = useState(0)
+
+  // React's documented adjust-state-during-render pattern, deliberately: the
+  // alternative (an effect) would mount the island once with the stale value and
+  // re-mount it a frame later, which the reader would see. React discards this
+  // pass and re-renders immediately instead.
+  if (!Object.is(shown, props.value)) {
+    setShown(props.value)
+    setGeneration((n) => n + 1)
+  }
+
+  return <IslandViewer key={generation} {...props} />
+}
+
+function IslandViewer({ decl, value, impl }: IslandViewProps) {
   const [host] = useState(() =>
     createIslandHost({
       http: httpJsonWithReauth,

@@ -15,6 +15,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-lint build
       - run: pnpm --filter workflow lint
+      # Both the MSW mock's island route and the Playwright smoke read
+      # `hello-dist/islands/*.html`, so the bundle is staged before either runs.
+      - run: pnpm --filter workflow stage
       - run: pnpm --filter workflow test:run
       - run: pnpm --filter workflow build
       - name: Install Playwright Chromium

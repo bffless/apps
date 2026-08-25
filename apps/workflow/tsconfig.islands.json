@@ -1,0 +1,30 @@
+{
+  /* The `hello` implementation's own sources: the two islands and the Vite
+     config that bundles them. They are a *bundle*, not part of the harness —
+     they never import from `src/`, and `tsconfig.app.json` deliberately does not
+     see them — but they are still TypeScript the build has to be able to trust,
+     so they get their own project rather than no type-checking at all. */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.islands.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["vite/client", "node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["hello"]
+}

@@ -65,11 +65,11 @@ origin) — inline everything, or read siblings through `resources/read` (`ui://
   const app = new App({ name: "cut-editor", version: "1.0.0" });
   app.ontoolinput = ({ arguments: args }) => render(args.clip, args.words);
   async function save(spans) {
-    await app.callTool({ name: "workflow.submit", arguments: { outputs: { spans } } });
+    await app.callServerTool({ name: "workflow.submit", arguments: { outputs: { spans } } });
   }
   async function refine(brief) {
-    const r = await app.callTool({ name: "refine-scene", arguments: { brief } });
-    return r.structuredContent;     // the pipeline's JSON
+    const r = await app.callServerTool({ name: "refine-scene", arguments: { brief } });
+    return r.structuredContent;     // the pipeline's JSON, object-wrapped
   }
   await app.connect();
 </script></head><body>…</body></html>
@@ -79,8 +79,17 @@ Build: any framework; output **one HTML file** with inlined JS/CSS (the ext-apps
 show Vite single-file builds). Put it under `islands/` in the implementation and it ships
 with the deploy at `/w/<impl>/islands/<name>.html`.
 
+The View-side method is **`app.callServerTool`** (`callTool` does not exist on `App`).
+
+`structuredContent` is an object, so a pipeline that answers with an array or a scalar is
+wrapped — a JSON object body arrives as-is, a string as `{ text }`, anything else as
+`{ value }` (Decision 10). A non-2xx answer comes back as `{ isError: true, content: [{ type:
+"text", text: "<code>: <message>" }] }` with the raw status under `_meta.bffless.status`.
+
 `workflow.submit` validates `outputs` against the step's declared map (02); a mismatch is
-returned as the tool's error and the step stays `waiting`, so the island can fix and resubmit.
+returned as the tool's error (`content[0].text` = the per-output messages,
+`structuredContent.errors` the same as an object) and the step stays `waiting`, so the island
+can fix and resubmit.
 
 ## Headless
 

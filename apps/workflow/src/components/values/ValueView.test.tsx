@@ -118,6 +118,33 @@ describe('ValueView', () => {
     expect(screen.queryByText('renderer: island (M2)')).not.toBeInTheDocument()
   })
 
+  // A live run renders its declared outputs before it has recorded them, so the
+  // first value a run-output viewer sees is null. Tool input is sent once per
+  // mount, so a changed value has to be a new mount or the viewer shows `null`
+  // for the life of the run (found by Task 7's browser walk).
+  it('re-mounts the island viewer when the value it shows changes', () => {
+    server.use(
+      http.get('/w/hello/islands/v.html', () => HttpResponse.text('<!doctype html><p>viewer</p>')),
+    )
+
+    const decl = { type: 'json', render: 'island', src: 'islands/v.html' } as const
+    // The *same* object across the last two renders: the store hands back one
+    // reference for an unchanged recorded value, and identity is the test (a
+    // deep compare on every run event would be the wrong price for a viewer).
+    const recorded = { line: 'Hello, world!' }
+
+    const { rerender } = render(<ValueView decl={decl} value={null} impl="hello" />)
+    const first = screen.getByTestId('island-frame')
+
+    rerender(<ValueView decl={decl} value={recorded} impl="hello" />)
+    expect(screen.getByTestId('island-frame')).not.toBe(first)
+
+    // …and an unrelated re-render with the same value leaves it alone.
+    const second = screen.getByTestId('island-frame')
+    rerender(<ValueView decl={decl} value={recorded} impl="hello" label="v" />)
+    expect(screen.getByTestId('island-frame')).toBe(second)
+  })
+
   it('falls back to the M2 badge for render: island when no implementation is known', () => {
     render(<ValueView decl={{ type: 'json', render: 'island', src: 'islands/v.html' }} value={{ a: 1 }} />)
     expect(screen.getByText('renderer: island (M2)')).toBeInTheDocument()

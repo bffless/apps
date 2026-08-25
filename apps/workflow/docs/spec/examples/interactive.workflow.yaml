@@ -1,0 +1,61 @@
+# The M2 test implementation's second workflow: `workflow-hello`, alias `hello`.
+# It grows one phase at a time so every push-to-main deploy stays runnable live
+# (Decision 3): Phase 1 = island step + `render: island` viewer; Phase 2 adds a
+# script job; Phase 3 adds form upgrades and the named renderers.
+
+spec: 1
+name: Interactive hello
+description: Exercises every interactive feature of the harness (M2) — grows per phase.
+
+on:
+  manual:
+    inputs:
+      greeting: { type: string, default: "Hello", required: true }
+      names:    { type: choice, options: [world, studio, reader], list: true, default: [world, studio] }
+
+jobs:
+  greet:
+    strategy: { matrix: { who: "${{ inputs.names }}" } }
+    steps:
+      - id: say
+        uses: pipeline
+        with: { path: echo, body: { text: "${{ inputs.greeting }}, ${{ matrix.who }}!" } }
+        outputs: { line: { type: string, value: "${{ response.text }}" } }
+    outputs: { lines: "${{ steps.say.outputs.line }}" }
+
+  analyze:
+    needs: greet
+    steps:
+      - id: run
+        uses: pipeline
+        with: { path: analyze, body: { lines: "${{ needs.greet.outputs.lines }}" } }
+        outputs:
+          words:   { type: json, value: "${{ response.words }}" }            # render: transcript arrives in Phase 3 (Task 21)
+          counts:  { type: table, value: "${{ response.counts }}", columns: [{key: line}, {key: chars, type: number}] }
+          snippet: { type: string, value: "${{ response.snippet }}" }
+          longest: { type: string, value: "${{ response.longest }}" }
+    outputs: { words: "${{ steps.run.outputs.words }}", counts: "${{ steps.run.outputs.counts }}", snippet: "${{ steps.run.outputs.snippet }}" }
+
+  pick:
+    needs: [greet, analyze]
+    steps:
+      - id: choose
+        uses: island
+        with:
+          src: islands/pick-line.html
+          title: Pick the best line
+          display: inline
+          lines: ${{ needs.greet.outputs.lines }}
+          words: ${{ needs.analyze.outputs.words }}
+        outputs:
+          line:  { type: string, required: true }
+          index: { type: number }
+        headless: { mode: skip, outputs: { line: "${{ needs.greet.outputs.lines[0] }}", index: 0 } }
+        summary: "Picked **${{ steps.choose.outputs.line }}** (#${{ steps.choose.outputs.index }})"
+    outputs:
+      line:  ${{ steps.choose.outputs.line }}
+      view:  { type: json, value: "${{ steps.choose.outputs }}", render: island, src: islands/line-viewer.html }
+
+outputs:
+  line: ${{ jobs.pick.outputs.line }}
+  view: ${{ jobs.pick.outputs.view }}
