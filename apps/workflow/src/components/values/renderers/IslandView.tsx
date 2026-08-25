@@ -22,10 +22,16 @@
  * live run renders its declared outputs before it has recorded any of them, so
  * the first value a run-output viewer ever sees is `null`. A changed value is
  * therefore a **new mount**: the outer component keys the inner one on the
- * value's identity, and the inner one is the single-mount viewer described
- * above. Identity, not deep equality — the store hands back the same object for
- * an unchanged recorded value, and a viewer is cheap to re-mount but must not
- * flicker on every unrelated run event.
+ * value, and the inner one is the single-mount viewer described above.
+ *
+ * The key is a **content signature**, not object identity, and that is not a
+ * nicety. `RunPage` rebuilds its `RunState` through `replayRun` in a `useMemo`
+ * over `[run, steps, def]`, so while a run is `running` every poll produces
+ * structurally identical but freshly allocated output objects. Keyed on
+ * identity, a `render: island` over a step output would re-fetch the island and
+ * rebuild the bridge every poll interval; keyed on content it never moves until
+ * the value really changes. Values are bounded (Phase 2 offloads outputs above
+ * 256 KB), so stringifying one per render is cheap next to what it prevents.
  */
 import { useEffect, useState } from 'react'
 import { IslandFrame } from '../../../islands/IslandFrame'
@@ -44,20 +50,22 @@ export interface IslandViewProps {
   impl: string
 }
 
-export function IslandView(props: IslandViewProps) {
-  const [shown, setShown] = useState(props.value)
-  const [generation, setGeneration] = useState(0)
-
-  // React's documented adjust-state-during-render pattern, deliberately: the
-  // alternative (an effect) would mount the island once with the stale value and
-  // re-mount it a frame later, which the reader would see. React discards this
-  // pass and re-renders immediately instead.
-  if (!Object.is(shown, props.value)) {
-    setShown(props.value)
-    setGeneration((n) => n + 1)
+/**
+ * What the viewer is showing, as a string. `undefined` and a value JSON cannot
+ * describe both collapse to a constant — the honest answer for "nothing here
+ * changed in a way an island could be told about", since tool input travels as
+ * JSON anyway and an unserialisable value could not be delivered.
+ */
+function signature(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? 'undefined'
+  } catch {
+    return 'unserialisable'
   }
+}
 
-  return <IslandViewer key={generation} {...props} />
+export function IslandView(props: IslandViewProps) {
+  return <IslandViewer key={signature(props.value)} {...props} />
 }
 
 function IslandViewer({ decl, value, impl }: IslandViewProps) {

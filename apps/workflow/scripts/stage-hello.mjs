@@ -13,6 +13,13 @@ import { lintSource, loadDefinition } from '@bffless/workflow-lint'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const examples = join(appDir, 'docs/spec/examples')
+
+/**
+ * The app's own binaries, not `npx`: `npx` will happily reach the network for a
+ * package this workspace already pins, and a stage that silently installs a
+ * different `vite` is not a reproducible publish.
+ */
+const bin = (name) => join(appDir, 'node_modules', '.bin', name)
 const outIdx = process.argv.indexOf('--out')
 const out = outIdx > -1 ? process.argv[outIdx + 1] : join(appDir, 'hello-dist')
 
@@ -65,8 +72,15 @@ const islandDir = join(out, 'islands')
 rmSync(islandDir, { recursive: true, force: true })
 mkdirSync(islandDir, { recursive: true })
 
+// The islands are type-checked *here*, by the thing that publishes them, and
+// deliberately **not** by the harness's `tsc -b`: `pnpm --filter workflow build`
+// must never fail because a bundle file has a type error (deploy-workflow.yml
+// runs that build before this script). `tsconfig.islands.json` is therefore not
+// referenced from `tsconfig.json`.
+execFileSync(bin('tsc'), ['-p', 'tsconfig.islands.json'], { cwd: appDir, stdio: 'inherit' })
+
 for (const island of ISLANDS) {
-  execFileSync('npx', ['vite', 'build', '-c', 'hello/vite.islands.config.ts'], {
+  execFileSync(bin('vite'), ['build', '-c', 'hello/vite.islands.config.ts'], {
     cwd: appDir,
     stdio: 'inherit',
     env: { ...process.env, WORKFLOW_ISLAND: island, WORKFLOW_ISLANDS_OUT: islandDir },

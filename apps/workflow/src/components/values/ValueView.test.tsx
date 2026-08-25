@@ -128,21 +128,24 @@ describe('ValueView', () => {
     )
 
     const decl = { type: 'json', render: 'island', src: 'islands/v.html' } as const
-    // The *same* object across the last two renders: the store hands back one
-    // reference for an unchanged recorded value, and identity is the test (a
-    // deep compare on every run event would be the wrong price for a viewer).
-    const recorded = { line: 'Hello, world!' }
 
     const { rerender } = render(<ValueView decl={decl} value={null} impl="hello" />)
     const first = screen.getByTestId('island-frame')
 
-    rerender(<ValueView decl={decl} value={recorded} impl="hello" />)
+    rerender(<ValueView decl={decl} value={{ line: 'Hello, world!' }} impl="hello" />)
     expect(screen.getByTestId('island-frame')).not.toBe(first)
 
-    // …and an unrelated re-render with the same value leaves it alone.
+    // A *deep-equal but freshly allocated* value must NOT remount: `RunPage`
+    // rebuilds its RunState through `replayRun` on every poll while a run is
+    // running, so identity churns even when nothing changed — and a remount
+    // would re-fetch the island and rebuild the bridge every poll interval.
     const second = screen.getByTestId('island-frame')
-    rerender(<ValueView decl={decl} value={recorded} impl="hello" label="v" />)
+    rerender(<ValueView decl={decl} value={{ line: 'Hello, world!' }} impl="hello" label="v" />)
     expect(screen.getByTestId('island-frame')).toBe(second)
+
+    // …but a genuinely different value still does.
+    rerender(<ValueView decl={decl} value={{ line: 'Hello, studio!' }} impl="hello" />)
+    expect(screen.getByTestId('island-frame')).not.toBe(second)
   })
 
   it('falls back to the M2 badge for render: island when no implementation is known', () => {
