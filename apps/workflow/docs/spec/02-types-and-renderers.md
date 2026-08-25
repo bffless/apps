@@ -30,7 +30,7 @@ Common keys on every definition: `label`, `description`, `list`, `render`; input
 `required`, `default`.
 
 Every definition compiles to one JSON Schema; validation (kickoff form, `form` submit, island
-`workflow/submit`, script return, pipeline `outputs` coercion) is one function over that
+`workflow.submit`, script return, pipeline `outputs` coercion) is one function over that
 schema. A pipeline `outputs` value that does not match its declared type fails the step with
 `error.code == 'OUTPUT_TYPE'` — better to fail at the step than render garbage downstream.
 

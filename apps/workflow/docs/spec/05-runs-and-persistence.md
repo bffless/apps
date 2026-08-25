@@ -100,7 +100,7 @@ Headless runs never resume (a failed CI step re-runs the workflow).
 Both are **declared in YAML** on the step (`summary:` markdown template, `annotations:` list
 of `{ level, if, title, message }`), evaluated by the harness after the step reaches a
 terminal state, and stored on the step row. Islands and scripts can add to them dynamically
-via `workflow/annotate` (04) / `ctx.annotate` (03) — appended to the same columns. Run-level
+via `workflow.annotate` (04) / `ctx.annotate` (03) — appended to the same columns. Run-level
 annotations (cancel notice, headless fail-fast) live on `workflow_runs.annotations`.
 
 The run page shows: a badge count per level in the header, each step's summary in its card,

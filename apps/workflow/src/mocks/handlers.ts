@@ -91,7 +91,10 @@ export const HELLO_INDEX = {
       headlessSafe: true,
     }
   }),
-  islands: ['islands/pick-line.html', 'islands/line-viewer.html'],
+  // Derived from the same glob the island route serves, so an unstaged dev
+  // session lists no islands rather than two that would 404. Glob order (by
+  // path), not the stager's listing order — the parity test compares sets.
+  islands: Object.keys(ISLAND_HTML).sort().map((name) => `islands/${name}`),
   scripts: [],
 }
 
@@ -328,9 +331,12 @@ const hello = [
     const id = new URL(request.url).searchParams.get('id') ?? ''
     const job = db.helloJobs.get(id)
     if (!job) return HttpResponse.json({ status: 'error', error: 'unknown job' }, { status: 404 })
+    // `found: true` is what the real rule's `shape.fn.js` sets for its 200
+    // branch (the `respond` responder's condition); nothing reads it, but the
+    // two bodies carry the same keys.
     job.polls += 1
-    if (job.polls < 2) return HttpResponse.json({ status: 'pending' })
-    return HttpResponse.json({ id, status: 'done', result: job.result })
+    if (job.polls < 2) return HttpResponse.json({ found: true, status: 'pending' })
+    return HttpResponse.json({ found: true, id, status: 'done', result: job.result })
   }),
 
   // The real rule builds this body via a `function_handler` (`fail.fn.js`), not

@@ -17,9 +17,12 @@ jobs:
       - run: pnpm --filter workflow lint
       # Both the MSW mock's island route and the Playwright smoke read
       # `hello-dist/islands/*.html`, so the bundle is staged before either runs.
+      # Keep this order in step with deploy-workflow.yml (stage → build → test).
       - run: pnpm --filter workflow stage
-      - run: pnpm --filter workflow test:run
       - run: pnpm --filter workflow build
+      - run: pnpm --filter workflow test:run
+      # The stager suite (real island builds) is its own step, not part of test:run.
+      - run: pnpm --filter workflow test:stage
       - name: Install Playwright Chromium
         run: pnpm --filter workflow exec playwright install chromium --with-deps
       - name: Playwright smoke

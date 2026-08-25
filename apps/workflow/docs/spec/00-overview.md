@@ -51,7 +51,7 @@ lists the project's aliases and probes `/w/<alias>/.bffless/workflows/index.json
 | Workflow YAML | [01-workflow-yaml.md](01-workflow-yaml.md) | GitHub-faithful `on.manual.inputs` + `jobs.<id>` (`needs`, `strategy.matrix`, sequential `steps`, `outputs`), expressions, control flow. JSON Schema in [`workflow.schema.json`](workflow.schema.json). |
 | Types & renderers | [02-types-and-renderers.md](02-types-and-renderers.md) | One closed vocabulary for inputs and outputs (`string number boolean choice file table markdown json`, `list: true`); renderer by type, `render:` override incl. `render: island`. |
 | Step kinds | [03-step-kinds.md](03-step-kinds.md) | `pipeline` (+ `poll`, `retry`), `island`, `form`, `script`. |
-| Islands | [04-islands.md](04-islands.md) | Islands are MCP Apps (`text/html;profile=mcp-app`); the harness is the host via `@modelcontextprotocol/ext-apps`; host tools `workflow/submit`, `workflow/annotate`. |
+| Islands | [04-islands.md](04-islands.md) | Islands are MCP Apps (`text/html;profile=mcp-app`); the harness is the host via `@modelcontextprotocol/ext-apps`; host tools `workflow.submit`, `workflow.annotate`. |
 | Runs & persistence | [05-runs-and-persistence.md](05-runs-and-persistence.md) | `workflow_runs` + `workflow_run_steps`, event-sourced; Resume with lease; summaries & annotations; definition snapshot. |
 | Discovery, publishing, files | [06-discovery-publishing-files.md](06-discovery-publishing-files.md) | Alias probing, `index.json`, implementation CI obligations, `publish-workflow` action/CLI, harness-owned run storage (`/api/workflow/files/{prepare,register}` + `/api/uploads/workflows/*`), the reusable `files` rule-set template. |
 | Headless | [07-headless.md](07-headless.md) | `?auto=1&inputs=` contract, `window.__workflow`, `headless: skip\|auto`, the Playwright CLI. |
@@ -84,7 +84,7 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
 | D2 | Single origin via the harness host; impl rule set attached to harness alias; `/api/<impl>/`, `/w/<impl>/` | 06, ADR-0001 |
 | D3 | GitHub-faithful `jobs`/`needs`/`matrix`/`steps`; `on.manual.inputs`; matrix outputs collect into arrays | 01 |
 | D4 | Step kinds: `pipeline`, `island`, `form`, `script`; upload is a property of `file` | 03 |
-| D5 | Islands = MCP Apps; harness = host; `workflow/submit`; single sandboxed srcdoc iframe v1 | 04, ADR-0002 |
+| D5 | Islands = MCP Apps; harness = host; `workflow.submit`; single sandboxed srcdoc iframe v1 | 04, ADR-0002 |
 | D6 | Closed type vocabulary + `list` + `render:` | 02 |
 | D7 | Harness-owned run storage; pipelines path-in/path-out; reusable `files` trio | 06 |
 | D8 | Server-side run rows per transition; Resume with lease | 05 |

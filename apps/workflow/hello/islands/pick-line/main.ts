@@ -11,7 +11,11 @@
  *   back through `structuredContent.text`) and the two host tools
  *   (`workflow.annotate`, `workflow.submit`);
  * - a rejected `workflow.submit` comes back as a tool *error*, not a throw, and
- *   the step stays `waiting` — so the island can show it and resubmit.
+ *   the step stays `waiting` — so the island can show it and resubmit;
+ * - a *transport* failure (the bridge gone, a request timed out) is a rejected
+ *   promise, and every one of them lands in the visible error slot too — an
+ *   island that swallows a rejection just stops responding, with nothing to
+ *   tell the member why.
  *
  * Handlers are registered before `connect()` (the SDK warns otherwise: the host
  * may already have sent `tool-input` by the time a late handler is installed),
@@ -42,6 +46,20 @@ function resultText(result: ToolResultish): string {
     .join('\n')
 }
 
+/** What a rejected `callServerTool` (not a tool error — a throw) reads as. */
+const failureText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+/**
+ * Run one host round trip and route *every* failure — a tool `isError` or a
+ * rejected promise — into the error slot, so a click never dies silently.
+ */
+function attempt(work: () => Promise<void>): void {
+  work().catch((error: unknown) => {
+    submitError.textContent = failureText(error)
+  })
+}
+
 const app = new App({ name: 'pick-line', version: '1.0.0' })
 
 let picked: { line: string; index: number } | null = null
@@ -63,7 +81,7 @@ app.ontoolinput = ({ arguments: args }) => {
       button.dataset.index = String(index)
       button.setAttribute('aria-pressed', 'false')
       button.textContent = line
-      button.addEventListener('click', () => void preview(line, index, button))
+      button.addEventListener('click', () => attempt(() => preview(line, index, button)))
       return button
     }),
   )
@@ -89,10 +107,13 @@ async function preview(line: string, index: number, button: HTMLButtonElement): 
   shouted.textContent = String(echoed.structuredContent?.text ?? '')
 
   // Decision 12: a live annotation becomes a persisted `step.annotated` event.
-  await app.callServerTool({
+  // The host refuses it as a tool error when the step is not the live one or
+  // the annotation budget is spent (#370) — shown, like a refused submit.
+  const annotated: ToolResultish = await app.callServerTool({
     name: 'workflow.annotate',
     arguments: { annotations: [{ level: 'notice', message: `Previewed ${line}` }] },
   })
+  if (annotated.isError) submitError.textContent = resultText(annotated)
 }
 
 /**
@@ -109,11 +130,11 @@ async function submit(outputs: Record<string, unknown>): Promise<void> {
 }
 
 el<HTMLButtonElement>('submit').addEventListener('click', () => {
-  void submit(picked ? { line: picked.line, index: picked.index } : {})
+  attempt(() => submit(picked ? { line: picked.line, index: picked.index } : {}))
 })
 
 el<HTMLButtonElement>('submit-nothing').addEventListener('click', () => {
-  void submit({})
+  attempt(() => submit({}))
 })
 
 app.onteardown = async () => ({})

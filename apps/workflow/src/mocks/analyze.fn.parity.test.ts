@@ -24,7 +24,7 @@ const FN_PATH = join(
   'analyze.fn.js',
 )
 
-function loadFnHandler(): (ctx: { request: { body: Record<string, unknown> } }) => unknown {
+function loadFnHandler(): (ctx: { request: { body?: Record<string, unknown> } }) => unknown {
   const src = readFileSync(FN_PATH, 'utf8')
   const factory = new Function(`${src}\nreturn handler;`)
   return factory()
@@ -47,5 +47,11 @@ describe('analyze.fn.js parity with the mock helper', () => {
     const fromFn = handler({ request: { body: { lines } } })
     const fromTs = analyzeLines(lines)
     expect(fromFn).toEqual(fromTs)
+  })
+
+  // A hand-rolled POST with no body reaches the handler with `request.body`
+  // undefined; that is an empty analysis, not a throw inside the pipeline.
+  it('treats a bodyless request as no lines', () => {
+    expect(handler({ request: {} })).toEqual(analyzeLines(undefined))
   })
 })

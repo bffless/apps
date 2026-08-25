@@ -161,7 +161,9 @@ describe('the hello pipelines', () => {
     expect(typeof enqueued.jobId).toBe('string')
 
     const pending = await (await fetch(`/api/hello/job?id=${enqueued.jobId}`)).json()
-    expect(pending).toEqual({ status: 'pending' })
+    // No `id` on the first tick (that is what makes the poll read the initial
+    // response); `found: true` mirrors the real rule's `shape.fn.js` 200 body.
+    expect(pending).toEqual({ found: true, status: 'pending' })
 
     const done = await (await fetch(`/api/hello/job?id=${enqueued.jobId}`)).json()
     expect(done).toMatchObject({
