@@ -25,7 +25,7 @@ import { runPipelineStep } from '../lib/runner/adapters/pipeline'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
 import { nextActions } from '../lib/runner/next'
 import type { NextAction } from '../lib/runner/next'
-import { offloadOutputs } from '../lib/runner/payload'
+import { isUnavailablePayload, offloadOutputs } from '../lib/runner/payload'
 import { isTruncatedStub } from '../lib/runner/results'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
@@ -557,6 +557,31 @@ function startHeartbeat(
 // The scheduler: NextAction → RunEvent
 // ---------------------------------------------------------------------------
 
+/** What the slice is parked with when a resume is refused (see the `runReplaced` listener). */
+const RESUME_REFUSED =
+  'Resume refused: this run has recorded outputs that could not be loaded. Reload to try again.'
+
+/**
+ * Every output of a replayed run that came back as the `{ $file, $error }`
+ * sentinel — a `{"$file"}` payload the read path could not fetch. Step rows
+ * first, then the run's own outputs (which carry no step key).
+ */
+function unavailableOutputs(
+  state: RunState,
+): { stepKey?: StepKey; name: string; error: string }[] {
+  const found: { stepKey?: StepKey; name: string; error: string }[] = []
+  const scan = (outputs: Record<string, unknown> | undefined, key?: StepKey) => {
+    for (const [name, value] of Object.entries(outputs ?? {})) {
+      if (isUnavailablePayload(value)) {
+        found.push({ ...(key ? { stepKey: key } : {}), name, error: value.$error })
+      }
+    }
+  }
+  for (const step of Object.values(state.steps)) scan(step.outputs, step.key)
+  scan(state.outputs)
+  return found
+}
+
 function stepOf(def: Definition, job: string, stepId: string): Step | undefined {
   return def.jobs[job]?.steps.find((s) => s.id === stepId)
 }
@@ -978,6 +1003,46 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       if (mode !== 'live') return
 
       currentRunId = state.runId
+
+      // Fail closed (Task 13 review): an output the read path could not fetch
+      // arrives as the `{ $file, $error }` sentinel (lib/payloadFetch), and
+      // `replayRun` folds it onto the step exactly like a value. Driving the
+      // run from here would evaluate every downstream
+      // `steps.<key>.outputs.<name>` / `needs.*` against that *object* —
+      // silently, all the way to a `run.finished` that persists derived
+      // outputs computed from an error marker. There is no honest way to
+      // continue, so this tab does not: the reason is recorded on the run
+      // (an `error` annotation per unreadable output, which the page renders
+      // and the row keeps), the slice is parked, and — crucially — the
+      // heartbeat is never started, so the lease this adoption just took
+      // lapses on its own and the run stays adoptable once the payload is
+      // reachable again. A `readonly` view is unaffected: it returned above,
+      // and `ValueView` shows each sentinel as its own "payload unavailable"
+      // chip.
+      const unloadable = unavailableOutputs(state)
+      if (unloadable.length > 0) {
+        // Parked *before* the annotations land, so the `runEvent` listener's
+        // own schedule pass is already closed when their writes settle
+        // (`runEvent` never clears `paused` — only `runReplaced` does).
+        listenerApi.dispatch(runPaused(RESUME_REFUSED))
+        for (const { stepKey: key, name, error } of unloadable) {
+          listenerApi.dispatch(
+            runEvent({
+              type: 'run.annotation',
+              annotation: {
+                level: 'error',
+                ...(key ? { stepKey: key } : {}),
+                message: key
+                  ? `step ${key}: output ${name} could not be loaded (${error}) — resume refused; reload to retry`
+                  : `run output ${name} could not be loaded (${error}) — resume refused; reload to retry`,
+              },
+              at: deps.clock.now(),
+            }),
+          )
+        }
+        return
+      }
+
       startHeartbeat(state.runId, deps, listenerApi.dispatch, listenerApi.getState)
 
       const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
@@ -1016,23 +1081,31 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             registerFile: registerFileForStep(deps, state, step.key, scoped),
           }
           // A `polling` row normally resumes poll-only, against the initial
-          // response the record kept. When that initial was *stubbed* by
-          // `trimResponse` (it blew the 256 KB response budget), there is
-          // nothing to poll against — the poll's `query`/`body` read
+          // response the record kept. Two rows cannot: one whose initial was
+          // *stubbed* by `trimResponse` (it blew the 256 KB response budget),
+          // and one that never recorded an initial at all (a half-written
+          // row, 08). Neither can be polled — the poll's `query`/`body` read
           // `response.<field>` off it — so the step is re-requested from
           // scratch instead (`restart`, pipeline.ts). That is a fact about
           // this run worth recording, not a silent repair: a server-side job
           // may already be running for the initial request whose id the
-          // record lost.
-          const truncatedInitial =
-            step.status === 'polling' && isTruncatedStub(step.response?.initial)
-          if (truncatedInitial) {
+          // record lost. The notice is stamped with the step so
+          // `AnnotationList` can jump to it like any other.
+          const initial = step.response?.initial
+          const fromScratch =
+            step.status === 'polling' && (initial === undefined || isTruncatedStub(initial))
+          if (fromScratch) {
+            const why =
+              initial === undefined
+                ? 'its initial response was not recorded'
+                : 'its initial response was truncated in the record'
             scoped(
               runEvent({
                 type: 'run.annotation',
                 annotation: {
                   level: 'notice',
-                  message: `step ${step.key} resumed from scratch — its initial response was truncated in the record`,
+                  stepKey: step.key,
+                  message: `step ${step.key} resumed from scratch — ${why}`,
                 },
                 at: deps.clock.now(),
               }),
@@ -1041,9 +1114,9 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
           const resume =
             step.status !== 'polling'
               ? undefined
-              : truncatedInitial
+              : fromScratch
                 ? { mode: 'restart' as const }
-                : { mode: 'poll-only' as const, initial: step.response?.initial }
+                : { mode: 'poll-only' as const, initial }
           void runPipelineStep(
             {
               step: stepDecl,

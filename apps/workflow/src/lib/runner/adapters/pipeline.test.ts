@@ -501,6 +501,48 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
     expect(succeeded(h.events[1]!).outputs).toEqual({ report: '# again', poster: null })
   })
 
+  // Review minor 2: the fail-closed guard must fire *before* any request. A
+  // `poll-only` resume never had a side effect to get wrong (it issues nothing);
+  // `restart` does, so the guard moved ahead of the re-request.
+  it('resume: a row that says `polling` for a step with no `poll:` fails closed in either mode, with no request', async () => {
+    const GREET_KEY = stepKey('greet', 0, 'say')
+    const modes = [{ mode: 'poll-only' as const, initial: { text: 'Hello, world!' } }, { mode: 'restart' as const }]
+
+    for (const resume of modes) {
+      const { http, calls } = fakeHttp([])
+      const state = baseState({
+        expansions: { greet: { total: 1, items: [{ who: 'world' }] } },
+        steps: {
+          [GREET_KEY]: {
+            ...queuedStep('greet', 0, 'say'),
+            status: 'polling',
+            inputs: { path: 'echo', body: { text: 'Hello, world!', upper: false } },
+            response: { initial: { text: 'Hello, world!' } },
+            startedAt: 1_000,
+          },
+        },
+      })
+      const h = harness(state, http)
+
+      await runPipelineStep(
+        {
+          step: stepOf(hello, 'greet', 'say'),
+          key: GREET_KEY,
+          job: 'greet',
+          index: 0,
+          def: hello,
+          state,
+          resume,
+        },
+        h.rt,
+      )
+
+      expect(h.types()).toEqual(['step.failed'])
+      expect(failed(h.events[0]!).error.message).toBe('resumed a polling row but the step has no `poll:`')
+      expect(calls).toEqual([])
+    }
+  })
+
   it('emits step.cancelled when the run is aborted mid-poll', async () => {
     const { http, calls } = fakeHttp([
       { status: 200, body: { jobId: 'j1' } },

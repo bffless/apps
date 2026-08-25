@@ -552,6 +552,9 @@ describe('openRun — a polling row whose recorded initial was truncated', () =>
       expect(store.getState().run.state!.annotations).toContainEqual(
         expect.objectContaining({
           level: 'notice',
+          // Review minor 3: stamped with the step, so `AnnotationList` can
+          // offer the same "from <step>" jump every other step annotation has.
+          stepKey: SLOW_KEY,
           message: `step ${SLOW_KEY} resumed from scratch — its initial response was truncated in the record`,
         }),
       )
@@ -634,5 +637,125 @@ describe('cancelRun after a resume', () => {
     expect(writes.length).toBe(settled)
 
     store.dispatch(runClosed())
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (g) Review, Important: a payload that could not be loaded must not become a
+// value a resumed run computes with
+// ---------------------------------------------------------------------------
+
+describe('openRun — a resumed run whose recorded output could not be loaded', () => {
+  it('refuses to drive the run: nothing relaunched, an error annotation on the record, the run left running', async () => {
+    const runId = 'run_resume_unreadable'
+    seedResumableRun(runId)
+
+    const path = `workflows/hello/hello/runs/${runId}/greet/0/say/line.json`
+    const bytes = new TextEncoder().encode(JSON.stringify('Hello, world!'))
+    db.files.set(path, { bytes, contentType: 'application/json' })
+    const rowKey = stepRowKey(runId, GREET0_KEY)
+    const row = db.steps.get(rowKey)!
+    db.steps.set(rowKey, {
+      ...row,
+      outputs: {
+        line: {
+          $file: {
+            path,
+            name: 'line.json',
+            contentType: 'application/json',
+            size: bytes.byteLength,
+            url: fileUrl(path),
+          },
+        },
+      },
+    })
+
+    // The bucket is unreachable, so `getRun` hands back the sentinel rather
+    // than the value — and `jobs.greet.outputs.lines` would otherwise collect
+    // it straight into the run's own outputs.
+    server.use(http.get('/api/uploads/*', () => new HttpResponse(null, { status: 500 })))
+
+    const calls: string[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      calls.push(`${request.method} ${new URL(request.url).pathname}`)
+    }
+    server.events.on('request:start', onRequestStart)
+
+    const { store } = trackedHelloStore()
+    try {
+      const read = await store.dispatch(workflowApi.endpoints.getRun.initiate(runId))
+      const record = read.data!
+      calls.length = 0
+
+      await store.dispatch(openRun({ runId, run: record.run!, steps: record.steps }))
+      await flush()
+
+      // `slow/0/start` would have resumed its poll immediately; nothing did.
+      expect(calls.filter((c) => c.includes('/api/hello/'))).toEqual([])
+
+      const state = store.getState().run.state!
+      expect(state.status).toBe('running')
+      expect(state.steps[SLOW_KEY]?.status).toBe('polling')
+      expect(state.annotations).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          stepKey: GREET0_KEY,
+          message: `step ${GREET0_KEY}: output line could not be loaded (the payload request answered 500) — resume refused; reload to retry`,
+        }),
+      )
+      expect(store.getState().run.paused).toBeTruthy()
+
+      // The refusal is on the record, not just in this tab — and the run is
+      // still `running`, so it stays adoptable once the lease lapses.
+      expect(db.runs.get(runId)?.annotations).toContainEqual(
+        expect.objectContaining({ level: 'error', stepKey: GREET0_KEY }),
+      )
+      expect(db.runs.get(runId)?.status).toBe('running')
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (h) Review minor 5: a `polling` row that never recorded an initial response
+// ---------------------------------------------------------------------------
+
+describe('openRun — a polling row with no recorded initial response', () => {
+  it('takes the same from-scratch path as a truncated one, and says which it was', async () => {
+    const runId = 'run_resume_no_initial'
+    const { run, steps } = resumableRunAndSteps(runId)
+    const slow = steps.find((s) => s.key === SLOW_KEY)!
+    // The row says `polling` but carries no `response` at all — a half-written
+    // row (08 degraded states). Polling it would read `response.jobId` off
+    // `undefined`.
+    delete slow.response
+    db.runs.set(runId, { ...run, _id: nextId() })
+    for (const step of steps) db.steps.set(stepRowKey(runId, step.key), { ...step, _id: nextId() })
+
+    db.helloBusy.add(JSON.stringify((slow.inputs as { body: unknown }).body))
+
+    const calls: string[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      calls.push(`${request.method} ${new URL(request.url).pathname}`)
+    }
+    server.events.on('request:start', onRequestStart)
+
+    const { store, advance } = trackedHelloStore()
+    try {
+      await store.dispatch(openRun({ runId, run, steps }))
+      await pumpUntil(advance, () => store.getState().run.state?.steps[SLOW_KEY]?.status === 'succeeded')
+
+      expect(calls.filter((c) => c === 'POST /api/hello/slow')).toHaveLength(1)
+      expect(store.getState().run.state!.annotations).toContainEqual(
+        expect.objectContaining({
+          level: 'notice',
+          stepKey: SLOW_KEY,
+          message: `step ${SLOW_KEY} resumed from scratch — its initial response was not recorded`,
+        }),
+      )
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+    }
   })
 })

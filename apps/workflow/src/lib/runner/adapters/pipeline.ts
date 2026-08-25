@@ -264,6 +264,23 @@ async function runAttempt(
       return { kind: 'error', error: { code: 'STEP', message: 'pipeline step has no `with.path`' } }
     }
 
+    const pollDecl = raw.poll === undefined || raw.poll === null ? undefined : obj(raw.poll)
+
+    // A row only ever persists `polling` when the step declares `poll:`
+    // (rows.ts) — resuming one (either mode) for a step whose definition no
+    // longer does is a data inconsistency the adapter should fail closed on,
+    // not paper over with a fabricated success nobody validated. Checked
+    // *before* the request: `poll-only` never had a side effect to get wrong
+    // (it issues nothing), and `restart` must not either — a re-POST that
+    // then reports "no `poll:`" would have already enqueued a server-side job
+    // for a step the harness is about to fail.
+    if (resuming && !pollDecl) {
+      return {
+        kind: 'error',
+        error: { code: 'STEP', message: 'resumed a polling row but the step has no `poll:`' },
+      }
+    }
+
     let initial: unknown
     if (resuming === 'poll-only') {
       initial = (a.resume as { initial: unknown }).initial
@@ -283,7 +300,6 @@ async function runAttempt(
       return { kind: 'error', error: timeoutError(), response: initial }
     }
 
-    const pollDecl = raw.poll === undefined || raw.poll === null ? undefined : obj(raw.poll)
     let last: unknown = initial
 
     if (pollDecl) {
@@ -296,15 +312,6 @@ async function runAttempt(
       if (polled.kind !== 'ok') return polled
       last = polled.body
       seen = last
-    } else if (resuming) {
-      // A row only ever persists `polling` when the step declares `poll:`
-      // (rows.ts) — resuming one (either mode) for a step whose definition no
-      // longer does is a data inconsistency the adapter should fail closed
-      // on, not paper over with a fabricated success nobody validated.
-      return {
-        kind: 'error',
-        error: { code: 'STEP', message: 'resumed a polling row but the step has no `poll:`' },
-      }
     }
 
     // Terminal success: outputs against the *final* response, then summary and
