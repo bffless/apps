@@ -40,6 +40,16 @@ namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, no
 addition — and the staged bundle now carries `islands/*.html` (`pick-line.html`,
 `line-viewer.html`) alongside `index.html` and the two workflow YAMLs.
 
+**Trust boundary.** Which bundle an island loads from is the run's `impl`, and on the
+read-only run page that value comes from the **run row** — a field any project member can
+write when they `POST /api/workflow/runs` (the rule is gated by `auth_required`, nothing
+narrower). That is safe today only because `/w/` forwards to exactly one fixed alias
+(`/w/hello`), so a planted `impl` resolves to nothing else. Before `targetUrl: alias://`
+generalises the forwarder (apps#364 / ce#698, M4), `run.impl` must be validated against the
+discovered aliases — or taken from the route rather than the row — or a member-planted run
+row could point another member's viewer at a foreign bundle while the host proxies its
+`tools/call` under the viewer's own session.
+
 ## First-success checkpoint
 
 Open `workflow.<domain>`, sign in as a project member: the Implementations screen lists

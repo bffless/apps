@@ -8,22 +8,30 @@
  * `RunPage` half, where fullscreen collapses the graph to a strip.
  */
 import { StrictMode } from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from '../../App'
+import { analyzeLines } from '../../mocks/analyze'
 import { server } from '../../mocks/server'
 import type { AppStore } from '../../store'
 import { useAppSelector } from '../../store/hooks'
 import { islandDisplayChanged } from '../../store/uiSlice'
 import {
+  CHOOSE_KEY,
+  FORM_AND_ISLAND_DEF,
+  FORM_KEY,
   ISLAND_DEF,
   ISLAND_FULLSCREEN_DEF,
   ISLAND_KEY,
+  PARALLEL_ISLAND_KEY,
+  SAY_KEY,
   flush,
+  pumpUntil,
   resetIslandHarness,
+  startInteractiveRun,
   startIslandRun,
 } from '../../test/islandHarness'
 import { IslandStepPane } from './IslandStepPane'
@@ -243,5 +251,97 @@ describe('RunPage — island fullscreen', () => {
     host.deps!.onSubmit({ choice: 'a' })
     await waitFor(() => expect(store.getState().ui.islandDisplay).toBe('inline'))
     expect(document.querySelector('.island-fullscreen')).toBeNull()
+  })
+})
+
+describe('RunPage — a loading island claims the pane', () => {
+  /** The graph chip for a step key, the way a user would reach it. */
+  function chip(page: HTMLElement, key: string): HTMLElement | undefined {
+    return within(page)
+      .getAllByTestId('step')
+      .find((el) => el.getAttribute('data-key') === key)
+  }
+
+  it('opens a starting island over a step the user picked mid-run, and the step reaches waiting', async () => {
+    // Fix round 4, finding 1: only the pane mounts an island (Decision 11), so
+    // an island whose pane never opens sits at `running` forever — no timeout,
+    // no affordance. A click on any other step used to cause exactly that.
+    //
+    // `analyze` is held open so the click lands while the run is genuinely in
+    // flight and the island has not started yet — the exact ordering the bug
+    // needed.
+    let releaseAnalyze!: () => void
+    const analyzing = new Promise<void>((resolve) => {
+      releaseAnalyze = resolve
+    })
+    server.use(
+      http.post('/api/hello/analyze', async ({ request }) => {
+        const { lines } = (await request.json()) as { lines: unknown }
+        await analyzing
+        return HttpResponse.json(analyzeLines(lines))
+      }),
+    )
+
+    const { store, advance, host, runId } = await startInteractiveRun()
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/hello/interactive/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    const page = screen.getByRole('main')
+    // The user picks a pipeline step while the run is still in flight.
+    await waitFor(() => expect(chip(page, SAY_KEY)).toBeDefined())
+    fireEvent.click(chip(page, SAY_KEY)!)
+    expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
+    await flush()
+    // Nothing interactive is loading yet, so the click stands.
+    expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
+
+    releaseAnalyze()
+    await act(async () => {
+      await pumpUntil(
+        advance,
+        () => store.getState().run.state?.steps[CHOOSE_KEY]?.status === 'running',
+        { maxSteps: 400 },
+      )
+    })
+
+    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(CHOOSE_KEY))
+    await waitFor(() => expect(host.mounts).toHaveLength(1))
+
+    host.settle()
+    await waitFor(() =>
+      expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'),
+    )
+  })
+
+  it('does not take the pane from a form being filled in', async () => {
+    // The case the original `!selectedStep` guard protected, kept: a person
+    // mid-interaction outranks an island loading in a parallel job.
+    const { store, host, runId } = await startIslandRun(FORM_AND_ISLAND_DEF, PARALLEL_ISLAND_KEY)
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/test/island/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(within(page).getByTestId('form-step')).toBeInTheDocument())
+    expect(store.getState().ui.selectedStep).toBe(FORM_KEY)
+
+    await flush()
+    expect(store.getState().ui.selectedStep).toBe(FORM_KEY)
+    expect(within(page).queryByTestId('island-frame')).toBeNull()
+    expect(host.mounts).toHaveLength(0)
+    // The island stays `running` — the deliberate trade (04/Decision 11): the
+    // pane is one, and the person filling in the form owns it.
+    expect(store.getState().run.state!.steps[PARALLEL_ISLAND_KEY].status).toBe('running')
   })
 })

@@ -293,16 +293,39 @@ export function RunPage() {
         )?.key ?? null)
       : null
   const openStep = waitingStep ?? loadingIsland
+
+  const selectedStepState = selectedStep && state ? state.steps[selectedStep] : undefined
+
+  // A step that is *itself* mid-interaction: an island whose pane owns the
+  // bridge, or a form waiting on the person filling it in. The pane is theirs
+  // until they resolve — nothing may take it out from under them.
+  const selectionIsInteractive =
+    (selectedStepState?.kind === 'island' &&
+      (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')) ||
+    (selectedStepState?.kind === 'form' && selectedStepState.status === 'waiting')
+
+  // Fix round 4, finding 1: the pane is the *only* thing that mounts an island
+  // (Decision 11), so a `running` island whose pane never opens stalls there
+  // forever — the 30 s `ISLAND_LOAD` clock only starts at `mount`, and the step
+  // offers no affordance of its own. A click on any other step during the run
+  // used to do exactly that. So a loading island **claims** the pane, over any
+  // selection that is not itself mid-interaction; the one case the original
+  // `!selectedStep` guard protected — a form being filled in, or another
+  // island already up — still wins, and that island is the one the user sees.
+  const claimingIsland = loadingIsland && !selectionIsInteractive ? loadingIsland : null
   useEffect(() => {
-    if (openStep && !selectedStep) dispatch(stepSelected(openStep))
-  }, [openStep, selectedStep, dispatch])
+    if (!selectedStep) {
+      if (openStep) dispatch(stepSelected(openStep))
+      return
+    }
+    if (claimingIsland && claimingIsland !== selectedStep) dispatch(stepSelected(claimingIsland))
+  }, [openStep, claimingIsland, selectedStep, dispatch])
 
   // Fullscreen is a mode of the *mounted island*, so it only holds while the
   // selected step really is one (08). Anything else — the run moved on, the
   // user picked another step, the page changed run — puts the page back inline
   // rather than leaving a fixed overlay over a step with no island in it.
   const islandDisplay = useAppSelector((s) => s.ui.islandDisplay)
-  const selectedStepState = selectedStep && state ? state.steps[selectedStep] : undefined
   const islandOpen =
     isLive &&
     selectedStepState?.kind === 'island' &&
@@ -362,6 +385,10 @@ export function RunPage() {
   // `render: island` needs to know which bundle an island file lives in,
   // and this page is the last place that fact is unambiguous.
   return (
+    // TODO(apps#364): on the read-only path this trusts the run row's own
+    // `impl`, which a member wrote. Safe only while `/w/` forwards one fixed
+    // alias — see "Trust boundary" under Islands (M2) in `bffless/README.md`
+    // before `targetUrl: alias://` generalises it.
     <ImplContext.Provider value={isLive ? sliceState!.impl : run!.impl}>
       <section className="page">
         <RunHeader

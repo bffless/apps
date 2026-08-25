@@ -354,6 +354,53 @@ describe('the host surface', () => {
     expect(h.iframe.style.height).toBe('200px')
   })
 
+  it('applies a mode set before the bridge connects through ui/initialize, with no unhandled rejection', async () => {
+    // Fix round 4, finding 2: the pane registers a session synchronously, so
+    // `RunPage`'s `display: fullscreen` seed lands while the HTML fetch is
+    // still in flight. Sending `host-context-changed` there would reject with
+    // `Not connected` inside ext-apps, which discards the promise — an
+    // unhandled rejection on every fullscreen island. The mode has to ride the
+    // handshake instead.
+    const rejections: unknown[] = []
+    const onRejection = (err: unknown) => rejections.push(err)
+    process.on('unhandledRejection', onRejection)
+
+    try {
+      let release!: (html: { ok: boolean; status: number; text: string }) => void
+      const pending = new Promise<{ ok: boolean; status: number; text: string }>((resolve) => {
+        release = resolve
+      })
+      const h = makeHarness({
+        fetchText: (() => pending) as unknown as IslandHostDeps['fetchText'],
+      })
+
+      const mounting = h.host.mount(h.iframe, MOUNT)
+      await tick()
+      h.host.setDisplayMode('fullscreen')
+      await tick()
+      await tick()
+      expect(rejections).toEqual([])
+
+      release({ ok: true, status: 200, text: HTML })
+      await h.island.connect()
+      await mounting
+      await tick()
+
+      // It arrived as part of `ui/initialize`, not as a notification.
+      expect(h.island.app.getHostContext()?.displayMode).toBe('fullscreen')
+      expect(h.island.contextChanges).toEqual([])
+      expect(rejections).toEqual([])
+
+      // And the connected path still notifies, from that same mode.
+      h.host.setDisplayMode('inline')
+      await tick()
+      expect(h.island.contextChanges).toEqual([{ displayMode: 'inline' }])
+      expect(rejections).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onRejection)
+    }
+  })
+
   it('setDisplayMode is a no-op when nothing changed, before a mount, and after teardown', async () => {
     const before = makeHarness()
     expect(() => before.host.setDisplayMode('fullscreen')).not.toThrow()

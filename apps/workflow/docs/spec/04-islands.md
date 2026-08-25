@@ -19,7 +19,7 @@ implementation's pipelines as its tools; authors write against the public
 | island finishes the step | `tools/call { name: "workflow.submit", arguments: { outputs } }` — our one host tool for completion |
 | island writes a summary / annotation | `tools/call { name: "workflow.annotate", arguments: { summary?, annotations? } }` |
 | theme, dark mode, size | `ui/notifications/initialized.hostContext` (`theme`, `styles`, `displayMode`, `containerDimensions`), `ui/notifications/size-changed`, `ui/notifications/host-context-changed` |
-| headless run | `hostContext.platform = "web"`, plus `_meta.bffless.headless = true` on `tool-input` (07) |
+| headless run | `hostContext.platform = "web"`, plus `_meta.bffless.headless = true` on `tool-input` (07) — but see below: ext-apps 1.7.5 strips it |
 | step cancelled / run leaves the page | `ui/resource-teardown { reason }` |
 | output viewer (`render: island`) | same file; `tool-input.arguments = { value }`; `workflow.submit` is rejected |
 
@@ -96,7 +96,12 @@ can fix and resubmit.
 When `run.headless`, a `headless: auto` island receives `tool-input` with
 `_meta.bffless.headless = true` and is expected to submit on its own (e.g. accept the AI's
 cuts unchanged). If it has not submitted within its `timeout-minutes` (default 5 in headless),
-the step fails with `HEADLESS_TIMEOUT` (07).
+the step fails with `HEADLESS_TIMEOUT` (07). All of this is **M3**: the M2 harness applies no
+`timeout-minutes` to island steps at all, and the stamp does not arrive — the host sends
+`_meta.bffless.headless` on the wire, but ext-apps 1.7.5's View validates
+`ui/notifications/tool-input` with a schema that **strips unknown keys** before
+`app.ontoolinput`, so an island never sees it. Headless needs another channel (a `headless`
+key inside `arguments`, or `hostContext`) — decided at M3.
 
 ## Later
 

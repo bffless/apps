@@ -16,18 +16,22 @@
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { IslandMountAbandoned } from '../islands/IslandHost'
 import type { IslandDisplayMode, IslandHost, IslandHostDeps, IslandMountArgs } from '../islands/IslandHost'
+import { httpJson } from '../lib/http'
+import { loadWorkflow } from '../lib/runner/definition'
 import type { HttpJson } from '../lib/runner/adapters/pipeline'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, FileRef, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import type { RunStore } from '../lib/runStore'
+import { createRunStore } from '../lib/runStore'
 import type { AppStore } from '../store'
 import { makeStore } from '../store'
 import type { RunnerDeps } from '../store/runnerMiddleware'
-import { runnerControllers } from '../store/runnerMiddleware'
+import { createRegisterFile, runnerControllers } from '../store/runnerMiddleware'
 import { startRun } from '../store/runnerActions'
 import { runClosed } from '../store/runSlice'
 import { pumpUntil, virtualClock } from './helloHarness'
+import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
 
 export { flush, pumpUntil, virtualClock } from './helloHarness'
 
@@ -80,6 +84,56 @@ export const ISLAND_FULLSCREEN_DEF = toDefinition({
   },
   outputs: { choice: '${{ jobs.a.outputs.choice }}' },
 }) as Definition
+
+/**
+ * A waiting form and a loading island **side by side**: two layer-0 jobs, so
+ * the run reaches both at once. The one shape that makes "an island must not
+ * take the pane from a person mid-interaction" observable (fix round 4,
+ * finding 1).
+ */
+export const FORM_AND_ISLAND_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    ask: {
+      steps: [
+        {
+          id: 'confirm',
+          uses: 'form',
+          with: {
+            title: 'Does this look right?',
+            fields: { approved: { type: 'boolean', default: true } },
+            submit: 'Finish',
+          },
+        },
+      ],
+    },
+    pick: {
+      steps: [
+        {
+          id: 'choose',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+    },
+  },
+}) as Definition
+
+export const FORM_KEY: StepKey = stepKey('ask', 0, 'confirm')
+export const PARALLEL_ISLAND_KEY: StepKey = stepKey('pick', 0, 'choose')
+
+// ---------------------------------------------------------------------------
+// The M2 interactive workflow — a real pipeline step *and* an island step
+// ---------------------------------------------------------------------------
+
+export const INTERACTIVE_YAML = interactiveYaml
+export const interactive = loadWorkflow(
+  interactiveYaml,
+  'interactive.workflow.yaml',
+).def as Definition
+export const SAY_KEY: StepKey = stepKey('greet', 0, 'say')
+export const CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
 
 // ---------------------------------------------------------------------------
 // The fake host
@@ -232,7 +286,10 @@ export function islandStore(): { store: AppStore; advance: (ms: number) => Promi
  * middleware has registered the handle and the pane could mount it, but the
  * mount has not settled yet (Decision 11's `running → waiting` seam).
  */
-export async function startIslandRun(def: Definition = ISLAND_DEF): Promise<IslandRun> {
+export async function startIslandRun(
+  def: Definition = ISLAND_DEF,
+  islandKey: StepKey = ISLAND_KEY,
+): Promise<IslandRun> {
   const { store, advance, host, writes } = islandStore()
   store.dispatch(
     startRun({
@@ -245,9 +302,52 @@ export async function startIslandRun(def: Definition = ISLAND_DEF): Promise<Isla
     }),
   )
 
-  await pumpUntil(advance, () => store.getState().run.state?.steps[ISLAND_KEY]?.status === 'running')
+  await pumpUntil(advance, () => store.getState().run.state?.steps[islandKey]?.status === 'running')
 
   return { store, advance, host, writes, runId: store.getState().run.state!.runId }
+}
+
+/**
+ * The M2 `interactive` workflow (docs/spec/examples) against the **real** MSW
+ * backend — its `greet`/`analyze` jobs are pipelines — with the fake island
+ * host injected for `pick/0/choose`. The only harness where a run holds both a
+ * non-island step the user can click and an island step that starts later.
+ *
+ * Pumped only as far as `greet/0/say` existing: the island is still several
+ * jobs away, which is what lets a test select something else first.
+ */
+export async function startInteractiveRun(): Promise<{
+  store: AppStore
+  advance: (ms: number) => Promise<void>
+  host: FakeIslandHost
+  runId: string
+}> {
+  const host = fakeIslandHost()
+  const { clock, advance } = virtualClock()
+  const deps: RunnerDeps = {
+    http: httpJson,
+    clock,
+    runStore: createRunStore(httpJson),
+    registerFile: createRegisterFile(httpJson),
+    islandHost: host.factory,
+  }
+  const store = makeStore(deps)
+  trackedStores.push(store)
+
+  store.dispatch(
+    startRun({
+      impl: 'hello',
+      workflow: 'interactive',
+      def: interactive,
+      yaml: INTERACTIVE_YAML,
+      workflowName: 'Interactive hello',
+      values: { greeting: 'Hello', names: ['world', 'studio'] },
+    }),
+  )
+
+  await pumpUntil(advance, () => store.getState().run.state?.steps[SAY_KEY] !== undefined)
+
+  return { store, advance, host, runId: store.getState().run.state!.runId }
 }
 
 /** Call from `afterEach`: closes every store this module tracked (the runner singletons are global). */

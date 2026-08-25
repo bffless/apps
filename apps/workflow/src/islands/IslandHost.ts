@@ -261,6 +261,17 @@ const CAPABILITIES: McpUiHostCapabilities = {
  * request and the page's `setDisplayMode` — can both be idempotent and cannot
  * ping-pong (the page's answer to a request arrives here as "unchanged").
  *
+ * **Before the bridge connects there is nothing to notify** (fix round 4,
+ * finding 2). A session is registered synchronously by `mount`, so the page can
+ * — and for a `display: fullscreen` island always does — reach this function
+ * while the HTML fetch is still in flight; `setHostContext` would then send a
+ * notification over a transport that does not exist yet, and ext-apps discards
+ * the promise `Protocol.notification()` rejects with `Not connected`, which
+ * surfaces as an unhandled rejection on every fullscreen island. So the
+ * pre-connect path **mutates the very `hostContext` object the bridge was
+ * constructed with** instead: no notification, and the mode rides the
+ * `ui/initialize` response the View is still waiting for.
+ *
  * Entering fullscreen clears the inline height: it is an *inline style*, so a
  * stale `height: 320px` from the last size-changed beats
  * `.island-fullscreen .island-frame { height: 100% }`. Entering inline leaves
@@ -270,8 +281,18 @@ const CAPABILITIES: McpUiHostCapabilities = {
 function applyDisplayMode(current: Session, mode: IslandDisplayMode): boolean {
   if (current.disposed || current.displayMode === mode) return false
   current.displayMode = mode
-  current.hostContext = { ...current.hostContext, displayMode: mode }
-  current.bridge.setHostContext(current.hostContext)
+  if (current.connected) {
+    current.hostContext = { ...current.hostContext, displayMode: mode }
+    try {
+      current.bridge.setHostContext(current.hostContext)
+    } catch {
+      // A bridge torn down between the flag and this call is not the page's
+      // problem: the frame is going away regardless.
+    }
+  } else {
+    // Same object identity the `AppBridge` holds — see `mount`.
+    current.hostContext.displayMode = mode
+  }
   if (mode === 'fullscreen') current.iframe.style.height = ''
   return true
 }
@@ -291,6 +312,8 @@ interface Session {
   iframe: HTMLIFrameElement
   hostContext: McpUiHostContext
   displayMode: IslandDisplayMode
+  /** `bridge.connect` has resolved — i.e. there is a transport to notify over. */
+  connected: boolean
   disposed: boolean
 }
 
@@ -482,11 +505,15 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         containerDimensions: containerDimensions(iframe),
       }
 
+      // The bridge keeps this exact object and answers `ui/initialize` with it,
+      // so a pre-connect `applyDisplayMode` mutation reaches the View through
+      // the handshake rather than through a notification it cannot send yet.
       const current: Session = {
         bridge: new AppBridge(null, HOST_INFO, CAPABILITIES, { hostContext }),
         iframe,
         hostContext,
         displayMode: 'inline',
+        connected: false,
         disposed: false,
       }
       install(current, a)
@@ -531,6 +558,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       // synchronously. Don't rely on that.
       try {
         await current.bridge.connect(makeTransport(iframe))
+        current.connected = true
       } catch (err) {
         await discard(current)
         throw new IslandLoadError(`island ${url}: ${messageOf(err)}`)
