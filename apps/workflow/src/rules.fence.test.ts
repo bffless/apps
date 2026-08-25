@@ -24,7 +24,7 @@ const SURFACE: Record<string, string[]> = {
   ],
   hello: [
     '/hello/echo/post/', '/hello/slow/post/', '/hello/job/get/', '/hello/fail/post/',
-    '/w/hello/[...path]/',
+    '/hello/analyze/post/', '/w/hello/[...path]/',
   ],
 }
 

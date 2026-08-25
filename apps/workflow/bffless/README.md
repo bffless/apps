@@ -1,7 +1,8 @@
 # Workflow harness backend — BFFless proxy rule sets
 
 Two authored sets: `workflow` (run records, lease, files trio — spec 05/06) and, from M1
-Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail).
+Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail, and — from
+M2 Task 6 — analyze; 5/5 hello surface rules).
 
 ## Manual setup (admin panel)
 

@@ -1,8 +1,11 @@
 function handler({ steps }) {
+  const row = steps.query
+  if (!row) return { found: false, missing: true }
   return {
-    id: steps.query.id,
-    status: steps.query.status,
-    result: steps.query.result || null,
-    error: steps.query.error || null,
+    found: true,
+    id: row.id,
+    status: row.status,
+    result: row.result || null,
+    error: row.error || null,
   }
 }

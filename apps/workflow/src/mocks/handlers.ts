@@ -15,6 +15,7 @@ import { toFileRef, toRunRow, toStepRow } from '../lib/coerce'
 import type { ServerStepRow } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
 import { db, nextId, stepRowKey, stepsOf, toRecord } from './db'
+import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 
 const ok = () => HttpResponse.json({ ok: true })
@@ -282,7 +283,9 @@ const hello = [
 
   // The first tick is `pending` and does NOT echo the id — that is what makes
   // the poll's `query: { id: ${{ response.jobId }} }` read the *initial*
-  // response rather than the tick's (01 contexts).
+  // response rather than the tick's (01 contexts). 404 mirrors the real
+  // rule's `notFound` response_handler (condition: steps.shape.missing —
+  // M1 minor a).
   http.get('/api/hello/job', ({ request }) => {
     const id = new URL(request.url).searchParams.get('id') ?? ''
     const job = db.helloJobs.get(id)
@@ -292,9 +295,19 @@ const hello = [
     return HttpResponse.json({ id, status: 'done', result: job.result })
   }),
 
+  // The real rule builds this body via a `function_handler` (`fail.fn.js`), not
+  // string interpolation of `request.body.code` (M1 minor b) — a `code` value
+  // that would break naive JSON-string templating comes back verbatim here too.
   http.post('/api/hello/fail', async ({ request }) => {
     const { code } = await body(request)
-    return HttpResponse.json({ code: String(code ?? 'FAILED'), error: 'fails on purpose' }, { status: 418 })
+    return HttpResponse.json({ code: String(code ?? 'FAIL'), error: 'fails on purpose' }, { status: 418 })
+  }),
+
+  // POST { lines, code? } -> { words, counts, snippet, longest }. Mirrors
+  // `analyze.fn.js` byte-for-byte (see analyze.ts and its parity test).
+  http.post('/api/hello/analyze', async ({ request }) => {
+    const { lines } = await body(request)
+    return HttpResponse.json(analyzeLines(lines))
   }),
 ]
 
