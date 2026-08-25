@@ -47,12 +47,19 @@ const answer = (msg) => {
   if (!entry) return
   pending.delete(msg.id)
   if (msg.error) { entry.reject(new Error(msg.error)); return }
-  const status = typeof msg.status === 'number' ? msg.status : 200
-  const bodiless = status === 204 || status === 205 || status === 304
-  entry.resolve(new Response(bodiless ? null : (msg.body || null), {
-    status: status,
-    headers: msg.headers || [],
-  }))
+  // A Response the page's answer cannot legally build (an out-of-range status,
+  // a malformed header pair) must reject *this* fetch, not throw out of
+  // onmessage where nothing would ever settle the promise.
+  try {
+    const status = typeof msg.status === 'number' ? msg.status : 200
+    const bodiless = status === 204 || status === 205 || status === 304
+    entry.resolve(new Response(bodiless ? null : (msg.body || null), {
+      status: status,
+      headers: msg.headers || [],
+    }))
+  } catch (err) {
+    entry.reject(err instanceof Error ? err : new Error(textOf(err)))
+  }
 }
 
 const run = async (msg) => {

@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFakeWorker, type FakeWorker } from './fakeWorker'
 import { createScriptHost, ScriptError, type ScriptHostDeps, type ScriptRun } from './ScriptHost'
-import type { FromWorker, RpcReqMessage, RunMessage, ToWorker } from './rpc'
+import type { FromWorker, RpcReqMessage, RpcResMessage, RunMessage, ToWorker } from './rpc'
 import { SHIM_SOURCE } from './worker-shim'
 
 const MODULE_TEXT = 'export default async () => ({ n: 1 })'
@@ -165,7 +165,7 @@ describe('createScriptHost', () => {
     // `ctx.files.fetch` was relayed by the *page* — the Worker never fetches.
     expect(h.fetchBytes).toHaveBeenCalledWith(REF.url)
     const answer = worker.received.find((m) => m.t === 'rpc:res')
-    expect(answer).toMatchObject({ id: 1, ok: true, status: 200 })
+    expect(answer).toMatchObject({ id: 1, status: 200 })
     const body = (answer as Extract<ToWorker, { t: 'rpc:res' }>).body
     expect(new TextDecoder().decode(body)).toBe('hi!')
     expect(worker.transfers[worker.received.indexOf(answer!)]).toEqual([body])
@@ -236,22 +236,48 @@ describe('createScriptHost', () => {
     await expect(codeOf(run2)).resolves.toBe('SCRIPT')
   })
 
-  it('refuses to relay a files.fetch that is not a rooted same-origin path', async () => {
-    const offSite: RpcReqMessage = {
+  // The final whole-branch review (I1/I2): the gate is the file-serve *route*,
+  // not "starts with a slash" — `/\\host/x` resolves off-site, and a plain
+  // same-origin path would let a script read the run API (or another
+  // implementation's bundle) with the member's session cookie.
+  it.each([
+    'https://evil.example/secret',
+    '//evil.example/x',
+    '/\\evil.example/x',
+    '\t/\\evil.example/x',
+    '/api/workflow/run?id=1',
+    '/w/other/scripts/steal.js',
+  ])('refuses to relay a files.fetch for %j', async (url) => {
+    const offRoute: RpcReqMessage = {
       t: 'rpc:req',
       id: 7,
       op: 'files.fetch',
-      ref: { ...REF, url: 'https://evil.example/secret' },
+      ref: { ...REF, url },
     }
     const worker = createFakeWorker({
-      run: () => [offSite],
+      run: () => [offRoute],
       rpcRes: (msg) => [{ t: 'error', message: msg.error ?? 'no error' }],
     })
     const h = makeHarness(worker)
 
     await expect(codeOf(start(h))).resolves.toBe('SCRIPT')
     expect(h.fetchBytes).not.toHaveBeenCalled()
-    expect(worker.received.find((m) => m.t === 'rpc:res')).toMatchObject({ id: 7, ok: false })
+    const answer = worker.received.find((m) => m.t === 'rpc:res')
+    expect(answer).toMatchObject({ id: 7 })
+    expect((answer as RpcResMessage).error).toContain('/api/uploads/')
+  })
+
+  it('relays a files.fetch for a serve-route url', async () => {
+    const worker = createFakeWorker({
+      run: () => [
+        { t: 'rpc:req', id: 3, op: 'files.fetch', ref: { ...REF, url: '/api/uploads/a/b.json' } },
+      ],
+      rpcRes: () => [{ t: 'done', outputs: {} }],
+    })
+    const h = makeHarness(worker)
+
+    await expect(start(h).outputs).resolves.toEqual({})
+    expect(h.fetchBytes).toHaveBeenCalledWith('/api/uploads/a/b.json')
   })
 
   it('answers a failed relay with an error rather than a body', async () => {
@@ -267,10 +293,17 @@ describe('createScriptHost', () => {
 
     const err = await failure(start(h))
     expect(err.message).toContain('connection reset')
-    expect(worker.received.find((m) => m.t === 'rpc:res')).toMatchObject({ id: 2, ok: false })
+    expect(worker.received.find((m) => m.t === 'rpc:res')).toMatchObject({ id: 2 })
   })
 
-  it('aborts: posts abort, terminates and rejects AbortError', async () => {
+  /**
+   * The final whole-branch review (I3): terminating in the same turn as the
+   * `abort` post meant `ctx.signal` never observably fired — the Worker was
+   * gone before the message was delivered. The rejection stays immediate; the
+   * teardown is one macrotask later, which is the window a module's (synchronous,
+   * best-effort) `ctx.signal` handler runs in.
+   */
+  it('aborts: posts abort, rejects AbortError at once, and terminates one macrotask later', async () => {
     const worker = createFakeWorker({ run: () => [{ t: 'log', line: 'working' }] })
     const h = makeHarness(worker)
     const controller = new AbortController()
@@ -281,9 +314,29 @@ describe('createScriptHost', () => {
 
     const err = await failure(run)
     expect(err.name).toBe('AbortError')
+    // Delivered *before* the Worker is torn down — the whole point of the defer.
     expect(worker.received.at(-1)).toEqual({ t: 'abort' })
+    expect(worker.terminated).toBe(0)
+    expect(objectUrls.some((o) => o.revoked)).toBe(false)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(worker.terminated).toBe(1)
     expect(objectUrls.every((o) => o.revoked)).toBe(true)
+  })
+
+  it('does not terminate twice when the signal aborts a run that is already aborting', async () => {
+    const worker = createFakeWorker({ run: () => [{ t: 'log', line: 'working' }] })
+    const h = makeHarness(worker)
+    const controller = new AbortController()
+
+    const run = start(h, { signal: controller.signal })
+    await vi.waitFor(() => expect(h.onLog).toHaveBeenCalled())
+    run.abort()
+    controller.abort()
+
+    await expect(run.outputs).rejects.toMatchObject({ name: 'AbortError' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(worker.terminated).toBe(1)
   })
 
   it('aborts on request, and never spawns for an already-aborted signal', async () => {
@@ -293,6 +346,9 @@ describe('createScriptHost', () => {
     await vi.waitFor(() => expect(h.onLog).toHaveBeenCalled())
     run.abort()
     await expect(run.outputs).rejects.toMatchObject({ name: 'AbortError' })
+    expect(worker.terminated).toBe(0)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(worker.terminated).toBe(1)
 
     const pre = makeHarness(createFakeWorker())
     const aborted = AbortSignal.abort()

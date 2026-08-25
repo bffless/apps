@@ -114,10 +114,10 @@ test('interactive hello runs an island step end to end against the mock backend'
     'href',
     /\/poster\.svg\?download=1$/,
   )
-  // Not the value itself — it is ~600 KB. The array's own length is what the
-  // `json` viewer's root node reports, and only a value that is really there
-  // has one.
-  await expect(outputsAgain.locator('[data-output="card/0/draw.big"]')).toContainText('[20000]')
+  // Not the value itself — it is ~400 KB, and the `json` viewer renders only
+  // its first 200 entries. The array's own length is what the viewer's root
+  // node reports, and only a value that is really there has one.
+  await expect(outputsAgain.locator('[data-output="card/0/draw.big"]')).toContainText('[12000]')
 })
 
 /**

@@ -8,8 +8,9 @@
  * spawned from. The shim dynamically imports the module and builds its `ctx`,
  * so every capability the module has is one this host answers over
  * `postMessage`: `ctx.log`, `ctx.annotate`, and `ctx.files.fetch` — the only
- * network any of this performs, and only ever for a `/`-rooted same-origin
- * path (Task 23's `isSameOriginUrl` will replace the check here).
+ * network any of this performs, and only ever for a url on the harness's own
+ * file-serve route (`lib/url`'s `isServeUrl`): a script, like an island, may
+ * not reach any other route with the member's cookies.
  *
  * This module owns the *effects*: the fetch, the two object URLs, the Worker,
  * the RPC relay, cancellation. Everything decidable from plain data — where a
@@ -19,6 +20,7 @@
  * never import this file.
  */
 import { resolveScriptSrc } from '../lib/runner/adapters/script'
+import { isServeUrl } from '../lib/url'
 import type { FileRef } from '../lib/runner/types'
 import type { FromWorker, RpcReqMessage, ToWorker, WorkerLike } from './rpc'
 import { SHIM_SOURCE } from './worker-shim'
@@ -111,20 +113,16 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/** A message off the wire is `unknown` in practice: absent and `''` mean the same thing. */
+function textOr(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value !== '' ? value : fallback
+}
+
 /** An abort is not a failure — the caller distinguishes cancel from timeout. */
 function abortError(message: string): Error {
   const err = new Error(message)
   err.name = 'AbortError'
   return err
-}
-
-/**
- * Until Task 23's `isSameOriginUrl`: a File ref's `url` must be a rooted path
- * on this origin. `//host/x` is rejected as well as `https://…` — it is
- * protocol-relative, i.e. off-site with the scheme left out.
- */
-function isRootedPath(url: unknown): url is string {
-  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
 }
 
 function objectUrl(source: string): string {
@@ -159,9 +157,14 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
 
       const onSignalAbort = () => abort()
 
-      /** Terminate, revoke, unsubscribe — every settle path goes through here. */
-      const cleanup = () => {
-        settled = true
+      /**
+       * Terminate, revoke, unsubscribe. Idempotent, because the abort path
+       * defers it by a macrotask and a second settle may land in between.
+       */
+      let disposed = false
+      const dispose = () => {
+        if (disposed) return
+        disposed = true
         a.signal.removeEventListener('abort', onSignalAbort)
         if (worker) {
           // Detached first: a Worker that posts on its way out must not reach
@@ -172,6 +175,12 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           worker = null
         }
         for (const revoke of urls.splice(0)) URL.revokeObjectURL(revoke)
+      }
+
+      /** Every settle path goes through here; only `abort` defers the teardown. */
+      const cleanup = () => {
+        settled = true
+        dispose()
       }
 
       const finish = (value: unknown) => {
@@ -188,14 +197,20 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
 
       function abort(): void {
         if (settled) return
-        // Best effort, and before `cleanup` terminates: a module that installed
-        // an `ctx.signal` handler gets the chance to unwind.
         try {
           worker?.postMessage({ t: 'abort' } satisfies ToWorker)
         } catch {
           // A Worker already gone is exactly the state we wanted.
         }
-        fail(abortError(`script ${url}: cancelled`))
+        // The rejection is immediate — the caller must not wait on a cancelled
+        // step — but the teardown is deferred by one macrotask, because
+        // `terminate()` in this same turn would kill the Worker before the
+        // `abort` message above was ever delivered and `ctx.signal` would never
+        // observably fire. `settled` is already true, so nothing the Worker
+        // posts in that window reaches the run.
+        settled = true
+        setTimeout(dispose, 0)
+        rejectOutputs(abortError(`script ${url}: cancelled`))
       }
 
       const send = (msg: ToWorker, transfer?: Transferable[]) => {
@@ -208,19 +223,20 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
 
       /**
        * `ctx.files.fetch`: the page performs the GET the Worker cannot, and
-       * only for a rooted same-origin path. A refusal and a failed fetch both
+       * only for a url on the file-serve route — same-origin is not enough,
+       * or a script could read the run API or another implementation's bundle
+       * with the member's session cookie. A refusal and a failed fetch both
        * come back as `error` (the shim rejects); a non-2xx *answer* comes back
        * as a body, because a 404 is a legitimate `Response` for a script to
        * branch on.
        */
       const relay = async (req: RpcReqMessage) => {
         const refUrl: unknown = (req.ref as Partial<FileRef> | undefined)?.url
-        if (!isRootedPath(refUrl)) {
+        if (!isServeUrl(refUrl)) {
           send({
             t: 'rpc:res',
             id: req.id,
-            ok: false,
-            error: `files.fetch ${String(refUrl)}: only same-origin, /-rooted URLs are readable from a script`,
+            error: `files.fetch ${String(refUrl)}: only /api/uploads/ urls can be fetched from a script`,
           })
           return
         }
@@ -232,7 +248,6 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
             {
               t: 'rpc:res',
               id: req.id,
-              ok: res.ok,
               status: res.status,
               headers: res.headers,
               body: res.body,
@@ -244,7 +259,6 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           send({
             t: 'rpc:res',
             id: req.id,
-            ok: false,
             error: `files.fetch ${refUrl}: ${messageOf(err)}`,
           })
         }
@@ -269,8 +283,8 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           case 'error':
             fail(
               new ScriptError(
-                msg.code !== undefined && msg.code !== '' ? msg.code : 'SCRIPT',
-                `script ${url}: ${msg.message !== '' ? msg.message : 'the module failed'}`,
+                textOr(msg.code, 'SCRIPT'),
+                `script ${url}: ${textOr(msg.message, 'the module failed')}`,
               ),
             )
         }
@@ -297,13 +311,16 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
         }
 
         // Two object URLs: the module, and the shim the Worker is spawned from.
-        // Both are revoked by `cleanup`, whichever way the run ends.
-        const moduleUrl = objectUrl(module.text)
-        urls.push(moduleUrl)
-        const shimUrl = objectUrl(SHIM_SOURCE)
-        urls.push(shimUrl)
-
+        // Both are revoked by `dispose`, whichever way the run ends. Minting
+        // one can itself throw (no `URL.createObjectURL`, a blocked Blob), and
+        // inside this floating async that would be an unhandled rejection
+        // rather than a step failure — so it is caught with the spawn.
+        let moduleUrl: string
         try {
+          moduleUrl = objectUrl(module.text)
+          urls.push(moduleUrl)
+          const shimUrl = objectUrl(SHIM_SOURCE)
+          urls.push(shimUrl)
           worker = spawn(shimUrl)
         } catch (err) {
           fail(new ScriptError('SCRIPT_LOAD', `script ${url}: ${messageOf(err)}`))
@@ -315,7 +332,7 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           fail(
             new ScriptError(
               progressed ? 'SCRIPT' : 'SCRIPT_LOAD',
-              `script ${url}: ${event.message !== '' ? event.message : 'the worker failed'}`,
+              `script ${url}: ${textOr(event.message, 'the worker failed')}`,
             ),
           )
         }

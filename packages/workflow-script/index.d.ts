@@ -29,7 +29,10 @@ export interface ScriptContext {
   annotate(
     a: { level: 'notice' | 'warning' | 'error'; message: string; title?: string } | { summary: string },
   ): void
-  /** Cancel / timeout. */
+  /**
+   * Aborts on cancel / `timeout-minutes`; the Worker is terminated on the next
+   * macrotask, so handlers must be synchronous and best-effort.
+   */
   signal: AbortSignal
 }
 

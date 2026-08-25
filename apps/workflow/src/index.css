@@ -436,6 +436,14 @@ body {
   color: var(--color-ink-mute);
 }
 
+/* The tree renders at most MAX_ENTRIES children per node; this is the tail. */
+.json-more {
+  color: var(--color-ink-mute);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
 .markdown-view {
   font-size: 0.9375rem;
   line-height: 1.5;

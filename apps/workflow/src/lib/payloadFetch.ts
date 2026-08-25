@@ -5,7 +5,8 @@
  * replace, never how to reach the bytes. This module is the `fetchJson` it is
  * handed on the read path (`store/workflowApi.ts`'s `getRun`) — a plain
  * same-origin GET of the ref's serve url, which is CE's `file_serve_handler`
- * route (`/api/uploads/…`, see `coerce.ts`'s `fileUrl`).
+ * route (`/api/uploads/…`, see `coerce.ts`'s `fileUrl`) — and nothing else:
+ * `lib/url`'s `isServeUrl` refuses any other url outright.
  *
  * It **never rejects.** A run record is read to be *looked at*: one payload
  * that 404s, 500s or was garbage-collected out of the bucket must not turn the
@@ -17,6 +18,7 @@
  */
 import type { UnavailablePayload } from './runner/payload'
 import type { FileRef } from './runner/types'
+import { isServeUrl } from './url'
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -28,6 +30,10 @@ function unavailable(ref: FileRef, error: string): UnavailablePayload {
 
 /** Fetch the JSON a `{ $file }` payload points to, or the sentinel saying why not. */
 export async function fetchPayload(ref: FileRef): Promise<unknown> {
+  // The ref comes off a run row any authenticated member can write, so the url
+  // is gated to the file-serve route before it is fetched with their cookie —
+  // the same rule a `script` step's `ctx.files.fetch` is held to.
+  if (!isServeUrl(ref.url)) return unavailable(ref, 'url refused')
   try {
     const res = await fetch(ref.url, { credentials: 'same-origin' })
     if (!res.ok) return unavailable(ref, `the payload request answered ${res.status}`)

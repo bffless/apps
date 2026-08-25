@@ -63,7 +63,7 @@ export const SCRIPT_RUN_BIG_MARKER = 'hydrated-from-payload'
 
 /**
  * Deliberately *small*: what makes this a payload is the `{"$file"}` pointer in
- * the row, not the size of what it points at, and a seeded 600 KB array would
+ * the row, not the size of what it points at, and a seeded 400 KB array would
  * only make every read of this fixture slower.
  */
 const BIG_VALUE = {

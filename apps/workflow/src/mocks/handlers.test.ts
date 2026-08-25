@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { db, seedFinishedRun } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
+import { PAYLOAD_BUDGET_BYTES } from '../lib/runner/payload'
 
 const json = (path: string, body: unknown) =>
   fetch(path, {
@@ -158,6 +159,35 @@ describe('the script module route', () => {
   it('lists the staged scripts in the discovery index', async () => {
     const index = await (await fetch('/w/hello/.bffless/workflows/index.json')).json()
     expect(index.scripts).toEqual(['scripts/poster-card.js'])
+  })
+
+  /**
+   * `poster-card`'s `big` output exists to push the step's outputs over the
+   * `{"$file"}` budget (Decision 5) — the live `interactive` run and its e2e
+   * assertion both depend on the offload actually firing. The count was cut
+   * from 20 000 to 12 000 (the final whole-branch review's I4: ~100k DOM nodes
+   * on the run page), so the budget is now pinned here rather than assumed.
+   */
+  it('returns a `big` output that is still over the payload budget', async () => {
+    // Loaded through `import.meta.glob`, the way `handlers.ts` reads the same
+    // directory: the script is plain JS with no declaration file, so a static
+    // import specifier would not type-check.
+    const modules = import.meta.glob('../../hello/scripts/poster-card.js') as Record<
+      string,
+      () => Promise<{ default: (ctx: unknown) => Promise<{ big: unknown[] }> }>
+    >
+    const load = Object.values(modules)[0]
+    const outputs = await (await load()).default({
+      inputs: { line: 'x', counts: [] },
+      log: () => {},
+      annotate: () => {},
+      files: { fetch: () => Promise.reject(new Error('not used')) },
+      signal: new AbortController().signal,
+    })
+
+    expect(outputs.big).toHaveLength(12000)
+    // The worst case: a one-character line. Anything real is far larger.
+    expect(JSON.stringify(outputs.big).length).toBeGreaterThan(PAYLOAD_BUDGET_BYTES)
   })
 })
 

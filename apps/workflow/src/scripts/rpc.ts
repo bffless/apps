@@ -18,9 +18,9 @@ export type ToWorker =
   | {
       t: 'rpc:res'
       id: number
-      ok: boolean
       body?: ArrayBuffer
       headers?: [string, string][]
+      /** Absent means 200: the shim rebuilds a `Response` from `status`, not from an `ok` flag. */
       status?: number
       /** Set when the page refused or could not perform the request: the shim rejects. */
       error?: string

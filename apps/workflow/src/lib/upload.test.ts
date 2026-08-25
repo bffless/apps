@@ -7,7 +7,7 @@
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '../mocks/server'
-import { uploadBlob, uploadFile } from './upload'
+import { putFile, uploadBlob, uploadFile } from './upload'
 
 function file(name = 'photo.png', bytes = 'hello-bytes', type = 'image/png'): File {
   return new File([bytes], name, { type })
@@ -113,5 +113,29 @@ describe('uploadFile — reauth', () => {
 
     expect(refreshes).toBe(1)
     expect(ref.name).toBe('photo.png')
+  })
+})
+
+/**
+ * The final whole-branch review (I6): `putFile` is reachable with an
+ * already-aborted signal now that a script's Blob outputs upload under the
+ * run's abort signal (`scriptLaunch` / the `{"$file"}` offload). Calling
+ * `xhr.abort()` on an XHR that was never `send()`-ed fires no `abort` event, so
+ * the promise used to hang forever.
+ */
+describe('putFile', () => {
+  it('rejects AbortError, without issuing a PUT, when the signal is already aborted', async () => {
+    let puts = 0
+    server.use(
+      http.put('/mock-upload/*', () => {
+        puts += 1
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    await expect(
+      putFile('/mock-upload/workflows/hello/hello/inputs/x.png', new Blob(['x']), AbortSignal.abort(), undefined),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(puts).toBe(0)
   })
 })

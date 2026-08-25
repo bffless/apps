@@ -67,8 +67,14 @@ async function prepare(a: UploadBlobArgs): Promise<Prepared> {
   return toPrepared(res.body)
 }
 
-/** The direct-to-bucket PUT. Plain `fetch` cannot report upload progress. */
-function putFile(
+/**
+ * The direct-to-bucket PUT. Plain `fetch` cannot report upload progress.
+ *
+ * Exported as a test seam: the already-aborted branch below is unreachable
+ * through `uploadBlob` (`prepare` would have rejected on the same signal
+ * first), and it is the branch that used to hang.
+ */
+export function putFile(
   url: string,
   blob: Blob,
   signal: AbortSignal | undefined,
@@ -100,7 +106,11 @@ function putFile(
 
     if (signal) {
       if (signal.aborted) {
-        xhr.abort()
+        // Not `xhr.abort()`: an XHR that was never `send()`-ed fires no `abort`
+        // event, so the listener above would never run and this promise would
+        // never settle. Reachable since a script's Blob outputs upload under
+        // the run's abort signal.
+        reject(new DOMException('The upload was aborted', 'AbortError'))
         return
       }
       signal.addEventListener('abort', onAbort)
