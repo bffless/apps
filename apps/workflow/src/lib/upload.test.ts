@@ -7,7 +7,7 @@
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '../mocks/server'
-import { uploadFile } from './upload'
+import { uploadBlob, uploadFile } from './upload'
 
 function file(name = 'photo.png', bytes = 'hello-bytes', type = 'image/png'): File {
   return new File([bytes], name, { type })
@@ -77,5 +77,41 @@ describe('uploadFile', () => {
     await expect(uploadFile({ impl: 'hello', workflow: 'hello', scope: 'inputs', file: file() })).rejects.toThrow(
       /register/,
     )
+  })
+})
+
+describe('uploadBlob', () => {
+  it('prepares, PUTs, registers and returns the File ref for a bare Blob under a step scope', async () => {
+    const ref = await uploadBlob({
+      impl: 'hello',
+      workflow: 'hello',
+      scope: 'runs/run_1/bundle/0/zip',
+      blob: new Blob(['x'], { type: 'application/zip' }),
+      name: 'out.zip',
+    })
+
+    expect(ref.name).toBe('out.zip')
+    expect(ref.contentType).toBe('application/zip')
+    expect(ref.path).toBe('workflows/hello/hello/runs/run_1/bundle/0/zip/out.zip')
+  })
+})
+
+// M1 minor (task 9 brief): a kickoff upload after an expired session refreshed
+// nothing — `prepare`/`register` now go through `httpJsonWithReauth`.
+describe('uploadFile — reauth', () => {
+  it('refreshes the session once when prepare answers 401, then retries and succeeds', async () => {
+    let refreshes = 0
+    server.use(
+      http.post('/api/workflow/files/prepare', () => new HttpResponse(null, { status: 401 }), { once: true }),
+      http.post('/api/auth/session/refresh', () => {
+        refreshes += 1
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    const ref = await uploadFile({ impl: 'hello', workflow: 'hello', scope: 'inputs', file: file() })
+
+    expect(refreshes).toBe(1)
+    expect(ref.name).toBe('photo.png')
   })
 })

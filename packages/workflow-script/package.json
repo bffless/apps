@@ -1,0 +1,8 @@
+{
+  "name": "@bffless/workflow-script",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Types for the `script` step module contract (spec apps/workflow/docs/spec/03-step-kinds.md) — zero runtime.",
+  "types": "./index.d.ts",
+  "files": ["index.d.ts"]
+}
