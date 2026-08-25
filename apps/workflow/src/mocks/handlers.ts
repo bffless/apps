@@ -61,6 +61,23 @@ const ISLAND_HTML: Record<string, string> = Object.fromEntries(
   ).map(([path, html]) => [path.split('/').pop()!, html]),
 )
 
+/**
+ * The scripts, read straight out of `hello/scripts/` — the **source**, not
+ * `hello-dist/`: the stager copies a script verbatim (a Worker fetches it as a
+ * module, so there is no build step to mirror), which makes the source file
+ * the staged bytes. Unlike the islands above, this glob is therefore populated
+ * whether or not `stage` has run.
+ */
+const SCRIPT_SOURCE: Record<string, string> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob('../../hello/scripts/*.js', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>,
+  ).map(([path, source]) => [path.split('/').pop()!, source]),
+)
+
 function definitionOf(file: string) {
   const def = loadWorkflow(HELLO_WORKFLOWS[file]!, file).def
   if (!def) throw new Error(`mock handlers: ${file} no longer parses`)
@@ -95,7 +112,7 @@ export const HELLO_INDEX = {
   // session lists no islands rather than two that would 404. Glob order (by
   // path), not the stager's listing order — the parity test compares sets.
   islands: Object.keys(ISLAND_HTML).sort().map((name) => `islands/${name}`),
-  scripts: [],
+  scripts: Object.keys(SCRIPT_SOURCE).sort().map((name) => `scripts/${name}`),
 }
 
 const discovery = [
@@ -122,6 +139,17 @@ const discovery = [
     return html === undefined
       ? new HttpResponse(null, { status: 404 })
       : HttpResponse.text(html, { headers: { 'content-type': 'text/html' } })
+  }),
+
+  // The script modules, served the way the bundle alias serves them: the
+  // harness fetches this with the member's session and turns the text into a
+  // Blob URL the Worker imports (03), so the response is JavaScript — an HTML
+  // error page with a 200 would be imported as a module and fail obscurely.
+  http.get('/w/:alias/scripts/:name', ({ params }) => {
+    const source = params.alias === 'hello' ? SCRIPT_SOURCE[String(params.name)] : undefined
+    return source === undefined
+      ? new HttpResponse(null, { status: 404 })
+      : HttpResponse.text(source, { headers: { 'content-type': 'text/javascript' } })
   }),
 ]
 

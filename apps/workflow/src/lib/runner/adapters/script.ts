@@ -64,6 +64,27 @@ export function resolveScriptSrc(impl: string, src: string): string {
   return resolveSrc(impl, src, 'script')
 }
 
+/**
+ * `ctx.annotate`'s argument, on the shape `annotateEvent` validates.
+ *
+ * A script's `ctx.annotate` takes **one** annotation — 03 and
+ * `@bffless/workflow-script`: `{ level, message, title? } | { summary }` —
+ * where an island's `workflow.annotate` *tool* takes the row's own shape
+ * (`{ annotations: [...], summary }`). `annotateEvent` (island.ts) validates
+ * the latter and is deliberately the only validator either path has, so the
+ * single annotation is lifted into it here rather than a second set of rules
+ * being written for scripts. Anything already in the row shape, or nothing
+ * recognizable at all, is passed straight through for `annotateEvent` to
+ * accept or refuse — a script that sends nonsense must get the same message an
+ * island would.
+ */
+export function scriptAnnotateArgs(args: unknown): unknown {
+  if (!isPlainObject(args)) return args
+  if ('annotations' in args) return args
+  if ('level' in args || 'message' in args || 'title' in args) return { annotations: [args] }
+  return args
+}
+
 // ---------------------------------------------------------------------------
 // Output coercion (03/06) — Blob/File → upload, string → registerFile
 // ---------------------------------------------------------------------------

@@ -3,7 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Definition, FileRef, RunState, Step, StepState } from '../types'
 import { stepKey } from '../types'
 import { OutputTypeError } from '../outputs'
-import { blobFileName, coerceScriptOutputs, resolveScriptSrc, scriptInputs } from './script'
+import {
+  blobFileName,
+  coerceScriptOutputs,
+  resolveScriptSrc,
+  scriptAnnotateArgs,
+  scriptInputs,
+} from './script'
 
 // ---------------------------------------------------------------------------
 // Fixture — one job, one script step with an expression `with` key and two
@@ -250,5 +256,26 @@ describe('resolveScriptSrc', () => {
     for (const src of ['../other/steal.js', '/w/other/steal.js', 'https://evil.example/x.js', '/api/hello/x']) {
       expect(() => resolveScriptSrc('hello', src)).toThrow(/^script src /)
     }
+  })
+})
+
+describe('scriptAnnotateArgs', () => {
+  it('lifts the module contract\'s single annotation into the row shape', () => {
+    expect(scriptAnnotateArgs({ level: 'notice', message: 'card drawn' })).toEqual({
+      annotations: [{ level: 'notice', message: 'card drawn' }],
+    })
+    expect(scriptAnnotateArgs({ level: 'warning', message: 'slow', title: 'Render' })).toEqual({
+      annotations: [{ level: 'warning', message: 'slow', title: 'Render' }],
+    })
+  })
+
+  it('passes a summary-only call, the row shape and nonsense straight through', () => {
+    // `annotateEvent` is the only validator either path has — it must be the
+    // one that answers these, not a second set of rules here.
+    expect(scriptAnnotateArgs({ summary: 'half way' })).toEqual({ summary: 'half way' })
+    expect(scriptAnnotateArgs({ annotations: 'not a list' })).toEqual({ annotations: 'not a list' })
+    expect(scriptAnnotateArgs({})).toEqual({})
+    expect(scriptAnnotateArgs('nope')).toBe('nope')
+    expect(scriptAnnotateArgs(null)).toBe(null)
   })
 })

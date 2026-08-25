@@ -141,6 +141,26 @@ describe('the files trio', () => {
   })
 })
 
+describe('the script module route', () => {
+  it('serves a bundle script as JavaScript, and 404s anything else', async () => {
+    const res = await fetch('/w/hello/scripts/poster-card.js')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/javascript')
+    // The text the harness turns into a Blob URL: a module with a default
+    // export, not an HTML error page answered with a 200.
+    expect(await res.text()).toContain('export default async function run')
+
+    expect((await fetch('/w/hello/scripts/nope.js')).status).toBe(404)
+    // Only `hello` publishes a bundle — another alias is an ordinary deploy.
+    expect((await fetch('/w/workflow/scripts/poster-card.js')).status).toBe(404)
+  })
+
+  it('lists the staged scripts in the discovery index', async () => {
+    const index = await (await fetch('/w/hello/.bffless/workflows/index.json')).json()
+    expect(index.scripts).toEqual(['scripts/poster-card.js'])
+  })
+})
+
 describe('the hello pipelines', () => {
   it('echoes, and shouts when asked', async () => {
     const plain = await (await json('/api/hello/echo', { text: 'Hello, world!' })).json()

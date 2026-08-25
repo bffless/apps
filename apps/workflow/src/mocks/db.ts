@@ -5,6 +5,7 @@
  */
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import { FINISHED_RUN } from './fixtures/finishedRun'
+import { SCRIPT_RUN } from './fixtures/scriptRun'
 
 export interface MockFile {
   bytes: Uint8Array
@@ -68,10 +69,27 @@ export function stepsOf(runId: string): ServerStepRow[] {
   return [...db.steps.values()].filter((row) => row.runId === runId)
 }
 
-/** Load the completed hello run (see `fixtures/finishedRun.ts`). */
-export function seedFinishedRun(): void {
-  db.runs.set(FINISHED_RUN.run.runId, { ...FINISHED_RUN.run, _id: nextId() })
-  for (const step of FINISHED_RUN.steps) {
+/** Load one recorded run's rows — the shared half of the two seeds below. */
+function seedRun(record: { run: ServerRunRow; steps: ServerStepRow[] }): void {
+  db.runs.set(record.run.runId, { ...record.run, _id: nextId() })
+  for (const step of record.steps) {
     db.steps.set(stepRowKey(step.runId, step.key), { ...step, _id: nextId() })
   }
+}
+
+/** Load the completed hello run (see `fixtures/finishedRun.ts`). */
+export function seedFinishedRun(): void {
+  seedRun(FINISHED_RUN)
+}
+
+/**
+ * Load the completed `interactive` run whose script step's `big` output is a
+ * persisted `{"$file"}` pointer (see `fixtures/scriptRun.ts`). The bytes it
+ * points at are seeded separately, by whoever owns `db.files` for the session
+ * (`mocks/browser.ts` in mock dev) — a row can be read without them, and the
+ * page then shows the "payload unavailable" chip, which is a state worth being
+ * able to seed on purpose.
+ */
+export function seedScriptRun(): void {
+  seedRun(SCRIPT_RUN)
 }

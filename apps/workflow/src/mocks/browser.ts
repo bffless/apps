@@ -1,7 +1,8 @@
 /** The dev worker; started from `main.tsx` when the master switch is on. */
 import { setupWorker } from 'msw/browser'
-import { db, seedFinishedRun } from './db'
+import { db, seedFinishedRun, seedScriptRun } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
+import { SCRIPT_RUN_FILES } from './fixtures/scriptRun'
 import { handlers } from './handlers'
 
 export const worker = setupWorker(...handlers)
@@ -24,10 +25,28 @@ function seedPoster(): void {
 }
 
 /**
- * Mock dev starts with one completed `hello` run already on the books, so Past
- * runs and the run page are browsable the moment the worker is up. Tests seed
- * per case instead (`mocks/server.ts` stays empty), because a fixture that is
- * always there is a fixture no test can prove it needs.
+ * The `interactive` run's objects: the poster its script step returned, and the
+ * JSON its offloaded `big` output points at. Text, not base64 — an SVG and a
+ * JSON document are both source, and seeding them as bytes keeps the serve
+ * route (`GET /api/uploads/*`) the only way either is read back.
+ */
+function seedScriptFiles(): void {
+  const encoder = new TextEncoder()
+  for (const file of SCRIPT_RUN_FILES) {
+    db.files.set(file.path, { bytes: encoder.encode(file.text), contentType: file.contentType })
+  }
+}
+
+/**
+ * Mock dev starts with two completed runs already on the books, so Past runs
+ * and the run page are browsable the moment the worker is up: the M1 `hello`
+ * run, and the `interactive` one whose script step left a `{"$file"}` payload
+ * behind (the only way to read one back — the db is page memory, so a live
+ * run's own rows never survive a reload). Tests seed per case instead
+ * (`mocks/server.ts` stays empty), because a fixture that is always there is a
+ * fixture no test can prove it needs.
  */
 seedFinishedRun()
 seedPoster()
+seedScriptRun()
+seedScriptFiles()

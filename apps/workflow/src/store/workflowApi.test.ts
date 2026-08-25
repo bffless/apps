@@ -40,7 +40,7 @@ describe('discover', () => {
         name: 'Interactive hello',
         description: 'Exercises every interactive feature of the harness (M2) — grows per phase.',
         inputs: 2,
-        jobs: 3,
+        jobs: 4,
         headlessSafe: true,
       },
     ])

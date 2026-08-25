@@ -307,6 +307,20 @@ describe('script steps — ctx.log and ctx.annotate', () => {
     ])
   })
 
+  it('lands the module contract\'s single-annotation `ctx.annotate` too', async () => {
+    // What a real script sends (03 / `@bffless/workflow-script`): one
+    // annotation, not the row's `{ annotations: [...] }` shape.
+    const { store, host, runId } = await startScriptRun()
+
+    host.deps!.onAnnotate({ level: 'notice', message: 'card drawn' })
+    await flush()
+
+    expect(store.getState().run.state!.steps[SCRIPT_KEY].annotations).toEqual([
+      { level: 'notice', message: 'card drawn' },
+    ])
+    expect(stepRow(runId)!.annotations).toEqual([{ level: 'notice', message: 'card drawn' }])
+  })
+
   it('reports a rejected annotate on the log rather than throwing into the module', async () => {
     const { host, runId } = await startScriptRun()
 

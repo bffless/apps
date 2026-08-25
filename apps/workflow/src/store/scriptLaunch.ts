@@ -24,6 +24,7 @@ import type { Clock } from '../lib/runner/adapters/pipeline'
 import { succeededEvent } from '../lib/runner/adapters/declared'
 import {
   coerceScriptOutputs,
+  scriptAnnotateArgs,
   scriptInputs,
   type ScriptStepArgs,
 } from '../lib/runner/adapters/script'
@@ -164,7 +165,8 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
       // The budget is per step, so the call is judged against what the row
       // already holds (apps#370).
       const existing = a.getRunState()?.steps[a.key]?.annotations ?? []
-      const event = annotateEvent(a.key, args, now(), existing)
+      // `ctx.annotate` takes one annotation; the event takes the row's shape.
+      const event = annotateEvent(a.key, scriptAnnotateArgs(args), now(), existing)
       if ('error' in event) {
         // A refused annotate is the module's mistake, not the step's failure:
         // it is reported where the module's own output goes, and the script
