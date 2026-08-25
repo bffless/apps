@@ -27,6 +27,19 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
 - The `/w/hello/[...path]` forwarding rule bakes `targetUrl: https://hello.j5s.dev` — edit it
   for a different install domain (CE follow-up `targetUrl: alias://hello` removes this).
 
+### Islands (M2)
+
+Island HTML is served straight out of the hello bundle at `/w/hello/islands/*.html` (the
+same forwarder as the workflow YAMLs) and injected verbatim into a sandboxed
+`<iframe sandbox="allow-scripts">` `srcdoc` host — an opaque origin, so no cookies, no
+storage, no same-origin fetch (Decision 9); the harness never parses, sanitises or rewrites
+the HTML. Tool names between the island and the host are dot-canonical, slash-tolerant
+(Decision 1): `workflow.submit` and `workflow.annotate` are the two host tools every island
+gets, and pipelines-as-tools are restricted to the implementation's own `/api/<impl>/`
+namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
+addition — and the staged bundle now carries `islands/*.html` (`pick-line.html`,
+`line-viewer.html`) alongside `index.html` and the two workflow YAMLs.
+
 ## First-success checkpoint
 
 Open `workflow.<domain>`, sign in as a project member: the Implementations screen lists
@@ -79,3 +92,5 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   run with defaults → greet / slow poll / flaky fail-then-recover → Finish → **Succeeded** with
   `report`, `poster`, `lines` and the TEAPOT annotation. (Creating that member first needed
   the SuperTokens pre-flight DDL on j5s — bffless/ce#695.)
+- [ ] **M2 Phase 1 — interactive hello runs on `workflow.j5s.dev` as `workflow-ci`** (island
+  loads, echo tool call, annotate, submit, viewer).
