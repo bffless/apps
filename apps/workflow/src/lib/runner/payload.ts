@@ -35,6 +35,32 @@ export function isFilePayload(v: unknown): v is FilePayload {
   return keys.length === 1 && keys[0] === '$file' && isFileRef((v as Record<string, unknown>).$file)
 }
 
+/**
+ * What a `{"$file"}` payload becomes when its bytes could not be read back
+ * (`lib/payloadFetch`): the pointer, plus why. It is deliberately *not* a
+ * `FilePayload` — `isFilePayload` stays exactly one key — so a renderer that
+ * only understands values sees an object it can report rather than a value it
+ * would silently mis-render.
+ */
+export interface UnavailablePayload {
+  $file: FileRef
+  $error: string
+}
+
+/** The two-key sentinel above, and nothing wider — a partial or padded match is not it. */
+export function isUnavailablePayload(v: unknown): v is UnavailablePayload {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false
+  const r = v as Record<string, unknown>
+  const keys = Object.keys(r)
+  return (
+    keys.length === 2 &&
+    keys.includes('$file') &&
+    keys.includes('$error') &&
+    isFileRef(r.$file) &&
+    typeof r.$error === 'string'
+  )
+}
+
 /** UTF-8 byte length of an already-serialized string. */
 function utf8Length(s: string): number {
   return new TextEncoder().encode(s).length

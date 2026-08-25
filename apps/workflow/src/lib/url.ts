@@ -58,3 +58,14 @@ export function isSafeUrl(rawUrl: string): boolean {
   if (/^[#/.]/.test(url)) return true
   return !HAS_SCHEME.test(url)
 }
+
+/**
+ * 02: the Download action is always `url + (?|&) + download=1`. Lives beside
+ * the allow-list because its two callers — `FileCard` (a `file` output's own
+ * ref) and `ValueView`'s "payload unavailable" chip (an offloaded `{"$file"}`
+ * payload whose bytes could not be read) — must build the same href from the
+ * same, already-`isSafeUrl`-checked url.
+ */
+export function downloadHref(url: string): string {
+  return url + (url.includes('?') ? '&' : '?') + 'download=1'
+}

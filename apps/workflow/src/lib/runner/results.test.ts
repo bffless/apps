@@ -4,7 +4,7 @@ import helloYaml from '../../../docs/spec/examples/hello.workflow.yaml?raw'
 import { loadWorkflow } from './definition'
 import type { Definition, RunState, Step } from './types'
 import { buildContexts } from './contexts'
-import { evalAnnotations, evalSummary, trimResponse } from './results'
+import { evalAnnotations, evalSummary, isTruncatedStub, trimResponse } from './results'
 
 const hello = loadWorkflow(helloYaml, 'hello.workflow.yaml').def as Definition
 
@@ -128,5 +128,22 @@ describe('trimResponse', () => {
     expect(result.last).toMatchObject({ note: 'truncated' })
     const serializedSize = new TextEncoder().encode(JSON.stringify(result)).length
     expect(serializedSize).toBeLessThan(262_144)
+  })
+})
+
+describe('isTruncatedStub', () => {
+  it('recognises exactly the marker `trimResponse` stubs a half with', () => {
+    const trimmed = trimResponse({ initial: { blob: 'x'.repeat(300 * 1024) } })
+    expect(isTruncatedStub(trimmed.initial)).toBe(true)
+  })
+
+  it('is the literal { note: "truncated", size: <number> } shape and nothing wider', () => {
+    expect(isTruncatedStub({ note: 'truncated', size: 999_999 })).toBe(true)
+    expect(isTruncatedStub({ note: 'truncated', size: '999999' })).toBe(false)
+    expect(isTruncatedStub({ note: 'truncated' })).toBe(false)
+    expect(isTruncatedStub({ note: 'truncated', size: 1, extra: 2 })).toBe(false)
+    expect(isTruncatedStub({ jobId: 'job_1' })).toBe(false)
+    expect(isTruncatedStub(null)).toBe(false)
+    expect(isTruncatedStub([{ note: 'truncated', size: 1 }])).toBe(false)
   })
 })

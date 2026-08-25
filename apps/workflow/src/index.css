@@ -339,6 +339,18 @@ body {
   font-style: italic;
 }
 
+/* An offloaded `{"$file"}` payload whose bytes could not be read back. */
+.value-unavailable {
+  gap: 0.5rem;
+  align-items: baseline;
+  color: var(--color-ink-mute);
+}
+
+.value-unavailable-download {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
 .file-card {
   display: flex;
   flex-direction: column;

@@ -185,6 +185,26 @@ describe('toStepRow', () => {
     expect(toStepRow({ id, fields })).toEqual(row)
     expect(toStepRow({ runId: 'run_1', key: 'a/0/b' })).toMatchObject({ status: 'queued', attempt: 1, index: 0 })
   })
+
+  // Task 13: hydration is `workflowApi`'s job, so the coercer must hand the
+  // pointer through untouched — parsed out of its JSON text, but never
+  // dereferenced, reshaped or dropped.
+  it('keeps an offloaded {"$file"} output exactly as the row stored it', () => {
+    const ref = {
+      path: 'workflows/hello/hello/runs/run_1/slow/0/start/report.json',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 300_000,
+      url: '/api/uploads/workflows/hello/hello/runs/run_1/slow/0/start/report.json',
+    }
+    const row = toStepRow({
+      runId: 'run_1',
+      key: 'slow/0/start',
+      outputs: JSON.stringify({ report: { $file: ref }, poster: null }),
+    })
+
+    expect(row.outputs).toEqual({ report: { $file: ref }, poster: null })
+  })
 })
 
 describe('toFileRef', () => {

@@ -26,6 +26,7 @@ import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeli
 import { nextActions } from '../lib/runner/next'
 import type { NextAction } from '../lib/runner/next'
 import { offloadOutputs } from '../lib/runner/payload'
+import { isTruncatedStub } from '../lib/runner/results'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
 import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
@@ -1014,10 +1015,35 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             signal: controller.signal,
             registerFile: registerFileForStep(deps, state, step.key, scoped),
           }
+          // A `polling` row normally resumes poll-only, against the initial
+          // response the record kept. When that initial was *stubbed* by
+          // `trimResponse` (it blew the 256 KB response budget), there is
+          // nothing to poll against — the poll's `query`/`body` read
+          // `response.<field>` off it — so the step is re-requested from
+          // scratch instead (`restart`, pipeline.ts). That is a fact about
+          // this run worth recording, not a silent repair: a server-side job
+          // may already be running for the initial request whose id the
+          // record lost.
+          const truncatedInitial =
+            step.status === 'polling' && isTruncatedStub(step.response?.initial)
+          if (truncatedInitial) {
+            scoped(
+              runEvent({
+                type: 'run.annotation',
+                annotation: {
+                  level: 'notice',
+                  message: `step ${step.key} resumed from scratch — its initial response was truncated in the record`,
+                },
+                at: deps.clock.now(),
+              }),
+            )
+          }
           const resume =
-            step.status === 'polling'
-              ? { mode: 'poll-only' as const, initial: step.response?.initial }
-              : undefined
+            step.status !== 'polling'
+              ? undefined
+              : truncatedInitial
+                ? { mode: 'restart' as const }
+                : { mode: 'poll-only' as const, initial: step.response?.initial }
           void runPipelineStep(
             {
               step: stepDecl,

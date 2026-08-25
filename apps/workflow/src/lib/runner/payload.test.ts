@@ -5,7 +5,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { FileRef } from './types'
-import { PAYLOAD_BUDGET_BYTES, byteSize, hydrateOutputs, isFilePayload, offloadOutputs } from './payload'
+import {
+  PAYLOAD_BUDGET_BYTES,
+  byteSize,
+  hydrateOutputs,
+  isFilePayload,
+  isUnavailablePayload,
+  offloadOutputs,
+} from './payload'
 
 function fileRef(path: string): FileRef {
   return { path, name: path.split('/').pop() ?? path, contentType: 'application/json', size: 1, url: `/api/uploads/${path}` }
@@ -145,5 +152,26 @@ describe('hydrateOutputs', () => {
     const result = await hydrateOutputs(outputs, fetchJson)
 
     expect(result).toEqual(outputs)
+  })
+})
+
+describe('isUnavailablePayload', () => {
+  const ref = fileRef('workflows/x/big.json')
+
+  it('recognises the two-key sentinel a failed payload fetch leaves behind', () => {
+    expect(isUnavailablePayload({ $file: ref, $error: '500' })).toBe(true)
+  })
+
+  it('is not a plain {$file} payload, and a plain {$file} payload is not it', () => {
+    expect(isUnavailablePayload({ $file: ref })).toBe(false)
+    expect(isFilePayload({ $file: ref, $error: '500' })).toBe(false)
+  })
+
+  it('rejects a partial or over-wide match', () => {
+    expect(isUnavailablePayload({ $file: ref, $error: 404 })).toBe(false)
+    expect(isUnavailablePayload({ $file: { path: 'p' }, $error: 'x' })).toBe(false)
+    expect(isUnavailablePayload({ $file: ref, $error: 'x', extra: 1 })).toBe(false)
+    expect(isUnavailablePayload(null)).toBe(false)
+    expect(isUnavailablePayload([{ $file: ref, $error: 'x' }])).toBe(false)
   })
 })
