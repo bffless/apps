@@ -6,7 +6,7 @@
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '../mocks/server'
-import { httpJson, toQueryString } from './http'
+import { httpJson, httpJsonWithReauth, toQueryString } from './http'
 
 describe('toQueryString', () => {
   it('skips undefined and null, and JSON-stringifies non-primitives', () => {
@@ -64,5 +64,60 @@ describe('httpJson', () => {
     const res = await httpJson('/api/test/fail', { method: 'POST', body: {} })
 
     expect(res).toEqual({ status: 418, ok: false, body: { code: 'TEAPOT' } })
+  })
+})
+
+describe('httpJsonWithReauth', () => {
+  it('refreshes the session once on a 401 and retries the request', async () => {
+    let refreshes = 0
+    server.use(
+      http.get('/api/test/secure', () => new HttpResponse(null, { status: 401 }), { once: true }),
+      http.get('/api/test/secure', () => HttpResponse.json({ ok: true })),
+      http.post('/api/auth/session/refresh', () => {
+        refreshes += 1
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    const res = await httpJsonWithReauth('/api/test/secure', { method: 'GET' })
+
+    expect(refreshes).toBe(1)
+    expect(res).toEqual({ status: 200, ok: true, body: { ok: true } })
+  })
+
+  it('returns the original 401 when the refresh itself fails', async () => {
+    server.use(
+      http.get('/api/test/secure-fail', () => new HttpResponse(null, { status: 401 })),
+      http.post('/api/auth/session/refresh', () => new HttpResponse(null, { status: 401 })),
+    )
+
+    const res = await httpJsonWithReauth('/api/test/secure-fail', { method: 'GET' })
+
+    expect(res.status).toBe(401)
+    expect(res.ok).toBe(false)
+  })
+
+  it('shares one refresh call across two concurrent 401s (refreshInFlight)', async () => {
+    let calls = 0
+    let refreshes = 0
+    server.use(
+      http.get('/api/test/secure-concurrent', () => {
+        calls += 1
+        return calls <= 2 ? new HttpResponse(null, { status: 401 }) : HttpResponse.json({ ok: true })
+      }),
+      http.post('/api/auth/session/refresh', () => {
+        refreshes += 1
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    const [a, b] = await Promise.all([
+      httpJsonWithReauth('/api/test/secure-concurrent', { method: 'GET' }),
+      httpJsonWithReauth('/api/test/secure-concurrent', { method: 'GET' }),
+    ])
+
+    expect(refreshes).toBe(1)
+    expect(a).toEqual({ status: 200, ok: true, body: { ok: true } })
+    expect(b).toEqual({ status: 200, ok: true, body: { ok: true } })
   })
 })

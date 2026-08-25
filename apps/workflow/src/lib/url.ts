@@ -1,13 +1,16 @@
 /**
- * The one allow-list for every url the harness is about to write into an
- * `href`/`src`/`data` attribute.
+ * The url policy, in one module: what may be written into an `href`/`src`/`data`
+ * attribute (`isSafeUrl`), and what may be *fetched* from an untrusted ref
+ * (`isServeUrl`).
  *
- * Two callers, one rule: `lib/markdown` (link and image hrefs inside a
- * summary) and `components/values/FileCard` (a `FileRef.url` out of a step's
- * outputs). Neither source is trusted — a run row's JSON is writable by any
- * authenticated member, and a summary is markdown a workflow author typed — so
- * the answer must not depend on which sink asks.
+ * `isSafeUrl`'s two callers, one rule: `lib/markdown` (link and image hrefs
+ * inside a summary) and `components/values/FileCard` (a `FileRef.url` out of a
+ * step's outputs). Neither source is trusted — a run row's JSON is writable by
+ * any authenticated member, and a summary is markdown a workflow author typed —
+ * so the answer must not depend on which sink asks. `isServeUrl` answers the
+ * stricter question its two fetching callers ask; see below.
  */
+import { SERVE_PREFIX } from './coerce'
 
 /**
  * WHATWG URL parsing strips ASCII tab/newline/CR from anywhere in the string
@@ -57,4 +60,55 @@ export function isSafeUrl(rawUrl: string): boolean {
   if (SAFE_SCHEME.test(url)) return true
   if (/^[#/.]/.test(url)) return true
   return !HAS_SCHEME.test(url)
+}
+
+/**
+ * 02: the Download action is always `url + (?|&) + download=1`. Lives beside
+ * the allow-list because its two callers — `FileCard` (a `file` output's own
+ * ref) and `ValueView`'s "payload unavailable" chip (an offloaded `{"$file"}`
+ * payload whose bytes could not be read) — must build the same href from the
+ * same, already-`isSafeUrl`-checked url.
+ */
+export function downloadHref(url: string): string {
+  return url + (url.includes('?') ? '&' : '?') + 'download=1'
+}
+
+/**
+ * The base a serve url is resolved against. Synthetic on purpose: every url
+ * that reaches the check below is already known to be rooted, so the origin
+ * cannot matter, and pinning it keeps the function usable (and testable)
+ * wherever there is no `location`.
+ */
+const CHECK_BASE = 'https://harness.invalid'
+
+/**
+ * May the harness *fetch* this url with the member's session cookie?
+ *
+ * Two callers, both handed a `FileRef.url` off a run row any authenticated
+ * member can write: `scripts/ScriptHost`'s `ctx.files.fetch` relay and
+ * `lib/payloadFetch`'s `{"$file"}` read. Same-origin is **not** enough — a
+ * same-origin path reaches the run API, another implementation's bundle, or
+ * any other cookie-gated route — so the gate is the file-serve route itself
+ * (`SERVE_PREFIX`, the prefix `coerce.ts`'s `fileUrl` builds). That still lets
+ * a run read `inputs/` uploads and other runs' files, which D14 allows.
+ *
+ * Three ways a url lies about where it points, all closed here:
+ * `//host` / `/\host` (protocol-relative — off-site with the scheme left out,
+ * and WHATWG reads `\` as `/`), whitespace padding (stripped before a scheme
+ * or a second slash is ever read, exactly as `isSafeUrl` does), and `..` /
+ * `%2e%2e` segments that climb out of the prefix (resolved away by `new URL`).
+ */
+export function isServeUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false
+  const normalized = normalizeForSchemeCheck(url)
+  // Rooted, and its second character is neither `/` nor `\`.
+  if (normalized[0] !== '/' || PROTOCOL_RELATIVE.test(normalized)) return false
+
+  let resolved: URL
+  try {
+    resolved = new URL(normalized, CHECK_BASE)
+  } catch {
+    return false
+  }
+  return resolved.origin === CHECK_BASE && resolved.pathname.startsWith(SERVE_PREFIX)
 }

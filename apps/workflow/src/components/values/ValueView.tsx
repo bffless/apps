@@ -12,6 +12,9 @@
  * `src` lives in. It comes from `ImplContext` (the page knows) or from an
  * explicit `impl` prop; with neither, the declaration degrades to the badge.
  */
+import { isUnavailablePayload } from '../../lib/runner/payload'
+import type { UnavailablePayload } from '../../lib/runner/payload'
+import { downloadHref, isSafeUrl } from '../../lib/url'
 import type { ValueDecl } from '../../lib/valueDecl'
 import { FileCard } from './FileCard'
 import { isFileRef } from './fileRef'
@@ -23,7 +26,31 @@ import { IslandView } from './renderers/IslandView'
 
 export type { ValueDecl }
 
+/**
+ * An output the writer offloaded (`{"$file"}`, Task 12) whose bytes the read
+ * path could not fetch back (`lib/payloadFetch`). The declared renderer is no
+ * help here — a `markdown` viewer would stringify the sentinel, a `table`
+ * viewer would show an empty table — so the chip reports what happened and
+ * still offers the bytes, which may well be readable by hand (an expired
+ * session, a transient 5xx). The url goes through the same allow-list a
+ * `FileRef`'s does: the row's JSON is writable by any authenticated member.
+ */
+function UnavailablePayload({ payload }: { payload: UnavailablePayload }) {
+  const { url } = payload.$file
+  return (
+    <span className="chip value-unavailable" data-testid="payload-unavailable">
+      {`payload unavailable — ${payload.$error}`}
+      {typeof url === 'string' && isSafeUrl(url) && (
+        <a className="value-unavailable-download" href={downloadHref(url)} download>
+          Download
+        </a>
+      )}
+    </span>
+  )
+}
+
 function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
+  if (isUnavailablePayload(value)) return <UnavailablePayload payload={value} />
   if (value === null || value === undefined) return <span className="value-empty">—</span>
 
   if (decl.list) {
@@ -85,7 +112,7 @@ export function ValueView({
     <div className="value">
       {label && <p className="value-label">{label}</p>}
       {origin && <span className="chip value-origin">from {origin}</span>}
-      {island ? (
+      {island && !isUnavailablePayload(value) ? (
         <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
       ) : (
         <>

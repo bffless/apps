@@ -103,7 +103,8 @@ describe('stage-hello.mjs', () => {
     const interactive = index.workflows.find((w) => w.file === 'interactive.workflow.yaml')
     expect(interactive).toBeDefined()
     expect(interactive!.name).toBe('Interactive hello')
-    expect(interactive!.jobs).toBe(3)
+    // greet, analyze, pick — and, since Phase 2, the `card` script job.
+    expect(interactive!.jobs).toBe(4)
     expect(interactive!.inputs).toBe(2)
     // The island step declares `headless: skip` with the outputs its job reads.
     expect(interactive!.headlessSafe).toBe(true)
@@ -138,7 +139,6 @@ describe('stage-hello.mjs', () => {
 
   it('builds both islands as single self-contained HTML files', () => {
     expect(index.islands).toEqual(['islands/pick-line.html', 'islands/line-viewer.html'])
-    expect(index.scripts).toEqual([])
     for (const island of index.islands) {
       const html = readFileSync(staged(outDir, island), 'utf8')
       expect(html).toContain('<!doctype html>')
@@ -149,6 +149,18 @@ describe('stage-hello.mjs', () => {
       // …and it is *this* island, with its script inlined — not an empty shell.
       expect(html, `${island} lost its markup`).toContain(ISLAND_MARKERS[island])
       expect(html, `${island} has no inlined module`).toMatch(/<script type="module"[^>]*>[^<]/)
+    }
+  })
+
+  // Scripts are the one part of the bundle with no build: the Worker imports
+  // the module text as it was written (03), so the staged file must be the
+  // source, byte for byte.
+  it('copies the scripts verbatim and lists them', () => {
+    expect(index.scripts).toEqual(['scripts/poster-card.js'])
+    for (const file of index.scripts) {
+      const out = readFileSync(staged(outDir, file))
+      const source = readFileSync(join(appDir, 'hello', file))
+      expect(out.equals(source), `${file} is not byte-identical`).toBe(true)
     }
   })
 
@@ -176,5 +188,8 @@ describe('stage-hello.mjs', () => {
       'the mock sees no staged islands — run `pnpm --filter workflow stage` before `test:stage`',
     ).toBeGreaterThan(0)
     expect([...HELLO_INDEX.islands].sort()).toEqual([...index.islands].sort())
+    // The mock serves the scripts from `hello/` (the source the stager copies),
+    // so this compares the two listings the same way.
+    expect([...HELLO_INDEX.scripts].sort()).toEqual([...index.scripts].sort())
   })
 })

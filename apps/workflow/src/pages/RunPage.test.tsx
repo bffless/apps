@@ -14,10 +14,11 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
-import { db, nextId, seedFinishedRun } from '../mocks/db'
+import { db, nextId, seedFinishedRun, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
+import { fileUrl } from '../lib/coerce'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 
@@ -151,6 +152,64 @@ describe('RunPage', () => {
     fireEvent.click(within(annotations).getByRole('button', { name: 'slow/0/start' }))
 
     expect(chip('slow/0/start')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // Task 13: an output the writer offloaded is a `{"$file"}` pointer in the
+  // row; the page must show the *value*, because that is what the workflow
+  // author declared and what every renderer is written against.
+  describe('an offloaded {"$file"} output', () => {
+    const REPORT = '## Offloaded report\n\n- from the bucket\n'
+    const PATH = 'workflows/hello/hello/runs/run_offload/slow/0/start/report.json'
+
+    /** Rewrite `slow/0/start`'s `report` output as a pointer, with its JSON in the mock bucket. */
+    function offloadReport(): void {
+      seedFinishedRun()
+      const bytes = new TextEncoder().encode(JSON.stringify(REPORT))
+      db.files.set(PATH, { bytes, contentType: 'application/json' })
+      const key = stepRowKey(FIXTURE_RUN_ID, 'slow/0/start')
+      const step = db.steps.get(key)!
+      db.steps.set(key, {
+        ...step,
+        outputs: {
+          ...(step.outputs as Record<string, unknown>),
+          report: {
+            $file: {
+              path: PATH,
+              name: 'report.json',
+              contentType: 'application/json',
+              size: bytes.byteLength,
+              url: fileUrl(PATH),
+            },
+          },
+        },
+      })
+    }
+
+    it('renders the payload it points to, through the declared renderer', async () => {
+      offloadReport()
+      renderApp()
+      const page = screen.getByRole('main')
+      await within(page).findByTestId('run-status')
+
+      const pane = openTab(page, 'slow/0/start', 'Output')
+
+      expect(within(pane).getByRole('heading', { name: 'Offloaded report' })).toBeInTheDocument()
+      expect(within(pane).getByText('from the bucket')).toBeInTheDocument()
+    })
+
+    it('shows a payload-unavailable chip — not a crash — when the bytes cannot be read', async () => {
+      offloadReport()
+      server.use(http.get('/api/uploads/*', () => new HttpResponse(null, { status: 500 })))
+      renderApp()
+      const page = screen.getByRole('main')
+      await within(page).findByTestId('run-status')
+
+      const pane = openTab(page, 'slow/0/start', 'Output')
+
+      expect(within(pane).getByTestId('payload-unavailable')).toHaveTextContent(/payload unavailable/)
+      // The rest of the row still renders — one bad payload is not a bad page.
+      expect(within(pane).getByAltText('poster.png')).toBeInTheDocument()
+    })
   })
 
   it('reports a run id nothing was recorded for', async () => {

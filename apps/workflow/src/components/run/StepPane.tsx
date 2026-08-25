@@ -30,6 +30,7 @@
  * is not offered yet.
  */
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { stepOutputDecl } from '../../lib/outputDecls'
 import { refsIn } from '../../lib/runner/graph'
@@ -42,6 +43,7 @@ import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
+import { ScriptStepCard } from './ScriptStepCard'
 
 type Tab = 'Input' | 'Output' | 'Details'
 const TABS: Tab[] = ['Input', 'Output', 'Details']
@@ -128,7 +130,16 @@ function timeline(step: StepState): { label: string; at?: number }[] {
   return entries
 }
 
-function DetailsTab({ step, declared }: { step: StepState; declared?: Step }) {
+function DetailsTab({
+  step,
+  declared,
+  scriptLog,
+}: {
+  step: StepState
+  declared?: Step
+  /** A live script step's log card — `undefined` for every other step (see `StepPane`). */
+  scriptLog?: ReactNode
+}) {
   const path = declared?.raw?.with?.path
   const raw = step.response?.last ?? step.response?.initial
 
@@ -161,6 +172,8 @@ function DetailsTab({ step, declared }: { step: StepState; declared?: Step }) {
           </>
         )}
       </dl>
+
+      {scriptLog}
 
       {step.error && (
         <div className="step-error" data-severity={step.status === 'failed' ? 'error' : 'warning'}>
@@ -274,7 +287,22 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
       >
         {tab === 'Input' && <InputTab job={parts.job} step={step} declared={declared} />}
         {tab === 'Output' && <OutputTab step={step} declared={declared} />}
-        {tab === 'Details' && <DetailsTab step={step} declared={declared} />}
+        {tab === 'Details' && (
+          <DetailsTab
+            step={step}
+            declared={declared}
+            // A script has no pane of its own — its live `ctx.log` rides on
+            // Details instead, whatever the step's status (a finished script's
+            // lines stay until the runner resets). Live only, like the island
+            // log: the lines belong to the run *this* tab is driving, and a
+            // read-only replay of another run's step has none of them.
+            scriptLog={
+              live && declared?.uses === 'script' ? (
+                <ScriptStepCard runId={state.runId} stepKey={stepKey} />
+              ) : undefined
+            }
+          />
+        )}
       </div>
     </aside>
   )

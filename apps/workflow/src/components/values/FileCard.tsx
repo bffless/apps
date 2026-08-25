@@ -9,7 +9,7 @@
  * is shown as text: the card still reports what it saw, it just refuses to
  * be the thing that navigates or fetches it.
  */
-import { isSafeUrl } from '../../lib/url'
+import { downloadHref, isSafeUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -23,11 +23,6 @@ function humanSize(bytes: unknown): string {
     i++
   }
   return `${i === 0 ? n : n.toFixed(1)} ${UNITS[i]}`
-}
-
-/** 02: the Download action is always `url + (?|&) + download=1`. */
-function downloadHref(url: string): string {
-  return url + (url.includes('?') ? '&' : '?') + 'download=1'
 }
 
 function Player({ contentType, url, name }: { contentType?: string; url: string; name: string }) {

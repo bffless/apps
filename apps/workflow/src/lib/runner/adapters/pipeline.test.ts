@@ -455,6 +455,94 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
     expect(calls[1]?.method).toBe('POST')
   })
 
+  // Task 13 (M1 minor): a `polling` row whose recorded `initial` was stubbed by
+  // `trimResponse` has nothing to resume *from* — the poll's request context
+  // reads `response.jobId` off it. The only legal way back is to re-issue the
+  // initial request from a row that is already `polling`, which means no
+  // `step.started` (that would be `polling -> running`).
+  it('resume (restart): re-issues the initial request with no step.started, then polls it', async () => {
+    const { http, calls } = fakeHttp([
+      { status: 200, body: { jobId: 'j9' } }, // the re-request
+      { status: 200, body: { status: 'pending' } },
+      {
+        status: 200,
+        body: { id: 'j9', status: 'done', result: { markdown: '# again', posterPath: null, ms: 5 } },
+      },
+    ])
+    const state = resumedSlowState()
+    const h = harness(state, http)
+
+    await runPipelineStep(
+      {
+        step: stepOf(hello, 'slow', 'start'),
+        key: SLOW_KEY,
+        job: 'slow',
+        index: 0,
+        def: hello,
+        state,
+        resume: { mode: 'restart' },
+      },
+      h.rt,
+    )
+
+    expect(h.types()).toEqual(['step.polling', 'step.succeeded'])
+    // The recorded `with` is reused verbatim — a resumed row cannot announce
+    // freshly evaluated inputs, because `step.started` is the only event that
+    // carries them and it has no legal edge from `polling`.
+    expect(calls[0]).toEqual({
+      path: '/api/hello/slow',
+      method: 'POST',
+      query: undefined,
+      body: resumedSlowState().steps[SLOW_KEY]!.inputs!.body,
+    })
+    // The poll runs against the *fresh* initial, not the stubbed one.
+    expect(polling(h.events[0]!).initial).toEqual({ jobId: 'j9' })
+    expect(calls[1]).toEqual({ path: '/api/hello/job', method: 'GET', query: { id: 'j9' }, body: undefined })
+    expect(succeeded(h.events[1]!).outputs).toEqual({ report: '# again', poster: null })
+  })
+
+  // Review minor 2: the fail-closed guard must fire *before* any request. A
+  // `poll-only` resume never had a side effect to get wrong (it issues nothing);
+  // `restart` does, so the guard moved ahead of the re-request.
+  it('resume: a row that says `polling` for a step with no `poll:` fails closed in either mode, with no request', async () => {
+    const GREET_KEY = stepKey('greet', 0, 'say')
+    const modes = [{ mode: 'poll-only' as const, initial: { text: 'Hello, world!' } }, { mode: 'restart' as const }]
+
+    for (const resume of modes) {
+      const { http, calls } = fakeHttp([])
+      const state = baseState({
+        expansions: { greet: { total: 1, items: [{ who: 'world' }] } },
+        steps: {
+          [GREET_KEY]: {
+            ...queuedStep('greet', 0, 'say'),
+            status: 'polling',
+            inputs: { path: 'echo', body: { text: 'Hello, world!', upper: false } },
+            response: { initial: { text: 'Hello, world!' } },
+            startedAt: 1_000,
+          },
+        },
+      })
+      const h = harness(state, http)
+
+      await runPipelineStep(
+        {
+          step: stepOf(hello, 'greet', 'say'),
+          key: GREET_KEY,
+          job: 'greet',
+          index: 0,
+          def: hello,
+          state,
+          resume,
+        },
+        h.rt,
+      )
+
+      expect(h.types()).toEqual(['step.failed'])
+      expect(failed(h.events[0]!).error.message).toBe('resumed a polling row but the step has no `poll:`')
+      expect(calls).toEqual([])
+    }
+  })
+
   it('emits step.cancelled when the run is aborted mid-poll', async () => {
     const { http, calls } = fakeHttp([
       { status: 200, body: { jobId: 'j1' } },

@@ -70,14 +70,25 @@ export interface PipelineStepArgs {
   def: Definition
   state: RunState
   /**
-   * Resume of a `polling` row (05 Resume item 3, Decision 3): skip the
-   * initial request and re-enter the poll loop with the recorded initial
-   * response. Applies only to the first attempt — a retry re-runs the whole
-   * step (request + poll, 01), same as any other attempt. A `queued`/
-   * `running` row has no resume hint in M1: it is relaunched by calling this
-   * adapter with `resume` absent, which re-issues the initial request.
+   * Resume of a `polling` row (05 Resume item 3, Decision 3). Applies only to
+   * the first attempt — a retry re-runs the whole step (request + poll, 01),
+   * same as any other attempt. A `queued`/`running` row has no resume hint:
+   * it is relaunched by calling this adapter with `resume` absent, which
+   * re-issues the initial request *and* emits `step.started` (legal from
+   * both).
+   *
+   * - `poll-only` — skip the initial request and re-enter the poll loop with
+   *   the recorded initial response.
+   * - `restart` — re-issue the initial request, because the recorded initial
+   *   is unusable: `results.ts`'s `trimResponse` stubbed it out of the record
+   *   when it blew the 256 KB budget, and the poll's request context reads
+   *   `response.<field>` off it. Still no `step.started`, for the same reason
+   *   `poll-only` has none: the row is already `polling`, and `polling ->
+   *   running` is not a legal transition (transitions.ts). The row therefore
+   *   keeps the `with` its original `step.started` announced, and re-enters
+   *   the poll loop through the legal `polling -> polling` self-transition.
    */
-  resume?: { mode: 'poll-only'; initial: unknown }
+  resume?: { mode: 'poll-only'; initial: unknown } | { mode: 'restart' }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,8 +141,14 @@ function pollFailError(response: unknown): StepError {
   }
 }
 
-/** A thrown value from anywhere in the attempt, mapped onto the step's error vocabulary. */
-function toStepError(err: unknown): StepError {
+/**
+ * A thrown value from anywhere in the attempt, mapped onto the step's error
+ * vocabulary. Exported because it is the *step* error vocabulary, not the
+ * pipeline's: the script runtime maps the identical throws (a malformed
+ * `summary:` template, a wrong-typed output) the identical way, and two copies
+ * of this table would drift.
+ */
+export function toStepError(err: unknown): StepError {
   if (err instanceof OutputTypeError) return { code: 'OUTPUT_TYPE', message: err.message }
   if (err instanceof EvalError) return { code: 'EXPRESSION', message: err.message }
   if (err instanceof RangeError) return { code: 'DURATION', message: err.message }
@@ -202,7 +219,8 @@ async function runAttempt(
   rt: StepRuntime,
   attempt: number,
   deadline: number | undefined,
-  resuming: boolean,
+  /** The resume mode this attempt is running under, if it is the resumed one. */
+  resuming: 'poll-only' | 'restart' | undefined,
 ): Promise<AttemptResult> {
   const raw = obj(a.step.raw)
   const scope = (over: { response?: unknown; selfOutputs?: Record<string, unknown> } = {}) =>
@@ -222,7 +240,8 @@ async function runAttempt(
     // `step.started` evaluated (replayed onto the step); re-emitting
     // `step.started` here would be `polling -> running`, which is not a
     // legal transition (only `polling -> polling`, the self-transition
-    // no-op below, is) — nothing new to evaluate or announce.
+    // no-op below, is) — nothing new to evaluate or announce. True of
+    // `restart` too, which re-requests but from the *recorded* inputs.
     inputs = a.state.steps[a.key]?.inputs ?? {}
   } else {
     let inputsError: StepError | undefined
@@ -245,9 +264,26 @@ async function runAttempt(
       return { kind: 'error', error: { code: 'STEP', message: 'pipeline step has no `with.path`' } }
     }
 
+    const pollDecl = raw.poll === undefined || raw.poll === null ? undefined : obj(raw.poll)
+
+    // A row only ever persists `polling` when the step declares `poll:`
+    // (rows.ts) — resuming one (either mode) for a step whose definition no
+    // longer does is a data inconsistency the adapter should fail closed on,
+    // not paper over with a fabricated success nobody validated. Checked
+    // *before* the request: `poll-only` never had a side effect to get wrong
+    // (it issues nothing), and `restart` must not either — a re-POST that
+    // then reports "no `poll:`" would have already enqueued a server-side job
+    // for a step the harness is about to fail.
+    if (resuming && !pollDecl) {
+      return {
+        kind: 'error',
+        error: { code: 'STEP', message: 'resumed a polling row but the step has no `poll:`' },
+      }
+    }
+
     let initial: unknown
-    if (resuming) {
-      initial = a.resume!.initial
+    if (resuming === 'poll-only') {
+      initial = (a.resume as { initial: unknown }).initial
     } else {
       const first = await request(rt, a.state.impl, {
         path: initialPath,
@@ -264,7 +300,6 @@ async function runAttempt(
       return { kind: 'error', error: timeoutError(), response: initial }
     }
 
-    const pollDecl = raw.poll === undefined || raw.poll === null ? undefined : obj(raw.poll)
     let last: unknown = initial
 
     if (pollDecl) {
@@ -277,15 +312,6 @@ async function runAttempt(
       if (polled.kind !== 'ok') return polled
       last = polled.body
       seen = last
-    } else if (resuming) {
-      // A row only ever persists `polling` when the step declares `poll:`
-      // (rows.ts) — resuming one for a step whose definition no longer does
-      // is a data inconsistency the adapter should fail closed on, not paper
-      // over with a fabricated success nobody validated.
-      return {
-        kind: 'error',
-        error: { code: 'STEP', message: 'resumed a polling row but the step has no `poll:`' },
-      }
     }
 
     // Terminal success: outputs against the *final* response, then summary and
@@ -316,7 +342,8 @@ async function runAttempt(
   }
 }
 
-function timeoutError(): StepError {
+/** One budget, one sentence — shared with the script runtime, which owns its own timer. */
+export function timeoutError(): StepError {
   return { code: 'TIMEOUT', message: 'the step exceeded its `timeout-minutes` budget' }
 }
 
@@ -408,15 +435,16 @@ export async function runPipelineStep(a: PipelineStepArgs, rt: StepRuntime): Pro
   const first = a.state.steps[a.key]?.attempt ?? 1
   let attempt = first
   // Resume (05 item 3, Decision 3): only the very first loop iteration of a
-  // resumed run can skip the initial request — a retry re-runs the whole
-  // step (request + poll), same as any other attempt.
-  let resuming = a.resume?.mode === 'poll-only'
+  // resumed run runs under a resume mode — a retry re-runs the whole step
+  // (request + poll) and announces itself with `step.started`, same as any
+  // other attempt (by then the row is `running`, so that edge is legal again).
+  let resuming: 'poll-only' | 'restart' | undefined = a.resume?.mode
 
   for (;;) {
     if (rt.signal.aborted) return cancel()
 
     const result = await runAttempt(a, rt, attempt, deadline, resuming)
-    resuming = false
+    resuming = undefined
     if (result.kind === 'cancelled') return cancel()
     if (result.kind === 'success') return rt.emit(result.event)
 

@@ -8,6 +8,7 @@ import { configureStore } from '@reduxjs/toolkit'
 import { createIslandHost } from '../islands/IslandHost'
 import { httpJsonWithReauth } from '../lib/http'
 import { createRunStore } from '../lib/runStore'
+import { createScriptHost } from '../scripts/ScriptHost'
 import { createRegisterFile, createRunnerMiddleware, realClock } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
 import { runSlice } from './runSlice'
@@ -22,6 +23,7 @@ export function defaultRunnerDeps(): RunnerDeps {
     runStore: createRunStore(httpJsonWithReauth),
     registerFile: createRegisterFile(httpJsonWithReauth),
     islandHost: createIslandHost,
+    scriptHost: createScriptHost,
   }
 }
 

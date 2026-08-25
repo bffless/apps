@@ -4,8 +4,10 @@
  */
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { seedFinishedRun } from '../mocks/db'
+import { db, seedFinishedRun, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN } from '../mocks/fixtures/finishedRun'
+import { fileUrl } from '../lib/coerce'
+import type { FileRef } from '../lib/runner/types'
 import { server } from '../mocks/server'
 import { makeStore } from './index'
 import { workflowApi } from './workflowApi'
@@ -38,7 +40,7 @@ describe('discover', () => {
         name: 'Interactive hello',
         description: 'Exercises every interactive feature of the harness (M2) — grows per phase.',
         inputs: 2,
-        jobs: 3,
+        jobs: 4,
         headlessSafe: true,
       },
     ])
@@ -174,6 +176,100 @@ describe('the run record', () => {
     )
 
     expect(res.data?.map((r) => r.runId)).toEqual([FINISHED_RUN.run.runId, 'run_older'])
+  })
+})
+
+/**
+ * Task 13: an output the writer offloaded (`{"$file": ref}`, payload.ts) is a
+ * pointer in the row and a value everywhere above this module — so the read
+ * path dereferences it exactly once, here.
+ */
+describe('the run record — {"$file"} hydration', () => {
+  /** Put JSON in the mock bucket at `path` and hand back the ref a row would carry. */
+  function seedPayload(path: string, value: unknown): FileRef {
+    const bytes = new TextEncoder().encode(JSON.stringify(value))
+    db.files.set(path, { bytes, contentType: 'application/json' })
+    return {
+      path,
+      name: path.split('/').pop() ?? path,
+      contentType: 'application/json',
+      size: bytes.byteLength,
+      url: fileUrl(path),
+    }
+  }
+
+  /** A coerced row's `outputs` — declared `unknown` on the row interface, always a record here. */
+  const outputsOf = (row: { outputs?: unknown }) => (row.outputs ?? {}) as Record<string, unknown>
+
+  const REPORT = '## The offloaded report'
+  const LINES = ['Hello, world!', 'Hello, studio!']
+
+  beforeEach(() => {
+    seedFinishedRun()
+  })
+
+  function offload(): void {
+    const stepRef = seedPayload('workflows/hello/hello/runs/x/slow/0/start/report.json', REPORT)
+    const runRef = seedPayload('workflows/hello/hello/runs/x/outputs/lines.json', LINES)
+
+    const key = stepRowKey(FINISHED_RUN.run.runId, 'slow/0/start')
+    const step = db.steps.get(key)!
+    db.steps.set(key, {
+      ...step,
+      outputs: { ...(step.outputs as Record<string, unknown>), report: { $file: stepRef } },
+    })
+
+    const run = db.runs.get(FINISHED_RUN.run.runId)!
+    db.runs.set(run.runId, { ...run, outputs: { ...run.outputs, lines: { $file: runRef } } })
+  }
+
+  it('replaces a step row’s pointer with the JSON it points to', async () => {
+    offload()
+
+    const res = await store().dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId))
+
+    const slow = outputsOf(res.data!.steps.find((s) => s.key === 'slow/0/start')!)
+    expect(slow.report).toBe(REPORT)
+    // Every other output of the same row is untouched.
+    expect(slow.poster).toEqual(outputsOf(FINISHED_RUN.steps.find((s) => s.key === 'slow/0/start')!).poster)
+  })
+
+  it('replaces the run row’s own pointer too', async () => {
+    offload()
+
+    const res = await store().dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId))
+
+    expect(res.data!.run!.outputs?.lines).toEqual(LINES)
+    expect(res.data!.run!.outputs?.report).toBe(FINISHED_RUN.run.outputs!.report)
+  })
+
+  it('leaves an unreadable payload as a { $file, $error } sentinel rather than failing the query', async () => {
+    offload()
+    server.use(http.get('/api/uploads/*', () => new HttpResponse(null, { status: 500 })))
+
+    const res = await store().dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId))
+
+    expect(res.error).toBeUndefined()
+    const slow = outputsOf(res.data!.steps.find((s) => s.key === 'slow/0/start')!)
+    expect(slow.report).toMatchObject({
+      $file: expect.objectContaining({ path: 'workflows/hello/hello/runs/x/slow/0/start/report.json' }),
+      $error: expect.stringContaining('500'),
+    })
+  })
+
+  it('reads a record with no offloaded outputs without touching the bucket', async () => {
+    let uploads = 0
+    server.use(
+      http.get('/api/uploads/*', () => {
+        uploads += 1
+        return new HttpResponse(null, { status: 404 })
+      }),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId))
+
+    expect(uploads).toBe(0)
+    expect(res.data?.steps).toHaveLength(6)
   })
 })
 

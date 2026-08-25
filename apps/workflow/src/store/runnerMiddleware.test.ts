@@ -252,16 +252,20 @@ const WITH_OUTPUTS = toDefinition({
 }) as Definition
 
 // ---------------------------------------------------------------------------
-// A one-job definition using a `script` step — still unsupported in M2 Phase 1
-// (islands landed in Task 5; scripts arrive in Phase 2).
+// A one-job definition whose step uses a kind no runner branch claims. Every
+// kind the vocabulary actually has is wired now (pipeline/form in M1, island
+// in Task 5, script in Task 11), so this fixture has to invent one to reach
+// `handleNextAction`'s fall-through arm at all — which is exactly what that
+// arm is for: a kind added to `StepKind` before the runner learns to run it
+// must fail its own step, not stall the run.
 // ---------------------------------------------------------------------------
 
-const SCRIPT_JOB = toDefinition({
+const UNKNOWN_KIND_JOB = toDefinition({
   name: 'Unsupported kind',
-  jobs: { a: { steps: [{ id: 'i', uses: 'script', with: {} }], outputs: {} } },
+  jobs: { a: { steps: [{ id: 'i', uses: 'sorcery', with: {} }], outputs: {} } },
   outputs: {},
 }) as Definition
-const SCRIPT_KEY = stepKey('a', 0, 'i')
+const UNKNOWN_KIND_KEY = stepKey('a', 0, 'i')
 
 // ---------------------------------------------------------------------------
 // A 3-item matrix, `max-parallel: 2`, fail-fast: two items run concurrently,
@@ -648,11 +652,11 @@ describe('createRunnerMiddleware — RTK Query cache invalidation', () => {
 // ---------------------------------------------------------------------------
 
 describe('createRunnerMiddleware — unsupported step kinds', () => {
-  it('fails a script step immediately with UNSUPPORTED_KIND_M1', async () => {
-    // Chosen over the "file outside the run prefix" annotation branch: it
-    // needs no file-registration plumbing to set up, and covers a scheduler
-    // branch (`handleNextAction`'s 'start' case, the fall-through arm no kind
-    // claims) that otherwise had zero coverage at all.
+  it('fails a step whose kind no branch claims, rather than stalling the run', async () => {
+    // Covers a scheduler branch (`handleNextAction`'s 'start' case, the
+    // fall-through arm) that otherwise has zero coverage now that every real
+    // kind is wired: the run must reach a final state, with the fault on the
+    // step that carries it.
     const { http } = scriptedHttp({})
     const { clock, advance } = virtualClock()
     const { store: runStore } = fakeRunStore()
@@ -660,14 +664,17 @@ describe('createRunnerMiddleware — unsupported step kinds', () => {
 
     const store = trackedStore(deps)
     store.dispatch(
-      startRun({ impl: 'test', workflow: 'script', def: SCRIPT_JOB, yaml: 'name: Unsupported kind', workflowName: 'Unsupported kind', values: {} }),
+      startRun({ impl: 'test', workflow: 'script', def: UNKNOWN_KIND_JOB, yaml: 'name: Unsupported kind', workflowName: 'Unsupported kind', values: {} }),
     )
 
     await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
 
-    const step = store.getState().run.state?.steps[SCRIPT_KEY]
+    const step = store.getState().run.state?.steps[UNKNOWN_KIND_KEY]
     expect(step?.status).toBe('failed')
-    expect(step?.error).toEqual({ code: 'UNSUPPORTED_KIND_M1', message: 'script steps arrive in M2' })
+    expect(step?.error).toEqual({
+      code: 'UNSUPPORTED_KIND',
+      message: 'sorcery is not a step kind this harness runs',
+    })
     expect(store.getState().run.state?.status).toBe('failed')
   })
 })

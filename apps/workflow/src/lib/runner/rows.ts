@@ -84,6 +84,16 @@ export interface WriteContext {
   state: RunState
   /** Builds the insert row for `run.started`; the caller owns yaml/definition/lease. */
   runRow?: () => RunRow
+  /**
+   * The offloaded outputs map (Task 12: `{"$file"}` payload offload),
+   * computed by the middleware *before* calling `eventToWrites` whenever any
+   * `step.succeeded`/`run.finished` output exceeded the persistence budget.
+   * Substitutes for the post-event `outputs` on the **persisted row only** —
+   * the live Redux state (and this function's own purity) never sees it;
+   * this module stays a pure mapper over whatever the caller decided to
+   * write.
+   */
+  outputsOverride?: Record<string, unknown>
 }
 
 function upsert(runId: string, key: StepKey, patch: Partial<StepRow>): PersistWrite {
@@ -186,7 +196,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       return [
         upsert(runId, event.key, {
           status: 'succeeded',
-          outputs: s.outputs,
+          outputs: ctx.outputsOverride ?? s.outputs,
           response: s.response,
           summary: s.summary ?? null,
           annotations: s.annotations,
@@ -230,7 +240,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       return [
         patchRun(runId, {
           status: event.status,
-          outputs: event.outputs,
+          outputs: ctx.outputsOverride ?? event.outputs,
           finishedAt: event.at,
           leaseOwner: null,
           leaseUntil: null,

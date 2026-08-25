@@ -19,6 +19,8 @@ import {
   unwrapRows,
 } from '../lib/coerce'
 import type { Implementation, ServerRunRow, ServerStepRow } from '../lib/coerce'
+import { fetchPayload } from '../lib/payloadFetch'
+import { hydrateOutputs } from '../lib/runner/payload'
 
 /** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
 const REFRESH_URL = '/api/auth/session/refresh'
@@ -61,6 +63,20 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
   const result = await rawBaseQuery(args, api, extraOptions)
   if (result.error?.status !== 401) return result
   return (await attemptRefresh()) ? rawBaseQuery(args, api, extraOptions) : result
+}
+
+/**
+ * The outputs map a coerced row carries. `RunRow.outputs`/`StepRow.outputs`
+ * are declared as wide as the raw column is (`unknown`), but everything that
+ * reaches here came through `toRunRow`/`toStepRow`, which already narrowed it
+ * to a record or `null` — this restates that fact for the type system without
+ * re-parsing (one parser, 09).
+ */
+function outputsOf(row: { outputs?: unknown }): Record<string, unknown> | null {
+  const outputs = row.outputs
+  return outputs !== null && typeof outputs === 'object' && !Array.isArray(outputs)
+    ? (outputs as Record<string, unknown>)
+    : null
 }
 
 /** `/w/<impl>/.bffless/workflows/<file>` — the implementation's published bundle (06). */
@@ -146,14 +162,46 @@ export const workflowApi = createApi({
       providesTags: ['Runs'],
     }),
 
-    /** One run and all its step rows — what Resume and the read-only view fold (05). */
+    /**
+     * One run and all its step rows — what Resume and the read-only view fold (05).
+     *
+     * This is the **only** place a `{"$file"}` payload is dereferenced (Task
+     * 13). An output over the persistence budget is stored as a pointer
+     * (`lib/runner/payload.ts`'s `offloadOutputs`), but nothing above this
+     * module should ever have to know that: `replayRun`, the run page's
+     * renderers and every `steps.<key>.outputs.<name>` expression are written
+     * against *values*, and expressions in particular are synchronous, so the
+     * dereference has to have already happened by the time a row leaves here.
+     * `openRun`/`takeOver` (lifecycleActions.ts) therefore need no hydration
+     * step of their own — they are handed what this endpoint produced.
+     *
+     * A `queryFn` rather than a `transformResponse` because the hydration is
+     * asynchronous; the row fetch still goes through the endpoint's own
+     * `baseQuery`, so `baseQueryWithReauth`'s 401-refresh-retry (R5) applies
+     * exactly as before. A payload that cannot be read never fails the query —
+     * `fetchPayload` resolves it to the `{ $file, $error }` sentinel instead.
+     */
     getRun: builder.query<{ run: ServerRunRow | null; steps: ServerStepRow[] }, string>({
-      query: (id) => ({ url: 'api/workflow/run', params: { id } }),
-      transformResponse: (raw: unknown) => {
-        const record = (raw ?? {}) as { run?: unknown; steps?: unknown }
+      async queryFn(id, _api, _extraOptions, baseQuery) {
+        const res = await baseQuery({ url: 'api/workflow/run', params: { id } })
+        if (res.error) return { error: res.error }
+
+        const record = (res.data ?? {}) as { run?: unknown; steps?: unknown }
+        const run = record.run ? toRunRow(record.run) : null
+        const steps = unwrapRows(record.steps).map(toStepRow)
+
+        // One row's payloads are independent of every other row's, so the
+        // whole record hydrates in one round trip's worth of wall time.
+        const [runOutputs, ...stepOutputs] = await Promise.all([
+          hydrateOutputs(run === null ? null : outputsOf(run), fetchPayload),
+          ...steps.map((step) => hydrateOutputs(outputsOf(step), fetchPayload)),
+        ])
+
         return {
-          run: record.run ? toRunRow(record.run) : null,
-          steps: unwrapRows(record.steps).map(toStepRow),
+          data: {
+            run: run === null ? null : { ...run, outputs: runOutputs ?? null },
+            steps: steps.map((step, i) => ({ ...step, outputs: stepOutputs[i] ?? null })),
+          },
         }
       },
       providesTags: (_result, _error, id) => [{ type: 'Run' as const, id }],

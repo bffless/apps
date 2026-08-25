@@ -25,11 +25,18 @@ import { runPipelineStep } from '../lib/runner/adapters/pipeline'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
 import { nextActions } from '../lib/runner/next'
 import type { NextAction } from '../lib/runner/next'
+import { isUnavailablePayload, offloadOutputs } from '../lib/runner/payload'
+import { isTruncatedStub } from '../lib/runner/results'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
 import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
+import { uploadBlob } from '../lib/upload'
+import type { ScriptHost, ScriptHostDeps } from '../scripts/ScriptHost'
+import { clearAllScriptLogs } from '../scripts/logStore'
 import { disposeAllIslandHandles, disposeIslandHandle, launchIslandStep } from './islandLaunch'
 import type { IslandLaunchDeps } from './islandLaunch'
+import { launchScriptStep } from './scriptLaunch'
+import type { ScriptLaunchDeps } from './scriptLaunch'
 import { getOwnerId } from './runnerActions'
 import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
@@ -59,6 +66,13 @@ export interface RunnerDeps {
    * the real `createIslandHost`, which `islandLaunch` also falls back to.
    */
   islandHost?: (deps: IslandHostDeps) => IslandHost
+  /**
+   * How a `script` step's Worker host is built (Task 11). Optional for the
+   * same reason `islandHost` is: `defaultRunnerDeps()` passes the real
+   * `createScriptHost`, which `scriptLaunch` also falls back to, and the test
+   * fixtures that drive no script keep compiling.
+   */
+  scriptHost?: (deps: ScriptHostDeps) => ScriptHost
 }
 
 /** `RunnerDeps`, narrowed to what launching an island actually needs. */
@@ -67,6 +81,14 @@ function islandDeps(deps: RunnerDeps): IslandLaunchDeps {
     http: deps.http,
     now: () => deps.clock.now(),
     ...(deps.islandHost ? { islandHost: deps.islandHost } : {}),
+  }
+}
+
+/** The same, for a script: a clock (the `timeout-minutes` timer) and the host factory. */
+function scriptDeps(deps: RunnerDeps): ScriptLaunchDeps {
+  return {
+    clock: deps.clock,
+    ...(deps.scriptHost ? { scriptHost: deps.scriptHost } : {}),
   }
 }
 
@@ -229,6 +251,138 @@ function pauseMessage(event: RunEvent, error: unknown): string {
   return key ? `Could not save step ${key}: ${detail}` : `Could not save the run: ${detail}`
 }
 
+// ---------------------------------------------------------------------------
+// `{"$file"}` payload offload (Task 12) — the `offloadOutputs` `store`
+// function for a `step.succeeded`/`run.finished` write, scoped under the run
+// (`runs/<runId>/<key>` for a step, `runs/<runId>/outputs` for the run
+// itself; `uploadBlob`'s prepare rule takes any scope string).
+//
+// The upload is threaded a real `AbortSignal` so a cancel / lease loss
+// (`runnerControllers.abortAll()`, fired by `resetRunnerState`/`loseLease`/
+// the effect's own pause path) interrupts the round trip rather than leaving
+// it to run to completion on behalf of a run this tab may no longer drive.
+// ---------------------------------------------------------------------------
+
+function offloadStore(
+  runState: RunState,
+  key: StepKey | undefined,
+  signal: AbortSignal,
+): (name: string, json: string) => Promise<FileRef> {
+  const scope = key ? `runs/${runState.runId}/${key}` : `runs/${runState.runId}/outputs`
+  return (name, json) =>
+    uploadBlob({
+      impl: runState.impl,
+      workflow: runState.workflow,
+      scope,
+      blob: new Blob([json], { type: 'application/json' }),
+      name: `${name}.json`,
+      signal,
+    })
+}
+
+/** The synthetic `controllers` map key for a run-level (`run.finished`) offload — no step to hang it off, so a fresh controller is registered under this key instead. Never collides with a real `StepKey` (`<job>/<index>/<step>` always contains `/`). */
+function runOutputsControllerKey(runId: string): string {
+  return `${runId}:__outputs__`
+}
+
+/**
+ * The controller an offload's upload should watch. For a step, this reuses
+ * the step's own controller — already registered by `handleNextAction`'s
+ * `start` case and not yet removed (that happens later in this same effect,
+ * in the terminal-cleanup block below) — so `runnerControllers.abort(key)`/
+ * `abortAll()` cancel the offload exactly like any other in-flight step
+ * work, with no separate bookkeeping. A run-level offload has no step to
+ * reuse, so a fresh controller is registered into the same shared map under
+ * `runOutputsControllerKey` — `abortAll()` (cancel, lease loss, a fresh
+ * `resetRunnerState()`) still reaches it that way.
+ */
+function offloadController(runId: string, key: StepKey | undefined): AbortController {
+  if (!key) {
+    const k = runOutputsControllerKey(runId)
+    const existing = controllers.get(k)
+    if (existing) return existing
+    const fresh = new AbortController()
+    controllers.set(k, fresh)
+    return fresh
+  }
+  const existing = controllers.get(controllerKey(runId, key))
+  if (existing) return existing
+  // A step's controller is normally already registered by the time its own
+  // `step.succeeded` reaches here (`handleNextAction`'s `start` case); a
+  // missing one means something already aborted/cleared it (e.g. a lease
+  // loss's `abortAll()` beat this task to the front of the run's write
+  // queue). Hand back an already-aborted stand-in rather than a fresh,
+  // unsupervised one, so the offload below gives up immediately instead of
+  // running to completion on behalf of a run this tab no longer drives.
+  const stale = new AbortController()
+  stale.abort()
+  return stale
+}
+
+/** Forgets a run-level offload's synthetic controller once its own call settles. A step's controller is left alone — it is owned by the normal step lifecycle (the terminal-cleanup block's `runnerControllers.abort`), not by this call. */
+function releaseOffloadController(runId: string, key: StepKey | undefined): void {
+  if (key) return
+  controllers.delete(runOutputsControllerKey(runId))
+}
+
+type WriteOutcome = { ok: true } | { ok: false; error: unknown } | { ok: 'stale' }
+
+/**
+ * The full write for one event — offload (if any) *then* `eventToWrites`
+ * *then* every `persistWrite` — run as a single task inside the run's own
+ * write-ahead queue (`enqueue`, called synchronously by the caller before
+ * this ever starts). Folding the offload in here, rather than awaiting it
+ * ahead of `enqueue()`, is what keeps write order equal to event order even
+ * when one event's offload is slow and a later, offload-free event's write
+ * would otherwise be free to race ahead of it (Task 12 fix round 1 —
+ * `enqueue`'s promise chain only orders calls made *before* any await, and
+ * parallel/matrix steps dispatch their `runEvent`s through concurrently
+ * running listener effects).
+ *
+ * `{ ok: 'stale' }` means the offload's own upload was aborted (a cancel,
+ * or a lease loss aborting the step's/run's controller — see
+ * `offloadController`) or the run stopped being the one this tab drives
+ * partway through the round trip (`runId`/`generation`, the same pair
+ * `scopedDispatch` checks) — the write is dropped silently: not persisted,
+ * and not a `runPaused` failure either, since nothing about the offload
+ * genuinely failed on its own terms.
+ */
+async function writeEvent(
+  event: RunEvent,
+  runState: RunState,
+  slice: RunSliceState,
+  runStore: RunStore,
+  generation: number,
+): Promise<WriteOutcome> {
+  const runId = runState.runId
+  let outputsOverride: Record<string, unknown> | undefined
+
+  if (event.type === 'step.succeeded' || event.type === 'run.finished') {
+    const outputs = event.type === 'step.succeeded' ? runState.steps[event.key]?.outputs : runState.outputs
+    if (outputs) {
+      const key = event.type === 'step.succeeded' ? event.key : undefined
+      const controller = offloadController(runId, key)
+      try {
+        outputsOverride = await offloadOutputs(outputs, offloadStore(runState, key, controller.signal))
+      } catch (error) {
+        releaseOffloadController(runId, key)
+        return controller.signal.aborted ? { ok: 'stale' } : { ok: false, error }
+      }
+      releaseOffloadController(runId, key)
+      if (controller.signal.aborted || runId !== currentRunId || generation !== currentGeneration) {
+        return { ok: 'stale' }
+      }
+    }
+  }
+
+  const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice), outputsOverride })
+  for (const write of writes) {
+    const result = await persistWrite(runStore, write)
+    if (!result.ok) return { ok: false, error: result.error }
+  }
+  return { ok: true }
+}
+
 /** The `run.started` insert row (05); the lease is set at creation — this tab drives it. */
 function rowFromSlice(slice: RunSliceState): RunRow {
   const { meta, state } = slice
@@ -287,6 +441,10 @@ function resetRunnerState(): void {
   // `tools/call` until its host is closed. Aborting and forgetting would leave
   // an abandoned run's island live in the page.
   void disposeAllIslandHandles('cancelled')
+  // A script's log lines are live-only (Decision 12) and belong to the run
+  // that produced them: the moment a different run becomes the one this tab
+  // drives, nothing from the old one may stay on the page.
+  clearAllScriptLogs()
   writeQueues.clear()
   finishing.clear()
   currentRunId = null
@@ -398,6 +556,31 @@ function startHeartbeat(
 // ---------------------------------------------------------------------------
 // The scheduler: NextAction → RunEvent
 // ---------------------------------------------------------------------------
+
+/** What the slice is parked with when a resume is refused (see the `runReplaced` listener). */
+const RESUME_REFUSED =
+  'Resume refused: this run has recorded outputs that could not be loaded. Reload to try again.'
+
+/**
+ * Every output of a replayed run that came back as the `{ $file, $error }`
+ * sentinel — a `{"$file"}` payload the read path could not fetch. Step rows
+ * first, then the run's own outputs (which carry no step key).
+ */
+function unavailableOutputs(
+  state: RunState,
+): { stepKey?: StepKey; name: string; error: string }[] {
+  const found: { stepKey?: StepKey; name: string; error: string }[] = []
+  const scan = (outputs: Record<string, unknown> | undefined, key?: StepKey) => {
+    for (const [name, value] of Object.entries(outputs ?? {})) {
+      if (isUnavailablePayload(value)) {
+        found.push({ ...(key ? { stepKey: key } : {}), name, error: value.$error })
+      }
+    }
+  }
+  for (const step of Object.values(state.steps)) scan(step.outputs, step.key)
+  scan(state.outputs)
+  return found
+}
 
 function stepOf(def: Definition, job: string, stepId: string): Step | undefined {
   return def.jobs[job]?.steps.find((s) => s.id === stepId)
@@ -603,7 +786,31 @@ async function handleNextAction(
         dispatch(
           runEvent({ type: 'step.started', key: a.key, inputs: launched.handle.arguments, at }),
         )
+      } else if (step.uses === 'script') {
+        // The one kind the middleware drives end to end: no element to hand
+        // over, nobody to wait for. The launcher owns every event from
+        // `step.started` onwards (Decision 13), including the failure a
+        // definition bug in `with.src` becomes.
+        const scoped = scopedDispatch(runState.runId, dispatch, getRunState)
+        launchScriptStep({
+          step,
+          key: a.key,
+          job: a.job,
+          index: a.index,
+          def,
+          state: runState,
+          signal: controller.signal,
+          deps: scriptDeps(deps),
+          registerFile: registerFileForStep(deps, runState, a.key, scoped),
+          scoped,
+          getRunState,
+        })
       } else {
+        // No kind reaches here any more (script was the last one, Task 11) —
+        // this is the backstop for a kind added to `StepKind` before the
+        // runner learns to run it: the step carries the fault, and the run
+        // still reaches a final state.
+        //
         // `queued -> failed` is not a legal transition (transitions.ts): every
         // kind's failure passes through `running` first, same as a pipeline
         // step's own terminal-failure path (`step.started` then `step.failed`).
@@ -613,7 +820,10 @@ async function handleNextAction(
           runEvent({
             type: 'step.failed',
             key: a.key,
-            error: { code: 'UNSUPPORTED_KIND_M1', message: `${step.uses} steps arrive in M2` },
+            error: {
+              code: 'UNSUPPORTED_KIND',
+              message: `${step.uses} is not a step kind this harness runs`,
+            },
             at,
           }),
         )
@@ -677,15 +887,23 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // own rule); nothing to persist or schedule either.
       if (!runState) return
 
-      const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice) })
-      for (const write of writes) {
-        const result = await enqueue(runState.runId, () => persistWrite(deps.runStore, write))
-        if (!result.ok) {
-          listenerApi.dispatch(runPaused(pauseMessage(event, result.error)))
-          runnerControllers.abortAll()
-          stopHeartbeat(runState.runId)
-          return
-        }
+      // `enqueue()` is called synchronously here, before any `await` in this
+      // effect — its promise chain only orders calls made in that window
+      // (Task 12 fix round 1). The offload (when `step.succeeded`/
+      // `run.finished` carries an oversized output) happens *inside*
+      // `writeEvent`'s queued task, not ahead of this call, so a slow upload
+      // can never let a later event's write land first.
+      const generation = currentGeneration
+      const outcome = await enqueue(runState.runId, () =>
+        writeEvent(event, runState, slice, deps.runStore, generation),
+      )
+
+      if (outcome.ok === 'stale') return
+      if (!outcome.ok) {
+        listenerApi.dispatch(runPaused(pauseMessage(event, outcome.error)))
+        runnerControllers.abortAll()
+        stopHeartbeat(runState.runId)
+        return
       }
 
       // `run.started` is always the first event of a run (runnerActions.ts),
@@ -785,6 +1003,46 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       if (mode !== 'live') return
 
       currentRunId = state.runId
+
+      // Fail closed (Task 13 review): an output the read path could not fetch
+      // arrives as the `{ $file, $error }` sentinel (lib/payloadFetch), and
+      // `replayRun` folds it onto the step exactly like a value. Driving the
+      // run from here would evaluate every downstream
+      // `steps.<key>.outputs.<name>` / `needs.*` against that *object* —
+      // silently, all the way to a `run.finished` that persists derived
+      // outputs computed from an error marker. There is no honest way to
+      // continue, so this tab does not: the reason is recorded on the run
+      // (an `error` annotation per unreadable output, which the page renders
+      // and the row keeps), the slice is parked, and — crucially — the
+      // heartbeat is never started, so the lease this adoption just took
+      // lapses on its own and the run stays adoptable once the payload is
+      // reachable again. A `readonly` view is unaffected: it returned above,
+      // and `ValueView` shows each sentinel as its own "payload unavailable"
+      // chip.
+      const unloadable = unavailableOutputs(state)
+      if (unloadable.length > 0) {
+        // Parked *before* the annotations land, so the `runEvent` listener's
+        // own schedule pass is already closed when their writes settle
+        // (`runEvent` never clears `paused` — only `runReplaced` does).
+        listenerApi.dispatch(runPaused(RESUME_REFUSED))
+        for (const { stepKey: key, name, error } of unloadable) {
+          listenerApi.dispatch(
+            runEvent({
+              type: 'run.annotation',
+              annotation: {
+                level: 'error',
+                ...(key ? { stepKey: key } : {}),
+                message: key
+                  ? `step ${key}: output ${name} could not be loaded (${error}) — resume refused; reload to retry`
+                  : `run output ${name} could not be loaded (${error}) — resume refused; reload to retry`,
+              },
+              at: deps.clock.now(),
+            }),
+          )
+        }
+        return
+      }
+
       startHeartbeat(state.runId, deps, listenerApi.dispatch, listenerApi.getState)
 
       const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
@@ -822,10 +1080,43 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             signal: controller.signal,
             registerFile: registerFileForStep(deps, state, step.key, scoped),
           }
+          // A `polling` row normally resumes poll-only, against the initial
+          // response the record kept. Two rows cannot: one whose initial was
+          // *stubbed* by `trimResponse` (it blew the 256 KB response budget),
+          // and one that never recorded an initial at all (a half-written
+          // row, 08). Neither can be polled — the poll's `query`/`body` read
+          // `response.<field>` off it — so the step is re-requested from
+          // scratch instead (`restart`, pipeline.ts). That is a fact about
+          // this run worth recording, not a silent repair: a server-side job
+          // may already be running for the initial request whose id the
+          // record lost. The notice is stamped with the step so
+          // `AnnotationList` can jump to it like any other.
+          const initial = step.response?.initial
+          const fromScratch =
+            step.status === 'polling' && (initial === undefined || isTruncatedStub(initial))
+          if (fromScratch) {
+            const why =
+              initial === undefined
+                ? 'its initial response was not recorded'
+                : 'its initial response was truncated in the record'
+            scoped(
+              runEvent({
+                type: 'run.annotation',
+                annotation: {
+                  level: 'notice',
+                  stepKey: step.key,
+                  message: `step ${step.key} resumed from scratch — ${why}`,
+                },
+                at: deps.clock.now(),
+              }),
+            )
+          }
           const resume =
-            step.status === 'polling'
-              ? { mode: 'poll-only' as const, initial: step.response?.initial }
-              : undefined
+            step.status !== 'polling'
+              ? undefined
+              : fromScratch
+                ? { mode: 'restart' as const }
+                : { mode: 'poll-only' as const, initial }
           void runPipelineStep(
             {
               step: stepDecl,
@@ -871,6 +1162,36 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             scoped: scopedDispatch(state.runId, listenerApi.dispatch, getRunState),
             getRunState,
             recordedInputs: step.inputs ?? {},
+          })
+        }
+
+        // Scripts resume like a `queued`/`running` pipeline, not like an
+        // island (Decision 13): the module is re-run from scratch, `with` and
+        // all. There is nothing to re-open — a Worker died with the tab that
+        // spawned it — and no `resume:` hint to pick a run back up mid-flight,
+        // so re-issuing the whole thing is the only honest option. (Which is
+        // why 03 asks a script to be idempotent.)
+        for (const step of Object.values(state.steps)) {
+          if (step.kind !== 'script') continue
+          if (step.status !== 'queued' && step.status !== 'running') continue
+          const stepDecl = stepOf(def, step.job, step.stepId)
+          if (!stepDecl) continue
+
+          const controller = new AbortController()
+          controllers.set(controllerKey(state.runId, step.key), controller)
+          const scoped = scopedDispatch(state.runId, listenerApi.dispatch, getRunState)
+          launchScriptStep({
+            step: stepDecl,
+            key: step.key,
+            job: step.job,
+            index: step.index,
+            def,
+            state,
+            signal: controller.signal,
+            deps: scriptDeps(deps),
+            registerFile: registerFileForStep(deps, state, step.key, scoped),
+            scoped,
+            getRunState,
           })
         }
       }

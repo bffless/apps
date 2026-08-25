@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { db, seedFinishedRun } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
+import { PAYLOAD_BUDGET_BYTES } from '../lib/runner/payload'
 
 const json = (path: string, body: unknown) =>
   fetch(path, {
@@ -138,6 +139,55 @@ describe('the files trio', () => {
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]))
 
     expect((await fetch('/api/uploads/workflows/hello/nope.png')).status).toBe(404)
+  })
+})
+
+describe('the script module route', () => {
+  it('serves a bundle script as JavaScript, and 404s anything else', async () => {
+    const res = await fetch('/w/hello/scripts/poster-card.js')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/javascript')
+    // The text the harness turns into a Blob URL: a module with a default
+    // export, not an HTML error page answered with a 200.
+    expect(await res.text()).toContain('export default async function run')
+
+    expect((await fetch('/w/hello/scripts/nope.js')).status).toBe(404)
+    // Only `hello` publishes a bundle — another alias is an ordinary deploy.
+    expect((await fetch('/w/workflow/scripts/poster-card.js')).status).toBe(404)
+  })
+
+  it('lists the staged scripts in the discovery index', async () => {
+    const index = await (await fetch('/w/hello/.bffless/workflows/index.json')).json()
+    expect(index.scripts).toEqual(['scripts/poster-card.js'])
+  })
+
+  /**
+   * `poster-card`'s `big` output exists to push the step's outputs over the
+   * `{"$file"}` budget (Decision 5) — the live `interactive` run and its e2e
+   * assertion both depend on the offload actually firing. The count was cut
+   * from 20 000 to 12 000 (the final whole-branch review's I4: ~100k DOM nodes
+   * on the run page), so the budget is now pinned here rather than assumed.
+   */
+  it('returns a `big` output that is still over the payload budget', async () => {
+    // Loaded through `import.meta.glob`, the way `handlers.ts` reads the same
+    // directory: the script is plain JS with no declaration file, so a static
+    // import specifier would not type-check.
+    const modules = import.meta.glob('../../hello/scripts/poster-card.js') as Record<
+      string,
+      () => Promise<{ default: (ctx: unknown) => Promise<{ big: unknown[] }> }>
+    >
+    const load = Object.values(modules)[0]
+    const outputs = await (await load()).default({
+      inputs: { line: 'x', counts: [] },
+      log: () => {},
+      annotate: () => {},
+      files: { fetch: () => Promise.reject(new Error('not used')) },
+      signal: new AbortController().signal,
+    })
+
+    expect(outputs.big).toHaveLength(12000)
+    // The worst case: a one-character line. Anything real is far larger.
+    expect(JSON.stringify(outputs.big).length).toBeGreaterThan(PAYLOAD_BUDGET_BYTES)
   })
 })
 

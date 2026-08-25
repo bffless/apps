@@ -193,12 +193,21 @@ export function workflowId(file: string): string {
 }
 
 /**
- * The serve route a storage path is reachable at — mirrors the rule's `shape.fn.js` (06):
- * CE's `file_serve_handler` serves `/api/uploads/<subDir>/…`, and `path` is the
- * uploads-relative key, so the url is simply `/api/uploads/` + path.
+ * The one route a File ref's `url` may point at — mirrors the rule's `shape.fn.js`
+ * (06): CE's `file_serve_handler` serves `/api/uploads/<subDir>/…`.
+ *
+ * Exported because it is also the *gate*: `lib/url.ts`'s `isServeUrl` refuses
+ * any ref url that does not resolve inside this prefix, and a second copy of
+ * the string would let the builder and the gate drift apart.
+ */
+export const SERVE_PREFIX = '/api/uploads/'
+
+/**
+ * The serve route a storage path is reachable at: `path` is the
+ * uploads-relative key, so the url is simply `SERVE_PREFIX` + path.
  */
 export function fileUrl(path: string): string {
-  return `/api/uploads/${path.replace(/^\/+/, '')}`
+  return `${SERVE_PREFIX}${path.replace(/^\/+/, '')}`
 }
 
 /** The alias list, whether CE answered with a bare array, `{ aliases }` or `{ data }`. */

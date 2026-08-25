@@ -1,14 +1,20 @@
 /**
- * `uploadFile` (06): the prepare → PUT → register flow, as one function. The
- * kickoff form uploads on select (08) and the `form` step's file control
- * (M2) drives the same three calls under a different `scope`.
+ * `uploadBlob` (06): the prepare → PUT → register flow, as one function. The
+ * kickoff form uploads on select (08), the `form` step's file control (M2)
+ * drives the same three calls under a different `scope`, and a `script`
+ * step's returned `Blob`/`File` output (03) uploads through it too —
+ * `uploadFile` is the `File`-specific one-liner over it.
  *
- * `prepare`/`register` go through `httpJson` (same-origin JSON, no retries —
- * see `lib/http`); the PUT itself is a raw `XMLHttpRequest` because that is
- * the only way the browser reports upload progress.
+ * `prepare`/`register` go through `httpJsonWithReauth`: a run (and its lease
+ * heartbeat) genuinely outlives a SuperTokens access token, and a kickoff
+ * upload can just as easily land after an expired session — before this it
+ * went through the no-retry `httpJson`, so an upload after an expired session
+ * refreshed nothing and just failed (M1 minor). The PUT itself is a raw
+ * `XMLHttpRequest` because that is the only way the browser reports upload
+ * progress.
  */
 import { toFileRef } from './coerce'
-import { httpJson } from './http'
+import { httpJsonWithReauth } from './http'
 import type { FileRef } from './runner/types'
 
 export interface UploadFileArgs {
@@ -20,6 +26,9 @@ export interface UploadFileArgs {
   signal?: AbortSignal
   onProgress?: (fraction: number) => void
 }
+
+/** As `UploadFileArgs`, but for a script's returned `Blob`/`File` — a bare `Blob` has no `.name` of its own. */
+export type UploadBlobArgs = Omit<UploadFileArgs, 'file'> & { blob: Blob; name: string }
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
@@ -41,27 +50,33 @@ function toPrepared(raw: unknown): Prepared {
   return { uploadUrl, storageKey }
 }
 
-async function prepare(a: UploadFileArgs): Promise<Prepared> {
-  const res = await httpJson('/api/workflow/files/prepare', {
+async function prepare(a: UploadBlobArgs): Promise<Prepared> {
+  const res = await httpJsonWithReauth('/api/workflow/files/prepare', {
     method: 'POST',
     signal: a.signal,
     body: {
       impl: a.impl,
       workflow: a.workflow,
       scope: a.scope,
-      filename: a.file.name,
-      contentType: a.file.type,
-      size: a.file.size,
+      filename: a.name,
+      contentType: a.blob.type,
+      size: a.blob.size,
     },
   })
   if (!res.ok) throw new Error(`files/prepare answered ${res.status}`)
   return toPrepared(res.body)
 }
 
-/** The direct-to-bucket PUT. Plain `fetch` cannot report upload progress. */
-function putFile(
+/**
+ * The direct-to-bucket PUT. Plain `fetch` cannot report upload progress.
+ *
+ * Exported as a test seam: the already-aborted branch below is unreachable
+ * through `uploadBlob` (`prepare` would have rejected on the same signal
+ * first), and it is the branch that used to hang.
+ */
+export function putFile(
   url: string,
-  file: File,
+  blob: Blob,
   signal: AbortSignal | undefined,
   onProgress: ((fraction: number) => void) | undefined,
 ): Promise<void> {
@@ -70,7 +85,7 @@ function putFile(
     const onAbort = () => xhr.abort()
 
     xhr.open('PUT', url, true)
-    if (file.type) xhr.setRequestHeader('content-type', file.type)
+    if (blob.type) xhr.setRequestHeader('content-type', blob.type)
 
     xhr.upload.addEventListener('progress', (event) => {
       if (onProgress && event.lengthComputable) onProgress(event.loaded / event.total)
@@ -91,18 +106,22 @@ function putFile(
 
     if (signal) {
       if (signal.aborted) {
-        xhr.abort()
+        // Not `xhr.abort()`: an XHR that was never `send()`-ed fires no `abort`
+        // event, so the listener above would never run and this promise would
+        // never settle. Reachable since a script's Blob outputs upload under
+        // the run's abort signal.
+        reject(new DOMException('The upload was aborted', 'AbortError'))
         return
       }
       signal.addEventListener('abort', onAbort)
     }
 
-    xhr.send(file)
+    xhr.send(blob)
   })
 }
 
-async function register(a: UploadFileArgs, storageKey: string): Promise<FileRef> {
-  const res = await httpJson('/api/workflow/files/register', {
+async function register(a: UploadBlobArgs, storageKey: string): Promise<FileRef> {
+  const res = await httpJsonWithReauth('/api/workflow/files/register', {
     method: 'POST',
     signal: a.signal,
     body: {
@@ -110,15 +129,19 @@ async function register(a: UploadFileArgs, storageKey: string): Promise<FileRef>
       workflow: a.workflow,
       scope: a.scope,
       storageKey,
-      originalName: a.file.name,
+      originalName: a.name,
     },
   })
   if (!res.ok) throw new Error(`files/register answered ${res.status}`)
   return toFileRef(res.body)
 }
 
-export async function uploadFile(a: UploadFileArgs): Promise<FileRef> {
+export async function uploadBlob(a: UploadBlobArgs): Promise<FileRef> {
   const { uploadUrl, storageKey } = await prepare(a)
-  await putFile(uploadUrl, a.file, a.signal, a.onProgress)
+  await putFile(uploadUrl, a.blob, a.signal, a.onProgress)
   return register(a, storageKey)
+}
+
+export async function uploadFile(a: UploadFileArgs): Promise<FileRef> {
+  return uploadBlob({ ...a, blob: a.file, name: a.file.name })
 }

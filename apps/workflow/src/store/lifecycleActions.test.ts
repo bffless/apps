@@ -6,6 +6,7 @@
  */
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
+import { fileUrl } from '../lib/coerce'
 import { httpJson } from '../lib/http'
 import { completeFormStep, formInitialValues } from '../lib/runner/adapters/form'
 import type { Step } from '../lib/runner/types'
@@ -31,6 +32,7 @@ import { getOwnerId, startRun } from './runnerActions'
 import { createRegisterFile } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
 import { runClosed, runEvent } from './runSlice'
+import { workflowApi } from './workflowApi'
 
 afterEach(() => {
   resetHelloHarness()
@@ -454,5 +456,306 @@ describe('openRun — a failed lease request (transport failure)', () => {
     // The lease rule was never reached successfully, so nothing changed
     // server-side either.
     expect(db.runs.get(runId)?.leaseOwner).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (d) Task 13: resuming a run whose recorded output was offloaded to a file
+// ---------------------------------------------------------------------------
+
+const GREET0_KEY = stepKey('greet', 0, 'say')
+
+describe('openRun — a resumed run whose succeeded step had a {"$file"} output', () => {
+  it('evaluates the downstream expression against the hydrated value, not the pointer', async () => {
+    const runId = 'run_resume_payload'
+    seedResumableRun(runId)
+
+    // `greet/0/say`'s `line` was over the persistence budget, so the row
+    // carries a pointer. `jobs.greet.outputs.lines` collects that output and
+    // the run's own `lines` output reads it — so if hydration did not happen,
+    // the run finishes with a `{ $file }` object in its outputs.
+    const path = `workflows/hello/hello/runs/${runId}/greet/0/say/line.json`
+    const bytes = new TextEncoder().encode(JSON.stringify('Hello, world!'))
+    db.files.set(path, { bytes, contentType: 'application/json' })
+    const rowKey = stepRowKey(runId, GREET0_KEY)
+    const row = db.steps.get(rowKey)!
+    db.steps.set(rowKey, {
+      ...row,
+      outputs: {
+        line: {
+          $file: {
+            path,
+            name: 'line.json',
+            contentType: 'application/json',
+            size: bytes.byteLength,
+            url: fileUrl(path),
+          },
+        },
+      },
+    })
+
+    db.helloJobs.set('job_seed', {
+      polls: 1,
+      result: { markdown: '# resumed report', posterPath: null, ms: 42 },
+    })
+
+    const { store, advance } = trackedHelloStore()
+
+    // The read path is the only place hydration happens — `openRun` is handed
+    // whatever `getRun` produced, exactly as `RunPage.tsx` hands it over.
+    const read = await store.dispatch(workflowApi.endpoints.getRun.initiate(runId))
+    const record = read.data!
+    expect(record.steps.find((s) => s.key === GREET0_KEY)?.outputs).toEqual({ line: 'Hello, world!' })
+
+    await store.dispatch(openRun({ runId, run: record.run!, steps: record.steps }))
+    await pumpUntil(advance, () => store.getState().run.state?.steps[REVIEW_KEY]?.status === 'waiting')
+    submitReview(store)
+    await flush()
+
+    const state = store.getState().run.state!
+    expect(state.status).toBe('succeeded')
+    expect(state.outputs?.lines).toEqual(['Hello, world!', 'Hello, studio!'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (e) Task 13 (M1 minor): a `polling` row whose recorded initial was truncated
+// ---------------------------------------------------------------------------
+
+describe('openRun — a polling row whose recorded initial was truncated', () => {
+  it('re-requests the step from scratch exactly once and annotates the run', async () => {
+    const runId = 'run_resume_truncated'
+    const { run, steps } = resumableRunAndSteps(runId)
+    const slow = steps.find((s) => s.key === SLOW_KEY)!
+    // What `trimResponse` leaves behind when the initial response blew the
+    // 256 KB budget — the `jobId` the poll's `query` reads is simply gone.
+    slow.response = { initial: { note: 'truncated', size: 999_999 }, truncated: true }
+    db.runs.set(runId, { ...run, _id: nextId() })
+    for (const step of steps) db.steps.set(stepRowKey(runId, step.key), { ...step, _id: nextId() })
+
+    // The hello service answers one BUSY per distinct body (R7); pre-marking
+    // this one keeps the assertion about resume rather than about retry.
+    db.helloBusy.add(JSON.stringify((slow.inputs as { body: unknown }).body))
+
+    const calls: string[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      calls.push(`${request.method} ${new URL(request.url).pathname}`)
+    }
+    server.events.on('request:start', onRequestStart)
+
+    const { store, advance } = trackedHelloStore()
+    try {
+      await store.dispatch(openRun({ runId, run, steps }))
+      await pumpUntil(advance, () => store.getState().run.state?.steps[SLOW_KEY]?.status === 'succeeded')
+
+      expect(calls.filter((c) => c === 'POST /api/hello/slow')).toHaveLength(1)
+      expect(store.getState().run.state!.annotations).toContainEqual(
+        expect.objectContaining({
+          level: 'notice',
+          // Review minor 3: stamped with the step, so `AnnotationList` can
+          // offer the same "from <step>" jump every other step annotation has.
+          stepKey: SLOW_KEY,
+          message: `step ${SLOW_KEY} resumed from scratch — its initial response was truncated in the record`,
+        }),
+      )
+
+      await pumpUntil(advance, () => store.getState().run.state?.steps[REVIEW_KEY]?.status === 'waiting')
+      submitReview(store)
+      await flush()
+      expect(store.getState().run.state?.status).toBe('succeeded')
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (f) Task 13 (M1 minor): cancelling a run that was just resumed
+// ---------------------------------------------------------------------------
+
+describe('cancelRun after a resume', () => {
+  it('cancels every relaunched step, finishes the run, and lands no write after the run patch', async () => {
+    const runId = 'run_cancel_after_resume'
+    const BOOM = stepKey('flaky', 0, 'boom')
+    const { run, steps } = resumableRunAndSteps(runId)
+    // `flaky/0/boom` was mid-request when the driving tab went away (so
+    // `flaky/0/after` never happened) — a `running` pipeline row alongside
+    // the `polling` one, both relaunched by the resume listener.
+    const rows: StepRow[] = steps
+      .filter((s) => s.key !== stepKey('flaky', 0, 'after'))
+      .map((s) =>
+        s.key === BOOM
+          ? {
+              ...s,
+              status: 'running' as const,
+              error: null,
+              finishedAt: null,
+              inputs: { path: 'fail', body: { code: 'TEAPOT' } },
+            }
+          : s,
+      )
+    db.runs.set(runId, { ...run, _id: nextId() })
+    for (const step of rows) db.steps.set(stepRowKey(runId, step.key), { ...step, _id: nextId() })
+
+    // Both relaunches stay genuinely in flight: `fail` never answers, and the
+    // resumed poll's first tick is `pending` so it parks in `clock.sleep`
+    // (the virtual clock is never advanced before the cancel).
+    server.use(http.post('/api/hello/fail', () => new Promise<never>(() => {})))
+    db.helloJobs.set('job_seed', {
+      polls: 0,
+      result: { markdown: '# never read', posterPath: null, ms: 1 },
+    })
+
+    const { store, advance, writes } = trackedHelloStoreWithWrites()
+
+    await store.dispatch(openRun({ runId, run, steps: rows }))
+    expect(store.getState().run.mode).toBe('live')
+    await flush()
+    expect(store.getState().run.state?.steps[BOOM]?.status).toBe('running')
+    expect(store.getState().run.state?.steps[SLOW_KEY]?.status).toBe('polling')
+
+    await store.dispatch(cancelRun())
+    await flush()
+
+    const state = store.getState().run.state!
+    expect(state.steps[BOOM]?.status).toBe('cancelled')
+    expect(state.steps[SLOW_KEY]?.status).toBe('cancelled')
+    expect(state.status).toBe('cancelled')
+
+    expect(writes[writes.length - 1]).toEqual({
+      op: 'patch',
+      id: runId,
+      patch: expect.objectContaining({ status: 'cancelled', leaseOwner: null, leaseUntil: null }),
+    })
+
+    // Nothing the aborted relaunches emit afterwards may reach the store —
+    // the write count is stable once every pending timer and promise settles.
+    const settled = writes.length
+    await flush(20)
+    await advance(60_000)
+    await flush(20)
+    expect(writes.length).toBe(settled)
+
+    store.dispatch(runClosed())
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (g) Review, Important: a payload that could not be loaded must not become a
+// value a resumed run computes with
+// ---------------------------------------------------------------------------
+
+describe('openRun — a resumed run whose recorded output could not be loaded', () => {
+  it('refuses to drive the run: nothing relaunched, an error annotation on the record, the run left running', async () => {
+    const runId = 'run_resume_unreadable'
+    seedResumableRun(runId)
+
+    const path = `workflows/hello/hello/runs/${runId}/greet/0/say/line.json`
+    const bytes = new TextEncoder().encode(JSON.stringify('Hello, world!'))
+    db.files.set(path, { bytes, contentType: 'application/json' })
+    const rowKey = stepRowKey(runId, GREET0_KEY)
+    const row = db.steps.get(rowKey)!
+    db.steps.set(rowKey, {
+      ...row,
+      outputs: {
+        line: {
+          $file: {
+            path,
+            name: 'line.json',
+            contentType: 'application/json',
+            size: bytes.byteLength,
+            url: fileUrl(path),
+          },
+        },
+      },
+    })
+
+    // The bucket is unreachable, so `getRun` hands back the sentinel rather
+    // than the value — and `jobs.greet.outputs.lines` would otherwise collect
+    // it straight into the run's own outputs.
+    server.use(http.get('/api/uploads/*', () => new HttpResponse(null, { status: 500 })))
+
+    const calls: string[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      calls.push(`${request.method} ${new URL(request.url).pathname}`)
+    }
+    server.events.on('request:start', onRequestStart)
+
+    const { store } = trackedHelloStore()
+    try {
+      const read = await store.dispatch(workflowApi.endpoints.getRun.initiate(runId))
+      const record = read.data!
+      calls.length = 0
+
+      await store.dispatch(openRun({ runId, run: record.run!, steps: record.steps }))
+      await flush()
+
+      // `slow/0/start` would have resumed its poll immediately; nothing did.
+      expect(calls.filter((c) => c.includes('/api/hello/'))).toEqual([])
+
+      const state = store.getState().run.state!
+      expect(state.status).toBe('running')
+      expect(state.steps[SLOW_KEY]?.status).toBe('polling')
+      expect(state.annotations).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          stepKey: GREET0_KEY,
+          message: `step ${GREET0_KEY}: output line could not be loaded (the payload request answered 500) — resume refused; reload to retry`,
+        }),
+      )
+      expect(store.getState().run.paused).toBeTruthy()
+
+      // The refusal is on the record, not just in this tab — and the run is
+      // still `running`, so it stays adoptable once the lease lapses.
+      expect(db.runs.get(runId)?.annotations).toContainEqual(
+        expect.objectContaining({ level: 'error', stepKey: GREET0_KEY }),
+      )
+      expect(db.runs.get(runId)?.status).toBe('running')
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (h) Review minor 5: a `polling` row that never recorded an initial response
+// ---------------------------------------------------------------------------
+
+describe('openRun — a polling row with no recorded initial response', () => {
+  it('takes the same from-scratch path as a truncated one, and says which it was', async () => {
+    const runId = 'run_resume_no_initial'
+    const { run, steps } = resumableRunAndSteps(runId)
+    const slow = steps.find((s) => s.key === SLOW_KEY)!
+    // The row says `polling` but carries no `response` at all — a half-written
+    // row (08 degraded states). Polling it would read `response.jobId` off
+    // `undefined`.
+    delete slow.response
+    db.runs.set(runId, { ...run, _id: nextId() })
+    for (const step of steps) db.steps.set(stepRowKey(runId, step.key), { ...step, _id: nextId() })
+
+    db.helloBusy.add(JSON.stringify((slow.inputs as { body: unknown }).body))
+
+    const calls: string[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      calls.push(`${request.method} ${new URL(request.url).pathname}`)
+    }
+    server.events.on('request:start', onRequestStart)
+
+    const { store, advance } = trackedHelloStore()
+    try {
+      await store.dispatch(openRun({ runId, run, steps }))
+      await pumpUntil(advance, () => store.getState().run.state?.steps[SLOW_KEY]?.status === 'succeeded')
+
+      expect(calls.filter((c) => c === 'POST /api/hello/slow')).toHaveLength(1)
+      expect(store.getState().run.state!.annotations).toContainEqual(
+        expect.objectContaining({
+          level: 'notice',
+          stepKey: SLOW_KEY,
+          message: `step ${SLOW_KEY} resumed from scratch — its initial response was not recorded`,
+        }),
+      )
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+    }
   })
 })

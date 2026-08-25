@@ -56,6 +56,23 @@ jobs:
       line:  ${{ steps.choose.outputs.line }}
       view:  { type: json, value: "${{ steps.choose.outputs }}", render: island, src: islands/line-viewer.html }
 
+  card:
+    needs: [pick, analyze]
+    steps:
+      - id: draw
+        uses: script
+        with:
+          src: scripts/poster-card.js
+          line: ${{ needs.pick.outputs.line }}
+          counts: ${{ needs.analyze.outputs.counts }}
+        outputs:
+          poster: { type: file }              # an SVG Blob → File ref
+          big:    { type: json }              # ~400 KB array → exercises {"$file"} (Task 12)
+        summary: "Card **${{ steps.draw.outputs.poster.name }}** (${{ steps.draw.outputs.poster.size }} bytes)"
+    outputs:
+      poster: ${{ steps.draw.outputs.poster }}
+
 outputs:
   line: ${{ jobs.pick.outputs.line }}
   view: ${{ jobs.pick.outputs.view }}
+  poster: ${{ jobs.card.outputs.poster }}

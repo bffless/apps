@@ -66,6 +66,19 @@ function stub(value: unknown): { note: 'truncated'; size: number } {
 }
 
 /**
+ * Is this value one of `stub()`'s markers — i.e. a `response` half the record
+ * kept only the *size* of? Resume needs to know: a `polling` row whose
+ * `initial` was stubbed cannot be polled against (the poll's request context
+ * reads `response.<field>` off it), so the step has to be re-requested from
+ * scratch (`runnerMiddleware.ts`'s `runReplaced` listener).
+ */
+export function isTruncatedStub(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const r = value as Record<string, unknown>
+  return Object.keys(r).length === 2 && r.note === 'truncated' && typeof r.size === 'number'
+}
+
+/**
  * Trim a step's `response` (`{ initial, last }`) to a 256 KB JSON-serialized
  * budget, trimming `last` first and only reaching for `initial` if that
  * alone was not enough (05) — `last` is the bulkier, less useful half once a

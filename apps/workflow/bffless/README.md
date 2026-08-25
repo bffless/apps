@@ -23,12 +23,19 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
 - **Storage**: a default storage backend must be configured (bucket or local ≥ CE 0.3.15) —
   the files trio (presigned PUT → register → serve) is the upload path.
 - **External connections / AI tokens**: none. **Secrets**: none.
-- **Response-header rules**: one, required from M2 Phase 1 — **`**/islands/*.html` →
-  `Cache-Control: no-transform, no-cache`** (project `bffless/workflow`, rule "Islands: no
-  Cloudflare script injection", created via MCP `create_response_header_rule`). Why: see
-  *Islands (M2) → Cloudflare* below. It is a project setting, not part of the rule sets, so
-  every new install has to add it by hand until bffless/ce#700 lets rules-as-code carry it.
-  (COOP/COEP only becomes relevant with M2 scripts.)
+- **Response-header rules**: two, both on project `bffless/workflow`, both created via MCP
+  `create_response_header_rule` (a project setting, not part of the rule sets, so every new
+  install has to add them by hand until bffless/ce#700 lets rules-as-code carry them):
+  - required from M2 Phase 1 — **`**/islands/*.html` → `Cache-Control: no-transform,
+    no-cache`** (rule "Islands: no Cloudflare script injection"). Why: see *Islands (M2) →
+    Cloudflare* below.
+  - required from M2 Phase 2 — **`**/scripts/*.js` → `Cache-Control: no-transform,
+    no-cache`**. Worker module text is fetched by the harness and turned into a Blob URL
+    verbatim — an edge-injected script would break the import; same reason as islands.
+    Not yet automatable — bffless/ce#700.
+
+  (COOP/COEP only becomes relevant if a script needs threads — `SharedArrayBuffer`,
+  ffmpeg core-mt — which nothing in hello does.)
 - The `/w/hello/[...path]` forwarding rule bakes `targetUrl: https://hello.j5s.dev` — edit it
   for a different install domain (CE follow-up `targetUrl: alias://hello` removes this).
 
@@ -68,6 +75,24 @@ generalises the forwarder (apps#364 / ce#698, M4), `run.impl` must be validated 
 discovered aliases — or taken from the route rather than the row — or a member-planted run
 row could point another member's viewer at a foreign bundle while the host proxies its
 `tools/call` under the viewer's own session.
+
+### Scripts (M2 Phase 2)
+
+A `script` step's module is served straight out of the hello bundle at
+`/w/hello/scripts/<file>.js` (the same forwarder as the islands and the workflow YAMLs). The
+**page** fetches it — the bundle is behind the member's session — and hands the text to a
+Worker as a Blob URL, so the module is imported verbatim; it has no cookies of its own and
+reaches the network only through the host's relay (03). Scripts are copied into the bundle
+**verbatim** by `scripts/stage-hello.mjs` (no build step, unlike islands) and listed in
+`index.json`'s `scripts` array; hello's first one is `scripts/poster-card.js`, the `card` job
+of `interactive.workflow.yaml`.
+
+**Oversized outputs.** An output whose JSON exceeds 256 KB is not stored in the row: the
+runner uploads it as `<name>.json` under the step's own `runs/<runId>/<job>/<index>/<step>/`
+prefix (the files trio, 06) and the row holds `{ "$file": <File ref> }` in its place. Every
+read path hydrates it back before the page sees it, so nothing downstream — renderers,
+expressions — knows the difference. The bytes therefore live under the run prefix and go with
+the run when it is deleted.
 
 ## First-success checkpoint
 

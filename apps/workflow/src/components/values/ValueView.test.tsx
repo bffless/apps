@@ -4,7 +4,7 @@
  * consumers depend on: the file card's Download link always ends `download=1`,
  * and a named `render` shows the M2 placeholder badge above the base viewer.
  */
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '../../mocks/server'
@@ -226,6 +226,44 @@ describe('ValueView', () => {
     expect((screen.getByText('Download') as HTMLAnchorElement).getAttribute('href')).toBe(
       `${ref.url}?download=1`,
     )
+  })
+
+  // Task 13: a payload whose fetch failed on the read path arrives here as the
+  // `{ $file, $error }` sentinel `lib/payloadFetch` leaves in place of the
+  // value — it must report itself rather than be stringified through whatever
+  // viewer the declaration asked for.
+  it('renders an unreadable offloaded payload as a chip that names the error and still offers the bytes', () => {
+    const ref: FileRef = {
+      path: 'workflows/hello/hello/runs/run_1/slow/0/start/report.json',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 300_000,
+      url: '/api/uploads/workflows/hello/hello/runs/run_1/slow/0/start/report.json',
+    }
+
+    render(<ValueView decl={{ type: 'markdown' }} value={{ $file: ref, $error: '500' }} />)
+
+    const chip = screen.getByTestId('payload-unavailable')
+    expect(chip).toHaveTextContent('payload unavailable — 500')
+    expect((within(chip).getByRole('link', { name: 'Download' }) as HTMLAnchorElement).getAttribute('href')).toBe(
+      `${ref.url}?download=1`,
+    )
+  })
+
+  it('refuses to link an unsafe payload url, and says so as text', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 1,
+      url: 'javascript:alert(1)',
+    }
+
+    render(<ValueView decl={{ type: 'json' }} value={{ $file: ref, $error: 'boom' }} />)
+
+    const chip = screen.getByTestId('payload-unavailable')
+    expect(chip).toHaveTextContent('payload unavailable — boom')
+    expect(within(chip).queryByRole('link')).toBeNull()
   })
 
   it('renders a null row in a table as an em dash instead of throwing', () => {

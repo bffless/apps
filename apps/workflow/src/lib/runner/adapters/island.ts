@@ -118,10 +118,15 @@ function inside(url: string, prefix: string): boolean {
  * (another implementation's bundle, an absolute `/api/…`, a protocol-relative
  * `//host`, an off-site URL, a path that traverses out however it is spelled)
  * is a definition bug and throws.
+ *
+ * `kind` only labels the error: a `script` step's `src` resolves by exactly the
+ * same rules (`resolveScriptSrc` in the script adapter passes `'script'`), and
+ * a message that said "island" there would send the author looking in the
+ * wrong place.
  */
-export function resolveSrc(impl: string, src: string): string {
+export function resolveSrc(impl: string, src: string, kind = 'island'): string {
   const bad = (why: string): never => {
-    throw new Error(`island src ${src}: ${why}`)
+    throw new Error(`${kind} src ${src}: ${why}`)
   }
 
   if (src === '') bad('must not be empty')
