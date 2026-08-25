@@ -14,6 +14,7 @@
  * `.spec`), so this never runs as its own suite.
  */
 import { toDefinition } from '@bffless/workflow-lint/definition'
+import { IslandMountAbandoned } from '../islands/IslandHost'
 import type { IslandDisplayMode, IslandHost, IslandHostDeps, IslandMountArgs } from '../islands/IslandHost'
 import type { HttpJson } from '../lib/runner/adapters/pipeline'
 import type { RunRow, StepRow } from '../lib/runner/rows'
@@ -56,6 +57,30 @@ export const ISLAND_DEF = toDefinition({
 
 export const ISLAND_KEY: StepKey = stepKey('a', 0, 'pick')
 
+/** The same workflow, but its island declares `display: fullscreen` (04). */
+export const ISLAND_FULLSCREEN_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    a: {
+      steps: [
+        {
+          id: 'pick',
+          uses: 'island',
+          with: {
+            src: 'islands/pick.html',
+            title: 'Pick one',
+            display: 'fullscreen',
+            mode: 'quick',
+          },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+      outputs: { choice: '${{ steps.pick.outputs.choice }}' },
+    },
+  },
+  outputs: { choice: '${{ jobs.a.outputs.choice }}' },
+}) as Definition
+
 // ---------------------------------------------------------------------------
 // The fake host
 // ---------------------------------------------------------------------------
@@ -77,8 +102,19 @@ export interface FakeIslandHost {
   pending(): number
 }
 
+/**
+ * A hand-written `IslandHost`, faithful on the one behaviour the middleware's
+ * wiring turns on: like the real host, `teardown` and a superseding `mount`
+ * **abandon** any mount still in flight (`IslandMountAbandoned`) rather than
+ * leaving it pending or failing it. Without that, the StrictMode double-mount
+ * and navigate-away-mid-load paths could not be exercised at all.
+ */
 export function fakeIslandHost(): FakeIslandHost {
   const settlers: { resolve: () => void; reject: (err: Error) => void }[] = []
+
+  const abandonPending = (why: string) => {
+    while (settlers.length > 0) settlers.shift()!.reject(new IslandMountAbandoned(why))
+  }
 
   const fake: FakeIslandHost = {
     deps: null,
@@ -101,11 +137,13 @@ export function fakeIslandHost(): FakeIslandHost {
       fake.deps = deps
       return {
         mount(iframe, a) {
+          // A second mount supersedes the first, exactly as the real host does.
+          abandonPending('superseded by a second mount')
           fake.mounts.push(a)
           fake.frames.push(iframe)
           return new Promise<void>((resolve, reject) => {
             if (a.signal.aborted) {
-              reject(new Error('aborted before mount'))
+              reject(new IslandMountAbandoned('the step went away while loading'))
               return
             }
             settlers.push({ resolve, reject })
@@ -116,6 +154,7 @@ export function fakeIslandHost(): FakeIslandHost {
         },
         async teardown(reason) {
           fake.teardowns.push(reason)
+          abandonPending(`torn down (${reason}) while loading`)
         },
       }
     },
@@ -193,13 +232,13 @@ export function islandStore(): { store: AppStore; advance: (ms: number) => Promi
  * middleware has registered the handle and the pane could mount it, but the
  * mount has not settled yet (Decision 11's `running → waiting` seam).
  */
-export async function startIslandRun(): Promise<IslandRun> {
+export async function startIslandRun(def: Definition = ISLAND_DEF): Promise<IslandRun> {
   const { store, advance, host, writes } = islandStore()
   store.dispatch(
     startRun({
       impl: 'test',
       workflow: 'island',
-      def: ISLAND_DEF,
+      def,
       yaml: ISLAND_YAML,
       workflowName: 'Island',
       values: {},

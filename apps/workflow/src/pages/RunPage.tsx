@@ -30,7 +30,7 @@
  * Phase 3), and a row whose definition snapshot cannot be used at all — which
  * still renders as a record.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { useParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
@@ -38,6 +38,7 @@ import { AnnotationList } from '../components/AnnotationList'
 import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
+import { useIslandHandle } from '../islands/useIslandHandle'
 import { RunHeader } from '../components/run/RunHeader'
 import { RunOutputs } from '../components/run/RunOutputs'
 import { RunSummary } from '../components/run/RunSummary'
@@ -307,9 +308,34 @@ export function RunPage() {
     selectedStepState?.kind === 'island' &&
     (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')
   const fullscreen = islandDisplay === 'fullscreen' && islandOpen
+
+  // The mode an island *starts* in is its own declared `display` (04), and this
+  // is where that is applied: when the pane opens, not when the step launches.
+  // Launching is global — a second island starting in a parallel job would drag
+  // the page out from under the one the user is in — and a seed dispatched
+  // before the step is selected would be undone by this effect's own reset in
+  // the same commit. Seeding once per opened step also leaves the island's
+  // `ui/request-display-mode` and the strip's exit button free to move the mode
+  // afterwards: neither changes what was seeded, so neither is fought back over.
+  const openIslandKey = islandOpen ? selectedStep : null
+  const openIslandHandle = useIslandHandle(state?.runId ?? '', openIslandKey ?? '')
+  const seededFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!islandOpen && islandDisplay === 'fullscreen') dispatch(islandDisplayChanged('inline'))
-  }, [islandOpen, islandDisplay, dispatch])
+    if (openIslandKey === null) {
+      // Nothing to reset until something was seeded — otherwise this would
+      // dispatch `inline` over and over on every unrelated render.
+      if (seededFor.current === null) return
+      seededFor.current = null
+      dispatch(islandDisplayChanged('inline'))
+      return
+    }
+    // The handle can land a render after the selection does (Resume registers
+    // handles from a listener effect), and waiting for it is better than
+    // seeding `inline` and never revisiting.
+    if (!openIslandHandle || seededFor.current === openIslandKey) return
+    seededFor.current = openIslandKey
+    dispatch(islandDisplayChanged(openIslandHandle.display))
+  }, [openIslandKey, openIslandHandle, dispatch])
 
   if (!isLive && (isLoading || (isFetching && !data && !isError))) {
     return <p className="note">Loading…</p>

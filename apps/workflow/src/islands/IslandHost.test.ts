@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFakeIsland } from './fakeIsland'
-import { createIslandHost, IslandLoadError } from './IslandHost'
+import { createIslandHost, IslandLoadError, IslandMountAbandoned } from './IslandHost'
 import type { IslandHost, IslandHostDeps } from './IslandHost'
 
 const HTML = '<!doctype html><html><body>island</body></html>'
@@ -411,7 +411,7 @@ describe('ISLAND_LOAD', () => {
     }
   })
 
-  it('rejects when the mount is aborted before the View initializes', async () => {
+  it('abandons — does not fail — when the mount is aborted before the View initializes', async () => {
     const h = makeHarness()
     const controller = new AbortController()
     const settled = h.host
@@ -421,7 +421,30 @@ describe('ISLAND_LOAD', () => {
     await tick()
     controller.abort()
 
-    expect(await settled).toBeInstanceOf(IslandLoadError)
+    expect(await settled).toBeInstanceOf(IslandMountAbandoned)
+  })
+
+  it('keeps abandonment and load failure disjoint', async () => {
+    // The whole point of the two types: a caller asking "is this the step's
+    // failure?" gets the right answer without reading the message.
+    const h = makeHarness()
+    h.fetchText.mockResolvedValueOnce({ ok: false, status: 500, text: 'boom' } as never)
+    const failure = await h.host.mount(h.iframe, MOUNT).catch((e: unknown) => e)
+
+    expect(failure).toBeInstanceOf(IslandLoadError)
+    expect(failure).not.toBeInstanceOf(IslandMountAbandoned)
+    expect((failure as IslandLoadError).code).toBe('ISLAND_LOAD')
+
+    const other = makeHarness()
+    const controller = new AbortController()
+    controller.abort()
+    const abandoned = await other.host
+      .mount(other.iframe, { ...MOUNT, signal: controller.signal })
+      .catch((e: unknown) => e)
+
+    expect(abandoned).toBeInstanceOf(IslandMountAbandoned)
+    expect(abandoned).not.toBeInstanceOf(IslandLoadError)
+    expect((abandoned as IslandMountAbandoned).code).toBe('ISLAND_ABANDONED')
   })
 })
 
@@ -458,7 +481,7 @@ describe('teardown', () => {
     expect(island.closed).toBe(true)
   })
 
-  it('rejects an already-aborted mount without fetching the HTML', async () => {
+  it('abandons an already-aborted mount without fetching the HTML', async () => {
     const h = makeHarness()
     const controller = new AbortController()
     controller.abort()
@@ -467,7 +490,7 @@ describe('teardown', () => {
       .mount(h.iframe, { ...MOUNT, signal: controller.signal })
       .catch((e: unknown) => e)
 
-    expect(err).toBeInstanceOf(IslandLoadError)
+    expect(err).toBeInstanceOf(IslandMountAbandoned)
     expect(h.fetchText).not.toHaveBeenCalled()
     expect(h.iframe.srcdoc).toBe('')
   })
@@ -488,7 +511,7 @@ describe('teardown', () => {
     await h.host.teardown('cancelled')
     deliver({ ok: true, status: 200, text: HTML })
 
-    expect(await settled).toBeInstanceOf(IslandLoadError)
+    expect(await settled).toBeInstanceOf(IslandMountAbandoned)
     expect(h.iframe.srcdoc).toBe('')
     // The transport is only built at `connect()` time: never reached.
     expect(island.frames).toEqual([])
@@ -515,7 +538,7 @@ describe('teardown', () => {
     expect(pending).toHaveLength(2)
 
     pending[0]({ ok: true, status: 200, text: HTML })
-    expect(await first).toBeInstanceOf(IslandLoadError)
+    expect(await first).toBeInstanceOf(IslandMountAbandoned)
 
     pending[1]({ ok: true, status: 200, text: HTML })
     await survivor.connect()

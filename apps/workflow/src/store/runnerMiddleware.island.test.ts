@@ -10,7 +10,7 @@
  * leave the iframe to `IslandStepPane.test.tsx`.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { IslandLoadError } from '../islands/IslandHost'
+import { IslandLoadError, IslandMountAbandoned } from '../islands/IslandHost'
 import { replayRun } from '../lib/runner/replay'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import { getIslandHandle } from './islandLaunch'
@@ -18,6 +18,7 @@ import { cancelRun } from './lifecycleActions'
 import { runOpened, runReplaced } from './runSlice'
 import {
   ISLAND_DEF,
+  ISLAND_FULLSCREEN_DEF,
   ISLAND_KEY,
   ISLAND_YAML,
   flush,
@@ -97,6 +98,48 @@ describe('island steps — launch', () => {
   })
 })
 
+describe('island steps — an abandoned mount is not a failure', () => {
+  it('leaves the step running when the mount is abandoned rather than failed', async () => {
+    // The dev-mode reality this guards (fix round 1, finding 1): React
+    // StrictMode double-mounts every effect, so session 1 is *always*
+    // superseded — recording that as ISLAND_LOAD would fail every island on
+    // its first load before the user saw anything.
+    const { store, runId, host } = await startIslandRun()
+
+    void getIslandHandle(runId, ISLAND_KEY)!.mount(frame())
+    await flush()
+    host.fail(new IslandMountAbandoned('island /w/test/islands/pick.html: superseded'))
+    await flush()
+
+    const step = store.getState().run.state!.steps[ISLAND_KEY]
+    expect(step.status).toBe('running')
+    expect(step.error).toBeUndefined()
+    expect(store.getState().run.state!.status).toBe('running')
+    // The handle survives: the step is still live, and the next mount is the
+    // one that counts.
+    expect(getIslandHandle(runId, ISLAND_KEY)).toBeDefined()
+  })
+
+  it('reaches waiting exactly once across a superseding second mount', async () => {
+    const { store, runId, host } = await startIslandRun()
+    const handle = getIslandHandle(runId, ISLAND_KEY)!
+
+    // Mount, then mount again before the first settles — the fake abandons the
+    // first, exactly as `IslandHost` does.
+    void handle.mount(frame())
+    await flush()
+    void handle.mount(frame())
+    await flush()
+    expect(host.mounts).toHaveLength(2)
+
+    host.settle()
+    await flush()
+
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
+    expect(store.getState().run.state!.steps[ISLAND_KEY].error).toBeUndefined()
+  })
+})
+
 describe('island steps — the host tools', () => {
   it('workflow.submit validates against the declared outputs and finishes the run', async () => {
     const { store, runId, host, advance } = await startIslandRun()
@@ -125,6 +168,32 @@ describe('island steps — the host tools', () => {
 
     expect(host.teardowns).toEqual(['completed'])
     expect(getIslandHandle(runId, ISLAND_KEY)).toBeUndefined()
+  })
+
+  it('refuses a second submit instead of throwing an illegal transition', async () => {
+    // The bridge is closed a persist round-trip *after* the step goes terminal,
+    // so an impatient island can submit twice (fix round 1, finding 3).
+    const { store, runId, host, advance } = await startIslandRun()
+
+    void getIslandHandle(runId, ISLAND_KEY)!.mount(frame())
+    await flush()
+    host.settle()
+    await flush()
+
+    expect(host.deps!.onSubmit({ choice: 'a' })).toEqual({ ok: true })
+    const second = host.deps!.onSubmit({ choice: 'b' })
+    expect(second).toEqual({ ok: false, errors: { outputs: expect.any(String) } })
+    // And annotating a step that has already answered is refused the same way.
+    expect(host.deps!.onAnnotate({ summary: 'too late' })).toEqual({
+      ok: false,
+      error: expect.any(String),
+    })
+
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+    const step = store.getState().run.state!.steps[ISLAND_KEY]
+    expect(step.status).toBe('succeeded')
+    expect(step.outputs).toEqual({ choice: 'a' })
+    expect(step.summary).toBeUndefined()
   })
 
   it('workflow.annotate lands as step.annotated on the still-waiting step', async () => {
@@ -164,7 +233,7 @@ describe('island steps — the host tools', () => {
     expect(handle.log).toEqual(['rendered 3 clips'])
   })
 
-  it('ui/request-display-mode drives the ui slice', async () => {
+  it('ui/request-display-mode drives the ui slice, but launching alone never does', async () => {
     const { store, runId, host } = await startIslandRun()
 
     void getIslandHandle(runId, ISLAND_KEY)!.mount(frame())
@@ -175,6 +244,14 @@ describe('island steps — the host tools', () => {
     expect(store.getState().ui.islandDisplay).toBe('inline')
     host.deps!.onDisplayMode('fullscreen')
     expect(store.getState().ui.islandDisplay).toBe('fullscreen')
+  })
+
+  it('does not seed the page mode at launch, even for a declared fullscreen island', async () => {
+    // Fix round 1, finding 4: launching is global, so a second island starting
+    // in a parallel job must not drag the page out from under the first. The
+    // declared mode is applied by the page when it opens the pane.
+    const { store } = await startIslandRun(ISLAND_FULLSCREEN_DEF)
+    expect(store.getState().ui.islandDisplay).toBe('inline')
   })
 })
 

@@ -68,9 +68,14 @@ const DISPLAY_MODES = ['inline', 'fullscreen'] as const
 export type IslandDisplayMode = (typeof DISPLAY_MODES)[number]
 
 /**
- * The step could not be shown at all: the HTML was not 2xx, the View never
- * completed `ui/initialize`, or the mount was aborted. Carries the `code` the
- * step's `error` will be recorded under (Decision 11).
+ * The island genuinely could not be shown: the HTML was not 2xx, the View never
+ * completed `ui/initialize` within 30 s, or the bridge would not connect.
+ * Carries the `code` the step's `error` will be recorded under (Decision 11).
+ *
+ * Deliberately **not** a superclass of `IslandMountAbandoned`: a caller that
+ * writes `err instanceof IslandLoadError` is asking "is this the step's
+ * failure?", and the answer for an abandoned mount is no. Keeping the two types
+ * disjoint makes that distinction impossible to lose by accident.
  */
 export class IslandLoadError extends Error {
   readonly code = 'ISLAND_LOAD' as const
@@ -78,6 +83,23 @@ export class IslandLoadError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'IslandLoadError'
+  }
+}
+
+/**
+ * The mount was **abandoned**, not failed: the step went away while its island
+ * was still loading (cancelled, the pane unmounted, a second `mount` superseded
+ * this one — React StrictMode's dev double-mount does exactly that on every
+ * island's first load). Nothing is wrong with the island, so nothing about it
+ * belongs in the run record: the caller re-mounts, or lets the step's own
+ * terminal event stand.
+ */
+export class IslandMountAbandoned extends Error {
+  readonly code = 'ISLAND_ABANDONED' as const
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'IslandMountAbandoned'
   }
 }
 
@@ -122,8 +144,11 @@ export interface IslandMountArgs {
 export interface IslandHost {
   /**
    * Fetches the HTML, mounts the bridge on `iframe`, resolves after
-   * `ui/notifications/initialized` (or rejects `IslandLoadError` after 30 s /
-   * a non-2xx fetch / an abort).
+   * `ui/notifications/initialized`. Rejects `IslandLoadError` when the island
+   * itself could not be shown (non-2xx fetch, 30 s with no `ui/initialize`, a
+   * bridge that would not connect) and `IslandMountAbandoned` when the mount
+   * was given up on instead (abort, teardown, a superseding mount) — the two
+   * are different facts, and only the first is the step's failure.
    */
   mount(iframe: HTMLIFrameElement, a: IslandMountArgs): Promise<void>
   /**
@@ -251,9 +276,13 @@ function applyDisplayMode(current: Session, mode: IslandDisplayMode): boolean {
   return true
 }
 
-/** The one message every "the step went away mid-load" path rejects with. */
-function cancelledWhileLoading(url: string): IslandLoadError {
-  return new IslandLoadError(`island ${url}: the step was cancelled while loading`)
+/**
+ * The one error every "the step went away mid-load" path rejects with — an
+ * abandonment, never a load failure, so a caller cannot mistake a StrictMode
+ * double-mount or a pane the user navigated away from for a broken island.
+ */
+function cancelledWhileLoading(url: string): IslandMountAbandoned {
+  return new IslandMountAbandoned(`island ${url}: the step went away while loading`)
 }
 
 /** One mounted island: its bridge, and the frame/flags its handlers close over. */

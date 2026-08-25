@@ -23,12 +23,12 @@
  * a handle appears (Resume registers handles from a listener effect, after the
  * page has already rendered) or when a log line lands.
  */
-import { createIslandHost } from '../islands/IslandHost'
+import { createIslandHost, IslandMountAbandoned } from '../islands/IslandHost'
 import type { IslandDisplayMode, IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { fetchText, openLink } from '../islands/hostDeps'
 import { annotateEvent, completeIslandStep, islandInputs } from '../lib/runner/adapters/island'
 import type { HttpJson } from '../lib/runner/adapters/pipeline'
-import type { Definition, RunState, Step, StepKey } from '../lib/runner/types'
+import type { Definition, RunState, Step, StepKey, StepStatus } from '../lib/runner/types'
 import { runEvent } from './runSlice'
 import { islandDisplayChanged } from './uiSlice'
 
@@ -179,14 +179,40 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
 
   const args = a.recordedInputs ?? inputs.arguments
   const log: string[] = []
-  const statusOf = () => a.getRunState()?.steps[a.key]?.status
+
+  /**
+   * This step's status — but only while the run it belongs to is still the one
+   * the slice holds. A step key repeats identically across runs of the same
+   * workflow, so without the `runId` check a superseded island could read (and
+   * act on) a *different* run's identically-keyed step.
+   */
+  const liveStatus = (): StepStatus | undefined => {
+    const state = a.getRunState()
+    if (!state || state.runId !== a.state.runId) return undefined
+    return state.steps[a.key]?.status
+  }
+
+  /**
+   * An island keeps answering until its bridge is closed, and closing happens a
+   * persist round-trip *after* the step went terminal — so a second
+   * `workflow.submit` (an impatient double click inside the island) can land on
+   * an already-succeeded step. The reducer would throw `IllegalTransition` out
+   * of `dispatch`; the island gets a plain "too late" instead.
+   */
+  const OPEN: ReadonlySet<StepStatus> = new Set<StepStatus>(['running', 'waiting'])
+  const isOpen = () => {
+    const status = liveStatus()
+    return status !== undefined && OPEN.has(status)
+  }
 
   const hostDeps: IslandHostDeps = {
     http: a.deps.http,
     fetchText,
     onSubmit: (outputs) => {
       const state = a.getRunState()
-      if (!state) return { ok: false, errors: { outputs: 'This run is no longer live.' } }
+      if (!state || !isOpen()) {
+        return { ok: false, errors: { outputs: 'This step is no longer accepting a submit.' } }
+      }
       const submitted = completeIslandStep({
         step: a.step,
         key: a.key,
@@ -201,6 +227,9 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
       return { ok: true }
     },
     onAnnotate: (annotateArgs) => {
+      // `step.annotated` is legal only on a non-terminal step (reducer.ts), so
+      // the same guard the submit path needs applies here.
+      if (!isOpen()) return { ok: false, error: 'This step is no longer accepting annotations.' }
       const event = annotateEvent(a.key, annotateArgs, a.deps.now())
       if ('error' in event) return { ok: false, error: event.error }
       a.scoped(runEvent(event))
@@ -238,11 +267,15 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
           signal: a.signal,
         })
       } catch (err) {
-        // Only while the step is still `running`: a mount abandoned because the
-        // step was cancelled (the abort *is* what rejected it) has already been
-        // recorded as `step.cancelled`, and a resumed `waiting` step whose
-        // re-mount failed is a UI problem, not a new run event.
-        if (statusOf() === 'running') {
+        // An abandoned mount is not a failure (`IslandMountAbandoned`): the
+        // pane unmounted, the step was cancelled, or a second mount superseded
+        // this one — React StrictMode's dev double-mount does the last on every
+        // island's first load, and recording that as `ISLAND_LOAD` would fail
+        // every island in dev before it ever rendered.
+        if (err instanceof IslandMountAbandoned) return
+        // Only while the step is still `running`: a resumed `waiting` step
+        // whose re-mount failed is a UI problem, not a new run event.
+        if (liveStatus() === 'running') {
           a.scoped(
             runEvent({
               type: 'step.failed',
@@ -257,7 +290,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
       // The same guard, the other way round: a resumed island is *already*
       // waiting, and a second `step.waiting` would put a transition in the row
       // stream that never happened.
-      if (statusOf() === 'running') {
+      if (liveStatus() === 'running') {
         a.scoped(runEvent({ type: 'step.waiting', key: a.key, at: a.deps.now() }))
       }
     },
@@ -266,10 +299,12 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
   handles.set(handleKey(a.state.runId, a.key), handle)
   bump()
 
-  // The step's declared `display` seeds the page's mode, so the store stays the
-  // single source of truth for it — an island that opens fullscreen can still
-  // be left fullscreen through the strip's own exit button.
-  a.dispatch(islandDisplayChanged(inputs.display))
-
+  // The declared `display` is *not* seeded from here. Launching is global —
+  // a second island starting in a parallel job would yank the page out from
+  // under the one the user is actually in — and a seed dispatched before the
+  // step is selected is undone by the page's own reset in the same commit. The
+  // page seeds it from `handle.display` when it opens the pane instead
+  // (`RunPage`), which keeps the store the single source of truth without
+  // letting a background launch touch it.
   return { ok: true, handle }
 }

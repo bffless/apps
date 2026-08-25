@@ -7,6 +7,7 @@
  * iframe to it, and reflects the display mode the store holds — plus the
  * `RunPage` half, where fullscreen collapses the graph to a strip.
  */
+import { StrictMode } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
@@ -19,6 +20,7 @@ import { useAppSelector } from '../../store/hooks'
 import { islandDisplayChanged } from '../../store/uiSlice'
 import {
   ISLAND_DEF,
+  ISLAND_FULLSCREEN_DEF,
   ISLAND_KEY,
   flush,
   resetIslandHarness,
@@ -47,12 +49,13 @@ function LivePane() {
   return <IslandStepPane def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} />
 }
 
-function renderPane(store: AppStore) {
-  return render(
+function renderPane(store: AppStore, strict = false) {
+  const tree = (
     <Provider store={store}>
       <LivePane />
-    </Provider>,
+    </Provider>
   )
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
 describe('IslandStepPane', () => {
@@ -99,6 +102,41 @@ describe('IslandStepPane', () => {
     expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
   })
 
+  it('leaves the step running when the pane unmounts mid-load', async () => {
+    // Fix round 1, finding 1: teardown abandons the in-flight mount. Nothing
+    // about that belongs in the run record — the user just looked elsewhere.
+    const { store, host } = await startIslandRun()
+    const { unmount } = renderPane(store)
+
+    await waitFor(() => expect(host.mounts).toHaveLength(1))
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('running')
+
+    unmount()
+    await flush()
+
+    const step = store.getState().run.state!.steps[ISLAND_KEY]
+    expect(step.status).toBe('running')
+    expect(step.error).toBeUndefined()
+    expect(host.teardowns).toContain('unmounted')
+  })
+
+  it('reaches waiting once under a StrictMode double-mount, with no ISLAND_LOAD', async () => {
+    // `main.tsx` wraps the app in StrictMode, so this is every island's first
+    // load in dev: mount → cleanup → mount, the first session abandoned.
+    const { store, host } = await startIslandRun()
+    renderPane(store, true)
+
+    await waitFor(() => expect(host.mounts.length).toBeGreaterThan(1))
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('running')
+    expect(store.getState().run.state!.steps[ISLAND_KEY].error).toBeUndefined()
+
+    host.settle()
+    await waitFor(() =>
+      expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
+    )
+    expect(store.getState().run.state!.steps[ISLAND_KEY].error).toBeUndefined()
+  })
+
   it('lists a dynamic annotation as step-annotated', async () => {
     const { store, host } = await startIslandRun()
     renderPane(store)
@@ -139,8 +177,11 @@ describe('StepPane — island delegation', () => {
 })
 
 describe('RunPage — island fullscreen', () => {
-  it('collapses the graph to a strip and comes back on exit', async () => {
-    const { store, runId, host } = await startIslandRun()
+  it('opens a declared fullscreen island fullscreen, and comes back on exit', async () => {
+    // Fix round 1, finding 2: nothing here dispatches `islandDisplayChanged` —
+    // the page seeds the mode from the step it opens, so a `display:
+    // fullscreen` declaration actually reaches the screen.
+    const { store, runId, host } = await startIslandRun(ISLAND_FULLSCREEN_DEF)
 
     render(
       <Provider store={store}>
@@ -159,12 +200,8 @@ describe('RunPage — island fullscreen', () => {
       expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
     )
 
-    expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
-    expect(document.querySelector('.island-fullscreen')).toBeNull()
-
-    store.dispatch(islandDisplayChanged('fullscreen'))
-
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).not.toBeNull())
+    expect(store.getState().ui.islandDisplay).toBe('fullscreen')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'fullscreen')
     // The graph is gone; the strip is what is left of it.
     expect(within(page).queryAllByTestId('step')).toHaveLength(0)
@@ -174,5 +211,37 @@ describe('RunPage — island fullscreen', () => {
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).toBeNull())
     expect(store.getState().ui.islandDisplay).toBe('inline')
     expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
+    // The seed is once per opened step: leaving fullscreen is not fought back.
+    await flush()
+    expect(store.getState().ui.islandDisplay).toBe('inline')
+  })
+
+  it('opens an ordinary island inline and resets the mode when the step finishes', async () => {
+    const { store, runId, host } = await startIslandRun()
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/test/island/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    host.settle()
+    await waitFor(() =>
+      expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
+    )
+    expect(store.getState().ui.islandDisplay).toBe('inline')
+
+    // The island asks for fullscreen, then answers — the mode goes back to
+    // inline because the step it belonged to is no longer open.
+    host.deps!.onDisplayMode('fullscreen')
+    await waitFor(() => expect(document.querySelector('.island-fullscreen')).not.toBeNull())
+
+    host.deps!.onSubmit({ choice: 'a' })
+    await waitFor(() => expect(store.getState().ui.islandDisplay).toBe('inline'))
+    expect(document.querySelector('.island-fullscreen')).toBeNull()
   })
 })
