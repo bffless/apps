@@ -172,10 +172,59 @@ describe('the hello pipelines', () => {
     expect(done.result.markdown).toContain('Hello, world!')
   })
 
+  // M1 minor (a): the job poll 404s an unknown id the same way the real
+  // rule's `notFound` response_handler does (condition: steps.shape.missing).
+  it('404s an unknown job id', async () => {
+    const res = await fetch('/api/hello/job?id=job_nope')
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ status: 'error', error: 'unknown job' })
+  })
+
   it('fails on purpose with the code it was handed', async () => {
     const res = await json('/api/hello/fail', { code: 'TEAPOT' })
     expect(res.status).toBe(418)
     expect(await res.json()).toEqual({ code: 'TEAPOT', error: 'fails on purpose' })
+  })
+
+  it('defaults the fail code to FAIL when none is given', async () => {
+    const res = await json('/api/hello/fail', {})
+    expect(res.status).toBe(418)
+    expect(await res.json()).toEqual({ code: 'FAIL', error: 'fails on purpose' })
+  })
+
+  // No string interpolation of request data (M1 minor b) — a code value that
+  // would break naive JSON-string templating comes back as the literal string.
+  it('fails on purpose with an unescaped code, verbatim', async () => {
+    const res = await json('/api/hello/fail', { code: '"}evil' })
+    expect(res.status).toBe(418)
+    expect(await res.json()).toEqual({ code: '"}evil', error: 'fails on purpose' })
+  })
+
+  it('analyzes lines into words, a chart-shaped count table, a snippet and the longest line', async () => {
+    const res = await json('/api/hello/analyze', { lines: ['Hello, world!'] })
+    expect(res.status).toBe(200)
+    const out = await res.json()
+
+    expect(out.words).toHaveLength(2)
+    expect(out.words[0]).toEqual({ text: 'Hello,', start: 0, end: 0.4 })
+    expect(out.words[1]).toEqual({ text: 'world!', start: 0.4, end: 0.8 })
+
+    expect(out.counts.columns).toEqual([{ key: 'line' }, { key: 'chars', type: 'number' }])
+    expect(out.counts.rows[0]).toEqual({ line: 'Hello, world!', chars: 13 })
+
+    expect(out.snippet).toContain('Hello, world!')
+    expect(out.longest).toBe('Hello, world!')
+  })
+
+  it('analyzes an empty/non-array lines value into empty output', async () => {
+    const res = await json('/api/hello/analyze', { lines: 'not-an-array' })
+    const out = await res.json()
+    expect(out).toEqual({
+      words: [],
+      counts: { columns: [{ key: 'line' }, { key: 'chars', type: 'number' }], rows: [] },
+      snippet: 'export const lines = []',
+      longest: '',
+    })
   })
 })
 

@@ -2,16 +2,20 @@ targetUrl: pipeline
 order: 33
 pipeline:
   name: Hello fail (on purpose)
-  description: "POST { code } -> 418 { code, error: 'fails on purpose' }. Exercises continue-on-error + the workflow's failure-recovery branch."
+  description: "POST { code } -> 418 { code, error: 'fails on purpose' }. Exercises continue-on-error + the workflow's failure-recovery branch. The body is built by a function_handler (fail.fn.js), not string interpolation of request data (M1 minor b)."
   steps:
+    - id: fail
+      name: fail
+      handler: function_handler
+      code: ./fail.fn.js
     - id: respond
       name: respond
       handler: response_handler
       config:
-        body: '{"code":"{{request.body.code}}","error":"fails on purpose"}'
+        body: "{{{steps.fail}}}"
         status: 418
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Hello implementation surface 4/4: fails on purpose (418)."
+description: "Hello implementation surface 4/5: fails on purpose (418)."

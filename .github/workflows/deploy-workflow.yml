@@ -40,8 +40,10 @@ jobs:
           alias: workflow
           proxy-rule-set-names: workflow,hello
       - name: Deploy the hello implementation
-        # The bundle is only `.bffless/workflows/*`; upload-artifact >= 1.4.2 keeps `.bffless/`
-        # directories while walking (and CE >= 0.4.33 keeps them in the zip fallback).
+        # The bundle is `.bffless/workflows/*` (the YAMLs + index.json), `islands/*.html`
+        # (one self-contained file each) and a one-line `index.html` landing page;
+        # upload-artifact >= 1.4.2 keeps `.bffless/` directories while walking (and
+        # CE >= 0.4.33 keeps them in the zip fallback).
         uses: bffless/upload-artifact@v1
         with:
           path: apps/workflow/hello-dist

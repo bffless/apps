@@ -636,3 +636,166 @@ describe('eventToWrites', () => {
     ])
   })
 })
+
+// ---------------------------------------------------------------------------
+// 5. step.annotated — dynamic annotations on a step that has not finished
+// ---------------------------------------------------------------------------
+
+describe('step.annotated (Decision 12)', () => {
+  const NOTICE: Annotation = { level: 'notice', message: 'half way' }
+
+  /** An open form row, annotated mid-wait — the island path writes the same rows. */
+  function annotatedForm(store: Store): RunState {
+    const state = openForm(store)
+    return dispatch(
+      store,
+      state,
+      { type: 'step.annotated', key: REVIEW, annotations: [NOTICE], summary: 'in progress', at: now() },
+      formDef,
+    )
+  }
+
+  it('writes exactly one step upsert carrying both columns', () => {
+    const store = newStore()
+    const state = openForm(store)
+    const event: RunEvent = {
+      type: 'step.annotated',
+      key: REVIEW,
+      annotations: [NOTICE],
+      summary: 'in progress',
+      at: 42,
+    }
+    const next = runReducer(state, event)
+
+    expect(eventToWrites(event, { state: next })).toEqual([
+      {
+        table: 'steps',
+        op: 'upsert',
+        runId: RUN_ID,
+        key: REVIEW,
+        patch: { annotations: [NOTICE], summary: 'in progress' },
+      },
+    ])
+  })
+
+  it('persists the annotation onto the waiting row', () => {
+    const store = newStore()
+    annotatedForm(store)
+
+    const row = store.steps[`${RUN_ID}::${REVIEW}`]
+    expect(row.status).toBe('waiting')
+    expect(row.annotations).toEqual([NOTICE])
+    expect(row.summary).toBe('in progress')
+  })
+
+  it('replays a non-terminal annotated row as its status event then one step.annotated', () => {
+    const store = newStore()
+    annotatedForm(store)
+
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), formDef).filter(
+      (e) => 'key' in e && e.key === REVIEW,
+    )
+    expect(events.map((e) => e.type)).toEqual(['step.queued', 'step.waiting', 'step.annotated'])
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
+    expect(replayed.steps[REVIEW].status).toBe('waiting')
+    expect(replayed.steps[REVIEW].annotations).toEqual([NOTICE])
+    expect(replayed.steps[REVIEW].summary).toBe('in progress')
+  })
+
+  it('leaves a terminal row alone — its annotations ride on the terminal event', () => {
+    const store = newStore()
+    let state = annotatedForm(store)
+    state = submitForm(store, state, { approved: true, report: 'ok' })
+
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), formDef).filter(
+      (e) => 'key' in e && e.key === REVIEW,
+    )
+    expect(events.map((e) => e.type)).toEqual(['step.queued', 'step.waiting', 'step.succeeded'])
+
+    // The form declares no `annotations:`, so its submit evaluates to `[]` —
+    // which must not wipe what `workflow.annotate` already appended.
+    expect(state.steps[REVIEW].annotations).toEqual([NOTICE])
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
+    expect(replayed.steps[REVIEW].annotations).toEqual(state.steps[REVIEW].annotations)
+  })
+
+  // A retry throws the attempt away, notes included — and replay must agree:
+  // the `queued` row carries no annotations, so there is nothing to put back.
+  it('is a fixed point across a retry (running → annotated → retrying)', () => {
+    const store = newStore()
+    let state = startRun(store)
+    state = dispatch(store, state, { type: 'job.expanded', job: 'seed', total: 1, items: [{}] })
+
+    const key = stepKey('seed', 0, 'make')
+    state = dispatch(store, state, {
+      type: 'step.queued',
+      key,
+      job: 'seed',
+      index: 0,
+      stepId: 'make',
+      kind: 'pipeline',
+      at: now(),
+    })
+    state = dispatch(store, state, { type: 'step.started', key, inputs: {}, at: now() })
+    state = dispatch(store, state, {
+      type: 'step.annotated',
+      key,
+      annotations: [{ level: 'notice', message: 'half way' }],
+      summary: 'half',
+      at: now(),
+    })
+    state = dispatch(store, state, {
+      type: 'step.retrying',
+      key,
+      error: { code: 'HTTP_503', message: 'busy' },
+      at: now(),
+    })
+
+    const row = store.steps[`${RUN_ID}::${key}`]
+    expect(row.status).toBe('queued')
+    expect(row.annotations).toEqual([])
+    expect(row.summary).toBeNull()
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    expect(replayed.steps[key].status).toBe('queued')
+    expect(replayed.steps[key].attempt).toBe(state.steps[key].attempt)
+    expect(replayed.steps[key].annotations).toEqual(state.steps[key].annotations)
+    expect(replayed.steps[key].summary).toBe(state.steps[key].summary)
+  })
+
+  // Decision 12's union, end to end: dynamic + declared, live and on Resume.
+  it('round-trips the union of dynamic and declared annotations (replay is a fixed point)', () => {
+    const DECLARED: Annotation = { level: 'warning', message: 'check the cuts' }
+    const store = newStore()
+    let state = annotatedForm(store)
+    state = dispatch(
+      store,
+      state,
+      {
+        type: 'step.succeeded',
+        key: REVIEW,
+        outputs: { approved: true, report: 'ok' },
+        summary: 'approved=true',
+        annotations: [DECLARED],
+        at: now(),
+      },
+      formDef,
+    )
+
+    expect(state.steps[REVIEW].annotations).toEqual([NOTICE, DECLARED])
+    // rows.ts writes the post-event state, so the column is already the union…
+    expect(store.steps[`${RUN_ID}::${REVIEW}`].annotations).toEqual([NOTICE, DECLARED])
+
+    // …and replaying it onto a fresh step (annotations `[]`) appends to nothing:
+    // one `step.succeeded` carrying the whole column, no extra `step.annotated`.
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), formDef).filter(
+      (e) => 'key' in e && e.key === REVIEW,
+    )
+    expect(events.map((e) => e.type)).toEqual(['step.queued', 'step.waiting', 'step.succeeded'])
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
+    expect(replayed.steps[REVIEW].annotations).toEqual([NOTICE, DECLARED])
+    expect(replayed.steps[REVIEW].summary).toBe(state.steps[REVIEW].summary)
+  })
+})

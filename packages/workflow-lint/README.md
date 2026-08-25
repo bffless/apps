@@ -48,12 +48,17 @@ deliberately omits `outputs`, which 03 says the linter flags) — asserted in
 | `upstream-reference` | error | `steps.<id>` reading later/self steps (self ok in own summary/annotations); `needs.<job>` not listed; `jobs.<id>` missing | 01 |
 | `unknown-output` | warning | referencing an output name the target step/job doesn't declare | 01 |
 | `unknown-render` / `island-render-src` | error | render names outside `transcript · chart · images · code · island`; `render: island` without `src` | 02 |
+| `island-src-ext` | error | `island` steps' `with.src` (and any `render: island` declaration's `src`) not ending `.html` | 02 |
+| `script-src-ext` | error | `script` steps' `with.src` not ending `.js`/`.mjs` | 02 |
+| `island-reserved-with` | error | an island step's `with` has a key named `arguments`, which collides with the tool-input envelope | Decision 1 |
 | `cross-impl-path` | warning | absolute `/api/…` paths that aren't the harness (`/api/workflow/…`) | 01 |
 | `file-ref-in-body` | warning | a whole File ref (or list) in a pipeline body — pass `ref.path` / `pluck(list, 'path')` | 03 |
+| `render-mapping` | warning | `render: chart` without `mapping.x`/`mapping.y`; `render: code` without `mapping.language` | 02 |
 | `headless-skip-outputs` | error | `headless: skip` giving no value to an output a later expression references | 07 |
 | `interactive-headless` | notice | island/form steps with no `headless` (not headless-safe) | 07 |
 | `outputs-omitted` | notice | pipeline steps with no `outputs` map (exposes only `outputs.response`) | 03 |
 | `untyped-job-output` | notice | computed job outputs that will type as `json` — suggest `{ type, value }` | 01 |
+| `tool-name-dot` | notice | a pipeline `with.path` containing `.`, in a workflow with ≥1 island step — only reachable by its slash-form tool name | Decision 1 |
 
 ## Programmatic API
 

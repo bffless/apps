@@ -33,6 +33,14 @@ describe('discover', () => {
         jobs: 4,
         headlessSafe: true,
       },
+      {
+        file: 'interactive.workflow.yaml',
+        name: 'Interactive hello',
+        description: 'Exercises every interactive feature of the harness (M2) — grows per phase.',
+        inputs: 2,
+        jobs: 3,
+        headlessSafe: true,
+      },
     ])
   })
 

@@ -14,10 +14,20 @@ pipeline:
       name: shape
       handler: function_handler
       code: ./shape.fn.js
+    - id: notFound
+      name: notFound
+      handler: response_handler
+      config:
+        condition: steps.shape.missing
+        body: '{"status":"error","error":"unknown job"}'
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: respond
       name: respond
       handler: response_handler
       config:
+        condition: steps.shape.found
         body: "{{{steps.shape}}}"
         status: 200
         headers: { Cache-Control: no-store }
@@ -25,4 +35,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Hello implementation surface 3/4: job poll."
+description: "Hello implementation surface 3/5: job poll. Two terminal response branches (notFound 404 / respond 200), same pattern as workflow/run/update."

@@ -141,6 +141,13 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         status: 'queued',
         attempt: step.attempt + 1,
         error: event.error, // kept for the pane
+        // A retry is a fresh attempt: whatever the failed attempt annotated
+        // (or summarised) describes work that is being thrown away, and the
+        // failure itself already rides on this event. Clearing here is also
+        // what keeps Resume a fixed point — a `queued` row carries no
+        // annotations, so replay has nothing to put back (Decision 12).
+        annotations: [],
+        summary: undefined,
       })
     }
 
@@ -153,7 +160,11 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         outputs: event.outputs,
         response: event.response ?? step.response,
         summary: event.summary ?? step.summary,
-        annotations: event.annotations ?? step.annotations,
+        // Appended, never replaced (Decision 12): a step's declared
+        // `annotations:` join whatever `step.annotated` already appended while
+        // it was in flight — otherwise an island's `workflow.annotate` would
+        // vanish at the moment its own `workflow.submit` lands.
+        annotations: [...step.annotations, ...(event.annotations ?? [])],
         finishedAt: event.at,
       })
     }
@@ -165,7 +176,8 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         ...step,
         status: 'failed',
         error: event.error,
-        annotations: event.annotations ?? step.annotations,
+        // Appended, never replaced (Decision 12) — see `step.succeeded` above.
+        annotations: [...step.annotations, ...(event.annotations ?? [])],
         finishedAt: event.at,
       })
     }
@@ -177,6 +189,29 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         ...step,
         status: 'cancelled', // terminal
         finishedAt: event.at,
+      })
+    }
+
+    /**
+     * An in-place update, not a transition (Decision 12): a step that is still
+     * in flight reports progress. `STEP_TRANSITIONS` is a *status* graph and
+     * this event changes no status, so the legality check is an explicit one
+     * — annotating a queued step (nothing is running yet) or a terminal one
+     * (its row is already the final record) is a bug, and bugs throw (09).
+     */
+    case 'step.annotated': {
+      const step = getStep(state, event.key)
+      if (step.status !== 'running' && step.status !== 'polling' && step.status !== 'waiting') {
+        throw new IllegalTransition(
+          `${event.key}: step.annotated is only legal while running|polling|waiting (was ${step.status})`,
+        )
+      }
+      return withStep(state, event.key, {
+        ...step,
+        annotations: event.annotations
+          ? [...step.annotations, ...event.annotations]
+          : step.annotations,
+        summary: event.summary ?? step.summary,
       })
     }
 

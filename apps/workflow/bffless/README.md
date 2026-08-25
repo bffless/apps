@@ -1,7 +1,8 @@
 # Workflow harness backend — BFFless proxy rule sets
 
 Two authored sets: `workflow` (run records, lease, files trio — spec 05/06) and, from M1
-Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail).
+Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail, and — from
+M2 Task 6 — analyze; 5/5 hello surface rules).
 
 ## Manual setup (admin panel)
 
@@ -25,6 +26,29 @@ Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail)
 - **Response-header rules**: none in M1 (COOP/COEP only becomes relevant with M2 scripts).
 - The `/w/hello/[...path]` forwarding rule bakes `targetUrl: https://hello.j5s.dev` — edit it
   for a different install domain (CE follow-up `targetUrl: alias://hello` removes this).
+
+### Islands (M2)
+
+Island HTML is served straight out of the hello bundle at `/w/hello/islands/*.html` (the
+same forwarder as the workflow YAMLs) and injected verbatim into a sandboxed
+`<iframe sandbox="allow-scripts">` `srcdoc` host — an opaque origin, so no cookies, no
+storage, no same-origin fetch (Decision 9); the harness never parses, sanitises or rewrites
+the HTML. Tool names between the island and the host are dot-canonical, slash-tolerant
+(Decision 1): `workflow.submit` and `workflow.annotate` are the two host tools every island
+gets, and pipelines-as-tools are restricted to the implementation's own `/api/<impl>/`
+namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
+addition — and the staged bundle now carries `islands/*.html` (`pick-line.html`,
+`line-viewer.html`) alongside `index.html` and the two workflow YAMLs.
+
+**Trust boundary.** Which bundle an island loads from is the run's `impl`, and on the
+read-only run page that value comes from the **run row** — a field any project member can
+write when they `POST /api/workflow/runs` (the rule is gated by `auth_required`, nothing
+narrower). That is safe today only because `/w/` forwards to exactly one fixed alias
+(`/w/hello`), so a planted `impl` resolves to nothing else. Before `targetUrl: alias://`
+generalises the forwarder (apps#364 / ce#698, M4), `run.impl` must be validated against the
+discovered aliases — or taken from the route rather than the row — or a member-planted run
+row could point another member's viewer at a foreign bundle while the host proxies its
+`tools/call` under the viewer's own session.
 
 ## First-success checkpoint
 
@@ -78,3 +102,5 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   run with defaults → greet / slow poll / flaky fail-then-recover → Finish → **Succeeded** with
   `report`, `poster`, `lines` and the TEAPOT annotation. (Creating that member first needed
   the SuperTokens pre-flight DDL on j5s — bffless/ce#695.)
+- [ ] **M2 Phase 1 — interactive hello runs on `workflow.j5s.dev` as `workflow-ci`** (island
+  loads, echo tool call, annotate, submit, viewer).

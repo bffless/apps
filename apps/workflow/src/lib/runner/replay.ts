@@ -162,6 +162,25 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
       events.push({ type: 'step.cancelled', key, at: finishedAt })
       break
   }
+
+  // Dynamic annotations/summary (Decision 12) on a step that has not finished:
+  // a terminal event already carries them (`step.succeeded`/`step.failed` take
+  // `annotations`/`summary`), so only the non-terminal statuses need the extra
+  // `step.annotated` to put the recorded columns back on the step.
+  if (row.status === 'running' || row.status === 'polling' || row.status === 'waiting') {
+    const annotations = row.annotations ?? []
+    const summary = row.summary ?? undefined
+    if (annotations.length > 0 || summary !== undefined) {
+      events.push({
+        type: 'step.annotated',
+        key,
+        annotations: annotations.length > 0 ? annotations : undefined,
+        summary,
+        at: startedAt,
+      })
+    }
+  }
+
   return events
 }
 

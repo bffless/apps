@@ -252,15 +252,16 @@ const WITH_OUTPUTS = toDefinition({
 }) as Definition
 
 // ---------------------------------------------------------------------------
-// A one-job definition using an `island` step — unsupported in M1.
+// A one-job definition using a `script` step — still unsupported in M2 Phase 1
+// (islands landed in Task 5; scripts arrive in Phase 2).
 // ---------------------------------------------------------------------------
 
-const ISLAND_JOB = toDefinition({
+const SCRIPT_JOB = toDefinition({
   name: 'Unsupported kind',
-  jobs: { a: { steps: [{ id: 'i', uses: 'island', with: {} }], outputs: {} } },
+  jobs: { a: { steps: [{ id: 'i', uses: 'script', with: {} }], outputs: {} } },
   outputs: {},
 }) as Definition
-const ISLAND_KEY = stepKey('a', 0, 'i')
+const SCRIPT_KEY = stepKey('a', 0, 'i')
 
 // ---------------------------------------------------------------------------
 // A 3-item matrix, `max-parallel: 2`, fail-fast: two items run concurrently,
@@ -643,15 +644,15 @@ describe('createRunnerMiddleware — RTK Query cache invalidation', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Scenario 7: an unsupported step kind fails fast (island/script, M1)
+// Scenario 7: an unsupported step kind fails fast (script, until Phase 2)
 // ---------------------------------------------------------------------------
 
-describe('createRunnerMiddleware — unsupported step kinds (M1)', () => {
-  it('fails an island step immediately with UNSUPPORTED_KIND_M1', async () => {
+describe('createRunnerMiddleware — unsupported step kinds', () => {
+  it('fails a script step immediately with UNSUPPORTED_KIND_M1', async () => {
     // Chosen over the "file outside the run prefix" annotation branch: it
     // needs no file-registration plumbing to set up, and covers a scheduler
-    // branch (`handleNextAction`'s 'start' case, the non-pipeline/non-form
-    // arm) that otherwise had zero coverage at all.
+    // branch (`handleNextAction`'s 'start' case, the fall-through arm no kind
+    // claims) that otherwise had zero coverage at all.
     const { http } = scriptedHttp({})
     const { clock, advance } = virtualClock()
     const { store: runStore } = fakeRunStore()
@@ -659,14 +660,14 @@ describe('createRunnerMiddleware — unsupported step kinds (M1)', () => {
 
     const store = trackedStore(deps)
     store.dispatch(
-      startRun({ impl: 'test', workflow: 'island', def: ISLAND_JOB, yaml: 'name: Unsupported kind', workflowName: 'Unsupported kind', values: {} }),
+      startRun({ impl: 'test', workflow: 'script', def: SCRIPT_JOB, yaml: 'name: Unsupported kind', workflowName: 'Unsupported kind', values: {} }),
     )
 
     await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
 
-    const step = store.getState().run.state?.steps[ISLAND_KEY]
+    const step = store.getState().run.state?.steps[SCRIPT_KEY]
     expect(step?.status).toBe('failed')
-    expect(step?.error).toEqual({ code: 'UNSUPPORTED_KIND_M1', message: 'island steps arrive in M2' })
+    expect(step?.error).toEqual({ code: 'UNSUPPORTED_KIND_M1', message: 'script steps arrive in M2' })
     expect(store.getState().run.state?.status).toBe('failed')
   })
 })

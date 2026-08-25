@@ -15,7 +15,9 @@ import { toFileRef, toRunRow, toStepRow } from '../lib/coerce'
 import type { ServerStepRow } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
 import { db, nextId, stepRowKey, stepsOf, toRecord } from './db'
+import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
+import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
 
 const ok = () => HttpResponse.json({ ok: true })
 
@@ -37,14 +39,39 @@ const ALIASES = [
   { name: 'hello', isAutoPreview: false },
 ]
 
-const helloDefinition = loadWorkflow(helloYaml, 'hello.workflow.yaml').def
-if (!helloDefinition) throw new Error('mock handlers: the hello workflow no longer parses')
+/** The workflow files this mock implementation publishes, exactly as the bundle does. */
+const HELLO_WORKFLOWS: Record<string, string> = {
+  'hello.workflow.yaml': helloYaml,
+  'interactive.workflow.yaml': interactiveYaml,
+}
+
+/**
+ * The staged islands, read straight out of `hello-dist/` — the same bytes the
+ * deploy uploads. Empty until `pnpm --filter workflow stage` has run (the
+ * route then 404s, which is exactly what an unstaged bundle would do), so CI
+ * stages before it tests.
+ */
+const ISLAND_HTML: Record<string, string> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob('../../hello-dist/islands/*.html', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>,
+  ).map(([path, html]) => [path.split('/').pop()!, html]),
+)
+
+function definitionOf(file: string) {
+  const def = loadWorkflow(HELLO_WORKFLOWS[file]!, file).def
+  if (!def) throw new Error(`mock handlers: ${file} no longer parses`)
+  return def
+}
 
 /**
  * `index.json` as the implementation's CI would have generated it — counted off
- * the real definition so the listing can never drift from the YAML it describes.
- * Exported so `hello-stage.test.ts` can assert the staged bundle's counts never
- * drift from this mock's (Task 20 parity test).
+ * the real definitions so the listing can never drift from the YAMLs it
+ * describes. Exported so `hello-stage.test.ts` can assert the staged bundle's
+ * counts never drift from this mock's (Task 20 parity test).
  */
 export const HELLO_INDEX = {
   spec: 1,
@@ -53,17 +80,18 @@ export const HELLO_INDEX = {
   version: '0.0.0',
   commit: 'mock',
   generatedAt: '2026-08-19T12:00:00.000Z',
-  workflows: [
-    {
-      file: 'hello.workflow.yaml',
-      name: helloDefinition.name,
-      description: helloDefinition.raw.description,
-      inputs: Object.keys(helloDefinition.inputs).length,
-      jobs: Object.keys(helloDefinition.jobs).length,
+  workflows: Object.keys(HELLO_WORKFLOWS).map((file) => {
+    const def = definitionOf(file)
+    return {
+      file,
+      name: def.name,
+      description: def.raw.description,
+      inputs: Object.keys(def.inputs).length,
+      jobs: Object.keys(def.jobs).length,
       headlessSafe: true,
-    },
-  ],
-  islands: [],
+    }
+  }),
+  islands: ['islands/pick-line.html', 'islands/line-viewer.html'],
   scripts: [],
 }
 
@@ -76,11 +104,22 @@ const discovery = [
     params.alias === 'hello' ? HttpResponse.json(HELLO_INDEX) : new HttpResponse(null, { status: 404 }),
   ),
 
-  http.get('/w/:alias/.bffless/workflows/:file', ({ params }) =>
-    params.alias === 'hello' && params.file === 'hello.workflow.yaml'
-      ? HttpResponse.text(helloYaml, { headers: { 'content-type': 'text/yaml' } })
-      : new HttpResponse(null, { status: 404 }),
-  ),
+  http.get('/w/:alias/.bffless/workflows/:file', ({ params }) => {
+    const yaml = params.alias === 'hello' ? HELLO_WORKFLOWS[String(params.file)] : undefined
+    return yaml === undefined
+      ? new HttpResponse(null, { status: 404 })
+      : HttpResponse.text(yaml, { headers: { 'content-type': 'text/yaml' } })
+  }),
+
+  // The island files, served the way the bundle alias serves them: the harness
+  // fetches this with the member's session and injects the text as `srcdoc`
+  // (Decision 9), so the response is `text/html` and nothing else.
+  http.get('/w/:alias/islands/:name', ({ params }) => {
+    const html = params.alias === 'hello' ? ISLAND_HTML[String(params.name)] : undefined
+    return html === undefined
+      ? new HttpResponse(null, { status: 404 })
+      : HttpResponse.text(html, { headers: { 'content-type': 'text/html' } })
+  }),
 ]
 
 // ---------------------------------------------------------------------------
@@ -282,7 +321,9 @@ const hello = [
 
   // The first tick is `pending` and does NOT echo the id — that is what makes
   // the poll's `query: { id: ${{ response.jobId }} }` read the *initial*
-  // response rather than the tick's (01 contexts).
+  // response rather than the tick's (01 contexts). 404 mirrors the real
+  // rule's `notFound` response_handler (condition: steps.shape.missing —
+  // M1 minor a).
   http.get('/api/hello/job', ({ request }) => {
     const id = new URL(request.url).searchParams.get('id') ?? ''
     const job = db.helloJobs.get(id)
@@ -292,9 +333,19 @@ const hello = [
     return HttpResponse.json({ id, status: 'done', result: job.result })
   }),
 
+  // The real rule builds this body via a `function_handler` (`fail.fn.js`), not
+  // string interpolation of `request.body.code` (M1 minor b) — a `code` value
+  // that would break naive JSON-string templating comes back verbatim here too.
   http.post('/api/hello/fail', async ({ request }) => {
     const { code } = await body(request)
-    return HttpResponse.json({ code: String(code ?? 'FAILED'), error: 'fails on purpose' }, { status: 418 })
+    return HttpResponse.json({ code: String(code ?? 'FAIL'), error: 'fails on purpose' }, { status: 418 })
+  }),
+
+  // POST { lines, code? } -> { words, counts, snippet, longest }. Mirrors
+  // `analyze.fn.js` byte-for-byte (see analyze.ts and its parity test).
+  http.post('/api/hello/analyze', async ({ request }) => {
+    const { lines } = await body(request)
+    return HttpResponse.json(analyzeLines(lines))
   }),
 ]
 

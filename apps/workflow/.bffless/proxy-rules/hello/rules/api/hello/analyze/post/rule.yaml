@@ -1,0 +1,21 @@
+targetUrl: pipeline
+order: 34
+pipeline:
+  name: Hello analyze
+  description: "POST { lines, code? } -> { words, counts, snippet, longest }. Feeds the M2 renderers over one function_handler step: words -> transcript, counts -> chart, snippet -> code, longest -> plain text."
+  steps:
+    - id: analyze
+      name: analyze
+      handler: function_handler
+      code: ./analyze.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.analyze}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 5/5: analyze."

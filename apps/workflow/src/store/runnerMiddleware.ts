@@ -17,6 +17,7 @@
  */
 import { createListenerMiddleware } from '@reduxjs/toolkit'
 import type { ListenerMiddleware } from '@reduxjs/toolkit'
+import type { IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { toFileRef } from '../lib/coerce'
 import type { RunStore } from '../lib/runStore'
 import { buildRunContexts, evalOutputDecl } from '../lib/runner/contexts'
@@ -27,6 +28,8 @@ import type { NextAction } from '../lib/runner/next'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
 import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
+import { disposeAllIslandHandles, disposeIslandHandle, launchIslandStep } from './islandLaunch'
+import type { IslandLaunchDeps } from './islandLaunch'
 import { getOwnerId } from './runnerActions'
 import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
@@ -50,6 +53,21 @@ export interface RunnerDeps {
   runStore: RunStore
   /** Register a bare pipeline path (02) under the run scope. */
   registerFile: (state: RunState, key: StepKey, path: string) => Promise<FileRef>
+  /**
+   * How an `island` step's host is built (Task 5). Optional so the test
+   * fixtures that predate islands keep compiling; `defaultRunnerDeps()` passes
+   * the real `createIslandHost`, which `islandLaunch` also falls back to.
+   */
+  islandHost?: (deps: IslandHostDeps) => IslandHost
+}
+
+/** `RunnerDeps`, narrowed to what launching an island actually needs. */
+function islandDeps(deps: RunnerDeps): IslandLaunchDeps {
+  return {
+    http: deps.http,
+    now: () => deps.clock.now(),
+    ...(deps.islandHost ? { islandHost: deps.islandHost } : {}),
+  }
 }
 
 const HEARTBEAT_MS = 15_000
@@ -264,6 +282,11 @@ function resetRunnerState(): void {
   // *and* clears the map, so the adapter's own `rt.signal.aborted` checks
   // (pipeline.ts) actually see the abort and cancel rather than running on.
   runnerControllers.abortAll()
+  // A bridge outlives its controller's abort: `AbortSignal` only reaches a
+  // mount that is still in flight, and a *mounted* island keeps answering
+  // `tools/call` until its host is closed. Aborting and forgetting would leave
+  // an abandoned run's island live in the page.
+  void disposeAllIslandHandles('cancelled')
   writeQueues.clear()
   finishing.clear()
   currentRunId = null
@@ -533,6 +556,46 @@ async function handleNextAction(
         void runPipelineStep({ step, key: a.key, job: a.job, index: a.index, def, state: runState }, rt)
       } else if (step.uses === 'form') {
         dispatch(runEvent({ type: 'step.waiting', key: a.key, at: deps.clock.now() }))
+      } else if (step.uses === 'island') {
+        // The middleware has no DOM (09): it builds the host and parks a
+        // handle, and the *pane* mounts it. `step.waiting` is dispatched from
+        // that mount, not from here — an island is `running` while it loads
+        // (Decision 11).
+        const scoped = scopedDispatch(runState.runId, dispatch, getRunState)
+        const launched = launchIslandStep({
+          step,
+          key: a.key,
+          job: a.job,
+          index: a.index,
+          def,
+          state: runState,
+          signal: controller.signal,
+          deps: islandDeps(deps),
+          dispatch,
+          scoped,
+          getRunState,
+        })
+        const at = deps.clock.now()
+        if (!launched.ok) {
+          // A definition bug (`with.src` missing or off-bundle). `queued ->
+          // failed` is illegal, so it passes through `running` first, like
+          // every other kind's failure.
+          dispatch(runEvent({ type: 'step.started', key: a.key, inputs: {}, at }))
+          dispatch(
+            runEvent({
+              type: 'step.failed',
+              key: a.key,
+              error: { code: 'ISLAND_LOAD', message: launched.error },
+              at,
+            }),
+          )
+          return
+        }
+        // The handle is registered *before* this dispatch, so a pane rendering
+        // off `running` always finds one.
+        dispatch(
+          runEvent({ type: 'step.started', key: a.key, inputs: launched.handle.arguments, at }),
+        )
       } else {
         // `queued -> failed` is not a legal transition (transitions.ts): every
         // kind's failure passes through `running` first, same as a pipeline
@@ -636,7 +699,18 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       }
 
       // Bookkeeping cleanup — harmless even on a natural (non-abort) terminal.
-      if (isTerminalStepEvent(event)) runnerControllers.abort(event.key)
+      if (isTerminalStepEvent(event)) {
+        runnerControllers.abort(event.key)
+        // An island step's bridge closes on every terminal path — a submit that
+        // succeeded, an ISLAND_LOAD failure, a skip, or `cancelRun`'s
+        // `step.cancelled` (which is also what gives cancel its own teardown
+        // reason). A no-op for every other kind.
+        void disposeIslandHandle(
+          runState.runId,
+          event.key,
+          event.type === 'step.cancelled' ? 'cancelled' : 'completed',
+        )
+      }
 
       if (event.type === 'run.finished') {
         stopHeartbeat(runState.runId)
@@ -757,6 +831,40 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             },
             rt,
           )
+        }
+
+        // Islands resume differently from pipelines: nothing is re-requested,
+        // because the island *is* the step — a `waiting` row re-opens on the
+        // recorded `inputs` (no re-evaluation, Decision 11), and a `running`
+        // row (one whose driving tab went away mid-load) re-mounts and reaches
+        // `waiting` through the same mount promise a fresh launch uses. The
+        // handle is registered here; the pane mounts it as soon as it renders.
+        for (const step of Object.values(state.steps)) {
+          if (step.kind !== 'island') continue
+          if (step.status !== 'waiting' && step.status !== 'running') continue
+          const stepDecl = stepOf(def, step.job, step.stepId)
+          if (!stepDecl) continue
+
+          const controller = new AbortController()
+          controllers.set(controllerKey(state.runId, step.key), controller)
+          // A launch that fails here is a definition bug in a row that already
+          // got past its own launch once, and `waiting` has no legal event to
+          // record it as — so the step simply has no island to re-open, and the
+          // pane says exactly that.
+          launchIslandStep({
+            step: stepDecl,
+            key: step.key,
+            job: step.job,
+            index: step.index,
+            def,
+            state,
+            signal: controller.signal,
+            deps: islandDeps(deps),
+            dispatch: listenerApi.dispatch,
+            scoped: scopedDispatch(state.runId, listenerApi.dispatch, getRunState),
+            getRunState,
+            recordedInputs: step.inputs ?? {},
+          })
         }
       }
 

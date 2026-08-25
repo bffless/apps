@@ -31,7 +31,7 @@ describe('ImplementationsPage', () => {
 
     const list = await screen.findByTestId('implementations')
     expect(within(list).getByText('hello')).toBeInTheDocument()
-    expect(within(list).getByText('1 workflow')).toBeInTheDocument()
+    expect(within(list).getByText('2 workflows')).toBeInTheDocument()
   })
 
   it('shows how the last run of each published workflow went', async () => {

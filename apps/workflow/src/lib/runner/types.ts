@@ -49,6 +49,13 @@ export type RunEvent =
   | { type: 'step.skipped'; key: StepKey; job: string; index: number; stepId: string; kind: StepKind; at: number }
   | { type: 'step.retrying'; key: StepKey; error: StepError; at: number }
   | { type: 'step.cancelled'; key: StepKey; at: number }
+  /**
+   * Dynamic annotations/summary from a still-running step (Decision 12):
+   * `workflow.annotate` (islands) and `ctx.annotate` (scripts). Not a status
+   * transition — it appends annotations and replaces the summary in place, and
+   * is legal only while the step is `running | polling | waiting`.
+   */
+  | { type: 'step.annotated'; key: StepKey; annotations?: Annotation[]; summary?: string; at: number }
   | { type: 'run.annotation'; annotation: Annotation; at: number }
   | { type: 'run.finished'; status: Exclude<RunStatus, 'running'>; outputs?: Record<string, unknown>; at: number }
 

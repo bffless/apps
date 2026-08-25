@@ -12,9 +12,10 @@ iframe anyway.
 self-contained `text/html;profile=mcp-app` file; the harness embeds
 `@modelcontextprotocol/ext-apps` AppBridge as the host; step `with` arrives as
 `ui/notifications/tool-input`; pipelines are `tools/call` proxied same-origin; completion is
-our single host tool `workflow/submit` (plus `workflow/annotate`). v1 renders a single
-`srcdoc` iframe with `sandbox="allow-scripts"` (opaque origin); the web-host double-iframe
-proxy is a later upgrade.
+our single host tool `workflow.submit` (plus `workflow.annotate`); tool names are
+dot-canonical and slash-tolerant (M2 plan Decision 1). v1 renders a single `srcdoc` iframe
+with `sandbox="allow-scripts"` (opaque origin); the web-host double-iframe proxy is a later
+upgrade.
 
 **Why:** the same island file can later be served as a `ui://` resource by a BFFless MCP
 server and render inside Claude / Copilot / Goose with the implementation's pipelines as tools;

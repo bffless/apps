@@ -4,6 +4,7 @@
 # an island; contact sheets and the blog bundle are browser scripts.
 # Every step kind, matrix fan-out/fan-in, poll+retry, island, form, script, summaries,
 # annotations, headless modes and top-level outputs are exercised here.
+# Island tool names: workflow.submit / refine-scene (04, dot-canonical).
 
 spec: 1
 name: Long recording to published short

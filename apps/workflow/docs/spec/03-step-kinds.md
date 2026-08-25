@@ -8,7 +8,7 @@ fail with `{ code, message, status? }`.
 | kind | runs where | waits on | produces outputs from |
 |---|---|---|---|
 | `pipeline` | BFFless (server), called from the browser | HTTP + optional `poll` | `response` via `outputs` expressions |
-| `island` | sandboxed iframe in the harness (04) | the user (or `headless: auto`) | `workflow/submit` |
+| `island` | sandboxed iframe in the harness (04) | the user (or `headless: auto`) | `workflow.submit` |
 | `form` | the harness | the user | submitted field values |
 | `script` | a Worker in the harness | the module's promise | the module's return value |
 
@@ -67,7 +67,7 @@ Studio's async pattern (`enqueue → {jobId} → poll /api/studio/job`) is the c
 
 A custom micro-UI the implementation ships as a self-contained HTML file in the **MCP Apps**
 format; the harness renders it in a sandboxed iframe and speaks the MCP Apps JSON-RPC dialect
-to it. The step is `waiting` until the island calls `workflow/submit` with outputs matching
+to it. The step is `waiting` until the island calls `workflow.submit` with outputs matching
 the declared map. Full contract in [04-islands.md](04-islands.md).
 
 ```yaml

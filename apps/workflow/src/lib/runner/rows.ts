@@ -165,9 +165,20 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
     case 'step.waiting':
       return [upsert(runId, event.key, { status: 'waiting' })]
 
+    // The reducer clears the previous attempt's annotations/summary; the row
+    // must forget them too, or Resume would hand a fresh attempt the last
+    // one's progress notes (Decision 12).
     case 'step.retrying': {
       const s = after(state, event.key)
-      return [upsert(runId, event.key, { status: 'queued', attempt: s.attempt, error: s.error })]
+      return [
+        upsert(runId, event.key, {
+          status: 'queued',
+          attempt: s.attempt,
+          error: s.error,
+          annotations: s.annotations,
+          summary: s.summary ?? null,
+        }),
+      ]
     }
 
     case 'step.succeeded': {
@@ -199,6 +210,14 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
     case 'step.cancelled': {
       const s = after(state, event.key)
       return [upsert(runId, event.key, { status: 'cancelled', finishedAt: s.finishedAt })]
+    }
+
+    // Dynamic progress from a step that has not finished (Decision 12): the
+    // reducer already merged the append/replace, so the row is simply the
+    // post-event columns — "appended to the same columns" (05), no new table.
+    case 'step.annotated': {
+      const s = after(state, event.key)
+      return [upsert(runId, event.key, { annotations: s.annotations, summary: s.summary ?? null })]
     }
 
     // Run-level annotations are an append-only column; the post-event state

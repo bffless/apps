@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pick the best line</title>
+    <style>
+      /* Inlined by the single-file build: an opaque-origin frame cannot fetch a
+         sibling stylesheet (04). Colours follow the host's theme, which arrives
+         on `ui/initialize` as `hostContext.theme`. */
+      :root { color-scheme: light dark; }
+      html, body { margin: 0; }
+      body {
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        padding: 12px;
+        background: transparent;
+      }
+      h1 { font-size: 15px; margin: 0 0 2px; }
+      .note { color: #6b7280; margin: 0 0 10px; font-size: 12px; }
+      .lines { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+      button {
+        font: inherit;
+        padding: 6px 10px;
+        border: 1px solid #c7cbd1;
+        border-radius: 6px;
+        background: #fff;
+        color: inherit;
+        cursor: pointer;
+      }
+      button:hover { border-color: #6b7280; }
+      button[aria-pressed='true'] { border-color: #2563eb; box-shadow: inset 0 0 0 1px #2563eb; }
+      .actions { display: flex; gap: 6px; }
+      .shouted { font-weight: 600; margin: 0 0 10px; min-height: 1.5em; }
+      .error { color: #b91c1c; margin: 8px 0 0; white-space: pre-wrap; }
+      @media (prefers-color-scheme: dark) {
+        .note { color: #9ca3af; }
+        button { background: #1f2937; border-color: #374151; }
+        .error { color: #fca5a5; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pick the best line</h1>
+    <p class="note" data-testid="words">Waiting for the workflow…</p>
+    <div class="lines" data-testid="lines"></div>
+    <p class="shouted" data-testid="shouted"></p>
+    <div class="actions">
+      <button type="button" data-testid="submit">Submit</button>
+      <button type="button" data-testid="submit-nothing">Submit nothing</button>
+    </div>
+    <p class="error" data-testid="submit-error"></p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

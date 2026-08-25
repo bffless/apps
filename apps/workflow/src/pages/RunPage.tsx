@@ -30,7 +30,7 @@
  * Phase 3), and a row whose definition snapshot cannot be used at all — which
  * still renders as a record.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { useParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
@@ -38,10 +38,12 @@ import { AnnotationList } from '../components/AnnotationList'
 import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
+import { useIslandHandle } from '../islands/useIslandHandle'
 import { RunHeader } from '../components/run/RunHeader'
 import { RunOutputs } from '../components/run/RunOutputs'
 import { RunSummary } from '../components/run/RunSummary'
 import { StepPane } from '../components/run/StepPane'
+import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
@@ -49,7 +51,7 @@ import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
-import { stepSelected } from '../store/uiSlice'
+import { islandDisplayChanged, stepSelected } from '../store/uiSlice'
 import { workflowApi, useGetRunQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
@@ -278,10 +280,85 @@ export function RunPage() {
   // A `waiting` step opens as its own pane the moment the run reaches it —
   // first by topo order (08: "the pane is the form") — as long as nothing
   // else is already selected, so a click elsewhere is never fought back over.
+  //
+  // A live island counts from `running`, not from `waiting`: the pane owns the
+  // iframe, so the step cannot *reach* `waiting` until its pane has rendered
+  // (Decision 11). Waiting still wins when both exist — an island loading in
+  // the background must not steal the pane from a form being filled in.
   const waitingStep = def && state ? firstWaitingStep(def, state) : null
+  const loadingIsland =
+    isLive && state
+      ? (Object.values(state.steps).find(
+          (step) => step.kind === 'island' && step.status === 'running',
+        )?.key ?? null)
+      : null
+  const openStep = waitingStep ?? loadingIsland
+
+  const selectedStepState = selectedStep && state ? state.steps[selectedStep] : undefined
+
+  // A step that is *itself* mid-interaction: an island whose pane owns the
+  // bridge, or a form waiting on the person filling it in. The pane is theirs
+  // until they resolve — nothing may take it out from under them.
+  const selectionIsInteractive =
+    (selectedStepState?.kind === 'island' &&
+      (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')) ||
+    (selectedStepState?.kind === 'form' && selectedStepState.status === 'waiting')
+
+  // Fix round 4, finding 1: the pane is the *only* thing that mounts an island
+  // (Decision 11), so a `running` island whose pane never opens stalls there
+  // forever — the 30 s `ISLAND_LOAD` clock only starts at `mount`, and the step
+  // offers no affordance of its own. A click on any other step during the run
+  // used to do exactly that. So a loading island **claims** the pane, over any
+  // selection that is not itself mid-interaction; the one case the original
+  // `!selectedStep` guard protected — a form being filled in, or another
+  // island already up — still wins, and that island is the one the user sees.
+  const claimingIsland = loadingIsland && !selectionIsInteractive ? loadingIsland : null
   useEffect(() => {
-    if (waitingStep && !selectedStep) dispatch(stepSelected(waitingStep))
-  }, [waitingStep, selectedStep, dispatch])
+    if (!selectedStep) {
+      if (openStep) dispatch(stepSelected(openStep))
+      return
+    }
+    if (claimingIsland && claimingIsland !== selectedStep) dispatch(stepSelected(claimingIsland))
+  }, [openStep, claimingIsland, selectedStep, dispatch])
+
+  // Fullscreen is a mode of the *mounted island*, so it only holds while the
+  // selected step really is one (08). Anything else — the run moved on, the
+  // user picked another step, the page changed run — puts the page back inline
+  // rather than leaving a fixed overlay over a step with no island in it.
+  const islandDisplay = useAppSelector((s) => s.ui.islandDisplay)
+  const islandOpen =
+    isLive &&
+    selectedStepState?.kind === 'island' &&
+    (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')
+  const fullscreen = islandDisplay === 'fullscreen' && islandOpen
+
+  // The mode an island *starts* in is its own declared `display` (04), and this
+  // is where that is applied: when the pane opens, not when the step launches.
+  // Launching is global — a second island starting in a parallel job would drag
+  // the page out from under the one the user is in — and a seed dispatched
+  // before the step is selected would be undone by this effect's own reset in
+  // the same commit. Seeding once per opened step also leaves the island's
+  // `ui/request-display-mode` and the strip's exit button free to move the mode
+  // afterwards: neither changes what was seeded, so neither is fought back over.
+  const openIslandKey = islandOpen ? selectedStep : null
+  const openIslandHandle = useIslandHandle(state?.runId ?? '', openIslandKey ?? '')
+  const seededFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (openIslandKey === null) {
+      // Nothing to reset until something was seeded — otherwise this would
+      // dispatch `inline` over and over on every unrelated render.
+      if (seededFor.current === null) return
+      seededFor.current = null
+      dispatch(islandDisplayChanged('inline'))
+      return
+    }
+    // The handle can land a render after the selection does (Resume registers
+    // handles from a listener effect), and waiting for it is better than
+    // seeding `inline` and never revisiting.
+    if (!openIslandHandle || seededFor.current === openIslandKey) return
+    seededFor.current = openIslandKey
+    dispatch(islandDisplayChanged(openIslandHandle.display))
+  }, [openIslandKey, openIslandHandle, dispatch])
 
   if (!isLive && (isLoading || (isFetching && !data && !isError))) {
     return <p className="note">Loading…</p>
@@ -305,53 +382,78 @@ export function RunPage() {
     ? `/${impl ?? sliceState!.impl}/${workflow ?? sliceState!.workflow}`
     : `/${impl ?? run!.impl}/${workflow ?? run!.workflow}`
 
+  // `render: island` needs to know which bundle an island file lives in,
+  // and this page is the last place that fact is unambiguous.
   return (
-    <section className="page">
-      <RunHeader
-        workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
-        runId={isLive ? sliceState!.runId : run!.runId}
-        startedBy={isLive ? undefined : run!.startedBy}
-        startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
-        finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
-        headless={isLive ? sliceState!.headless : run!.headless}
-        yaml={isLive ? sliceMeta!.yaml : run!.yaml}
-        status={state?.status ?? run!.status}
-        annotations={annotations}
-        base={base}
-        progress={state ? stepProgress(state) : undefined}
-        live={isLive}
-        onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
-      />
+    // TODO(apps#364): on the read-only path this trusts the run row's own
+    // `impl`, which a member wrote. Safe only while `/w/` forwards one fixed
+    // alias — see "Trust boundary" under Islands (M2) in `bffless/README.md`
+    // before `targetUrl: alias://` generalises it.
+    <ImplContext.Provider value={isLive ? sliceState!.impl : run!.impl}>
+      <section className="page">
+        <RunHeader
+          workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
+          runId={isLive ? sliceState!.runId : run!.runId}
+          startedBy={isLive ? undefined : run!.startedBy}
+          startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
+          finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
+          headless={isLive ? sliceState!.headless : run!.headless}
+          yaml={isLive ? sliceMeta!.yaml : run!.yaml}
+          status={state?.status ?? run!.status}
+          annotations={annotations}
+          base={base}
+          progress={state ? stepProgress(state) : undefined}
+          live={isLive}
+          onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
+        />
 
-      {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
+        {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
 
-      {!state || !def ? (
-        <RawRows run={run!} steps={steps} />
-      ) : (
-        <>
-          <div className="run-canvas">
-            <GraphView
-              def={def}
-              mode="run"
-              state={state}
-              selectedKey={selectedStep}
-              onSelect={(key) => dispatch(stepSelected(key))}
+        {!state || !def ? (
+          <RawRows run={run!} steps={steps} />
+        ) : (
+          <>
+            <div className={fullscreen ? 'run-canvas island-fullscreen' : 'run-canvas'}>
+              {fullscreen ? (
+                // The page's half of `ui/request-display-mode`: the graph
+                // collapses to a strip, and leaving is the page's decision, not
+                // the island's — the store flips, and the new mode flows back
+                // down to the bridge through `IslandFrame`.
+                <div className="island-strip">
+                  <span className="island-strip-title">{selectedStep}</span>
+                  <button
+                    type="button"
+                    data-testid="island-exit-fullscreen"
+                    onClick={() => dispatch(islandDisplayChanged('inline'))}
+                  >
+                    Exit fullscreen
+                  </button>
+                </div>
+              ) : (
+                <GraphView
+                  def={def}
+                  mode="run"
+                  state={state}
+                  selectedKey={selectedStep}
+                  onSelect={(key) => dispatch(stepSelected(key))}
+                />
+              )}
+              {selectedStep ? (
+                <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} live={isLive} />
+              ) : (
+                <p className="note">Pick a step to see what went in and what came out.</p>
+              )}
+            </div>
+
+            <RunOutputs def={def} state={state} />
+            <RunSummary def={def} state={state} />
+            <AnnotationList
+              annotations={annotations}
+              onJump={(key) => dispatch(stepSelected(key))}
             />
-            {selectedStep ? (
-              <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} live={isLive} />
-            ) : (
-              <p className="note">Pick a step to see what went in and what came out.</p>
-            )}
-          </div>
-
-          <RunOutputs def={def} state={state} />
-          <RunSummary def={def} state={state} />
-          <AnnotationList
-            annotations={annotations}
-            onJump={(key) => dispatch(stepSelected(key))}
-          />
-        </>
-      )}
-    </section>
+          </>
+        )}
+      </section>
+    </ImplContext.Provider>
   )
 }
