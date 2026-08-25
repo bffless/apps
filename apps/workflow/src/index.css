@@ -1162,3 +1162,22 @@ body {
   font-size: 0.75rem;
   color: var(--color-ink-mute);
 }
+
+/* A script step's `ctx.log`, on its Details tab — the same live-only bargain,
+   with room for more lines because a script is the one kind whose whole
+   visible progress this is. */
+.script-log {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  list-style: none;
+  max-height: 14rem;
+  overflow-y: auto;
+  border-radius: 0.375rem;
+  background-color: var(--color-surface-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-ink-mute);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

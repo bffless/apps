@@ -28,8 +28,12 @@ import type { NextAction } from '../lib/runner/next'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
 import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
+import type { ScriptHost, ScriptHostDeps } from '../scripts/ScriptHost'
+import { clearAllScriptLogs } from '../scripts/logStore'
 import { disposeAllIslandHandles, disposeIslandHandle, launchIslandStep } from './islandLaunch'
 import type { IslandLaunchDeps } from './islandLaunch'
+import { launchScriptStep } from './scriptLaunch'
+import type { ScriptLaunchDeps } from './scriptLaunch'
 import { getOwnerId } from './runnerActions'
 import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
@@ -59,6 +63,13 @@ export interface RunnerDeps {
    * the real `createIslandHost`, which `islandLaunch` also falls back to.
    */
   islandHost?: (deps: IslandHostDeps) => IslandHost
+  /**
+   * How a `script` step's Worker host is built (Task 11). Optional for the
+   * same reason `islandHost` is: `defaultRunnerDeps()` passes the real
+   * `createScriptHost`, which `scriptLaunch` also falls back to, and the test
+   * fixtures that drive no script keep compiling.
+   */
+  scriptHost?: (deps: ScriptHostDeps) => ScriptHost
 }
 
 /** `RunnerDeps`, narrowed to what launching an island actually needs. */
@@ -67,6 +78,14 @@ function islandDeps(deps: RunnerDeps): IslandLaunchDeps {
     http: deps.http,
     now: () => deps.clock.now(),
     ...(deps.islandHost ? { islandHost: deps.islandHost } : {}),
+  }
+}
+
+/** The same, for a script: a clock (the `timeout-minutes` timer) and the host factory. */
+function scriptDeps(deps: RunnerDeps): ScriptLaunchDeps {
+  return {
+    clock: deps.clock,
+    ...(deps.scriptHost ? { scriptHost: deps.scriptHost } : {}),
   }
 }
 
@@ -287,6 +306,10 @@ function resetRunnerState(): void {
   // `tools/call` until its host is closed. Aborting and forgetting would leave
   // an abandoned run's island live in the page.
   void disposeAllIslandHandles('cancelled')
+  // A script's log lines are live-only (Decision 12) and belong to the run
+  // that produced them: the moment a different run becomes the one this tab
+  // drives, nothing from the old one may stay on the page.
+  clearAllScriptLogs()
   writeQueues.clear()
   finishing.clear()
   currentRunId = null
@@ -603,7 +626,31 @@ async function handleNextAction(
         dispatch(
           runEvent({ type: 'step.started', key: a.key, inputs: launched.handle.arguments, at }),
         )
+      } else if (step.uses === 'script') {
+        // The one kind the middleware drives end to end: no element to hand
+        // over, nobody to wait for. The launcher owns every event from
+        // `step.started` onwards (Decision 13), including the failure a
+        // definition bug in `with.src` becomes.
+        const scoped = scopedDispatch(runState.runId, dispatch, getRunState)
+        launchScriptStep({
+          step,
+          key: a.key,
+          job: a.job,
+          index: a.index,
+          def,
+          state: runState,
+          signal: controller.signal,
+          deps: scriptDeps(deps),
+          registerFile: registerFileForStep(deps, runState, a.key, scoped),
+          scoped,
+          getRunState,
+        })
       } else {
+        // No kind reaches here any more (script was the last one, Task 11) —
+        // this is the backstop for a kind added to `StepKind` before the
+        // runner learns to run it: the step carries the fault, and the run
+        // still reaches a final state.
+        //
         // `queued -> failed` is not a legal transition (transitions.ts): every
         // kind's failure passes through `running` first, same as a pipeline
         // step's own terminal-failure path (`step.started` then `step.failed`).
@@ -871,6 +918,36 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             scoped: scopedDispatch(state.runId, listenerApi.dispatch, getRunState),
             getRunState,
             recordedInputs: step.inputs ?? {},
+          })
+        }
+
+        // Scripts resume like a `queued`/`running` pipeline, not like an
+        // island (Decision 13): the module is re-run from scratch, `with` and
+        // all. There is nothing to re-open — a Worker died with the tab that
+        // spawned it — and no `resume:` hint to pick a run back up mid-flight,
+        // so re-issuing the whole thing is the only honest option. (Which is
+        // why 03 asks a script to be idempotent.)
+        for (const step of Object.values(state.steps)) {
+          if (step.kind !== 'script') continue
+          if (step.status !== 'queued' && step.status !== 'running') continue
+          const stepDecl = stepOf(def, step.job, step.stepId)
+          if (!stepDecl) continue
+
+          const controller = new AbortController()
+          controllers.set(controllerKey(state.runId, step.key), controller)
+          const scoped = scopedDispatch(state.runId, listenerApi.dispatch, getRunState)
+          launchScriptStep({
+            step: stepDecl,
+            key: step.key,
+            job: step.job,
+            index: step.index,
+            def,
+            state,
+            signal: controller.signal,
+            deps: scriptDeps(deps),
+            registerFile: registerFileForStep(deps, state, step.key, scoped),
+            scoped,
+            getRunState,
           })
         }
       }
