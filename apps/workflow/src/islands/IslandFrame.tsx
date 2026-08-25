@@ -41,15 +41,33 @@ export interface IslandFrameProps {
   onLoadError: (err: { code: 'ISLAND_LOAD'; message: string }) => void
 }
 
+/**
+ * What the island has been (or would be) told, as a string. Tool input travels
+ * as JSON, so two structurally equal values are one value — and a live run
+ * page rebuilds its state on every poll, so identity would remount a viewer
+ * every few seconds. `undefined` and a value JSON cannot describe both collapse
+ * to a constant: an unserialisable value could not be delivered anyway.
+ */
+function toolInputSignature(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args) ?? 'undefined'
+  } catch {
+    return 'unserialisable'
+  }
+}
+
 export function IslandFrame(props: IslandFrameProps) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const { host, impl, src, viewer, headless, onLoadError } = props
 
   // The island is mounted for the identity of the step, not for every render:
   // `arguments` is a fresh object each time the pane re-renders, and re-sending
-  // tool input would restart the island under the user's hands. The one
+  // tool input would restart a step's island under the user's hands. The one
   // `tool-input` a step gets is sent by `mount`; later changes are the run's
-  // business, not the frame's.
+  // business, not the frame's. A **viewer** is the exception (apps#370): its
+  // value routinely changes after the first render (a live run renders its
+  // declared outputs before it has recorded any), and a changed value is
+  // re-sent over the live bridge rather than remounting the island.
   const argsRef = useRef(props.arguments)
   const errorRef = useRef(onLoadError)
   const displayRef = useRef(props.display)
@@ -63,27 +81,45 @@ export function IslandFrame(props: IslandFrameProps) {
     displayRef.current = props.display
   })
 
+  /** Signature of the arguments the island was last told; `null` until mounted. */
+  const sentRef = useRef<string | null>(null)
+
+  /** Viewer only: send the current arguments if the island has not had them. */
+  const resend = () => {
+    const signature = toolInputSignature(argsRef.current)
+    if (sentRef.current === null || sentRef.current === signature) return
+    sentRef.current = signature
+    void host.sendToolInput(argsRef.current).catch(() => {
+      // A bridge that went away mid-send is torn down by the cleanup anyway.
+    })
+  }
+
   useEffect(() => {
     const iframe = frameRef.current
     if (!iframe) return
 
     const controller = new AbortController()
     let live = true
+    const mountedWith = argsRef.current
 
     void host
       .mount(iframe, {
         impl,
         src,
-        arguments: argsRef.current,
+        arguments: mountedWith,
         viewer,
         headless,
         signal: controller.signal,
       })
       .then(() => {
+        if (!live) return
         // The mode effect below cannot reach a session that did not exist yet
         // when it ran, so a step that opens straight into fullscreen applies it
         // here. Idempotent: `setDisplayMode` no-ops when nothing changed.
-        if (live) host.setDisplayMode(displayRef.current)
+        host.setDisplayMode(displayRef.current)
+        // A viewer's value may have moved on while the HTML was in flight.
+        sentRef.current = toolInputSignature(mountedWith)
+        if (viewer) resend()
       })
       .catch((err: unknown) => {
         // A mount the cleanup already abandoned is not a load error.
@@ -94,10 +130,22 @@ export function IslandFrame(props: IslandFrameProps) {
 
     return () => {
       live = false
+      sentRef.current = null
       controller.abort()
       void host.teardown('unmounted')
     }
+    // `resend` closes over refs only; it is stable by construction.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, impl, src, viewer, headless])
+
+  // The viewer half of tool-input: a changed value reaches the mounted island
+  // as a fresh `ui/notifications/tool-input`. No-op until the mount resolves
+  // (the mount's own `.then` catches up) and always for a step's island.
+  const signature = viewer ? toolInputSignature(props.arguments) : null
+  useEffect(() => {
+    if (viewer) resend()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host, viewer, signature])
 
   // The page's half of `ui/request-display-mode`: the island *asks*, the store
   // decides, and the answer flows back down here. Without it the bridge would

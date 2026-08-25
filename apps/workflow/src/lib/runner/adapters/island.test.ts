@@ -3,6 +3,7 @@ import { toDefinition } from '@bffless/workflow-lint/definition'
 import type { Definition, RunState, Step, StepState } from '../types'
 import { stepKey } from '../types'
 import {
+  ANNOTATION_BUDGET,
   annotateEvent,
   completeIslandStep,
   islandInputs,
@@ -93,6 +94,7 @@ function args(stepId: string) {
     index: 0,
     def,
     state: state(),
+    at: 1_000,
   }
 }
 
@@ -340,5 +342,103 @@ describe('annotateEvent', () => {
     expect(result).toHaveProperty('error')
     if (!('error' in result)) return
     expect(typeof result.error).toBe('string')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// apps#370 — host polish follow-ups
+// ---------------------------------------------------------------------------
+
+describe('completeIslandStep — clock injection (#370)', () => {
+  it('stamps the caller-supplied `at` rather than reading the wall clock', () => {
+    const result = completeIslandStep({ ...args('trim'), outputs: { pick: 'a' }, at: 42 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.event.at).toBe(42)
+  })
+
+  it('reads a submitted output named after an Object.prototype member by own key only', () => {
+    const proto: Definition = toDefinition({
+      name: 'Proto',
+      jobs: {
+        edit: {
+          steps: [
+            {
+              id: 'trim',
+              uses: 'island',
+              with: { src: 'islands/a.html' },
+              outputs: { constructor: { type: 'string' }, toString: { type: 'string' } },
+            },
+          ],
+        },
+      },
+    })
+    const step = proto.jobs.edit!.steps[0]!
+    const base = { ...args('trim'), def: proto, step, at: 1 }
+
+    const omitted = completeIslandStep({ ...base, outputs: {} })
+    expect(omitted).toMatchObject({
+      ok: true,
+      event: { outputs: { constructor: null, toString: null } },
+    })
+
+    const given = completeIslandStep({ ...base, outputs: { constructor: 'c', toString: 't' } })
+    expect(given).toMatchObject({
+      ok: true,
+      event: { outputs: { constructor: 'c', toString: 't' } },
+    })
+  })
+})
+
+describe('resolveSrc — must name a file (#370)', () => {
+  it.each(['.', 'islands/', 'islands/.', '/w/studio/', '/w/studio/islands/'])(
+    'rejects %j',
+    (src) => {
+      expect(() => resolveSrc('studio', src)).toThrow(/name a file/)
+    },
+  )
+})
+
+describe('annotateEvent — the per-step budget (#370)', () => {
+  const one = (i: number) => ({ level: 'notice' as const, message: `m${i}` })
+
+  it('exports the budget so the persistence layer can share it', () => {
+    expect(ANNOTATION_BUDGET).toEqual({ count: 100, bytes: 64 * 1024, summaryBytes: 16 * 1024 })
+  })
+
+  it('accepts a call that lands exactly on the count cap', () => {
+    const existing = Array.from({ length: 99 }, (_, i) => one(i))
+    const result = annotateEvent(TRIM, { annotations: [one(99)] }, 5, existing)
+    expect(result).not.toHaveProperty('error')
+  })
+
+  it('rejects a call that would exceed the count cap, counting what the step already holds', () => {
+    const existing = Array.from({ length: 100 }, (_, i) => one(i))
+    const result = annotateEvent(TRIM, { annotations: [one(100)] }, 5, existing)
+    expect(result).toHaveProperty('error', expect.stringMatching(/at most 100/))
+  })
+
+  it('rejects a single call that alone exceeds the count cap', () => {
+    const many = Array.from({ length: 101 }, (_, i) => one(i))
+    expect(annotateEvent(TRIM, { annotations: many }, 5)).toHaveProperty('error')
+  })
+
+  it('rejects annotations whose serialised size, with what the step holds, exceeds the byte cap', () => {
+    const big = { level: 'notice' as const, message: 'x'.repeat(40 * 1024) }
+    expect(annotateEvent(TRIM, { annotations: [big] }, 5, [])).not.toHaveProperty('error')
+    expect(annotateEvent(TRIM, { annotations: [big] }, 5, [big])).toHaveProperty(
+      'error',
+      expect.stringMatching(/64 KB/),
+    )
+  })
+
+  it('rejects a summary over its own byte cap', () => {
+    expect(annotateEvent(TRIM, { summary: 'x'.repeat(16 * 1024 + 1) }, 5)).toHaveProperty(
+      'error',
+      expect.stringMatching(/16 KB/),
+    )
+    expect(annotateEvent(TRIM, { summary: 'x'.repeat(16 * 1024) }, 5)).not.toHaveProperty(
+      'error',
+    )
   })
 })

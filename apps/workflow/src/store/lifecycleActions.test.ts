@@ -49,7 +49,16 @@ function submitReview(store: ReturnType<typeof trackedHelloStore>['store']): voi
   const state = store.getState().run.state!
   const step = stepOf('confirm', 'review')
   const values = formInitialValues({ step, def: hello, state, job: 'confirm', index: 0 })
-  const r = completeFormStep({ step, key: REVIEW_KEY, job: 'confirm', index: 0, def: hello, state, values })
+  const r = completeFormStep({
+    step,
+    key: REVIEW_KEY,
+    job: 'confirm',
+    index: 0,
+    def: hello,
+    state,
+    values,
+    at: Date.now(),
+  })
   if (!r.ok) throw new Error(`submitReview: form rejected ${JSON.stringify(r.errors)}`)
   store.dispatch(runEvent(r.event))
 }

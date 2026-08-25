@@ -18,10 +18,10 @@ implementation's pipelines as its tools; authors write against the public
 | island calls a pipeline | `tools/call { name, arguments }` → host proxies to `/api/<alias>/<name>` (see tool naming) |
 | island finishes the step | `tools/call { name: "workflow.submit", arguments: { outputs } }` — our one host tool for completion |
 | island writes a summary / annotation | `tools/call { name: "workflow.annotate", arguments: { summary?, annotations? } }` |
-| theme, dark mode, size | `ui/notifications/initialized.hostContext` (`theme`, `styles`, `displayMode`, `containerDimensions`), `ui/notifications/size-changed`, `ui/notifications/host-context-changed` |
+| theme, dark mode, size | `ui/notifications/initialized.hostContext` (`theme`, `styles`, `displayMode`, `containerDimensions`), `ui/notifications/size-changed`, `ui/notifications/host-context-changed` — the host re-sends `theme` on an OS theme flip and `containerDimensions` on a frame resize |
 | headless run | `hostContext.platform = "web"`, plus `_meta.bffless.headless = true` on `tool-input` (07) — but see below: ext-apps 1.7.5 strips it |
 | step cancelled / run leaves the page | `ui/resource-teardown { reason }` |
-| output viewer (`render: island`) | same file; `tool-input.arguments = { value }`; `workflow.submit` is rejected |
+| output viewer (`render: island`) | same file; `tool-input.arguments = { value }`; `workflow.submit` is rejected. A changed value is a **fresh `tool-input`** over the same bridge, never a remount — a viewer must handle `ontoolinput` more than once. A step's island is sent `tool-input` exactly once |
 
 Host capabilities declared on `ui/initialize`: `tools/call`, `ui/message` (no-op: logs to the
 step card), `ui/open-link` (opens a new tab, same as GitHub), `ui/request-display-mode`
@@ -42,6 +42,12 @@ callable by its slash name (the linter notices). The two host tools are `workflo
 is POST. The host restricts islands to **their own implementation's** rules plus the
 `workflow.*` host tools: absolute paths and other aliases are a tool error. `poll` is not
 available to islands — an island that enqueues a job polls it itself.
+
+`workflow.annotate` is budgeted **per step**, because its `annotations`/`summary` land in
+persisted columns that are never offloaded the way large `outputs` are (05): at most **100
+annotations** and **64 KB** of annotation JSON per step (what the row already holds counts), and
+a `summary` of at most **16 KB**. An over-budget call is a tool error and records nothing;
+the numbers are `ANNOTATION_BUDGET` in the island adapter.
 
 ## Sandbox
 

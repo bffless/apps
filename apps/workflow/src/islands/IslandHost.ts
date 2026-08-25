@@ -159,6 +159,17 @@ export interface IslandHost {
    * size-changed handler disabled. No-op with no session, or when unchanged.
    */
   setDisplayMode(mode: IslandDisplayMode): void
+  /**
+   * A **viewer's** value changed: send a fresh `ui/notifications/tool-input`
+   * over the live bridge instead of remounting the island (apps#370). A step's
+   * island is sent tool-input exactly once, by `mount` — re-sending would
+   * restart it under the user's hands — so this rejects for a non-viewer
+   * session. No-op with no connected session (the pending `mount` carries the
+   * arguments the frame reads at that point), and likewise while the mount is
+   * still delivering its own tool-input — sending then would put the new value
+   * ahead of the mount's.
+   */
+  sendToolInput(args: Record<string, unknown>): Promise<void>
   /** `ui/resource-teardown` then disconnect; idempotent, and safe before a mount. */
   teardown(reason: 'cancelled' | 'completed' | 'unmounted'): Promise<void>
 }
@@ -229,9 +240,11 @@ function mimeOf(path: string): string | undefined {
   return ext ? MIME[ext.toLowerCase()] : undefined
 }
 
+const DARK_SCHEME = '(prefers-color-scheme: dark)'
+
 /** The host's theme follows the OS, like the harness page itself. jsdom has no `matchMedia`. */
 function currentTheme(): 'light' | 'dark' {
-  const query = globalThis.matchMedia?.('(prefers-color-scheme: dark)')
+  const query = globalThis.matchMedia?.(DARK_SCHEME)
   return query?.matches ? 'dark' : 'light'
 }
 
@@ -241,6 +254,63 @@ function containerDimensions(iframe: HTMLIFrameElement): McpUiHostContext['conta
     width: Math.round(rect.width),
     maxHeight: Math.round(globalThis.innerHeight * INLINE_HEIGHT_CAP),
   }
+}
+
+/**
+ * Keep a connected island's `theme` and `containerDimensions` current
+ * (apps#370): both were sampled once at `mount`, so an OS theme flip or a
+ * viewport resize never reached the View. Returns the disposer. Either
+ * observer may be missing (jsdom has neither), in which case that half is
+ * simply never re-sent.
+ */
+function observeHostContext(current: Session): () => void {
+  const disposers: (() => void)[] = []
+
+  const query = globalThis.matchMedia?.(DARK_SCHEME)
+  if (query?.addEventListener) {
+    const onChange = (e: { matches: boolean }) => {
+      notifyHostContext(current, { theme: e.matches ? 'dark' : 'light' })
+    }
+    query.addEventListener('change', onChange)
+    disposers.push(() => query.removeEventListener('change', onChange))
+  }
+
+  if (typeof globalThis.ResizeObserver === 'function') {
+    const observer = new ResizeObserver(() => {
+      notifyHostContext(current, { containerDimensions: containerDimensions(current.iframe) })
+    })
+    observer.observe(current.iframe)
+    disposers.push(() => observer.disconnect())
+  }
+
+  return () => {
+    for (const dispose of disposers.splice(0)) dispose()
+  }
+}
+
+/**
+ * Apply a host-context diff and, when there is a live transport, tell the
+ * View through `ui/notifications/host-context-changed`.
+ *
+ * The diff is written into the **same `hostContext` object the `AppBridge`
+ * was constructed with**, never a copy: before the bridge connects that object
+ * is what the `ui/initialize` answer carries (so a pre-connect change rides the
+ * handshake instead of a notification the bridge cannot send yet — fix round 4,
+ * finding 2), and after it the bridge's own copy stays in step for free.
+ *
+ * The notification is sent directly rather than through
+ * `bridge.setHostContext`: that helper discards the promise
+ * `Protocol.notification()` returns, so a transport that died between the
+ * `connected` check and the send would surface as an unhandled rejection —
+ * the sync `try/catch` that used to wrap it could never fire (apps#370).
+ */
+function notifyHostContext(current: Session, diff: Partial<McpUiHostContext>): void {
+  if (current.disposed) return
+  Object.assign(current.hostContext, diff)
+  if (!current.connected) return
+  void Promise.resolve(current.bridge.sendHostContextChange(diff)).catch(() => {
+    // The frame is going away regardless; `onclose` clears `connected`.
+  })
 }
 
 const CAPABILITIES: McpUiHostCapabilities = {
@@ -261,16 +331,11 @@ const CAPABILITIES: McpUiHostCapabilities = {
  * request and the page's `setDisplayMode` — can both be idempotent and cannot
  * ping-pong (the page's answer to a request arrives here as "unchanged").
  *
- * **Before the bridge connects there is nothing to notify** (fix round 4,
- * finding 2). A session is registered synchronously by `mount`, so the page can
- * — and for a `display: fullscreen` island always does — reach this function
- * while the HTML fetch is still in flight; `setHostContext` would then send a
- * notification over a transport that does not exist yet, and ext-apps discards
- * the promise `Protocol.notification()` rejects with `Not connected`, which
- * surfaces as an unhandled rejection on every fullscreen island. So the
- * pre-connect path **mutates the very `hostContext` object the bridge was
- * constructed with** instead: no notification, and the mode rides the
- * `ui/initialize` response the View is still waiting for.
+ * A session is registered synchronously by `mount`, so the page can — and for
+ * a `display: fullscreen` island always does — reach this function while the
+ * HTML fetch is still in flight; `notifyHostContext` handles both halves of
+ * that (the pre-connect mode rides `ui/initialize`, a connected one is a
+ * notification).
  *
  * Entering fullscreen clears the inline height: it is an *inline style*, so a
  * stale `height: 320px` from the last size-changed beats
@@ -281,18 +346,7 @@ const CAPABILITIES: McpUiHostCapabilities = {
 function applyDisplayMode(current: Session, mode: IslandDisplayMode): boolean {
   if (current.disposed || current.displayMode === mode) return false
   current.displayMode = mode
-  if (current.connected) {
-    current.hostContext = { ...current.hostContext, displayMode: mode }
-    try {
-      current.bridge.setHostContext(current.hostContext)
-    } catch {
-      // A bridge torn down between the flag and this call is not the page's
-      // problem: the frame is going away regardless.
-    }
-  } else {
-    // Same object identity the `AppBridge` holds — see `mount`.
-    current.hostContext.displayMode = mode
-  }
+  notifyHostContext(current, { displayMode: mode })
   if (mode === 'fullscreen') current.iframe.style.height = ''
   return true
 }
@@ -312,9 +366,26 @@ interface Session {
   iframe: HTMLIFrameElement
   hostContext: McpUiHostContext
   displayMode: IslandDisplayMode
-  /** `bridge.connect` has resolved — i.e. there is a transport to notify over. */
+  /** `render: island` — tool-input may be re-sent; `workflow.submit` is refused. */
+  viewer: boolean
+  headless: boolean
+  /**
+   * `bridge.connect` has resolved and the transport has not closed since —
+   * i.e. there is a transport to notify over. Cleared by the bridge's
+   * `onclose`, so a frame yanked without `teardown()` stops being notified
+   * instead of re-floating `Not connected` on every later call (apps#370).
+   */
   connected: boolean
+  /**
+   * The mount has delivered its own `tool-input`. A viewer re-send before this
+   * point would land *ahead* of the mount's and leave the island on the stale
+   * value, so `sendToolInput` is a no-op until then (the frame re-checks once
+   * the mount resolves).
+   */
+  ready: boolean
   disposed: boolean
+  /** Stops the theme / resize observers. */
+  unobserve: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +406,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
   async function discard(current: Session): Promise<void> {
     if (current.disposed) return
     current.disposed = true
+    current.unobserve()
     if (session === current) session = null
     try {
       await current.bridge.close()
@@ -345,6 +417,14 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
 
   function install(current: Session, a: IslandMountArgs): void {
     const { bridge } = current
+
+    // The transport closed — our own `close()`, or a transport closed out of
+    // band — so there is nothing left to notify over. (A frame simply removed
+    // from the DOM closes no transport; that case is benign only because
+    // `notifyHostContext` catches the rejection.)
+    bridge.onclose = () => {
+      current.connected = false
+    }
 
     bridge.oncalltool = async (params, extra): Promise<CallToolResult> => {
       const target = resolveToolName(a.impl, params.name, params._meta)
@@ -513,10 +593,18 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         iframe,
         hostContext,
         displayMode: 'inline',
+        viewer: a.viewer === true,
+        headless: a.headless,
         connected: false,
+        ready: false,
         disposed: false,
+        unobserve: () => {},
       }
       install(current, a)
+      // From here on a theme flip or resize lands in `hostContext` — before the
+      // bridge connects that is the object `ui/initialize` will answer with, so
+      // nothing sampled during the HTML fetch goes stale.
+      current.unobserve = observeHostContext(current)
 
       // Registered *before* the first await, so `teardown()` and a second
       // `mount()` can both find and dispose an in-flight mount. Everything
@@ -579,24 +667,33 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       // viewer mode the caller's `{ value }`. See the `_meta` note at the top:
       // the stamp is sent, but ext-apps 1.7.5's View strips it.
       try {
-        await current.bridge.sendToolInput({
-          arguments: a.arguments,
-          _meta: { bffless: { headless: a.headless } },
-        } as Parameters<AppBridge['sendToolInput']>[0])
+        await sendToolInput(current, a.arguments)
       } catch (err) {
         await discard(current)
         throw new IslandLoadError(`island ${url}: ${messageOf(err)}`)
       }
+      current.ready = true
     },
 
     setDisplayMode(mode) {
       if (session) applyDisplayMode(session, mode)
     },
 
+    async sendToolInput(args) {
+      const current = session
+      if (!current || current.disposed) return
+      if (!current.viewer) {
+        throw new Error("tool-input is only re-sent to a viewer; a step's island is mounted once")
+      }
+      if (!current.ready || !current.connected) return
+      await sendToolInput(current, args)
+    },
+
     async teardown(reason) {
       const current = session
       if (!current || current.disposed) return
       current.disposed = true
+      current.unobserve()
       session = null
 
       // `ui/resource-teardown` is a *request*: an island that never set
@@ -618,6 +715,19 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       }
     },
   }
+}
+
+/**
+ * `ui/notifications/tool-input`: the step's `with` (minus `src`/`title`/
+ * `display`) verbatim, or a viewer's `{ value }`. See the `_meta` note at the
+ * top of the file: the headless stamp is sent, but ext-apps 1.7.5's View
+ * strips it.
+ */
+function sendToolInput(current: Session, args: Record<string, unknown>): Promise<void> {
+  return current.bridge.sendToolInput({
+    arguments: args,
+    _meta: { bffless: { headless: current.headless } },
+  } as Parameters<AppBridge['sendToolInput']>[0])
 }
 
 /** The text blocks of an MCP content list, joined — the only modality the step card shows. */

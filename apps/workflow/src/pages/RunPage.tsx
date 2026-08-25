@@ -45,10 +45,10 @@ import { RunSummary } from '../components/run/RunSummary'
 import { StepPane } from '../components/run/StepPane'
 import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
-import { firstWaitingStep, stepProgress } from '../lib/runner/graph'
+import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
-import type { Annotation, Definition, RunState } from '../lib/runner/types'
+import type { Annotation, Definition, RunState, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
 import { islandDisplayChanged, stepSelected } from '../store/uiSlice'
@@ -83,6 +83,14 @@ function collectAnnotations(state: RunState): Annotation[] {
       step.annotations.map((annotation) => ({ ...annotation, stepKey: step.key })),
     ),
   ]
+}
+
+/**
+ * An island whose pane has not opened yet: the pane owns the iframe, so a live
+ * island counts from `running`, not `waiting` (Decision 11).
+ */
+function isLoadingIsland(step: StepState): boolean {
+  return step.kind === 'island' && step.status === 'running'
 }
 
 /** A row that cannot be replayed is still a row worth reading (08). */
@@ -287,11 +295,7 @@ export function RunPage() {
   // the background must not steal the pane from a form being filled in.
   const waitingStep = def && state ? firstWaitingStep(def, state) : null
   const loadingIsland =
-    isLive && state
-      ? (Object.values(state.steps).find(
-          (step) => step.kind === 'island' && step.status === 'running',
-        )?.key ?? null)
-      : null
+    isLive && def && state ? firstStepWhere(def, state, isLoadingIsland) : null
   const openStep = waitingStep ?? loadingIsland
 
   const selectedStepState = selectedStep && state ? state.steps[selectedStep] : undefined
@@ -312,14 +316,57 @@ export function RunPage() {
   // selection that is not itself mid-interaction; the one case the original
   // `!selectedStep` guard protected — a form being filled in, or another
   // island already up — still wins, and that island is the one the user sees.
-  const claimingIsland = loadingIsland && !selectionIsInteractive ? loadingIsland : null
+  //
+  // The claim is made **once per island** (apps#370). Re-claiming on every
+  // click away restarted the ISLAND_LOAD clock with every re-mount, so a
+  // hanging island plus a clicking user never timed out — and fought the user
+  // for the pane. An island the user has left while loading stays `running`
+  // with its chip as the way back; the run header's cancel is the other exit.
+  // Any island that has been the selection while loading counts as claimed,
+  // whether the page opened it or the user did.
+  const claimed = useRef<{ runId: string | null; keys: Set<string> }>({
+    runId: null,
+    keys: new Set(),
+  })
   useEffect(() => {
+    if (!state || !def) return
+    if (claimed.current.runId !== state.runId) {
+      claimed.current = { runId: state.runId, keys: new Set() }
+    }
     if (!selectedStep) {
-      if (openStep) dispatch(stepSelected(openStep))
+      if (openStep) {
+        if (isLoadingIsland(state.steps[openStep]!)) claimed.current.keys.add(openStep)
+        dispatch(stepSelected(openStep))
+      }
       return
     }
-    if (claimingIsland && claimingIsland !== selectedStep) dispatch(stepSelected(claimingIsland))
-  }, [openStep, claimingIsland, selectedStep, dispatch])
+    // Only the tab driving the run has a pane to claim: read-only renders the
+    // tabs for a `running` island (StepPane's `live` gate), so moving the
+    // selection there would just yank the reader around.
+    if (!isLive) return
+    if (selectedStepState && isLoadingIsland(selectedStepState)) {
+      claimed.current.keys.add(selectedStep)
+      return
+    }
+    if (selectionIsInteractive) return
+    const claiming = firstStepWhere(
+      def,
+      state,
+      (step) => isLoadingIsland(step) && !claimed.current.keys.has(step.key),
+    )
+    if (!claiming) return
+    claimed.current.keys.add(claiming)
+    dispatch(stepSelected(claiming))
+  }, [
+    isLive,
+    openStep,
+    selectedStep,
+    selectedStepState,
+    selectionIsInteractive,
+    def,
+    state,
+    dispatch,
+  ])
 
   // Fullscreen is a mode of the *mounted island*, so it only holds while the
   // selected step really is one (08). Anything else — the run moved on, the

@@ -239,7 +239,7 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
   // same reason a read-only form does — a submit from here would land on
   // whatever run the global slice holds live.
   if (live && declared?.uses === 'island' && (step.status === 'running' || step.status === 'waiting')) {
-    return <IslandStepPane def={def} state={state} stepKey={stepKey} />
+    return <IslandStepPane state={state} stepKey={stepKey} />
   }
 
   return (

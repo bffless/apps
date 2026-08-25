@@ -293,6 +293,19 @@ function resetRunnerState(): void {
   currentGeneration += 1
 }
 
+/**
+ * This tab no longer drives the run: the view goes readonly, in-flight steps
+ * are aborted, and every island bridge is closed (apps#370) — a mounted island
+ * keeps answering `tools/call` until its host is closed, and aborting its
+ * controller alone would leave it live, with a `workflow.submit` that lands
+ * on a run this tab has no lease over. The record itself is untouched.
+ */
+function loseLease(dispatch: (action: unknown) => unknown): void {
+  dispatch(runModeChanged('readonly'))
+  runnerControllers.abortAll()
+  void disposeAllIslandHandles('unmounted')
+}
+
 const NON_TERMINAL_STEP = new Set(['queued', 'running', 'polling', 'waiting'])
 
 function startHeartbeat(
@@ -354,19 +367,13 @@ function startHeartbeat(
         // tick, same as any other missed beat, as long as the lease this tab
         // last knew about hasn't actually run out yet.
         if (deps.clock.now() < leaseUntil) continue
-        if (isCurrent) {
-          dispatch(runModeChanged('readonly'))
-          runnerControllers.abortAll()
-        }
+        if (isCurrent) loseLease(dispatch)
         heartbeats.delete(runId)
         return
       }
 
       if (!result.ok) {
-        if (isCurrent) {
-          dispatch(runModeChanged('readonly'))
-          runnerControllers.abortAll()
-        }
+        if (isCurrent) loseLease(dispatch)
         heartbeats.delete(runId)
         return
       }

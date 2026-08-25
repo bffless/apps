@@ -229,8 +229,13 @@ describe('island steps — the host tools', () => {
     host.settle()
     await flush()
 
+    const before = handle.log
     host.deps!.onLog('rendered 3 clips')
     expect(handle.log).toEqual(['rendered 3 clips'])
+    // A fresh array each line: the pane reads `log` as an immutable snapshot
+    // (apps#370), so the handle itself never has to change identity.
+    expect(handle.log).not.toBe(before)
+    expect(before).toEqual([])
   })
 
   it('ui/request-display-mode drives the ui slice, but launching alone never does', async () => {
@@ -345,5 +350,35 @@ describe('island steps — resume (Decision 11)', () => {
     expect(host.deps!.onSubmit({ choice: 'b' })).toEqual({ ok: true })
     await flush()
     expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('succeeded')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// apps#370 — a lost lease disposes the island, not just its controller
+// ---------------------------------------------------------------------------
+
+describe('island steps — lease loss', () => {
+  it('tears the host down and forgets the handle when the tab stops driving the run', async () => {
+    const { store, advance, runId, host, setLease } = await startIslandRun()
+
+    const handle = getIslandHandle(runId, ISLAND_KEY)!
+    void handle.mount(frame())
+    await flush()
+    host.settle()
+    await flush()
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
+
+    setLease({ ok: false, heldBy: 'tab_other' })
+    await pumpUntil(advance, () => store.getState().run.mode === 'readonly', {
+      stepMs: 1_000,
+      maxSteps: 30,
+    })
+    await flush()
+
+    expect(getIslandHandle(runId, ISLAND_KEY)).toBeUndefined()
+    // `unmounted`, not `cancelled`: the island is told the truth on the wire.
+    expect(host.teardowns).toEqual(['unmounted'])
+    // The record is untouched: readonly means "not ours to drive", not "cancelled".
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
   })
 })

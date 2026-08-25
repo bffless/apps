@@ -17,16 +17,22 @@ import App from '../../App'
 import { analyzeLines } from '../../mocks/analyze'
 import { server } from '../../mocks/server'
 import type { AppStore } from '../../store'
+import { makeStore } from '../../store'
 import { useAppSelector } from '../../store/hooks'
 import { islandDisplayChanged } from '../../store/uiSlice'
 import {
+  A_X_KEY,
+  A_Y_KEY,
+  B_Z_KEY,
   CHOOSE_KEY,
   FORM_AND_ISLAND_DEF,
   FORM_KEY,
   ISLAND_DEF,
   ISLAND_FULLSCREEN_DEF,
   ISLAND_KEY,
+  ISLAND_YAML,
   PARALLEL_ISLAND_KEY,
+  FORM_AND_TWO_ISLANDS_DEF,
   SAY_KEY,
   flush,
   pumpUntil,
@@ -54,7 +60,7 @@ afterEach(() => {
 function LivePane() {
   const state = useAppSelector((s) => s.run.state)
   if (!state) return null
-  return <IslandStepPane def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} />
+  return <IslandStepPane state={state} stepKey={ISLAND_KEY} />
 }
 
 function renderPane(store: AppStore, strict = false) {
@@ -313,10 +319,133 @@ describe('RunPage — a loading island claims the pane', () => {
     await waitFor(() => expect(store.getState().ui.selectedStep).toBe(CHOOSE_KEY))
     await waitFor(() => expect(host.mounts).toHaveLength(1))
 
+    // apps#370: the claim happens **once**. A second click away while the
+    // island is still loading stands — the page does not re-claim on every
+    // click (each re-mount restarted the 30 s ISLAND_LOAD clock, so a hanging
+    // island plus a clicking user never timed out). The abandoned mount leaves
+    // the step `running`; the chip is the way back.
+    fireEvent.click(chip(page, SAY_KEY)!)
+    await flush()
+    expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
+    expect(host.mounts).toHaveLength(1)
+    expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('running')
+
+    fireEvent.click(chip(page, CHOOSE_KEY)!)
+    await waitFor(() => expect(host.mounts).toHaveLength(2))
+
     host.settle()
     await waitFor(() =>
       expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'),
     )
+  })
+
+  it('opens the first loading island in scheduling order, not in state-insertion order', async () => {
+    // The form owns the pane while `a/x` and `b/z` load unclaimed; `a/y`
+    // starts only once `a/x` submits, so the state holds `b/z` before `a/y`.
+    // When the form is done, scheduling order says `a/y` (apps#370).
+    const { store, host, runId } = await startIslandRun(FORM_AND_TWO_ISLANDS_DEF, A_X_KEY)
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/test/island/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(FORM_KEY))
+    expect(host.mounts).toHaveLength(0)
+
+    // Hosts are built in launch order: a/x, b/z. A running island accepts a
+    // submit whether or not its pane ever opened.
+    expect(host.allDeps[0]!.onSubmit({ choice: 'a' })).toEqual({ ok: true })
+    await waitFor(() => expect(store.getState().run.state!.steps[A_Y_KEY]?.status).toBe('running'))
+    expect(Object.keys(store.getState().run.state!.steps).indexOf(B_Z_KEY)).toBeLessThan(
+      Object.keys(store.getState().run.state!.steps).indexOf(A_Y_KEY),
+    )
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Finish' }))
+    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(A_Y_KEY))
+    expect(store.getState().run.state!.steps[B_Z_KEY].status).toBe('running')
+  })
+
+  it('never claims the pane on a read-only view — another tab drives that island', async () => {
+    // A `running` island in a run this tab does not drive has no pane to open
+    // here (StepPane's `live` gate renders the tabs); moving the selection
+    // onto it would only yank the reader around (review of apps#370). The
+    // reader picks the finished form — a non-interactive selection, the one
+    // shape that lets a live page claim.
+    const runId = 'run_readonly_island'
+    server.use(
+      http.get('/api/workflow/run', () =>
+        HttpResponse.json({
+          run: {
+            _id: 1,
+            runId,
+            impl: 'test',
+            workflow: 'island',
+            workflowName: 'Island',
+            definition: FORM_AND_ISLAND_DEF.raw,
+            yaml: ISLAND_YAML,
+            inputs: {},
+            status: 'running',
+            headless: false,
+            startedAt: 1_000,
+            finishedAt: null,
+            outputs: null,
+            annotations: [],
+          },
+          steps: [
+            {
+              _id: 2,
+              runId,
+              key: FORM_KEY,
+              job: 'ask',
+              index: 0,
+              step: 'confirm',
+              kind: 'form',
+              status: 'succeeded',
+              attempt: 1,
+              outputs: { approved: true },
+              annotations: [],
+              finishedAt: 1_002,
+            },
+            {
+              _id: 3,
+              runId,
+              key: PARALLEL_ISLAND_KEY,
+              job: 'pick',
+              index: 0,
+              step: 'choose',
+              kind: 'island',
+              status: 'running',
+              attempt: 1,
+              inputs: { mode: 'quick' },
+              annotations: [],
+              startedAt: 1_001,
+            },
+          ],
+        }),
+      ),
+    )
+    const store = makeStore()
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/test/island/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(chip(page, FORM_KEY)).toBeDefined())
+    fireEvent.click(chip(page, FORM_KEY)!)
+    await flush()
+
+    expect(store.getState().ui.selectedStep).toBe(FORM_KEY)
+    expect(within(page).queryByTestId('island-step')).toBeNull()
   })
 
   it('does not take the pane from a form being filled in', async () => {

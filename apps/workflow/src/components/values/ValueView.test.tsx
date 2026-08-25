@@ -122,7 +122,10 @@ describe('ValueView', () => {
   // first value a run-output viewer sees is null. Tool input is sent once per
   // mount, so a changed value has to be a new mount or the viewer shows `null`
   // for the life of the run (found by Task 7's browser walk).
-  it('re-mounts the island viewer when the value it shows changes', () => {
+  it('keeps the island viewer mounted when the value it shows changes', () => {
+    // apps#370: a changed value is a fresh `tool-input` over the live bridge
+    // (`IslandFrame.test.tsx` proves the send); the frame — and with it the
+    // fetched HTML, the bridge and the island's own state — is never rebuilt.
     server.use(
       http.get('/w/hello/islands/v.html', () => HttpResponse.text('<!doctype html><p>viewer</p>')),
     )
@@ -130,22 +133,16 @@ describe('ValueView', () => {
     const decl = { type: 'json', render: 'island', src: 'islands/v.html' } as const
 
     const { rerender } = render(<ValueView decl={decl} value={null} impl="hello" />)
-    const first = screen.getByTestId('island-frame')
+    const frame = screen.getByTestId('island-frame')
 
     rerender(<ValueView decl={decl} value={{ line: 'Hello, world!' }} impl="hello" />)
-    expect(screen.getByTestId('island-frame')).not.toBe(first)
+    expect(screen.getByTestId('island-frame')).toBe(frame)
 
-    // A *deep-equal but freshly allocated* value must NOT remount: `RunPage`
-    // rebuilds its RunState through `replayRun` on every poll while a run is
-    // running, so identity churns even when nothing changed — and a remount
-    // would re-fetch the island and rebuild the bridge every poll interval.
-    const second = screen.getByTestId('island-frame')
     rerender(<ValueView decl={decl} value={{ line: 'Hello, world!' }} impl="hello" label="v" />)
-    expect(screen.getByTestId('island-frame')).toBe(second)
+    expect(screen.getByTestId('island-frame')).toBe(frame)
 
-    // …but a genuinely different value still does.
     rerender(<ValueView decl={decl} value={{ line: 'Hello, studio!' }} impl="hello" />)
-    expect(screen.getByTestId('island-frame')).not.toBe(second)
+    expect(screen.getByTestId('island-frame')).toBe(frame)
   })
 
   it('falls back to the M2 badge for render: island when no implementation is known', () => {
