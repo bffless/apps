@@ -205,7 +205,11 @@ describe('RunPage', () => {
 
       fireEvent.click(within(page).getByRole('button', { name: 'Job Greet each name' }))
       const pane = within(page).getByTestId('job-pane')
-      expect(within(pane).getByText('Greet each name')).toBeInTheDocument()
+      // The crumb ends on the job, the title repeats it: `Run › Greet each name`.
+      expect(within(pane).getByRole('heading', { name: 'Greet each name' })).toBeInTheDocument()
+      expect(within(pane).getByRole('navigation', { name: /where this sits/i })).toHaveTextContent(
+        /^Run›Greet each name/,
+      )
       // `lines: ${{ steps.say.outputs.line }}` collects across the matrix (01).
       expect(within(pane).getByText('lines')).toBeInTheDocument()
       expect(within(pane).getByText('Hello, world!')).toBeInTheDocument()

@@ -81,9 +81,9 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
      declared `outputs:` **evaluated** (aliases over step outputs; a matrix job's collect into
      lists), with `goes to …` chips; the trail lists the job's steps, each a way down. Job
      outputs are derived, never persisted (05) — this is the one place they are shown.
-   - **Step pane** (a chip): as below. Its eyebrow is the crumb `Run › <job>`.
-   `←` climbs one level (job from a step, run from a job); Esc and the pressed chip do the
-   same; the crumb's `Run` climbs to the top. Step outputs are never listed at the run level.
+   - **Step pane** (a chip): as below.
+   Every card's head carries the breadcrumb `Run › <job> › <step>`; each segment above the
+   current one is a way up. Esc and the pressed chip/strip climb one level. Step outputs are never listed at the run level.
 
 ## Kickoff form
 

@@ -66,9 +66,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   `WORKFLOW`), the **job card** (`.job-pane`: `RUN · JOB` · job name · id | Input/Output | pill |
   `JOB` / `MATRIX · N ITEMS`, trail = its steps) and the **step pane** (`.step-pane`: crumb
   `Run › <job>` · step · key | Input/Output | pill | kind) share one shape: header row with the
-  `.segmented` toggle (selected = ink), a body of values, then a `.pane-trail`. `.pane-back`
-  (`← <level above>`) climbs one level; Esc and the pressed chip/strip do the same; the crumb's
-  `Run` climbs to the top. The selection is the URL (`?step=`). On the graph, a group card's
+  `.segmented` toggle (selected = ink), a body of values, then a `.pane-trail`. Every card's
+  head opens with `.pane-crumbs` — `Run › <job> › <step> · item n of N`, the shell crumb's own
+  shape (mono 11.5px), every segment above the current one a way up; Esc and the pressed
+  chip/strip climb one level. The selection is the URL (`?step=`). On the graph, a group card's
   header strip is a button (pressed = ink fill), and a run-mode card lists its job `outputs:`
   as `OUT name` rows (`CARD.out`, 20px each) that open the job card on Output.
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
