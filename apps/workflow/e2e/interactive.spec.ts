@@ -125,19 +125,22 @@ test('interactive hello runs an island step end to end against the mock backend'
   // a `file` output always offers Download (02).
   const posterDownload = outputs.locator('[data-output="poster"] .file-card-download')
   await expect(posterDownload).toHaveAttribute('href', /\/poster\.svg\?download=1$/)
-  // …and the run-level `poster` is the very file the step recorded, not another
-  // one that happens to be named the same.
   const posterHref = await posterDownload.getAttribute('href')
-  await expect(
-    outputs.locator('[data-output="card/0/draw.poster"] .file-card-download'),
-  ).toHaveAttribute('href', posterHref!)
 
   // `ctx.log` (03: "shows in the step card") — the script step keeps the
-  // ordinary Input | Output toggle, and its log card rides on Output.
+  // ordinary Input | Output toggle, and its log card rides on Output. The
+  // step's pane *replaces* the run card (08): one level at a time.
   await drawStep.click()
   const pane = page.getByTestId('step-pane')
+  await expect(page.getByTestId('run-pane')).toHaveCount(0)
   await pane.getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByTestId('script-log')).toContainText('drawing')
+  // …and the run-level `poster` is the very file the step recorded, not another
+  // one that happens to be named the same.
+  await expect(pane.locator('.file-card-download').first()).toHaveAttribute('href', posterHref!)
+  // Back climbs out to the run card.
+  await pane.getByTestId('step-pane-back').click()
+  await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // `ctx.annotate` became a persisted `step.annotated`, so it is in the
   // run-level list beside the island's.
@@ -157,10 +160,14 @@ test('interactive hello runs an island step end to end against the mock backend'
     'href',
     /\/poster\.svg\?download=1$/,
   )
-  // Not the value itself — it is ~400 KB, and the `json` viewer renders only
-  // its first 200 entries. The array's own length is what the viewer's root
-  // node reports, and only a value that is really there has one.
-  await expect(outputsAgain.locator('[data-output="card/0/draw.big"]')).toContainText('[12000]')
+  // The step's `big` output lives on the step's pane. Not the value itself — it
+  // is ~400 KB, and the `json` viewer renders only its first 200 entries. The
+  // array's own length is what the viewer's root node reports, and only a
+  // value that is really there has one.
+  await drawStep.click()
+  await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
+  await expect(page.getByTestId('step-pane')).toContainText('[12000]')
+  await page.getByTestId('step-pane-back').click()
 
   // ---------------------------------------------------------------------
   // Phase 3: the four named renderers the workflow now declares. Each is
@@ -170,14 +177,23 @@ test('interactive hello runs an island step end to end against the mock backend'
   // the real browser has one).
   // ---------------------------------------------------------------------
 
-  // These are step-level outputs, which the page folds behind the "Every
-  // step's outputs" disclosure (the pane already shows them a step at a time).
-  await outputsAgain.getByTestId('run-step-outputs').locator('> summary').click()
-  for (const render of ['transcript', 'chart', 'code', 'images']) {
-    await expect(
-      outputsAgain.locator(`[data-testid="renderer"][data-render="${render}"]`).first(),
-      `no ${render} renderer in the run's outputs`,
-    ).toBeVisible()
+  // These are step-level outputs, so each is asserted on its step's pane:
+  // `analyze/0/run` declares the transcript, chart and code; `card/0/draw`
+  // the image grid.
+  for (const [key, renders] of [
+    ['analyze/0/run', ['transcript', 'chart', 'code']],
+    ['card/0/draw', ['images']],
+  ] as const) {
+    await page.locator(`[data-testid="step"][data-key="${key}"]`).click()
+    const stepPane = page.getByTestId('step-pane')
+    await stepPane.getByRole('tab', { name: 'Output' }).click()
+    for (const render of renders) {
+      await expect(
+        stepPane.locator(`[data-testid="renderer"][data-render="${render}"]`).first(),
+        `no ${render} renderer on ${key}'s Output`,
+      ).toBeVisible()
+    }
+    await stepPane.getByTestId('step-pane-back').click()
   }
 
   // Ruling P5: `review.outputs.cover` and the run-level `cover` are evaluated
@@ -207,18 +223,22 @@ test('interactive hello runs an island step end to end against the mock backend'
  * shows can only have come from fetching the object it points at.
  */
 test('a recorded script run hydrates its {"$file"} payload on read', async ({ page }) => {
-  await page.goto('/hello/interactive/runs/run_01hellofixturescript000000?mocks=on')
+  // `?step=` is the selection (08): the deep link opens straight on the step.
+  await page.goto('/hello/interactive/runs/run_01hellofixturescript000000?mocks=on&step=card/0/draw')
 
-  const outputs = page.getByTestId('run-outputs')
-  await expect(outputs).toBeVisible()
+  const pane = page.getByTestId('step-pane')
+  await expect(pane).toBeVisible()
+  await pane.getByRole('tab', { name: 'Output' }).click()
 
   // The row holds `{ $file: … }`; the marker only exists inside the object.
-  await expect(outputs.locator('[data-output="card/0/draw.big"]')).toContainText(
-    'hydrated-from-payload',
-  )
+  await expect(pane).toContainText('hydrated-from-payload')
   // A payload the fetch could not answer renders as this chip instead.
   await expect(page.getByTestId('payload-unavailable')).toHaveCount(0)
 
+  // Back to the run card, whose results carry the run-level poster.
+  await pane.getByTestId('step-pane-back').click()
+  const outputs = page.getByTestId('run-outputs')
+  await expect(outputs).toBeVisible()
   await expect(outputs.locator('[data-output="poster"] .file-card-download')).toHaveAttribute(
     'href',
     /\/poster\.svg\?download=1$/,

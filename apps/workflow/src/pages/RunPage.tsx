@@ -32,9 +32,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
-import { AnnotationList } from '../components/AnnotationList'
 import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
@@ -42,15 +41,14 @@ import type { PaneSide } from '../components/graph/GraphView'
 import { useIslandHandle } from '../islands/useIslandHandle'
 import { PausedBanner } from '../components/run/PausedBanner'
 import { RunHeader } from '../components/run/RunHeader'
-import { RunOutputs } from '../components/run/RunOutputs'
-import { RunSummary } from '../components/run/RunSummary'
+import { RunPane } from '../components/run/RunPane'
 import { StepPane } from '../components/run/StepPane'
 import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
-import type { Annotation, Definition, RunState, StepState } from '../lib/runner/types'
+import type { Annotation, Definition, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { RunStoreError } from '../lib/runStore'
 import { LeaseTransportError, cancelRun, deleteRun, openRun, takeOver } from '../store/lifecycleActions'
@@ -62,6 +60,12 @@ const POLL_MS = 5_000
 
 /** The roles the delete rule lets past its owner check (05 access) — mirrored, never trusted. */
 const ADMIN_ROLES = ['admin', 'owner']
+
+/** The query parameter that carries the selected step (08): `?step=<job>/<index>/<step>`. */
+const STEP_PARAM = 'step'
+
+/** A run that is no longer in flight. */
+const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
 
 /**
  * A refusal from the delete rule, in the words of the person who asked. The
@@ -255,7 +259,26 @@ export function RunPage() {
   const { impl, workflow, runId } = useParams()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const selectedStep = useAppSelector((state) => state.ui.selectedStep)
+
+  // The selection *is* the URL (08, decided 2026-08-26): `?step=<key>` opens
+  // that step's pane in place of the run-level card, so a drilled-in view is
+  // linkable and the browser's Back button climbs out of a step the way it
+  // climbs out of a GitHub job page. It is also what scopes a selection to
+  // the run being viewed — a navigation to another run is a different URL,
+  // with no `step` on it — which the process-global `ui.selectedStep` never
+  // was (fix round 1). Other query parameters (`?mocks=`) ride along untouched.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedStep: StepKey | null = searchParams.get(STEP_PARAM)
+  const setStep = (key: StepKey | null, replace: boolean) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (key === null) next.delete(STEP_PARAM)
+        else next.set(STEP_PARAM, key)
+        return next
+      },
+      { replace },
+    )
 
   // Who we are, for Delete's owner gate. Advisory only: the rule re-reads
   // `user.*` server-side, so the worst a wrong answer here can do is offer a
@@ -269,26 +292,34 @@ export function RunPage() {
   // counter makes a second click on the same dot re-open that side even when
   // the selection did not change — the pane is keyed on it below.
   const [side, setSide] = useState<{ key: string; side: PaneSide; n: number } | null>(null)
-  const select = (key: string, requested?: PaneSide) => {
-    dispatch(stepSelected(key))
+  /** A person's click: a history entry, so Back returns to where they were. */
+  const select = (key: StepKey, requested?: PaneSide) => {
+    // The selected chip, clicked again with no side asked for, is the way back
+    // out of the step — the same toggle a pressed button suggests.
+    if (key === selectedStep && requested === undefined) {
+      setStep(null, false)
+      return
+    }
+    setStep(key, false)
     if (requested) setSide((prev) => ({ key, side: requested, n: (prev?.n ?? 0) + 1 }))
   }
+  const back = () => setStep(null, false)
   const paneSide = side && side.key === selectedStep ? side : null
 
-  // Selection is scoped to the run being viewed (fix round 1): `uiSlice.
-  // selectedStep` is process-global and step keys repeat identically across
-  // runs of the same workflow (`<job>/<index>/<step>`, no `runId` component)
-  // — and this page never remounts across a run-to-run navigation
-  // (react-router keeps the same `RunPage` instance for a `:runId` param
-  // change, there is no `key` forcing a fresh one). Left uncleared, a
-  // selection made on the run just left would survive onto the next one and
-  // block *that* run's own waiting-step auto-select below (`!selectedStep`).
+  // `ui.selectedStep` is a read-model of the URL, never the other way round:
+  // kept for whatever cannot reach the router (tests read it; the hover
+  // highlight's owner may). It is written after each change, so it lags the
+  // URL by one commit and must not be read to *decide* anything on this page.
   useEffect(() => {
-    dispatch(stepSelected(null))
-    // The hovered value is the same process-global, step-key-repeats-across-
-    // runs shape `selectedStep` is (fix round 1, finding 1) — a hover left
-    // over from the run just navigated away from would highlight a graph
-    // chip on the new run that never produced it.
+    dispatch(stepSelected(selectedStep))
+  }, [selectedStep, dispatch])
+
+  // The hovered value is process-global and step keys repeat identically
+  // across runs of the same workflow (fix round 1, finding 1) — a hover left
+  // over from the run just navigated away from would highlight a graph chip
+  // on the new run that never produced it. (The selection needs no such
+  // reset any more: it lives on the URL, which the navigation replaced.)
+  useEffect(() => {
     dispatch(valueHovered(null))
   }, [runId, dispatch])
 
@@ -383,7 +414,9 @@ export function RunPage() {
     if (!selectedStep) {
       if (openStep) {
         if (isLoadingIsland(state.steps[openStep]!)) claimed.current.keys.add(openStep)
-        dispatch(stepSelected(openStep))
+        // The page's own selection replaces the entry rather than pushing one:
+        // Back should leave the run, not step through every auto-open.
+        setStep(openStep, true)
       }
       return
     }
@@ -403,17 +436,26 @@ export function RunPage() {
     )
     if (!claiming) return
     claimed.current.keys.add(claiming)
-    dispatch(stepSelected(claiming))
-  }, [
-    isLive,
-    openStep,
-    selectedStep,
-    selectedStepState,
-    selectionIsInteractive,
-    def,
-    state,
-    dispatch,
-  ])
+    setStep(claiming, true)
+    // `setStep` closes over `setSearchParams`, which react-router keeps stable;
+    // listing it would only re-run this effect on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive, openStep, selectedStep, selectedStepState, selectionIsInteractive, def, state])
+
+  // A live run that just finished returns the page to the run level (08): the
+  // results are the reason the person is here, and the step that happened to
+  // be open — usually the form they just submitted — is not. Only on the
+  // *transition* out of `running`, so a finished run deep-linked with `?step=`
+  // opens on that step as asked.
+  const runStatus = state?.status
+  const previousStatus = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const was = previousStatus.current
+    previousStatus.current = runStatus
+    if (!isLive || runStatus === undefined) return
+    if (was === 'running' && TERMINAL_RUN.has(runStatus) && selectedStep) setStep(null, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `setStep` is stable (see above)
+  }, [isLive, runStatus, selectedStep])
 
   // Fullscreen is a mode of the *mounted island*, so it only holds while the
   // selected step really is one (08). Anything else — the run moved on, the
@@ -573,6 +615,11 @@ export function RunPage() {
                   onSelect={select}
                 />
               )}
+              {/*
+                One level of the taxonomy at a time (08, decided 2026-08-26):
+                the run's own card, or — while a step is selected — that
+                step's pane in its place. Never both.
+              */}
               {selectedStep ? (
                 <StepPane
                   key={`${selectedStep}#${paneSide?.n ?? 0}`}
@@ -581,20 +628,20 @@ export function RunPage() {
                   stepKey={selectedStep}
                   live={isLive}
                   initialTab={paneSide?.side}
+                  onBack={back}
                 />
               ) : (
-                <p className="note pane-placeholder">
-                  Pick a step to see what went in and what came out.
-                </p>
+                <RunPane
+                  key={state.runId}
+                  def={def}
+                  state={state}
+                  workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
+                  annotations={annotations}
+                  impl={state.impl}
+                  onJump={(key) => select(key)}
+                />
               )}
             </div>
-
-            <RunOutputs def={def} state={state} impl={state.impl} />
-            <RunSummary def={def} state={state} />
-            <AnnotationList
-              annotations={annotations}
-              onJump={(key) => select(key)}
-            />
           </>
         )}
       </section>

@@ -24,13 +24,16 @@ import type { RunState, StepKey } from '../../lib/runner/types'
 import { useAppSelector } from '../../store/hooks'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
+import { BackToRun } from './BackToRun'
 
 export interface IslandStepPaneProps {
   state: RunState
   stepKey: StepKey
+  /** Back to the run level (08) — the island unmounts and re-mounts from its handle on return. */
+  onBack?: () => void
 }
 
-export function IslandStepPane({ state, stepKey: key }: IslandStepPaneProps) {
+export function IslandStepPane({ state, stepKey: key, onBack }: IslandStepPaneProps) {
   const display = useAppSelector((s) => s.ui.islandDisplay)
   const handle = useIslandHandle(state.runId, key)
   const log = useIslandLog(state.runId, key)
@@ -71,9 +74,15 @@ export function IslandStepPane({ state, stepKey: key }: IslandStepPaneProps) {
   return (
     <aside className="step-pane island-step-pane" data-testid="step-pane" aria-label="Step">
       <section className="island-step" data-testid="island-step">
-        <header className="graph-panel-head">
-          <h3 className="graph-panel-title">{handle?.title ?? key}</h3>
+        <header className="pane-head">
+          <BackToRun onBack={onBack} />
+          <span className="pane-title">
+            <span className="pane-eyebrow">{step.job}</span>
+            <h3 className="graph-panel-title">{handle?.title ?? key}</h3>
+            <span className="pane-key">{key}</span>
+          </span>
           <StatusPill status={step.status} />
+          <span className="pane-kind">island</span>
         </header>
 
         <div className="island-display" data-testid="island-display" data-mode={display}>

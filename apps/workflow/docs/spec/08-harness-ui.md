@@ -62,11 +62,17 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 1. Header: workflow name, run id, status pill, started by/at, elapsed/duration, annotation
    badges (notice/warning/error counts), actions (Cancel · Resume · Re-run · Delete · View
    workflow file).
-2. The graph (run mode) + step pane.
-3. **Outputs**: top-level outputs first, then — behind an "Every step's outputs" disclosure,
-   since the pane already shows them a step at a time — per job, each with renderer + Download.
-4. **Run summary**: step summaries concatenated in job order (GitHub job-summary page).
-5. **Annotations**: the full list, each linking to its step.
+2. The graph (run mode), the navigator.
+3. **One card under it, one level of the taxonomy at a time** (decided 2026-08-26). With no
+   step selected, the **run card** — the run as the outermost step, in the step pane's own
+   shape: eyebrow `WORKFLOW`, the workflow name, the run id, the same **Input | Output**
+   toggle. *Input* is the kickoff form's values; *Output* is the **results** (the workflow's
+   declared `outputs`, each with renderer + Download), then the **summary** (step summaries
+   concatenated in job order — the GitHub job-summary page) and the **annotations**, each
+   linking into the graph. Selecting a step **replaces** the run card with that step's pane
+   (`← Run` / Esc / the pressed chip climb back out). A live run returns to the run card the
+   moment it finishes. The selection is the URL: `?step=<job>/<index>/<step>` (linkable; the
+   browser's Back button climbs out of a step). Step outputs are never listed at the run level.
 
 ## Kickoff form
 

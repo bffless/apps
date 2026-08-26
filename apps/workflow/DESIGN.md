@@ -61,9 +61,12 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   out = ink. Selection: ink ring (`box-shadow: inset 0 0 0 1px`) + `--surface-dim`; the whole
   card's border turns ink. Data-flow hover: solid inset ring on the source, dashed outline on
   targets.
-- **Step pane**: header row (eyebrow · title · mono key | `.segmented` Input/Output toggle,
-  selected = ink | pill | kind), body with `.stats` (mono dl), `.step-error`, values, then the
-  trail (summary, annotations, script log, raw response disclosure).
+- **The pane under the graph** — one level of the taxonomy at a time. The **run card**
+  (`.run-pane`, no step selected: eyebrow `RUN` · workflow name · run id | Input/Output | pill |
+  `WORKFLOW`) and the **step pane** (`.step-pane`: job eyebrow · step · key | Input/Output |
+  pill | kind) share one shape: header row with the `.segmented` toggle (selected = ink), a body
+  of values, then a `.pane-trail`. The step pane's head opens with `.pane-back` (`← Run`); Esc
+  and the pressed chip do the same. The selection is the URL (`?step=`).
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
   `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
   striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image
@@ -79,7 +82,8 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   wraps to its own line.
 - Page head: title + sub on the left, `.page-actions` on the right, 1px rule beneath.
 - Run page: head → one-line run bar (pill · mono progress/elapsed · badges) → graph panel →
-  legend → step pane (full width, below the graph) → Outputs → Run summary → Annotations.
+  legend → the run card *or* the selected step's pane (full width, below the graph). The run
+  card's Output holds the results, then the trail (summary, annotations).
 - Lists max out at 1080px; forms at 760px; prose at 70ch.
 
 ## Motion

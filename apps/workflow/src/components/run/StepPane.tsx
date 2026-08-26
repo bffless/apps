@@ -31,7 +31,7 @@
  * is not offered yet.
  */
 import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { formatDuration } from '../../lib/duration'
 import { stepOutputDecl } from '../../lib/outputDecls'
@@ -47,6 +47,7 @@ import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
+import { BackToRun } from './BackToRun'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
 import { ScriptStepCard } from './ScriptStepCard'
@@ -336,10 +337,18 @@ export interface StepPaneProps {
   live: boolean
   /** Which side opens first — an edge dot's click says (08); a chip's click leaves it on Input. */
   initialTab?: Tab
+  /** Back to the run level (08): the pane's "← Run" button, and Esc anywhere inside it. */
+  onBack?: () => void
 }
 
-export function StepPane({ def, state, stepKey, live, initialTab = 'Input' }: StepPaneProps) {
+export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack }: StepPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && onBack) {
+      event.stopPropagation()
+      onBack()
+    }
+  }
 
   const parts = parseKey(stepKey)
   const step = state.steps[stepKey]
@@ -348,8 +357,9 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input' }: St
 
   if (!parts || !step) {
     return (
-      <aside className="step-pane" data-testid="step-pane" aria-label="Step">
+      <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>
         <header className="pane-head">
+          <BackToRun onBack={onBack} />
           <h3 className="graph-panel-title">{stepKey}</h3>
         </header>
         <p className="note">This run has no record of that step.</p>
@@ -358,7 +368,7 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input' }: St
   }
 
   if (live && declared?.uses === 'form' && step.status === 'waiting') {
-    return <FormStepPane def={def} state={state} stepKey={stepKey} />
+    return <FormStepPane def={def} state={state} stepKey={stepKey} onBack={onBack} />
   }
 
   // An island is the pane from the moment it starts loading, not only once it
@@ -367,7 +377,7 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input' }: St
   // same reason a read-only form does — a submit from here would land on
   // whatever run the global slice holds live.
   if (live && declared?.uses === 'island' && (step.status === 'running' || step.status === 'waiting')) {
-    return <IslandStepPane state={state} stepKey={stepKey} />
+    return <IslandStepPane state={state} stepKey={stepKey} onBack={onBack} />
   }
 
   // The eyebrow says which job this step belongs to and, for a fanned-out job,
@@ -386,8 +396,9 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input' }: St
     live && declared?.uses === 'script' ? <ScriptStepCard runId={state.runId} stepKey={stepKey} /> : undefined
 
   return (
-    <aside className="step-pane" data-testid="step-pane" aria-label="Step">
+    <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>
       <header className="pane-head">
+        <BackToRun onBack={onBack} />
         <span className="pane-title">
           <span className="pane-eyebrow">{eyebrow}</span>
           <h3 className="graph-panel-title">{declared ? stepLabel(declared) : parts.stepId}</h3>

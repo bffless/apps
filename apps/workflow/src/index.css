@@ -1809,18 +1809,36 @@ button {
   flex: none;
 }
 
-.pane-placeholder {
-  margin: 0 0 20px;
-  padding: 16px 20px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-panel);
-}
-
-/* The step pane (08): the prototype's panel under the graph — a header row
-   (job eyebrow + name, the Input | Output toggle, status, kind) and the body. */
+/* The pane under the graph (08): one level of the taxonomy at a time — the
+   run's own card, or the selected step's in its place. Both share this
+   shape: a header row (eyebrow + name + key, the Input | Output toggle,
+   status, kind) and the body. */
 .step-pane {
   margin: 0 0 20px;
   overflow: hidden;
+}
+
+/* The way back up a level: a quiet mono button at the head's left edge. */
+.pane-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font: 500 11.5px var(--font-mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color var(--fast) var(--ease-out),
+    border-color var(--fast) var(--ease-out);
+}
+
+.pane-back:hover {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 
 .pane-head {
@@ -1996,102 +2014,35 @@ button {
   color: var(--ink);
 }
 
-.outputs,
-.run-summary,
-.annotations-section,
 .raw-rows {
   margin-top: 8px;
 }
 
-.outputs .section-title:first-child,
-.run-summary .section-title:first-child,
-.annotations-section .section-title:first-child {
-  margin-top: 8px;
-}
-
-.output-group {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  margin-bottom: 8px;
-  padding: 20px;
-  background-color: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
-}
-
-.output-group .section-title {
-  margin: 0 0 -8px;
-}
-
+/* The run's results (08 §3), in the run card's Output — the same value
+   treatment the step pane uses, one hairline between entries. */
 .output-group > .output + .output {
   padding-top: 22px;
   border-top: 1px solid var(--hairline-faint);
 }
 
-/* Every step's outputs, folded: the pane already shows them one step at a
-   time, so this is the long form behind one line. */
-.outputs-steps {
-  margin: 12px 0 8px;
-}
-
-.outputs-steps > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  list-style: none;
-}
-
-.outputs-steps > summary::-webkit-details-marker {
-  display: none;
-}
-
-.outputs-steps > summary::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform var(--fast) var(--ease-out);
-}
-
-.outputs-steps[open] > summary::before {
-  transform: rotate(45deg);
-}
-
-.outputs-steps > summary:hover {
-  color: var(--ink);
-}
-
-.outputs-steps-count {
-  color: var(--ink-mute);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.outputs-steps > .output-group:first-of-type {
-  margin-top: 10px;
-}
-
-/* Run summary: one panel, one hairline-separated entry per step — the
-   markdown sits directly in the row, not in a box inside a box. */
-.summary-panel {
-  max-width: 1080px;
-}
-
-.summary-entry {
-  padding: 16px 20px 18px;
+/* The run card's trail: Summary, then Annotations. */
+.pane-trail > .run-summary + .annotations-section {
+  padding-top: 16px;
   border-top: 1px solid var(--hairline);
 }
 
+.summary-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-entry {
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--hairline-faint);
+}
+
 .summary-entry:first-child {
+  padding-top: 0;
   border-top: 0;
 }
 
@@ -2115,20 +2066,6 @@ button {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.annotations-panel {
-  gap: 0;
-  max-width: 1080px;
-}
-
-.annotations-panel .annotation {
-  padding: 12px 20px;
-  border-top: 1px solid var(--hairline);
-}
-
-.annotations-panel .annotation:first-child {
-  border-top: 0;
 }
 
 .annotation {
