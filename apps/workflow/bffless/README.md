@@ -4,6 +4,12 @@ Two authored sets: `workflow` (run records, lease, files trio — spec 05/06) an
 Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail, and — from
 M2 Task 6 — analyze; 5/5 hello surface rules).
 
+**hello's directory names are load-bearing**, and now enforced: a workflow's
+`with: { path: echo }` resolves to `POST /api/hello/echo`, which is
+`rules/api/hello/echo/post/rule.yaml` here. `pnpm stage` lints the example YAMLs against
+this set (`rule-missing`, spec 06), so renaming a rule directory without renaming the step's
+path — or vice versa — fails CI instead of 404-ing at run time.
+
 ## Manual setup (admin panel)
 
 - **Project**: the harness expects its own BFFless project (phase 1: `bffless/workflow` on

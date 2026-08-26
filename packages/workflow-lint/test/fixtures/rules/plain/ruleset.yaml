@@ -1,0 +1,2 @@
+name: plain
+description: "Fixture rule set in the post-M3 shape: rules authored with no alias segment (publish-workflow adds the prefix)."

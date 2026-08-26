@@ -1,0 +1,2 @@
+targetUrl: pipeline
+description: POST /api/alpha/ping

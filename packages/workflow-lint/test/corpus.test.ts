@@ -27,6 +27,10 @@ const EXPECTED: Record<string, string[]> = {
   'cross-impl-path': ['cross-impl-path', 'cross-impl-path'],
   'skip-missing-output': ['headless-skip-outputs', 'headless-skip-outputs'],
   'dup-and-untyped': ['duplicate-step-id', 'outputs-omitted', 'untyped-job-output'],
+  // The `rule-missing` check needs a rule set to compare against; with none in
+  // sight (the harness's in-memory lint) it stays silent. See cli.test.ts for
+  // the same fixture linted with --rules.
+  'rule-missing': [],
 }
 
 for (const [fixture, rules] of Object.entries(EXPECTED)) {

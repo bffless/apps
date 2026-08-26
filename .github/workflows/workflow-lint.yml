@@ -45,5 +45,11 @@ jobs:
       - name: Test
         run: pnpm --filter @bffless/workflow-lint test:run
 
+      # hello ships a real rule set, so it is linted against it (`rule-missing`
+      # holds every relative `with.path` to the rule that serves it); `--alias`
+      # only picks `hello` out of the two sets under apps/workflow/.bffless.
+      # studio is spec-only — no rule set, so that check is skipped with a notice.
       - name: Lint the spec examples with the built CLI
-        run: node packages/workflow-lint/dist/cli.js lint apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/studio.workflow.yaml
+        run: |
+          node packages/workflow-lint/dist/cli.js lint --alias hello apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/interactive.workflow.yaml
+          node packages/workflow-lint/dist/cli.js lint apps/workflow/docs/spec/examples/studio.workflow.yaml

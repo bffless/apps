@@ -1,0 +1,2 @@
+targetUrl: pipeline
+description: POST /api/echo (the alias prefix is added at publish time)

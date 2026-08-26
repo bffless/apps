@@ -9,7 +9,7 @@ import { mkdirSync, copyFileSync, writeFileSync, readFileSync, readdirSync, rmSy
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync, execFileSync } from 'node:child_process'
-import { lintSource, loadDefinition } from '@bffless/workflow-lint'
+import { lintSource, loadDefinition, scanRuleSet } from '@bffless/workflow-lint'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const examples = join(appDir, 'docs/spec/examples')
@@ -37,11 +37,19 @@ const ISLANDS = ['pick-line', 'line-viewer']
 // Workflows — lint, then copy
 // ---------------------------------------------------------------------------
 
+/**
+ * hello's own rule set, so the lint can check every relative `with.path`
+ * against the rule that serves it (06). The YAMLs live in `docs/spec/examples/`
+ * rather than beside the set, so the linter's search cannot find it — the
+ * stage, which knows the implementation it is publishing, passes it in.
+ */
+const rules = scanRuleSet(join(appDir, '.bffless/proxy-rules/hello'))
+
 const workflows = WORKFLOWS.map((file) => {
   const source = join(examples, file)
   const yaml = readFileSync(source, 'utf8')
 
-  const { findings } = lintSource(yaml, { file })
+  const { findings } = lintSource(yaml, { file, rules })
   if (findings.some((f) => f.severity === 'error' || f.severity === 'warning')) {
     console.error(`${file} fails lint — a failing lint fails the publish (06):`, findings)
     process.exit(1)

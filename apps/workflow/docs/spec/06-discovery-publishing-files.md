@@ -76,7 +76,10 @@ CLI verb (`bffless workflows publish`), the way `upload-artifact` owns deploys:
 
 1. build the implementation (`dist/` = islands, scripts, any standalone UI);
 2. copy `.bffless/workflows/*.yaml` into `dist/.bffless/workflows/` and generate
-   `index.json` (runs the linter; a failing lint fails the publish);
+   `index.json` (runs the linter **against the rule set being published**, so the linter's
+   `rule-missing` check can hold every relative `with.path`/`poll.path` to the rule that
+   serves it — a typo on either side would otherwise be a run-time 404; a failing lint fails
+   the publish);
 3. deploy `dist/` to alias `<alias>` (`bffless/upload-artifact`);
 4. `bffless rules sync` the rule set as **`<alias>`** with every rule path rewritten under
    `/api/<alias>/` (authored in the repo as `rules/api/…` with no impl prefix — the CLI adds
@@ -89,6 +92,11 @@ PR previews are therefore first-class: `alias: studio-pr-12` yields `/api/studio
 `/w/studio-pr-12/...`, a `studio-pr-12` rule set on the harness alias, and the harness lists
 it as an implementation with a *preview* badge. The workflow YAML is byte-identical between
 production and preview because paths are relative (D17).
+
+`rule-missing` reads the path prefix off the rule set on disk, the same place step 4 reads
+it: `/api/<alias>` while implementations author the prefix by hand, `/api` once
+`--path-prefix` lands. Where the linter cannot see a rule set — the harness lints in the
+browser (09) — the check is skipped with a notice, never an error.
 
 ## Files — harness-owned run storage (D7)
 
