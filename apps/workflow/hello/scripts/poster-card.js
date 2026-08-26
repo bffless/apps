@@ -32,8 +32,15 @@ export default async function run(ctx) {
 
   ctx.annotate({ level: 'notice', message: 'card drawn' })
 
+  const poster = new File([svg], 'poster.svg', { type: 'image/svg+xml' })
+
   return {
-    poster: new File([svg], 'poster.svg', { type: 'image/svg+xml' }),
+    poster,
+    // The same file again, as a `list: true` output: what the `images`
+    // renderer draws its grid from, and the options list the `review` form's
+    // tile picker offers (Phase 3). A `list` of `file` uploads every item, so
+    // this is a second upload of the same bytes — deliberate, and cheap.
+    posters: [poster],
     // Over the 256 KB budget on purpose: this is what the `{"$file"}` offload
     // (Decision 5) is for, end to end. 12 000 entries of `{ i, line, k }` is
     // ~480 KB *before* the line itself — `k` is a fixed marker that keeps the

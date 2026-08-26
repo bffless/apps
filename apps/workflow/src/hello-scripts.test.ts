@@ -36,4 +36,12 @@ describe('hello/scripts/poster-card.js', () => {
     expect(await poster.text()).toContain('Hello &lt;world&gt;')
     expect(await poster.text()).toContain('2 lines analyzed')
   })
+
+  // Phase 3: `posters` is what `render: images` and the `review` form's tile
+  // picker read, and it must be the *same* file the `poster` output is — a
+  // second, differently-drawn card would make the picker a lie.
+  it('returns the same poster again as a one-item `posters` list', async () => {
+    const out = await posterCard(ctx({ line: 'Hello', counts: [1] }))
+    expect(out.posters).toEqual([out.poster])
+  })
 })

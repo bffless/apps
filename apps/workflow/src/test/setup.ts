@@ -28,6 +28,61 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
 }
 
 /**
+ * …and jsdom has no canvas backend either: `getContext('2d')` answers `null`,
+ * which `uplot` dereferences one microtask later (`_commit` → `clearRect`).
+ * That lands as an *uncaught* exception rather than a test failure, so any
+ * suite that renders a `render: chart` output — anything showing the hello
+ * bundle's interactive workflow, since its `counts` output gained one in
+ * Task 21 — fails the whole run while reporting every test as passing.
+ *
+ * The two stubs below are deliberately inert: nothing asserts what a canvas
+ * drew. The chart is only ever really exercised in a browser (e2e), and
+ * `ChartView.test.tsx` mocks the `uplot` module outright and asserts the
+ * *computed series* instead. Their one job is to let uPlot's draw path run to
+ * completion without a null deref.
+ */
+if (typeof globalThis.Path2D === 'undefined') {
+  // uPlot builds its line/bar paths as `Path2D` objects before stroking them.
+  globalThis.Path2D = class Path2DStub {
+    addPath() {}
+    arc() {}
+    arcTo() {}
+    bezierCurveTo() {}
+    closePath() {}
+    ellipse() {}
+    lineTo() {}
+    moveTo() {}
+    quadraticCurveTo() {}
+    rect() {}
+    roundRect() {}
+  } as unknown as typeof Path2D
+}
+
+if (typeof HTMLCanvasElement !== 'undefined') {
+  // Every drawing call is a no-op; the handful of getters that must answer an
+  // object (rather than `undefined`) answer the emptiest honest one.
+  const noop = () => {}
+  const context = (canvas: HTMLCanvasElement) =>
+    new Proxy({ canvas } as Record<string | symbol, unknown>, {
+      get(target, prop) {
+        if (prop in target) return target[prop]
+        if (prop === 'measureText') return () => ({ width: 0 })
+        if (prop === 'createLinearGradient' || prop === 'createPattern')
+          return () => ({ addColorStop: noop })
+        if (prop === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) })
+        return noop
+      },
+      set(target, prop, value) {
+        target[prop] = value
+        return true
+      },
+    })
+  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+    return context(this)
+  } as unknown as HTMLCanvasElement['getContext']
+}
+
+/**
  * jsdom + undici parse a request URL with no base, and the app (rightly) speaks
  * in same-origin relative paths. Resolving them against the document's origin —
  * `Request` for RTK Query's `fetchBaseQuery`, `fetch` for everything else — is
