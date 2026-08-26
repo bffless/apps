@@ -97,7 +97,15 @@ export function putFile(
     })
     xhr.addEventListener('error', () => {
       signal?.removeEventListener('abort', onAbort)
-      reject(new Error('the upload PUT failed'))
+      // An XHR `error` carries no status: the browser refused to send (or read)
+      // the request. For a direct-to-bucket PUT that is almost always the
+      // bucket's CORS allow-list missing this origin (bffless/README.md
+      // "Storage") — say so, the console has the preflight detail.
+      reject(
+        new Error(
+          'the upload PUT failed before a response — usually the storage bucket\'s CORS allow-list does not include this origin',
+        ),
+      )
     })
     xhr.addEventListener('abort', () => {
       signal?.removeEventListener('abort', onAbort)

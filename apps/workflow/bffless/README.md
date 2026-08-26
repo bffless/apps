@@ -41,7 +41,16 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
   other build — so no mock and no identity switch can reach a production build regardless of
   query string or `MOCKS_ENABLED`.
 - **Storage**: a default storage backend must be configured (bucket or local ≥ CE 0.3.15) —
-  the files trio (presigned PUT → register → serve) is the upload path.
+  the files trio (presigned PUT → register → serve) is the upload path. **Bucket CORS must
+  list the harness origin** (`https://workflow.<domain>`): the presigned PUT goes straight from
+  the browser to the bucket, and GCS/S3 answer the preflight with no `Access-Control-Allow-Origin`
+  for an unlisted origin, so every browser upload — a kickoff `file` input, a `form` step's file
+  field, a `script` step's Blob output, the >256 KB `{"$file"}` offload — fails with
+  `the upload PUT failed` and a CORS error in the console. Add the origin per
+  [docs › Google Cloud Storage › Step 2](https://docs.bffless.dev/storage/google-cloud-storage#step-2-configure-bucket-cors)
+  (`gcloud storage buckets update gs://<bucket> --cors-file=cors.json`; wildcards are not
+  supported, list each origin). Seen live 2026-08-25: `j5s-dev` listed `j5s.dev`/`admin.`/
+  `studio.` but not `workflow.j5s.dev`, so the first Phase-2 run failed at `card/0/draw`.
 - **External connections / AI tokens**: none. **Secrets**: none.
 - **Response-header rules**: two, both on project `bffless/workflow`, both created via MCP
   `create_response_header_rule` (a project setting, not part of the rule sets, so every new
