@@ -16,6 +16,15 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
   unscoped by design: the relay then answers every alias the calling session can see. Runtime
   self-discovery for a catalog install — reading the installed-into project instead of baking one
   in at build time — is M4, the other half of apps#363.
+- **Members need a project role** (found on the M2 live walk, 2026-08-26): CE answers a scoped
+  alias list (`?repository=owner/name`) with `{ data: [] }` — not an error — for any non-admin
+  who has **no role on that project** (`deployments.service.ts` `listAliases` →
+  `getUserProjectRole`), and the harness then reads "No implementations found". Nothing else in
+  the harness needs one (every rule is `auth_required` only, and the *unscoped* list has no
+  project gate at all — bffless/ce#701), so a member who ran M1 fine can see an empty M2. Grant
+  each harness member at least **`viewer`** on the project (admin panel → project → Permissions,
+  or `POST /api/projects/<owner>/<name>/permissions/users` `{ userEmail, role: "viewer" }`). The
+  scoped build's empty state says so.
 - **Aliases + domains**: alias `workflow` (the harness SPA) on `workflow.<domain>`, alias
   `hello` (the test implementation bundle) on `hello.<domain>`. Attach rule set `workflow`
   to alias `workflow`; attach rule set `hello` to BOTH aliases (ADR-0001 single origin).
@@ -185,30 +194,52 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   member session (zero `challenge-platform` scripts, bytes identical to the local build).
   Also confirmed: `hello.<domain>/` now serves the landing `index.html` (M1 minor closed).
 
-The rows below are the M2 Phase 3 walk Task 24 does after this PR merges — unticked until then.
+**M2 Phase 3 — walked 2026-08-26** against the #378 deploy (run 32957995835) as member
+`workflow-ci@bffless.app` with `localdev-tools/workflow-live.mjs --interactive` (mirrors
+`e2e/interactive.spec.ts` in the real browser, plus the API-level probes CI cannot make); run
+`run_01M0YV4G7JH6VF5C5ZQ1R6P7PH`, 27/27 checks. Console: only the two anonymous 401s on
+`admin.j5s.dev` before sign-in — zero `SecurityError`s, so both `no-transform` rules hold.
 
-- [ ] **M2 Phase 3 — Decision 7 (run delete).** Owner path via `workflow-ci`; the 403/409 refusal
-  matrix (another member's run → 403, a still-`running` run → 409); `GET /api/workflow/run?id=`
-  answers `{ run: null }` after delete; the run's poster/File-ref URLs 404; the workflow's
-  `inputs/` uploads still serve; the 200 body's `records` count is **> 0** — verifies the
-  `workflow_files` filter actually matches on `storage_path`/`%prefix%`, not just that `files`
-  swept something.
-- [ ] **M2 Phase 3 — Decision 8 (scoped discovery).** Network log shows
-  `/api/workflow/aliases?repository=bffless/workflow`; no foreign alias's `index.json` gets
-  probed (no 404s outside the project).
-- [ ] **M2 Phase 3 — Decision 14 (form step, mid-run upload).** A mid-run `extra` upload lands
-  under `workflows/hello/interactive/inputs/…`; the tile picker's value is the poster's storage
-  path. **Note:** the `cover` run output is a PATH STRING, not a File ref — job/run-level outputs
-  do not register files (plan Ruling P5). Expected, not a bug; file as an M3 follow-up if it still
-  surprises on the walk.
-- [ ] **M2 Phase 3 — renderers.** Transcript segment click seeks nothing in hello (expected — no
-  video output in this workflow); chart draws; code is syntax-highlighted; the images grid shows
-  the SVG tile; `posters` uploads the poster bytes a second time — expect **two** live objects,
-  not a dedupe.
-- [ ] **M2 Phase 3 — whoami.** `role` is the GLOBAL role (`admin | user | member`), not a
-  per-project one; an API-key caller gets `role: user` and an empty `email` — confirm an admin's
-  API key still cannot delete another member's run.
-- [ ] **M2 Phase 3 — apps#362 `?download=1`.** Record observed behaviour on this walk (ce#697 was
-  still open as of 2026-08-26 — no `Content-Disposition` from `file_serve_handler`).
+- [x] **M2 Phase 3 — Decision 7 (run delete) — PASSED.** Owner delete answered
+  `{"ok":true,"deleted":{"files":3,"records":3}}`: three objects under
+  `runs/<id>/card/0/draw/` (two `<uuid>-poster.svg`, one `<uuid>-big.json`, exactly what the
+  files trio registered) and three `workflow_files` rows — the `storage_path ILIKE '%<prefix>%'`
+  sweep matches. `GET /api/workflow/run?id=` → `{ run: null, steps: [] }`; both poster URLs 200
+  before → 404 after; the mid-run `inputs/<uuid>-extra.png` 200 before **and after**. Refusal
+  matrix: `POST run/delete` while the run sat at the island step → **409** `cancel the run
+  first`; an admin's **API key** on the finished run → **403** `only the run owner or an admin
+  can delete a run` (the key resolves to `{ id: <that user>, role: user }`, so this is the
+  owner-mismatch branch). Another *member session* deleting a foreign run was not exercised —
+  there is one member account; it is the same branch.
+- [x] **M2 Phase 3 — Decision 8 (scoped discovery) — PASSED, one precondition DISPROVED.**
+  Network log: exactly one `GET /api/workflow/aliases?repository=bffless%2Fworkflow`, then only
+  `/w/workflow/.bffless/workflows/index.json` (the harness's own alias — SPA fallback answers
+  200 HTML, no bundle) and `/w/hello/…/index.json`; no foreign alias probed. **But** the first
+  walk showed "No implementations found": the scoped list needs a *project role* and
+  `workflow-ci` had none (see Manual setup → *Members need a project role*; CE side
+  bffless/ce#701). Fixed by granting `viewer`; the empty state now names the project and the
+  cause when the build is scoped.
+- [x] **M2 Phase 3 — Decision 14 (form step, mid-run upload) — PASSED.** The `extra` upload
+  registered as `workflows/hello/interactive/inputs/<uuid>-extra.png` (scope `inputs`, served
+  200, untouched by the delete); the tile picker showed one tile and the picked value was the
+  poster's path; the markdown preview rendered `## Notes` as an `h2`; `Previewed Hello, world!`
+  landed in Annotations. `cover` rendered as the PATH chip
+  (`workflows/hello/interactive/runs/<id>/card/0/draw/<uuid>-poster.svg`, no Download) — Ruling
+  P5 holds, no surprise; the M3 follow-up stays in #382.
+- [x] **M2 Phase 3 — renderers — PASSED.** `transcript`, `chart` (one `<canvas>`), `code`
+  (hljs spans), `images` (one `<img>`) all rendered; `posters` uploaded the bytes a second time
+  — **two** distinct `<uuid>-poster.svg` objects (CE's uuid key strategy), both served, both
+  404 after delete. Script side: `script-log` shows "drawing", the `card/0/draw` row holds `big`
+  as `{"$file": …/<uuid>-big.json}` (636 891 bytes) and the page hydrates it (`[12000]`).
+- [x] **M2 Phase 3 — whoami — PASSED.** Session → `{ id: 25464c18…, email:
+  workflow-ci@bffless.app, role: user }`, `Cache-Control: no-store`, and `role` equals
+  `users.role` from `GET /api/users/:id` — the global role. API key → `{ id: <key's user>,
+  email: "", role: user }`, and that admin's key could not delete the member's run (403).
+  Observed aside: `workflow-ci` read `member` (MCP `list_users`, 10:37) before the admin-UI
+  project grant and `user` after it (`updatedAt` 10:49:17) — CE promotes on grant (noted in
+  ce#701); either way the pipeline's `user.role` matched the record.
+- [x] **M2 Phase 3 — apps#362 `?download=1` — observed 2026-08-26.** `GET …-poster.svg?download=1`
+  → 200 `image/svg+xml` with **no** `Content-Disposition` (none without the query either);
+  bffless/ce#697 still open.
 - [ ] **M2 Phase 3 — Annotations column.** Shows real counts for the new (M2) run and an em dash
   `—` for pre-M2 rows that predate `annotationCounts`.

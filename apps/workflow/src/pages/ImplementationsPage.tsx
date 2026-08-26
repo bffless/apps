@@ -10,6 +10,7 @@ import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { LastRunPill } from '../components/LastRunPill'
 import { workflowId } from '../lib/coerce'
+import { projectRepository } from '../lib/discovery'
 import { pluralize } from '../lib/plural'
 import type { Implementation } from '../lib/coerce'
 import { useDiscoverQuery } from '../store/workflowApi'
@@ -68,6 +69,7 @@ export function ImplementationsPage() {
   if (isError) return <DiscoveryError error={error} />
 
   if (!implementations?.length) {
+    const repository = projectRepository()
     return (
       <EmptyState title="No implementations found">
         <p>
@@ -77,6 +79,16 @@ export function ImplementationsPage() {
             How to publish one
           </a>
         </p>
+        {repository !== undefined && (
+          // Found live (M2 walk, apps#363): CE answers a scoped alias list with
+          // nothing — not an error — for a member who has no role on that
+          // project, which reads exactly like "nobody published anything".
+          <p className="note" data-testid="scope-hint">
+            This harness only looks at project <code>{repository}</code>. If something is
+            published there and you still see nothing, you may have no role on that project
+            yet — ask an admin to add you (viewer is enough).
+          </p>
+        )}
       </EmptyState>
     )
   }
