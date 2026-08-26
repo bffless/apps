@@ -10,7 +10,12 @@
  * the request is retried in place (R5).
  */
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
-import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query/react'
+import type {
+  BaseQueryFn,
+  FetchArgs,
+  FetchBaseQueryError,
+  FetchBaseQueryMeta,
+} from '@reduxjs/toolkit/query/react'
 import {
   toAliasList,
   toImplementation,
@@ -20,6 +25,7 @@ import {
   unwrapRows,
 } from '../lib/coerce'
 import type { Implementation, ServerRunRow, ServerStepRow, Whoami } from '../lib/coerce'
+import { aliasesUrl } from '../lib/discovery'
 import { fetchPayloadCached, forgetPayloads } from '../lib/payloadFetch'
 import { hydrateOutputs } from '../lib/runner/payload'
 
@@ -59,15 +65,32 @@ let lastHydratedRunId: string | null = null
 
 const rawBaseQuery = fetchBaseQuery({ baseUrl: '/' })
 
-const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
-  args,
-  api,
-  extraOptions,
-) => {
+/**
+ * `Meta` carries `FetchBaseQueryMeta` (the raw `Response`) through explicitly:
+ * `probe()` reads `result.meta?.response?.headers` off exactly this base
+ * query, and a default `{}` Meta would type that away.
+ */
+type ReauthBaseQuery = BaseQueryFn<
+  string | FetchArgs,
+  unknown,
+  FetchBaseQueryError,
+  object,
+  FetchBaseQueryMeta
+>
+
+const baseQueryWithReauth: ReauthBaseQuery = async (args, api, extraOptions) => {
   const result = await rawBaseQuery(args, api, extraOptions)
   if (result.error?.status !== 401) return result
   return (await attemptRefresh()) ? rawBaseQuery(args, api, extraOptions) : result
 }
+
+/**
+ * The shape RTK Query actually hands a `queryFn` its own `baseQuery` as —
+ * unary, `Parameters<BaseQuery>[0]) => ReturnType<BaseQuery>` — not the full
+ * 3-argument `BaseQueryFn`. Derived from `ReauthBaseQuery` so the two can
+ * never drift apart.
+ */
+type ProbeBaseQuery = (arg: Parameters<ReauthBaseQuery>[0]) => ReturnType<ReauthBaseQuery>
 
 /**
  * The outputs map a coerced row carries. `RunRow.outputs`/`StepRow.outputs`
@@ -89,19 +112,34 @@ function publishedPath(impl: string, file: string): string {
 }
 
 /**
- * One alias probed for an `index.json`.
+ * One alias probed for an `index.json`, through the endpoint's own
+ * `baseQuery` (M1 minor, apps#363) rather than a raw `fetch`: a run outlives
+ * the access token exactly as much during discovery as anywhere else, and a
+ * probe that read an expired session's 401 straight as "not published" would
+ * silently drop every implementation until the member reloaded. Routing
+ * through `baseQueryWithReauth` means one 401 mid-discovery is retried once,
+ * the same as every other endpoint (R5).
  *
  * "Not an implementation" (ADR-0004) is not only a 404: a BFFless SPA answers
  * *any* unknown path with its `index.html`, 200 and all, and that is the common
  * shape of an ordinary alias in these projects. So the answer only counts as a
- * publish when the server says it is JSON — otherwise the alias is dropped
- * exactly like a 404, rather than being listed as somebody's broken workflow.
+ * publish when the server says it is JSON *and* the body actually parses as
+ * JSON — a body that claims to be JSON but is not is indistinguishable from
+ * the SPA-fallback case, so both drop the alias like a 404 rather than listing
+ * it as somebody's broken workflow.
  *
- * Anything that *is* a publish but cannot be used — JSON that will not parse, a
- * future `spec`, no `workflows` — stays on the list carrying its error, because
- * a broken publish the user cannot see is worse than one they can (08).
+ * A publish that *does* parse but cannot be used — a future `spec`, no
+ * `workflows` — still stays on the list carrying its error (`toImplementation`
+ * never throws for that; it returns the same `{ error }` shape `unusable`
+ * builds here), because a broken publish the user cannot see is worse than one
+ * they can (08). `unusable` is reserved for an actual transport failure: a
+ * non-404 error status, or the request failing outright.
  */
-async function probe(alias: string, preview: boolean): Promise<Implementation | null> {
+async function probe(
+  alias: string,
+  preview: boolean,
+  baseQuery: ProbeBaseQuery,
+): Promise<Implementation | null> {
   const unusable = (error: string): Implementation => ({
     alias,
     name: alias,
@@ -110,22 +148,28 @@ async function probe(alias: string, preview: boolean): Promise<Implementation | 
     error,
   })
 
-  let res: Response
-  try {
-    res = await fetch(`/${publishedPath(alias, 'index.json')}`, { credentials: 'same-origin' })
-  } catch (err) {
-    return unusable(err instanceof Error ? err.message : 'the index.json request failed')
+  const result = await baseQuery({ url: publishedPath(alias, 'index.json'), responseHandler: 'text' })
+
+  if (result.error) {
+    if (result.error.status === 404) return null
+    const message =
+      'error' in result.error && typeof result.error.error === 'string'
+        ? result.error.error
+        : `index.json answered ${result.error.status}`
+    return unusable(message)
   }
 
-  if (res.status === 404) return null
-  if (!res.ok) return unusable(`index.json answered ${res.status}`)
-  if (!(res.headers.get('content-type') ?? '').includes('json')) return null
+  const contentType = result.meta?.response?.headers.get('content-type') ?? ''
+  if (!contentType.includes('json')) return null
 
+  let parsed: unknown
   try {
-    return toImplementation(alias, preview, await res.json())
+    parsed = JSON.parse(result.data as string)
   } catch {
-    return unusable('index.json is not valid JSON')
+    return null
   }
+
+  return toImplementation(alias, preview, parsed)
 }
 
 export const workflowApi = createApi({
@@ -136,16 +180,17 @@ export const workflowApi = createApi({
     /**
      * Discovery: the project's aliases, each probed in parallel. The harness's
      * own alias is not special-cased — it simply has no `index.json`.
-     * `api/workflow/aliases` is the harness relay rule (Decision 4 fallback: the
+     * `aliasesUrl()` is the harness relay rule (Decision 4 fallback: the
      * harness host has no CE alias API of its own — an unmatched `/api/*` falls
-     * through to the SPA's `index.html`).
+     * through to the SPA's `index.html`), scoped to this build's project when
+     * `VITE_BFFLESS_PROJECT` is set (apps#363).
      */
     discover: builder.query<Implementation[], void>({
       async queryFn(_arg, _api, _extraOptions, baseQuery) {
-        const aliases = await baseQuery('api/workflow/aliases')
+        const aliases = await baseQuery(aliasesUrl())
         if (aliases.error) return { error: aliases.error }
         const probed = await Promise.all(
-          toAliasList(aliases.data).map((alias) => probe(alias.name, alias.isAutoPreview)),
+          toAliasList(aliases.data).map((alias) => probe(alias.name, alias.isAutoPreview, baseQuery)),
         )
         return { data: probed.filter((impl): impl is Implementation => impl !== null) }
       },

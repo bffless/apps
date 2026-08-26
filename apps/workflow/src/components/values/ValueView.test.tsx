@@ -51,6 +51,42 @@ describe('ValueView', () => {
     expect(screen.getByText('video/mp4')).toBeInTheDocument()
   })
 
+  // apps#363: the player is a stricter sink than the Download link — a
+  // cross-origin `http(s)` url would leak the member's session cookie to a
+  // third party the same way an untrusted fetch would, so it fails
+  // `isSameOriginUrl` even though `isSafeUrl` (the Download link's own gate)
+  // allows any http(s) scheme.
+  it('renders no player for a cross-origin File ref, but still offers Download', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      size: 1,
+      url: 'https://other.example/clip.mp4',
+    }
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
+
+    expect(container.querySelector('video')).toBeNull()
+    const download = screen.getByText('Download') as HTMLAnchorElement
+    expect(download.tagName).toBe('A')
+    expect(download.getAttribute('href')).toBe(`${ref.url}?download=1`)
+  })
+
+  it('renders the player for a same-origin absolute File ref url', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      size: 1,
+      url: `${window.location.origin}/api/uploads/clip.mp4`,
+    }
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
+
+    const video = container.querySelector('video')
+    expect(video).toBeTruthy()
+    expect(video?.getAttribute('src')).toBe(ref.url)
+  })
+
   it('appends download=1 with & when the url already has a query string', () => {
     const ref: FileRef = {
       path: 'p',

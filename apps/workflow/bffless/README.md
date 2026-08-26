@@ -9,6 +9,13 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
 - **Project**: the harness expects its own BFFless project (phase 1: `bffless/workflow` on
   j5s.dev) — discovery lists *this project's* aliases, so co-tenanting with unrelated apps
   only adds harmless 404 probes.
+- **Discovery scope** (apps#363): `deploy-workflow.yml` builds the harness with `VITE_BFFLESS_PROJECT:
+  bffless/workflow`, baked in at build time — the discovery relay preserves the query string
+  (Decision 4), so only that project's aliases are probed and an unrelated co-tenanted app never
+  shows up as a foreign 404 probe. Unset (local dev, `?mocks=on`, CI's `workflow-app.yml`) is
+  unscoped by design: the relay then answers every alias the calling session can see. Runtime
+  self-discovery for a catalog install — reading the installed-into project instead of baking one
+  in at build time — is M4, the other half of apps#363.
 - **Aliases + domains**: alias `workflow` (the harness SPA) on `workflow.<domain>`, alias
   `hello` (the test implementation bundle) on `hello.<domain>`. Attach rule set `workflow`
   to alias `workflow`; attach rule set `hello` to BOTH aliases (ADR-0001 single origin).
@@ -173,3 +180,31 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   fixed with the `no-transform` response-header rule, verified through both hops with a
   member session (zero `challenge-platform` scripts, bytes identical to the local build).
   Also confirmed: `hello.<domain>/` now serves the landing `index.html` (M1 minor closed).
+
+The rows below are the M2 Phase 3 walk Task 24 does after this PR merges — unticked until then.
+
+- [ ] **M2 Phase 3 — Decision 7 (run delete).** Owner path via `workflow-ci`; the 403/409 refusal
+  matrix (another member's run → 403, a still-`running` run → 409); `GET /api/workflow/run?id=`
+  answers `{ run: null }` after delete; the run's poster/File-ref URLs 404; the workflow's
+  `inputs/` uploads still serve; the 200 body's `records` count is **> 0** — verifies the
+  `workflow_files` filter actually matches on `storage_path`/`%prefix%`, not just that `files`
+  swept something.
+- [ ] **M2 Phase 3 — Decision 8 (scoped discovery).** Network log shows
+  `/api/workflow/aliases?repository=bffless/workflow`; no foreign alias's `index.json` gets
+  probed (no 404s outside the project).
+- [ ] **M2 Phase 3 — Decision 14 (form step, mid-run upload).** A mid-run `extra` upload lands
+  under `workflows/hello/interactive/inputs/…`; the tile picker's value is the poster's storage
+  path. **Note:** the `cover` run output is a PATH STRING, not a File ref — job/run-level outputs
+  do not register files (plan Ruling P5). Expected, not a bug; file as an M3 follow-up if it still
+  surprises on the walk.
+- [ ] **M2 Phase 3 — renderers.** Transcript segment click seeks nothing in hello (expected — no
+  video output in this workflow); chart draws; code is syntax-highlighted; the images grid shows
+  the SVG tile; `posters` uploads the poster bytes a second time — expect **two** live objects,
+  not a dedupe.
+- [ ] **M2 Phase 3 — whoami.** `role` is the GLOBAL role (`admin | user | member`), not a
+  per-project one; an API-key caller gets `role: user` and an empty `email` — confirm an admin's
+  API key still cannot delete another member's run.
+- [ ] **M2 Phase 3 — apps#362 `?download=1`.** Record observed behaviour on this walk (ce#697 was
+  still open as of 2026-08-26 — no `Content-Disposition` from `file_serve_handler`).
+- [ ] **M2 Phase 3 — Annotations column.** Shows real counts for the new (M2) run and an em dash
+  `—` for pre-M2 rows that predate `annotationCounts`.

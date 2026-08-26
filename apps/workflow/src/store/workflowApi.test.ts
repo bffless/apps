@@ -3,9 +3,10 @@
  * the workflow YAML fetch, and the two read endpoints over the run record (05).
  */
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, seedFinishedRun, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN } from '../mocks/fixtures/finishedRun'
+import { HELLO_INDEX } from '../mocks/handlers'
 import { fileUrl } from '../lib/coerce'
 import type { FileRef } from '../lib/runner/types'
 import { server } from '../mocks/server'
@@ -99,7 +100,13 @@ describe('discover', () => {
     expect(res.data?.[0].error).toContain('spec')
   })
 
-  it('keeps an alias whose JSON index does not parse', async () => {
+  // apps#363: probes now go through `baseQueryWithReauth` with
+  // `responseHandler: 'text'`, so the probe parses the body itself rather than
+  // letting `fetch().json()` throw. A body that will not parse as JSON is
+  // indistinguishable from one that was never JSON in the first place (the
+  // ordinary "ADR-0004" SPA-fallback case above) — both drop the alias rather
+  // than listing it with an error.
+  it('drops an alias whose JSON index does not parse', async () => {
     server.use(
       http.get('/api/workflow/aliases', () => HttpResponse.json([{ name: 'torn', isAutoPreview: false }])),
       http.get('/w/torn/.bffless/workflows/index.json', () =>
@@ -109,7 +116,7 @@ describe('discover', () => {
 
     const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
 
-    expect(res.data?.[0].error).toBe('index.json is not valid JSON')
+    expect(res.data).toEqual([])
   })
 
   it('surfaces the aliases request failing as a query error', async () => {
@@ -119,6 +126,74 @@ describe('discover', () => {
 
     expect(res.data).toBeUndefined()
     expect(res.error).toBeTruthy()
+  })
+
+  it('keeps a probe that answers with a real error, rather than dropping it (M1 minor)', async () => {
+    server.use(
+      http.get('/api/workflow/aliases', () => HttpResponse.json([{ name: 'down', isAutoPreview: false }])),
+      http.get('/w/down/.bffless/workflows/index.json', () => new HttpResponse(null, { status: 500 })),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(res.data?.map((i) => i.alias)).toEqual(['down'])
+    expect(res.data?.[0].error).toContain('500')
+  })
+
+  it('retries a probe once after a 401 instead of reading it as unpublished (M1 minor)', async () => {
+    let refreshes = 0
+    let calls = 0
+    server.use(
+      http.get('/w/hello/.bffless/workflows/index.json', () => {
+        calls += 1
+        return calls === 1 ? new HttpResponse(null, { status: 401 }) : HttpResponse.json(HELLO_INDEX)
+      }),
+      http.post('/api/auth/session/refresh', () => {
+        refreshes += 1
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(refreshes).toBe(1)
+    expect(res.data?.map((i) => i.alias)).toEqual(['hello'])
+  })
+})
+
+describe('discover — scoped to a project (apps#363)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('carries ?repository= when VITE_BFFLESS_PROJECT is set', async () => {
+    vi.stubEnv('VITE_BFFLESS_PROJECT', 'bffless/workflow')
+    let seenUrl = ''
+    server.use(
+      http.get('/api/workflow/aliases', ({ request }) => {
+        seenUrl = request.url
+        return HttpResponse.json([{ name: 'hello', isAutoPreview: false }])
+      }),
+    )
+
+    await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(new URL(seenUrl).searchParams.get('repository')).toBe('bffless/workflow')
+  })
+
+  it('carries no ?repository= when VITE_BFFLESS_PROJECT is unset', async () => {
+    vi.stubEnv('VITE_BFFLESS_PROJECT', undefined)
+    let seenUrl = ''
+    server.use(
+      http.get('/api/workflow/aliases', ({ request }) => {
+        seenUrl = request.url
+        return HttpResponse.json([{ name: 'hello', isAutoPreview: false }])
+      }),
+    )
+
+    await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(new URL(seenUrl).searchParams.has('repository')).toBe(false)
   })
 })
 

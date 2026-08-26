@@ -18,6 +18,25 @@ const json = (path: string, body: unknown) =>
 
 const RUN_ID = FINISHED_RUN.run.runId
 
+describe('discovery — aliases scoping (apps#363)', () => {
+  it('answers every alias when no ?repository= is given', async () => {
+    const res = await fetch('/api/workflow/aliases')
+    const aliases = (await res.json()) as { name: string }[]
+    expect(aliases.map((a) => a.name).sort()).toEqual(['hello', 'workflow'])
+  })
+
+  it('answers the same list scoped to the mock project', async () => {
+    const res = await fetch('/api/workflow/aliases?repository=bffless%2Fworkflow')
+    const aliases = (await res.json()) as { name: string }[]
+    expect(aliases.map((a) => a.name).sort()).toEqual(['hello', 'workflow'])
+  })
+
+  it('answers an empty list for an unknown repository', async () => {
+    const res = await fetch('/api/workflow/aliases?repository=someone%2Felse')
+    expect(await res.json()).toEqual([])
+  })
+})
+
 describe('the run record surface', () => {
   beforeEach(() => {
     seedFinishedRun()

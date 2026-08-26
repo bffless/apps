@@ -23,6 +23,12 @@ jobs:
       - name: Stage the hello implementation bundle
         run: pnpm --filter workflow stage
       - run: pnpm --filter workflow build
+        env:
+          # apps#363: scopes discovery to this harness's own project — without
+          # it the relay lists every alias the calling session can see. Unset
+          # everywhere else (dev, mocks, CI) on purpose: workflow-app.yml below
+          # tests the unscoped path its mocks/fixtures actually exercise.
+          VITE_BFFLESS_PROJECT: bffless/workflow
       - run: pnpm --filter workflow test:run
       - run: pnpm --filter workflow test:stage
       - name: Sync proxy rules (workflow + hello)

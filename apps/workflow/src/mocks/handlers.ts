@@ -33,10 +33,16 @@ async function body(request: Request): Promise<Record<string, unknown>> {
 // Discovery (06) — a deploy is the publish
 // ---------------------------------------------------------------------------
 
-/** The aliases of the mock project: the harness itself, and one implementation. */
+/**
+ * The aliases of the mock project: the harness itself, and one implementation.
+ * `repository` mirrors what the real relay filters `?repository=` against
+ * (apps#363) — every mock alias lives in the same project, so an unscoped
+ * probe and a `?repository=bffless/workflow`-scoped one see the same list;
+ * only an unknown repository narrows it to nothing.
+ */
 const ALIASES = [
-  { name: 'workflow', isAutoPreview: false },
-  { name: 'hello', isAutoPreview: false },
+  { name: 'workflow', isAutoPreview: false, repository: 'bffless/workflow' },
+  { name: 'hello', isAutoPreview: false, repository: 'bffless/workflow' },
 ]
 
 /** The workflow files this mock implementation publishes, exactly as the bundle does. */
@@ -116,7 +122,11 @@ export const HELLO_INDEX = {
 }
 
 const discovery = [
-  http.get('/api/workflow/aliases', () => HttpResponse.json(ALIASES)),
+  http.get('/api/workflow/aliases', ({ request }) => {
+    const repository = new URL(request.url).searchParams.get('repository')
+    const aliases = repository === null ? ALIASES : ALIASES.filter((a) => a.repository === repository)
+    return HttpResponse.json(aliases)
+  }),
 
   // Only `hello` publishes workflows; every other alias 404s, which is exactly
   // how the harness tells an implementation from an ordinary deploy (ADR-0004).

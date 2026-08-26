@@ -4,10 +4,18 @@
  * whether a player could be rendered.
  *
  * `url` arrives from a run row's JSON, which any authenticated member can
- * write — so it goes through the same allow-list a markdown link href does
- * (`lib/url`) before it reaches an `src`/`data`/`href`. A url that fails it
- * is shown as text: the card still reports what it saw, it just refuses to
- * be the thing that navigates or fetches it.
+ * write. Two different gates apply, because the Download link and the player
+ * are two different sinks: the Download `<a href>` goes through `isSafeUrl`,
+ * the same allow-list a markdown link href uses (`lib/url`), so any http(s)
+ * ref — cross-origin included — still gets a Download action (02: "always a
+ * Download action"). The player (`<video>`/`<audio>`/`<img>`/`<object data>`)
+ * is a stricter sink: it goes through `isSameOriginUrl`, because a
+ * cross-origin `src` would leak the member's session cookie to a third party
+ * the same way an untrusted fetch would. A url that fails `isSafeUrl` is
+ * shown as text instead of a Download link: the card still reports what it
+ * saw, it just refuses to be the thing that navigates or fetches it. A url
+ * that passes `isSafeUrl` but fails `isSameOriginUrl` still gets its Download
+ * link, just no player.
  *
  * A `video`/`audio` player also registers its element with `MediaSeekContext`
  * (Task 15) so a `transcript` renderer's segment click can seek it — a `ref`
@@ -18,7 +26,7 @@
  * — an Input tab, a bare `ValueView` in a test — is unaffected.
  */
 import { useCallback, useRef } from 'react'
-import { downloadHref, isSafeUrl } from '../../lib/url'
+import { downloadHref, isSafeUrl, isSameOriginUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
 import { useMediaSeek } from './MediaSeekContext'
 
@@ -61,9 +69,10 @@ function Player({ contentType, url, name }: { contentType?: string; url: string;
 export function FileCard({ refValue }: { refValue: FileRef }) {
   const { name, contentType, size, url } = refValue
   const safe = typeof url === 'string' && isSafeUrl(url)
+  const sameOrigin = typeof url === 'string' && isSameOriginUrl(url)
   return (
     <div className="file-card">
-      {safe && <Player contentType={contentType} url={url} name={name} />}
+      {sameOrigin && <Player contentType={contentType} url={url} name={name} />}
       <div className="file-card-meta">
         <span className="file-card-name">{name}</span>
         <span className="file-card-type">{contentType || 'unknown type'}</span>

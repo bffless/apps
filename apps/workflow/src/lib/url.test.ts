@@ -90,9 +90,12 @@ describe('isServeUrl', () => {
  * allow for a plain link.
  */
 describe('isSameOriginUrl', () => {
-  it.each(['//evil.com', '/\\evil.com', '/\t/evil.com'])('refuses the protocol-relative %j', (url) => {
-    expect(isSameOriginUrl(url)).toBe(false)
-  })
+  it.each(['//evil.com', '/\\evil.com', '/\t/evil.com', '/ /evil.com', '\\\\evil.com'])(
+    'refuses the protocol-relative %j',
+    (url) => {
+      expect(isSameOriginUrl(url)).toBe(false)
+    },
+  )
 
   it('allows a root-relative url', () => {
     expect(isSameOriginUrl('/api/uploads/x')).toBe(true)
