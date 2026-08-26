@@ -21,5 +21,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Imports a bundle file (`hello/scripts/*.js`) — checked by `tsconfig.scripts.json` in the stager, never by the harness build. */
+  "exclude": ["src/hello-scripts.test.ts"]
 }

@@ -101,6 +101,13 @@ const islands = ISLANDS.map((island) => `islands/${island}.html`)
 // ---------------------------------------------------------------------------
 
 const scriptSrc = join(appDir, 'hello', 'scripts')
+
+// Type-checked *as JavaScript* here, by the thing that publishes them
+// (`tsconfig.scripts.json`: `allowJs` + `checkJs` against each module's JSDoc
+// `@type` import of `@bffless/workflow-script`), for the same reason the
+// islands are: a broken script must fail the bundle stage, never the harness
+// build. Before apps#375 nothing checked these at all.
+execFileSync(bin('tsc'), ['-p', 'tsconfig.scripts.json'], { cwd: appDir, stdio: 'inherit' })
 // Phase 2 (Decision 13) adds the first one; until then the directory is absent
 // and `scripts: []` is the honest answer, not a missing-file crash.
 const scriptFiles = existsSync(scriptSrc)
