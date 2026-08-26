@@ -59,6 +59,20 @@ describe('FINISHED_RUN', () => {
     expect(isServeUrl(poster.url)).toBe(true)
   })
 
+  it('carries the annotationCounts rollup its own rows add up to (Task 20)', () => {
+    const levels = [
+      ...FINISHED_RUN.run.annotations!,
+      ...FINISHED_RUN.steps.flatMap((step) => step.annotations ?? []),
+    ].map((a) => a.level)
+
+    expect(FINISHED_RUN.run.annotationCounts).toEqual({
+      error: levels.filter((l) => l === 'error').length,
+      warning: levels.filter((l) => l === 'warning').length,
+      notice: levels.filter((l) => l === 'notice').length,
+    })
+    expect(FINISHED_RUN.run.annotationCounts).toEqual({ error: 0, warning: 1, notice: 1 })
+  })
+
   it('is monotonic in time', () => {
     const stamps = FINISHED_RUN.steps.flatMap((s) => [s.startedAt, s.finishedAt])
     for (const at of stamps) {

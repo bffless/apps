@@ -16,9 +16,10 @@ import {
   toImplementation,
   toRunRow,
   toStepRow,
+  toWhoami,
   unwrapRows,
 } from '../lib/coerce'
-import type { Implementation, ServerRunRow, ServerStepRow } from '../lib/coerce'
+import type { Implementation, ServerRunRow, ServerStepRow, Whoami } from '../lib/coerce'
 import { fetchPayloadCached, forgetPayloads } from '../lib/payloadFetch'
 import { hydrateOutputs } from '../lib/runner/payload'
 
@@ -150,6 +151,24 @@ export const workflowApi = createApi({
       },
     }),
 
+    /**
+     * Who the session is (Task 19's `whoami` rule) — the only place the app
+     * learns its own identity. M1 had none (R8), so the shell showed no user
+     * and Delete's owner gate had nothing to compare against.
+     *
+     * Untagged and therefore cached for the life of the app: the identity
+     * behind a session does not change without a new session, and the rule is
+     * a read of `user.*` with no record behind it.
+     *
+     * The answer is *advisory*: every rule that cares re-reads `user.*`
+     * server-side, so a tampered reply can only ever offer a button the server
+     * then refuses (403), never widen what a caller may actually do.
+     */
+    whoami: builder.query<Whoami, void>({
+      query: () => 'api/workflow/whoami',
+      transformResponse: toWhoami,
+    }),
+
     /** The workflow's YAML, by the `file` its listing names (R1). */
     getWorkflowYaml: builder.query<string, { impl: string; file: string }>({
       query: ({ impl, file }) => ({ url: publishedPath(impl, file), responseHandler: 'text' }),
@@ -224,5 +243,10 @@ export const workflowApi = createApi({
   }),
 })
 
-export const { useDiscoverQuery, useGetWorkflowYamlQuery, useListRunsQuery, useGetRunQuery } =
-  workflowApi
+export const {
+  useDiscoverQuery,
+  useGetWorkflowYamlQuery,
+  useGetRunQuery,
+  useListRunsQuery,
+  useWhoamiQuery,
+} = workflowApi

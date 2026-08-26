@@ -25,6 +25,9 @@ import type { Annotation, RunStatus } from '../../lib/runner/types'
 const LEVELS: Annotation['level'][] = ['error', 'warning', 'notice']
 const TICK_MS = 1_000
 
+/** Deletion takes the run's files with it (05) — the one header action that asks first. */
+const DELETE_CONFIRM = 'Delete this run and its files? This cannot be undone.'
+
 /**
  * `Date.now()`, refreshed every `intervalMs` while `active` — never read at
  * render time (react-hooks/purity), and never set synchronously inside the
@@ -67,6 +70,15 @@ export interface RunHeaderProps {
   live?: boolean
   /** Present, and rendered as the Cancel button, only while there is a running live run to cancel. */
   onCancel?: () => void
+  /**
+   * Present, and rendered as the Delete button, only when the page has decided
+   * this run may be deleted (terminal, and owned by this user or an admin —
+   * `RunPage.tsx`). Unlike Cancel this is **not** a live-only action: a record
+   * is deletable long after the tab that drove it is gone.
+   */
+  onDelete?: () => void
+  /** A delete is in flight; the button stays visible but refuses a second press. */
+  deleting?: boolean
 }
 
 export function RunHeader({
@@ -83,6 +95,8 @@ export function RunHeader({
   progress,
   live = false,
   onCancel,
+  onDelete,
+  deleting = false,
 }: RunHeaderProps) {
   const inFlight = finishedAt === null
   const now = useNow(inFlight)
@@ -134,6 +148,25 @@ export function RunHeader({
               </button>
             )}
           </span>
+        )}
+        {/*
+          Deletion takes the run's files with it and cannot be undone (05), so
+          it is confirmed here rather than in the page: whoever renders this
+          header gets the confirm for free, and there is no way to wire the
+          button up without one.
+        */}
+        {onDelete && (
+          <button
+            type="button"
+            className="danger"
+            data-testid="run-delete"
+            disabled={deleting}
+            onClick={() => {
+              if (window.confirm(DELETE_CONFIRM)) onDelete()
+            }}
+          >
+            Delete
+          </button>
         )}
       </nav>
     </header>

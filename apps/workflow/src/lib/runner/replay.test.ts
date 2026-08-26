@@ -629,6 +629,9 @@ describe('eventToWrites', () => {
         patch: {
           status: 'succeeded',
           outputs: { a: 1 },
+          // The Task 20 rollup: this run annotated nothing, which is a fact
+          // the row states rather than omits (`rows.test.ts`).
+          annotationCounts: { error: 0, warning: 0, notice: 0 },
           finishedAt: 9,
           leaseOwner: null,
           leaseUntil: null,

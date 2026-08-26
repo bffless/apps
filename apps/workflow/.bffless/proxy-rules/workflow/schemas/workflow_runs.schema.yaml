@@ -17,3 +17,4 @@ fields:
   - { name: leaseUntil, type: number, required: false }
   - { name: outputs, type: json, required: false }
   - { name: annotations, type: json, required: false }
+  - { name: annotationCounts, type: json, required: false }

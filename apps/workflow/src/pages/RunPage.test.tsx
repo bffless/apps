@@ -12,9 +12,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
-import { db, nextId, seedFinishedRun, stepRowKey } from '../mocks/db'
+import { MOCK_ADMIN, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
@@ -250,5 +250,97 @@ describe('RunPage', () => {
     expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
     expect(within(page).queryByTestId('job')).not.toBeInTheDocument()
     expect(within(page).getByText(/read-only record/i)).toBeInTheDocument()
+  })
+
+  /**
+   * Delete (05 retention): the header only offers it when the *server* would
+   * allow it, so the affordance is a mirror of the gate rather than a second
+   * policy — a member sees it on their own terminal run, an admin on anyone's,
+   * and neither sees it while the run is still going.
+   */
+  describe('deleting a run', () => {
+    /** The mock session that started the fixture run. */
+    const asOwner = () =>
+      setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('offers Delete to the member who started the run', async () => {
+      asOwner()
+      const page = await openRun()
+
+      expect(await within(page).findByTestId('run-delete')).toBeInTheDocument()
+    })
+
+    it('offers no Delete to a member who did not start the run', async () => {
+      setMockUser({ id: 'someone_else', email: 'else@example.test', role: 'user' })
+      const page = await openRun()
+
+      // The shell's user chip proves the whoami answer has landed — without it
+      // this would pass merely because the query had not resolved yet.
+      expect(await screen.findByTestId('whoami')).toHaveTextContent('else@example.test')
+      expect(within(page).queryByTestId('run-delete')).not.toBeInTheDocument()
+    })
+
+    it("offers Delete to an admin on someone else's run", async () => {
+      setMockUser(MOCK_ADMIN)
+      const page = await openRun()
+
+      expect(await within(page).findByTestId('run-delete')).toBeInTheDocument()
+    })
+
+    it('deletes the record and leaves for Past runs', async () => {
+      asOwner()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const page = await openRun()
+
+      fireEvent.click(await within(page).findByTestId('run-delete'))
+
+      // The heading, not the header's own "Past runs" *link* — that link is
+      // still in the document when the query first runs and is detached by the
+      // navigation a tick later.
+      expect(await screen.findByRole('heading', { name: 'Past runs' })).toBeInTheDocument()
+      // The record itself is gone, so the list it landed on has nothing left.
+      expect(await screen.findByText('No runs yet')).toBeInTheDocument()
+      expect(db.runs.has(FIXTURE_RUN_ID)).toBe(false)
+      expect(screen.queryByTestId('run-status')).not.toBeInTheDocument()
+    })
+
+    it('stays on the run and says why when the server refuses (403)', async () => {
+      asOwner()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      server.use(
+        http.post('/api/workflow/run/delete', () =>
+          HttpResponse.json({ ok: false, error: 'nope' }, { status: 403 }),
+        ),
+      )
+      const page = await openRun()
+
+      fireEvent.click(await within(page).findByTestId('run-delete'))
+
+      const failed = await within(page).findByTestId('run-delete-failed')
+      expect(failed).toHaveTextContent(/only the run's owner or an admin/i)
+      expect(within(page).getByTestId('run-status')).toBeInTheDocument()
+      expect(db.runs.has(FIXTURE_RUN_ID)).toBe(true)
+    })
+
+    it('says to cancel the run first when the server refuses (409)', async () => {
+      asOwner()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      server.use(
+        http.post('/api/workflow/run/delete', () =>
+          HttpResponse.json({ ok: false, error: 'nope' }, { status: 409 }),
+        ),
+      )
+      const page = await openRun()
+
+      fireEvent.click(await within(page).findByTestId('run-delete'))
+
+      expect(await within(page).findByTestId('run-delete-failed')).toHaveTextContent(
+        /cancel the run first/i,
+      )
+    })
   })
 })

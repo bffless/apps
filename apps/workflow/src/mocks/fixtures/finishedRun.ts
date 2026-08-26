@@ -69,6 +69,10 @@ const run: RunRow = {
   leaseUntil: null,
   outputs: { report: REPORT, poster: POSTER, lines: LINES },
   annotations: [],
+  // The rollup `run.finished` writes (Task 20): the notice on `slow/0/start`
+  // and the warning on `flaky/0/after`, and no errors — `flaky/0/boom` failed
+  // under `continue-on-error`, which is not an annotation.
+  annotationCounts: { error: 0, warning: 1, notice: 1 },
 }
 
 /** A greeted matrix item: one echo call, its line, and the step's summary. */

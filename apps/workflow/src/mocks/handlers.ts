@@ -158,7 +158,9 @@ const discovery = [
 // ---------------------------------------------------------------------------
 
 /** Patchable post-create; everything else is the immutable start snapshot (D16). */
-const RUN_PATCHABLE = ['status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations']
+const RUN_PATCHABLE = [
+  'status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations', 'annotationCounts',
+]
 
 /** The 11 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
 const STEP_MUTABLE = [

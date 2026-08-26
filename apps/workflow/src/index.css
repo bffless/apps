@@ -69,6 +69,12 @@ body {
   text-decoration: none;
 }
 
+.whoami {
+  margin-left: auto;
+  color: var(--color-ink-mute);
+  font-size: 0.875rem;
+}
+
 .crumbs {
   display: flex;
   flex-wrap: wrap;
@@ -156,6 +162,18 @@ body {
   display: flex;
   gap: 1rem;
   font-size: 0.875rem;
+}
+
+/* Delete: the one page action that destroys something, and the only one that
+   says so before you press it (`RunHeader`'s confirm). */
+.page-actions .danger {
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+.page-actions .danger:disabled {
+  color: var(--color-ink-mute);
+  border-color: var(--color-line);
 }
 
 .note {
@@ -908,19 +926,29 @@ body {
   font-family: var(--font-mono);
 }
 
-.badge[data-severity='error'] {
+.badge[data-severity='error'],
+.badge-error {
   border-color: #fca5a5;
   color: #b91c1c;
 }
 
-.badge[data-severity='warning'] {
+.badge[data-severity='warning'],
+.badge-warning {
   border-color: #fcd34d;
   color: #b45309;
 }
 
-.badge[data-severity='notice'] {
+.badge[data-severity='notice'],
+.badge-notice {
   border-color: #bfdbfe;
   color: #1d4ed8;
+}
+
+/* Past runs' Annotations column: three fixed badges, so the column scans. */
+.run-annotations {
+  display: inline-flex;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .run-canvas {

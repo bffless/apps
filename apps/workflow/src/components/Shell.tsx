@@ -1,8 +1,8 @@
 /**
- * The frame every screen renders inside (08): a header with the app title and a
- * breadcrumb, and a left rail holding the implementation → workflow tree that
- * discovery found. No user display in M1 — the harness has no endpoint for one
- * (R8).
+ * The frame every screen renders inside (08): a header with the app title, a
+ * breadcrumb and the signed-in user, and a left rail holding the implementation
+ * → workflow tree that discovery found. (The user was M1's one gap here — the
+ * harness had no endpoint for one, R8; Task 19's `whoami` rule is it.)
  *
  * The breadcrumb is read off the path rather than from `useParams`, because a
  * layout route matches before its children and so sees none of their params.
@@ -10,7 +10,7 @@
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from './ErrorBoundary'
 import { workflowId } from '../lib/coerce'
-import { useDiscoverQuery } from '../store/workflowApi'
+import { useDiscoverQuery, useWhoamiQuery } from '../store/workflowApi'
 
 function Rail() {
   const { data: implementations, isLoading, isError } = useDiscoverQuery()
@@ -49,6 +49,22 @@ function Rail() {
   )
 }
 
+/**
+ * Who you are, as the harness sees you. The email when there is one, the id
+ * otherwise (an API-key caller has no email) — and nothing at all until the
+ * answer lands, because a placeholder identity is worse than none: this is the
+ * same fact the run page's Delete gate is read against.
+ */
+function Whoami() {
+  const { data: me } = useWhoamiQuery()
+  if (!me) return null
+  return (
+    <span className="whoami" data-testid="whoami">
+      {me.email ?? me.id}
+    </span>
+  )
+}
+
 /** `/hello/hello/runs/run_1` → the crumbs above it, each linking to its screen. */
 function Breadcrumb() {
   const [impl, workflow, ...rest] = useLocation().pathname.split('/').filter(Boolean)
@@ -78,6 +94,7 @@ export function Shell() {
           Workflow
         </Link>
         <Breadcrumb />
+        <Whoami />
       </header>
       <div className="shell-body">
         <nav className="rail" aria-label="Implementations">
