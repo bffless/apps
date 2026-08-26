@@ -110,6 +110,18 @@ describe('RunPage', () => {
     )
   })
 
+  it("shows a form step's evaluated `with` on Input — title, fields with resolved defaults, submit", async () => {
+    const page = await openRun()
+    const pane = openTab(page, 'confirm/0/review', 'Input')
+
+    expect(within(pane).getByText('title')).toBeInTheDocument()
+    expect(within(pane).getByText('Does the report look right?')).toBeInTheDocument()
+    expect(within(pane).getByText('fields')).toBeInTheDocument()
+    // `default: ${{ needs.slow.outputs.report }}` was evaluated before the form was shown.
+    expect(within(pane).getByText(/Hello, world!/)).toBeInTheDocument()
+    expect(within(pane).getByText('submit')).toBeInTheDocument()
+  })
+
   it('details the attempt, the pipeline path and the annotations of a step on Output', async () => {
     const page = await openRun()
     const pane = openTab(page, 'slow/0/start', 'Output')
@@ -146,10 +158,11 @@ describe('RunPage', () => {
     expect(within(pane).getByText('studio')).toBeInTheDocument()
   })
 
-  // One level of the taxonomy at a time (08, 2026-08-26): a step's pane
-  // replaces the run card, and there are three ways back.
-  describe('the run card and the step pane take turns', () => {
-    it('replaces the run card with the step pane on a chip click, and restores it on Back', async () => {
+  // One level of the taxonomy at a time (08, 2026-08-26): run › job › step.
+  // A step's pane replaces the run card; Back climbs one level, the crumb's
+  // "Run" climbs to the top, Esc and the pressed chip climb one level too.
+  describe('the run, job and step cards take turns', () => {
+    it('replaces the run card with the step pane on a chip click; Back climbs to the job, then the run', async () => {
       const page = await openRun()
 
       fireEvent.click(chip('slow/0/start')!)
@@ -158,22 +171,80 @@ describe('RunPage', () => {
       expect(within(page).queryByTestId('run-outputs')).not.toBeInTheDocument()
 
       fireEvent.click(within(page).getByTestId('step-pane-back'))
-      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
       expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
       expect(chip('slow/0/start')).toHaveAttribute('aria-pressed', 'false')
+
+      fireEvent.click(within(page).getByTestId('step-pane-back'))
+      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+      expect(within(page).queryByTestId('job-pane')).not.toBeInTheDocument()
     })
 
-    it('climbs out on Esc, and on the pressed chip clicked again', async () => {
+    it("climbs straight to the run on the step pane's Run crumb", async () => {
+      const page = await openRun()
+      fireEvent.click(chip('slow/0/start')!)
+      fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
+      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+    })
+
+    it('climbs one level on Esc, and on the pressed chip clicked again', async () => {
       const page = await openRun()
 
       fireEvent.click(chip('slow/0/start')!)
       fireEvent.keyDown(within(page).getByTestId('step-pane'), { key: 'Escape' })
-      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
 
       fireEvent.click(chip('slow/0/start')!)
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
       fireEvent.click(chip('slow/0/start')!)
-      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+    })
+
+    it("opens the job card from a group card's header strip, with the job's evaluated outputs", async () => {
+      const page = await openRun()
+
+      fireEvent.click(within(page).getByRole('button', { name: 'Job Greet each name' }))
+      const pane = within(page).getByTestId('job-pane')
+      // The crumb ends on the job, the title repeats it: `Run › Greet each name`.
+      expect(within(pane).getByRole('heading', { name: 'Greet each name' })).toBeInTheDocument()
+      expect(within(pane).getByRole('navigation', { name: /where this sits/i })).toHaveTextContent(
+        /^Run›Greet each name/,
+      )
+      // `lines: ${{ steps.say.outputs.line }}` collects across the matrix (01).
+      expect(within(pane).getByText('lines')).toBeInTheDocument()
+      expect(within(pane).getByText('Hello, world!')).toBeInTheDocument()
+      expect(within(pane).getByText('Hello, studio!')).toBeInTheDocument()
+      // …and goes to the step that reads it.
+      expect(within(pane).getByText(/goes to slow\/start/)).toBeInTheDocument()
+
+      // The trail lists every step of every item, each a way down.
+      fireEvent.click(within(pane).getByRole('button', { name: /greet\/1\/say/ }))
+      expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
+      expect(chip('greet/1/say')).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('opens the job card on Output from the right dot, and on Input from the left dot', async () => {
+      const page = await openRun()
+
+      fireEvent.click(within(page).getByRole('button', { name: 'Output of A slow server job' }))
+      let pane = within(page).getByTestId('job-pane')
+      expect(within(pane).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
+      expect(within(pane).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
+
+      fireEvent.click(within(page).getByRole('button', { name: 'Input of Confirm the report' }))
+      pane = within(page).getByTestId('job-pane')
+      expect(within(pane).getByRole('tab', { name: 'Input' })).toHaveAttribute('aria-selected', 'true')
+      // `needs: [slow, flaky]` — what the job waited on.
+      expect(within(pane).getByText('slow')).toBeInTheDocument()
+      expect(within(pane).getByText('flaky')).toBeInTheDocument()
+    })
+
+    it('opens the job a bare `?step=<job>` deep link names', async () => {
+      seedFinishedRun()
+      renderApp(`${RUN_PATH}?step=confirm`)
+      const page = screen.getByRole('main')
+      await within(page).findByTestId('run-status')
+      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
     })
 
     it('opens the step a `?step=` deep link names', async () => {

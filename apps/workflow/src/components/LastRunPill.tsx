@@ -6,11 +6,21 @@
  * per component fixed while still asking per workflow.
  */
 import { useListRunsQuery } from '../store/workflowApi'
-import { StatusPill } from './StatusPill'
+import { StatusGlyph, StatusPill } from './StatusPill'
 
-export function LastRunPill({ impl, workflow }: { impl: string; workflow: string }) {
+export function LastRunPill({
+  impl,
+  workflow,
+  glyphOnly = false,
+}: {
+  impl: string
+  workflow: string
+  /** The 15px glyph alone — the rail has no room for the word. */
+  glyphOnly?: boolean
+}) {
   // Rows arrive newest-first (workflowApi sorts on startedAt).
   const { data } = useListRunsQuery({ impl, workflow })
   const latest = data?.[0]
-  return latest ? <StatusPill status={latest.status} /> : null
+  if (!latest) return glyphOnly ? <StatusGlyph status="queued" /> : null
+  return glyphOnly ? <StatusGlyph status={latest.status} /> : <StatusPill status={latest.status} />
 }

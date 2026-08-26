@@ -58,13 +58,71 @@ export function completeFormStep(a: FormStepArgs): FormResult {
   // A form's fields *are* its declarations; an untyped field is a string (02).
   // Evaluated, so `choice` membership is checked against the options the form
   // actually offered rather than the expression that produced them.
-  const { outputs, errors } = validateDeclared(formFieldDefs(a), a.values, {
+  const fields = formFieldDefs(a)
+  const { outputs, errors } = validateDeclared(fields, a.values, {
     defaultType: 'string',
   })
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  return { ok: true, event: succeededEvent(a, outputs, a.at) }
+  return { ok: true, event: succeededEvent(a, withFileRefs(fields, outputs), a.at) }
+}
+
+/**
+ * A `choice` over File refs (02's shorthand) is *edited* by path — the tile's
+ * value, what membership is checked against — but *recorded* as the ref the
+ * path named, so everything downstream (`steps.confirm.outputs.cover`, a job
+ * or run output declared `type: file`, the cards) keeps the file's name, size,
+ * content type and url rather than a bare path (2026-08-26 review). A value
+ * that matches no ref (a plain string option) is recorded as it was.
+ */
+function withFileRefs(
+  fields: Record<string, InputDef>,
+  outputs: Record<string, unknown>,
+): Record<string, unknown> {
+  const upgraded: Record<string, unknown> = { ...outputs }
+  for (const [name, field] of Object.entries(fields)) {
+    if (field.type !== 'choice' || !Array.isArray(field.options)) continue
+    const refs = new Map<string, unknown>()
+    for (const option of field.options) {
+      if (isFileRefLike(option)) refs.set(option.path, option)
+    }
+    if (refs.size === 0) continue
+    const value = outputs[name]
+    if (typeof value === 'string') upgraded[name] = refs.get(value) ?? value
+    else if (Array.isArray(value)) {
+      upgraded[name] = value.map((v) => (typeof v === 'string' ? (refs.get(v) ?? v) : v))
+    }
+  }
+  return upgraded
+}
+
+function isFileRefLike(value: unknown): value is { path: string; name: string; url: string } {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return typeof v.path === 'string' && typeof v.name === 'string' && typeof v.url === 'string'
+}
+
+/**
+ * What the form is *shown with* — its `with` evaluated against the run so far
+ * (title, description, fields with their `default`/`options` expressions
+ * resolved, submit) — recorded as the step's `inputs` on `step.waiting`, so a
+ * form step has the same provenance on its Input side as any other step
+ * (`default: ${{ needs.slow.outputs.report }}` → "from slow job output").
+ */
+export function formInputs(a: {
+  step: Step
+  def: Definition
+  state: RunState
+  job: string
+  index: number
+}): Record<string, unknown> {
+  const contexts = buildContexts(a.def, a.state, {
+    job: a.job,
+    index: a.index,
+    stepId: a.step.id,
+  })
+  return obj(evalDeep(obj(a.step.raw?.with), contexts))
 }
 
 /** Evaluated initial field values (expression defaults) for the form UI. */

@@ -138,8 +138,11 @@ test('interactive hello runs an island step end to end against the mock backend'
   // …and the run-level `poster` is the very file the step recorded, not another
   // one that happens to be named the same.
   await expect(pane.locator('.file-card-download').first()).toHaveAttribute('href', posterHref!)
-  // Back climbs out to the run card.
+  // Back climbs one level, to the job card (run › job › step); the crumb's
+  // "Run" climbs to the top.
   await pane.getByTestId('step-pane-back').click()
+  await expect(page.getByTestId('job-pane')).toBeVisible()
+  await page.getByTestId('job-pane').getByTestId('step-pane-back').click()
   await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // `ctx.annotate` became a persisted `step.annotated`, so it is in the
@@ -167,7 +170,8 @@ test('interactive hello runs an island step end to end against the mock backend'
   await drawStep.click()
   await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByTestId('step-pane')).toContainText('[12000]')
-  await page.getByTestId('step-pane-back').click()
+  await page.getByTestId('step-pane').getByRole('button', { name: 'Run', exact: true }).click()
+  await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // ---------------------------------------------------------------------
   // Phase 3: the four named renderers the workflow now declares. Each is
@@ -193,14 +197,15 @@ test('interactive hello runs an island step end to end against the mock backend'
         `no ${render} renderer on ${key}'s Output`,
       ).toBeVisible()
     }
-    await stepPane.getByTestId('step-pane-back').click()
+    await stepPane.getByRole('button', { name: 'Run', exact: true }).click()
   }
 
-  // Ruling P5: `review.outputs.cover` and the run-level `cover` are evaluated
-  // synchronously and register nothing, so what a `file`-declared job output
-  // carries in M2 is the tile's *path string* — a chip, not a file card. The
-  // path is the poster's, which is the whole point of the pick.
-  await expect(outputsAgain.locator('[data-output="cover"]')).toContainText('poster.svg')
+  // The tile was picked by path, but the form recorded the *ref* (02), and the
+  // job and run outputs pass it through whole — so the run-level `cover` is a
+  // file card with the poster's name and a Download, not a bare path.
+  const cover = outputsAgain.locator('[data-output="cover"]')
+  await expect(cover.locator('.file-card-name')).toHaveText('poster.svg')
+  await expect(cover.locator('.file-card-download')).toHaveAttribute('href', posterHref!)
 
   // ---------------------------------------------------------------------
   // 05 retention: the run's owner may delete it, behind the header's confirm.
@@ -235,8 +240,8 @@ test('a recorded script run hydrates its {"$file"} payload on read', async ({ pa
   // A payload the fetch could not answer renders as this chip instead.
   await expect(page.getByTestId('payload-unavailable')).toHaveCount(0)
 
-  // Back to the run card, whose results carry the run-level poster.
-  await pane.getByTestId('step-pane-back').click()
+  // The crumb's "Run" climbs to the run card, whose results carry the run-level poster.
+  await pane.getByRole('button', { name: 'Run', exact: true }).click()
   const outputs = page.getByTestId('run-outputs')
   await expect(outputs).toBeVisible()
   await expect(outputs.locator('[data-output="poster"] .file-card-download')).toHaveAttribute(

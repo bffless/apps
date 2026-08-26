@@ -330,7 +330,13 @@ describe('ValueView', () => {
     expect(() =>
       render(<ValueView decl={{ type: 'file' }} value="workflows/hello/hello/inputs/u1/cat.png" />),
     ).not.toThrow()
-    expect(screen.getByText('workflows/hello/hello/inputs/u1/cat.png')).toBeInTheDocument()
+    // A bare path under `type: file` is the file it names: a row with the
+    // name, a type guessed from the extension, and a Download (no size).
+    expect(screen.getByText('cat.png')).toBeInTheDocument()
+    expect(screen.getByText('image/png')).toBeInTheDocument()
+    expect((screen.getByText('Download') as HTMLAnchorElement).getAttribute('href')).toContain(
+      'workflows/hello/hello/inputs/u1/cat.png',
+    )
   })
 
   it('renders a file object with no contentType as a download card, not a crash', () => {

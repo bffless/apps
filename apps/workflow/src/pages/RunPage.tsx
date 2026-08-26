@@ -41,8 +41,10 @@ import type { PaneSide } from '../components/graph/GraphView'
 import { useIslandHandle } from '../islands/useIslandHandle'
 import { PausedBanner } from '../components/run/PausedBanner'
 import { RunHeader } from '../components/run/RunHeader'
+import { JobPane } from '../components/run/JobPane'
 import { RunPane } from '../components/run/RunPane'
 import { StepPane } from '../components/run/StepPane'
+import { FileRefProvider } from '../components/values/FileRefProvider'
 import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
@@ -267,8 +269,11 @@ export function RunPage() {
   // the run being viewed — a navigation to another run is a different URL,
   // with no `step` on it — which the process-global `ui.selectedStep` never
   // was (fix round 1). Other query parameters (`?mocks=`) ride along untouched.
+  // Three levels share the one parameter (08: run › job › step): absent = the
+  // run card, a bare job id = that job's card, `job/index/step` = a step's pane.
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedStep: StepKey | null = searchParams.get(STEP_PARAM)
+  const level: 'run' | 'job' | 'step' = selectedStep === null ? 'run' : selectedStep.includes('/') ? 'step' : 'job'
   const setStep = (key: StepKey | null, replace: boolean) =>
     setSearchParams(
       (prev) => {
@@ -292,18 +297,20 @@ export function RunPage() {
   // counter makes a second click on the same dot re-open that side even when
   // the selection did not change — the pane is keyed on it below.
   const [side, setSide] = useState<{ key: string; side: PaneSide; n: number } | null>(null)
+  /** Up one level: a step's job, a job's run. */
+  const back = () => setStep(level === 'step' ? selectedStep!.split('/')[0]! : null, false)
+  const toRun = () => setStep(null, false)
   /** A person's click: a history entry, so Back returns to where they were. */
   const select = (key: StepKey, requested?: PaneSide) => {
-    // The selected chip, clicked again with no side asked for, is the way back
-    // out of the step — the same toggle a pressed button suggests.
+    // The selected chip (or strip), clicked again with no side asked for, is
+    // the way up one level — the same toggle a pressed button suggests.
     if (key === selectedStep && requested === undefined) {
-      setStep(null, false)
+      back()
       return
     }
     setStep(key, false)
     if (requested) setSide((prev) => ({ key, side: requested, n: (prev?.n ?? 0) + 1 }))
   }
-  const back = () => setStep(null, false)
   const paneSide = side && side.key === selectedStep ? side : null
 
   // `ui.selectedStep` is a read-model of the URL, never the other way round:
@@ -376,7 +383,7 @@ export function RunPage() {
     isLive && def && state ? firstStepWhere(def, state, isLoadingIsland) : null
   const openStep = waitingStep ?? loadingIsland
 
-  const selectedStepState = selectedStep && state ? state.steps[selectedStep] : undefined
+  const selectedStepState = level === 'step' && selectedStep && state ? state.steps[selectedStep] : undefined
 
   // A step that is *itself* mid-interaction: an island whose pane owns the
   // bridge, or a form waiting on the person filling it in. The pane is theirs
@@ -589,7 +596,7 @@ export function RunPage() {
         {!state || !def ? (
           <RawRows run={run!} steps={steps} />
         ) : (
-          <>
+          <FileRefProvider state={state}>
             <div className={fullscreen ? 'run-canvas island-fullscreen' : 'run-canvas'}>
               {fullscreen ? (
                 // The page's half of `ui/request-display-mode`: the graph
@@ -620,15 +627,27 @@ export function RunPage() {
                 the run's own card, or — while a step is selected — that
                 step's pane in its place. Never both.
               */}
-              {selectedStep ? (
+              {level === 'step' ? (
                 <StepPane
                   key={`${selectedStep}#${paneSide?.n ?? 0}`}
                   def={def}
                   state={state}
-                  stepKey={selectedStep}
+                  stepKey={selectedStep!}
                   live={isLive}
                   initialTab={paneSide?.side}
                   onBack={back}
+                  onRun={toRun}
+                />
+              ) : level === 'job' ? (
+                <JobPane
+                  key={`${selectedStep}#${paneSide?.n ?? 0}`}
+                  def={def}
+                  state={state}
+                  job={selectedStep!}
+                  impl={state.impl}
+                  initialTab={paneSide?.side}
+                  onSelect={(key) => select(key)}
+                  onBack={toRun}
                 />
               ) : (
                 <RunPane
@@ -642,7 +661,7 @@ export function RunPage() {
                 />
               )}
             </div>
-          </>
+          </FileRefProvider>
         )}
       </section>
     </ImplContext.Provider>

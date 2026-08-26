@@ -2,10 +2,10 @@
  * One job of the graph: its name, what it fans out over, and its steps stacked
  * in declaration order (08).
  *
- * Two shapes, as in the prototype: a job with one step and no matrix is a
- * single 60px card — the step *is* the card, its row carries the job's name —
- * and anything else is a group card with a header strip (the job name, and for
- * a matrix job the `FOR EACH … · N AT ONCE` line) over one row per step.
+ * One shape for every job (2026-08-26 review): a header strip — the job's
+ * name, its handle onto the job card, and for a matrix job the `FOR EACH … ·
+ * N AT ONCE` line — over one row per step, so a job and its step never merge
+ * into one line.
  *
  * A matrix job is one card, not N: in run mode it carries the progress fraction
  * ("2 of 2") and an item selector that swaps which expansion index the chips
@@ -26,7 +26,7 @@ import type { CSSProperties } from 'react'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import type { GraphFlow } from './flow'
-import { isSingle, jobLabel, matrixNote } from './geometry'
+import { jobLabel, matrixNote } from './geometry'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
@@ -59,12 +59,14 @@ export interface JobCardProps {
   state?: RunState
   selectedKey?: StepKey | null
   onPick: (key: StepKey, step: Step) => void
+  /** The job itself as the selection (08: run › job › step): the header strip and the OUT rows. */
+  onPickJob?: (job: string, side?: 'Input' | 'Output') => void
   /** Which chips light up for the hovered value (08); absent outside `GraphView`'s own render. */
   flow?: GraphFlow
   style?: CSSProperties
 }
 
-export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow, style }: JobCardProps) {
+export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPickJob, flow, style }: JobCardProps) {
   const [picked, setPicked] = useState(0)
 
   const expansion = state?.expansions[job.id]
@@ -91,9 +93,9 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
 
   const note = matrixNote(job)
   const isMatrix = job.matrix !== undefined && mode === 'run'
-  const single = isSingle(job)
   const jobFlow = flow?.sourceJobs.has(job.id) ? 'source' : undefined
   const selectedInside = selectedHere !== null
+  const selectedJob = selectedKey === job.id
 
   return (
     <article
@@ -103,23 +105,29 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
       data-col={col}
       data-row={row}
       data-flow={jobFlow}
-      data-single={single || undefined}
-      data-selected={selectedInside || undefined}
+      data-selected={selectedInside || selectedJob || undefined}
+      data-selected-job={selectedJob || undefined}
       style={style}
     >
-      {!single && (
-        <header className="job-head">
-          <span className="job-head-row">
+      <header className="job-head">
+          {/* The strip is the job's own handle (08: run › job › step). */}
+          <button
+            type="button"
+            className="job-head-row"
+            data-testid="job-head"
+            aria-pressed={selectedJob}
+            aria-label={`Job ${jobLabel(job)}`}
+            onClick={() => onPickJob?.(job.id)}
+          >
             <h3 className="job-name">{jobLabel(job)}</h3>
             {isMatrix && (
               <span className="job-fraction">
                 {done} of {total}
               </span>
             )}
-          </span>
+          </button>
           {note && <p className="job-note">{note}</p>}
         </header>
-      )}
 
       {isMatrix && total > 1 && (
         <select
@@ -149,19 +157,18 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
             <StepChip
               key={step.id}
               job={job.id}
-              jobLabel={single ? jobLabel(job) : undefined}
               index={mode === 'run' ? index : 0}
               step={step}
               mode={mode}
               state={state?.steps[key]}
               selected={selectedKey === key}
-              single={single}
               onPick={onPick}
               flow={stepFlow}
             />
           )
         })}
       </div>
+
     </article>
   )
 }

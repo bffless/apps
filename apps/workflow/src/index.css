@@ -329,19 +329,19 @@ button {
 .rail {
   position: sticky;
   top: 56px;
-  flex: 0 0 15rem;
+  flex: 0 0 16rem;
   align-self: flex-start;
   max-height: calc(100vh - 56px);
-  padding: 22px 18px 24px 28px;
+  padding: 22px 16px 24px 24px;
   overflow-y: auto;
 }
 
 .rail-eyebrow {
-  margin: 0 0 10px;
+  margin: 0 0 10px 8px;
 }
 
 .rail-note {
-  margin: 0;
+  margin: 0 0 0 8px;
   color: var(--ink-mute);
   font-size: 13px;
 }
@@ -353,17 +353,19 @@ button {
   list-style: none;
 }
 
-.rail-workflows {
-  margin: 2px 0 8px;
-  padding-left: 10px;
-  border-left: 1px solid var(--hairline);
+.rail-tree > li + li {
+  margin-top: 14px;
 }
 
+/* An implementation: a group head. Its workflows sit under it, each with the
+   glyph of its latest run, and the open one reads as a pressed row. */
 .rail-impl,
 .rail-workflow {
-  display: block;
-  padding: 5px 8px;
-  margin-left: -8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  padding: 5px 10px;
   color: var(--ink-soft);
   font-size: 13px;
   text-decoration: none;
@@ -375,11 +377,32 @@ button {
 
 .rail-impl {
   color: var(--ink);
+  font-size: 13.5px;
   font-weight: 600;
 }
 
 .rail-impl.is-error {
   color: var(--ink-mute);
+}
+
+.rail-workflows {
+  margin-top: 2px;
+  padding-left: 10px;
+}
+
+.rail-workflow .glyph {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  font-size: 7px;
+}
+
+.rail-workflow-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail-impl:hover,
@@ -392,7 +415,8 @@ button {
 .rail-workflow.active {
   color: var(--ink);
   font-weight: 600;
-  background-color: var(--surface-dim);
+  background-color: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .content {
@@ -1359,12 +1383,12 @@ button {
   box-shadow: 0 0 0 1px var(--ink);
 }
 
-/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note. */
+/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note.
+   The name row is a button — the job is the middle level of run › job › step. */
 .job-head {
   display: flex;
   flex: none;
   flex-direction: column;
-  padding: 0 13px;
   background-color: var(--surface-dim);
   border-bottom: 1px solid var(--line);
 }
@@ -1374,7 +1398,38 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
   height: 39px;
+  padding: 0 13px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.job-head-row:hover {
+  background-color: oklch(0.95 0.006 265);
+}
+
+.job-head-row[aria-pressed='true'] {
+  color: var(--paper);
+  background-color: var(--ink);
+}
+
+.job-head-row[aria-pressed='true'] .job-fraction {
+  color: var(--paper);
+  opacity: 0.7;
+}
+
+.job-head .job-note {
+  padding: 0 13px;
+}
+
+.job-card[data-selected-job] {
+  border-color: var(--ink);
 }
 
 .job-name {
@@ -1456,33 +1511,6 @@ button {
   box-shadow: inset 0 0 0 1px var(--ink);
 }
 
-.step-chip[data-single][aria-pressed='true'] {
-  box-shadow: none;
-}
-
-/* A single card stacks the job's name over the step id (and any headless
-   badge), so a long name never fights the duration for the row. */
-.step-chip[data-single] .step-label {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  white-space: normal;
-}
-
-.step-chip[data-single] .step-label .badge {
-  margin-top: 2px;
-}
-
-.step-chip[data-single] .step-title {
-  max-width: 100%;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.step-chip[data-single] .step-title + .step-id {
-  line-height: 1.2;
-}
-
 /* The running row's warm wash, as in the prototype. */
 .step-chip[data-state='running'],
 .step-chip[data-state='polling'],
@@ -1528,11 +1556,6 @@ button {
   padding: 0 13px 0 12px;
 }
 
-.step-chip[data-single] .step-row {
-  height: 60px;
-  padding: 0 14px;
-}
-
 .step-kind {
   display: inline-flex;
   flex: none;
@@ -1558,11 +1581,6 @@ button {
   font-size: 13.5px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.step-chip[data-single] .step-title {
-  font-size: 14.5px;
-  font-weight: 600;
 }
 
 .step-id {
@@ -1595,10 +1613,6 @@ button {
   display: flex;
   flex-direction: column;
   padding: 0 13px 8px 37px;
-}
-
-.step-chip[data-single] .step-outputs {
-  padding-left: 39px;
 }
 
 .step-output {
@@ -1843,28 +1857,106 @@ button {
   overflow: hidden;
 }
 
-/* The way back up a level: a quiet mono button at the head's left edge. */
-.pane-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 6px 8px;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  font: 500 11.5px var(--font-mono);
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transition:
-    color var(--fast) var(--ease-out),
-    border-color var(--fast) var(--ease-out);
+/* The card's breadcrumb (08: Run › job › step · item n of N): the shell's own
+   crumb shape, one level down. Every segment above the current one is a way
+   up; the current one is ink. */
+.pane-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+  margin-bottom: 2px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
 }
 
-.pane-back:hover {
-  color: var(--ink);
-  border-color: var(--ink);
+.pane-crumb-slot {
+  display: inline-flex;
+  align-items: baseline;
 }
+
+.pane-crumb {
+  padding: 0;
+  color: var(--ink-mute);
+  font: inherit;
+  letter-spacing: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease-out);
+}
+
+button.pane-crumb:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pane-crumb.is-current {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.pane-crumb-sep {
+  margin: 0 7px;
+  color: var(--line-strong);
+}
+
+.pane-crumb-note {
+  margin-left: 6px;
+  color: var(--ink-mute);
+}
+
+/* The job card's trail: its steps, each a way down. */
+.job-pane-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-pane-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 8px;
+  margin: 0 -8px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--hairline-faint);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.job-pane-steps > li:first-child .job-pane-step {
+  border-top: 0;
+}
+
+.job-pane-step:hover {
+  background-color: var(--surface-dim);
+}
+
+.job-pane-step-label {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.job-pane-step-label .step-id {
+  color: var(--ink-mute);
+  font-size: 11px;
+}
+
 
 .pane-head {
   display: flex;

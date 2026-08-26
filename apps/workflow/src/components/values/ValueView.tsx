@@ -16,6 +16,7 @@ import { useState } from 'react'
 import { isUnavailablePayload } from '../../lib/runner/payload'
 import type { UnavailablePayload } from '../../lib/runner/payload'
 import { downloadHref, isSafeUrl } from '../../lib/url'
+import { useFileRefs } from './fileRefIndex'
 import type { ValueDecl } from '../../lib/valueDecl'
 import { FileCard } from './FileCard'
 import { isFileRef } from './fileRef'
@@ -61,8 +62,12 @@ function UnavailablePayload({ payload }: { payload: UnavailablePayload }) {
 }
 
 function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
+  const resolve = useFileRefs()
   if (isUnavailablePayload(value)) return <UnavailablePayload payload={value} />
   if (value === null || value === undefined) return <span className="value-empty">—</span>
+  // A File ref is a file wherever it turns up — a `choice` over File refs
+  // records the ref (form adapter), and a bare `json` output may hold one.
+  if (!decl.list && isFileRef(value)) return <FileCard refValue={value} />
 
   if (decl.list) {
     if (!Array.isArray(value)) return <ValueBody decl={{ ...decl, list: false }} value={value} />
@@ -78,10 +83,16 @@ function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
   }
 
   switch (decl.type) {
-    case 'file':
+    case 'file': {
       if (isFileRef(value)) return <FileCard refValue={value} />
+      // A bare path (a job/run-level `type: file` output evaluated from a path
+      // string): the ref the run already holds for it, else one built from the
+      // path — a file row with Download either way, never a chip.
+      const resolved = typeof value === 'string' ? resolve(value) : undefined
+      if (resolved) return <FileCard refValue={resolved} />
       if (typeof value === 'string') return <span className="chip">{value}</span>
       return <JsonTree value={value} />
+    }
     case 'table':
       return <TableView decl={decl} value={value} />
     case 'markdown':

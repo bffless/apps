@@ -182,6 +182,31 @@ describe('completeFormStep (hello confirm.review)', () => {
   })
 })
 
+describe('completeFormStep — a choice over File refs records the ref', () => {
+  const POSTER = {
+    path: 'workflows/hello/interactive/runs/run_x/card/0/draw/poster.svg',
+    name: 'poster.svg',
+    contentType: 'image/svg+xml',
+    size: 399,
+    url: '/api/uploads/workflows/hello/interactive/runs/run_x/card/0/draw/poster.svg',
+  }
+  const step: Step = {
+    id: 'pick',
+    uses: 'form',
+    raw: { id: 'pick', uses: 'form', with: { fields: { cover: { type: 'choice', options: [POSTER], required: true }, covers: { type: 'choice', options: [POSTER], list: true } } } },
+  } as unknown as Step
+  const def = { name: 'x', inputs: {}, jobs: { j: { id: 'j', needs: [], steps: [step], outputs: {}, raw: {} } }, outputs: {} } as unknown as Definition
+  const state = { runId: 'run_x', impl: 'hello', workflow: 'interactive', status: 'running', startedAt: 0, inputs: {}, steps: {}, expansions: {}, annotations: [], headless: false } as unknown as RunState
+
+  it('upgrades the picked path to the File ref it named, for one value and for a list', () => {
+    const r = completeFormStep({ step, key: 'j/0/pick', job: 'j', index: 0, def, state, values: { cover: POSTER.path, covers: [POSTER.path] }, at: 1 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.event.outputs.cover).toEqual(POSTER)
+    expect(r.event.outputs.covers).toEqual([POSTER])
+  })
+})
+
 describe('formInitialValues (hello confirm.review)', () => {
   it('resolves expression defaults against the run so far', () => {
     const values = formInitialValues({
@@ -392,7 +417,9 @@ describe('completeFormStep — evaluated options and file fields', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.event.outputs).toEqual({ cover: COVER_A.path, attachment: null })
+    // Picked by path, recorded as the ref (02): everything downstream keeps
+    // the file's name, size, content type and url.
+    expect(result.event.outputs).toEqual({ cover: COVER_A, attachment: null })
   })
 
   it('rejects a value that is not one of the evaluated options', () => {

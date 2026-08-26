@@ -10,6 +10,7 @@
  */
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from './ErrorBoundary'
+import { LastRunPill } from './LastRunPill'
 import { workflowId } from '../lib/coerce'
 import { useDiscoverQuery, useWhoamiQuery } from '../store/workflowApi'
 
@@ -38,7 +39,8 @@ function Rail() {
               {impl.workflows.map((listing) => (
                 <li key={listing.file}>
                   <NavLink className="rail-workflow" to={`/${impl.alias}/${workflowId(listing.file)}`}>
-                    {listing.name}
+                    <LastRunPill impl={impl.alias} workflow={workflowId(listing.file)} glyphOnly />
+                    <span className="rail-workflow-name">{listing.name}</span>
                   </NavLink>
                 </li>
               ))}

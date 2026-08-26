@@ -60,33 +60,18 @@ function meta(state: StepState | undefined): string {
 
 export interface StepChipProps {
   job: string
-  /** The job's own name, shown on a single-step card in place of a strip (08). */
-  jobLabel?: string
   index: number
   step: Step
   mode: 'definition' | 'run'
   /** The step's row in run mode; absent until the scheduler reaches it. */
   state?: StepState
   selected?: boolean
-  /** This chip is its job's whole card: one 60px row rather than a list row. */
-  single?: boolean
   onPick: (key: StepKey, step: Step) => void
   /** The value under the pointer, if this chip is its source or a target (08); absent otherwise. */
   flow?: 'source' | 'target'
 }
 
-export function StepChip({
-  job,
-  jobLabel,
-  index,
-  step,
-  mode,
-  state,
-  selected,
-  single = false,
-  onPick,
-  flow,
-}: StepChipProps) {
+export function StepChip({ job, index, step, mode, state, selected, onPick, flow }: StepChipProps) {
   const key = stepKey(job, index, step.id)
   const run = mode === 'run'
   const outputs = run ? [] : declaredOutputs(step)
@@ -104,7 +89,6 @@ export function StepChip({
       // A step the run has not reached yet has no row, and is queued by definition.
       data-state={status}
       data-flow={flow}
-      data-single={single || undefined}
       aria-pressed={selected ?? false}
       onClick={() => onPick(key, step)}
     >
@@ -117,12 +101,7 @@ export function StepChip({
           </span>
         )}
         <span className="step-label">
-          {single && jobLabel && jobLabel !== label ? (
-            <>
-              <span className="step-title">{jobLabel}</span>
-              <span className="step-id">{label}</span>
-            </>
-          ) : label !== step.id ? (
+          {label !== step.id ? (
             <>
               <span className="step-title">{label}</span>
               <span className="step-id">{step.id}</span>

@@ -47,9 +47,9 @@ import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
-import { BackToRun } from './BackToRun'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
+import { PaneCrumbs } from './PaneCrumbs'
 import { ScriptStepCard } from './ScriptStepCard'
 
 export type Tab = 'Input' | 'Output'
@@ -337,11 +337,13 @@ export interface StepPaneProps {
   live: boolean
   /** Which side opens first — an edge dot's click says (08); a chip's click leaves it on Input. */
   initialTab?: Tab
-  /** Back to the run level (08): the pane's "← Run" button, and Esc anywhere inside it. */
+  /** Up one level (08: run › job › step): the pane's "← <job>" button, and Esc anywhere inside it. */
   onBack?: () => void
+  /** Straight to the run card — the crumb's first segment. */
+  onRun?: () => void
 }
 
-export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack }: StepPaneProps) {
+export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack, onRun }: StepPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && onBack) {
@@ -359,8 +361,13 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
     return (
       <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>
         <header className="pane-head">
-          <BackToRun onBack={onBack} />
-          <h3 className="graph-panel-title">{stepKey}</h3>
+          <span className="pane-title">
+            <PaneCrumbs
+              trail={[{ label: 'Run', onClick: onRun }, { label: parts?.job ?? '?', onClick: onBack }]}
+              current={parts?.stepId ?? stepKey}
+            />
+            <h3 className="graph-panel-title">{stepKey}</h3>
+          </span>
         </header>
         <p className="note">This run has no record of that step.</p>
       </aside>
@@ -368,7 +375,17 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   }
 
   if (live && declared?.uses === 'form' && step.status === 'waiting') {
-    return <FormStepPane def={def} state={state} stepKey={stepKey} onBack={onBack} />
+    return (
+      <FormStepPane
+        def={def}
+        state={state}
+        stepKey={stepKey}
+        trail={[
+          { label: 'Run', onClick: onRun },
+          { label: job ? jobLabel(job) : parts.job, onClick: onBack },
+        ]}
+      />
+    )
   }
 
   // An island is the pane from the moment it starts loading, not only once it
@@ -377,15 +394,22 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   // same reason a read-only form does — a submit from here would land on
   // whatever run the global slice holds live.
   if (live && declared?.uses === 'island' && (step.status === 'running' || step.status === 'waiting')) {
-    return <IslandStepPane state={state} stepKey={stepKey} onBack={onBack} />
+    return (
+      <IslandStepPane
+        state={state}
+        stepKey={stepKey}
+        trail={[
+          { label: 'Run', onClick: onRun },
+          { label: job ? jobLabel(job) : parts.job, onClick: onBack },
+        ]}
+      />
+    )
   }
 
-  // The eyebrow says which job this step belongs to and, for a fanned-out job,
-  // which item is showing — the prototype's "For each video · step 2 of 3".
+  // The crumb: Run › <job> › <step> (· item n of N for a fanned-out job).
   const total = state.expansions[parts.job]?.total
-  const eyebrow = job
-    ? `${jobLabel(job)}${job.matrix !== undefined && total !== undefined ? ` · item ${parts.index + 1} of ${total}` : ''}`
-    : parts.job
+  const jobName = job ? jobLabel(job) : parts.job
+  const item = job?.matrix !== undefined && total !== undefined ? `item ${parts.index + 1} of ${total}` : undefined
 
   // A script has no pane of its own — its live `ctx.log` rides on Output
   // instead, whatever the step's status (a finished script's lines stay until
@@ -398,9 +422,15 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   return (
     <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>
       <header className="pane-head">
-        <BackToRun onBack={onBack} />
         <span className="pane-title">
-          <span className="pane-eyebrow">{eyebrow}</span>
+          <PaneCrumbs
+            trail={[
+              { label: 'Run', onClick: onRun },
+              { label: jobName, onClick: onBack },
+            ]}
+            current={declared ? stepLabel(declared) : parts.stepId}
+            note={item}
+          />
           <h3 className="graph-panel-title">{declared ? stepLabel(declared) : parts.stepId}</h3>
           <span className="pane-key">{stepKey}</span>
         </span>
