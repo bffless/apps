@@ -28,7 +28,8 @@ import { useAppDispatch } from '../../store/hooks'
 import { runEvent } from '../../store/runSlice'
 import { StatusPill } from '../StatusPill'
 import { FieldControl } from '../kickoff/FieldControl'
-import { BackToRun } from './BackToRun'
+import { PaneCrumbs } from './PaneCrumbs'
+import type { Crumb } from './PaneCrumbs'
 
 /** `confirm/0/review` → its parts; a step id cannot contain `/`, so the split is exact. */
 function parseKey(key: StepKey): { job: string; index: number; stepId: string } | null {
@@ -48,12 +49,11 @@ export interface FormStepPaneProps {
   stepKey: StepKey
   /** Test seam: the default uploads through `lib/upload` under scope `inputs`. */
   upload?: (file: File, onProgress: (fraction: number) => void) => Promise<FileRef>
-  /** Up one level (08) — the form keeps waiting; its chip is the way back in. */
-  onBack?: () => void
-  backLabel?: string
+  /** The levels above (08: Run › job) — the form keeps waiting; its chip is the way back in. */
+  trail?: Crumb[]
 }
 
-export function FormStepPane({ def, state, stepKey: key, upload, onBack, backLabel }: FormStepPaneProps) {
+export function FormStepPane({ def, state, stepKey: key, upload, trail = [] }: FormStepPaneProps) {
   const dispatch = useAppDispatch()
   const parts = parseKey(key)
   const step = parts ? def.jobs[parts.job]?.steps.find((candidate) => candidate.id === parts.stepId) : undefined
@@ -126,9 +126,8 @@ export function FormStepPane({ def, state, stepKey: key, upload, onBack, backLab
   return (
     <aside className="step-pane form-step-pane" data-testid="step-pane" aria-label="Step">
       <header className="pane-head">
-        <BackToRun onBack={onBack} label={backLabel} />
         <span className="pane-title">
-          <span className="pane-eyebrow">Run › {def.jobs[parts.job]?.raw?.name ?? parts.job}</span>
+          <PaneCrumbs trail={trail} current={step.id} />
           <h3 className="graph-panel-title">{title}</h3>
           <span className="pane-key">{key}</span>
         </span>

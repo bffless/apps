@@ -23,6 +23,7 @@ import { StatusPill } from '../StatusPill'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import type { Annotation, Definition, RunState, StepKey } from '../../lib/runner/types'
+import { PaneCrumbs } from './PaneCrumbs'
 import { RunOutputs } from './RunOutputs'
 import { RunSummary } from './RunSummary'
 import type { Tab } from './StepPane'
@@ -73,7 +74,7 @@ export function RunPane({
     <aside className="step-pane run-pane" data-testid="run-pane" aria-label="Run">
       <header className="pane-head">
         <span className="pane-title">
-          <span className="pane-eyebrow">Run</span>
+          <PaneCrumbs trail={[]} current="Run" />
           <h3 className="graph-panel-title">{workflowName}</h3>
           <span className="pane-key">{state.runId}</span>
         </span>

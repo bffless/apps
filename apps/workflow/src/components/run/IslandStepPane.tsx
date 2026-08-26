@@ -24,17 +24,17 @@ import type { RunState, StepKey } from '../../lib/runner/types'
 import { useAppSelector } from '../../store/hooks'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
-import { BackToRun } from './BackToRun'
+import { PaneCrumbs } from './PaneCrumbs'
+import type { Crumb } from './PaneCrumbs'
 
 export interface IslandStepPaneProps {
   state: RunState
   stepKey: StepKey
-  /** Up one level (08) — the island unmounts and re-mounts from its handle on return. */
-  onBack?: () => void
-  backLabel?: string
+  /** The levels above (08: Run › job) — the island unmounts and re-mounts from its handle on return. */
+  trail?: Crumb[]
 }
 
-export function IslandStepPane({ state, stepKey: key, onBack, backLabel }: IslandStepPaneProps) {
+export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPaneProps) {
   const display = useAppSelector((s) => s.ui.islandDisplay)
   const handle = useIslandHandle(state.runId, key)
   const log = useIslandLog(state.runId, key)
@@ -76,9 +76,8 @@ export function IslandStepPane({ state, stepKey: key, onBack, backLabel }: Islan
     <aside className="step-pane island-step-pane" data-testid="step-pane" aria-label="Step">
       <section className="island-step" data-testid="island-step">
         <header className="pane-head">
-          <BackToRun onBack={onBack} label={backLabel} />
           <span className="pane-title">
-            <span className="pane-eyebrow">Run › {step.job}</span>
+            <PaneCrumbs trail={trail} current={step.stepId} />
             <h3 className="graph-panel-title">{handle?.title ?? key}</h3>
             <span className="pane-key">{key}</span>
           </span>
