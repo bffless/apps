@@ -38,6 +38,7 @@ import type { ValueRef } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
+import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
@@ -106,19 +107,23 @@ function OutputTab({ step, declared }: { step: StepState; declared?: Step }) {
   if (names.length === 0) return <p className="note">This step declares no outputs.</p>
 
   return (
-    <div className="pane-values">
-      {names.map((name) => {
-        // A pipeline step with no `outputs` map exposes the response itself (03).
-        const value =
-          name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
-        const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
-        const decl =
-          declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
-            ? { type: 'file' }
-            : declaredDecl
-        return <ValueView key={name} label={name} decl={decl} value={value} />
-      })}
-    </div>
+    // Scoped to this one step, so a transcript's seek click always lands on
+    // the player showing in the same step's Output tab (Task 15).
+    <MediaSeekProvider>
+      <div className="pane-values">
+        {names.map((name) => {
+          // A pipeline step with no `outputs` map exposes the response itself (03).
+          const value =
+            name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
+          const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
+          const decl =
+            declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
+              ? { type: 'file' }
+              : declaredDecl
+          return <ValueView key={name} label={name} decl={decl} value={value} />
+        })}
+      </div>
+    </MediaSeekProvider>
   )
 }
 

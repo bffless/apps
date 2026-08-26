@@ -94,9 +94,64 @@ describe('ValueView', () => {
     expect(boolContainer.querySelector('.chip')?.textContent).toBe('false')
   })
 
-  it('shows a renderer badge above the base viewer for a named decl.render', () => {
-    render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={[{ text: 'hi', start: 0, end: 1 }]} />)
-    expect(screen.getByText('renderer: transcript (M2)')).toBeInTheDocument()
+  it('shows an "(unknown)" renderer badge above the base viewer for an unrecognized decl.render', () => {
+    render(<ValueView decl={{ type: 'json', render: 'bogus' }} value={{ a: 1 }} />)
+    expect(screen.getByText('renderer: bogus (unknown)')).toBeInTheDocument()
+    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument()
+  })
+
+  it('shows no badge at all when decl.render is absent', () => {
+    const { container } = render(<ValueView decl={{ type: 'json' }} value={{ a: 1 }} />)
+    expect(container.querySelector('.value-renderer-badge')).toBeNull()
+  })
+
+  it('renders a render: transcript declaration through TranscriptView, with no badge', () => {
+    render(
+      <ValueView
+        decl={{ type: 'json', render: 'transcript' }}
+        value={[{ text: 'hi', start: 0, end: 1 }]}
+      />,
+    )
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'transcript')
+    expect(screen.getByRole('button', { name: '[0:00] hi' })).toBeInTheDocument()
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('renders a render: images declaration through ImagesView, with no badge', () => {
+    const refValue: FileRef = {
+      path: 'p',
+      name: 'pic.png',
+      contentType: 'image/png',
+      size: 10,
+      url: '/api/uploads/pic.png',
+    }
+    const { container } = render(<ValueView decl={{ type: 'json', render: 'images' }} value={[refValue]} />)
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'images')
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(refValue.url)
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('lets the payload-unavailable chip win over a named render: transcript/images', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 300,
+      url: '/api/uploads/report.json',
+    }
+    render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={{ $file: ref, $error: '500' }} />)
+    expect(screen.getByTestId('payload-unavailable')).toBeInTheDocument()
+    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument()
+  })
+
+  it('falls to the base viewer with no badge for render: chart or render: code (Task 16)', () => {
+    render(<ValueView decl={{ type: 'json', render: 'chart' }} value={{ a: 1 }} label="chart-case" />)
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+
+    render(<ValueView decl={{ type: 'json', render: 'code' }} value={{ b: 2 }} label="code-case" />)
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
   })
 
   it('renders a render: island declaration through the island viewer instead of the badge', () => {

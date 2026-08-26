@@ -63,6 +63,33 @@ export function isSafeUrl(rawUrl: string): boolean {
 }
 
 /**
+ * May this url be trusted as a media *sink* — an `<img>`/`<video>`/`<audio>`
+ * `src` a renderer builds itself, rather than the writer-supplied `FileRef.url`
+ * FileCard's own `isSafeUrl` gate covers? Root-relative (already excludes
+ * protocol-relative, checked first) or same-origin absolute http(s): a
+ * cross-origin `src` would leak the member's session cookie to a third party
+ * the same way an untrusted fetch would, so "safe scheme" is not enough here —
+ * unlike `isSafeUrl`, off-origin is refused even for `http(s)`. `false` when
+ * there is no `location` (a non-browser render, e.g. SSR or a headless test
+ * harness with no jsdom `location` polyfill) — nothing to compare the origin
+ * against, so nothing is trusted.
+ */
+export function isSameOriginUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false
+  const normalized = normalizeForSchemeCheck(url)
+  if (PROTOCOL_RELATIVE.test(normalized)) return false
+  if (normalized.startsWith('/')) return true
+  if (!/^https?:/i.test(normalized)) return false
+  const origin = globalThis.location?.origin
+  if (origin === undefined) return false
+  try {
+    return new URL(normalized).origin === origin
+  } catch {
+    return false
+  }
+}
+
+/**
  * 02: the Download action is always `url + (?|&) + download=1`. Lives beside
  * the allow-list because its two callers — `FileCard` (a `file` output's own
  * ref) and `ValueView`'s "payload unavailable" chip (an offloaded `{"$file"}`

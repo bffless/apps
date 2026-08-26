@@ -3,8 +3,9 @@
  * inputs, `form` fields, step/job/run outputs (02): the same closed
  * vocabulary of types, always rendered read-only here (editing is a separate,
  * later concern). `list: true` repeats the base-type dispatch per item; a
- * named `render` replaces the base viewer where one exists — `island` (Task 5)
- * today, the rest (transcript/chart/images/code) in Phase 3 — and otherwise
+ * named `render` replaces the base viewer where one exists — `island` (Task 5),
+ * `transcript`/`images` (Task 15) so far, `chart`/`code` still to come (Task
+ * 16, falls to the base viewer with no badge in the meantime) — and otherwise
  * shows a placeholder badge above the base viewer rather than silently falling
  * back to it.
  *
@@ -23,6 +24,8 @@ import { JsonTree } from './JsonTree'
 import { MarkdownView } from './MarkdownView'
 import { TableView } from './TableView'
 import { IslandView } from './renderers/IslandView'
+import { ImagesView } from './renderers/ImagesView'
+import { TranscriptView } from './renderers/TranscriptView'
 
 export type { ValueDecl }
 
@@ -106,20 +109,44 @@ export function ValueView({
   // Unconditional: `impl ?? useImpl()` would short-circuit the hook away.
   const contextImpl = useImpl()
   const bundle = impl ?? contextImpl
+  const unavailable = isUnavailablePayload(value)
   const island = decl.render === 'island' && typeof decl.src === 'string' && bundle !== null
+  const transcript = decl.render === 'transcript'
+  const images = decl.render === 'images'
+
+  let body
+  if (island && !unavailable) {
+    body = <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
+  } else if (transcript && !unavailable) {
+    body = <TranscriptView value={value} />
+  } else if (images && !unavailable) {
+    body = <ImagesView value={value} />
+  } else {
+    // `chart`/`code` (Task 16) fall through to the base viewer with no badge —
+    // their renderers don't exist yet, so a placeholder would be more
+    // misleading than silence. `island` keeps its historical "(M2)" badge
+    // when it can't dispatch (no src, or no implementation known); any other
+    // named `render` this dispatch doesn't recognise gets the "(unknown)"
+    // badge instead.
+    const isChartOrCode = decl.render === 'chart' || decl.render === 'code'
+    const isIslandFallback = decl.render === 'island'
+    body = (
+      <>
+        {decl.render && !isChartOrCode && (
+          <p className="value-renderer-badge">
+            {`renderer: ${decl.render} (${isIslandFallback ? 'M2' : 'unknown'})`}
+          </p>
+        )}
+        <ValueBody decl={decl} value={value} />
+      </>
+    )
+  }
 
   return (
     <div className="value">
       {label && <p className="value-label">{label}</p>}
       {origin && <span className="chip value-origin">from {origin}</span>}
-      {island && !isUnavailablePayload(value) ? (
-        <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
-      ) : (
-        <>
-          {decl.render && <p className="value-renderer-badge">{`renderer: ${decl.render} (M2)`}</p>}
-          <ValueBody decl={decl} value={value} />
-        </>
-      )}
+      {body}
     </div>
   )
 }

@@ -8,9 +8,19 @@
  * (`lib/url`) before it reaches an `src`/`data`/`href`. A url that fails it
  * is shown as text: the card still reports what it saw, it just refuses to
  * be the thing that navigates or fetches it.
+ *
+ * A `video`/`audio` player also registers its element with `MediaSeekContext`
+ * (Task 15) so a `transcript` renderer's segment click can seek it — a `ref`
+ * callback rather than a `useEffect`, so the element is registered the
+ * instant it mounts and unregistered the instant it's removed, with no
+ * one-tick gap either way. `useMediaSeek()` is safe with no provider in the
+ * tree (a no-op `register`), so every `FileCard` outside a transcript's scope
+ * — an Input tab, a bare `ValueView` in a test — is unaffected.
  */
+import { useCallback, useRef } from 'react'
 import { downloadHref, isSafeUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
+import { useMediaSeek } from './MediaSeekContext'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
@@ -26,9 +36,23 @@ function humanSize(bytes: unknown): string {
 }
 
 function Player({ contentType, url, name }: { contentType?: string; url: string; name: string }) {
+  const { register } = useMediaSeek()
+  const unregister = useRef<(() => void) | null>(null)
+  const mediaRef = useCallback(
+    (el: HTMLVideoElement | HTMLAudioElement | null) => {
+      if (el) {
+        unregister.current = register(el)
+      } else {
+        unregister.current?.()
+        unregister.current = null
+      }
+    },
+    [register],
+  )
+
   if (!contentType) return null
-  if (contentType.startsWith('video/')) return <video controls src={url} />
-  if (contentType.startsWith('audio/')) return <audio controls src={url} />
+  if (contentType.startsWith('video/')) return <video controls src={url} ref={mediaRef} />
+  if (contentType.startsWith('audio/')) return <audio controls src={url} ref={mediaRef} />
   if (contentType.startsWith('image/')) return <img src={url} alt={name} />
   if (contentType === 'application/pdf') return <object type={contentType} data={url} />
   return null
