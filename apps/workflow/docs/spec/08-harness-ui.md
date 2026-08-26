@@ -76,7 +76,7 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
      **results** (the workflow's declared `outputs`, each with renderer + Download), then the
      **summary** (step summaries in job order — the GitHub job-summary page) and the
      **annotations**, each linking into the graph. A live run returns here when it finishes.
-   - **Job card** (the header strip, an edge dot, or an `OUT` row on a graph card): *Input* is
+   - **Job card** (a graph card's header strip, or an edge dot): *Input* is
      what the job waited on — each `needs` job's evaluated outputs; *Output* is the job's own
      declared `outputs:` **evaluated** (aliases over step outputs; a matrix job's collect into
      lists), with `goes to …` chips; the trail lists the job's steps, each a way down. Job

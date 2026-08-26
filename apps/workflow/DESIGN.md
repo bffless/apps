@@ -53,9 +53,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   `.pill` = glyph + word. `data-state` is the headless contract; never restyle it away.
 - **Panel** `.panel` / `.cards` / `.rows` / `.step-pane` / `.graph-scroll`: white, 1px
   `--line`, 10px radius. Rows inside separate with `--hairline`, hover to `--paper`.
-- **Graph**: cards 260px wide, 8px radius, `--line-strong`; single-step job = one 60px row
-  (`CHIP.single`), otherwise a 40px header strip (+20px matrix line, +34px item selector) over
-  42px rows (`CHIP.row`); definition mode adds 20px `OUT name · type` lines. Geometry constants
+- **Graph**: cards 260px wide, 8px radius, `--line-strong`; every job is one shape — a 40px
+  header strip, the job (`.job-head-row`, a button; pressed = ink fill) (+20px matrix line,
+  +34px item selector) over 42px step rows (`CHIP.row`: glyph · name · mono duration);
+  definition mode adds 20px `OUT name · type` lines to a step row. Geometry constants
   live in `src/components/graph/geometry.ts` and must match the CSS. Connectors are straight
   (`H`) on the same row, one cubic bend across rows. Edge dots: 15px, 2px white ring, in = grey,
   out = ink. Selection: ink ring (`box-shadow: inset 0 0 0 1px`) + `--surface-dim`; the whole
@@ -69,9 +70,9 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   `.segmented` toggle (selected = ink), a body of values, then a `.pane-trail`. Every card's
   head opens with `.pane-crumbs` — `Run › <job> › <step> · item n of N`, the shell crumb's own
   shape (mono 11.5px), every segment above the current one a way up; Esc and the pressed
-  chip/strip climb one level. The selection is the URL (`?step=`). On the graph, a group card's
-  header strip is a button (pressed = ink fill), and a run-mode card lists its job `outputs:`
-  as `OUT name` rows (`CARD.out`, 20px each) that open the job card on Output.
+  chip/strip climb one level. The selection is the URL (`?step=`). On the graph, every card's
+  header strip is a button (pressed = ink fill) onto the job card; the edge dots open the job on
+  Input / Output.
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
   `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
   striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image
@@ -82,8 +83,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
 
 ## Layout
 
-- Shell: sticky 56px top bar (brand dot + name · mono breadcrumb · mono whoami), 15rem sticky
-  rail, content padded 30×28. Under 900px the rail stacks above the content and the breadcrumb
+- Shell: sticky 56px top bar (brand dot + name · mono breadcrumb · mono whoami), 16rem sticky
+  rail (`IMPLEMENTATIONS` eyebrow; each implementation a 600 group head, its workflows as 32px
+  rows with the latest run's 11px glyph; the open row = white + hairline ring), content padded
+  30×28. Under 900px the rail stacks above the content and the breadcrumb
   wraps to its own line.
 - Page head: title + sub on the left, `.page-actions` on the right, 1px rule beneath.
 - Run page: head → one-line run bar (pill · mono progress/elapsed · badges) → graph panel →

@@ -223,10 +223,10 @@ describe('RunPage', () => {
       expect(chip('greet/1/say')).toHaveAttribute('aria-pressed', 'true')
     })
 
-    it('opens the job card on Output from a job-output row, and on Input from the left dot', async () => {
+    it('opens the job card on Output from the right dot, and on Input from the left dot', async () => {
       const page = await openRun()
 
-      fireEvent.click(page.querySelector('[data-testid="job-output"][data-output="report"]') as HTMLElement)
+      fireEvent.click(within(page).getByRole('button', { name: 'Output of A slow server job' }))
       let pane = within(page).getByTestId('job-pane')
       expect(within(pane).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
       expect(within(pane).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
