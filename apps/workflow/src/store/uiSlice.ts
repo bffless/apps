@@ -8,6 +8,7 @@ import type { PayloadAction } from '@reduxjs/toolkit'
 import type { RunStatus, StepKey } from '../lib/runner/types'
 
 export interface UiState {
+  /** A read-model of the run page's `?step=` (08) — written by RunPage, never the source of the selection. */
   selectedStep: StepKey | null
   runsStatusFilter: RunStatus | 'all'
   /**

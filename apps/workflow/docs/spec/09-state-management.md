@@ -9,7 +9,8 @@ framework-free module. XState was evaluated and not adopted for v1 (the eval is 
 |---|---|---|
 | Server data — implementations, workflows, runs, step rows, files | **RTK Query** (`workflowApi`) | cache + invalidation; mock-first with MSW like Studio (every `/api/workflow/*` and the discovery fetches have a mock; real and mock go through one `toX()` coercer) |
 | The live run — what is running in *this* tab | `lib/runner` state held in a Redux slice `run`, mutated only by the runner's reducer | the same reducer rebuilds state from rows (Resume) |
-| UI — selected card/pane/chip, theme, filters | Redux slice `ui` + React local state for transient bits | persisted: theme only |
+| UI — the selected step | the run page URL (`?step=<key>`, 08) | linkable; Back climbs out of a step; a navigation to another run drops it |
+| UI — hover highlight, theme, filters | Redux slice `ui` + React local state for transient bits | persisted: theme only |
 
 ## `lib/runner` — pure, tested, no React
 

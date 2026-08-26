@@ -55,9 +55,12 @@ describe('RunPage', () => {
     const page = await openRun()
 
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
-    expect(within(page).getByText('Hello workflow')).toBeInTheDocument()
-    expect(within(page).getByText(FIXTURE_RUN_ID)).toBeInTheDocument()
-    expect(within(page).getByText('user_fixture')).toBeInTheDocument()
+    // Scoped to the header: the run card under the graph names the workflow
+    // and the run too.
+    const head = page.querySelector('.run-head') as HTMLElement
+    expect(within(head).getByText('Hello workflow')).toBeInTheDocument()
+    expect(within(head).getByText(FIXTURE_RUN_ID)).toBeInTheDocument()
+    expect(within(head).getByText('user_fixture')).toBeInTheDocument()
     expect(within(page).getByText('12.5 s')).toBeInTheDocument()
 
     expect(within(page).getAllByTestId('step')).toHaveLength(5)
@@ -118,17 +121,71 @@ describe('RunPage', () => {
     expect(within(pane).getByText(/BUSY/)).toBeInTheDocument()
   })
 
-  it("lists the run's own outputs before the per-job step outputs", async () => {
+  it("lists the run's own outputs, and only those, on the run card's Output", async () => {
     const page = await openRun()
+
+    // No step selected: the run card is what sits under the graph, open on Output.
+    expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+    expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
 
     const outputs = within(page).getByTestId('run-outputs')
     const names = [...outputs.querySelectorAll('[data-output]')].map((el) =>
       el.getAttribute('data-output'),
     )
+    expect(names).toEqual(['report', 'poster', 'lines'])
+  })
 
-    expect(names.slice(0, 3)).toEqual(['report', 'poster', 'lines'])
-    expect(names.slice(3).every((name) => name!.includes('/'))).toBe(true)
-    expect(names).toContain('greet/0/say.line')
+  it("shows the kickoff inputs on the run card's Input", async () => {
+    const page = await openRun()
+    fireEvent.click(within(page).getByRole('tab', { name: 'Input' }))
+
+    const pane = within(page).getByTestId('run-pane')
+    expect(within(pane).getByText('greeting')).toBeInTheDocument()
+    expect(within(pane).getByText('Hello')).toBeInTheDocument()
+    expect(within(pane).getByText('names')).toBeInTheDocument()
+    expect(within(pane).getByText('studio')).toBeInTheDocument()
+  })
+
+  // One level of the taxonomy at a time (08, 2026-08-26): a step's pane
+  // replaces the run card, and there are three ways back.
+  describe('the run card and the step pane take turns', () => {
+    it('replaces the run card with the step pane on a chip click, and restores it on Back', async () => {
+      const page = await openRun()
+
+      fireEvent.click(chip('slow/0/start')!)
+      expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
+      expect(within(page).queryByTestId('run-pane')).not.toBeInTheDocument()
+      expect(within(page).queryByTestId('run-outputs')).not.toBeInTheDocument()
+
+      fireEvent.click(within(page).getByTestId('step-pane-back'))
+      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+      expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
+      expect(chip('slow/0/start')).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('climbs out on Esc, and on the pressed chip clicked again', async () => {
+      const page = await openRun()
+
+      fireEvent.click(chip('slow/0/start')!)
+      fireEvent.keyDown(within(page).getByTestId('step-pane'), { key: 'Escape' })
+      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+
+      fireEvent.click(chip('slow/0/start')!)
+      expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
+      fireEvent.click(chip('slow/0/start')!)
+      expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+    })
+
+    it('opens the step a `?step=` deep link names', async () => {
+      seedFinishedRun()
+      renderApp(`${RUN_PATH}?step=flaky/0/boom`)
+      const page = screen.getByRole('main')
+      await within(page).findByTestId('run-status')
+
+      expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
+      expect(chip('flaky/0/boom')).toHaveAttribute('aria-pressed', 'true')
+      expect(within(page).queryByTestId('run-pane')).not.toBeInTheDocument()
+    })
   })
 
   it('concatenates the step summaries in job order', async () => {

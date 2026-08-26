@@ -22,11 +22,11 @@ export function RunSummary({ def, state }: { def: Definition; state: RunState })
 
   return (
     <section className="run-summary" data-testid="run-summary">
-      <h2 className="section-title">Run summary</h2>
+      <h4 className="section-title">Summary</h4>
       {steps.length === 0 ? (
         <p className="note">No step wrote a summary.</p>
       ) : (
-        <div className="panel summary-panel">
+        <div className="summary-entries">
           {steps.map((step) => (
             <article className="summary-entry" key={step.key}>
               <p className="summary-step">{step.key}</p>

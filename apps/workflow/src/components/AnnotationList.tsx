@@ -16,11 +16,11 @@ export interface AnnotationListProps {
 export function AnnotationList({ annotations, onJump }: AnnotationListProps) {
   return (
     <section className="annotations-section" data-testid="annotations">
-      <h2 className="section-title">Annotations</h2>
+      <h4 className="section-title">Annotations</h4>
       {annotations.length === 0 ? (
         <p className="note">This run produced no annotations.</p>
       ) : (
-        <ul className="annotations panel annotations-panel">
+        <ul className="annotations">
           {annotations.map((annotation, i) => {
             const from = annotation.stepKey
             return (
