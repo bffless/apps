@@ -263,8 +263,17 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
 
     // Run-level annotations are an append-only column; the post-event state
     // already holds the whole array, so the patch is the array (05).
+    //
+    // The rollup rides along on the **same** write (P6). `run.finished` is not
+    // the last word on a run's annotations: the middleware deliberately
+    // dispatches it *first* and only then one `run.annotation` per output
+    // declaration that failed to evaluate (`runnerMiddleware.ts`'s `finish`
+    // case — finishing first is what stops the recursive rescan proposing a
+    // second finish). Rolling up only at `run.finished` would leave Past runs
+    // showing `0 0 0` for a run whose own page lists those warnings. Same
+    // helper, same single patch — no new event, no second write.
     case 'run.annotation':
-      return [patchRun(runId, { annotations: state.annotations })]
+      return [patchRun(runId, { annotations: state.annotations, annotationCounts: annotationCounts(state) })]
 
     // The lease belongs to the tab that was driving: a finished run has no driver.
     case 'run.finished':

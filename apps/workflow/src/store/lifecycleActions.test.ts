@@ -818,10 +818,9 @@ describe('deleteRun', () => {
     await expect(store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))).rejects.toBeInstanceOf(
       RunStoreError,
     )
+    await expect(store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))).rejects.toMatchObject({
+      status: 403,
+    })
     expect(db.runs.has(FIXTURE_RUN_ID)).toBe(true)
-
-    await store
-      .dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))
-      .catch((error) => expect((error as RunStoreError).status).toBe(403))
   })
 })
