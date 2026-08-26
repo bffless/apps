@@ -63,7 +63,8 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
    badges (notice/warning/error counts), actions (Cancel · Resume · Re-run · Delete · View
    workflow file).
 2. The graph (run mode) + step pane.
-3. **Outputs**: top-level outputs first, then per job, each with renderer + Download.
+3. **Outputs**: top-level outputs first, then — behind an "Every step's outputs" disclosure,
+   since the pane already shows them a step at a time — per job, each with renderer + Download.
 4. **Run summary**: step summaries concatenated in job order (GitHub job-summary page).
 5. **Annotations**: the full list, each linking to its step.
 

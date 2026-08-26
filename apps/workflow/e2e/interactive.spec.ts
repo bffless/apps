@@ -170,6 +170,9 @@ test('interactive hello runs an island step end to end against the mock backend'
   // the real browser has one).
   // ---------------------------------------------------------------------
 
+  // These are step-level outputs, which the page folds behind the "Every
+  // step's outputs" disclosure (the pane already shows them a step at a time).
+  await outputsAgain.getByTestId('run-step-outputs').locator('> summary').click()
   for (const render of ['transcript', 'chart', 'code', 'images']) {
     await expect(
       outputsAgain.locator(`[data-testid="renderer"][data-render="${render}"]`).first(),

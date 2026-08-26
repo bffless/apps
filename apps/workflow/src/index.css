@@ -2029,20 +2029,83 @@ button {
   border-top: 1px solid var(--hairline-faint);
 }
 
+/* Every step's outputs, folded: the pane already shows them one step at a
+   time, so this is the long form behind one line. */
+.outputs-steps {
+  margin: 12px 0 8px;
+}
+
+.outputs-steps > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.outputs-steps > summary::-webkit-details-marker {
+  display: none;
+}
+
+.outputs-steps > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.outputs-steps[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.outputs-steps > summary:hover {
+  color: var(--ink);
+}
+
+.outputs-steps-count {
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.outputs-steps > .output-group:first-of-type {
+  margin-top: 10px;
+}
+
+/* Run summary: one panel, one hairline-separated entry per step — the
+   markdown sits directly in the row, not in a box inside a box. */
+.summary-panel {
+  max-width: 1080px;
+}
+
 .summary-entry {
-  padding: 14px 0;
+  padding: 16px 20px 18px;
   border-top: 1px solid var(--hairline);
 }
 
-.summary-entry:first-of-type {
+.summary-entry:first-child {
   border-top: 0;
 }
 
 .summary-step {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   color: var(--ink-mute);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.summary-entry .markdown-view {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 .annotations {
@@ -2054,12 +2117,30 @@ button {
   list-style: none;
 }
 
+.annotations-panel {
+  gap: 0;
+  max-width: 1080px;
+}
+
+.annotations-panel .annotation {
+  padding: 12px 20px;
+  border-top: 1px solid var(--hairline);
+}
+
+.annotations-panel .annotation:first-child {
+  border-top: 0;
+}
+
 .annotation {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   font-size: 13.5px;
+}
+
+.annotation-jump {
+  margin-left: auto;
 }
 
 .annotation-title {

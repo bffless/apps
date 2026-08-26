@@ -20,7 +20,7 @@ export function AnnotationList({ annotations, onJump }: AnnotationListProps) {
       {annotations.length === 0 ? (
         <p className="note">This run produced no annotations.</p>
       ) : (
-        <ul className="annotations">
+        <ul className="annotations panel annotations-panel">
           {annotations.map((annotation, i) => {
             const from = annotation.stepKey
             return (

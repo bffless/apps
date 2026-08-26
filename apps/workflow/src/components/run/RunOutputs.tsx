@@ -11,6 +11,12 @@
  *
  * Top-level outputs *are* persisted (the run row's `outputs`), so those are
  * shown as recorded, each through the renderer the declaration resolves to.
+ *
+ * The per-step half sits behind a disclosure: every step's outputs are one
+ * click away in its own pane already, so listing them all again under the
+ * pane read as a second, louder copy of the same thing (2026-08-26 review).
+ * The rows stay in the DOM either way — the headless driver reads them by
+ * `data-output`, open or closed.
  */
 import { RUN_SCOPE, resolveOutputDecl, stepOutputDecl } from '../../lib/outputDecls'
 import { jobOrder } from '../../lib/runner/graph'
@@ -51,6 +57,10 @@ export function RunOutputs({
 }) {
   const recorded = state.outputs ?? {}
   const topLevel = outputNames(Object.keys(def.outputs ?? {}), recorded)
+  const jobGroups = jobOrder(def)
+    .map((job) => ({ job, steps: stepsOfJob(def, state, job) }))
+    .filter(({ steps }) => steps.length > 0)
+  const stepCount = jobGroups.reduce((sum, { steps }) => sum + steps.length, 0)
 
   return (
     <section className="outputs" data-testid="run-outputs">
@@ -78,33 +88,40 @@ export function RunOutputs({
         </MediaSeekProvider>
       )}
 
-      {jobOrder(def).map((job) => {
-        const steps = stepsOfJob(def, state, job)
-        if (steps.length === 0) return null
-        return (
-          <MediaSeekProvider key={job}>
-            <div className="output-group" data-scope="job" data-job={job}>
-              <h3 className="section-title">{def.jobs[job]?.raw?.name ?? job}</h3>
-              {steps.map((step) => {
-                const declared = def.jobs[job]?.steps.find((s) => s.id === step.stepId)
-                return Object.entries(step.outputs ?? {}).map(([name, value]) => (
-                  <div className="output" data-output={`${step.key}.${name}`} key={`${step.key}.${name}`}>
-                    <ValueView
-                      label={`${step.key} · ${name}`}
-                      decl={withValue(
-                        declared ? stepOutputDecl(declared, name) : { type: 'json' },
-                        value,
-                      )}
-                      value={value}
-                      impl={impl}
-                    />
-                  </div>
-                ))
-              })}
-            </div>
-          </MediaSeekProvider>
-        )
-      })}
+      {jobGroups.length > 0 && (
+        <details className="outputs-steps" data-testid="run-step-outputs">
+          <summary>
+            Every step's outputs
+            <span className="outputs-steps-count">
+              {stepCount} {stepCount === 1 ? 'step' : 'steps'}
+            </span>
+          </summary>
+          {jobGroups.map(({ job, steps }) => (
+            <MediaSeekProvider key={job}>
+              <div className="output-group" data-scope="job" data-job={job}>
+                <h3 className="section-title">{def.jobs[job]?.raw?.name ?? job}</h3>
+                {steps.map((step) => {
+                  const declared = def.jobs[job]?.steps.find((s) => s.id === step.stepId)
+                  return Object.entries(step.outputs ?? {}).map(([name, value]) => (
+                    <div className="output" data-output={`${step.key}.${name}`} key={`${step.key}.${name}`}>
+                      <ValueView
+                        label={name}
+                        tag={step.key}
+                        decl={withValue(
+                          declared ? stepOutputDecl(declared, name) : { type: 'json' },
+                          value,
+                        )}
+                        value={value}
+                        impl={impl}
+                      />
+                    </div>
+                  ))
+                })}
+              </div>
+            </MediaSeekProvider>
+          ))}
+        </details>
+      )}
     </section>
   )
 }
