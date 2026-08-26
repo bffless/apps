@@ -6,6 +6,7 @@ import { buildJobContexts, evalValue } from './contexts'
 import type { Definition, RunState, StepState } from './types'
 import { stepKey } from './types'
 import {
+  dataFlowEdges,
   expandMatrix,
   firstStepWhere,
   isTerminal,
@@ -375,6 +376,42 @@ describe('refsIn', () => {
 
   it('collects only `outputs` reads of steps and needs', () => {
     expect(refsIn('${{ steps.boom.error.code }} ${{ needs.greet.result }}')).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// dataFlowEdges (Task 22): what the graph's hover-highlight draws
+// ---------------------------------------------------------------------------
+
+describe('dataFlowEdges', () => {
+  it('edges a step that reads a needs job output, from the job to the step (hello: slow/start reads greet)', () => {
+    expect(dataFlowEdges(hello)).toContainEqual({
+      from: { job: 'greet', output: 'lines' },
+      to: { job: 'slow', step: 'start' },
+    })
+  })
+
+  it("edges a step whose field default reads another job's output (hello: confirm/review reads slow)", () => {
+    expect(dataFlowEdges(hello)).toContainEqual({
+      from: { job: 'slow', output: 'report' },
+      to: { job: 'confirm', step: 'review' },
+    })
+  })
+
+  it('skips job-level `outputs` aliases — only step-held expressions produce edges', () => {
+    // `slow`'s own job `outputs.report`/`outputs.poster` alias `steps.start.outputs.*`
+    // but are not held by any step, so they contribute no `to: { job: 'slow', step: '' }`
+    // edge of their own — downstream jobs light up via their own `needs.*` reads instead.
+    expect(dataFlowEdges(hello)).not.toContainEqual(
+      expect.objectContaining({ to: expect.objectContaining({ step: '' }) }),
+    )
+  })
+
+  it('edges a same-job step-to-step read (hello: flaky/after reads its own outputs in an annotation)', () => {
+    expect(dataFlowEdges(hello)).toContainEqual({
+      from: { job: 'flaky', step: 'after', output: 'note' },
+      to: { job: 'flaky', step: 'after' },
+    })
   })
 })
 

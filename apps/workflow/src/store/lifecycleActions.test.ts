@@ -13,7 +13,8 @@ import type { Step } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { RunStore } from '../lib/runStore'
-import { db, nextId, stepRowKey } from '../mocks/db'
+import { db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
+import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import {
   flush,
@@ -27,11 +28,14 @@ import {
   virtualClock,
 } from '../test/helloHarness'
 import { makeStore } from './index'
-import { LeaseTransportError, cancelRun, openRun, takeOver } from './lifecycleActions'
+import { LeaseTransportError, cancelRun, deleteRun, openRun, takeOver } from './lifecycleActions'
 import { getOwnerId, startRun } from './runnerActions'
 import { createRegisterFile } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
-import { runClosed, runEvent } from './runSlice'
+import { replayRun } from '../lib/runner/replay'
+import { RunStoreError } from '../lib/runStore'
+import { toDefinition } from '@bffless/workflow-lint/definition'
+import { runClosed, runEvent, runReplaced } from './runSlice'
 import { workflowApi } from './workflowApi'
 
 afterEach(() => {
@@ -757,5 +761,66 @@ describe('openRun — a polling row with no recorded initial response', () => {
     } finally {
       server.events.removeListener('request:start', onRequestStart)
     }
+  })
+})
+
+/**
+ * Delete (Task 20). The rule's own gate is exercised through the real mock —
+ * the point here is what the *thunk* owns either side of it: the run slice
+ * this tab was showing, and the caches that still hold the row.
+ */
+describe('deleteRun', () => {
+  const asOwner = () =>
+    setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+
+  it('drops the record and refreshes the list the row was in', async () => {
+    asOwner()
+    seedFinishedRun()
+    const store = makeStore()
+    const list = store.dispatch(
+      workflowApi.endpoints.listRuns.initiate({ impl: 'hello', workflow: 'hello' }),
+    )
+    expect((await list).data).toHaveLength(1)
+
+    await store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))
+
+    expect(db.runs.has(FIXTURE_RUN_ID)).toBe(false)
+    // The invalidation is what makes the refetch happen; the row is gone from
+    // the *cache*, not merely from the mock's tables.
+    await flush()
+    expect(
+      workflowApi.endpoints.listRuns.select({ impl: 'hello', workflow: 'hello' })(store.getState())
+        .data,
+    ).toEqual([])
+    list.unsubscribe()
+  })
+
+  it('closes the run this tab was showing, and leaves any other one alone', async () => {
+    asOwner()
+    seedFinishedRun()
+    const run = db.runs.get(FIXTURE_RUN_ID)!
+    const state = replayRun(run, [...db.steps.values()], toDefinition(run.definition))
+
+    const store = makeStore()
+    store.dispatch(runReplaced({ state, mode: 'readonly' }))
+    await store.dispatch(deleteRun({ runId: 'run_someone_elses' })).catch(() => {})
+    expect(store.getState().run.state?.runId).toBe(FIXTURE_RUN_ID)
+
+    await store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))
+    expect(store.getState().run.state).toBeNull()
+  })
+
+  it('rethrows the refusal with its status, so the page can say which it was', async () => {
+    setMockUser({ id: 'someone_else', email: 'else@example.test', role: 'user' })
+    seedFinishedRun()
+    const store = makeStore()
+
+    await expect(store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))).rejects.toBeInstanceOf(
+      RunStoreError,
+    )
+    await expect(store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))).rejects.toMatchObject({
+      status: 403,
+    })
+    expect(db.runs.has(FIXTURE_RUN_ID)).toBe(true)
   })
 })

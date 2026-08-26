@@ -137,6 +137,19 @@ describe('KickoffForm', () => {
     expect(uploading).not.toHaveBeenCalled()
   })
 
+  it('renders a tile picker for a choice input whose options carry previews (02)', () => {
+    const tiled: Record<string, InputDef> = {
+      cover: { type: 'choice', options: [{ value: 'a', label: 'A', preview: '/api/uploads/a.png' }] },
+    }
+    const { form, onStart } = renderForm({ inputs: tiled })
+
+    expect(within(form).getByTestId('tile-picker')).toBeInTheDocument()
+    fireEvent.click(within(form).getByTestId('tile'))
+    fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+    expect(onStart).toHaveBeenCalledWith({ cover: 'a' })
+  })
+
   describe('input-specific constraints on submit (02: min/max, pattern/length, choice membership)', () => {
     it('blocks submit and shows an inline error when a number is outside min/max', () => {
       const numberInputs: Record<string, InputDef> = { count: { type: 'number', min: 1, max: 5, default: 1 } }

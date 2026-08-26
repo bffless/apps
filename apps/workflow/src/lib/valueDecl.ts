@@ -15,4 +15,6 @@ export interface ValueDecl {
   columns?: unknown
   /** `render: island` only: the island file, relative to the implementation bundle (04). */
   src?: string
+  /** `render: chart`/`render: code` only: `{ x, y, kind? }` or `{ language }` (02). */
+  mapping?: unknown
 }

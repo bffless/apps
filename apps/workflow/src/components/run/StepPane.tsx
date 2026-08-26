@@ -29,15 +29,18 @@
  * philosophy: an action that cannot be honoured is worse than an action that
  * is not offered yet.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { stepOutputDecl } from '../../lib/outputDecls'
 import { refsIn } from '../../lib/runner/graph'
 import type { ValueRef } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
+import { useAppDispatch } from '../../store/hooks'
+import { valueHovered } from '../../store/uiSlice'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
+import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
@@ -81,6 +84,12 @@ function originOf(job: string, declared: unknown): string | undefined {
   return labels.length > 0 ? labels.join(', ') : undefined
 }
 
+// `origin` above is one joined string per entry — a pipeline step's `with`
+// can read several upstream values into one persisted input (`body.lines`
+// *and* `body.photo`, say), so a single origin chip has no one `ValueRef` to
+// hand `onHover` as the hovered value's identity. Wiring hover here would
+// need one chip per ref, which is a bigger change than this task's `onHover`
+// plumbing; the Output tab below is the hover source Task 22 wires up.
 function InputTab({ job, step, declared }: { job: string; step: StepState; declared?: Step }) {
   const entries = Object.entries(step.inputs ?? {})
   if (entries.length === 0) return <p className="note">This step evaluated no inputs.</p>
@@ -100,25 +109,64 @@ function InputTab({ job, step, declared }: { job: string; step: StepState; decla
   )
 }
 
-function OutputTab({ step, declared }: { step: StepState; declared?: Step }) {
+function OutputTab({
+  step,
+  declared,
+  impl,
+}: {
+  step: StepState
+  declared?: Step
+  /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
+  impl?: string
+}) {
   const recorded = step.outputs ?? {}
   const names = (declared && stepOutputNames(declared)) ?? Object.keys(recorded)
+  const dispatch = useAppDispatch()
+  // A hover this tab leaves mid-flight — the tab switched, another step got
+  // selected (StepPane is remounted with `key={selectedStep}`) — must not
+  // outlive the pointer leaving the DOM node that set it: `onMouseLeave`
+  // never fires for an element that was unmounted out from under the cursor.
+  useEffect(
+    () => () => {
+      dispatch(valueHovered(null))
+    },
+    [dispatch],
+  )
   if (names.length === 0) return <p className="note">This step declares no outputs.</p>
 
   return (
-    <div className="pane-values">
-      {names.map((name) => {
-        // A pipeline step with no `outputs` map exposes the response itself (03).
-        const value =
-          name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
-        const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
-        const decl =
-          declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
-            ? { type: 'file' }
-            : declaredDecl
-        return <ValueView key={name} label={name} decl={decl} value={value} />
-      })}
-    </div>
+    // Scoped to this one step, so a transcript's seek click always lands on
+    // the player showing in the same step's Output tab (Task 15).
+    <MediaSeekProvider>
+      <div className="pane-values">
+        {names.map((name) => {
+          // A pipeline step with no `outputs` map exposes the response itself (03).
+          const value =
+            name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
+          const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
+          const decl =
+            declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
+              ? { type: 'file' }
+              : declaredDecl
+          return (
+            <ValueView
+              key={name}
+              label={name}
+              decl={decl}
+              value={value}
+              impl={impl}
+              // This step's own output is the value's declaring chip (08's
+              // data-flow highlight) — the graph lights up wherever else it's read.
+              onHover={(hovering) =>
+                dispatch(
+                  valueHovered(hovering ? { job: step.job, step: step.stepId, output: name } : null),
+                )
+              }
+            />
+          )
+        })}
+      </div>
+    </MediaSeekProvider>
   )
 }
 
@@ -286,7 +334,7 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
         aria-labelledby={`step-pane-tab-${tab}`}
       >
         {tab === 'Input' && <InputTab job={parts.job} step={step} declared={declared} />}
-        {tab === 'Output' && <OutputTab step={step} declared={declared} />}
+        {tab === 'Output' && <OutputTab step={step} declared={declared} impl={state.impl} />}
         {tab === 'Details' && (
           <DetailsTab
             step={step}

@@ -11,6 +11,7 @@ import {
   toImplementation,
   toRunRow,
   toStepRow,
+  toWhoami,
   unwrapRows,
   workflowId,
 } from './coerce'
@@ -158,6 +159,47 @@ describe('toRunRow', () => {
       inputs: {},
     })
     expect(row._id).toBeUndefined()
+  })
+})
+
+describe('toRunRow — annotationCounts (Task 20)', () => {
+  it('reads the rollup, completing a partial one with zeroes', () => {
+    expect(toRunRow({ runId: 'r', annotationCounts: { warning: 2 } }).annotationCounts).toEqual({
+      error: 0,
+      warning: 2,
+      notice: 0,
+    })
+  })
+
+  it('parses it back from a stringified json column', () => {
+    expect(
+      toRunRow({ runId: 'r', annotationCounts: '{"error":1,"warning":0,"notice":3}' })
+        .annotationCounts,
+    ).toEqual({ error: 1, warning: 0, notice: 3 })
+  })
+
+  it('leaves it absent on a row written before the column existed', () => {
+    expect(toRunRow({ runId: 'r' })).not.toHaveProperty('annotationCounts')
+    expect(toRunRow({ runId: 'r', annotationCounts: null })).not.toHaveProperty('annotationCounts')
+  })
+})
+
+describe('toWhoami', () => {
+  it('reads the session user', () => {
+    expect(toWhoami({ id: 'user_1', email: 'a@b.test', role: 'admin' })).toEqual({
+      id: 'user_1',
+      email: 'a@b.test',
+      role: 'admin',
+    })
+  })
+
+  it("treats CE's empty strings for an API-key caller as unknown, not as values", () => {
+    expect(toWhoami({ id: '', email: '', role: '' })).toEqual({ id: '' })
+  })
+
+  it('never throws on a body that is not an object', () => {
+    expect(toWhoami(null)).toEqual({ id: '' })
+    expect(toWhoami('nope')).toEqual({ id: '' })
   })
 })
 

@@ -31,6 +31,22 @@ import type {
   StepStatus,
 } from './types'
 
+/**
+ * The run's annotations, rolled up per level at `run.finished` (Task 20).
+ *
+ * Past runs lists **run rows** and nothing else, but annotations live on the
+ * *step* rows — so an honest column needs this one derived column, written at
+ * the single moment the whole run is known. Always all three levels, `0`
+ * included: an absent count and a zero count mean different things (a row from
+ * before this column existed, versus a run that annotated nothing), and the
+ * list draws them differently.
+ */
+export interface AnnotationCounts {
+  error: number
+  warning: number
+  notice: number
+}
+
 /** `workflow_runs` (05). */
 export interface RunRow {
   runId: string
@@ -51,6 +67,8 @@ export interface RunRow {
   leaseUntil?: number | null
   outputs?: Record<string, unknown> | null
   annotations?: Annotation[] | null
+  /** Derived at `run.finished` (Task 20); absent on rows written before it existed. */
+  annotationCounts?: AnnotationCounts | null
 }
 
 /** `workflow_run_steps` — one row per (job, matrix index, step); the key is `<job>/<index>/<step>`. */
@@ -94,6 +112,19 @@ export interface WriteContext {
    * write.
    */
   outputsOverride?: Record<string, unknown>
+}
+
+/**
+ * Every annotation the run ended with — its own, plus each step's — counted by
+ * level. Read off the post-event state rather than accumulated as events go by,
+ * for the same reason every other patch here is: the state is the truth about
+ * what the run holds, and a running tally could drift from it after a replay.
+ */
+function annotationCounts(state: RunState): AnnotationCounts {
+  const counts: AnnotationCounts = { error: 0, warning: 0, notice: 0 }
+  const all = [...state.annotations, ...Object.values(state.steps).flatMap((step) => step.annotations)]
+  for (const annotation of all) counts[annotation.level] += 1
+  return counts
 }
 
 function upsert(runId: string, key: StepKey, patch: Partial<StepRow>): PersistWrite {
@@ -232,8 +263,17 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
 
     // Run-level annotations are an append-only column; the post-event state
     // already holds the whole array, so the patch is the array (05).
+    //
+    // The rollup rides along on the **same** write (P6). `run.finished` is not
+    // the last word on a run's annotations: the middleware deliberately
+    // dispatches it *first* and only then one `run.annotation` per output
+    // declaration that failed to evaluate (`runnerMiddleware.ts`'s `finish`
+    // case — finishing first is what stops the recursive rescan proposing a
+    // second finish). Rolling up only at `run.finished` would leave Past runs
+    // showing `0 0 0` for a run whose own page lists those warnings. Same
+    // helper, same single patch — no new event, no second write.
     case 'run.annotation':
-      return [patchRun(runId, { annotations: state.annotations })]
+      return [patchRun(runId, { annotations: state.annotations, annotationCounts: annotationCounts(state) })]
 
     // The lease belongs to the tab that was driving: a finished run has no driver.
     case 'run.finished':
@@ -241,6 +281,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
         patchRun(runId, {
           status: event.status,
           outputs: ctx.outputsOverride ?? event.outputs,
+          annotationCounts: annotationCounts(state),
           finishedAt: event.at,
           leaseOwner: null,
           leaseUntil: null,

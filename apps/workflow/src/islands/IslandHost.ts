@@ -492,6 +492,9 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
     }
 
     bridge.onopenlink = async ({ url }) => {
+      // Navigation the member's own click drives, not a byte sink the harness
+      // reads on their behalf — `isSafeUrl`'s plain allow-list is the right
+      // question here, not the stricter same-origin media-sink gate (apps#363).
       if (!isSafeUrl(url)) return { isError: true }
       deps.openLink(url)
       return {}

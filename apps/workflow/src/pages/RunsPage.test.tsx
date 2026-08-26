@@ -8,8 +8,8 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
-import { seedFinishedRun } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
+import { db, nextId, seedFinishedRun } from '../mocks/db'
+import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
 
@@ -82,5 +82,44 @@ describe('RunsPage', () => {
 
     const page = screen.getByRole('main')
     expect(await within(page).findByText('No runs yet')).toBeInTheDocument()
+  })
+
+  /**
+   * The Annotations column (Task 20): the run row's own `annotationCounts`
+   * rollup, written at `run.finished`. A row from before the rollup existed
+   * carries no such column — and an empty cell is the honest answer there, not
+   * three zeroes it would be inventing.
+   */
+  describe('the Annotations column', () => {
+    it('shows the rolled-up counts of a run', async () => {
+      seedFinishedRun()
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: fixtureRow() })
+      const cell = within(row).getByTestId('run-annotations')
+
+      expect([...cell.querySelectorAll('.badge')].map((el) => el.textContent)).toEqual([
+        '0',
+        '1',
+        '1',
+      ])
+      expect(cell.querySelector('.badge-warning')).toHaveTextContent('1')
+      expect(cell.querySelector('.badge-notice')).toHaveTextContent('1')
+      expect(cell.querySelector('.badge-error')).toHaveTextContent('0')
+    })
+
+    it('leaves the cell empty for a row written before the rollup existed', async () => {
+      const pre = { ...FINISHED_RUN.run, runId: 'run_prem2', _id: nextId() }
+      delete pre.annotationCounts
+      db.runs.set('run_prem2', pre)
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: /run_prem2/ })
+
+      expect(within(row).queryByTestId('run-annotations')).not.toBeInTheDocument()
+      expect(within(row).getAllByText('—').length).toBeGreaterThan(0)
+    })
   })
 })

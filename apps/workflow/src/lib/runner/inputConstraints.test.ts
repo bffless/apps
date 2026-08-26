@@ -76,5 +76,13 @@ describe('validateInputConstraints', () => {
       const def = { type: 'choice', options: '${{ inputs.dynamicOptions }}' }
       expect(validateInputConstraints(def, 'anything')).toBeUndefined()
     })
+
+    it('reports unresolved options, not "not one of", when the evaluated list is empty', () => {
+      // `formFieldDefs` leaves a field with `options: []` when its expression
+      // did not evaluate to a list — readable and empty, not the same fact
+      // as readable and simply lacking this value.
+      const def = { type: 'choice', options: [] }
+      expect(validateInputConstraints(def, 'anything')).toBe("this field's options could not be resolved")
+    })
   })
 })

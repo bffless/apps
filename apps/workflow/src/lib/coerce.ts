@@ -8,7 +8,7 @@
  * column yields the documented default rather than an exception, because a
  * half-written row must still render as a run record (08 degraded states).
  */
-import type { RunRow, StepRow } from './runner/rows'
+import type { AnnotationCounts, RunRow, StepRow } from './runner/rows'
 import type { Annotation, FileRef, RunStatus, StepError, StepKind, StepStatus } from './runner/types'
 
 // ---------------------------------------------------------------------------
@@ -168,6 +168,19 @@ function annotations(value: unknown): Annotation[] {
   })
 }
 
+/**
+ * The `annotationCounts` rollup, or `undefined` when the row has none — a run
+ * written before the column existed (M1) is not a run with zero annotations,
+ * and Past runs shows the two differently. A present-but-partial object is
+ * completed with zeroes rather than dropped: the column is derived, so a
+ * missing level genuinely means none of that level.
+ */
+function annotationCounts(value: unknown): AnnotationCounts | undefined {
+  const c = optionalRecord(value)
+  if (!c) return undefined
+  return { error: num(c.error), warning: num(c.warning), notice: num(c.notice) }
+}
+
 function stepError(value: unknown): StepError | null {
   const e = optionalRecord(value)
   if (!e) return null
@@ -268,9 +281,34 @@ export function toImplementation(alias: string, preview: boolean, raw: unknown):
   }
 }
 
+/**
+ * The session user, as `api/workflow/whoami` reports it (Task 19) — CE's
+ * `user.*` expression roots, straight through. An API-key caller has no
+ * session behind it, and CE resolves those roots to empty strings rather than
+ * omitting them: an empty string is "unknown", never an id or a role, so it
+ * never reaches the app as one.
+ */
+export interface Whoami {
+  id: string
+  email?: string
+  role?: string
+}
+
+export function toWhoami(raw: unknown): Whoami {
+  // Not a Data Table row — the rule answers `user.*` directly — so this reads
+  // the body itself rather than going through `fieldsOf`.
+  const f = obj(raw)
+  return {
+    id: optionalStr(f.id) ?? '',
+    ...(optionalStr(f.email) ? { email: str(f.email) } : {}),
+    ...(optionalStr(f.role) ? { role: str(f.role) } : {}),
+  }
+}
+
 export function toRunRow(raw: unknown): ServerRunRow {
   const f = fieldsOf(raw)
   const id = recordId(raw)
+  const counts = annotationCounts(f.annotationCounts)
   return {
     ...(id ? { _id: id } : {}),
     runId: str(f.runId),
@@ -290,6 +328,7 @@ export function toRunRow(raw: unknown): ServerRunRow {
     leaseUntil: optionalNum(f.leaseUntil),
     outputs: optionalRecord(f.outputs),
     annotations: annotations(f.annotations),
+    ...(counts === undefined ? {} : { annotationCounts: counts }),
   }
 }
 

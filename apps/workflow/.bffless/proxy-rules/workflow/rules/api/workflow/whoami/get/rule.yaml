@@ -1,0 +1,18 @@
+targetUrl: pipeline
+order: 17
+pipeline:
+  name: Who am I
+  description: "GET -> { id, email, role } for the calling session. The one thing the SPA cannot work out for itself: whether this member owns a run (05 access) and whether they are an admin. `user.*` resolves to null for a caller CE could not tie to a person (an API key with no user), and a null renders as an empty string — so the reader must tolerate empty fields rather than assume three non-empty ones."
+  steps:
+    - id: me
+      name: me
+      handler: response_handler
+      config:
+        body: '{"id":"{{user.id}}","email":"{{user.email}}","role":"{{user.role}}"}'
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "The calling member's identity. no-store: it is per-session, and a cached answer would be someone else's."

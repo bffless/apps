@@ -1,10 +1,16 @@
 /**
  * The waiting form step's pane (03 `form` step, 08: "the pane is the form").
  *
- * Same renderer as the kickoff form (`FieldControl`), but with no `upload`
- * wired in — Decision 1: file fields in a mid-run form are M2, so `FieldControl`
- * falls back to its own "not supported here yet" notice rather than this pane
- * inventing a picker.
+ * Same renderer as the kickoff form (`FieldControl`) — including its uploads:
+ * a mid-run `file` field uploads under the run's own implementation/workflow
+ * with scope `inputs` (D18), the same scope the kickoff form uses, because a
+ * mid-run answer is a human's input like any other and outlives the step that
+ * asked for it. (`upload` is a prop only so a test can hand in a fake; the
+ * default is the real `uploadFile`.)
+ *
+ * The fields are `formFieldDefs`', not the raw `with.fields`: a field's
+ * `options` may be an expression over the run so far (03), and the form must
+ * offer exactly the options its submit will then be checked against.
  *
  * Validation and the resulting event are entirely `completeFormStep`'s
  * (Task 10/lib/runner/adapters/form.ts) — this component's only two jobs are
@@ -13,11 +19,11 @@
  * schedule onward; otherwise the per-field errors it returned are shown. This
  * pane never persists anything itself.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { InputDef } from '@bffless/workflow-lint/definition'
-import { completeFormStep, formInitialValues } from '../../lib/runner/adapters/form'
-import type { Definition, RunState, StepKey } from '../../lib/runner/types'
+import { completeFormStep, formFieldDefs, formInitialValues } from '../../lib/runner/adapters/form'
+import type { Definition, FileRef, RunState, StepKey } from '../../lib/runner/types'
+import { uploadFile } from '../../lib/upload'
 import { useAppDispatch } from '../../store/hooks'
 import { runEvent } from '../../store/runSlice'
 import { StatusPill } from '../StatusPill'
@@ -35,18 +41,15 @@ function obj(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-/** `with.fields` — the field definitions, which double as the output types (03). */
-function fieldsOf(withDecl: unknown): Record<string, InputDef> {
-  return obj(obj(withDecl).fields) as Record<string, InputDef>
-}
-
 export interface FormStepPaneProps {
   def: Definition
   state: RunState
   stepKey: StepKey
+  /** Test seam: the default uploads through `lib/upload` under scope `inputs`. */
+  upload?: (file: File, onProgress: (fraction: number) => void) => Promise<FileRef>
 }
 
-export function FormStepPane({ def, state, stepKey: key }: FormStepPaneProps) {
+export function FormStepPane({ def, state, stepKey: key, upload }: FormStepPaneProps) {
   const dispatch = useAppDispatch()
   const parts = parseKey(key)
   const step = parts ? def.jobs[parts.job]?.steps.find((candidate) => candidate.id === parts.stepId) : undefined
@@ -59,6 +62,16 @@ export function FormStepPane({ def, state, stepKey: key }: FormStepPaneProps) {
   )
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const impl = state.impl
+  const workflow = state.workflow
+  const uploading = useMemo(
+    () =>
+      upload ??
+      ((file: File, onProgress: (fraction: number) => void) =>
+        uploadFile({ impl, workflow, scope: 'inputs', file, onProgress })),
+    [upload, impl, workflow],
+  )
+
   if (!parts || !step || !stepState) {
     return (
       <aside className="step-pane" data-testid="step-pane" aria-label="Step">
@@ -69,7 +82,7 @@ export function FormStepPane({ def, state, stepKey: key }: FormStepPaneProps) {
   }
 
   const withDecl = obj(step.raw?.with)
-  const fields = fieldsOf(withDecl)
+  const fields = formFieldDefs({ step, def, state, job: parts.job, index: parts.index })
   const fieldNames = Object.keys(fields)
   const title = typeof withDecl.title === 'string' && withDecl.title !== '' ? withDecl.title : step.id
   const description =
@@ -124,6 +137,7 @@ export function FormStepPane({ def, state, stepKey: key }: FormStepPaneProps) {
             def={fields[name]!}
             value={values[name] ?? null}
             onChange={(v) => setValue(name, v)}
+            upload={uploading}
             error={errors[name]}
           />
         ))}

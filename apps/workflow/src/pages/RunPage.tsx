@@ -32,7 +32,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { AnnotationList } from '../components/AnnotationList'
 import { EmptyState } from '../components/EmptyState'
@@ -51,12 +51,30 @@ import { replayRun } from '../lib/runner/replay'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
-import { islandDisplayChanged, stepSelected } from '../store/uiSlice'
-import { workflowApi, useGetRunQuery } from '../store/workflowApi'
+import { RunStoreError } from '../lib/runStore'
+import { LeaseTransportError, cancelRun, deleteRun, openRun, takeOver } from '../store/lifecycleActions'
+import { islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
+import { workflowApi, useGetRunQuery, useWhoamiQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
 const POLL_MS = 5_000
+
+/** The roles the delete rule lets past its owner check (05 access) — mirrored, never trusted. */
+const ADMIN_ROLES = ['admin', 'owner']
+
+/**
+ * A refusal from the delete rule, in the words of the person who asked. The
+ * three statuses mean three different things and only one of them is "try
+ * again", so a single "couldn't delete" message would hide the fix.
+ */
+function deleteMessage(error: unknown): string {
+  if (error instanceof RunStoreError) {
+    if (error.status === 403) return "Only the run's owner or an admin can delete it."
+    if (error.status === 409) return 'Cancel the run first, then delete it.'
+    if (error.status === 404) return 'This run is already gone.'
+  }
+  return error instanceof Error ? error.message : 'The run could not be deleted.'
+}
 
 /**
  * The definition the run stored, or the one its YAML snapshot parses to.
@@ -235,7 +253,15 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
 export function RunPage() {
   const { impl, workflow, runId } = useParams()
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const selectedStep = useAppSelector((state) => state.ui.selectedStep)
+
+  // Who we are, for Delete's owner gate. Advisory only: the rule re-reads
+  // `user.*` server-side, so the worst a wrong answer here can do is offer a
+  // button the server then refuses.
+  const { data: me } = useWhoamiQuery()
+  const [deleting, setDeleting] = useState(false)
+  const [deleteFailed, setDeleteFailed] = useState<string | null>(null)
 
   // Selection is scoped to the run being viewed (fix round 1): `uiSlice.
   // selectedStep` is process-global and step keys repeat identically across
@@ -247,6 +273,11 @@ export function RunPage() {
   // block *that* run's own waiting-step auto-select below (`!selectedStep`).
   useEffect(() => {
     dispatch(stepSelected(null))
+    // The hovered value is the same process-global, step-key-repeats-across-
+    // runs shape `selectedStep` is (fix round 1, finding 1) — a hover left
+    // over from the run just navigated away from would highlight a graph
+    // chip on the new run that never produced it.
+    dispatch(valueHovered(null))
   }, [runId, dispatch])
 
   // The live path (Task 18): this tab is driving `runId` right now.
@@ -433,6 +464,38 @@ export function RunPage() {
     ? `/${impl ?? sliceState!.impl}/${workflow ?? sliceState!.workflow}`
     : `/${impl ?? run!.impl}/${workflow ?? run!.workflow}`
 
+  const shownRunId = isLive ? sliceState!.runId : run!.runId
+  const shownStatus = state?.status ?? run!.status
+  // A run this tab started has no `startedBy` in the slice (only a *replayed*
+  // one does — `replayRun` carries the row's), and it does not need one: the
+  // session that started it is the session reading this.
+  const startedBy = isLive ? (sliceState!.startedBy ?? me?.id) : run!.startedBy
+
+  // The affordance mirrors the rule's own gate (05 access), so the button is
+  // only ever offered where the answer is likely yes — a refusal is still a
+  // normal outcome, and `deleteFailed` below is where it lands.
+  const canDelete =
+    shownStatus !== 'running' &&
+    me !== undefined &&
+    (startedBy === me.id || ADMIN_ROLES.includes((me.role ?? '').toLowerCase()))
+
+  async function onDelete() {
+    setDeleting(true)
+    setDeleteFailed(null)
+    try {
+      await dispatch(deleteRun({ runId: shownRunId }))
+      // Only on success, and only here: the thunk owns the caches, the page
+      // owns where to go next (there is no run left to be on).
+      void navigate(`${base}/runs`)
+    } catch (error) {
+      // Deliberately not in a `finally`: the success path has navigated away
+      // and this component is gone, so re-enabling the button is the failure
+      // path's business alone.
+      setDeleteFailed(deleteMessage(error))
+      setDeleting(false)
+    }
+  }
+
   // `render: island` needs to know which bundle an island file lives in,
   // and this page is the last place that fact is unambiguous.
   return (
@@ -444,19 +507,27 @@ export function RunPage() {
       <section className="page">
         <RunHeader
           workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
-          runId={isLive ? sliceState!.runId : run!.runId}
+          runId={shownRunId}
           startedBy={isLive ? undefined : run!.startedBy}
           startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
           finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
           headless={isLive ? sliceState!.headless : run!.headless}
           yaml={isLive ? sliceMeta!.yaml : run!.yaml}
-          status={state?.status ?? run!.status}
+          status={shownStatus}
           annotations={annotations}
           base={base}
           progress={state ? stepProgress(state) : undefined}
           live={isLive}
           onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
+          onDelete={canDelete ? () => void onDelete() : undefined}
+          deleting={deleting}
         />
+
+        {deleteFailed && (
+          <p className="note banner" role="alert" data-testid="run-delete-failed">
+            {deleteFailed}
+          </p>
+        )}
 
         {isLive && paused && <PausedBanner message={paused} />}
         {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
@@ -497,7 +568,7 @@ export function RunPage() {
               )}
             </div>
 
-            <RunOutputs def={def} state={state} />
+            <RunOutputs def={def} state={state} impl={state.impl} />
             <RunSummary def={def} state={state} />
             <AnnotationList
               annotations={annotations}

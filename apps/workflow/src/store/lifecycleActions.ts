@@ -22,16 +22,16 @@ import { replayRun } from '../lib/runner/replay'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepStatus } from '../lib/runner/types'
 import { createRunStore } from '../lib/runStore'
-import type { RunStore } from '../lib/runStore'
+import type { RunDeleter, RunStore } from '../lib/runStore'
 import type { AppThunk, RootState } from './index'
 import { runnerControllers } from './runnerMiddleware'
 import { getOwnerId } from './runnerActions'
-import { runEvent, runOpened, runReplaced } from './runSlice'
+import { runClosed, runEvent, runOpened, runReplaced } from './runSlice'
 import type { RunMeta } from './runSlice'
 import { workflowApi } from './workflowApi'
 
 /** The app's real `RunStore` — fresh per module, matching `defaultRunnerDeps()` (store/index.ts). */
-const runStore: RunStore = createRunStore(httpJsonWithReauth)
+const runStore: RunStore & RunDeleter = createRunStore(httpJsonWithReauth)
 
 const NON_TERMINAL_STEP: ReadonlySet<StepStatus> = new Set(['queued', 'running', 'polling', 'waiting'])
 
@@ -210,5 +210,33 @@ export function retryRun(): AppThunk<Promise<void>> {
     } finally {
       read.unsubscribe()
     }
+  }
+}
+
+/**
+ * Delete one run and everything it left behind (05 retention): the rule drops
+ * the run's storage prefix, its `workflow_files` rows, its step rows and the
+ * run row, in that order, behind its own 404/409/403 gate.
+ *
+ * The gate is the *server's* — this thunk asks and reports. `RunPage.tsx` only
+ * offers the button when the answer is likely to be yes (a terminal run, owned
+ * or admin), but a refusal is a normal outcome and is rethrown as the
+ * `RunStoreError` it arrived as, status and all, so the page can say which of
+ * the three refusals it was rather than "something went wrong".
+ *
+ * Navigating away is the **caller's** job: this module has no router, and a
+ * thunk that redirected would be deciding what the page after the deletion is.
+ * What it does own is the state the deleted run leaves behind — the run slice,
+ * if this tab was showing it, and the two RTK Query caches that still hold the
+ * row (the list, and the run's own entry).
+ */
+export function deleteRun(a: { runId: string }): AppThunk<Promise<void>> {
+  return async (dispatch, getState) => {
+    await runStore.deleteRun(a.runId)
+    // Only ever the run *this* tab holds: `runClosed` resets the slice
+    // outright, and a run terminal enough to delete has no controllers left to
+    // abort (the `status !== 'running'` gate is what makes that true).
+    if (getState().run.state?.runId === a.runId) dispatch(runClosed())
+    dispatch(workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: a.runId }]))
   }
 }

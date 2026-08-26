@@ -4,12 +4,23 @@
  * consumers depend on: the file card's Download link always ends `download=1`,
  * and a named `render` shows the M2 placeholder badge above the base viewer.
  */
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
 import { ValueView } from './ValueView'
 import type { FileRef } from '../../lib/runner/types'
+
+// jsdom has no canvas (ChartView.test.tsx explains why); ValueView's own
+// dispatch test only needs to know `render: chart` reaches ChartView, not
+// that uPlot can actually draw into a headless DOM.
+vi.mock('uplot', () => {
+  class MockUPlot {
+    static paths = { bars: () => undefined }
+    destroy() {}
+  }
+  return { default: MockUPlot }
+})
 
 describe('ValueView', () => {
   it('renders null as an em dash', () => {
@@ -38,6 +49,42 @@ describe('ValueView', () => {
     // FileCard always shows name, human size, and contentType regardless of player.
     expect(screen.getByText('clip.mp4')).toBeInTheDocument()
     expect(screen.getByText('video/mp4')).toBeInTheDocument()
+  })
+
+  // apps#363: the player is a stricter sink than the Download link — a
+  // cross-origin `http(s)` url would leak the member's session cookie to a
+  // third party the same way an untrusted fetch would, so it fails
+  // `isSameOriginUrl` even though `isSafeUrl` (the Download link's own gate)
+  // allows any http(s) scheme.
+  it('renders no player for a cross-origin File ref, but still offers Download', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      size: 1,
+      url: 'https://other.example/clip.mp4',
+    }
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
+
+    expect(container.querySelector('video')).toBeNull()
+    const download = screen.getByText('Download') as HTMLAnchorElement
+    expect(download.tagName).toBe('A')
+    expect(download.getAttribute('href')).toBe(`${ref.url}?download=1`)
+  })
+
+  it('renders the player for a same-origin absolute File ref url', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      size: 1,
+      url: `${window.location.origin}/api/uploads/clip.mp4`,
+    }
+    const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
+
+    const video = container.querySelector('video')
+    expect(video).toBeTruthy()
+    expect(video?.getAttribute('src')).toBe(ref.url)
   })
 
   it('appends download=1 with & when the url already has a query string', () => {
@@ -94,9 +141,113 @@ describe('ValueView', () => {
     expect(boolContainer.querySelector('.chip')?.textContent).toBe('false')
   })
 
-  it('shows a renderer badge above the base viewer for a named decl.render', () => {
-    render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={[{ text: 'hi', start: 0, end: 1 }]} />)
-    expect(screen.getByText('renderer: transcript (M2)')).toBeInTheDocument()
+  it('shows an "(unknown)" renderer badge above the base viewer for an unrecognized decl.render', () => {
+    render(<ValueView decl={{ type: 'json', render: 'bogus' }} value={{ a: 1 }} />)
+    expect(screen.getByText('renderer: bogus (unknown)')).toBeInTheDocument()
+    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument()
+  })
+
+  it('shows no badge at all when decl.render is absent', () => {
+    const { container } = render(<ValueView decl={{ type: 'json' }} value={{ a: 1 }} />)
+    expect(container.querySelector('.value-renderer-badge')).toBeNull()
+  })
+
+  it('renders a render: transcript declaration through TranscriptView, with no badge', () => {
+    render(
+      <ValueView
+        decl={{ type: 'json', render: 'transcript' }}
+        value={[{ text: 'hi', start: 0, end: 1 }]}
+      />,
+    )
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'transcript')
+    expect(screen.getByRole('button', { name: '[0:00] hi' })).toBeInTheDocument()
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('renders a render: images declaration through ImagesView, with no badge', () => {
+    const refValue: FileRef = {
+      path: 'p',
+      name: 'pic.png',
+      contentType: 'image/png',
+      size: 10,
+      url: '/api/uploads/pic.png',
+    }
+    const { container } = render(<ValueView decl={{ type: 'json', render: 'images' }} value={[refValue]} />)
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'images')
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(refValue.url)
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('lets the payload-unavailable chip win over a named render: transcript/images', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 300,
+      url: '/api/uploads/report.json',
+    }
+    render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={{ $file: ref, $error: '500' }} />)
+    expect(screen.getByTestId('payload-unavailable')).toBeInTheDocument()
+    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument()
+  })
+
+  // Final review, finding 3: the badge used to say "(unknown)" on a *known*
+  // renderer just because its payload was unavailable — worse than useless,
+  // since it misnamed a renderer this dispatch understands perfectly well.
+  // The chip alone says everything there is to say here.
+  it('shows the payload-unavailable chip with no badge at all for a known renderer (transcript)', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'transcript.json',
+      contentType: 'application/json',
+      size: 300,
+      url: '/api/uploads/transcript.json',
+    }
+    render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={{ $file: ref, $error: '500' }} />)
+    expect(screen.getByTestId('payload-unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the "(unknown)" badge alongside the chip for an unrecognised render name with an unavailable payload', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 300,
+      url: '/api/uploads/report.json',
+    }
+    render(<ValueView decl={{ type: 'json', render: 'bogus' }} value={{ $file: ref, $error: '500' }} />)
+    expect(screen.getByTestId('payload-unavailable')).toBeInTheDocument()
+    expect(screen.getByText('renderer: bogus (unknown)')).toBeInTheDocument()
+  })
+
+  it('renders a render: chart declaration through ChartView, with no badge', () => {
+    render(
+      <ValueView
+        decl={{ type: 'json', render: 'chart', mapping: { x: 'line', y: 'chars' } }}
+        value={[
+          { line: 'a', chars: 13 },
+          { line: 'b', chars: 14 },
+        ]}
+      />,
+    )
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'chart')
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('renders a render: code declaration through CodeView, with no badge', () => {
+    render(
+      <ValueView
+        decl={{ type: 'string', render: 'code', mapping: { language: 'javascript' } }}
+        value="const x = 1"
+      />,
+    )
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'code')
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
   })
 
   it('renders a render: island declaration through the island viewer instead of the badge', () => {
@@ -277,5 +428,28 @@ describe('ValueView', () => {
     ).not.toThrow()
     expect(screen.getByText('Intro')).toBeInTheDocument()
     expect(screen.getAllByText('—')).toHaveLength(2)
+  })
+
+  it('reports hover start/end through onHover, mouse only (08 data-flow highlight)', () => {
+    const onHover = vi.fn()
+    const { container } = render(
+      <ValueView decl={{ type: 'string' }} value="hi" onHover={onHover} />,
+    )
+    const wrapper = container.querySelector('.value')!
+
+    fireEvent.mouseEnter(wrapper)
+    expect(onHover).toHaveBeenLastCalledWith(true)
+
+    fireEvent.mouseLeave(wrapper)
+    expect(onHover).toHaveBeenLastCalledWith(false)
+  })
+
+  it('never throws hovering a value with no onHover given', () => {
+    const { container } = render(<ValueView decl={{ type: 'string' }} value="hi" />)
+    const wrapper = container.querySelector('.value')!
+    expect(() => {
+      fireEvent.mouseEnter(wrapper)
+      fireEvent.mouseLeave(wrapper)
+    }).not.toThrow()
   })
 })

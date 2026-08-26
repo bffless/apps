@@ -73,3 +73,46 @@ describe('RunPage — selection is scoped to the run being viewed', () => {
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
   })
 })
+
+/**
+ * Final review, finding 1: `ui.hoveredValue` is the same process-global,
+ * step-key-repeats-across-runs shape `selectedStep` is (fix round 1, finding
+ * 1) — a hover left over from the run just navigated away from would light up
+ * a graph chip on the new run that never produced it. The existing `[runId]`
+ * effect that clears `selectedStep` is where this rides along.
+ */
+describe('RunPage — hoveredValue is scoped to the run being viewed', () => {
+  it('clears a hovered value from one run when navigating to another', async () => {
+    seedFinishedRun() // Run A: finished, read-only.
+    const { store, runId: runBId } = await startHelloAtConfirmWaiting() // Run B: live.
+
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/hello/hello/runs/${FIXTURE_RUN_ID}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+
+    const page = screen.getByRole('main')
+    await within(page).findByTestId('run-status')
+
+    // Hover an output value on Run A — scoped to the step pane itself, since
+    // `RunOutputs` below it renders its own `poster` label for the same value.
+    fireEvent.click(chip(page, 'slow/0/start')!)
+    fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
+    const pane = within(page).getByTestId('step-pane')
+    const wrapper = within(pane).getByText('poster').closest('.value')!
+    fireEvent.mouseEnter(wrapper)
+    expect(store.getState().ui.hoveredValue).not.toBeNull()
+
+    // Navigate to Run B — the same `RunPage` instance, only the `:runId`
+    // param changes (no remount, no `key`) — without ever firing `mouseleave`.
+    await act(async () => {
+      await router.navigate(`/hello/hello/runs/${runBId}`)
+    })
+
+    expect(store.getState().ui.hoveredValue).toBeNull()
+  })
+})

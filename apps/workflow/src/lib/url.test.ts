@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSafeUrl, isServeUrl } from './url'
+import { isSafeUrl, isSameOriginUrl, isServeUrl } from './url'
 
 describe('isSafeUrl', () => {
   it.each([
@@ -80,5 +80,41 @@ describe('isServeUrl', () => {
   it('refuses anything that is not a string', () => {
     expect(isServeUrl(undefined)).toBe(false)
     expect(isServeUrl({ url: '/api/uploads/x' })).toBe(false)
+  })
+})
+
+/**
+ * Task 15 (P1): the media-sink gate `ImagesView` uses for `<img src>` — a
+ * FileRef.url is writer-supplied, so a cross-origin absolute url must be
+ * refused even though it carries a "safe" `http(s)` scheme `isSafeUrl` would
+ * allow for a plain link.
+ */
+describe('isSameOriginUrl', () => {
+  it.each(['//evil.com', '/\\evil.com', '/\t/evil.com', '/ /evil.com', '\\\\evil.com'])(
+    'refuses the protocol-relative %j',
+    (url) => {
+      expect(isSameOriginUrl(url)).toBe(false)
+    },
+  )
+
+  it('allows a root-relative url', () => {
+    expect(isSameOriginUrl('/api/uploads/x')).toBe(true)
+  })
+
+  it('allows an absolute http(s) url whose origin matches location.origin', () => {
+    expect(isSameOriginUrl(`${globalThis.location.origin}/x`)).toBe(true)
+  })
+
+  it('refuses an absolute url on another origin', () => {
+    expect(isSameOriginUrl('https://other.example/x')).toBe(false)
+  })
+
+  it('refuses a non-http(s) scheme', () => {
+    expect(isSameOriginUrl('javascript:alert(1)')).toBe(false)
+  })
+
+  it('refuses anything that is not a string', () => {
+    expect(isSameOriginUrl(undefined)).toBe(false)
+    expect(isSameOriginUrl(42)).toBe(false)
   })
 })

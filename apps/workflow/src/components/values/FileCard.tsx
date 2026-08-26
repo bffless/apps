@@ -4,13 +4,31 @@
  * whether a player could be rendered.
  *
  * `url` arrives from a run row's JSON, which any authenticated member can
- * write — so it goes through the same allow-list a markdown link href does
- * (`lib/url`) before it reaches an `src`/`data`/`href`. A url that fails it
- * is shown as text: the card still reports what it saw, it just refuses to
- * be the thing that navigates or fetches it.
+ * write. Two different gates apply, because the Download link and the player
+ * are two different sinks: the Download `<a href>` goes through `isSafeUrl`,
+ * the same allow-list a markdown link href uses (`lib/url`), so any http(s)
+ * ref — cross-origin included — still gets a Download action (02: "always a
+ * Download action"). The player (`<video>`/`<audio>`/`<img>`/`<object data>`)
+ * is a stricter sink: it goes through `isSameOriginUrl`, because a
+ * cross-origin `src` would leak the member's session cookie to a third party
+ * the same way an untrusted fetch would. A url that fails `isSafeUrl` is
+ * shown as text instead of a Download link: the card still reports what it
+ * saw, it just refuses to be the thing that navigates or fetches it. A url
+ * that passes `isSafeUrl` but fails `isSameOriginUrl` still gets its Download
+ * link, just no player.
+ *
+ * A `video`/`audio` player also registers its element with `MediaSeekContext`
+ * (Task 15) so a `transcript` renderer's segment click can seek it — a `ref`
+ * callback rather than a `useEffect`, so the element is registered the
+ * instant it mounts and unregistered the instant it's removed, with no
+ * one-tick gap either way. `useMediaSeek()` is safe with no provider in the
+ * tree (a no-op `register`), so every `FileCard` outside a transcript's scope
+ * — an Input tab, a bare `ValueView` in a test — is unaffected.
  */
-import { downloadHref, isSafeUrl } from '../../lib/url'
+import { useCallback, useRef } from 'react'
+import { downloadHref, isSafeUrl, isSameOriginUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
+import { useMediaSeek } from './MediaSeekContext'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
@@ -26,9 +44,23 @@ function humanSize(bytes: unknown): string {
 }
 
 function Player({ contentType, url, name }: { contentType?: string; url: string; name: string }) {
+  const { register } = useMediaSeek()
+  const unregister = useRef<(() => void) | null>(null)
+  const mediaRef = useCallback(
+    (el: HTMLVideoElement | HTMLAudioElement | null) => {
+      if (el) {
+        unregister.current = register(el)
+      } else {
+        unregister.current?.()
+        unregister.current = null
+      }
+    },
+    [register],
+  )
+
   if (!contentType) return null
-  if (contentType.startsWith('video/')) return <video controls src={url} />
-  if (contentType.startsWith('audio/')) return <audio controls src={url} />
+  if (contentType.startsWith('video/')) return <video controls src={url} ref={mediaRef} />
+  if (contentType.startsWith('audio/')) return <audio controls src={url} ref={mediaRef} />
   if (contentType.startsWith('image/')) return <img src={url} alt={name} />
   if (contentType === 'application/pdf') return <object type={contentType} data={url} />
   return null
@@ -37,9 +69,10 @@ function Player({ contentType, url, name }: { contentType?: string; url: string;
 export function FileCard({ refValue }: { refValue: FileRef }) {
   const { name, contentType, size, url } = refValue
   const safe = typeof url === 'string' && isSafeUrl(url)
+  const sameOrigin = typeof url === 'string' && isSameOriginUrl(url)
   return (
     <div className="file-card">
-      {safe && <Player contentType={contentType} url={url} name={name} />}
+      {sameOrigin && <Player contentType={contentType} url={url} name={name} />}
       <div className="file-card-meta">
         <span className="file-card-name">{name}</span>
         <span className="file-card-type">{contentType || 'unknown type'}</span>

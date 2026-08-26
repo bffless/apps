@@ -12,9 +12,11 @@
  * run mode reports the click instead, because there the pane belongs to the run
  * page, which has the evaluated inputs and outputs to put in it.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { needsEdges, topoLayers } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey } from '../../lib/runner/types'
+import { useAppSelector } from '../../store/hooks'
+import { flowFor } from './flow'
 import { JobCard } from './JobCard'
 
 /** Cell geometry, in px. Mirrored by `.job-card` sizing in `index.css`. */
@@ -37,6 +39,8 @@ export interface GraphViewProps {
 
 export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphViewProps) {
   const [declared, setDeclared] = useState<{ key: StepKey; step: Step } | null>(null)
+  const hoveredValue = useAppSelector((s) => s.ui.hoveredValue)
+  const flow = useMemo(() => flowFor(def, hoveredValue), [def, hoveredValue])
 
   const layers = topoLayers(def)
   const at = new Map<string, { col: number; row: number }>()
@@ -102,6 +106,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
                 state={state}
                 selectedKey={selectedKey}
                 onPick={pick}
+                flow={flow}
                 style={{ gridColumn: col + 1, gridRow: row + 1 }}
               />
             )),

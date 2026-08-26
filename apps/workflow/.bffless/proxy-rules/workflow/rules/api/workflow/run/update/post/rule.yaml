@@ -30,6 +30,7 @@ pipeline:
           leaseUntil: steps.merge.fields.leaseUntil
           outputs: steps.merge.fields.outputs
           annotations: steps.merge.fields.annotations
+          annotationCounts: steps.merge.fields.annotationCounts
     - id: notFound
       name: notFound
       handler: response_handler
@@ -48,4 +49,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Patch a run row (status, finishedAt, lease, outputs, annotations). Two terminal response branches — fine in rules-as-code (the admin UI bug ce#502 does not apply)."
+description: "Patch a run row (status, finishedAt, lease, outputs, annotations, annotationCounts). Two terminal response branches — fine in rules-as-code (the admin UI bug ce#502 does not apply)."

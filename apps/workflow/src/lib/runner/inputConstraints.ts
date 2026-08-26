@@ -12,28 +12,41 @@
  */
 import type { InputDef } from '@bffless/workflow-lint/definition'
 
-/** `options: [a, {value, label}]` (02) flattened to the allowed value strings. */
+/**
+ * One `options` entry (02) → the value it stands for, or `undefined` when the
+ * entry cannot be read: a bare string is its own value, `{value, label}` says
+ * so, and a **File ref is the 02 shorthand** for `{value: path, label: name,
+ * preview: ref}` — so a File-ref option's value is its `path`.
+ *
+ * This is the single notion of "what this option is worth", shared by the
+ * membership check below, the `form` adapter (`adapters/form.ts`, which
+ * re-exports `optionValues`) and the field renderer (`FieldControl`), so a
+ * tile the user can click can never be a value the submit then refuses.
+ */
+export function optionValue(entry: unknown): string | undefined {
+  if (typeof entry === 'string') return entry
+  if (entry === null || typeof entry !== 'object') return undefined
+  const o = entry as Record<string, unknown>
+  if (typeof o.value === 'string') return o.value
+  if (typeof o.path === 'string' && typeof o.name === 'string' && typeof o.url === 'string') return o.path
+  return undefined
+}
+
+/** Every readable option's value; a non-array (an unevaluated expression) has none. */
+export function optionValues(options: unknown): string[] {
+  if (!Array.isArray(options)) return []
+  return options.map(optionValue).filter((value): value is string => value !== undefined)
+}
+
+/** `options: [a, {value, label}, <File ref>]` (02) flattened to the allowed value strings. */
 function allowedChoices(options: unknown): string[] | null {
   if (!Array.isArray(options)) return null
-  const allowed: string[] = []
-  for (const entry of options) {
-    if (typeof entry === 'string') {
-      allowed.push(entry)
-      continue
-    }
-    if (entry !== null && typeof entry === 'object') {
-      const value = (entry as Record<string, unknown>).value
-      if (typeof value === 'string') {
-        allowed.push(value)
-        continue
-      }
-    }
-    // An option this module cannot read (an unresolved expression, or a
-    // malformed entry) means membership cannot be checked honestly — bail
-    // out entirely rather than rejecting values that may well be valid.
-    return null
-  }
-  return allowed
+  const allowed = optionValues(options)
+  // An option this module cannot read (an unresolved expression, or a
+  // malformed entry) means membership cannot be checked honestly — bail out
+  // entirely rather than rejecting values that may well be valid. An options
+  // list that is *empty* is readable, and means no value is allowed.
+  return allowed.length === options.length ? allowed : null
 }
 
 /** A compiled `pattern`; an invalid regex cannot honestly fail a value, so it is skipped. */
@@ -71,7 +84,15 @@ function scalarConstraintError(def: InputDef, value: unknown): string | undefine
 
   if (type === 'choice' && typeof value === 'string') {
     const allowed = allowedChoices(def.options)
-    if (allowed && !allowed.includes(value)) return 'Is not one of the allowed choices'
+    if (allowed) {
+      // Readable and empty is not the same fact as readable and non-matching:
+      // an `options` expression that evaluated to something other than a list
+      // leaves the field with `[]` (`formFieldDefs`), not with its unresolved
+      // expression — so an empty list here means the options never resolved,
+      // not that the field genuinely offers no choices at all.
+      if (allowed.length === 0) return "this field's options could not be resolved"
+      if (!allowed.includes(value)) return 'Is not one of the allowed choices'
+    }
     return undefined
   }
 

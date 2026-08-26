@@ -11,9 +11,12 @@
  * submit dispatches nothing at all.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Provider } from 'react-redux'
+import { toDefinition } from '@bffless/workflow-lint/definition'
 import { FormStepPane } from './FormStepPane'
+import type { Definition, FileRef, RunState } from '../../lib/runner/types'
+import type { AppStore } from '../../store'
 import {
   hello,
   REVIEW_KEY,
@@ -110,5 +113,105 @@ describe('FormStepPane (hello confirm/0/review, waiting)', () => {
 
     expect(await screen.findByText(/expected a boolean/i)).toBeInTheDocument()
     expect(store.getState().run.state?.steps[REVIEW_KEY]?.status).toBe('waiting')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task 18 — `file` fields in a mid-run form (the M1 gap this pays down)
+// ---------------------------------------------------------------------------
+
+const UPLOADED: FileRef = {
+  path: 'workflows/hello/hello/inputs/17/scan.png',
+  name: 'scan.png',
+  contentType: 'image/png',
+  size: 5,
+  url: '/api/uploads/hello/hello/inputs/17/scan.png',
+}
+
+const FILE_FORM: Definition = toDefinition({
+  name: 'Attach',
+  jobs: {
+    j: {
+      steps: [{ id: 'attach', uses: 'form', with: { fields: { scan: { type: 'file' } }, submit: 'Attach' } }],
+    },
+  },
+}) as Definition
+
+const ATTACH_KEY = 'j/0/attach'
+
+function fileFormState(): RunState {
+  return {
+    runId: 'run_ATTACH',
+    impl: 'hello',
+    workflow: 'hello',
+    status: 'running',
+    headless: false,
+    inputs: {},
+    steps: {
+      [ATTACH_KEY]: {
+        key: ATTACH_KEY,
+        job: 'j',
+        index: 0,
+        stepId: 'attach',
+        kind: 'form',
+        status: 'waiting',
+        attempt: 1,
+        annotations: [],
+      },
+    },
+    expansions: {},
+    annotations: [],
+    startedAt: 1_000,
+  }
+}
+
+/** A store that only records what the pane dispatched — the middleware is Task 17's test, not this one's. */
+function captureStore() {
+  const dispatched: { type: string; payload?: unknown }[] = []
+  const store = {
+    getState: () => ({ run: { state: null } }),
+    subscribe: () => () => {},
+    dispatch: (action: { type: string; payload?: unknown }) => {
+      dispatched.push(action)
+      return action
+    },
+  }
+  return { store: store as unknown as AppStore, dispatched }
+}
+
+describe('FormStepPane — file fields (Task 18)', () => {
+  it('renders a file picker instead of the "not supported" notice', () => {
+    const { store } = captureStore()
+    render(
+      <Provider store={store}>
+        <FormStepPane def={FILE_FORM} state={fileFormState()} stepKey={ATTACH_KEY} upload={vi.fn()} />
+      </Provider>,
+    )
+
+    const input = screen.getByLabelText('scan') as HTMLInputElement
+    expect(input.type).toBe('file')
+    expect(screen.queryByText(/not supported here yet/i)).not.toBeInTheDocument()
+  })
+
+  it('uploads the picked file and submits its File ref as the step output', async () => {
+    const { store, dispatched } = captureStore()
+    const upload = vi.fn().mockResolvedValue(UPLOADED)
+    render(
+      <Provider store={store}>
+        <FormStepPane def={FILE_FORM} state={fileFormState()} stepKey={ATTACH_KEY} upload={upload} />
+      </Provider>,
+    )
+
+    const file = new File(['bytes'], 'scan.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('scan'), { target: { files: [file] } })
+    expect(upload).toHaveBeenCalledWith(file, expect.any(Function))
+
+    await waitFor(() => expect(screen.getByText('scan.png')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }))
+
+    const succeeded = dispatched.find((a) => (a.payload as { type?: string } | undefined)?.type === 'step.succeeded')
+    expect(succeeded).toBeDefined()
+    expect((succeeded!.payload as { outputs: Record<string, unknown> }).outputs).toEqual({ scan: UPLOADED })
   })
 })

@@ -118,6 +118,26 @@ describe('mount', () => {
     expect(context).toMatchObject({ displayMode: 'inline', platform: 'web' })
     expect(context?.theme === 'light' || context?.theme === 'dark').toBe(true)
   })
+
+  // apps#363: `render: island` (IslandView) hands its `decl.src` to this same
+  // `mount` unresolved — `resolveSrc` is the one bundle-escape fence, whether
+  // the src came from a step's `with.src` or a value declaration. A src that
+  // escapes the bundle throws synchronously inside the async `mount`, so it
+  // rejects without ever fetching HTML or writing `srcdoc` — no iframe content
+  // is ever mounted. `IslandFrame` turns that rejection into `onLoadError`
+  // rather than an uncaught throw; a viewer (`IslandView`) treats that as a
+  // no-op and stays an empty frame, never mounted (its own doc comment).
+  it.each(['//evil.example/x.html', 'https://evil.example/x.html'])(
+    'rejects without mounting for a src that escapes the bundle (%s)',
+    async (src) => {
+      const h = makeHarness()
+
+      await expect(h.host.mount(h.iframe, { ...MOUNT, src })).rejects.toThrow()
+
+      expect(h.fetchText).not.toHaveBeenCalled()
+      expect(h.iframe.srcdoc).toBe('')
+    },
+  )
 })
 
 // ---------------------------------------------------------------------------

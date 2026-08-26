@@ -1,14 +1,32 @@
 /**
- * The url policy, in one module: what may be written into an `href`/`src`/`data`
- * attribute (`isSafeUrl`), and what may be *fetched* from an untrusted ref
- * (`isServeUrl`).
+ * The url policy, in one module: three gates for three different questions,
+ * from loosest to strictest.
  *
- * `isSafeUrl`'s two callers, one rule: `lib/markdown` (link and image hrefs
- * inside a summary) and `components/values/FileCard` (a `FileRef.url` out of a
- * step's outputs). Neither source is trusted — a run row's JSON is writable by
- * any authenticated member, and a summary is markdown a workflow author typed —
- * so the answer must not depend on which sink asks. `isServeUrl` answers the
- * stricter question its two fetching callers ask; see below.
+ * `isSafeUrl` — may this url be written into an `href`/`src`/`data` attribute
+ * at all? Its callers: `lib/markdown` (link and image hrefs inside a
+ * summary), `components/values/FileCard`'s Download link (a `FileRef.url` out
+ * of a step's outputs, kept as a link even when the ref fails the stricter
+ * media-sink gate below — 02: "always a Download action"), and
+ * `islands/IslandHost`'s `ui/open-link` (navigation the member's own click
+ * drives, not a byte sink the harness reads on their behalf — the plain
+ * allow-list is the right question there). Neither a run row nor a summary is
+ * trusted — a run row's JSON is writable by any authenticated member, and a
+ * summary is markdown a workflow author typed — so the answer must not depend
+ * on which of these callers asks.
+ *
+ * `isSameOriginUrl` — the stricter question a media *sink* a renderer builds
+ * itself must ask: `FileCard`'s `<video>`/`<audio>`/`<img>`/`<object data>`
+ * player, and `ImagesView`'s grid `<img>`. A cross-origin `http(s)` url would
+ * leak the member's session cookie to a third party the same way an untrusted
+ * fetch would, so "safe scheme" is not enough here even though it is for a
+ * plain link.
+ *
+ * `isServeUrl` — the strictest question, for a *fetch* the harness makes on
+ * the member's behalf with their cookie attached: `scripts/ScriptHost`'s
+ * `ctx.files.fetch` relay and `lib/payloadFetch`'s `{"$file"}` read.
+ * Same-origin is not enough either — a same-origin path can reach the run API
+ * or another implementation's bundle — so this one is scoped to the
+ * file-serve route itself; see its own doc comment below.
  */
 import { SERVE_PREFIX } from './coerce'
 
@@ -60,6 +78,33 @@ export function isSafeUrl(rawUrl: string): boolean {
   if (SAFE_SCHEME.test(url)) return true
   if (/^[#/.]/.test(url)) return true
   return !HAS_SCHEME.test(url)
+}
+
+/**
+ * May this url be trusted as a media *sink* — an `<img>`/`<video>`/`<audio>`
+ * `src` a renderer builds itself, rather than the writer-supplied `FileRef.url`
+ * FileCard's own `isSafeUrl` gate covers? Root-relative (already excludes
+ * protocol-relative, checked first) or same-origin absolute http(s): a
+ * cross-origin `src` would leak the member's session cookie to a third party
+ * the same way an untrusted fetch would, so "safe scheme" is not enough here —
+ * unlike `isSafeUrl`, off-origin is refused even for `http(s)`. `false` when
+ * there is no `location` (a non-browser render, e.g. SSR or a headless test
+ * harness with no jsdom `location` polyfill) — nothing to compare the origin
+ * against, so nothing is trusted.
+ */
+export function isSameOriginUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false
+  const normalized = normalizeForSchemeCheck(url)
+  if (PROTOCOL_RELATIVE.test(normalized)) return false
+  if (normalized.startsWith('/')) return true
+  if (!/^https?:/i.test(normalized)) return false
+  const origin = globalThis.location?.origin
+  if (origin === undefined) return false
+  try {
+    return new URL(normalized).origin === origin
+  } catch {
+    return false
+  }
 }
 
 /**

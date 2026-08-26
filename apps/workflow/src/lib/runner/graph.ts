@@ -10,8 +10,8 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
-import { scanTemplates } from '@bffless/workflow-lint/expressions'
-import type { Expr } from '@bffless/workflow-lint/expressions'
+import { collectRefs, scanTemplates } from '@bffless/workflow-lint/expressions'
+import type { Ref } from '@bffless/workflow-lint/expressions'
 import { evalDeep, jobOutcome } from './contexts'
 import type { Definition, Job, RunState, StepKey, StepState, StepStatus } from './types'
 import { stepKey } from './types'
@@ -197,68 +197,20 @@ export interface ValueRef {
 const REF_ROOTS: ReadonlySet<string> = new Set(['steps', 'needs', 'inputs'])
 
 /**
- * The dotted chain an expression node reads, or nothing when it is not a plain
- * reference. A dynamic `[expr]` segment ends the chain as unusable (`null`),
- * which is enough: a reference whose subject is computed names no single
- * upstream value, and the panes label values, not possibilities.
+ * `steps.<id>.outputs.<o>` / `needs.<job>.outputs.<o>` / `inputs.<name>`, or
+ * nothing — from lint's own `Ref { root, path }` (a dynamic `[expr]` segment
+ * comes through as a `null` path entry, which is enough: a reference whose
+ * subject is computed names no single upstream value, and the panes label
+ * values, not possibilities).
  */
-function chainOf(e: Expr): { root: string; path: (string | null)[] } | undefined {
-  if (e.kind === 'ident') return { root: e.name, path: [] }
-  if (e.kind === 'member') {
-    const c = chainOf(e.object)
-    return c && { root: c.root, path: [...c.path, e.property] }
-  }
-  if (e.kind === 'index') {
-    const c = chainOf(e.object)
-    if (!c) return undefined
-    const idx = e.index
-    const seg = idx.kind === 'string' ? idx.value : idx.kind === 'number' ? String(idx.value) : null
-    return { root: c.root, path: [...c.path, seg] }
-  }
-  return undefined
-}
-
-/** `steps.<id>.outputs.<o>` / `needs.<job>.outputs.<o>` / `inputs.<name>`, or nothing. */
-function refOf(e: Expr): ValueRef | undefined {
-  const chain = chainOf(e)
-  if (!chain || !REF_ROOTS.has(chain.root)) return undefined
-  const [name, kind, output] = chain.path
+function toValueRef(ref: Ref): ValueRef | undefined {
+  if (!REF_ROOTS.has(ref.root)) return undefined
+  const [name, kind, output] = ref.path
   if (typeof name !== 'string') return undefined
-  if (chain.root === 'inputs') return { context: 'inputs', name }
+  if (ref.root === 'inputs') return { context: 'inputs', name }
   // `steps.boom.error.code` and `needs.greet.result` are control flow, not data.
   if (kind !== 'outputs' || typeof output !== 'string') return undefined
-  return { context: chain.root as 'steps' | 'needs', name, output }
-}
-
-/** Every reference in one expression tree, in source order. */
-function collect(e: Expr, into: ValueRef[]): void {
-  switch (e.kind) {
-    case 'ident':
-    case 'member':
-    case 'index': {
-      const ref = refOf(e)
-      if (ref) into.push(ref)
-      // A dynamic index carries its own references, whatever the chain did.
-      for (let cur: Expr = e; cur.kind === 'member' || cur.kind === 'index'; cur = cur.object) {
-        if (cur.kind === 'index' && cur.index.kind !== 'string' && cur.index.kind !== 'number') {
-          collect(cur.index, into)
-        }
-      }
-      break
-    }
-    case 'call':
-      for (const arg of e.args) collect(arg, into)
-      break
-    case 'not':
-      collect(e.operand, into)
-      break
-    case 'binary':
-      collect(e.left, into)
-      collect(e.right, into)
-      break
-    default:
-      break
-  }
+  return { context: ref.root as 'steps' | 'needs', name, output }
 }
 
 /**
@@ -277,7 +229,11 @@ export function refsIn(raw: unknown): ValueRef[] {
   const walk = (value: unknown): void => {
     if (typeof value === 'string') {
       for (const span of scanTemplates(value)) {
-        if (span.expr) collect(span.expr, refs)
+        if (!span.expr) continue
+        for (const ref of collectRefs(span.expr).refs) {
+          const mapped = toValueRef(ref)
+          if (mapped) refs.push(mapped)
+        }
       }
       return
     }
@@ -297,4 +253,45 @@ export function refsIn(raw: unknown): ValueRef[] {
     seen.add(id)
     return true
   })
+}
+
+/** A directed data-flow edge: the value a step reads, and the step that reads it. */
+export interface DataFlowEdge {
+  from: { job: string; step?: string; output: string }
+  to: { job: string; step: string }
+}
+
+/**
+ * The fields whose expressions are read for data-flow edges (08's
+ * hover-highlight) — the ones a step's own pane shows (Input/Output/Details'
+ * summary and annotations). `poll`/`retry` are control flow over `response`/
+ * `error`, not upstream data, and `headless` is the escape hatch a headless
+ * run takes instead of the interactive path this highlight is drawn for.
+ */
+const FLOW_FIELDS = ['with', 'if', 'outputs', 'summary', 'annotations'] as const
+
+/**
+ * Every step-held expression's upstream reference, as an edge from the value
+ * it reads to the step that reads it. Only STEP-held expressions produce
+ * edges: a job's own `outputs` are aliases evaluated at the job boundary, not
+ * a step's expression, so they contribute none of their own — a downstream
+ * job still lights up because *it* reads `needs.<job>.outputs.*` directly.
+ */
+export function dataFlowEdges(def: Definition): DataFlowEdge[] {
+  const edges: DataFlowEdge[] = []
+  for (const job of Object.values(def.jobs)) {
+    for (const step of job.steps) {
+      const to = { job: job.id, step: step.id }
+      for (const field of FLOW_FIELDS) {
+        for (const ref of refsIn((step.raw as Record<string, unknown> | undefined)?.[field])) {
+          if (ref.context === 'needs') {
+            edges.push({ from: { job: ref.name, output: ref.output! }, to })
+          } else if (ref.context === 'steps') {
+            edges.push({ from: { job: job.id, step: ref.name, output: ref.output! }, to })
+          }
+        }
+      }
+    }
+  }
+  return edges
 }

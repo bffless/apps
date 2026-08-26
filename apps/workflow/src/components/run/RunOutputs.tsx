@@ -15,6 +15,7 @@
 import { RUN_SCOPE, resolveOutputDecl, stepOutputDecl } from '../../lib/outputDecls'
 import { jobOrder } from '../../lib/runner/graph'
 import type { Definition, RunState, StepState } from '../../lib/runner/types'
+import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
@@ -38,7 +39,16 @@ function stepsOfJob(def: Definition, state: RunState, job: string): StepState[] 
     .sort((a, b) => a.index - b.index || order.indexOf(a.stepId) - order.indexOf(b.stepId))
 }
 
-export function RunOutputs({ def, state }: { def: Definition; state: RunState }) {
+export function RunOutputs({
+  def,
+  state,
+  impl,
+}: {
+  def: Definition
+  state: RunState
+  /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
+  impl?: string
+}) {
   const recorded = state.outputs ?? {}
   const topLevel = outputNames(Object.keys(def.outputs ?? {}), recorded)
 
@@ -49,41 +59,50 @@ export function RunOutputs({ def, state }: { def: Definition; state: RunState })
       {topLevel.length === 0 ? (
         <p className="note">This workflow declares no outputs.</p>
       ) : (
-        <div className="output-group" data-scope="run">
-          {topLevel.map((name) => (
-            <div className="output" data-output={name} key={name}>
-              <ValueView
-                label={name}
-                decl={withValue(resolveOutputDecl(def, RUN_SCOPE, name), recorded[name])}
-                value={recorded[name] ?? null}
-              />
-            </div>
-          ))}
-        </div>
+        // Scoped to the run's own outputs, so a transcript here seeks a player
+        // shown among these same outputs — never one in a different job's
+        // block (Task 15).
+        <MediaSeekProvider>
+          <div className="output-group" data-scope="run">
+            {topLevel.map((name) => (
+              <div className="output" data-output={name} key={name}>
+                <ValueView
+                  label={name}
+                  decl={withValue(resolveOutputDecl(def, RUN_SCOPE, name), recorded[name])}
+                  value={recorded[name] ?? null}
+                  impl={impl}
+                />
+              </div>
+            ))}
+          </div>
+        </MediaSeekProvider>
       )}
 
       {jobOrder(def).map((job) => {
         const steps = stepsOfJob(def, state, job)
         if (steps.length === 0) return null
         return (
-          <div className="output-group" data-scope="job" data-job={job} key={job}>
-            <h3 className="section-title">{def.jobs[job]?.raw?.name ?? job}</h3>
-            {steps.map((step) => {
-              const declared = def.jobs[job]?.steps.find((s) => s.id === step.stepId)
-              return Object.entries(step.outputs ?? {}).map(([name, value]) => (
-                <div className="output" data-output={`${step.key}.${name}`} key={`${step.key}.${name}`}>
-                  <ValueView
-                    label={`${step.key} · ${name}`}
-                    decl={withValue(
-                      declared ? stepOutputDecl(declared, name) : { type: 'json' },
-                      value,
-                    )}
-                    value={value}
-                  />
-                </div>
-              ))
-            })}
-          </div>
+          <MediaSeekProvider key={job}>
+            <div className="output-group" data-scope="job" data-job={job}>
+              <h3 className="section-title">{def.jobs[job]?.raw?.name ?? job}</h3>
+              {steps.map((step) => {
+                const declared = def.jobs[job]?.steps.find((s) => s.id === step.stepId)
+                return Object.entries(step.outputs ?? {}).map(([name, value]) => (
+                  <div className="output" data-output={`${step.key}.${name}`} key={`${step.key}.${name}`}>
+                    <ValueView
+                      label={`${step.key} · ${name}`}
+                      decl={withValue(
+                        declared ? stepOutputDecl(declared, name) : { type: 'json' },
+                        value,
+                      )}
+                      value={value}
+                      impl={impl}
+                    />
+                  </div>
+                ))
+              })}
+            </div>
+          </MediaSeekProvider>
         )
       })}
     </section>

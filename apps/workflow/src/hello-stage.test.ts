@@ -103,8 +103,9 @@ describe('stage-hello.mjs', () => {
     const interactive = index.workflows.find((w) => w.file === 'interactive.workflow.yaml')
     expect(interactive).toBeDefined()
     expect(interactive!.name).toBe('Interactive hello')
-    // greet, analyze, pick — and, since Phase 2, the `card` script job.
-    expect(interactive!.jobs).toBe(4)
+    // greet, analyze, pick, the Phase 2 `card` script job — and, since Phase 3,
+    // the `review` form job.
+    expect(interactive!.jobs).toBe(5)
     expect(interactive!.inputs).toBe(2)
     // The island step declares `headless: skip` with the outputs its job reads.
     expect(interactive!.headlessSafe).toBe(true)

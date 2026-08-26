@@ -14,7 +14,7 @@ import { http, HttpResponse } from 'msw'
 import { toFileRef, toRunRow, toStepRow } from '../lib/coerce'
 import type { ServerStepRow } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
-import { db, nextId, stepRowKey, stepsOf, toRecord } from './db'
+import { db, deleteRun, mockUser, nextId, stepRowKey, stepsOf, toRecord } from './db'
 import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
@@ -33,10 +33,16 @@ async function body(request: Request): Promise<Record<string, unknown>> {
 // Discovery (06) — a deploy is the publish
 // ---------------------------------------------------------------------------
 
-/** The aliases of the mock project: the harness itself, and one implementation. */
+/**
+ * The aliases of the mock project: the harness itself, and one implementation.
+ * `repository` mirrors what the real relay filters `?repository=` against
+ * (apps#363) — every mock alias lives in the same project, so an unscoped
+ * probe and a `?repository=bffless/workflow`-scoped one see the same list;
+ * only an unknown repository narrows it to nothing.
+ */
 const ALIASES = [
-  { name: 'workflow', isAutoPreview: false },
-  { name: 'hello', isAutoPreview: false },
+  { name: 'workflow', isAutoPreview: false, repository: 'bffless/workflow' },
+  { name: 'hello', isAutoPreview: false, repository: 'bffless/workflow' },
 ]
 
 /** The workflow files this mock implementation publishes, exactly as the bundle does. */
@@ -116,7 +122,11 @@ export const HELLO_INDEX = {
 }
 
 const discovery = [
-  http.get('/api/workflow/aliases', () => HttpResponse.json(ALIASES)),
+  http.get('/api/workflow/aliases', ({ request }) => {
+    const repository = new URL(request.url).searchParams.get('repository')
+    const aliases = repository === null ? ALIASES : ALIASES.filter((a) => a.repository === repository)
+    return HttpResponse.json(aliases)
+  }),
 
   // Only `hello` publishes workflows; every other alias 404s, which is exactly
   // how the harness tells an implementation from an ordinary deploy (ADR-0004).
@@ -158,7 +168,9 @@ const discovery = [
 // ---------------------------------------------------------------------------
 
 /** Patchable post-create; everything else is the immutable start snapshot (D16). */
-const RUN_PATCHABLE = ['status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations']
+const RUN_PATCHABLE = [
+  'status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations', 'annotationCounts',
+]
 
 /** The 11 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
 const STEP_MUTABLE = [
@@ -168,6 +180,15 @@ const STEP_MUTABLE = [
 const STEP_IDENTITY = ['job', 'index', 'step', 'kind']
 
 const LEASE_MS = 60_000
+
+/** The roles the delete gate treats as "may delete anyone's run" (05 access). */
+const ADMIN_ROLES = new Set(['admin', 'owner'])
+
+const NO_STORE = { 'Cache-Control': 'no-store' }
+
+/** One of the delete rule's three literal-status `response_handler` refusals. */
+const refuse = (status: number, error: string) =>
+  HttpResponse.json({ ok: false, error }, { status, headers: NO_STORE })
 
 /** A step row as `merge.fn.js` invents it when the upsert is the first write. */
 function baseStepRow(runId: string, key: string): ServerStepRow {
@@ -186,7 +207,7 @@ const runRecord = [
   // is recorded"), so a client-supplied value must never be trusted.
   http.post('/api/workflow/runs', async ({ request }) => {
     const row = toRunRow(await body(request))
-    const stored = { ...row, startedBy: 'user_mock', _id: nextId() }
+    const stored = { ...row, startedBy: mockUser().id, _id: nextId() }
     db.runs.set(stored.runId, stored)
     return HttpResponse.json(toRecord(stored))
   }),
@@ -244,6 +265,34 @@ const runRecord = [
     }
     db.steps.set(id, merged)
     return ok()
+  }),
+
+  // Mirrors `run/delete/post/gate.fn.js` and its three refusal responders: 404
+  // unknown, 409 while running (cancel is the way out), 403 for a member who
+  // neither started the run nor is an admin. Only then the deletion itself,
+  // files first — the rule's step order, because a retry of a half-done delete
+  // must never leave a row pointing at bytes that are already gone.
+  http.post('/api/workflow/run/delete', async ({ request }) => {
+    const { id } = await body(request)
+    const run = db.runs.get(String(id))
+    const user = mockUser()
+
+    if (!run) return refuse(404, 'run not found')
+    if (run.status === 'running') return refuse(409, 'cancel the run first')
+    const admin = ADMIN_ROLES.has(String(user.role ?? '').toLowerCase())
+    // `undefined !== undefined` is `false` — an id-less user must never fall
+    // through that comparison just because a row with no `startedBy` is
+    // *also* id-less (gate.fn.js's `!caller.id ||` guard, mirrored here).
+    if (!admin && (!user.id || run.startedBy !== user.id)) {
+      return refuse(403, 'only the run owner or an admin can delete a run')
+    }
+
+    // `records` is the `workflow_files` sweep's count in the real rule. The mock has no
+    // such table, but everything in `db.files` got there through the files trio, which
+    // registers exactly one record per object — so the object count IS the record count
+    // here, and reporting it keeps the two response shapes identical.
+    const { files } = deleteRun(run.runId)
+    return HttpResponse.json({ ok: true, deleted: { files, records: files } }, { headers: NO_STORE })
   }),
 
   // Mirrors `gate.fn.js`: granted when unheld, expired, already ours, or forced.
@@ -384,9 +433,17 @@ const hello = [
 ]
 
 // ---------------------------------------------------------------------------
+// Identity — `user.*` read back, for the header and the delete gate's UI half
+// ---------------------------------------------------------------------------
+
+const identity = [
+  http.get('/api/workflow/whoami', () => HttpResponse.json(mockUser(), { headers: NO_STORE })),
+]
+
+// ---------------------------------------------------------------------------
 // Auth — the SuperTokens refresh relay the data layer retries through (R5)
 // ---------------------------------------------------------------------------
 
 const auth = [http.post('/api/auth/session/refresh', () => new HttpResponse(null, { status: 200 }))]
 
-export const handlers = [...discovery, ...runRecord, ...files, ...hello, ...auth]
+export const handlers = [...discovery, ...runRecord, ...files, ...hello, ...identity, ...auth]

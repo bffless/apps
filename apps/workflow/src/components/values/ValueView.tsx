@@ -3,8 +3,8 @@
  * inputs, `form` fields, step/job/run outputs (02): the same closed
  * vocabulary of types, always rendered read-only here (editing is a separate,
  * later concern). `list: true` repeats the base-type dispatch per item; a
- * named `render` replaces the base viewer where one exists — `island` (Task 5)
- * today, the rest (transcript/chart/images/code) in Phase 3 — and otherwise
+ * named `render` replaces the base viewer where one exists — `island` (Task 5),
+ * `transcript`/`images` (Task 15), `chart`/`code` (Task 16) — and otherwise
  * shows a placeholder badge above the base viewer rather than silently falling
  * back to it.
  *
@@ -23,8 +23,15 @@ import { JsonTree } from './JsonTree'
 import { MarkdownView } from './MarkdownView'
 import { TableView } from './TableView'
 import { IslandView } from './renderers/IslandView'
+import { ImagesView } from './renderers/ImagesView'
+import { TranscriptView } from './renderers/TranscriptView'
+import { ChartView } from './renderers/ChartView'
+import { CodeView } from './renderers/CodeView'
 
 export type { ValueDecl }
+
+/** Every `render` name this dispatch actually knows how to draw (island's M2 fallback aside). */
+const KNOWN_RENDERERS = new Set(['island', 'transcript', 'images', 'chart', 'code'])
 
 /**
  * An output the writer offloaded (`{"$file"}`, Task 12) whose bytes the read
@@ -95,6 +102,7 @@ export function ValueView({
   label,
   origin,
   impl,
+  onHover,
 }: {
   decl: ValueDecl
   value: unknown
@@ -102,24 +110,66 @@ export function ValueView({
   origin?: string
   /** Overrides `ImplContext`; only `render: island` reads it. */
   impl?: string
+  /**
+   * The value's declaring/consuming graph chips light up while the pointer is
+   * over it (08's data-flow highlight, Task 22). Mouse only — keyboard-focus
+   * parity is a follow-up, not required for M2.
+   */
+  onHover?: (hovering: boolean) => void
 }) {
   // Unconditional: `impl ?? useImpl()` would short-circuit the hook away.
   const contextImpl = useImpl()
   const bundle = impl ?? contextImpl
+  const unavailable = isUnavailablePayload(value)
   const island = decl.render === 'island' && typeof decl.src === 'string' && bundle !== null
+  const transcript = decl.render === 'transcript'
+  const images = decl.render === 'images'
+  const chart = decl.render === 'chart'
+  const code = decl.render === 'code'
+
+  let body
+  if (island && !unavailable) {
+    body = <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
+  } else if (transcript && !unavailable) {
+    body = <TranscriptView value={value} />
+  } else if (images && !unavailable) {
+    body = <ImagesView value={value} />
+  } else if (chart && !unavailable) {
+    body = <ChartView value={value} mapping={decl.mapping} />
+  } else if (code && !unavailable) {
+    body = <CodeView value={value} mapping={decl.mapping} />
+  } else {
+    // `island` keeps its historical "(M2)" badge when it can't dispatch (no
+    // src, or no implementation known). Any other named `render` reaching
+    // this branch got here because its payload is unavailable — the badge
+    // would only repeat what the `payload-unavailable` chip already says, and
+    // for a *known* renderer it would say it wrongly ("(unknown)" on a
+    // renderer this dispatch knows perfectly well) — so a known renderer gets
+    // no badge at all here, and only a genuinely unrecognised `render` value
+    // keeps the "(unknown)" badge.
+    const isKnownRenderer = typeof decl.render === 'string' && KNOWN_RENDERERS.has(decl.render)
+    const showBadge = Boolean(decl.render) && !(unavailable && isKnownRenderer)
+    body = (
+      <>
+        {showBadge && (
+          <p className="value-renderer-badge">
+            {`renderer: ${decl.render} (${isKnownRenderer ? 'M2' : 'unknown'})`}
+          </p>
+        )}
+        <ValueBody decl={decl} value={value} />
+      </>
+    )
+  }
 
   return (
-    <div className="value">
+    <div
+      className="value"
+      onMouseEnter={onHover && (() => onHover(true))}
+      onMouseLeave={onHover && (() => onHover(false))}
+    >
       {label && <p className="value-label">{label}</p>}
       {origin && <span className="chip value-origin">from {origin}</span>}
-      {island && !isUnavailablePayload(value) ? (
-        <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
-      ) : (
-        <>
-          {decl.render && <p className="value-renderer-badge">{`renderer: ${decl.render} (M2)`}</p>}
-          <ValueBody decl={decl} value={value} />
-        </>
-      )}
+      {body}
     </div>
   )
 }
