@@ -14,7 +14,7 @@ import { http, HttpResponse } from 'msw'
 import { toFileRef, toRunRow, toStepRow } from '../lib/coerce'
 import type { ServerStepRow } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
-import { db, nextId, stepRowKey, stepsOf, toRecord } from './db'
+import { db, deleteRun, mockUser, nextId, stepRowKey, stepsOf, toRecord } from './db'
 import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
@@ -169,6 +169,15 @@ const STEP_IDENTITY = ['job', 'index', 'step', 'kind']
 
 const LEASE_MS = 60_000
 
+/** The roles the delete gate treats as "may delete anyone's run" (05 access). */
+const ADMIN_ROLES = new Set(['admin', 'owner'])
+
+const NO_STORE = { 'Cache-Control': 'no-store' }
+
+/** One of the delete rule's three literal-status `response_handler` refusals. */
+const refuse = (status: number, error: string) =>
+  HttpResponse.json({ ok: false, error }, { status, headers: NO_STORE })
+
 /** A step row as `merge.fn.js` invents it when the upsert is the first write. */
 function baseStepRow(runId: string, key: string): ServerStepRow {
   return toStepRow({ runId, key })
@@ -186,7 +195,7 @@ const runRecord = [
   // is recorded"), so a client-supplied value must never be trusted.
   http.post('/api/workflow/runs', async ({ request }) => {
     const row = toRunRow(await body(request))
-    const stored = { ...row, startedBy: 'user_mock', _id: nextId() }
+    const stored = { ...row, startedBy: mockUser().id, _id: nextId() }
     db.runs.set(stored.runId, stored)
     return HttpResponse.json(toRecord(stored))
   }),
@@ -244,6 +253,27 @@ const runRecord = [
     }
     db.steps.set(id, merged)
     return ok()
+  }),
+
+  // Mirrors `run/delete/post/gate.fn.js` and its three refusal responders: 404
+  // unknown, 409 while running (cancel is the way out), 403 for a member who
+  // neither started the run nor is an admin. Only then the deletion itself,
+  // files first — the rule's step order, because a retry of a half-done delete
+  // must never leave a row pointing at bytes that are already gone.
+  http.post('/api/workflow/run/delete', async ({ request }) => {
+    const { id } = await body(request)
+    const run = db.runs.get(String(id))
+    const user = mockUser()
+
+    if (!run) return refuse(404, 'run not found')
+    if (run.status === 'running') return refuse(409, 'cancel the run first')
+    const admin = ADMIN_ROLES.has(String(user.role ?? '').toLowerCase())
+    if (!admin && run.startedBy !== user.id) {
+      return refuse(403, 'only the run owner or an admin can delete a run')
+    }
+
+    const { files } = deleteRun(run.runId)
+    return HttpResponse.json({ ok: true, deleted: { files } }, { headers: NO_STORE })
   }),
 
   // Mirrors `gate.fn.js`: granted when unheld, expired, already ours, or forced.
@@ -384,9 +414,17 @@ const hello = [
 ]
 
 // ---------------------------------------------------------------------------
+// Identity — `user.*` read back, for the header and the delete gate's UI half
+// ---------------------------------------------------------------------------
+
+const identity = [
+  http.get('/api/workflow/whoami', () => HttpResponse.json(mockUser(), { headers: NO_STORE })),
+]
+
+// ---------------------------------------------------------------------------
 // Auth — the SuperTokens refresh relay the data layer retries through (R5)
 // ---------------------------------------------------------------------------
 
 const auth = [http.post('/api/auth/session/refresh', () => new HttpResponse(null, { status: 200 }))]
 
-export const handlers = [...discovery, ...runRecord, ...files, ...hello, ...auth]
+export const handlers = [...discovery, ...runRecord, ...files, ...hello, ...identity, ...auth]

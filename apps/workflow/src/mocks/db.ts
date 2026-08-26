@@ -48,6 +48,41 @@ export function resetDb(): void {
   db.helloJobs.clear()
   db.helloBusy.clear()
   db.seq = 0
+  currentUser = MOCK_MEMBER
+}
+
+// ---------------------------------------------------------------------------
+// Identity — what CE's `user.*` expression root resolves to (id, email, role)
+// ---------------------------------------------------------------------------
+
+/** The three fields CE exposes to a pipeline as `user.*`; `null` there means unauthenticated. */
+export interface MockUser {
+  id: string
+  email: string
+  role: string
+}
+
+/** The default session: the ordinary project member every other mock test runs as. */
+export const MOCK_MEMBER: MockUser = { id: 'user_mock', email: 'workflow-ci@example.test', role: 'user' }
+
+/** The second identity, for the branches only an admin reaches (deleting someone else's run). */
+export const MOCK_ADMIN: MockUser = { id: 'user_admin', email: 'admin@example.test', role: 'admin' }
+
+let currentUser: MockUser = MOCK_MEMBER
+
+/** Who the mock backend believes is calling — the stand-in for CE's `user.*`. */
+export function mockUser(): MockUser {
+  return currentUser
+}
+
+/**
+ * Switch the mock's identity. Mock-only: a real session is chosen by logging
+ * in, and no rule ever takes the caller's word for who they are. `resetDb()`
+ * puts it back, so a test that switches cannot leak into the next one; in the
+ * browser worker it is driven by `?as=admin` (see `mocks/browser.ts`).
+ */
+export function setMockUser(user: MockUser): void {
+  currentUser = user
 }
 
 /** The record id CE would mint for a new row. */
@@ -68,6 +103,37 @@ export function toRecord<T extends { _id?: string }>(row: T): Record<string, unk
 
 export function stepsOf(runId: string): ServerStepRow[] {
   return [...db.steps.values()].filter((row) => row.runId === runId)
+}
+
+/** The storage keys under one prefix — what `file_delete`'s `prefix` config sweeps. */
+export function filesUnder(prefix: string): string[] {
+  return [...db.files.keys()].filter((key) => key.startsWith(prefix))
+}
+
+/**
+ * A run's storage prefix (06/D18): `workflows/<impl>/<workflow>/runs/<runId>/`.
+ * Kickoff uploads live one level up under `inputs/`, so they are outside it —
+ * that is the whole point of the layout, and deletion must never reach them.
+ */
+export function runPrefix(run: ServerRunRow): string {
+  return `workflows/${run.impl}/${run.workflow}/runs/${run.runId}/`
+}
+
+/**
+ * Drop one run: every object under its prefix, its step rows, then the run row
+ * — the same order the rule's steps run in (files first, so a failure leaves a
+ * row pointing at bytes rather than bytes nobody can find). Returns the object
+ * count the response reports. Unknown ids delete nothing; the gate, not this,
+ * decides whether a caller may ask.
+ */
+export function deleteRun(runId: string): { files: number } {
+  const run = db.runs.get(runId)
+  if (!run) return { files: 0 }
+  const keys = filesUnder(runPrefix(run))
+  for (const key of keys) db.files.delete(key)
+  for (const step of stepsOf(runId)) db.steps.delete(stepRowKey(runId, step.key))
+  db.runs.delete(runId)
+  return { files: keys.length }
 }
 
 /** Load one recorded run's rows — the shared half of the two seeds below. */

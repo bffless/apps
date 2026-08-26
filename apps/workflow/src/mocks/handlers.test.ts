@@ -5,7 +5,7 @@
  * hello pipelines the M1 implementation calls.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { db, seedFinishedRun } from './db'
+import { MOCK_ADMIN, MOCK_MEMBER, db, filesUnder, seedFinishedRun, setMockUser, stepsOf } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { PAYLOAD_BUDGET_BYTES } from '../lib/runner/payload'
 
@@ -30,6 +30,9 @@ describe('the run record surface', () => {
     expect(res.status).toBe(200)
     const list = await (await fetch('/api/workflow/runs?impl=hello&workflow=hello')).json()
     expect(list.records.map((r: { runId: string }) => r.runId)).toContain('run_new')
+    // `startedBy` is the *session's* member, not the body's — and the session is
+    // whoever `setMockUser` last selected, so ownership is testable (Task 19).
+    expect(list.records.find((r: { runId: string }) => r.runId === 'run_new').startedBy).toBe(MOCK_MEMBER.id)
   })
 
   it('patches only the patchable columns and 404s an unknown run', async () => {
@@ -93,6 +96,93 @@ describe('the run record surface', () => {
 
     const res = await (await json('/api/workflow/run/lease', { id: RUN_ID, owner: 'tab-b' })).json()
     expect(res.ok).toBe(true)
+  })
+})
+
+/** The run whose rows the fixture seeds; `user_fixture` started it, not the default member. */
+const OWNER = FINISHED_RUN.run.startedBy!
+const RUN_PREFIX = `workflows/hello/hello/runs/${RUN_ID}/`
+const INPUT_KEY = 'workflows/hello/hello/inputs/photo.png'
+
+/** Bytes a real run leaves behind: two under its run prefix, one kickoff input outside it (D18). */
+function seedBytes(): void {
+  const file = { bytes: new Uint8Array([1]), contentType: 'application/octet-stream' }
+  db.files.set(`${RUN_PREFIX}slow/0/start/poster.png`, file)
+  db.files.set(`${RUN_PREFIX}outputs/report.json`, file)
+  db.files.set(INPUT_KEY, file)
+}
+
+describe('run deletion (rows + file-prefix GC)', () => {
+  beforeEach(() => {
+    seedFinishedRun()
+    seedBytes()
+  })
+
+  it('404s an unknown run', async () => {
+    const res = await json('/api/workflow/run/delete', { id: 'run_nope' })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  it('refuses a run another member started (403) and deletes nothing', async () => {
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('only the run owner or an admin can delete a run')
+    expect(db.runs.has(RUN_ID)).toBe(true)
+    expect(filesUnder(RUN_PREFIX)).toHaveLength(2)
+  })
+
+  it('refuses while the run is still running (409) — cancel is the way out', async () => {
+    setMockUser({ ...MOCK_MEMBER, id: OWNER })
+    await json('/api/workflow/run/update', { id: RUN_ID, patch: { status: 'running' } })
+
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('cancel the run first')
+    expect(db.runs.has(RUN_ID)).toBe(true)
+    expect(stepsOf(RUN_ID).length).toBeGreaterThan(0)
+  })
+
+  it('deletes the rows and the run prefix for its owner, keeping the kickoff inputs', async () => {
+    setMockUser({ ...MOCK_MEMBER, id: OWNER })
+
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, deleted: { files: 2 } })
+    expect(db.runs.has(RUN_ID)).toBe(false)
+    expect(stepsOf(RUN_ID)).toEqual([])
+    expect(filesUnder(RUN_PREFIX)).toEqual([])
+    expect(db.files.has(INPUT_KEY)).toBe(true)
+  })
+
+  it('lets an admin delete a run they did not start', async () => {
+    setMockUser(MOCK_ADMIN)
+
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(res.status).toBe(200)
+    expect(db.runs.has(RUN_ID)).toBe(false)
+    expect(filesUnder(RUN_PREFIX)).toEqual([])
+  })
+})
+
+describe('whoami', () => {
+  it('answers the session member, uncacheable', async () => {
+    const res = await fetch('/api/workflow/whoami')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.json()).toEqual(MOCK_MEMBER)
+  })
+
+  it('answers the admin identity the mock switch selects (?as=admin)', async () => {
+    setMockUser(MOCK_ADMIN)
+
+    expect(await (await fetch('/api/workflow/whoami')).json()).toEqual(MOCK_ADMIN)
   })
 })
 

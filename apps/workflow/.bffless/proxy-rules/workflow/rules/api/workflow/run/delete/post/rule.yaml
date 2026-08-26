@@ -1,0 +1,105 @@
+targetUrl: pipeline
+order: 16
+pipeline:
+  name: Delete workflow run
+  description: "POST { id }: owner (startedBy == user.id) or admin; terminal runs only (409 while running). Deletes the run's storage prefix first (retryable), then the workflow_files records under it, the step rows, the run row. The per-workflow inputs/ area is never touched (D18)."
+  steps:
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        pageSize: 1
+        filters:
+          runId: { op: eq, value: request.body.id }
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    # Three refusals, not one: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a ConfigurationError),
+    # so each status is its own step gated on its own flag. Exactly one of the four
+    # responders below ever runs, and a skipped step leaves the response to the last one
+    # that did (pipeline-execution.service.ts) — which is why every later step is gated
+    # on `steps.gate.ok` too.
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.gate.notFound
+        body: "{{{steps.gate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    - id: refuse-409
+      name: refuse-409
+      handler: response_handler
+      config:
+        condition: steps.gate.running
+        body: "{{{steps.gate.result}}}"
+        status: 409
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    - id: refuse-403
+      name: refuse-403
+      handler: response_handler
+      config:
+        condition: steps.gate.forbidden
+        body: "{{{steps.gate.result}}}"
+        status: 403
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    # Bytes first: a half-done delete that is retried must never leave a row pointing at
+    # objects that are already gone. `prefix` is a TEMPLATE, not a bare expression
+    # (file-delete.handler.ts resolveAndGuard -> evaluateTemplate); it is relative to the
+    # project's uploads root, blank/`..` are refused, and a prefix matching nothing is
+    # `{ deleted: 0 }`, not an error — so the whole step is idempotent.
+    - id: files
+      name: files
+      handler: file_delete
+      config:
+        condition: steps.gate.ok
+        prefix: "{{steps.gate.prefix}}"
+    # The upload records CE wrote for those objects. The field is `storage_path`, in
+    # snake_case: register_upload writes the record itself (upload-record.service.ts
+    # createUploadRecords) with CE's own column names, unlike the run/step rows, which
+    # this rule set writes with the camelCase names its schemas declare.
+    - id: recs
+      name: recs
+      handler: data_delete
+      config:
+        condition: steps.gate.ok
+        schemaId: $schema:workflow_files
+        filters:
+          storage_path: { op: like, value: steps.gate.prefixLike }
+    - id: steps
+      name: steps
+      handler: data_delete
+      config:
+        condition: steps.gate.ok
+        schemaId: $schema:workflow_run_steps
+        filters:
+          runId: { op: eq, value: request.body.id }
+    - id: row
+      name: row
+      handler: data_delete
+      config:
+        condition: steps.gate.ok
+        schemaId: $schema:workflow_runs
+        recordId: steps.gate.recordId
+    # `{{steps.files.deleted}}` renders the number bare (double braces stringify a
+    # primitive as-is), and the `}}}}` tail is safe: evaluateTemplate scans the original
+    # template once and only tries `{{{` where three braces actually open.
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.gate.ok
+        body: '{"ok":true,"deleted":{"files":{{steps.files.deleted}}}}'
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Delete a run: its storage prefix, its file records, its step rows and the run row — owner or admin, terminal runs only. Kickoff inputs are kept (D18)."

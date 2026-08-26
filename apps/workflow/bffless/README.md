@@ -38,6 +38,19 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
   ffmpeg core-mt — which nothing in hello does.)
 - The `/w/hello/[...path]` forwarding rule bakes `targetUrl: https://hello.j5s.dev` — edit it
   for a different install domain (CE follow-up `targetUrl: alias://hello` removes this).
+- **Run deletion** (`POST /api/workflow/run/delete`, M2 Phase 3): deletes the run's storage
+  prefix `workflows/<impl>/<workflow>/runs/<runId>/` **first** (`file_delete`, idempotent), then
+  the `workflow_files` records under it, then the step rows, then the run row — bytes before
+  rows, so a retried half-delete never leaves a record pointing at objects that are gone. The
+  per-workflow `inputs/` area is **never** touched (D18): kickoff uploads outlive the runs that
+  reference them, and Re-run reuses them. Owner (`startedBy == user.id`) or admin only; a run
+  still `running` is refused with 409 — cancel it first. Because the refusal statuses are
+  literal (`response_handler` will not take an expression for `status`), the rule carries three
+  one-line responders (404/409/403), each gated on its own flag from `gate.fn.js`.
+- **`GET /api/workflow/whoami`** (M2 Phase 3): `{ id, email, role }` for the calling session —
+  the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
+  Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty
+  strings rather than an error, so readers must tolerate them.
 
 ### Islands (M2)
 
