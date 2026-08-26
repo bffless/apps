@@ -133,10 +133,10 @@ test('interactive hello runs an island step end to end against the mock backend'
   ).toHaveAttribute('href', posterHref!)
 
   // `ctx.log` (03: "shows in the step card") — the script step keeps the
-  // ordinary tabs, and its log card rides on Details.
+  // ordinary Input | Output toggle, and its log card rides on Output.
   await drawStep.click()
   const pane = page.getByTestId('step-pane')
-  await pane.getByRole('tab', { name: 'Details' }).click()
+  await pane.getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByTestId('script-log')).toContainText('drawing')
 
   // `ctx.annotate` became a persisted `step.annotated`, so it is in the

@@ -100,14 +100,21 @@ export function ValueView({
   decl,
   value,
   label,
+  tag,
   origin,
+  destination,
   impl,
   onHover,
 }: {
   decl: ValueDecl
   value: unknown
   label?: string
+  /** A mono tag beside the label — the declared type and renderer (08's "file list", "table"). */
+  tag?: string
+  /** Where the value came from: renders as the "from …" provenance chip (08). */
   origin?: string
+  /** Where the value goes next: renders as the "goes to …" chip (08). */
+  destination?: string
   /** Overrides `ImplContext`; only `render: island` reads it. */
   impl?: string
   /**
@@ -167,8 +174,14 @@ export function ValueView({
       onMouseEnter={onHover && (() => onHover(true))}
       onMouseLeave={onHover && (() => onHover(false))}
     >
-      {label && <p className="value-label">{label}</p>}
-      {origin && <span className="chip value-origin">from {origin}</span>}
+      {(label || origin || destination || tag) && (
+        <div className="value-head">
+          {label && <p className="value-label">{label}</p>}
+          {origin && <span className="chip value-origin">from {origin}</span>}
+          {destination && <span className="chip value-origin">goes to {destination}</span>}
+          {tag && <span className="value-tag">{tag}</span>}
+        </div>
+      )}
       {body}
     </div>
   )

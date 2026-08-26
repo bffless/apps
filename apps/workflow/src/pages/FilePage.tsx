@@ -91,8 +91,14 @@ export function FilePage() {
 
   return (
     <section className="page">
-      <h1 className="page-title">{listing?.file ?? 'Workflow file'}</h1>
-      {runId && <p className="note">A snapshot from run {runId}, not the file published now.</p>}
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title mono">{listing?.file ?? 'Workflow file'}</h1>
+          {runId && (
+            <p className="page-sub">A snapshot from run {runId}, not the file published now.</p>
+          )}
+        </div>
+      </div>
 
       <ul className="meta lint-counts">
         <li>{pluralize(result.counts.errors, 'error')}</li>

@@ -94,10 +94,20 @@ export function ImplementationsPage() {
   }
 
   return (
-    <section className="cards" data-testid="implementations">
-      {implementations.map((impl) => (
-        <ImplementationCard key={impl.alias} impl={impl} />
-      ))}
+    <section className="page">
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">Implementations</h1>
+          <p className="page-sub">
+            Every deployment in this project that published a workflow bundle.
+          </p>
+        </div>
+      </div>
+      <div className="cards" data-testid="implementations">
+        {implementations.map((impl) => (
+          <ImplementationCard key={impl.alias} impl={impl} />
+        ))}
+      </div>
     </section>
   )
 }

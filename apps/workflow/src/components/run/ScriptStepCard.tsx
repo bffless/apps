@@ -3,8 +3,8 @@
  *
  * The counterpart of the island pane's `island-log`, and deliberately *not* a
  * pane of its own: a script has nothing to interact with, so its step keeps
- * the ordinary Input / Output / Details tabs and this card rides along on
- * Details, under the timeline that says when the step ran.
+ * the ordinary Input / Output toggle and this card rides along on Output,
+ * under the stats that say when the step ran.
  *
  * The lines are never run state (Decision 12) — they are not persisted, not
  * replayed, and mean nothing outside the tab driving the run — so they come

@@ -82,8 +82,14 @@ export function RunsPage() {
 
   return (
     <section className="page">
-      <h1 className="page-title">Past runs</h1>
-
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">Past runs</h1>
+          <p className="page-sub">
+            Every run of this workflow, newest first.{' '}
+            <Link to={`${base}/run`}>Start a run</Link>
+          </p>
+        </div>
       <div className="filters">
         <label className="filter" htmlFor="runs-status">
           Status
@@ -101,6 +107,7 @@ export function RunsPage() {
             </option>
           ))}
         </select>
+      </div>
       </div>
 
       {isLoading && <p className="note">Loading…</p>}
@@ -123,6 +130,7 @@ export function RunsPage() {
       )}
 
       {shown.length > 0 && (
+        <div className="panel table-panel">
         <table className="runs-table">
           <thead>
             <tr>
@@ -163,6 +171,7 @@ export function RunsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   )

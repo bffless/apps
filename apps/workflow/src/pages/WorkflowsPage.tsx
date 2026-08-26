@@ -42,7 +42,14 @@ export function WorkflowsPage() {
 
   return (
     <section className="page">
-      <h1 className="page-title">{impl.name}</h1>
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">{impl.name}</h1>
+          <p className="page-sub">
+            {impl.description ?? 'Pick a workflow to see how it fits together.'}
+          </p>
+        </div>
+      </div>
       <ul className="rows" data-testid="workflow-list">
         {impl.workflows.map((listing) => {
           const id = workflowId(listing.file)

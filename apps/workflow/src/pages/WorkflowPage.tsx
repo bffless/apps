@@ -55,16 +55,29 @@ export function WorkflowPage() {
 
   const links = (
     <nav className="page-actions">
-      {loaded?.ok && <Link to="run">Start a run</Link>}
-      <Link to="runs">Past runs</Link>
-      <Link to="file">View workflow file</Link>
+      <Link className="button" to="runs">
+        Past runs
+      </Link>
+      <Link className="button" to="file">
+        View workflow file
+      </Link>
+      {loaded?.ok && (
+        <Link className="button primary" to="run">
+          Start a run
+        </Link>
+      )}
     </nav>
   )
 
   return (
     <section className="page">
-      <h1 className="page-title">{listing.name}</h1>
-      {listing.description && <p className="row-desc">{listing.description}</p>}
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">{listing.name}</h1>
+          {listing.description && <p className="page-sub">{listing.description}</p>}
+        </div>
+        {links}
+      </div>
 
       {yamlFailed && (
         <EmptyState title="Couldn't read the workflow file">
@@ -96,8 +109,6 @@ export function WorkflowPage() {
 
       {loaded?.ok && loaded.def && <GraphView def={loaded.def} mode="definition" />}
 
-      {links}
-
       {runs && runs.length > 0 && (
         <section className="recent">
           <h2 className="section-title">Recent runs</h2>
@@ -105,12 +116,12 @@ export function WorkflowPage() {
             {runs.slice(0, RECENT).map((run) => (
               <li className="row" key={run.runId}>
                 <div className="row-head">
-                  <Link className="row-title" to={`runs/${run.runId}`}>
+                  <StatusPill status={run.status} />
+                  <Link className="row-title mono" to={`runs/${run.runId}`}>
                     {run.runId}
                   </Link>
-                  <StatusPill status={run.status} />
+                  <span className="row-when">{new Date(run.startedAt).toLocaleString()}</span>
                 </div>
-                <p className="row-desc">{new Date(run.startedAt).toLocaleString()}</p>
               </li>
             ))}
           </ul>
