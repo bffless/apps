@@ -83,7 +83,12 @@ export function KickoffPage() {
 
   return (
     <section className="page">
-      <h1 className="page-title">Start a run</h1>
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">Start a run</h1>
+          <p className="page-sub">{loaded?.def?.name ?? listing.name}</p>
+        </div>
+      </div>
 
       {yamlFailed && (
         <EmptyState title="Couldn't read the workflow file">
@@ -112,12 +117,14 @@ export function KickoffPage() {
       )}
 
       {loaded?.ok && loaded.def && (
-        <KickoffForm
-          inputs={loaded.def.inputs}
-          initial={previousRun?.run?.inputs}
-          uploading={upload}
-          onStart={handleStart}
-        />
+        <div className="panel form-panel">
+          <KickoffForm
+            inputs={loaded.def.inputs}
+            initial={previousRun?.run?.inputs}
+            uploading={upload}
+            onStart={handleStart}
+          />
+        </div>
       )}
     </section>
   )

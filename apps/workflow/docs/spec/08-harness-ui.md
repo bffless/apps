@@ -2,8 +2,9 @@
 
 What the harness shows, derived from the Claude Design prototype ("Long recording to published
 short": 14 cards, loop groups, per-step Input/Output panes with typed renderers, Past runs,
-Start a run). This is the information architecture, not the visual design — visual design is
-a separate pass (`/impeccable`) once M1 renders real data.
+Start a run). This is the information architecture; the visual design landed with the
+2026-08-26 `/impeccable` pass (`PRODUCT.md`, `DESIGN.md`, `src/index.css`), matched to the
+prototype's "Workflow Graph A" artboard.
 
 ## Routes
 
@@ -42,16 +43,17 @@ One view, two modes, same layout:
 
 ## Step panes (run mode)
 
-Selecting a card opens the side pane with the prototype's **Input | Output** toggle and payload
-chips:
+Selecting a card (or one of its edge dots — left opens Input, right opens Output) opens the
+pane under the graph with the prototype's **Input | Output** toggle and payload chips:
 
 - **Input** — the evaluated `with` (File refs as file cards, expressions resolved to values),
   each chip labelled "from `<job>/<step>`" when it came from a data-flow edge.
 - **Output** — each declared output with its renderer (02): table, transcript, markdown, file
-  viewers with Download, JSON tree, `render: island` viewer; chips labelled "goes to …".
-- **Details** — status timeline (queued → running → … with timestamps), attempt, error
-  (`code`, message, raw response behind a disclosure), the pipeline path, the step's `summary`
-  rendered, its annotations.
+  viewers with Download, JSON tree, `render: island` viewer; chips labelled "goes to …". The
+  audit trail rides here too (the separate Details tab was folded in on 2026-08-26): started /
+  finished / took, attempt, kind, the pipeline path, the error (`code`, message; the raw
+  response behind a disclosure), the step's `summary` rendered, its annotations, and a live
+  script's log.
 - Interactive steps in `waiting`: the pane **is** the island (inline) or the form; `display:
   fullscreen` islands take over the main area with the graph collapsed to a strip.
 

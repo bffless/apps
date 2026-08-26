@@ -5,13 +5,15 @@
  * live in a module-level store keyed by run + step and reach the card through
  * `useSyncExternalStore` rather than Redux. What matters here is that the card
  * renders whatever the store holds — the newest lines, capped — and that
- * `StepPane` puts it on a live script step's Details tab.
+ * `StepPane` puts it on a live script step's Output tab.
  */
 import { render, screen, act } from '@testing-library/react'
+import { Provider } from 'react-redux'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ScriptStepCard } from './ScriptStepCard'
 import { StepPane } from './StepPane'
+import { makeStore } from '../../store'
 import { appendScriptLog, clearAllScriptLogs } from '../../scripts/logStore'
 import type { Definition, RunState, StepKey, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
@@ -119,40 +121,50 @@ describe('ScriptStepCard', () => {
   })
 })
 
-describe('StepPane — the Details tab carries the log for a live script step', () => {
+describe('StepPane — the Output tab carries the log for a live script step', () => {
   it('shows the card while the script runs and after it finished', async () => {
     appendScriptLog(RUN, KEY, 'frame 1')
+    const store = makeStore()
     const { rerender } = render(
-      <StepPane def={def} state={runState()} stepKey={KEY} live={true} />,
+      <Provider store={store}>
+        <StepPane def={def} state={runState()} stepKey={KEY} live={true} />
+      </Provider>,
     )
 
-    // The plain three tabs are unchanged — the card lives on Details.
+    // The Input | Output toggle is unchanged — the card lives on Output, which
+    // (unlike the old Details tab) dispatches the hover highlight, hence the store.
     expect(screen.getByTestId('step-pane')).toBeInTheDocument()
     expect(screen.queryByTestId('script-log')).not.toBeInTheDocument()
     await act(async () => {
-      screen.getByRole('tab', { name: 'Details' }).click()
+      screen.getByRole('tab', { name: 'Output' }).click()
     })
     expect(screen.getByTestId('script-log')).toBeInTheDocument()
     expect(screen.getByText('frame 1')).toBeInTheDocument()
 
     // A finished script keeps its lines until the runner resets.
     rerender(
-      <StepPane
-        def={def}
-        state={runState({ status: 'succeeded', outputs: { count: 2 } })}
-        stepKey={KEY}
-        live={true}
-      />,
+      <Provider store={store}>
+        <StepPane
+          def={def}
+          state={runState({ status: 'succeeded', outputs: { count: 2 } })}
+          stepKey={KEY}
+          live={true}
+        />
+      </Provider>,
     )
     expect(screen.getByTestId('script-log')).toBeInTheDocument()
   })
 
   it('leaves the log out of a read-only replay', async () => {
     appendScriptLog(RUN, KEY, 'frame 1')
-    render(<StepPane def={def} state={runState()} stepKey={KEY} live={false} />)
+    render(
+      <Provider store={makeStore()}>
+        <StepPane def={def} state={runState()} stepKey={KEY} live={false} />
+      </Provider>,
+    )
 
     await act(async () => {
-      screen.getByRole('tab', { name: 'Details' }).click()
+      screen.getByRole('tab', { name: 'Output' }).click()
     })
     expect(screen.queryByTestId('script-log')).not.toBeInTheDocument()
   })

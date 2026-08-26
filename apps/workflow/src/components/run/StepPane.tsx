@@ -1,5 +1,5 @@
 /**
- * One step of a run, in the prototype's three tabs (08).
+ * One step of a run, as the prototype's **Input | Output** toggle (08).
  *
  * **Input** is the `with` the engine actually evaluated, entry by entry, each
  * labelled with where its value came from — the origin is read off the *sub*
@@ -9,12 +9,13 @@
  * `needs.greet.outputs.lines`.
  *
  * **Output** shows what the step *declared*, through the declared renderer — so
- * a `markdown` output renders as markdown even though the row stores a string.
- *
- * **Details** is the audit trail: only stamps the row actually holds are shown
- * with a time (a row keeps `startedAt`/`finishedAt` and nothing else), the
- * retried error stays visible on a step that went on to succeed, and the raw
- * response sits behind a disclosure because it can be 256 KB.
+ * a `markdown` output renders as markdown even though the row stores a string
+ * — each chip saying where it goes next. The audit trail that used to be a
+ * third `Details` tab rides on Output (decided 2026-08-26): the stamps the row
+ * actually holds (a row keeps `startedAt`/`finishedAt` and nothing else), the
+ * attempt, the pipeline path, the retried error that stays visible on a step
+ * that went on to succeed, the summary, the annotations, a live script's log,
+ * and the raw response behind a disclosure because it can be 256 KB.
  *
  * A `form` step in `waiting` is the one exception to all of the above (08:
  * "the pane is the form") — but only while `live` is true, i.e. this run is
@@ -32,13 +33,15 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
+import { formatDuration } from '../../lib/duration'
 import { stepOutputDecl } from '../../lib/outputDecls'
-import { refsIn } from '../../lib/runner/graph'
+import { dataFlowEdges, refsIn } from '../../lib/runner/graph'
 import type { ValueRef } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
 import { useAppDispatch } from '../../store/hooks'
 import { valueHovered } from '../../store/uiSlice'
 import { StatusPill } from '../StatusPill'
+import { jobLabel, stepLabel } from '../graph/geometry'
 import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
@@ -48,8 +51,8 @@ import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
 import { ScriptStepCard } from './ScriptStepCard'
 
-type Tab = 'Input' | 'Output' | 'Details'
-const TABS: Tab[] = ['Input', 'Output', 'Details']
+export type Tab = 'Input' | 'Output'
+const TABS: Tab[] = ['Input', 'Output']
 
 /** `greet/1/say` → its parts; a step id cannot contain `/`, so the split is exact. */
 function parseKey(key: StepKey): { job: string; index: number; stepId: string } | null {
@@ -84,6 +87,41 @@ function originOf(job: string, declared: unknown): string | undefined {
   return labels.length > 0 ? labels.join(', ') : undefined
 }
 
+/**
+ * "goes to `<job>/<step>`, …" — every step whose expressions read this output
+ * (08), directly (`steps.<id>.outputs.<o>` inside the same job) or through a
+ * job-level alias (`outputs: { o: ${{ steps.<id>.outputs.<o> }} }`, then
+ * `needs.<job>.outputs.<o>` downstream) — the way every cross-job read in the
+ * hello workflow actually happens.
+ */
+function destinationOf(def: Definition, step: StepState, output: string): string | undefined {
+  const jobOutputs = (def.jobs[step.job]?.raw?.outputs ?? null) as Record<string, unknown> | null
+  const aliases = new Set(
+    Object.entries(jobOutputs ?? {})
+      .filter(([, expr]) =>
+        refsIn(expr).some(
+          (ref) => ref.context === 'steps' && ref.name === step.stepId && ref.output === output,
+        ),
+      )
+      .map(([alias]) => alias),
+  )
+  const targets = dataFlowEdges(def)
+    .filter((edge) => {
+      if (edge.from.job !== step.job) return false
+      if (edge.from.step === undefined) return aliases.has(edge.from.output)
+      return edge.from.step === step.stepId && edge.from.output === output
+    })
+    .map((edge) => `${edge.to.job}/${edge.to.step}`)
+  const unique = [...new Set(targets)]
+  return unique.length > 0 ? unique.join(', ') : undefined
+}
+
+/** The mono tag beside a value's name: its declared type, and its renderer when named. */
+function kindTag(decl: ValueDecl): string {
+  const base = `${decl.type}${decl.list ? ' · list' : ''}`
+  return typeof decl.render === 'string' ? `${base} · ${decl.render}` : base
+}
+
 // `origin` above is one joined string per entry — a pipeline step's `with`
 // can read several upstream values into one persisted input (`body.lines`
 // *and* `body.photo`, say), so a single origin chip has no one `ValueRef` to
@@ -96,24 +134,30 @@ function InputTab({ job, step, declared }: { job: string; step: StepState; decla
 
   return (
     <div className="pane-values">
-      {entries.map(([name, value]) => (
-        <ValueView
-          key={name}
-          label={name}
-          decl={inferDecl(value)}
-          value={value}
-          origin={originOf(job, declared?.raw?.with?.[name])}
-        />
-      ))}
+      {entries.map(([name, value]) => {
+        const decl = inferDecl(value)
+        return (
+          <ValueView
+            key={name}
+            label={name}
+            tag={kindTag(decl)}
+            decl={decl}
+            value={value}
+            origin={originOf(job, declared?.raw?.with?.[name])}
+          />
+        )
+      })}
     </div>
   )
 }
 
-function OutputTab({
+function OutputValues({
+  def,
   step,
   declared,
   impl,
 }: {
+  def: Definition
   step: StepState
   declared?: Step
   /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
@@ -152,9 +196,11 @@ function OutputTab({
             <ValueView
               key={name}
               label={name}
+              tag={kindTag(decl)}
               decl={decl}
               value={value}
               impl={impl}
+              destination={destinationOf(def, step, name)}
               // This step's own output is the value's declaring chip (08's
               // data-flow highlight) — the graph lights up wherever else it's read.
               onHover={(hovering) =>
@@ -170,58 +216,53 @@ function OutputTab({
   )
 }
 
-/** The stamps the row holds, in the order they happened. */
-function timeline(step: StepState): { label: string; at?: number }[] {
-  const entries: { label: string; at?: number }[] = [{ label: 'Queued' }]
-  if (step.startedAt !== undefined) entries.push({ label: 'Started', at: step.startedAt })
-  if (step.finishedAt !== undefined) entries.push({ label: 'Finished', at: step.finishedAt })
-  return entries
+/** `14:06:02` — the wall-clock stamp the row holds, in the reader's locale. */
+function clock(at: number | undefined): string {
+  return at === undefined ? '—' : new Date(at).toLocaleTimeString()
 }
 
-function DetailsTab({
-  step,
-  declared,
-  scriptLog,
-}: {
-  step: StepState
-  declared?: Step
-  /** A live script step's log card — `undefined` for every other step (see `StepPane`). */
-  scriptLog?: ReactNode
-}) {
+/**
+ * The audit trail, folded into Output: only stamps the row actually holds are
+ * shown with a time, the retried error stays visible on a step that went on to
+ * succeed, and the raw response sits behind a disclosure.
+ */
+function Details({ step, declared }: { step: StepState; declared?: Step }) {
   const path = declared?.raw?.with?.path
-  const raw = step.response?.last ?? step.response?.initial
+  const took =
+    step.startedAt !== undefined && step.finishedAt !== undefined
+      ? formatDuration(step.finishedAt - step.startedAt)
+      : undefined
 
   return (
-    <div className="pane-details">
-      <ol className="timeline">
-        {timeline(step).map((entry) => (
-          <li className="timeline-entry" key={entry.label}>
-            <span className="timeline-label">{entry.label}</span>
-            <span className="timeline-at">
-              {entry.at === undefined ? '—' : new Date(entry.at).toLocaleTimeString()}
-            </span>
-          </li>
-        ))}
-      </ol>
-
-      <dl className="details">
-        <dt>Status</dt>
-        <dd>
-          <StatusPill status={step.status} />
-        </dd>
-        <dt>Attempt</dt>
-        <dd>Attempt {step.attempt}</dd>
-        <dt>Kind</dt>
-        <dd>{step.kind}</dd>
+    <>
+      <dl className="stats">
+        <div className="stat">
+          <dt>Started</dt>
+          <dd>{clock(step.startedAt)}</dd>
+        </div>
+        <div className="stat">
+          <dt>Finished</dt>
+          <dd>{clock(step.finishedAt)}</dd>
+        </div>
+        <div className="stat">
+          <dt>Took</dt>
+          <dd>{took ?? '—'}</dd>
+        </div>
+        <div className="stat">
+          <dt>Attempt</dt>
+          <dd>Attempt {step.attempt}</dd>
+        </div>
+        <div className="stat">
+          <dt>Kind</dt>
+          <dd>{step.kind}</dd>
+        </div>
         {typeof path === 'string' && (
-          <>
-            <dt>Pipeline path</dt>
+          <div className="stat">
+            <dt>Pipeline</dt>
             <dd>{path}</dd>
-          </>
+          </div>
         )}
       </dl>
-
-      {scriptLog}
 
       {step.error && (
         <div className="step-error" data-severity={step.status === 'failed' ? 'error' : 'warning'}>
@@ -232,14 +273,28 @@ function DetailsTab({
           <p className="step-error-message">{step.error.message}</p>
         </div>
       )}
+    </>
+  )
+}
 
-      {raw !== undefined && raw !== null && (
-        <details className="raw-response">
-          <summary>Raw response{step.response?.truncated ? ' (truncated)' : ''}</summary>
-          <pre className="declaration">{JSON.stringify(raw, null, 2)}</pre>
-        </details>
-      )}
+function Trail({
+  step,
+  scriptLog,
+}: {
+  step: StepState
+  /** A live script step's log card — `undefined` for every other step (see `StepPane`). */
+  scriptLog?: ReactNode
+}) {
+  const raw = step.response?.last ?? step.response?.initial
+  const hasTrail =
+    scriptLog !== undefined ||
+    step.summary !== undefined ||
+    step.annotations.length > 0 ||
+    (raw !== undefined && raw !== null)
+  if (!hasTrail) return null
 
+  return (
+    <div className="pane-trail">
       {step.summary && (
         <section className="pane-summary">
           <h4 className="section-title">Summary</h4>
@@ -260,6 +315,15 @@ function DetailsTab({
           ))}
         </ul>
       )}
+
+      {scriptLog}
+
+      {raw !== undefined && raw !== null && (
+        <details className="raw-response">
+          <summary>Raw response{step.response?.truncated ? ' (truncated)' : ''}</summary>
+          <pre className="declaration">{JSON.stringify(raw, null, 2)}</pre>
+        </details>
+      )}
     </div>
   )
 }
@@ -270,21 +334,24 @@ export interface StepPaneProps {
   stepKey: StepKey
   /** This run is the one this tab is driving (`RunPage`'s own `isLive`) — gates the `FormStepPane` delegation below. */
   live: boolean
+  /** Which side opens first — an edge dot's click says (08); a chip's click leaves it on Input. */
+  initialTab?: Tab
 }
 
-export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
-  const [tab, setTab] = useState<Tab>('Input')
+export function StepPane({ def, state, stepKey, live, initialTab = 'Input' }: StepPaneProps) {
+  const [tab, setTab] = useState<Tab>(initialTab)
 
   const parts = parseKey(stepKey)
   const step = state.steps[stepKey]
-  const declared = parts
-    ? def.jobs[parts.job]?.steps.find((candidate) => candidate.id === parts.stepId)
-    : undefined
+  const job = parts ? def.jobs[parts.job] : undefined
+  const declared = parts ? job?.steps.find((candidate) => candidate.id === parts.stepId) : undefined
 
   if (!parts || !step) {
     return (
       <aside className="step-pane" data-testid="step-pane" aria-label="Step">
-        <h3 className="graph-panel-title">{stepKey}</h3>
+        <header className="pane-head">
+          <h3 className="graph-panel-title">{stepKey}</h3>
+        </header>
         <p className="note">This run has no record of that step.</p>
       </aside>
     )
@@ -303,29 +370,50 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
     return <IslandStepPane state={state} stepKey={stepKey} />
   }
 
+  // The eyebrow says which job this step belongs to and, for a fanned-out job,
+  // which item is showing — the prototype's "For each video · step 2 of 3".
+  const total = state.expansions[parts.job]?.total
+  const eyebrow = job
+    ? `${jobLabel(job)}${job.matrix !== undefined && total !== undefined ? ` · item ${parts.index + 1} of ${total}` : ''}`
+    : parts.job
+
+  // A script has no pane of its own — its live `ctx.log` rides on Output
+  // instead, whatever the step's status (a finished script's lines stay until
+  // the runner resets). Live only, like the island log: the lines belong to
+  // the run *this* tab is driving, and a read-only replay of another run's
+  // step has none of them.
+  const scriptLog =
+    live && declared?.uses === 'script' ? <ScriptStepCard runId={state.runId} stepKey={stepKey} /> : undefined
+
   return (
     <aside className="step-pane" data-testid="step-pane" aria-label="Step">
-      <header className="graph-panel-head">
-        <h3 className="graph-panel-title">{stepKey}</h3>
-        <StatusPill status={step.status} />
-      </header>
+      <header className="pane-head">
+        <span className="pane-title">
+          <span className="pane-eyebrow">{eyebrow}</span>
+          <h3 className="graph-panel-title">{declared ? stepLabel(declared) : parts.stepId}</h3>
+          <span className="pane-key">{stepKey}</span>
+        </span>
 
-      <div className="tabs" role="tablist">
-        {TABS.map((name) => (
-          <button
-            type="button"
-            role="tab"
-            className="tab"
-            key={name}
-            aria-selected={tab === name}
-            aria-controls="step-pane-body"
-            id={`step-pane-tab-${name}`}
-            onClick={() => setTab(name)}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
+        <div className="segmented" role="tablist" aria-label="Side">
+          {TABS.map((name) => (
+            <button
+              type="button"
+              role="tab"
+              className="tab"
+              key={name}
+              aria-selected={tab === name}
+              aria-controls="step-pane-body"
+              id={`step-pane-tab-${name}`}
+              onClick={() => setTab(name)}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+
+        <StatusPill status={step.status} />
+        <span className="pane-kind">{step.kind}</span>
+      </header>
 
       <div
         className="pane-body"
@@ -334,22 +422,12 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
         aria-labelledby={`step-pane-tab-${tab}`}
       >
         {tab === 'Input' && <InputTab job={parts.job} step={step} declared={declared} />}
-        {tab === 'Output' && <OutputTab step={step} declared={declared} impl={state.impl} />}
-        {tab === 'Details' && (
-          <DetailsTab
-            step={step}
-            declared={declared}
-            // A script has no pane of its own — its live `ctx.log` rides on
-            // Details instead, whatever the step's status (a finished script's
-            // lines stay until the runner resets). Live only, like the island
-            // log: the lines belong to the run *this* tab is driving, and a
-            // read-only replay of another run's step has none of them.
-            scriptLog={
-              live && declared?.uses === 'script' ? (
-                <ScriptStepCard runId={state.runId} stepKey={stepKey} />
-              ) : undefined
-            }
-          />
+        {tab === 'Output' && (
+          <>
+            <Details step={step} declared={declared} />
+            <OutputValues def={def} step={step} declared={declared} impl={state.impl} />
+            <Trail step={step} scriptLog={scriptLog} />
+          </>
         )}
       </div>
     </aside>

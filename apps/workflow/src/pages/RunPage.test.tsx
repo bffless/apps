@@ -107,9 +107,9 @@ describe('RunPage', () => {
     )
   })
 
-  it('details the attempt, the pipeline path and the annotations of a step', async () => {
+  it('details the attempt, the pipeline path and the annotations of a step on Output', async () => {
     const page = await openRun()
-    const pane = openTab(page, 'slow/0/start', 'Details')
+    const pane = openTab(page, 'slow/0/start', 'Output')
 
     expect(within(pane).getByText('Attempt 2')).toBeInTheDocument()
     expect(within(pane).getByText('slow')).toBeInTheDocument()

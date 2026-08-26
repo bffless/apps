@@ -96,7 +96,7 @@ describe('StepPane — live gates the waiting-form delegation', () => {
     expect(screen.getByTestId('step-pane')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Input' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Details' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
     expect(screen.getByText('Attempt 1')).toBeInTheDocument()
   })
 

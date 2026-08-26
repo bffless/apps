@@ -1,6 +1,7 @@
 /**
  * The run page's first section (08): what ran, how it's going (or ended), and
- * the ways out of it.
+ * the ways out of it — a title row with the actions, then the prototype's
+ * one-line **run bar** (status glyph, progress, elapsed, the badges).
  *
  * "View workflow file" carries the run's **own** YAML in the navigation state
  * (D16) rather than linking at the file the implementation publishes now — a
@@ -109,66 +110,85 @@ export function RunHeader({
 
   return (
     <header className="run-head">
-      <div className="run-head-title">
-        <h1 className="page-title">{workflowName}</h1>
-        <span data-testid="run-status" data-state={status}>
-          <StatusPill status={status} />
-        </span>
+      <div className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">{workflowName}</h1>
+          <p className="page-sub run-sub">
+            <span className="run-id">{runId}</span>
+            {startedBy && (
+              <>
+                <span className="sep">·</span>
+                <span>{startedBy}</span>
+              </>
+            )}
+            <span className="sep">·</span>
+            <span>{new Date(startedAt).toLocaleString()}</span>
+          </p>
+        </div>
+
+        <nav className="page-actions">
+          <Link className="button" to={`${base}/runs`}>
+            Past runs
+          </Link>
+          <Link className="button" to={`${base}/file`} state={{ yaml, runId }}>
+            View workflow file
+          </Link>
+          {live && (
+            <span className="page-actions-live" data-testid="run-actions-live">
+              {onCancel && (
+                <button type="button" className="button" data-testid="run-cancel" onClick={onCancel}>
+                  Cancel
+                </button>
+              )}
+            </span>
+          )}
+          {/*
+            Deletion takes the run's files with it and cannot be undone (05), so
+            it is confirmed here rather than in the page: whoever renders this
+            header gets the confirm for free, and there is no way to wire the
+            button up without one.
+          */}
+          {onDelete && (
+            <button
+              type="button"
+              className="button danger"
+              data-testid="run-delete"
+              disabled={deleting}
+              onClick={() => {
+                if (window.confirm(DELETE_CONFIRM)) onDelete()
+              }}
+            >
+              Delete
+            </button>
+          )}
+          <Link className="button primary" to={`${base}/run?from=${runId}`}>
+            Re-run
+          </Link>
+        </nav>
       </div>
 
-      <ul className="meta run-meta">
-        <li className="run-id">{runId}</li>
-        {startedBy && <li>{startedBy}</li>}
-        <li>{new Date(startedAt).toLocaleString()}</li>
-        <li>{elapsedMs === null ? 'in flight' : formatDuration(elapsedMs)}</li>
-        {progress && (
-          <li>
-            {progress.done} of {progress.total} done
-          </li>
-        )}
-        {headless && <li className="badge">headless</li>}
-        {counts.map(({ level, count }) => (
-          <li className="badge" key={level} data-severity={level}>
-            {pluralize(count, level)}
-          </li>
-        ))}
-      </ul>
-
-      <nav className="page-actions">
-        <Link to={`${base}/runs`}>Past runs</Link>
-        <Link to={`${base}/file`} state={{ yaml, runId }}>
-          View workflow file
-        </Link>
-        <Link to={`${base}/run?from=${runId}`}>Re-run</Link>
-        {live && (
-          <span className="page-actions-live" data-testid="run-actions-live">
-            {onCancel && (
-              <button type="button" data-testid="run-cancel" onClick={onCancel}>
-                Cancel
-              </button>
-            )}
-          </span>
-        )}
-        {/*
-          Deletion takes the run's files with it and cannot be undone (05), so
-          it is confirmed here rather than in the page: whoever renders this
-          header gets the confirm for free, and there is no way to wire the
-          button up without one.
-        */}
-        {onDelete && (
-          <button
-            type="button"
-            className="danger"
-            data-testid="run-delete"
-            disabled={deleting}
-            onClick={() => {
-              if (window.confirm(DELETE_CONFIRM)) onDelete()
-            }}
-          >
-            Delete
-          </button>
-        )}
-      </nav>
+      <div className="run-bar">
+        <span className="run-bar-status" data-testid="run-status" data-state={status}>
+          <StatusPill status={status} />
+        </span>
+        <span className="run-bar-meta">
+          {progress && (
+            <span>
+              {progress.done} of {progress.total} done
+            </span>
+          )}
+          <span>{elapsedMs === null ? 'in flight' : formatDuration(elapsedMs)}</span>
+          {inFlight && elapsedMs !== null && <span>elapsed</span>}
+        </span>
+        <span className="run-bar-badges">
+          {headless && <span className="badge">headless</span>}
+          {counts.map(({ level, count }) => (
+            <span className="badge" key={level} data-severity={level}>
+              {pluralize(count, level)}
+            </span>
+          ))}
+        </span>
+      </div>
     </header>
   )
 }

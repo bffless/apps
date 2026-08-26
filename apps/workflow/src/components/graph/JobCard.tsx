@@ -2,10 +2,17 @@
  * One job of the graph: its name, what it fans out over, and its steps stacked
  * in declaration order (08).
  *
+ * Two shapes, as in the prototype: a job with one step and no matrix is a
+ * single 60px card — the step *is* the card, its row carries the job's name —
+ * and anything else is a group card with a header strip (the job name, and for
+ * a matrix job the `FOR EACH … · N AT ONCE` line) over one row per step.
+ *
  * A matrix job is one card, not N: in run mode it carries the progress fraction
  * ("2 of 2") and an item selector that swaps which expansion index the chips
  * below show. That keeps the layout a function of the *definition* — the graph
- * never grows or reflows as a run fans out.
+ * never grows or reflows as a run fans out. Every card's height is derived the
+ * same way (`cardHeight`), so `GraphView` can draw connectors and edge dots
+ * without a layout pass.
  *
  * Which item is showing is *derived from `selectedKey`* whenever the selection
  * belongs to this job, and changing the selector reports the new key through
@@ -19,6 +26,7 @@ import type { CSSProperties } from 'react'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import type { GraphFlow } from './flow'
+import { isSingle, jobLabel, matrixNote } from './geometry'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
@@ -27,15 +35,6 @@ const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
   'skipped',
   'cancelled',
 ])
-
-/** "For each who · max 2 at once" — the strategy, as the prototype phrases it. */
-function matrixNote(job: Job): string | null {
-  const strategy = job.raw?.strategy as { matrix?: object; 'max-parallel'?: number } | undefined
-  const vars = strategy?.matrix ? Object.keys(strategy.matrix) : []
-  if (vars.length === 0) return null
-  const parallel = strategy?.['max-parallel']
-  return `For each ${vars.join(', ')}${parallel ? ` · max ${parallel} at once` : ''}`
-}
 
 /** `greet/1/say` → its parts; step ids cannot contain `/`, so the split is exact. */
 function parseKey(key: StepKey): { job: string; index: number; stepId: string } | null {
@@ -92,7 +91,9 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
 
   const note = matrixNote(job)
   const isMatrix = job.matrix !== undefined && mode === 'run'
+  const single = isSingle(job)
   const jobFlow = flow?.sourceJobs.has(job.id) ? 'source' : undefined
+  const selectedInside = selectedHere !== null
 
   return (
     <article
@@ -102,18 +103,23 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
       data-col={col}
       data-row={row}
       data-flow={jobFlow}
+      data-single={single || undefined}
+      data-selected={selectedInside || undefined}
       style={style}
     >
-      <header className="job-head">
-        <h3 className="job-name">{job.raw?.name ?? job.id}</h3>
-        {isMatrix && (
-          <span className="job-fraction">
-            {done} of {total}
+      {!single && (
+        <header className="job-head">
+          <span className="job-head-row">
+            <h3 className="job-name">{jobLabel(job)}</h3>
+            {isMatrix && (
+              <span className="job-fraction">
+                {done} of {total}
+              </span>
+            )}
           </span>
-        )}
-      </header>
-
-      {note && <p className="job-note">{note}</p>}
+          {note && <p className="job-note">{note}</p>}
+        </header>
+      )}
 
       {isMatrix && total > 1 && (
         <select
@@ -143,11 +149,13 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
             <StepChip
               key={step.id}
               job={job.id}
+              jobLabel={single ? jobLabel(job) : undefined}
               index={mode === 'run' ? index : 0}
               step={step}
               mode={mode}
               state={state?.steps[key]}
               selected={selectedKey === key}
+              single={single}
               onPick={onPick}
               flow={stepFlow}
             />

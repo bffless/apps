@@ -38,6 +38,7 @@ import { AnnotationList } from '../components/AnnotationList'
 import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
+import type { PaneSide } from '../components/graph/GraphView'
 import { useIslandHandle } from '../islands/useIslandHandle'
 import { PausedBanner } from '../components/run/PausedBanner'
 import { RunHeader } from '../components/run/RunHeader'
@@ -262,6 +263,17 @@ export function RunPage() {
   const { data: me } = useWhoamiQuery()
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState<string | null>(null)
+
+  // Which side a graph edge dot asked the pane to open on (08: "jump straight
+  // to one side"). A chip click has no side and leaves the pane on Input. The
+  // counter makes a second click on the same dot re-open that side even when
+  // the selection did not change — the pane is keyed on it below.
+  const [side, setSide] = useState<{ key: string; side: PaneSide; n: number } | null>(null)
+  const select = (key: string, requested?: PaneSide) => {
+    dispatch(stepSelected(key))
+    if (requested) setSide((prev) => ({ key, side: requested, n: (prev?.n ?? 0) + 1 }))
+  }
+  const paneSide = side && side.key === selectedStep ? side : null
 
   // Selection is scoped to the run being viewed (fix round 1): `uiSlice.
   // selectedStep` is process-global and step keys repeat identically across
@@ -558,13 +570,22 @@ export function RunPage() {
                   mode="run"
                   state={state}
                   selectedKey={selectedStep}
-                  onSelect={(key) => dispatch(stepSelected(key))}
+                  onSelect={select}
                 />
               )}
               {selectedStep ? (
-                <StepPane key={selectedStep} def={def} state={state} stepKey={selectedStep} live={isLive} />
+                <StepPane
+                  key={`${selectedStep}#${paneSide?.n ?? 0}`}
+                  def={def}
+                  state={state}
+                  stepKey={selectedStep}
+                  live={isLive}
+                  initialTab={paneSide?.side}
+                />
               ) : (
-                <p className="note">Pick a step to see what went in and what came out.</p>
+                <p className="note pane-placeholder">
+                  Pick a step to see what went in and what came out.
+                </p>
               )}
             </div>
 
@@ -572,7 +593,7 @@ export function RunPage() {
             <RunSummary def={def} state={state} />
             <AnnotationList
               annotations={annotations}
-              onJump={(key) => dispatch(stepSelected(key))}
+              onJump={(key) => select(key)}
             />
           </>
         )}

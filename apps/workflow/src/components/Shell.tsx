@@ -1,8 +1,9 @@
 /**
- * The frame every screen renders inside (08): a header with the app title, a
- * breadcrumb and the signed-in user, and a left rail holding the implementation
- * → workflow tree that discovery found. (The user was M1's one gap here — the
- * harness had no endpoint for one, R8; Task 19's `whoami` rule is it.)
+ * The frame every screen renders inside (08): a 56px top bar with the app
+ * mark, a mono breadcrumb and the signed-in user, and a left rail holding the
+ * implementation → workflow tree that discovery found. (The user was M1's one
+ * gap here — the harness had no endpoint for one, R8; Task 19's `whoami` rule
+ * is it.)
  *
  * The breadcrumb is read off the path rather than from `useParams`, because a
  * layout route matches before its children and so sees none of their params.
@@ -91,13 +92,16 @@ export function Shell() {
     <div className="shell">
       <header className="shell-header">
         <Link className="brand" to="/">
+          <span className="brand-mark" aria-hidden="true" />
           Workflow
         </Link>
+        <span className="shell-divider" aria-hidden="true" />
         <Breadcrumb />
         <Whoami />
       </header>
       <div className="shell-body">
         <nav className="rail" aria-label="Implementations">
+          <p className="rail-eyebrow">Implementations</p>
           <Rail />
         </nav>
         <main className="content">
