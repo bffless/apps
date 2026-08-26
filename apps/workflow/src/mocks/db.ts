@@ -5,6 +5,7 @@
  */
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import { FINISHED_RUN } from './fixtures/finishedRun'
+import { RENDERED_RUN } from './fixtures/renderedRun'
 import { SCRIPT_RUN } from './fixtures/scriptRun'
 
 export interface MockFile {
@@ -92,4 +93,14 @@ export function seedFinishedRun(): void {
  */
 export function seedScriptRun(): void {
   seedRun(SCRIPT_RUN)
+}
+
+/**
+ * Load the completed `rendered` run whose one step declares all five named
+ * renderers (see `fixtures/renderedRun.ts`, Task 17). Its two `images` File
+ * refs need bytes the same way the script run's poster does — seeded
+ * separately by whoever owns `db.files` for the session.
+ */
+export function seedRenderedRun(): void {
+  seedRun(RENDERED_RUN)
 }

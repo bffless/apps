@@ -101,7 +101,16 @@ function InputTab({ job, step, declared }: { job: string; step: StepState; decla
   )
 }
 
-function OutputTab({ step, declared }: { step: StepState; declared?: Step }) {
+function OutputTab({
+  step,
+  declared,
+  impl,
+}: {
+  step: StepState
+  declared?: Step
+  /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
+  impl?: string
+}) {
   const recorded = step.outputs ?? {}
   const names = (declared && stepOutputNames(declared)) ?? Object.keys(recorded)
   if (names.length === 0) return <p className="note">This step declares no outputs.</p>
@@ -120,7 +129,7 @@ function OutputTab({ step, declared }: { step: StepState; declared?: Step }) {
             declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
               ? { type: 'file' }
               : declaredDecl
-          return <ValueView key={name} label={name} decl={decl} value={value} />
+          return <ValueView key={name} label={name} decl={decl} value={value} impl={impl} />
         })}
       </div>
     </MediaSeekProvider>
@@ -291,7 +300,7 @@ export function StepPane({ def, state, stepKey, live }: StepPaneProps) {
         aria-labelledby={`step-pane-tab-${tab}`}
       >
         {tab === 'Input' && <InputTab job={parts.job} step={step} declared={declared} />}
-        {tab === 'Output' && <OutputTab step={step} declared={declared} />}
+        {tab === 'Output' && <OutputTab step={step} declared={declared} impl={state.impl} />}
         {tab === 'Details' && (
           <DetailsTab
             step={step}

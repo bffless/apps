@@ -39,7 +39,16 @@ function stepsOfJob(def: Definition, state: RunState, job: string): StepState[] 
     .sort((a, b) => a.index - b.index || order.indexOf(a.stepId) - order.indexOf(b.stepId))
 }
 
-export function RunOutputs({ def, state }: { def: Definition; state: RunState }) {
+export function RunOutputs({
+  def,
+  state,
+  impl,
+}: {
+  def: Definition
+  state: RunState
+  /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
+  impl?: string
+}) {
   const recorded = state.outputs ?? {}
   const topLevel = outputNames(Object.keys(def.outputs ?? {}), recorded)
 
@@ -61,6 +70,7 @@ export function RunOutputs({ def, state }: { def: Definition; state: RunState })
                   label={name}
                   decl={withValue(resolveOutputDecl(def, RUN_SCOPE, name), recorded[name])}
                   value={recorded[name] ?? null}
+                  impl={impl}
                 />
               </div>
             ))}
@@ -86,6 +96,7 @@ export function RunOutputs({ def, state }: { def: Definition; state: RunState })
                         value,
                       )}
                       value={value}
+                      impl={impl}
                     />
                   </div>
                 ))

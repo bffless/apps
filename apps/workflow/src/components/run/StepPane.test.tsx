@@ -15,13 +15,29 @@
  * case falls back to tabs even while a same-keyed run really is live in that
  * very store, and the live case still gets the form.
  */
+import { http, HttpResponse } from 'msw'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
-import { afterEach, describe, expect, it } from 'vitest'
+import { toDefinition } from '@bffless/workflow-lint/definition'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StepPane } from './StepPane'
 import { hello, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
+import { server } from '../../mocks/server'
+import { RENDERED_RUN } from '../../mocks/fixtures/renderedRun'
+import { replayRun } from '../../lib/runner/replay'
 import type { RunState, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
+
+// jsdom has no canvas (`ChartView.test.tsx` explains why); this file only
+// needs to know `render: chart` reaches `ChartView`, not that uPlot can
+// actually draw into a headless DOM.
+vi.mock('uplot', () => {
+  class MockUPlot {
+    static paths = { bars: () => undefined }
+    destroy() {}
+  }
+  return { default: MockUPlot }
+})
 
 afterEach(() => {
   resetHelloHarness()
@@ -94,5 +110,35 @@ describe('StepPane — live gates the waiting-form delegation', () => {
 
     expect(screen.getByLabelText(/^approved/)).toBeChecked()
     expect(screen.getByRole('button', { name: 'Finish' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Task 17's renderer sweep, one level down from `RunOutputs`: the same five
+ * named renderers have to reach the Output tab too, off the very same
+ * replayed step row — including `island`, which needs `impl` threaded from
+ * `state.impl` rather than only from `ImplContext` (no `Provider` wraps this
+ * render at all).
+ */
+describe('StepPane — Output tab renders every named renderer', () => {
+  it('shows all five renderer wrappers for the rendered-run fixture step', () => {
+    server.use(
+      http.get('/w/hello/islands/line-viewer.html', () =>
+        HttpResponse.text('<!doctype html><p>viewer</p>'),
+      ),
+    )
+
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    render(<StepPane def={def} state={state} stepKey="show/0/render" live={false} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
+
+    const renderers = screen.getAllByTestId('renderer')
+    expect(renderers.map((el) => el.getAttribute('data-render')).sort()).toEqual(
+      ['chart', 'code', 'images', 'island', 'transcript'].sort(),
+    )
+    expect(screen.queryAllByText(/^renderer:/)).toHaveLength(0)
   })
 })

@@ -497,7 +497,7 @@ export function RunPage() {
               )}
             </div>
 
-            <RunOutputs def={def} state={state} />
+            <RunOutputs def={def} state={state} impl={state.impl} />
             <RunSummary def={def} state={state} />
             <AnnotationList
               annotations={annotations}
