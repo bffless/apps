@@ -26,12 +26,14 @@ export function RunSummary({ def, state }: { def: Definition; state: RunState })
       {steps.length === 0 ? (
         <p className="note">No step wrote a summary.</p>
       ) : (
-        steps.map((step) => (
-          <article className="summary-entry" key={step.key}>
-            <p className="summary-step">{step.key}</p>
-            <MarkdownView value={step.summary!} />
-          </article>
-        ))
+        <div className="panel summary-panel">
+          {steps.map((step) => (
+            <article className="summary-entry" key={step.key}>
+              <p className="summary-step">{step.key}</p>
+              <MarkdownView value={step.summary!} />
+            </article>
+          ))}
+        </div>
       )}
     </section>
   )
