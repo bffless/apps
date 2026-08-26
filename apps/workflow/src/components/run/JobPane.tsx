@@ -27,7 +27,7 @@ import { jobLabel, matrixNote, stepLabel } from '../graph/geometry'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
-import { BackToRun } from './BackToRun'
+import { PaneCrumbs } from './PaneCrumbs'
 import type { Tab } from './StepPane'
 
 const TABS: Tab[] = ['Input', 'Output']
@@ -85,8 +85,10 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
     return (
       <aside className="step-pane job-pane" data-testid="job-pane" aria-label="Job">
         <header className="pane-head">
-          <BackToRun onBack={onBack} label="Run" />
-          <h3 className="graph-panel-title">{job}</h3>
+          <span className="pane-title">
+            <PaneCrumbs trail={[{ label: 'Run', onClick: onBack }]} current={job} />
+            <h3 className="graph-panel-title">{job}</h3>
+          </span>
         </header>
         <p className="note">This workflow declares no such job.</p>
       </aside>
@@ -114,14 +116,14 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
   return (
     <aside className="step-pane job-pane" data-testid="job-pane" aria-label="Job">
       <header className="pane-head">
-        <BackToRun onBack={onBack} label="Run" />
         <span className="pane-title">
-          <span className="pane-eyebrow">Run · job</span>
+          <PaneCrumbs
+            trail={[{ label: 'Run', onClick: onBack }]}
+            current={jobLabel(decl)}
+            note={note?.toLowerCase()}
+          />
           <h3 className="graph-panel-title">{jobLabel(decl)}</h3>
-          <span className="pane-key">
-            {job}
-            {note ? ` · ${note.toLowerCase()}` : ''}
-          </span>
+          <span className="pane-key">{job}</span>
         </span>
 
         <div className="segmented" role="tablist" aria-label="Side">

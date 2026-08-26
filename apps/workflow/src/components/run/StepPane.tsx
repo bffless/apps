@@ -47,9 +47,9 @@ import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef } from '../values/fileRef'
-import { BackToRun } from './BackToRun'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
+import { PaneCrumbs } from './PaneCrumbs'
 import { ScriptStepCard } from './ScriptStepCard'
 
 export type Tab = 'Input' | 'Output'
@@ -361,8 +361,13 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
     return (
       <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>
         <header className="pane-head">
-          <BackToRun onBack={onBack} />
-          <h3 className="graph-panel-title">{stepKey}</h3>
+          <span className="pane-title">
+            <PaneCrumbs
+              trail={[{ label: 'Run', onClick: onRun }, { label: parts?.job ?? '?', onClick: onBack }]}
+              current={parts?.stepId ?? stepKey}
+            />
+            <h3 className="graph-panel-title">{stepKey}</h3>
+          </span>
         </header>
         <p className="note">This run has no record of that step.</p>
       </aside>
@@ -370,7 +375,17 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   }
 
   if (live && declared?.uses === 'form' && step.status === 'waiting') {
-    return <FormStepPane def={def} state={state} stepKey={stepKey} onBack={onBack} backLabel={job ? jobLabel(job) : parts.job} />
+    return (
+      <FormStepPane
+        def={def}
+        state={state}
+        stepKey={stepKey}
+        trail={[
+          { label: 'Run', onClick: onRun },
+          { label: job ? jobLabel(job) : parts.job, onClick: onBack },
+        ]}
+      />
+    )
   }
 
   // An island is the pane from the moment it starts loading, not only once it
@@ -379,14 +394,22 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   // same reason a read-only form does — a submit from here would land on
   // whatever run the global slice holds live.
   if (live && declared?.uses === 'island' && (step.status === 'running' || step.status === 'waiting')) {
-    return <IslandStepPane state={state} stepKey={stepKey} onBack={onBack} backLabel={job ? jobLabel(job) : parts.job} />
+    return (
+      <IslandStepPane
+        state={state}
+        stepKey={stepKey}
+        trail={[
+          { label: 'Run', onClick: onRun },
+          { label: job ? jobLabel(job) : parts.job, onClick: onBack },
+        ]}
+      />
+    )
   }
 
-  // The eyebrow is the crumb: Run › <job> (· item n of N for a fanned-out job).
-  // Each segment is a way up; the Back button is the nearest one.
+  // The crumb: Run › <job> › <step> (· item n of N for a fanned-out job).
   const total = state.expansions[parts.job]?.total
   const jobName = job ? jobLabel(job) : parts.job
-  const item = job?.matrix !== undefined && total !== undefined ? ` · item ${parts.index + 1} of ${total}` : ''
+  const item = job?.matrix !== undefined && total !== undefined ? `item ${parts.index + 1} of ${total}` : undefined
 
   // A script has no pane of its own — its live `ctx.log` rides on Output
   // instead, whatever the step's status (a finished script's lines stay until
@@ -399,28 +422,15 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   return (
     <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>
       <header className="pane-head">
-        <BackToRun onBack={onBack} label={jobName} />
         <span className="pane-title">
-          <span className="pane-eyebrow pane-crumbs">
-            {onRun ? (
-              <button type="button" className="pane-crumb" onClick={onRun}>
-                Run
-              </button>
-            ) : (
-              <span>Run</span>
-            )}
-            <span className="pane-crumb-sep" aria-hidden="true">
-              ›
-            </span>
-            {onBack ? (
-              <button type="button" className="pane-crumb" onClick={onBack}>
-                {jobName}
-              </button>
-            ) : (
-              <span>{jobName}</span>
-            )}
-            {item && <span>{item}</span>}
-          </span>
+          <PaneCrumbs
+            trail={[
+              { label: 'Run', onClick: onRun },
+              { label: jobName, onClick: onBack },
+            ]}
+            current={declared ? stepLabel(declared) : parts.stepId}
+            note={item}
+          />
           <h3 className="graph-panel-title">{declared ? stepLabel(declared) : parts.stepId}</h3>
           <span className="pane-key">{stepKey}</span>
         </span>
