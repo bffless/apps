@@ -144,11 +144,6 @@ function TilePicker({
       aria-invalid={invalid}
       aria-describedby={describedBy}
     >
-      {options.length === 0 && (
-        <p className="note" data-testid="tile-picker-empty">
-          No options are available yet.
-        </p>
-      )}
       {options.map((opt) => {
         const checked = selected.includes(opt.value)
         return (
