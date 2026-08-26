@@ -8,7 +8,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { seedFinishedRun } from '../mocks/db'
 import { server } from '../mocks/server'
@@ -26,6 +26,8 @@ function renderApp(path = '/') {
 }
 
 describe('ImplementationsPage', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it('lists every implementation discovery found', async () => {
     renderApp()
 
@@ -53,6 +55,27 @@ describe('ImplementationsPage', () => {
       'href',
       expect.stringContaining('06-discovery-publishing-files.md'),
     )
+  })
+
+  it('names the project and the missing-role cause when a scoped build finds nothing', async () => {
+    vi.stubEnv('VITE_BFFLESS_PROJECT', 'bffless/workflow')
+    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
+
+    renderApp()
+
+    const hint = await screen.findByTestId('scope-hint')
+    expect(hint).toHaveTextContent('bffless/workflow')
+    expect(hint).toHaveTextContent(/no role on that project/)
+  })
+
+  it('offers no project hint when the build is unscoped', async () => {
+    vi.stubEnv('VITE_BFFLESS_PROJECT', undefined)
+    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
+
+    renderApp()
+
+    expect(await screen.findByText('No implementations found')).toBeInTheDocument()
+    expect(screen.queryByTestId('scope-hint')).not.toBeInTheDocument()
   })
 
   it('says discovery failed rather than "you published nothing"', async () => {
