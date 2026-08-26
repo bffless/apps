@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom'
 import { afterAll, afterEach, beforeAll } from 'vitest'
+import { forgetPayloads } from '../lib/payloadFetch'
 import { resetDb } from '../mocks/db'
 import { server } from '../mocks/server'
 
@@ -36,6 +37,8 @@ beforeAll(() => {
 afterEach(() => {
   server.resetHandlers()
   resetDb()
+  // The `{"$file"}` read memo is module-level (lib/payloadFetch); a test's bucket must never answer the next test's read.
+  forgetPayloads()
 })
 
 afterAll(() => {

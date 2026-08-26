@@ -19,7 +19,7 @@ import {
   unwrapRows,
 } from '../lib/coerce'
 import type { Implementation, ServerRunRow, ServerStepRow } from '../lib/coerce'
-import { fetchPayload } from '../lib/payloadFetch'
+import { fetchPayloadCached, forgetPayloads } from '../lib/payloadFetch'
 import { hydrateOutputs } from '../lib/runner/payload'
 
 /** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
@@ -52,6 +52,9 @@ function attemptRefresh(): Promise<boolean> {
   })
   return refreshInFlight
 }
+
+/** The run `getRun` last hydrated — the payload memo's scope. */
+let lastHydratedRunId: string | null = null
 
 const rawBaseQuery = fetchBaseQuery({ baseUrl: '/' })
 
@@ -180,9 +183,21 @@ export const workflowApi = createApi({
      * `baseQuery`, so `baseQueryWithReauth`'s 401-refresh-retry (R5) applies
      * exactly as before. A payload that cannot be read never fails the query —
      * `fetchPayload` resolves it to the `{ $file, $error }` sentinel instead.
+     *
+     * Every payload is read through `fetchPayloadCached` (apps#375): the 5 s
+     * poll of a running run re-issues this query, and a payload is immutable
+     * once written, so a path read once is not read again while this run is
+     * the one being viewed.
      */
     getRun: builder.query<{ run: ServerRunRow | null; steps: ServerStepRow[] }, string>({
       async queryFn(id, _api, _extraOptions, baseQuery) {
+        // The payload memo (`fetchPayloadCached`) is scoped to one run: a
+        // read of a different run drops it, so the memo never grows past
+        // what the run on screen offloaded (apps#375).
+        if (id !== lastHydratedRunId) {
+          forgetPayloads()
+          lastHydratedRunId = id
+        }
         const res = await baseQuery({ url: 'api/workflow/run', params: { id } })
         if (res.error) return { error: res.error }
 
@@ -193,8 +208,8 @@ export const workflowApi = createApi({
         // One row's payloads are independent of every other row's, so the
         // whole record hydrates in one round trip's worth of wall time.
         const [runOutputs, ...stepOutputs] = await Promise.all([
-          hydrateOutputs(run === null ? null : outputsOf(run), fetchPayload),
-          ...steps.map((step) => hydrateOutputs(outputsOf(step), fetchPayload)),
+          hydrateOutputs(run === null ? null : outputsOf(run), fetchPayloadCached),
+          ...steps.map((step) => hydrateOutputs(outputsOf(step), fetchPayloadCached)),
         ])
 
         return {

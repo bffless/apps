@@ -257,6 +257,30 @@ describe('the run record — {"$file"} hydration', () => {
     })
   })
 
+  it('reads an offloaded payload from the bucket once across repeated reads of the same run (apps#375)', async () => {
+    offload()
+    let uploads = 0
+    server.use(
+      http.get('/api/uploads/*', ({ request }) => {
+        uploads += 1
+        const path = new URL(request.url).pathname.replace('/api/uploads/', '')
+        const file = db.files.get(path)
+        return file ? HttpResponse.arrayBuffer(file.bytes.buffer as ArrayBuffer, { headers: { 'content-type': file.contentType } }) : new HttpResponse(null, { status: 404 })
+      }),
+    )
+    const s = store()
+
+    // The 5 s poll: a second read of the same run, with the cache entry for the first still live.
+    await s.dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId, { forceRefetch: true }))
+    await s.dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId, { forceRefetch: true }))
+    expect(uploads).toBe(2) // one per offloaded output (step + run), not per read
+
+    // A different run wipes the memo, so the next read of the first run fetches again.
+    await s.dispatch(workflowApi.endpoints.getRun.initiate('run_other'))
+    await s.dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId, { forceRefetch: true }))
+    expect(uploads).toBe(4)
+  })
+
   it('reads a record with no offloaded outputs without touching the bucket', async () => {
     let uploads = 0
     server.use(

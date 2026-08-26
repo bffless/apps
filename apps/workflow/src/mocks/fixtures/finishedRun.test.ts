@@ -3,6 +3,9 @@
  * rebuilds its state with the very same `replayRun` the resumed live run uses,
  * so a row the engine cannot fold is a broken fixture, not a UI bug.
  */
+import { fileUrl } from '../../lib/coerce'
+import type { FileRef } from '../../lib/runner/types'
+import { isServeUrl } from '../../lib/url'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { describe, expect, it } from 'vitest'
 import { replayRun } from '../../lib/runner/replay'
@@ -48,6 +51,12 @@ describe('FINISHED_RUN', () => {
     })
     expect(state.steps['greet/1/say'].summary).toBe('Said **Hello, studio!**')
     expect(state.steps['confirm/0/review'].kind).toBe('form')
+  })
+
+  it('carries File refs on the file-serve route the read path is gated to (Decision 8, apps#375)', () => {
+    const poster = FINISHED_RUN.run.outputs!.poster as FileRef
+    expect(poster.url).toBe(fileUrl(poster.path))
+    expect(isServeUrl(poster.url)).toBe(true)
   })
 
   it('is monotonic in time', () => {

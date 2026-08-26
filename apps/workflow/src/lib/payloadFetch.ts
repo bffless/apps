@@ -16,6 +16,7 @@
  * that still offers the bytes. That also keeps `hydrateOutputs` free to reject
  * on a genuinely throwing fetcher — this one simply never is.
  */
+import { isUnavailablePayload } from './runner/payload'
 import type { UnavailablePayload } from './runner/payload'
 import type { FileRef } from './runner/types'
 import { isServeUrl } from './url'
@@ -41,4 +42,36 @@ export async function fetchPayload(ref: FileRef): Promise<unknown> {
   } catch (err) {
     return unavailable(ref, messageOf(err))
   }
+}
+
+/**
+ * The read memo (apps#375). `workflowApi.getRun` hydrates every `{"$file"}`
+ * on every read, and a run page in flight polls that read every 5 s — so
+ * without this, a viewer watching a run whose early steps offloaded pulled
+ * every one of those payloads again on each tick. A payload is immutable once
+ * written (its path is unique per step attempt, 06), so the memo is keyed by
+ * `ref.path` and holds the *promise*: concurrent reads of one path share one
+ * request. A failure is never remembered — the sentinel resolves, but the
+ * entry is dropped, so the next poll (or a Retry) tries the bucket again.
+ *
+ * Module-level on purpose: the store's `getRun` is the only caller, and it
+ * calls `forgetPayloads()` whenever the run it reads changes, which bounds
+ * the memo to one run's worth of payloads.
+ */
+const memo = new Map<string, Promise<unknown>>()
+
+export function fetchPayloadCached(ref: FileRef): Promise<unknown> {
+  const hit = memo.get(ref.path)
+  if (hit) return hit
+  const pending = fetchPayload(ref).then((value) => {
+    if (isUnavailablePayload(value)) memo.delete(ref.path)
+    return value
+  })
+  memo.set(ref.path, pending)
+  return pending
+}
+
+/** Drop every memoized payload — the run being read changed, or a test ended. */
+export function forgetPayloads(): void {
+  memo.clear()
 }
