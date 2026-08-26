@@ -44,6 +44,7 @@ import { RunHeader } from '../components/run/RunHeader'
 import { JobPane } from '../components/run/JobPane'
 import { RunPane } from '../components/run/RunPane'
 import { StepPane } from '../components/run/StepPane'
+import { FileRefProvider } from '../components/values/FileRefProvider'
 import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
@@ -595,7 +596,7 @@ export function RunPage() {
         {!state || !def ? (
           <RawRows run={run!} steps={steps} />
         ) : (
-          <>
+          <FileRefProvider state={state}>
             <div className={fullscreen ? 'run-canvas island-fullscreen' : 'run-canvas'}>
               {fullscreen ? (
                 // The page's half of `ui/request-display-mode`: the graph
@@ -660,7 +661,7 @@ export function RunPage() {
                 />
               )}
             </div>
-          </>
+          </FileRefProvider>
         )}
       </section>
     </ImplContext.Provider>

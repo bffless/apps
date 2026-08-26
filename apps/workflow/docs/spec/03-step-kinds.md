@@ -107,7 +107,7 @@ The built-in schema-driven form, the same renderer as the kickoff form, used mid
 ```
 
 Outputs **are** the field values, typed by their definitions (no separate `outputs` map on a
-`form` step). `default` values may be expressions — that is how an upstream output becomes an
+`form` step). A `choice` over File refs outputs the chosen **ref**, not its path (02). `default` values may be expressions — that is how an upstream output becomes an
 editable field.
 
 ## `script`

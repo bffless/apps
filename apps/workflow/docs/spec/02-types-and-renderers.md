@@ -16,7 +16,7 @@ be overridden per definition with `render:`.
 | `string` | string | text field (`format: textarea` → multiline; `url`, `email`, `date`, `datetime`, `password`) | plain text (url → link) | `format`, `pattern`, `minLength`, `maxLength` |
 | `number` | number | number field | number | `min`, `max`, `step` |
 | `boolean` | boolean | toggle | ✓ / ✗ | — |
-| `choice` | string (or string[] with `list: true`) | select / radio (`list: true` → checkboxes); options with `preview` render as a tile picker | chip(s) | `options: [a, {value, label, preview?}]` — `options` may be an expression; a list of File refs is shorthand for `{value: path, label: name, preview: ref}` (the field's value is then the **path** string) |
+| `choice` | string (or string[] with `list: true`) | select / radio (`list: true` → checkboxes); options with `preview` render as a tile picker | chip(s) | `options: [a, {value, label, preview?}]` — `options` may be an expression; a list of File refs is shorthand for `{value: path, label: name, preview: ref}` — a tile is picked by its ref's `path`, and the field's **output is the ref itself**, so the file's name, size, content type and url survive downstream |
 | `file` | **File ref** `{ path, name, contentType, size, url }` | upload control (prepare → PUT → register, 06) | viewer by `contentType`: `video/*` player, `audio/*` player, `image/*` image, `application/pdf` PDF, else download card; **always** a Download action | `accept`, `maxSize` |
 | `table` | `{ columns: [{key,label?,type?}], rows: object[] }` | editable grid | table | `columns` |
 | `markdown` | string | markdown editor with preview | rendered markdown | — |
