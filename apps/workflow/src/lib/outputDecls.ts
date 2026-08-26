@@ -74,6 +74,9 @@ function typed(decl: unknown): ValueDecl | null {
     // `render: island` needs the island file to travel with the declaration —
     // the renderer is chosen from `render`, but only `src` says *which* island.
     ...(typeof d.src === 'string' ? { src: d.src } : {}),
+    // `render: chart`/`render: code` need their own axis/language mapping —
+    // same reasoning as `src` above.
+    ...(d.mapping !== null && typeof d.mapping === 'object' ? { mapping: d.mapping } : {}),
   }
 }
 

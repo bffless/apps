@@ -5,6 +5,29 @@ import { resetDb } from '../mocks/db'
 import { server } from '../mocks/server'
 
 /**
+ * jsdom has no `matchMedia` — `uplot` (Task 16) calls it unconditionally at
+ * module load time (`setPxRatio`, unrelated to whether a chart is ever
+ * constructed), so merely importing `ChartView` throws without this. Real
+ * browsers always have `matchMedia`; this stub only exists for the test
+ * environment. Guarded on `window` itself: `lib/runner`'s pure suites opt
+ * into the `node` test environment (no `window` at all, and no `ChartView`
+ * import either), so there's nothing to stub there.
+ */
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList
+}
+
+/**
  * jsdom + undici parse a request URL with no base, and the app (rightly) speaks
  * in same-origin relative paths. Resolving them against the document's origin —
  * `Request` for RTK Query's `fetchBaseQuery`, `fetch` for everything else — is

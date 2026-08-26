@@ -6,10 +6,21 @@
  */
 import { render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
 import { ValueView } from './ValueView'
 import type { FileRef } from '../../lib/runner/types'
+
+// jsdom has no canvas (ChartView.test.tsx explains why); ValueView's own
+// dispatch test only needs to know `render: chart` reaches ChartView, not
+// that uPlot can actually draw into a headless DOM.
+vi.mock('uplot', () => {
+  class MockUPlot {
+    static paths = { bars: () => undefined }
+    destroy() {}
+  }
+  return { default: MockUPlot }
+})
 
 describe('ValueView', () => {
   it('renders null as an em dash', () => {
@@ -146,11 +157,30 @@ describe('ValueView', () => {
     expect(screen.queryByTestId('renderer')).not.toBeInTheDocument()
   })
 
-  it('falls to the base viewer with no badge for render: chart or render: code (Task 16)', () => {
-    render(<ValueView decl={{ type: 'json', render: 'chart' }} value={{ a: 1 }} label="chart-case" />)
+  it('renders a render: chart declaration through ChartView, with no badge', () => {
+    render(
+      <ValueView
+        decl={{ type: 'json', render: 'chart', mapping: { x: 'line', y: 'chars' } }}
+        value={[
+          { line: 'a', chars: 13 },
+          { line: 'b', chars: 14 },
+        ]}
+      />,
+    )
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'chart')
     expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
 
-    render(<ValueView decl={{ type: 'json', render: 'code' }} value={{ b: 2 }} label="code-case" />)
+  it('renders a render: code declaration through CodeView, with no badge', () => {
+    render(
+      <ValueView
+        decl={{ type: 'string', render: 'code', mapping: { language: 'javascript' } }}
+        value="const x = 1"
+      />,
+    )
+    const renderer = screen.getByTestId('renderer')
+    expect(renderer).toHaveAttribute('data-render', 'code')
     expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
   })
 

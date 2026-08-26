@@ -4,8 +4,7 @@
  * vocabulary of types, always rendered read-only here (editing is a separate,
  * later concern). `list: true` repeats the base-type dispatch per item; a
  * named `render` replaces the base viewer where one exists — `island` (Task 5),
- * `transcript`/`images` (Task 15) so far, `chart`/`code` still to come (Task
- * 16, falls to the base viewer with no badge in the meantime) — and otherwise
+ * `transcript`/`images` (Task 15), `chart`/`code` (Task 16) — and otherwise
  * shows a placeholder badge above the base viewer rather than silently falling
  * back to it.
  *
@@ -26,6 +25,8 @@ import { TableView } from './TableView'
 import { IslandView } from './renderers/IslandView'
 import { ImagesView } from './renderers/ImagesView'
 import { TranscriptView } from './renderers/TranscriptView'
+import { ChartView } from './renderers/ChartView'
+import { CodeView } from './renderers/CodeView'
 
 export type { ValueDecl }
 
@@ -113,6 +114,8 @@ export function ValueView({
   const island = decl.render === 'island' && typeof decl.src === 'string' && bundle !== null
   const transcript = decl.render === 'transcript'
   const images = decl.render === 'images'
+  const chart = decl.render === 'chart'
+  const code = decl.render === 'code'
 
   let body
   if (island && !unavailable) {
@@ -121,18 +124,18 @@ export function ValueView({
     body = <TranscriptView value={value} />
   } else if (images && !unavailable) {
     body = <ImagesView value={value} />
+  } else if (chart && !unavailable) {
+    body = <ChartView value={value} mapping={decl.mapping} />
+  } else if (code && !unavailable) {
+    body = <CodeView value={value} mapping={decl.mapping} />
   } else {
-    // `chart`/`code` (Task 16) fall through to the base viewer with no badge —
-    // their renderers don't exist yet, so a placeholder would be more
-    // misleading than silence. `island` keeps its historical "(M2)" badge
-    // when it can't dispatch (no src, or no implementation known); any other
-    // named `render` this dispatch doesn't recognise gets the "(unknown)"
-    // badge instead.
-    const isChartOrCode = decl.render === 'chart' || decl.render === 'code'
+    // `island` keeps its historical "(M2)" badge when it can't dispatch (no
+    // src, or no implementation known); any other named `render` this
+    // dispatch doesn't recognise gets the "(unknown)" badge instead.
     const isIslandFallback = decl.render === 'island'
     body = (
       <>
-        {decl.render && !isChartOrCode && (
+        {decl.render && (
           <p className="value-renderer-badge">
             {`renderer: ${decl.render} (${isIslandFallback ? 'M2' : 'unknown'})`}
           </p>
