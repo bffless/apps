@@ -7,6 +7,11 @@
  * `uPlot.paths.bars()`; anything else (including an absent `kind`) stays a
  * line.
  *
+ * The series is painted in the system's own ink (`DESIGN.md`): uPlot draws
+ * nothing for a series with no `stroke`/`fill` — which is exactly what the
+ * first cut shipped, a grid with no bars (2026-08-26 review). A bar chart's
+ * y scale starts at zero, since a bar's length *is* its value.
+ *
  * jsdom has no canvas, so uPlot itself is only ever exercised in the real
  * browser (`pnpm --filter workflow build` + a manual smoke, not a unit test);
  * `ChartView.test.tsx` mocks the `uplot` module and asserts the constructor
@@ -19,6 +24,12 @@ import uPlot from 'uplot'
 import { JsonTree } from '../JsonTree'
 
 type ChartKind = 'bar' | 'line'
+
+/** The chart's paint — the system's ink and hairlines, never a second palette (DESIGN.md). */
+const INK = 'oklch(0.17 0.015 265)'
+const AXIS = 'oklch(0.5 0.012 265)'
+const GRID = 'oklch(0.94 0.006 265)'
+const AXIS_FONT = "11px 'Roboto Mono', ui-monospace, monospace"
 
 interface ChartMapping {
   x: string
@@ -98,23 +109,50 @@ export function ChartView({ value, mapping }: { value: unknown; mapping: unknown
     const xs = labels.map((_, i) => i)
     const data: uPlot.AlignedData = [xs, ys]
 
+    const bar = m.kind === 'bar'
     const opts: uPlot.Options = {
       width: el.clientWidth || 480,
-      height: 200,
+      height: 220,
+      legend: { show: false },
+      cursor: { show: false },
       series: [
-        {},
+        { label: m.x },
         {
-          paths: m.kind === 'bar' ? uPlot.paths.bars!() : undefined,
-          points: { show: m.kind !== 'bar' },
+          label: m.y,
+          stroke: INK,
+          fill: bar ? INK : undefined,
+          width: 1.5,
+          paths: bar ? uPlot.paths.bars!({ size: [0.6, 64] }) : undefined,
+          points: { show: !bar, size: 6, fill: INK, stroke: INK },
         },
       ],
       axes: [
         {
+          stroke: AXIS,
+          grid: { show: false },
+          ticks: { stroke: GRID, width: 1 },
+          font: AXIS_FONT,
+          gap: 8,
+          // One label per data point, never a fractional split.
+          splits: () => xs,
           values: (_self, splits) => splits.map((s) => labels[s] ?? ''),
         },
-        {},
+        {
+          stroke: AXIS,
+          grid: { stroke: GRID, width: 1 },
+          ticks: { show: false },
+          font: AXIS_FONT,
+          gap: 8,
+          size: 48,
+        },
       ],
-      scales: { x: { time: false } },
+      scales: {
+        // Bars sit on the index axis with room for their own width either side.
+        x: { time: false, range: bar ? [-0.5, xs.length - 0.5] : undefined },
+        // A bar's length is its value, so the scale starts at zero; a line can
+        // keep uPlot's data-fitted range.
+        y: bar ? { range: (_u, _min, max) => [0, max <= 0 ? 1 : max * 1.1] } : {},
+      },
     }
 
     const plot = new uPlot(opts, data, el)
