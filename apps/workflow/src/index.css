@@ -1359,12 +1359,12 @@ button {
   box-shadow: 0 0 0 1px var(--ink);
 }
 
-/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note. */
+/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note.
+   The name row is a button — the job is the middle level of run › job › step. */
 .job-head {
   display: flex;
   flex: none;
   flex-direction: column;
-  padding: 0 13px;
   background-color: var(--surface-dim);
   border-bottom: 1px solid var(--line);
 }
@@ -1374,7 +1374,69 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
   height: 39px;
+  padding: 0 13px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.job-head-row:hover {
+  background-color: oklch(0.95 0.006 265);
+}
+
+.job-head-row[aria-pressed='true'] {
+  color: var(--paper);
+  background-color: var(--ink);
+}
+
+.job-head-row[aria-pressed='true'] .job-fraction {
+  color: var(--paper);
+  opacity: 0.7;
+}
+
+.job-head .job-note {
+  padding: 0 13px;
+}
+
+/* Run mode: the job's declared outputs, one 20px row each (CARD.out), the
+   job card's own handle onto its Output side. */
+.job-outputs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 0 13px 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.job-output {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  padding: 0 0 0 24px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.job-output:hover .out-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.job-card[data-selected-job] {
+  border-color: var(--ink);
 }
 
 .job-name {
@@ -1841,6 +1903,82 @@ button {
 .step-pane {
   margin: 0 0 20px;
   overflow: hidden;
+}
+
+/* The crumb in a step pane's eyebrow: Run › <job> · item n of N, each segment a way up. */
+.pane-crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pane-crumb {
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.pane-crumb:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pane-crumb-sep {
+  color: var(--line-strong);
+}
+
+/* The job card's trail: its steps, each a way down. */
+.job-pane-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-pane-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 8px;
+  margin: 0 -8px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--hairline-faint);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.job-pane-steps > li:first-child .job-pane-step {
+  border-top: 0;
+}
+
+.job-pane-step:hover {
+  background-color: var(--surface-dim);
+}
+
+.job-pane-step-label {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.job-pane-step-label .step-id {
+  color: var(--ink-mute);
+  font-size: 11px;
 }
 
 /* The way back up a level: a quiet mono button at the head's left edge. */

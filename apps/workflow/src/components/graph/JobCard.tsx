@@ -26,7 +26,7 @@ import type { CSSProperties } from 'react'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import type { GraphFlow } from './flow'
-import { isSingle, jobLabel, matrixNote } from './geometry'
+import { isSingle, jobLabel, jobOutputNames, matrixNote } from './geometry'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
@@ -59,12 +59,14 @@ export interface JobCardProps {
   state?: RunState
   selectedKey?: StepKey | null
   onPick: (key: StepKey, step: Step) => void
+  /** The job itself as the selection (08: run › job › step): the header strip and the OUT rows. */
+  onPickJob?: (job: string, side?: 'Input' | 'Output') => void
   /** Which chips light up for the hovered value (08); absent outside `GraphView`'s own render. */
   flow?: GraphFlow
   style?: CSSProperties
 }
 
-export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow, style }: JobCardProps) {
+export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPickJob, flow, style }: JobCardProps) {
   const [picked, setPicked] = useState(0)
 
   const expansion = state?.expansions[job.id]
@@ -94,6 +96,8 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
   const single = isSingle(job)
   const jobFlow = flow?.sourceJobs.has(job.id) ? 'source' : undefined
   const selectedInside = selectedHere !== null
+  const selectedJob = selectedKey === job.id
+  const outs = mode === 'run' ? jobOutputNames(job) : []
 
   return (
     <article
@@ -104,19 +108,28 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
       data-row={row}
       data-flow={jobFlow}
       data-single={single || undefined}
-      data-selected={selectedInside || undefined}
+      data-selected={selectedInside || selectedJob || undefined}
+      data-selected-job={selectedJob || undefined}
       style={style}
     >
       {!single && (
         <header className="job-head">
-          <span className="job-head-row">
+          {/* The strip is the job's own handle (08: run › job › step). */}
+          <button
+            type="button"
+            className="job-head-row"
+            data-testid="job-head"
+            aria-pressed={selectedJob}
+            aria-label={`Job ${jobLabel(job)}`}
+            onClick={() => onPickJob?.(job.id)}
+          >
             <h3 className="job-name">{jobLabel(job)}</h3>
             {isMatrix && (
               <span className="job-fraction">
                 {done} of {total}
               </span>
             )}
-          </span>
+          </button>
           {note && <p className="job-note">{note}</p>}
         </header>
       )}
@@ -162,6 +175,26 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow,
           )
         })}
       </div>
+
+      {outs.length > 0 && (
+        <div className="job-outputs">
+          {outs.map((name) => (
+            <button
+              type="button"
+              className="job-output"
+              key={name}
+              data-testid="job-output"
+              data-output={name}
+              onClick={() => onPickJob?.(job.id, 'Output')}
+            >
+              <span className="out-tag" aria-hidden="true">
+                out
+              </span>
+              <span className="out-name">{name}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </article>
   )
 }

@@ -67,6 +67,28 @@ export function completeFormStep(a: FormStepArgs): FormResult {
   return { ok: true, event: succeededEvent(a, outputs, a.at) }
 }
 
+/**
+ * What the form is *shown with* — its `with` evaluated against the run so far
+ * (title, description, fields with their `default`/`options` expressions
+ * resolved, submit) — recorded as the step's `inputs` on `step.waiting`, so a
+ * form step has the same provenance on its Input side as any other step
+ * (`default: ${{ needs.slow.outputs.report }}` → "from slow job output").
+ */
+export function formInputs(a: {
+  step: Step
+  def: Definition
+  state: RunState
+  job: string
+  index: number
+}): Record<string, unknown> {
+  const contexts = buildContexts(a.def, a.state, {
+    job: a.job,
+    index: a.index,
+    stepId: a.step.id,
+  })
+  return obj(evalDeep(obj(a.step.raw?.with), contexts))
+}
+
 /** Evaluated initial field values (expression defaults) for the form UI. */
 export function formInitialValues(a: {
   step: Step

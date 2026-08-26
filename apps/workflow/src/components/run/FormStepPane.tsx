@@ -48,11 +48,12 @@ export interface FormStepPaneProps {
   stepKey: StepKey
   /** Test seam: the default uploads through `lib/upload` under scope `inputs`. */
   upload?: (file: File, onProgress: (fraction: number) => void) => Promise<FileRef>
-  /** Back to the run level (08) — the form keeps waiting; its chip is the way back in. */
+  /** Up one level (08) — the form keeps waiting; its chip is the way back in. */
   onBack?: () => void
+  backLabel?: string
 }
 
-export function FormStepPane({ def, state, stepKey: key, upload, onBack }: FormStepPaneProps) {
+export function FormStepPane({ def, state, stepKey: key, upload, onBack, backLabel }: FormStepPaneProps) {
   const dispatch = useAppDispatch()
   const parts = parseKey(key)
   const step = parts ? def.jobs[parts.job]?.steps.find((candidate) => candidate.id === parts.stepId) : undefined
@@ -125,9 +126,9 @@ export function FormStepPane({ def, state, stepKey: key, upload, onBack }: FormS
   return (
     <aside className="step-pane form-step-pane" data-testid="step-pane" aria-label="Step">
       <header className="pane-head">
-        <BackToRun onBack={onBack} />
+        <BackToRun onBack={onBack} label={backLabel} />
         <span className="pane-title">
-          <span className="pane-eyebrow">{def.jobs[parts.job]?.raw?.name ?? parts.job}</span>
+          <span className="pane-eyebrow">Run › {def.jobs[parts.job]?.raw?.name ?? parts.job}</span>
           <h3 className="graph-panel-title">{title}</h3>
           <span className="pane-key">{key}</span>
         </span>

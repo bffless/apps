@@ -204,7 +204,12 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
     }
 
     case 'step.waiting':
-      return [upsert(runId, event.key, { status: 'waiting' })]
+      return [
+        upsert(runId, event.key, {
+          status: 'waiting',
+          ...(event.inputs === undefined ? {} : { inputs: event.inputs }),
+        }),
+      ]
 
     // The reducer clears the previous attempt's annotations/summary; the row
     // must forget them too, or Resume would hand a fresh attempt the last

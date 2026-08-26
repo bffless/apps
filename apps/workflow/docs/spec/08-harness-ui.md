@@ -47,7 +47,10 @@ Selecting a card (or one of its edge dots — left opens Input, right opens Outp
 pane under the graph with the prototype's **Input | Output** toggle and payload chips:
 
 - **Input** — the evaluated `with` (File refs as file cards, expressions resolved to values),
-  each chip labelled "from `<job>/<step>`" when it came from a data-flow edge.
+  each chip labelled "from `<job>/<step>`" when it came from a data-flow edge. A `form` step
+  records its evaluated `with` too (title, fields with `default`/`options` resolved, submit) —
+  on `step.waiting`, since a form never emits `step.started`; what the person typed is its
+  *Output*.
 - **Output** — each declared output with its renderer (02): table, transcript, markdown, file
   viewers with Download, JSON tree, `render: island` viewer; chips labelled "goes to …". Every
   value that is *drawn* rather than printed carries a `json` flip to the raw value the row holds
@@ -65,16 +68,22 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
    badges (notice/warning/error counts), actions (Cancel · Resume · Re-run · Delete · View
    workflow file).
 2. The graph (run mode), the navigator.
-3. **One card under it, one level of the taxonomy at a time** (decided 2026-08-26). With no
-   step selected, the **run card** — the run as the outermost step, in the step pane's own
-   shape: eyebrow `WORKFLOW`, the workflow name, the run id, the same **Input | Output**
-   toggle. *Input* is the kickoff form's values; *Output* is the **results** (the workflow's
-   declared `outputs`, each with renderer + Download), then the **summary** (step summaries
-   concatenated in job order — the GitHub job-summary page) and the **annotations**, each
-   linking into the graph. Selecting a step **replaces** the run card with that step's pane
-   (`← Run` / Esc / the pressed chip climb back out). A live run returns to the run card the
-   moment it finishes. The selection is the URL: `?step=<job>/<index>/<step>` (linkable; the
-   browser's Back button climbs out of a step). Step outputs are never listed at the run level.
+3. **One card under it, one level of the taxonomy at a time** (decided 2026-08-26): **run ›
+   job › step**, three cards of one shape — eyebrow · name · key | **Input | Output** | pill |
+   kind — and the selection is the URL: `?step=` absent (run), a bare job id (job), or
+   `<job>/<index>/<step>` (step); linkable, and the browser's Back button climbs up a level.
+   - **Run card** (nothing selected): *Input* is the kickoff form's values; *Output* is the
+     **results** (the workflow's declared `outputs`, each with renderer + Download), then the
+     **summary** (step summaries in job order — the GitHub job-summary page) and the
+     **annotations**, each linking into the graph. A live run returns here when it finishes.
+   - **Job card** (the header strip, an edge dot, or an `OUT` row on a graph card): *Input* is
+     what the job waited on — each `needs` job's evaluated outputs; *Output* is the job's own
+     declared `outputs:` **evaluated** (aliases over step outputs; a matrix job's collect into
+     lists), with `goes to …` chips; the trail lists the job's steps, each a way down. Job
+     outputs are derived, never persisted (05) — this is the one place they are shown.
+   - **Step pane** (a chip): as below. Its eyebrow is the crumb `Run › <job>`.
+   `←` climbs one level (job from a step, run from a job); Esc and the pressed chip do the
+   same; the crumb's `Run` climbs to the top. Step outputs are never listed at the run level.
 
 ## Kickoff form
 

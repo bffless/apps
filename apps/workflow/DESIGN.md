@@ -61,12 +61,16 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   out = ink. Selection: ink ring (`box-shadow: inset 0 0 0 1px`) + `--surface-dim`; the whole
   card's border turns ink. Data-flow hover: solid inset ring on the source, dashed outline on
   targets.
-- **The pane under the graph** — one level of the taxonomy at a time. The **run card**
-  (`.run-pane`, no step selected: eyebrow `RUN` · workflow name · run id | Input/Output | pill |
-  `WORKFLOW`) and the **step pane** (`.step-pane`: job eyebrow · step · key | Input/Output |
-  pill | kind) share one shape: header row with the `.segmented` toggle (selected = ink), a body
-  of values, then a `.pane-trail`. The step pane's head opens with `.pane-back` (`← Run`); Esc
-  and the pressed chip do the same. The selection is the URL (`?step=`).
+- **The pane under the graph** — one level of the taxonomy at a time: **run › job › step**.
+  The **run card** (`.run-pane`: `RUN` · workflow name · run id | Input/Output | pill |
+  `WORKFLOW`), the **job card** (`.job-pane`: `RUN · JOB` · job name · id | Input/Output | pill |
+  `JOB` / `MATRIX · N ITEMS`, trail = its steps) and the **step pane** (`.step-pane`: crumb
+  `Run › <job>` · step · key | Input/Output | pill | kind) share one shape: header row with the
+  `.segmented` toggle (selected = ink), a body of values, then a `.pane-trail`. `.pane-back`
+  (`← <level above>`) climbs one level; Esc and the pressed chip/strip do the same; the crumb's
+  `Run` climbs to the top. The selection is the URL (`?step=`). On the graph, a group card's
+  header strip is a button (pressed = ink fill), and a run-mode card lists its job `outputs:`
+  as `OUT name` rows (`CARD.out`, 20px each) that open the job card on Output.
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
   `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
   striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image
