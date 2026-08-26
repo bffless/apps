@@ -23,6 +23,23 @@ const KIND_ICON: Record<StepKind, string> = {
 }
 
 /**
+ * `headless: skip|auto` (bare form) or `headless: { mode: skip|auto, ... }`
+ * (07) — `undefined` for a step that declares no `headless` at all. Defensive
+ * on a headless block with no `mode`: the schema requires one, but `auto` is
+ * the harness's own default if that ever slips through.
+ */
+function headlessMode(step: Step): 'skip' | 'auto' | undefined {
+  const h = step.raw?.headless as unknown
+  if (h === 'skip' || h === 'auto') return h
+  if (h !== null && typeof h === 'object') {
+    const mode = (h as { mode?: unknown }).mode
+    if (mode === 'skip' || mode === 'auto') return mode
+    if (mode === undefined) return 'auto'
+  }
+  return undefined
+}
+
+/**
  * What a step promises, per kind (03) — and the linter owns that answer, so the
  * chip asks `stepOutputNames` rather than reading `outputs` and calling a form
  * or a bare pipeline step outputless: a form's outputs *are* its `with.fields`,
@@ -58,9 +75,11 @@ export interface StepChipProps {
   state?: StepState
   selected?: boolean
   onPick: (key: StepKey, step: Step) => void
+  /** The value under the pointer, if this chip is its source or a target (08); absent otherwise. */
+  flow?: 'source' | 'target'
 }
 
-export function StepChip({ job, index, step, mode, state, selected, onPick }: StepChipProps) {
+export function StepChip({ job, index, step, mode, state, selected, onPick, flow }: StepChipProps) {
   const key = stepKey(job, index, step.id)
   const run = mode === 'run'
   const outputs = declaredOutputs(step)
@@ -68,6 +87,8 @@ export function StepChip({ job, index, step, mode, state, selected, onPick }: St
     state?.startedAt !== undefined && state.finishedAt !== undefined
       ? state.finishedAt - state.startedAt
       : undefined
+  // Definition-mode only: in run mode this would read as a status, not a declaration (M1 minor).
+  const headless = mode === 'definition' ? headlessMode(step) : undefined
 
   return (
     <button
@@ -77,6 +98,7 @@ export function StepChip({ job, index, step, mode, state, selected, onPick }: St
       data-key={key}
       // A step the run has not reached yet has no row, and is queued by definition.
       data-state={run ? (state?.status ?? 'queued') : 'declared'}
+      data-flow={flow}
       aria-pressed={selected ?? false}
       onClick={() => onPick(key, step)}
     >
@@ -86,7 +108,7 @@ export function StepChip({ job, index, step, mode, state, selected, onPick }: St
         </span>
         <span className="step-id">{step.id}</span>
         {run && state && <StatusPill status={state.status} />}
-        {step.raw?.headless !== undefined && <span className="badge">headless</span>}
+        {headless && <span className="badge">{`headless: ${headless}`}</span>}
       </span>
 
       {run ? (

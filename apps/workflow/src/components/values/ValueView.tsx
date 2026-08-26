@@ -99,6 +99,7 @@ export function ValueView({
   label,
   origin,
   impl,
+  onHover,
 }: {
   decl: ValueDecl
   value: unknown
@@ -106,6 +107,12 @@ export function ValueView({
   origin?: string
   /** Overrides `ImplContext`; only `render: island` reads it. */
   impl?: string
+  /**
+   * The value's declaring/consuming graph chips light up while the pointer is
+   * over it (08's data-flow highlight, Task 22). Mouse only — keyboard-focus
+   * parity is a follow-up, not required for M2.
+   */
+  onHover?: (hovering: boolean) => void
 }) {
   // Unconditional: `impl ?? useImpl()` would short-circuit the hook away.
   const contextImpl = useImpl()
@@ -146,7 +153,11 @@ export function ValueView({
   }
 
   return (
-    <div className="value">
+    <div
+      className="value"
+      onMouseEnter={onHover && (() => onHover(true))}
+      onMouseLeave={onHover && (() => onHover(false))}
+    >
       {label && <p className="value-label">{label}</p>}
       {origin && <span className="chip value-origin">from {origin}</span>}
       {body}

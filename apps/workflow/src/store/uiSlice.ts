@@ -16,12 +16,19 @@ export interface UiState {
    * comes back inline, and no island is ever *told* to be fullscreen — it asks.
    */
   islandDisplay: 'inline' | 'fullscreen'
+  /**
+   * The value under the pointer, so the graph can highlight where it came
+   * from and where it goes (08, Task 22). `step` absent means a job-level
+   * `outputs` alias — no one step declares it, so the whole job stands in.
+   */
+  hoveredValue: { job: string; step?: string; output?: string } | null
 }
 
 const initialState: UiState = {
   selectedStep: null,
   runsStatusFilter: 'all',
   islandDisplay: 'inline',
+  hoveredValue: null,
 }
 
 export const uiSlice = createSlice({
@@ -37,7 +44,11 @@ export const uiSlice = createSlice({
     islandDisplayChanged(state, action: PayloadAction<'inline' | 'fullscreen'>) {
       state.islandDisplay = action.payload
     },
+    valueHovered(state, action: PayloadAction<UiState['hoveredValue']>) {
+      state.hoveredValue = action.payload
+    },
   },
 })
 
-export const { stepSelected, runsStatusFilterChanged, islandDisplayChanged } = uiSlice.actions
+export const { stepSelected, runsStatusFilterChanged, islandDisplayChanged, valueHovered } =
+  uiSlice.actions

@@ -23,10 +23,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StepPane } from './StepPane'
 import { hello, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 import { server } from '../../mocks/server'
+import { FINISHED_RUN } from '../../mocks/fixtures/finishedRun'
 import { RENDERED_RUN } from '../../mocks/fixtures/renderedRun'
 import { replayRun } from '../../lib/runner/replay'
 import type { RunState, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
+import { makeStore } from '../../store'
 
 // jsdom has no canvas (`ChartView.test.tsx` explains why); this file only
 // needs to know `render: chart` reaches `ChartView`, not that uPlot can
@@ -117,8 +119,10 @@ describe('StepPane — live gates the waiting-form delegation', () => {
  * Task 17's renderer sweep, one level down from `RunOutputs`: the same five
  * named renderers have to reach the Output tab too, off the very same
  * replayed step row — including `island`, which needs `impl` threaded from
- * `state.impl` rather than only from `ImplContext` (no `Provider` wraps this
- * render at all).
+ * `state.impl` rather than only from `ImplContext`. A bare `Provider` is
+ * enough here (Task 22): the Output tab's hover wiring needs a dispatch to
+ * render at all, but this test never hovers, so a fresh store with no live
+ * run is fine.
  */
 describe('StepPane — Output tab renders every named renderer', () => {
   it('shows all five renderer wrappers for the rendered-run fixture step', () => {
@@ -131,7 +135,11 @@ describe('StepPane — Output tab renders every named renderer', () => {
     const def = toDefinition(RENDERED_RUN.run.definition)
     const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
 
-    render(<StepPane def={def} state={state} stepKey="show/0/render" live={false} />)
+    render(
+      <Provider store={makeStore()}>
+        <StepPane def={def} state={state} stepKey="show/0/render" live={false} />
+      </Provider>,
+    )
 
     fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
 
@@ -140,5 +148,34 @@ describe('StepPane — Output tab renders every named renderer', () => {
       ['chart', 'code', 'images', 'island', 'transcript'].sort(),
     )
     expect(screen.queryAllByText(/^renderer:/)).toHaveLength(0)
+  })
+})
+
+/**
+ * Task 22: the Output tab is the hover source the graph's data-flow highlight
+ * reads — each output's `ValueView` is given the step's own identity, so
+ * hovering it dispatches exactly what a downstream reader's `needs`/`steps`
+ * ref would match.
+ */
+describe('StepPane — Output tab hover dispatches the value under the pointer', () => {
+  it("hovering an output sets ui.hoveredValue to this step's own identity, and clears on leave", () => {
+    const def = toDefinition(FINISHED_RUN.run.definition)
+    const state = replayRun(FINISHED_RUN.run, FINISHED_RUN.steps, def)
+    const store = makeStore()
+
+    render(
+      <Provider store={store}>
+        <StepPane def={def} state={state} stepKey="greet/0/say" live={false} />
+      </Provider>,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
+    const wrapper = screen.getByText('line').closest('.value')!
+
+    fireEvent.mouseEnter(wrapper)
+    expect(store.getState().ui.hoveredValue).toEqual({ job: 'greet', step: 'say', output: 'line' })
+
+    fireEvent.mouseLeave(wrapper)
+    expect(store.getState().ui.hoveredValue).toBeNull()
   })
 })

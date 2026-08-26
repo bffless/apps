@@ -670,6 +670,14 @@ body {
   border-radius: 0.5rem;
 }
 
+/* Data-flow hover-highlight (08, M2 Task 22): a job card lights up as a whole
+   when the hovered value is one of its job-level `outputs` aliases, since no
+   single step declares it. */
+.job-card[data-flow='source'] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .job-head {
   display: flex;
   align-items: baseline;
@@ -723,6 +731,18 @@ body {
 
 .step-chip[data-state='succeeded'] {
   border-color: #bbf7d0;
+}
+
+/* Data-flow hover-highlight (08, M2 Task 22): solid outline on the value's
+   declaring chip, dashed on every chip that reads it. */
+.step-chip[data-flow='source'] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.step-chip[data-flow='target'] {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 2px;
 }
 
 .step-head {

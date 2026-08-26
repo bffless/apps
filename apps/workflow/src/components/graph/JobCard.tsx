@@ -18,6 +18,7 @@ import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
+import type { GraphFlow } from './flow'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
@@ -59,10 +60,12 @@ export interface JobCardProps {
   state?: RunState
   selectedKey?: StepKey | null
   onPick: (key: StepKey, step: Step) => void
+  /** Which chips light up for the hovered value (08); absent outside `GraphView`'s own render. */
+  flow?: GraphFlow
   style?: CSSProperties
 }
 
-export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style }: JobCardProps) {
+export function JobCard({ job, col, row, mode, state, selectedKey, onPick, flow, style }: JobCardProps) {
   const [picked, setPicked] = useState(0)
 
   const expansion = state?.expansions[job.id]
@@ -89,6 +92,7 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style
 
   const note = matrixNote(job)
   const isMatrix = job.matrix !== undefined && mode === 'run'
+  const jobFlow = flow?.sourceJobs.has(job.id) ? 'source' : undefined
 
   return (
     <article
@@ -97,6 +101,7 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style
       data-job={job.id}
       data-col={col}
       data-row={row}
+      data-flow={jobFlow}
       style={style}
     >
       <header className="job-head">
@@ -128,6 +133,12 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style
       <div className="job-steps">
         {job.steps.map((step) => {
           const key = stepKey(job.id, mode === 'run' ? index : 0, step.id)
+          const flowKey = `${job.id}::${step.id}`
+          const stepFlow = flow?.sourceSteps.has(flowKey)
+            ? 'source'
+            : flow?.targetSteps.has(flowKey)
+              ? 'target'
+              : undefined
           return (
             <StepChip
               key={step.id}
@@ -138,6 +149,7 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, style
               state={state?.steps[key]}
               selected={selectedKey === key}
               onPick={onPick}
+              flow={stepFlow}
             />
           )
         })}

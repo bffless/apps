@@ -36,6 +36,8 @@ import { stepOutputDecl } from '../../lib/outputDecls'
 import { refsIn } from '../../lib/runner/graph'
 import type { ValueRef } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
+import { useAppDispatch } from '../../store/hooks'
+import { valueHovered } from '../../store/uiSlice'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
@@ -82,6 +84,12 @@ function originOf(job: string, declared: unknown): string | undefined {
   return labels.length > 0 ? labels.join(', ') : undefined
 }
 
+// `origin` above is one joined string per entry — a pipeline step's `with`
+// can read several upstream values into one persisted input (`body.lines`
+// *and* `body.photo`, say), so a single origin chip has no one `ValueRef` to
+// hand `onHover` as the hovered value's identity. Wiring hover here would
+// need one chip per ref, which is a bigger change than this task's `onHover`
+// plumbing; the Output tab below is the hover source Task 22 wires up.
 function InputTab({ job, step, declared }: { job: string; step: StepState; declared?: Step }) {
   const entries = Object.entries(step.inputs ?? {})
   if (entries.length === 0) return <p className="note">This step evaluated no inputs.</p>
@@ -113,6 +121,7 @@ function OutputTab({
 }) {
   const recorded = step.outputs ?? {}
   const names = (declared && stepOutputNames(declared)) ?? Object.keys(recorded)
+  const dispatch = useAppDispatch()
   if (names.length === 0) return <p className="note">This step declares no outputs.</p>
 
   return (
@@ -129,7 +138,22 @@ function OutputTab({
             declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
               ? { type: 'file' }
               : declaredDecl
-          return <ValueView key={name} label={name} decl={decl} value={value} impl={impl} />
+          return (
+            <ValueView
+              key={name}
+              label={name}
+              decl={decl}
+              value={value}
+              impl={impl}
+              // This step's own output is the value's declaring chip (08's
+              // data-flow highlight) — the graph lights up wherever else it's read.
+              onHover={(hovering) =>
+                dispatch(
+                  valueHovered(hovering ? { job: step.job, step: step.stepId, output: name } : null),
+                )
+              }
+            />
+          )
         })}
       </div>
     </MediaSeekProvider>

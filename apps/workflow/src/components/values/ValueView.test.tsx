@@ -4,7 +4,7 @@
  * consumers depend on: the file card's Download link always ends `download=1`,
  * and a named `render` shows the M2 placeholder badge above the base viewer.
  */
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
@@ -362,5 +362,28 @@ describe('ValueView', () => {
     ).not.toThrow()
     expect(screen.getByText('Intro')).toBeInTheDocument()
     expect(screen.getAllByText('—')).toHaveLength(2)
+  })
+
+  it('reports hover start/end through onHover, mouse only (08 data-flow highlight)', () => {
+    const onHover = vi.fn()
+    const { container } = render(
+      <ValueView decl={{ type: 'string' }} value="hi" onHover={onHover} />,
+    )
+    const wrapper = container.querySelector('.value')!
+
+    fireEvent.mouseEnter(wrapper)
+    expect(onHover).toHaveBeenLastCalledWith(true)
+
+    fireEvent.mouseLeave(wrapper)
+    expect(onHover).toHaveBeenLastCalledWith(false)
+  })
+
+  it('never throws hovering a value with no onHover given', () => {
+    const { container } = render(<ValueView decl={{ type: 'string' }} value="hi" />)
+    const wrapper = container.querySelector('.value')!
+    expect(() => {
+      fireEvent.mouseEnter(wrapper)
+      fireEvent.mouseLeave(wrapper)
+    }).not.toThrow()
   })
 })
