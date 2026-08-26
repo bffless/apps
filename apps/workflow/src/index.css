@@ -159,6 +159,19 @@ body {
   font-size: 0.875rem;
 }
 
+/* The 05 pause banner (`PausedBanner`): a note that must not be missed. */
+.banner {
+  padding: 0.6rem 0.8rem;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  background-color: #fef2f2;
+}
+
+.banner strong {
+  color: inherit;
+}
+
 .cards {
   display: flex;
   flex-direction: column;

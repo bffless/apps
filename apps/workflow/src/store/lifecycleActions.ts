@@ -28,6 +28,7 @@ import { runnerControllers } from './runnerMiddleware'
 import { getOwnerId } from './runnerActions'
 import { runEvent, runOpened, runReplaced } from './runSlice'
 import type { RunMeta } from './runSlice'
+import { workflowApi } from './workflowApi'
 
 /** The app's real `RunStore` — fresh per module, matching `defaultRunnerDeps()` (store/index.ts). */
 const runStore: RunStore = createRunStore(httpJsonWithReauth)
@@ -171,5 +172,43 @@ export function openRun(a: { runId: string; run: RunRow; steps: StepRow[] }): Ap
 export function takeOver(a: { runId: string; run: RunRow; steps: StepRow[] }): AppThunk<Promise<void>> {
   return async (dispatch, getState) => {
     await adopt(a, dispatch, getState, true)
+  }
+}
+
+/**
+ * Retry, from the persistence-pause banner (05: "the run is paused with an
+ * error banner"; apps#375). The pause means a write-ahead write failed —
+ * the slice folded an event the record never got, and every in-flight
+ * controller was aborted with it — or a resume was refused because a
+ * recorded payload could not be read (`RESUME_REFUSED`). Both have the same
+ * honest way forward: the **record** is the truth, so the run is re-read from
+ * the server and adopted again through the very path a fresh tab would use
+ * (`takeOver`, since this tab is the lease holder it is taking over from):
+ * the replaced state drops whatever the record never got, the middleware's
+ * `runReplaced` listener relaunches the steps left non-terminal, re-fetches
+ * any `{"$file"}` payload (a failed read is never memoized), and clears
+ * `paused`. If the record still cannot be read, or the payload still cannot,
+ * the banner comes straight back with the reason.
+ *
+ * Throws `LeaseTransportError` when the record itself could not be read, so
+ * the banner can say "couldn't reach the server" rather than pretending the
+ * retry happened.
+ */
+export function retryRun(): AppThunk<Promise<void>> {
+  return async (dispatch, getState) => {
+    const runId = getState().run.state?.runId
+    if (!runId) return
+    const read = dispatch(workflowApi.endpoints.getRun.initiate(runId, { forceRefetch: true }))
+    try {
+      const res = await read
+      if (res.error || !res.data?.run) {
+        throw new LeaseTransportError(
+          res.error ? `the run record could not be read (${JSON.stringify(res.error)})` : 'the run record is gone',
+        )
+      }
+      await adopt({ runId, run: res.data.run, steps: res.data.steps }, dispatch, getState, true)
+    } finally {
+      read.unsubscribe()
+    }
   }
 }

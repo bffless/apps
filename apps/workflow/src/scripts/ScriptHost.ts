@@ -20,6 +20,7 @@
  * never import this file.
  */
 import { resolveScriptSrc } from '../lib/runner/adapters/script'
+import { SERVE_PREFIX } from '../lib/coerce'
 import { isServeUrl } from '../lib/url'
 import type { FileRef } from '../lib/runner/types'
 import type { FromWorker, RpcReqMessage, ToWorker, WorkerLike } from './rpc'
@@ -216,8 +217,13 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
       const send = (msg: ToWorker, transfer?: Transferable[]) => {
         try {
           worker?.postMessage(msg, transfer)
-        } catch {
-          // The run is being torn down; nothing left to answer.
+        } catch (err) {
+          // A message that cannot be posted (a body the structured clone
+          // refuses, a Worker already gone) is not something to swallow: a
+          // dropped `rpc:res` would leave the module awaiting an answer that
+          // never comes, and the step `running` with it (apps#375). After
+          // `settled`, `fail` is a no-op — the teardown case costs nothing.
+          fail(new ScriptError('SCRIPT', `script ${url}: ${messageOf(err)}`))
         }
       }
 
@@ -236,7 +242,7 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           send({
             t: 'rpc:res',
             id: req.id,
-            error: `files.fetch ${String(refUrl)}: only /api/uploads/ urls can be fetched from a script`,
+            error: `files.fetch ${String(refUrl)}: only ${SERVE_PREFIX} urls can be fetched from a script`,
           })
           return
         }

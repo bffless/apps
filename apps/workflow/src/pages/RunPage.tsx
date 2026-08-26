@@ -39,6 +39,7 @@ import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
 import { useIslandHandle } from '../islands/useIslandHandle'
+import { PausedBanner } from '../components/run/PausedBanner'
 import { RunHeader } from '../components/run/RunHeader'
 import { RunOutputs } from '../components/run/RunOutputs'
 import { RunSummary } from '../components/run/RunSummary'
@@ -253,6 +254,9 @@ export function RunPage() {
   const sliceMeta = useAppSelector((state) => state.run.meta)
   const sliceState = useAppSelector((state) => state.run.state)
   const isLive = sliceMode === 'live' && sliceMeta !== null && sliceState?.runId === runId
+  // The 05 pause (a failed write-ahead write, or a refused resume): only ever
+  // set on the run this tab drives, so it is a live-path fact (apps#375).
+  const paused = useAppSelector((state) => state.run.paused)
 
   // Skipped entirely while live — the point of the live path is to never
   // depend on this call, not merely to prefer the slice when it wins a race.
@@ -454,6 +458,7 @@ export function RunPage() {
           onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
         />
 
+        {isLive && paused && <PausedBanner message={paused} />}
         {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
 
         {!state || !def ? (

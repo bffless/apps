@@ -29,6 +29,7 @@ import { runnerControllers } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
 import { startRun } from './runnerActions'
 import { runClosed } from './runSlice'
+import { workflowApi } from './workflowApi'
 
 // ---------------------------------------------------------------------------
 // Fakes — the same shapes `runnerMiddleware.test.ts` uses for its own
@@ -347,5 +348,63 @@ describe('payload offload — a lease loss aborts the offload; the write is skip
 
     expect(store.getState().run.paused).toBeUndefined()
     expect(writes.some((w) => w.op === 'upsert' && w.key === ONE_KEY && w.patch.status === 'succeeded')).toBe(false)
+  })
+})
+
+describe('payload offload — a stale run.finished still runs the terminal cleanup (apps#375)', () => {
+  it('invalidates the run caches (the observable half of the cleanup) when the finish offload was aborted by a lease loss', async () => {
+    // PUT #1 is the step's own offload and lands; PUT #2 is the run-level
+    // `outputs/big.json` and is held open until the lease is gone.
+    let puts = 0
+    const putGate = deferred<void>()
+    server.use(
+      http.put('/mock-upload/*', async () => {
+        puts += 1
+        if (puts > 1) await putGate.promise
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+    let listReads = 0
+    server.use(
+      http.get('/api/workflow/runs', () => {
+        listReads += 1
+        return HttpResponse.json([])
+      }),
+    )
+
+    const { http: pipelineHttp } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: BIG, s: SMALL } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes, setLease } = fakeRunStore()
+    const deps: RunnerDeps = { http: pipelineHttp, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    // A subscribed Past-runs query: a `Runs` invalidation shows up as a refetch.
+    const listing = store.dispatch(workflowApi.endpoints.listRuns.initiate({ impl: 'test', workflow: 'payload' }))
+    await listing
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'payload', def: DEF, yaml: 'name: Payload offload', workflowName: 'Payload offload', values: {} }),
+    )
+
+    // The slice reaches `run.finished`; its offload is stuck on PUT #2.
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+    await flush()
+    expect(puts).toBe(2)
+    const runId = store.getState().run.state!.runId
+    const before = listReads
+
+    // The lease is lost on the next heartbeat tick: `loseLease` aborts the
+    // run-level offload's controller, and `writeEvent` answers `stale`.
+    setLease({ ok: false, heldBy: 'tab_other' })
+    await pumpUntil(advance, () => store.getState().run.mode === 'readonly', { stepMs: 1_000, maxSteps: 30 })
+    putGate.resolve()
+    await flush()
+
+    // Nothing terminal was written, nothing paused — the fix round 1 contract…
+    expect(store.getState().run.paused).toBeUndefined()
+    expect(writes.some((w) => w.op === 'patch' && w.id === runId && w.patch.status !== undefined)).toBe(false)
+    // …and the terminal cleanup still ran: the caches were invalidated.
+    await pumpUntil(advance, () => listReads > before, { stepMs: 10, maxSteps: 50 })
+    expect(listReads).toBeGreaterThan(before)
+    listing.unsubscribe()
   })
 })

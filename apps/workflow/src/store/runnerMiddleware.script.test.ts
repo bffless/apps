@@ -174,7 +174,7 @@ interface ScriptRun {
   runId: string
 }
 
-function scriptStore(): Omit<ScriptRun, 'runId'> {
+function scriptStore(factory?: (deps: ScriptHostDeps) => ScriptHost): Omit<ScriptRun, 'runId'> {
   const host = fakeScriptHost()
   const { clock, advance } = virtualClock()
   const deps: RunnerDeps = {
@@ -182,7 +182,7 @@ function scriptStore(): Omit<ScriptRun, 'runId'> {
     clock,
     runStore: createRunStore(httpJson),
     registerFile: createRegisterFile(httpJson),
-    scriptHost: host.factory,
+    scriptHost: factory ?? host.factory,
   }
   const store = makeStore(deps)
   trackedStores.push(store)
@@ -190,8 +190,11 @@ function scriptStore(): Omit<ScriptRun, 'runId'> {
 }
 
 /** Starts the workflow and pumps until the script step is `running` — i.e. the host is in flight. */
-async function startScriptRun(def: Definition = scriptDef()): Promise<ScriptRun> {
-  const { store, advance, host } = scriptStore()
+async function startScriptRun(
+  def: Definition = scriptDef(),
+  factory?: (deps: ScriptHostDeps) => ScriptHost,
+): Promise<ScriptRun> {
+  const { store, advance, host } = scriptStore(factory)
   store.dispatch(
     startRun({
       impl: 'hello',
@@ -330,6 +333,25 @@ describe('script steps — ctx.log and ctx.annotate', () => {
     expect(getScriptLog(runId, SCRIPT_KEY).join('\n')).toContain('annotate rejected')
     expect(getScriptLog(runId, SCRIPT_KEY).join('\n')).toContain('`annotations` must be a list')
   })
+
+  it('leaves one run-level warning per step for a refused annotate, so the record keeps a trace (apps#375)', async () => {
+    const { store, host, runId } = await startScriptRun()
+
+    host.deps!.onAnnotate({ annotations: 'not a list' })
+    host.deps!.onAnnotate({ annotations: 'still not a list' })
+    await flush()
+
+    const notices = store.getState().run.state!.annotations.filter((a) => a.stepKey === SCRIPT_KEY)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toMatchObject({
+      level: 'warning',
+      stepKey: SCRIPT_KEY,
+      message: expect.stringContaining('ctx.annotate'),
+    })
+    // The live log has every refusal; the record has the one notice.
+    expect(getScriptLog(runId, SCRIPT_KEY).filter((l) => l.includes('annotate rejected'))).toHaveLength(2)
+    expect(db.runs.get(runId)!.annotations).toEqual(notices)
+  })
 })
 
 describe('script steps — failure', () => {
@@ -410,6 +432,36 @@ describe('script steps — the `timeout-minutes` budget', () => {
     })
     // The module was told to stop, not left running behind the run.
     expect(host.runs[0].signal.aborted).toBe(true)
+  })
+
+  it('records TIMEOUT, not succeeded, when the module resolves in the very tick the budget expires (apps#375)', async () => {
+    // A host whose abort *resolves* the module (a Worker that answers `done`
+    // on its way out) — the budget's `run.abort()` and the module's own
+    // settlement then land in one tick, and `timedOut` is the only thing
+    // that says which of the two the row should believe.
+    const resolvingHost = (): ScriptHost => ({
+      run() {
+        let resolve!: (v: unknown) => void
+        const outputs = new Promise<unknown>((r) => {
+          resolve = r
+        })
+        return {
+          outputs,
+          abort: () => resolve({ poster: new Blob(['<svg/>'], { type: 'image/svg+xml' }), count: 2 }),
+        }
+      },
+    })
+    const { store, advance } = await startScriptRun(scriptDef({ 'timeout-minutes': 1 }), () => resolvingHost())
+
+    await advance(61_000)
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+
+    const step = store.getState().run.state!.steps[SCRIPT_KEY]
+    expect(step.status).toBe('failed')
+    expect(step.error).toEqual({
+      code: 'TIMEOUT',
+      message: 'the step exceeded its `timeout-minutes` budget',
+    })
   })
 
   it('leaves a step that finishes inside its budget alone', async () => {

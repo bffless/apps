@@ -117,23 +117,19 @@ async function materialize(
   return materializeFile(raw, registerFile)
 }
 
-async function coerceOne(
-  name: string,
-  decl: OutputDecl,
-  contexts: Record<string, unknown>,
-  registerFile: RegisterFile,
-): Promise<unknown> {
+/** The evaluated (and, for `table`, assembled) value of one declaration — nothing registered yet. */
+function evaluateOne(decl: OutputDecl, contexts: Record<string, unknown>): unknown {
   if (typeof decl === 'string') return evalValue(decl, contexts)
-
   // Omitted `value` → null (03: a step outputs map with no value for a name).
   const raw = decl.value === undefined ? null : evalDeep(decl.value, contexts)
-  const shaped = decl.type === 'table' ? assembleTable(decl, raw) : raw
-  const value = await materialize(decl.type, decl.list, shaped, registerFile)
+  return decl.type === 'table' ? assembleTable(decl, raw) : raw
+}
 
-  if (decl.type && !validateValue(decl.type, decl.list, value)) {
+function check(name: string, decl: OutputDecl, value: unknown): void {
+  if (typeof decl === 'string' || !decl.type) return
+  if (!validateValue(decl.type, decl.list, value)) {
     throw new OutputTypeError(name, decl.list ? `${decl.type}[]` : decl.type, value)
   }
-  return value
 }
 
 /**
@@ -141,6 +137,12 @@ async function coerceOne(
  * rest of `contexts`); validate against the closed vocabulary (02). Omitted
  * `decls` exposes exactly `{ response }` (03) — a pipeline step with no
  * `outputs` map.
+ *
+ * Order matters (apps#375): every declaration is evaluated and every
+ * non-`file` one validated *before* the first `file` is registered, so a
+ * later declaration's type failure never leaves a registered file behind for
+ * a step that then fails `OUTPUT_TYPE`. The returned map keeps declaration
+ * order either way.
  */
 export async function coerceOutputs(
   decls: Record<string, OutputDecl> | undefined,
@@ -150,8 +152,17 @@ export async function coerceOutputs(
   if (!decls) return { response: (contexts.response as unknown) ?? null }
 
   const out: Record<string, unknown> = {}
+  const files: [string, OutputDecl][] = []
   for (const [name, decl] of Object.entries(decls)) {
-    out[name] = await coerceOne(name, decl, contexts, registerFile)
+    out[name] = evaluateOne(decl, contexts)
+    if (typeof decl !== 'string' && decl.type === 'file') files.push([name, decl])
+    else check(name, decl, out[name])
+  }
+
+  for (const [name, decl] of files) {
+    const typed = decl as Exclude<OutputDecl, string>
+    out[name] = await materialize(typed.type, typed.list, out[name], registerFile)
+    check(name, decl, out[name])
   }
   return out
 }

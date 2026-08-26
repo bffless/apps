@@ -13,7 +13,7 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
-import type { InputDef } from '@bffless/workflow-lint/definition'
+import type { InputDef, OutputDecl } from '@bffless/workflow-lint/definition'
 import { buildContexts } from '../contexts'
 import { validateInputConstraints } from '../inputConstraints'
 import { validateValue } from '../outputs'
@@ -23,6 +23,26 @@ import type { Definition, RunEvent, RunState, Step, StepKey } from '../types'
 /** A JSON object view of an unknown value; anything else reads as `{}`. */
 export function obj(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+/** A JSON object — an array is not a bag of named values. */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** The step's declared `outputs` map — an island's or a script's outputs are named and typed (02/03). */
+export function outputDecls(step: Step): Record<string, OutputDecl> {
+  return obj(obj(step.raw).outputs) as Record<string, OutputDecl>
+}
+
+/**
+ * The type token an `OutputTypeError.expected` carries for one declaration —
+ * `number`, `file[]`, `json` for an untyped one — the same vocabulary the
+ * pipeline adapter's `coerceOne` reports, whichever adapter refused the value.
+ */
+export function expectedToken(decl: Record<string, unknown>, defaultType: string): string {
+  const type = typeof decl.type === 'string' ? decl.type : defaultType
+  return decl.list === true ? `${type}[]` : type
 }
 
 /** "Unanswered" for the purposes of `required` — `false` and `0` are answers. */
