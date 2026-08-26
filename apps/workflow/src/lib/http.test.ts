@@ -131,17 +131,25 @@ describe('httpJsonWithReauth', () => {
 // ---------------------------------------------------------------------------
 
 describe('runStore.deleteRun', () => {
-  it('posts the id and reads back the deleted file count', async () => {
+  it('posts the id and reads back both sweep counts', async () => {
     let seen: unknown = null
     server.use(
       http.post('/api/workflow/run/delete', async ({ request }) => {
         seen = await request.json()
-        return HttpResponse.json({ ok: true, deleted: { files: 3 } })
+        // Deliberately different numbers: the objects removed from storage and the
+        // upload rows removed are two separate sweeps, and must not be conflated.
+        return HttpResponse.json({ ok: true, deleted: { files: 3, records: 5 } })
       }),
     )
 
-    await expect(createRunStore(httpJson).deleteRun('run_1')).resolves.toEqual({ files: 3 })
+    await expect(createRunStore(httpJson).deleteRun('run_1')).resolves.toEqual({ files: 3, records: 5 })
     expect(seen).toEqual({ id: 'run_1' })
+  })
+
+  it('reads a missing count as 0 rather than undefined', async () => {
+    server.use(http.post('/api/workflow/run/delete', () => HttpResponse.json({ ok: true })))
+
+    await expect(createRunStore(httpJson).deleteRun('run_1')).resolves.toEqual({ files: 0, records: 0 })
   })
 
   it('rejects carrying the refusal status, so 403 and 409 stay tellable apart', async () => {

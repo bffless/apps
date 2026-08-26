@@ -152,7 +152,9 @@ describe('run deletion (rows + file-prefix GC)', () => {
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, deleted: { files: 2 } })
+    // `records` is the workflow_files sweep's count — reported so a filter that
+    // silently stops matching shows up as `records: 0` beside a non-zero `files`.
+    expect(await res.json()).toEqual({ ok: true, deleted: { files: 2, records: 2 } })
     expect(db.runs.has(RUN_ID)).toBe(false)
     expect(stepsOf(RUN_ID)).toEqual([])
     expect(filesUnder(RUN_PREFIX)).toEqual([])
@@ -165,6 +167,7 @@ describe('run deletion (rows + file-prefix GC)', () => {
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
     expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, deleted: { files: 2, records: 2 } })
     expect(db.runs.has(RUN_ID)).toBe(false)
     expect(filesUnder(RUN_PREFIX)).toEqual([])
   })

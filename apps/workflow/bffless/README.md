@@ -46,7 +46,11 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
   reference them, and Re-run reuses them. Owner (`startedBy == user.id`) or admin only; a run
   still `running` is refused with 409 — cancel it first. Because the refusal statuses are
   literal (`response_handler` will not take an expression for `status`), the rule carries three
-  one-line responders (404/409/403), each gated on its own flag from `gate.fn.js`.
+  one-line responders (404/409/403), each gated on its own flag from `gate.fn.js`. **Edit this rule
+  as rules-as-code only** — it is a multi-branch conditional `response_handler` rule, and saving it
+  from the admin panel drops the second conditional responder (bffless/ce#502). Its 200 reports both
+  sweeps, `{"deleted":{"files":n,"records":n}}`: `records: 0` beside a non-zero `files` means the
+  `workflow_files` filter stopped matching (it deletes nothing rather than failing).
 - **`GET /api/workflow/whoami`** (M2 Phase 3): `{ id, email, role }` for the calling session —
   the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
   Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty

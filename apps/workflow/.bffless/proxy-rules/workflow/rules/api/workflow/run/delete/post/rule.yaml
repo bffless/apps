@@ -87,15 +87,19 @@ pipeline:
         condition: steps.gate.ok
         schemaId: $schema:workflow_runs
         recordId: steps.gate.recordId
-    # `{{steps.files.deleted}}` renders the number bare (double braces stringify a
-    # primitive as-is), and the `}}}}` tail is safe: evaluateTemplate scans the original
-    # template once and only tries `{{{` where three braces actually open.
+    # Both counts are reported, and `records` is the one that matters: the `recs` sweep is
+    # the only step whose correctness rides on a CE implementation detail (the full-key
+    # shape of `storage_path`), and a filter that stops matching deletes 0 rows *without*
+    # failing. A `records` of 0 next to a non-zero `files` is that regression, visible.
+    # `{{…}}` renders each number bare (double braces stringify a primitive as-is), and the
+    # `}}}}` tail is safe: evaluateTemplate scans the original template once and only tries
+    # `{{{` where three braces actually open.
     - id: respond
       name: respond
       handler: response_handler
       config:
         condition: steps.gate.ok
-        body: '{"ok":true,"deleted":{"files":{{steps.files.deleted}}}}'
+        body: '{"ok":true,"deleted":{"files":{{steps.files.deleted}},"records":{{steps.recs.count}}}}'
         status: 200
         headers: { Cache-Control: no-store }
         contentType: application/json

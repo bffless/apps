@@ -28,7 +28,7 @@ export interface RunStore {
  * interface; `createRunStore` returns both.
  */
 export interface RunDeleter {
-  deleteRun(id: string): Promise<{ files: number }>
+  deleteRun(id: string): Promise<{ files: number; records: number }>
 }
 
 /**
@@ -82,11 +82,17 @@ export function createRunStore(http: HttpJson): RunStore & RunDeleter {
     },
 
     // The rule deletes the run's storage prefix, its `workflow_files` rows, its
-    // step rows and the run row; the count it reports back is the objects the
-    // sweep actually removed (0 is a normal answer — a run that produced none).
+    // step rows and the run row. Both sweeps report their count: `files` is the
+    // objects removed from storage, `records` the upload rows removed. 0 is a
+    // normal answer for a run that produced no files — but `records: 0` beside a
+    // non-zero `files` means the record filter stopped matching (it deletes
+    // nothing rather than failing), which is the one silent failure here.
     async deleteRun(id) {
       const deleted = obj(obj(await post(http, '/api/workflow/run/delete', { id })).deleted)
-      return { files: typeof deleted.files === 'number' ? deleted.files : 0 }
+      return {
+        files: typeof deleted.files === 'number' ? deleted.files : 0,
+        records: typeof deleted.records === 'number' ? deleted.records : 0,
+      }
     },
   }
 }

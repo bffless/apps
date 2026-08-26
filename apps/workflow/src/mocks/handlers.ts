@@ -272,8 +272,12 @@ const runRecord = [
       return refuse(403, 'only the run owner or an admin can delete a run')
     }
 
+    // `records` is the `workflow_files` sweep's count in the real rule. The mock has no
+    // such table, but everything in `db.files` got there through the files trio, which
+    // registers exactly one record per object — so the object count IS the record count
+    // here, and reporting it keeps the two response shapes identical.
     const { files } = deleteRun(run.runId)
-    return HttpResponse.json({ ok: true, deleted: { files } }, { headers: NO_STORE })
+    return HttpResponse.json({ ok: true, deleted: { files, records: files } }, { headers: NO_STORE })
   }),
 
   // Mirrors `gate.fn.js`: granted when unheld, expired, already ours, or forced.
