@@ -8,6 +8,12 @@ generates one from the other.
 | **Workflow YAML** | `.bffless/workflows/<name>.yaml` | *What* runs: inputs, jobs, steps. Spec 01. |
 | **Rule set** | `.bffless/proxy-rules/<alias>/rules/api/<alias>/<path>/<method>/rule.yaml` | *How* each pipeline step works: a BFFless pipeline (handlers, `.fn.js`). Rules-as-code. |
 
+Mental model: the **rule set is the backend** (every pipeline step is an HTTP endpoint, a
+BFFless pipeline you author as code) and the **workflow YAML is the frontend's script** — it
+says which endpoints to call, in what order, with what data, and where a person steps in. The
+"frontend" itself is the harness: one generic app that reads the YAML and runs it in the
+browser. Islands and scripts are the parts of the frontend an implementation supplies.
+
 The link is the step's `path`:
 
 ```yaml
