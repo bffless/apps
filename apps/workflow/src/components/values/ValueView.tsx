@@ -12,6 +12,7 @@
  * `src` lives in. It comes from `ImplContext` (the page knows) or from an
  * explicit `impl` prop; with neither, the declaration degrades to the badge.
  */
+import { useState } from 'react'
 import { isUnavailablePayload } from '../../lib/runner/payload'
 import type { UnavailablePayload } from '../../lib/runner/payload'
 import { downloadHref, isSafeUrl } from '../../lib/url'
@@ -32,6 +33,9 @@ export type { ValueDecl }
 
 /** Every `render` name this dispatch actually knows how to draw (island's M2 fallback aside). */
 const KNOWN_RENDERERS = new Set(['island', 'transcript', 'images', 'chart', 'code'])
+
+/** Types whose default viewer *draws* the value, so a raw view is worth offering (a bare `json` is already the tree). */
+const DRAWN_TYPES = new Set(['table', 'markdown', 'file'])
 
 /**
  * An output the writer offloaded (`{"$file"}`, Task 12) whose bytes the read
@@ -126,6 +130,10 @@ export function ValueView({
 }) {
   // Unconditional: `impl ?? useImpl()` would short-circuit the hook away.
   const contextImpl = useImpl()
+  // "Show me the exact data" (2026-08-26 review): any value that is drawn
+  // rather than printed — a chart, a table, a transcript, markdown, a file —
+  // can be flipped to the raw JSON the row actually holds, and back.
+  const [raw, setRaw] = useState(false)
   const bundle = impl ?? contextImpl
   const unavailable = isUnavailablePayload(value)
   const island = decl.render === 'island' && typeof decl.src === 'string' && bundle !== null
@@ -134,8 +142,18 @@ export function ValueView({
   const chart = decl.render === 'chart'
   const code = decl.render === 'code'
 
+  const drawn =
+    !unavailable &&
+    value !== null &&
+    value !== undefined &&
+    (typeof decl.render === 'string' ||
+      DRAWN_TYPES.has(decl.type) ||
+      (decl.list === true && decl.type !== 'json'))
+
   let body
-  if (island && !unavailable) {
+  if (drawn && raw) {
+    body = <JsonTree value={value} />
+  } else if (island && !unavailable) {
     body = <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
   } else if (transcript && !unavailable) {
     body = <TranscriptView value={value} />
@@ -180,6 +198,18 @@ export function ValueView({
           {origin && <span className="chip value-origin">from {origin}</span>}
           {destination && <span className="chip value-origin">goes to {destination}</span>}
           {tag && <span className="value-tag">{tag}</span>}
+          {drawn && (
+            <button
+              type="button"
+              className="value-raw"
+              data-testid="value-raw"
+              aria-pressed={raw}
+              title={raw ? 'Show it as declared' : 'Show the raw JSON'}
+              onClick={() => setRaw((on) => !on)}
+            >
+              {raw ? 'rendered' : 'json'}
+            </button>
+          )}
         </div>
       )}
       {body}

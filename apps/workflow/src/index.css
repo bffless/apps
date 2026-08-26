@@ -776,6 +776,32 @@ button {
   margin-left: auto;
 }
 
+/* The raw-JSON flip on a drawn value: a mono toggle at the head's right edge. */
+.value-raw {
+  padding: 2px 8px;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 500 10.5px var(--font-mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color var(--fast) var(--ease-out),
+    border-color var(--fast) var(--ease-out);
+}
+
+.value-raw:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.value-raw[aria-pressed='true'] {
+  color: var(--paper);
+  background-color: var(--ink);
+  border-color: var(--ink);
+}
+
 .value-empty {
   color: var(--ink-mute);
   font-family: var(--font-mono);
@@ -1130,8 +1156,7 @@ button {
   font-size: 12.5px;
 }
 
-.renderer-chart .uplot,
-.renderer-chart .u-legend {
+.renderer-chart .uplot {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-mute);
