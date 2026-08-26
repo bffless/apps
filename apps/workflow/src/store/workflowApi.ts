@@ -123,17 +123,15 @@ function publishedPath(impl: string, file: string): string {
  * "Not an implementation" (ADR-0004) is not only a 404: a BFFless SPA answers
  * *any* unknown path with its `index.html`, 200 and all, and that is the common
  * shape of an ordinary alias in these projects. So the answer only counts as a
- * publish when the server says it is JSON *and* the body actually parses as
- * JSON — a body that claims to be JSON but is not is indistinguishable from
- * the SPA-fallback case, so both drop the alias like a 404 rather than listing
- * it as somebody's broken workflow.
+ * publish when the server says it is JSON — a `content-type` that lacks it
+ * drops the alias like a 404, rather than listing it as somebody's broken
+ * workflow.
  *
- * A publish that *does* parse but cannot be used — a future `spec`, no
- * `workflows` — still stays on the list carrying its error (`toImplementation`
- * never throws for that; it returns the same `{ error }` shape `unusable`
- * builds here), because a broken publish the user cannot see is worse than one
- * they can (08). `unusable` is reserved for an actual transport failure: a
- * non-404 error status, or the request failing outright.
+ * Anything that *is* a publish but cannot be used — JSON that will not parse,
+ * a future `spec`, no `workflows` — stays on the list carrying its error
+ * (`toImplementation` never throws for the latter two; it returns the same
+ * `{ error }` shape `unusable` builds here for the former), because a broken
+ * publish the user cannot see is worse than one they can (08, P9).
  */
 async function probe(
   alias: string,
@@ -166,7 +164,7 @@ async function probe(
   try {
     parsed = JSON.parse(result.data as string)
   } catch {
-    return null
+    return unusable('index.json is not valid JSON')
   }
 
   return toImplementation(alias, preview, parsed)

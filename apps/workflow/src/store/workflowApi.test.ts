@@ -100,13 +100,7 @@ describe('discover', () => {
     expect(res.data?.[0].error).toContain('spec')
   })
 
-  // apps#363: probes now go through `baseQueryWithReauth` with
-  // `responseHandler: 'text'`, so the probe parses the body itself rather than
-  // letting `fetch().json()` throw. A body that will not parse as JSON is
-  // indistinguishable from one that was never JSON in the first place (the
-  // ordinary "ADR-0004" SPA-fallback case above) — both drop the alias rather
-  // than listing it with an error.
-  it('drops an alias whose JSON index does not parse', async () => {
+  it('keeps an alias whose JSON index does not parse', async () => {
     server.use(
       http.get('/api/workflow/aliases', () => HttpResponse.json([{ name: 'torn', isAutoPreview: false }])),
       http.get('/w/torn/.bffless/workflows/index.json', () =>
@@ -116,7 +110,7 @@ describe('discover', () => {
 
     const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
 
-    expect(res.data).toEqual([])
+    expect(res.data?.[0].error).toBe('index.json is not valid JSON')
   })
 
   it('surfaces the aliases request failing as a query error', async () => {
