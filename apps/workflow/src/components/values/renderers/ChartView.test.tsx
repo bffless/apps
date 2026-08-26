@@ -7,9 +7,10 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { uPlotCtor, barsFactory } = vi.hoisted(() => ({
+const { uPlotCtor, barsFactory, destroySpy } = vi.hoisted(() => ({
   uPlotCtor: vi.fn(),
   barsFactory: vi.fn(() => 'bars-paths-builder'),
+  destroySpy: vi.fn(),
 }))
 
 vi.mock('uplot', () => {
@@ -18,7 +19,9 @@ vi.mock('uplot', () => {
     constructor(...args: unknown[]) {
       uPlotCtor(...args)
     }
-    destroy() {}
+    destroy() {
+      destroySpy()
+    }
   }
   return { default: MockUPlot }
 })
@@ -76,6 +79,7 @@ describe('ChartView', () => {
   beforeEach(() => {
     uPlotCtor.mockClear()
     barsFactory.mockClear()
+    destroySpy.mockClear()
   })
 
   it('renders the wrapper and constructs uPlot with the computed series (line)', () => {
@@ -102,5 +106,46 @@ describe('ChartView', () => {
     expect(container.querySelector('.note')).toBeTruthy()
     expect(container.querySelector('details')).toBeTruthy() // JsonTree
     expect(uPlotCtor).not.toHaveBeenCalled()
+  })
+
+  it('does not tear down and rebuild uPlot on a re-render with structurally-equal (new object) value/mapping', () => {
+    // Simulates `RunPage` polling every 5s while a run is running: each poll
+    // re-renders with a freshly-decoded outputs object that is a *new*
+    // reference but the same data.
+    const { rerender } = render(
+      <ChartView value={JSON_ARRAY_VALUE} mapping={{ x: 'line', y: 'chars' }} />,
+    )
+    expect(uPlotCtor).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <ChartView
+        value={[
+          { line: 'a', chars: 13 },
+          { line: 'b', chars: 14 },
+        ]}
+        mapping={{ x: 'line', y: 'chars' }}
+      />,
+    )
+    expect(uPlotCtor).toHaveBeenCalledTimes(1)
+    expect(destroySpy).not.toHaveBeenCalled()
+  })
+
+  it('does tear down and rebuild uPlot when the data actually changes', () => {
+    const { rerender } = render(
+      <ChartView value={JSON_ARRAY_VALUE} mapping={{ x: 'line', y: 'chars' }} />,
+    )
+    expect(uPlotCtor).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <ChartView
+        value={[
+          { line: 'a', chars: 13 },
+          { line: 'b', chars: 99 },
+        ]}
+        mapping={{ x: 'line', y: 'chars' }}
+      />,
+    )
+    expect(destroySpy).toHaveBeenCalledTimes(1)
+    expect(uPlotCtor).toHaveBeenCalledTimes(2)
   })
 })

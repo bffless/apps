@@ -77,6 +77,19 @@ export function ChartView({ value, mapping }: { value: unknown; mapping: unknown
   const series = chartSeries(value, mapping)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
+  // `chartSeries`/`readMapping` build a fresh array/object literal on
+  // *every* render, even when `value`/`mapping` are structurally unchanged —
+  // `RunPage` polls every 5s while a run is running, re-rendering with a
+  // new-but-equal outputs object each poll. Depending the effect on `series`/
+  // `m` directly would tear down and rebuild uPlot on every one of those
+  // polls; depending on their JSON content instead (a primitive, compared by
+  // value) only rebuilds when the chart's data has actually changed. `series`/
+  // `m` are still read from the enclosing closure, which is exactly the pair
+  // `seriesKey`/`kind` describe — this isn't a case exhaustive-deps can see
+  // through, since it can't tell two array literals are content-equal.
+  const seriesKey = series ? JSON.stringify(series) : null
+  const kind = m?.kind ?? null
+
   useEffect(() => {
     const el = containerRef.current
     if (!series || !m || !el) return
@@ -106,7 +119,8 @@ export function ChartView({ value, mapping }: { value: unknown; mapping: unknown
 
     const plot = new uPlot(opts, data, el)
     return () => plot.destroy()
-  }, [series, m])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `seriesKey`/`kind` are the content-equality stand-ins for `series`/`m` explained above; listing `series`/`m` themselves would defeat the whole point (they're new references every render).
+  }, [seriesKey, kind])
 
   if (!series) {
     return (
