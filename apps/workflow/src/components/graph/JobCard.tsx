@@ -2,10 +2,10 @@
  * One job of the graph: its name, what it fans out over, and its steps stacked
  * in declaration order (08).
  *
- * Two shapes, as in the prototype: a job with one step and no matrix is a
- * single 60px card — the step *is* the card, its row carries the job's name —
- * and anything else is a group card with a header strip (the job name, and for
- * a matrix job the `FOR EACH … · N AT ONCE` line) over one row per step.
+ * One shape for every job (2026-08-26 review): a header strip — the job's
+ * name, its handle onto the job card, and for a matrix job the `FOR EACH … ·
+ * N AT ONCE` line — over one row per step, so a job and its step never merge
+ * into one line.
  *
  * A matrix job is one card, not N: in run mode it carries the progress fraction
  * ("2 of 2") and an item selector that swaps which expansion index the chips
@@ -26,7 +26,7 @@ import type { CSSProperties } from 'react'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import type { GraphFlow } from './flow'
-import { isSingle, jobLabel, jobOutputNames, matrixNote } from './geometry'
+import { jobLabel, matrixNote } from './geometry'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
@@ -93,11 +93,9 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPic
 
   const note = matrixNote(job)
   const isMatrix = job.matrix !== undefined && mode === 'run'
-  const single = isSingle(job)
   const jobFlow = flow?.sourceJobs.has(job.id) ? 'source' : undefined
   const selectedInside = selectedHere !== null
   const selectedJob = selectedKey === job.id
-  const outs = mode === 'run' ? jobOutputNames(job) : []
 
   return (
     <article
@@ -107,13 +105,11 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPic
       data-col={col}
       data-row={row}
       data-flow={jobFlow}
-      data-single={single || undefined}
       data-selected={selectedInside || selectedJob || undefined}
       data-selected-job={selectedJob || undefined}
       style={style}
     >
-      {!single && (
-        <header className="job-head">
+      <header className="job-head">
           {/* The strip is the job's own handle (08: run › job › step). */}
           <button
             type="button"
@@ -132,7 +128,6 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPic
           </button>
           {note && <p className="job-note">{note}</p>}
         </header>
-      )}
 
       {isMatrix && total > 1 && (
         <select
@@ -162,13 +157,11 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPic
             <StepChip
               key={step.id}
               job={job.id}
-              jobLabel={single ? jobLabel(job) : undefined}
               index={mode === 'run' ? index : 0}
               step={step}
               mode={mode}
               state={state?.steps[key]}
               selected={selectedKey === key}
-              single={single}
               onPick={onPick}
               flow={stepFlow}
             />
@@ -176,25 +169,6 @@ export function JobCard({ job, col, row, mode, state, selectedKey, onPick, onPic
         })}
       </div>
 
-      {outs.length > 0 && (
-        <div className="job-outputs">
-          {outs.map((name) => (
-            <button
-              type="button"
-              className="job-output"
-              key={name}
-              data-testid="job-output"
-              data-output={name}
-              onClick={() => onPickJob?.(job.id, 'Output')}
-            >
-              <span className="out-tag" aria-hidden="true">
-                out
-              </span>
-              <span className="out-name">{name}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </article>
   )
 }

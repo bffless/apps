@@ -16,8 +16,6 @@ import type { Job, RunState, Step } from '../../lib/runner/types'
 export const CHIP = {
   /** A step row inside a multi-step (or matrix) card. */
   row: 42,
-  /** The one row of a single-step card, which is the whole card. */
-  single: 60,
   /** One declared output line under a row (definition mode only). */
   out: 20,
   /** Breathing room under the last output line. */
@@ -58,8 +56,8 @@ export function stepLabel(step: Step): string {
 }
 
 /** The chip's height in px, from the definition alone. */
-export function chipHeight(step: Step, mode: 'definition' | 'run', single: boolean): number {
-  const base = single ? CHIP.single : CHIP.row
+export function chipHeight(step: Step, mode: 'definition' | 'run'): number {
+  const base = CHIP.row
   if (mode !== 'definition') return base
   const outputs = declaredOutputs(step).length
   return outputs === 0 ? base : base + outputs * CHIP.out + CHIP.outPad
@@ -73,18 +71,11 @@ export const CARD = {
   note: 20,
   /** The matrix item selector row. */
   select: 34,
-  /** One declared job-output line under the steps (run mode). */
-  out: 20,
-  /** Breathing room under the last output line. */
-  outPad: 8,
   /** Top + bottom border. */
   border: 2,
 }
 
-/** The job's declared `outputs:` names — the rows a run-mode card lists under its steps. */
-export function jobOutputNames(job: Job): string[] {
-  return Object.keys(job.outputs ?? {})
-}
+
 
 /** "For each who · max 2 at once" — the strategy, as the prototype phrases it. */
 export function matrixNote(job: Job): string | null {
@@ -100,10 +91,6 @@ export function jobLabel(job: Job): string {
   return job.raw?.name ?? job.id
 }
 
-/** A one-step, un-fanned job renders as a single card (08). */
-export function isSingle(job: Job): boolean {
-  return job.steps.length === 1 && job.matrix === undefined
-}
 
 /** Whether the item selector row shows: a run-mode matrix job that fanned out to more than one item. */
 function hasSelector(job: Job, mode: 'definition' | 'run', state?: RunState): boolean {
@@ -114,17 +101,14 @@ function hasSelector(job: Job, mode: 'definition' | 'run', state?: RunState): bo
 
 /** The card's height in px, from the definition (and, in run mode, the fan-out) alone. */
 export function cardHeight(job: Job, mode: 'definition' | 'run', state?: RunState): number {
-  const single = isSingle(job)
-  const chips = job.steps.reduce((sum, step) => sum + chipHeight(step, mode, single), 0)
-  const outs = mode === 'run' ? jobOutputNames(job).length : 0
-  const outRows = outs === 0 ? 0 : outs * CARD.out + CARD.outPad
-  if (single) return chips + outRows + CARD.border
+  // Every job is one shape (2026-08-26 review): a header strip — the job —
+  // over one row per step, so a job and its steps never merge into one line.
+  const chips = job.steps.reduce((sum, step) => sum + chipHeight(step, mode), 0)
   return (
     CARD.strip +
     (matrixNote(job) ? CARD.note : 0) +
     (hasSelector(job, mode, state) ? CARD.select : 0) +
     chips +
-    outRows +
     CARD.border
   )
 }
