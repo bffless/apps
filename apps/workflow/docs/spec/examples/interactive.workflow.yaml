@@ -85,16 +85,17 @@ jobs:
           title: Review the card
           fields:
             # 02's File-ref shorthand: an `options` list of File refs renders as
-            # a tile picker, and the value a tile yields is that ref's `path`.
+            # a tile picker; a tile is *picked* by its ref's `path`, and the
+            # field's output is the ref itself.
             cover: { type: choice, options: "${{ needs.card.outputs.posters }}", required: true }
             notes: { type: markdown, default: "## Notes\n\n${{ needs.pick.outputs.line }}" }   # live preview
             extra: { type: file, accept: "image/*" }                                          # mid-run upload (scope `inputs`)
           submit: Approve
-        headless: { mode: skip, outputs: { cover: "${{ needs.card.outputs.posters[0].path }}", notes: "", extra: null } }
+        headless: { mode: skip, outputs: { cover: "${{ needs.card.outputs.posters[0] }}", notes: "", extra: null } }
     outputs:
-      # A path string in M2, not a File ref: job- and run-level outputs are
-      # evaluated synchronously and register no files — only a *step* output
-      # materializes a bare path into a File ref (see plan Ruling P5).
+      # The ref the form recorded, passed through whole (an exact expression
+      # keeps its type, 01), so the run-level `cover` carries name, size,
+      # content type and url — not just a path.
       cover: { type: file, value: "${{ steps.confirm.outputs.cover }}" }
 
 outputs:

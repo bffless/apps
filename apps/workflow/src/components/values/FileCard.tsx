@@ -76,7 +76,7 @@ export function FileCard({ refValue }: { refValue: FileRef }) {
       <div className="file-card-meta">
         <span className="file-card-name">{name}</span>
         <span className="file-card-type">{contentType || 'unknown type'}</span>
-        <span className="file-card-size">{humanSize(size)}</span>
+        {typeof size === 'number' && size > 0 && <span className="file-card-size">{humanSize(size)}</span>}
         {safe ? (
           <a className="file-card-download" href={downloadHref(url)} download>
             Download

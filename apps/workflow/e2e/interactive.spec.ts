@@ -200,11 +200,12 @@ test('interactive hello runs an island step end to end against the mock backend'
     await stepPane.getByRole('button', { name: 'Run', exact: true }).click()
   }
 
-  // Ruling P5: `review.outputs.cover` and the run-level `cover` are evaluated
-  // synchronously and register nothing, so what a `file`-declared job output
-  // carries in M2 is the tile's *path string* — a chip, not a file card. The
-  // path is the poster's, which is the whole point of the pick.
-  await expect(outputsAgain.locator('[data-output="cover"]')).toContainText('poster.svg')
+  // The tile was picked by path, but the form recorded the *ref* (02), and the
+  // job and run outputs pass it through whole — so the run-level `cover` is a
+  // file card with the poster's name and a Download, not a bare path.
+  const cover = outputsAgain.locator('[data-output="cover"]')
+  await expect(cover.locator('.file-card-name')).toHaveText('poster.svg')
+  await expect(cover.locator('.file-card-download')).toHaveAttribute('href', posterHref!)
 
   // ---------------------------------------------------------------------
   // 05 retention: the run's owner may delete it, behind the header's confirm.

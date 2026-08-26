@@ -58,13 +58,49 @@ export function completeFormStep(a: FormStepArgs): FormResult {
   // A form's fields *are* its declarations; an untyped field is a string (02).
   // Evaluated, so `choice` membership is checked against the options the form
   // actually offered rather than the expression that produced them.
-  const { outputs, errors } = validateDeclared(formFieldDefs(a), a.values, {
+  const fields = formFieldDefs(a)
+  const { outputs, errors } = validateDeclared(fields, a.values, {
     defaultType: 'string',
   })
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  return { ok: true, event: succeededEvent(a, outputs, a.at) }
+  return { ok: true, event: succeededEvent(a, withFileRefs(fields, outputs), a.at) }
+}
+
+/**
+ * A `choice` over File refs (02's shorthand) is *edited* by path — the tile's
+ * value, what membership is checked against — but *recorded* as the ref the
+ * path named, so everything downstream (`steps.confirm.outputs.cover`, a job
+ * or run output declared `type: file`, the cards) keeps the file's name, size,
+ * content type and url rather than a bare path (2026-08-26 review). A value
+ * that matches no ref (a plain string option) is recorded as it was.
+ */
+function withFileRefs(
+  fields: Record<string, InputDef>,
+  outputs: Record<string, unknown>,
+): Record<string, unknown> {
+  const upgraded: Record<string, unknown> = { ...outputs }
+  for (const [name, field] of Object.entries(fields)) {
+    if (field.type !== 'choice' || !Array.isArray(field.options)) continue
+    const refs = new Map<string, unknown>()
+    for (const option of field.options) {
+      if (isFileRefLike(option)) refs.set(option.path, option)
+    }
+    if (refs.size === 0) continue
+    const value = outputs[name]
+    if (typeof value === 'string') upgraded[name] = refs.get(value) ?? value
+    else if (Array.isArray(value)) {
+      upgraded[name] = value.map((v) => (typeof v === 'string' ? (refs.get(v) ?? v) : v))
+    }
+  }
+  return upgraded
+}
+
+function isFileRefLike(value: unknown): value is { path: string; name: string; url: string } {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return typeof v.path === 'string' && typeof v.name === 'string' && typeof v.url === 'string'
 }
 
 /**
