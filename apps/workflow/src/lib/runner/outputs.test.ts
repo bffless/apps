@@ -29,7 +29,7 @@ function fakeRegisterFile(): { registerFile: RegisterFile; calls: string[] } {
   const calls: string[] = []
   const registerFile: RegisterFile = vi.fn(async (path: string): Promise<FileRef> => {
     calls.push(path)
-    return { path, name: path.split('/').pop() ?? path, contentType: 'image/png', size: 42, url: `/api/workflow/files/${path}` }
+    return { path, name: path.split('/').pop() ?? path, contentType: 'image/png', size: 42, url: `/api/uploads/${path}` }
   })
   return { registerFile, calls }
 }
@@ -59,7 +59,7 @@ describe('coerceOutputs — start.poster (bare path → File ref)', () => {
       name: 'poster.png',
       contentType: 'image/png',
       size: 42,
-      url: '/api/workflow/files/workflows/hello/runs/r1/slow/0/start/poster.png',
+      url: '/api/uploads/workflows/hello/runs/r1/slow/0/start/poster.png',
     })
     expect(out.report).toBe('# hi')
   })
@@ -86,6 +86,38 @@ describe('coerceOutputs — type mismatch', () => {
     await expect(
       coerceOutputs(decls, { response: { total: 'not a number' } }, registerFile),
     ).rejects.toMatchObject({ output: 'total', expected: 'number', got: 'not a number' })
+  })
+})
+
+describe('coerceOutputs — validate before registering (apps#375)', () => {
+  const mixedDef: Definition = toDefinition({
+    name: 'Mixed',
+    jobs: {
+      a: {
+        steps: [
+          {
+            id: 's1',
+            uses: 'pipeline',
+            with: { path: 'echo' },
+            outputs: {
+              poster: { type: 'file', value: '${{ response.posterPath }}' },
+              total: { type: 'number', value: '${{ response.total }}' },
+            },
+          },
+        ],
+        outputs: {},
+      },
+    },
+    outputs: {},
+  })
+
+  it('registers no file when a later-declared output fails its type check', async () => {
+    const { registerFile, calls } = fakeRegisterFile()
+    const decls = mixedDef.jobs.a!.steps[0]!.raw.outputs
+    await expect(
+      coerceOutputs(decls, { response: { posterPath: 'workflows/x/poster.png', total: 'nope' } }, registerFile),
+    ).rejects.toMatchObject({ output: 'total', expected: 'number' })
+    expect(calls).toEqual([])
   })
 })
 

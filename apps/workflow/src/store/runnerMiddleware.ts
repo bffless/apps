@@ -29,7 +29,7 @@ import { isUnavailablePayload, offloadOutputs } from '../lib/runner/payload'
 import { isTruncatedStub } from '../lib/runner/results'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
-import type { Definition, FileRef, RunEvent, RunState, Step, StepKey } from '../lib/runner/types'
+import type { Definition, FileRef, RunEvent, RunState, Step, StepKey, StepState } from '../lib/runner/types'
 import { uploadBlob } from '../lib/upload'
 import type { ScriptHost, ScriptHostDeps } from '../scripts/ScriptHost'
 import { clearAllScriptLogs } from '../scripts/logStore'
@@ -559,7 +559,7 @@ function startHeartbeat(
 
 /** What the slice is parked with when a resume is refused (see the `runReplaced` listener). */
 const RESUME_REFUSED =
-  'Resume refused: this run has recorded outputs that could not be loaded. Reload to try again.'
+  'Resume refused: this run has recorded outputs that could not be loaded. Retry re-reads the run.'
 
 /**
  * Every output of a replayed run that came back as the `{ $file, $error }`
@@ -584,6 +584,44 @@ function unavailableOutputs(
 
 function stepOf(def: Definition, job: string, stepId: string): Step | undefined {
   return def.jobs[job]?.steps.find((s) => s.id === stepId)
+}
+
+/** One step a resume relaunches, with everything a launch needs already registered (see `resumable`). */
+interface Resumable {
+  step: StepState
+  stepDecl: Step
+  controller: AbortController
+  scoped: (action: unknown) => unknown
+}
+
+/**
+ * The steps of one `kind` left in one of `statuses` by the tab that went
+ * away — each with its controller registered in the shared `controllers` map
+ * (so `cancelRun`'s `abortAll()` reaches the relaunch exactly like a
+ * scheduler-started step) and its `scopedDispatch` built the normal way
+ * (runId + generation + run-status guarded, so a second adoption supersedes
+ * this one cleanly). The three per-kind resume loops in the `runReplaced`
+ * listener used to repeat this preamble verbatim (apps#375); a step whose
+ * declaration is gone from the definition is skipped, as before.
+ */
+function resumable(
+  state: RunState,
+  def: Definition,
+  kind: StepState['kind'],
+  statuses: readonly StepState['status'][],
+  dispatch: (action: unknown) => unknown,
+  getRunState: () => RunState | undefined,
+): Resumable[] {
+  const found: Resumable[] = []
+  for (const step of Object.values(state.steps)) {
+    if (step.kind !== kind || !statuses.includes(step.status)) continue
+    const stepDecl = stepOf(def, step.job, step.stepId)
+    if (!stepDecl) continue
+    const controller = new AbortController()
+    controllers.set(controllerKey(state.runId, step.key), controller)
+    found.push({ step, stepDecl, controller, scoped: scopedDispatch(state.runId, dispatch, getRunState) })
+  }
+  return found
 }
 
 /** `workflows/<impl>/<workflow>/runs/<run-id>` (06). */
@@ -870,6 +908,23 @@ async function handleNextAction(
   }
 }
 
+/**
+ * What a `run.finished` leaves behind once it has been written — or dropped
+ * as stale (apps#375): the heartbeat, the run's write queue and its
+ * `finishing` guard are done with, and the caches that show this run are
+ * told. The `Runs` invalidation mirrors `run.started`'s (the runner writes
+ * through `RunStore`, never through RTK Query, so the Past-runs list would
+ * otherwise not learn the run ended); the specific `Run` is the record a page
+ * may already be viewing (`workflowApi.ts`'s `getRun` `providesTags` keys it
+ * by run id), which would stay stale otherwise.
+ */
+function finishRunCleanup(runId: string, dispatch: (action: unknown) => unknown): void {
+  stopHeartbeat(runId)
+  writeQueues.delete(runId)
+  finishing.delete(runId)
+  dispatch(workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: runId }]))
+}
+
 // ---------------------------------------------------------------------------
 // The middleware
 // ---------------------------------------------------------------------------
@@ -898,7 +953,19 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         writeEvent(event, runState, slice, deps.runStore, generation),
       )
 
-      if (outcome.ok === 'stale') return
+      if (outcome.ok === 'stale') {
+        // A `run.finished` whose offload was aborted by a lease loss
+        // (`loseLease` → `abortAll`, no `resetRunnerState`) still ends this
+        // tab's part in the run: without the cleanup its write queue and
+        // `finishing` entry would sit there until the next reset (apps#375).
+        // Only for the *current* generation — a `stale` that came from a
+        // reset means a new adoption (possibly of this very run) already
+        // owns fresh entries under the same id, and they must be left alone.
+        if (event.type === 'run.finished' && generation === currentGeneration) {
+          finishRunCleanup(runState.runId, listenerApi.dispatch)
+        }
+        return
+      }
       if (!outcome.ok) {
         listenerApi.dispatch(runPaused(pauseMessage(event, outcome.error)))
         runnerControllers.abortAll()
@@ -937,18 +1004,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         )
       }
 
-      if (event.type === 'run.finished') {
-        stopHeartbeat(runState.runId)
-        writeQueues.delete(runState.runId)
-        finishing.delete(runState.runId)
-        // Same reasoning as `run.started` above, plus the specific `Run` this
-        // finish just patched (`workflowApi.ts`'s `getRun` `providesTags`
-        // keys it by run id) — a page already viewing this run's record stays
-        // stale otherwise.
-        listenerApi.dispatch(
-          workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: runState.runId }]),
-        )
-      }
+      if (event.type === 'run.finished') finishRunCleanup(runState.runId, listenerApi.dispatch)
 
       const after = (listenerApi.getState() as HasRunSlice).run
       if (after.mode === 'live' && !after.paused && after.meta && after.state?.status === 'running') {
@@ -1033,8 +1089,8 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
                 level: 'error',
                 ...(key ? { stepKey: key } : {}),
                 message: key
-                  ? `step ${key}: output ${name} could not be loaded (${error}) — resume refused; reload to retry`
-                  : `run output ${name} could not be loaded (${error}) — resume refused; reload to retry`,
+                  ? `step ${key}: output ${name} could not be loaded (${error}) — resume refused; Retry re-reads the run`
+                  : `run output ${name} could not be loaded (${error}) — resume refused; Retry re-reads the run`,
               },
               at: deps.clock.now(),
             }),
@@ -1056,23 +1112,19 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // `polling` resumes the poll loop against its recorded
       // `response.initial`; `queued`/`running` re-issue the whole request
       // (no `resume:` hint in M1); `waiting` needs nothing — the pane
-      // re-mounts straight off the replayed state (08). Every relaunch is
-      // registered in the same `controllers` map a scheduler-started step
-      // would use, so `cancelRun`'s `runnerControllers.abortAll()` reaches
-      // it exactly the same way, and every relaunch's `scopedDispatch` is
-      // built the normal way (runId + generation + run-status guarded) so a
-      // second adoption of this same run supersedes this one cleanly.
+      // re-mounts straight off the replayed state (08). `resumable` above
+      // registers every relaunch's controller and builds its `scopedDispatch`
+      // the same way for all three kinds.
       const def = (listenerApi.getState() as HasRunSlice).run.meta?.def
       if (def) {
-        for (const step of Object.values(state.steps)) {
-          if (step.kind !== 'pipeline') continue
-          if (step.status !== 'queued' && step.status !== 'running' && step.status !== 'polling') continue
-          const stepDecl = stepOf(def, step.job, step.stepId)
-          if (!stepDecl) continue
-
-          const controller = new AbortController()
-          controllers.set(controllerKey(state.runId, step.key), controller)
-          const scoped = scopedDispatch(state.runId, listenerApi.dispatch, getRunState)
+        for (const { step, stepDecl, controller, scoped } of resumable(
+          state,
+          def,
+          'pipeline',
+          ['queued', 'running', 'polling'],
+          listenerApi.dispatch,
+          getRunState,
+        )) {
           const rt: StepRuntime = {
             emit: (e) => scoped(runEvent(e)),
             http: deps.http,
@@ -1137,14 +1189,14 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         // row (one whose driving tab went away mid-load) re-mounts and reaches
         // `waiting` through the same mount promise a fresh launch uses. The
         // handle is registered here; the pane mounts it as soon as it renders.
-        for (const step of Object.values(state.steps)) {
-          if (step.kind !== 'island') continue
-          if (step.status !== 'waiting' && step.status !== 'running') continue
-          const stepDecl = stepOf(def, step.job, step.stepId)
-          if (!stepDecl) continue
-
-          const controller = new AbortController()
-          controllers.set(controllerKey(state.runId, step.key), controller)
+        for (const { step, stepDecl, controller, scoped } of resumable(
+          state,
+          def,
+          'island',
+          ['waiting', 'running'],
+          listenerApi.dispatch,
+          getRunState,
+        )) {
           // A launch that fails here is a definition bug in a row that already
           // got past its own launch once, and `waiting` has no legal event to
           // record it as — so the step simply has no island to re-open, and the
@@ -1159,7 +1211,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             signal: controller.signal,
             deps: islandDeps(deps),
             dispatch: listenerApi.dispatch,
-            scoped: scopedDispatch(state.runId, listenerApi.dispatch, getRunState),
+            scoped,
             getRunState,
             recordedInputs: step.inputs ?? {},
           })
@@ -1171,15 +1223,14 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         // spawned it — and no `resume:` hint to pick a run back up mid-flight,
         // so re-issuing the whole thing is the only honest option. (Which is
         // why 03 asks a script to be idempotent.)
-        for (const step of Object.values(state.steps)) {
-          if (step.kind !== 'script') continue
-          if (step.status !== 'queued' && step.status !== 'running') continue
-          const stepDecl = stepOf(def, step.job, step.stepId)
-          if (!stepDecl) continue
-
-          const controller = new AbortController()
-          controllers.set(controllerKey(state.runId, step.key), controller)
-          const scoped = scopedDispatch(state.runId, listenerApi.dispatch, getRunState)
+        for (const { step, stepDecl, controller, scoped } of resumable(
+          state,
+          def,
+          'script',
+          ['queued', 'running'],
+          listenerApi.dispatch,
+          getRunState,
+        )) {
           launchScriptStep({
             step: stepDecl,
             key: step.key,

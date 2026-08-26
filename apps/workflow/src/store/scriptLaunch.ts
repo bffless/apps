@@ -156,6 +156,13 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     return state.steps[a.key]?.status === 'running'
   }
 
+  // The live log is not the record (Decision 12): a refused `ctx.annotate`
+  // is appended there every time, but the row would keep no trace at all —
+  // so the *first* refusal per launch also lands as one run-level warning,
+  // stamped with the step (apps#375). One, not one per call: a module that
+  // annotates in a loop must not fill the run's annotations with its mistake.
+  let refusalRecorded = false
+
   const hostDeps: ScriptHostDeps = {
     fetchText,
     fetchBytes,
@@ -173,6 +180,20 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
         // runs on. (`ctx.annotate` is fire-and-forget over `postMessage` —
         // there is no reply channel to throw back down.)
         appendScriptLog(a.state.runId, a.key, `annotate rejected: ${event.error}`)
+        if (!refusalRecorded) {
+          refusalRecorded = true
+          a.scoped(
+            runEvent({
+              type: 'run.annotation',
+              annotation: {
+                level: 'warning',
+                stepKey: a.key,
+                message: `step ${a.key}: a ctx.annotate call was refused — ${event.error} (see the step's log)`,
+              },
+              at: now(),
+            }),
+          )
+        }
         return
       }
       a.scoped(runEvent(event))
@@ -249,6 +270,15 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
         return
       }
       fail(toScriptError(err))
+      return
+    }
+
+    // A module that *resolves* in the same tick the budget fires (the host's
+    // abort reached a Worker already posting `done`) still spent the budget:
+    // the timer's verdict wins over the value, so `timeout-minutes` means one
+    // thing whichever way the race lands (apps#375).
+    if (timedOut) {
+      fail(timeoutError())
       return
     }
 

@@ -9,6 +9,7 @@
  * failed step never writes one, and the form step has no `startedAt` because it
  * went queued → waiting → succeeded.
  */
+import { fileUrl } from '../../lib/coerce'
 import { loadWorkflow } from '../../lib/runner/definition'
 import type { RunRow, StepRow } from '../../lib/runner/rows'
 import type { FileRef } from '../../lib/runner/types'
@@ -39,7 +40,8 @@ const POSTER: FileRef = {
   name: 'poster.png',
   contentType: 'image/png',
   size: 20_480,
-  url: `/api/workflow/files/${POSTER_PATH.replace(/^workflows\//, '')}`,
+  // The serve route the read path is gated to (`isServeUrl`) — never a hand-spelled shape.
+  url: fileUrl(POSTER_PATH),
 }
 
 const INPUTS = {

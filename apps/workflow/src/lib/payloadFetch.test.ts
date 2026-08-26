@@ -8,7 +8,7 @@
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../mocks/server'
-import { fetchPayload } from './payloadFetch'
+import { fetchPayload, fetchPayloadCached, forgetPayloads } from './payloadFetch'
 import type { FileRef } from './runner/types'
 
 const ref = (url: string): FileRef => ({
@@ -67,5 +67,61 @@ describe('fetchPayload', () => {
     const value = ref('https://evil.example/api/uploads/x')
     await expect(fetchPayload(value)).resolves.toEqual({ $file: value, $error: 'url refused' })
     expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+describe('fetchPayloadCached', () => {
+  it('answers a repeated read of the same path from memory', async () => {
+    let hits = 0
+    server.use(
+      http.get(PAYLOAD_URL, () => {
+        hits += 1
+        return HttpResponse.json({ n: 1 })
+      }),
+    )
+    await expect(fetchPayloadCached(ref(PAYLOAD_URL))).resolves.toEqual({ n: 1 })
+    await expect(fetchPayloadCached(ref(PAYLOAD_URL))).resolves.toEqual({ n: 1 })
+    expect(hits).toBe(1)
+  })
+
+  it('shares one in-flight request between concurrent reads of the same path', async () => {
+    let hits = 0
+    server.use(
+      http.get(PAYLOAD_URL, () => {
+        hits += 1
+        return HttpResponse.json({ n: 1 })
+      }),
+    )
+    const [a, b] = await Promise.all([fetchPayloadCached(ref(PAYLOAD_URL)), fetchPayloadCached(ref(PAYLOAD_URL))])
+    expect(a).toEqual({ n: 1 })
+    expect(b).toEqual({ n: 1 })
+    expect(hits).toBe(1)
+  })
+
+  it('does not remember a failure — the next read tries the bucket again', async () => {
+    let hits = 0
+    server.use(
+      http.get(PAYLOAD_URL, () => {
+        hits += 1
+        return hits === 1 ? new HttpResponse(null, { status: 404 }) : HttpResponse.json({ n: 2 })
+      }),
+    )
+    const value = ref(PAYLOAD_URL)
+    await expect(fetchPayloadCached(value)).resolves.toEqual({ $file: value, $error: 'the payload request answered 404' })
+    await expect(fetchPayloadCached(value)).resolves.toEqual({ n: 2 })
+  })
+
+  it('forgets everything on forgetPayloads()', async () => {
+    let hits = 0
+    server.use(
+      http.get(PAYLOAD_URL, () => {
+        hits += 1
+        return HttpResponse.json({ n: 1 })
+      }),
+    )
+    await fetchPayloadCached(ref(PAYLOAD_URL))
+    forgetPayloads()
+    await fetchPayloadCached(ref(PAYLOAD_URL))
+    expect(hits).toBe(2)
   })
 })

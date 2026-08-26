@@ -280,6 +280,23 @@ describe('createScriptHost', () => {
     expect(h.fetchBytes).toHaveBeenCalledWith('/api/uploads/a/b.json')
   })
 
+  it('fails the run when an answer cannot be posted to the Worker, rather than leaving the module awaiting it forever (apps#375)', async () => {
+    const worker = createFakeWorker({
+      run: () => [{ t: 'rpc:req', id: 2, op: 'files.fetch', ref: REF }],
+    })
+    const post = worker.postMessage.bind(worker)
+    worker.postMessage = (msg, transfer) => {
+      if ((msg as ToWorker).t === 'rpc:res') throw new DOMException('body could not be cloned', 'DataCloneError')
+      post(msg, transfer)
+    }
+    const h = makeHarness(worker)
+
+    const err = await failure(start(h))
+    expect(err.code).toBe('SCRIPT')
+    expect(err.message).toContain('body could not be cloned')
+    expect(worker.terminated).toBe(1)
+  })
+
   it('answers a failed relay with an error rather than a body', async () => {
     const worker = createFakeWorker({
       run: () => [{ t: 'rpc:req', id: 2, op: 'files.fetch', ref: REF }],

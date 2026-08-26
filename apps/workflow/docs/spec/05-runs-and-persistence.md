@@ -45,10 +45,17 @@ goes away.
 Job-level state is **derived** (a job is the fold of its step rows + the definition); it is
 not stored, which keeps the write path to one table per transition.
 
-Payloads are inline JSON; files are always refs (06), so rows stay small. A `table`/`json`
-output over 1 MB is stored as a file under the step's prefix and the row holds
-`{ "$file": <File ref> }` in place of the value — renderers (and expressions) fetch it
-transparently.
+Payloads are inline JSON; files are always refs (06), so rows stay small. An output whose
+serialized value is over **256 KB** (`PAYLOAD_BUDGET_BYTES`, Decision 5 — measured per
+top-level output, whatever its type) is stored as `<name>.json` under the step's prefix
+(`outputs/<name>.json` under the run's for a run-level output) and the row holds
+`{ "$file": <File ref> }` in place of the value. The read path (`workflowApi.getRun`) is the
+only place that pointer is dereferenced: renderers, `replayRun` and every expression see the
+value, never the pointer. That also means a legitimate output whose value is *exactly*
+`{ "$file": <File ref> }` — one key, a well-formed ref — will be hydrated as if it had been
+offloaded; an output that needs to carry a ref as data should nest it or add a sibling key.
+A payload that cannot be read back is substituted with `{ "$file": <ref>, "$error": <why> }`
+rather than failing the read; a resume of such a run is refused (banner + Retry).
 
 ## The write path
 

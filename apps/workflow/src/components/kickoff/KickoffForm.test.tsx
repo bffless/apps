@@ -88,7 +88,7 @@ describe('KickoffForm', () => {
       name: 'photo.png',
       contentType: 'image/png',
       size: 5,
-      url: '/api/workflow/files/hello/hello/inputs/1/photo.png',
+      url: '/api/uploads/hello/hello/inputs/1/photo.png',
     }
     await act(async () => {
       resolveUpload!(ref)
@@ -123,7 +123,7 @@ describe('KickoffForm', () => {
       name: 'photo.png',
       contentType: 'image/png',
       size: 5,
-      url: '/api/workflow/files/hello/hello/inputs/1/photo.png',
+      url: '/api/uploads/hello/hello/inputs/1/photo.png',
     }
     const uploading = vi.fn()
     const { form } = renderForm({

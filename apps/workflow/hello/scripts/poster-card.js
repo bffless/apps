@@ -8,10 +8,11 @@
  */
 
 /** The three characters an SVG text node cannot carry raw. */
-const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
+const ESCAPE = /** @type {Record<string, string>} */ ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })
 
+/** @param {unknown} value */
 function escapeText(value) {
-  return String(value).replace(/[&<>]/g, (char) => ESCAPE[char])
+  return String(value).replace(/[&<>]/g, (char) => ESCAPE[char] ?? char)
 }
 
 /** @type {import('@bffless/workflow-script').ScriptModule['default']} */
@@ -34,9 +35,11 @@ export default async function run(ctx) {
   return {
     poster: new File([svg], 'poster.svg', { type: 'image/svg+xml' }),
     // Over the 256 KB budget on purpose: this is what the `{"$file"}` offload
-    // (Decision 5) is for, end to end. 12 000 entries is ~250 KB of `{i,line}`
-    // pairs *before* the line itself, so any non-empty line clears the budget —
-    // and it is as small as that can be, because the run page renders this.
-    big: Array.from({ length: 12000 }, (_, i) => ({ i, line })),
+    // (Decision 5) is for, end to end. 12 000 entries of `{ i, line, k }` is
+    // ~480 KB *before* the line itself — `k` is a fixed marker that keeps the
+    // headroom real (a one-character line was only 2.7 KB over without it,
+    // apps#375; `src/hello-scripts.test.ts` pins the margin) — and it stays
+    // as small as that, because the run page renders this.
+    big: Array.from({ length: 12000 }, (_, i) => ({ i, line, k: 'offload-demo' })),
   }
 }

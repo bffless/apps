@@ -12,7 +12,7 @@
  * read, every test below fails on "No such run", a stuck "Loading…", or a
  * non-zero call count — never a false pass.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from '../App'
 import { server } from '../mocks/server'
 import type { AppStore } from '../store'
+import { runPaused } from '../store/runSlice'
 import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
 
 let getRunCalls = 0
@@ -86,5 +87,35 @@ describe('RunPage — live', () => {
     })
     expect(chip(page, REVIEW_KEY)).toHaveAttribute('data-state', 'succeeded')
     expect(getRunCalls).toBe(0)
+  })
+
+  describe('the persistence-pause banner (05, apps#375)', () => {
+    it('shows the pause message with a Retry, and Retry re-adopts the run from its record', async () => {
+      // This suite stubs `GET /api/workflow/run` to "nothing here"; Retry
+      // genuinely re-reads the record, so that stub is dropped for this test.
+      server.resetHandlers()
+      const { store, runId } = await startHelloAtConfirmWaiting()
+      renderLive(store, runId)
+      const page = screen.getByRole('main')
+      expect(within(page).queryByTestId('run-paused')).not.toBeInTheDocument()
+
+      act(() => {
+        store.dispatch(runPaused('Could not save step confirm/0/review'))
+      })
+
+      const banner = within(page).getByTestId('run-paused')
+      expect(banner).toHaveAttribute('role', 'alert')
+      expect(banner).toHaveTextContent('Could not save step confirm/0/review')
+
+      fireEvent.click(within(banner).getByRole('button', { name: 'Retry' }))
+
+      await waitFor(() => {
+        expect(within(page).queryByTestId('run-paused')).not.toBeInTheDocument()
+      })
+      expect(store.getState().run.mode).toBe('live')
+      expect(store.getState().run.state?.runId).toBe(runId)
+      expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
+      expect(chip(page, REVIEW_KEY)).toHaveAttribute('data-state', 'waiting')
+    })
   })
 })

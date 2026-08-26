@@ -700,7 +700,7 @@ describe('openRun — a resumed run whose recorded output could not be loaded', 
         expect.objectContaining({
           level: 'error',
           stepKey: GREET0_KEY,
-          message: `step ${GREET0_KEY}: output line could not be loaded (the payload request answered 500) — resume refused; reload to retry`,
+          message: `step ${GREET0_KEY}: output line could not be loaded (the payload request answered 500) — resume refused; Retry re-reads the run`,
         }),
       )
       expect(store.getState().run.paused).toBeTruthy()

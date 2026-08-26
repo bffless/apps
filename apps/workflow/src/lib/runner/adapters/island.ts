@@ -14,15 +14,9 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
-import type { OutputDecl } from '@bffless/workflow-lint/definition'
 import { buildContexts, evalDeep } from '../contexts'
 import type { Annotation, Definition, RunEvent, RunState, Step, StepKey } from '../types'
-import { obj, succeededEvent, validateDeclared } from './declared'
-
-/** A JSON object — an array is not a bag of named values. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
+import { isPlainObject, obj, outputDecls, succeededEvent, validateDeclared } from './declared'
 
 /**
  * `with` keys the host consumes itself: they configure the frame, so they are
@@ -216,11 +210,6 @@ export function resolveToolName(impl: string, name: string, meta?: unknown): Too
 export type IslandSubmitResult =
   | { ok: true; event: Extract<RunEvent, { type: 'step.succeeded' }> }
   | { ok: false; errors: Record<string, string> }
-
-/** The step's declared `outputs` map — an island's outputs are named and typed (02/03). */
-function outputDecls(step: Step): Record<string, OutputDecl> {
-  return obj(obj(step.raw).outputs) as Record<string, OutputDecl>
-}
 
 /**
  * Validate an island's `workflow.submit { outputs }` against the step's declared

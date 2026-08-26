@@ -238,6 +238,29 @@ describe('coerceScriptOutputs', () => {
     )
   })
 
+  it('validates every non-file output before uploading anything, so a later type failure leaves no orphan bytes (apps#375)', async () => {
+    const d = deps()
+
+    await expect(
+      coerceScriptOutputs(args('zip'), { zip: new Blob(['x'], { type: 'application/zip' }), n: 'not a number' }, d),
+    ).rejects.toMatchObject({ output: 'n', expected: 'number' })
+    expect(d.uploadBlob).not.toHaveBeenCalled()
+  })
+
+  it('names the declared type, not a sentence, as `expected` for a missing output (apps#375)', async () => {
+    const d = deps()
+
+    await expect(coerceScriptOutputs(args('zip'), { zip: new Blob(['x']) }, d)).rejects.toMatchObject({
+      output: 'n',
+      expected: 'number',
+      got: null,
+    })
+    await expect(coerceScriptOutputs(args('zips'), {}, d)).rejects.toMatchObject({
+      output: 'zip',
+      expected: 'file[]',
+    })
+  })
+
   it('throws OutputTypeError when the module returns nothing at all', async () => {
     const d = deps()
 

@@ -23,7 +23,7 @@ describe('ValueView', () => {
       name: 'clip.mp4',
       contentType: 'video/mp4',
       size: 12345,
-      url: '/api/workflow/files/hello/hello/runs/run_1/clip.mp4',
+      url: '/api/uploads/hello/hello/runs/run_1/clip.mp4',
     }
     const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
     const video = container.querySelector('video')
@@ -46,11 +46,11 @@ describe('ValueView', () => {
       name: 'take.mov',
       contentType: 'video/quicktime',
       size: 1,
-      url: '/api/workflow/files/p?sig=abc',
+      url: '/api/uploads/p?sig=abc',
     }
     render(<ValueView decl={{ type: 'file' }} value={ref} />)
     const download = screen.getByText('Download') as HTMLAnchorElement
-    expect(download.getAttribute('href')).toBe('/api/workflow/files/p?sig=abc&download=1')
+    expect(download.getAttribute('href')).toBe('/api/uploads/p?sig=abc&download=1')
   })
 
   it('renders a table value with column headers from decl.columns', () => {
@@ -183,12 +183,12 @@ describe('ValueView', () => {
   })
 
   it('renders a file object with no contentType as a download card, not a crash', () => {
-    const ref = { path: 'p', name: 'take.mov', url: '/api/workflow/files/p' }
+    const ref = { path: 'p', name: 'take.mov', url: '/api/uploads/p' }
     expect(() => render(<ValueView decl={{ type: 'file' }} value={ref} />)).not.toThrow()
     expect(screen.getByText('take.mov')).toBeInTheDocument()
     expect(screen.getByText('unknown type')).toBeInTheDocument()
     const download = screen.getByText('Download') as HTMLAnchorElement
-    expect(download.getAttribute('href')).toBe('/api/workflow/files/p?download=1')
+    expect(download.getAttribute('href')).toBe('/api/uploads/p?download=1')
   })
 
   it('falls through to JsonTree for a file value that is neither a File ref nor a bare string', () => {
@@ -219,7 +219,7 @@ describe('ValueView', () => {
       name: 'poster.png',
       contentType: 'image/png',
       size: 10,
-      url: '/api/workflow/files/hello/hello/runs/run_1/poster.png',
+      url: '/api/uploads/hello/hello/runs/run_1/poster.png',
     }
     const { container } = render(<ValueView decl={{ type: 'file' }} value={ref} />)
     expect(container.querySelector('img')?.getAttribute('src')).toBe(ref.url)

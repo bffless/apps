@@ -143,10 +143,15 @@ export default async function run(ctx: {
   becomes a File ref — scripts never do uploads themselves.
 - `files.fetch` only accepts the harness's file-serve urls (`/api/uploads/…`) — a script,
   like an island, cannot reach other routes.
-- The Worker has the harness page's CSP; network is same-origin only. Threads
-  (`SharedArrayBuffer`, ffmpeg core-mt) need the harness served cross-origin-isolated
-  (COOP/COEP response-header rules on the harness alias) — **open item**, decide at M2 with
-  the Studio port.
+- The harness ships **no CSP today**, so the Worker inherits none. `ctx.files.fetch` is gated
+  to the file-serve route, but a module Worker spawned from a Blob URL runs at the harness
+  origin and can call `fetch` itself — same-origin, with the member's cookie — so that gate
+  bounds the *relay*, not the Worker; what bounds the Worker is that a script comes from the
+  implementation's own bundle (`resolveScriptSrc`), i.e. code a project member published. A
+  CSP (`connect-src`/`worker-src`) is what would close the gap, and it is decided together
+  with the M3 COOP/COEP item: threads (`SharedArrayBuffer`, ffmpeg core-mt) need the harness
+  served cross-origin-isolated (COOP/COEP response-header rules on the harness alias) —
+  **open item**, decide at M3 with the Studio port.
 - Failure = rejected promise (`error.code` from `err.code` or `SCRIPT`), or `timeout-minutes`.
 
 ## Choosing
