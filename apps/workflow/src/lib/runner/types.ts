@@ -43,7 +43,13 @@ export type RunEvent =
   | { type: 'step.queued'; key: StepKey; job: string; index: number; stepId: string; kind: StepKind; at: number }
   | { type: 'step.started'; key: StepKey; inputs: Record<string, unknown>; at: number }
   | { type: 'step.polling'; key: StepKey; initial: unknown; at: number }
-  | { type: 'step.waiting'; key: StepKey; at: number }
+  | {
+      type: 'step.waiting'
+      key: StepKey
+      /** The evaluated `with` of a step that waits without ever running (a form): its title, fields with defaults resolved, submit. */
+      inputs?: Record<string, unknown>
+      at: number
+    }
   | { type: 'step.succeeded'; key: StepKey; outputs: Record<string, unknown>; response?: { initial?: unknown; last?: unknown; truncated?: boolean }; summary?: string; annotations?: Annotation[]; at: number }
   | { type: 'step.failed'; key: StepKey; error: StepError; annotations?: Annotation[]; at: number }
   | { type: 'step.skipped'; key: StepKey; job: string; index: number; stepId: string; kind: StepKind; at: number }

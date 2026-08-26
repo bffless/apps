@@ -13,8 +13,10 @@
  * card's right edge at that midline and enters the target's left edge at its
  * own — a straight line when the two rows agree, one soft bend when they don't
  * (the prototype's connectors). The two dots on a card's edges are the
- * prototype's "jump straight to one side": the left one opens the job's first
- * step on Input, the right one its last step on Output.
+ * prototype's "jump straight to one side": the left one opens the **job** on
+ * Input (what it waited on), the right one the job on Output (what it hands
+ * on) — the job is the middle level of run › job › step, and its outputs are
+ * what the edges carry.
  *
  * Definition mode owns its side panel (clicking a chip shows the declaration);
  * run mode reports the click instead, because there the pane belongs to the run
@@ -46,13 +48,12 @@ export interface GraphViewProps {
   /** Required in run mode: the folded state every chip reads its status from. */
   state?: RunState
   selectedKey?: StepKey | null
-  /** `side` is set when the click came from an edge dot (08: "jump straight to one side"). */
-  onSelect?: (key: StepKey, side?: PaneSide) => void
-}
-
-/** Which step a dot lands on: the first for Input, the last for Output. */
-function dotStep(job: Job, side: PaneSide): Step | undefined {
-  return side === 'Input' ? job.steps[0] : job.steps[job.steps.length - 1]
+  /**
+   * `key` is a step key (`job/index/step`) from a chip, or a bare job id from
+   * the header strip / an edge dot / an OUT row; `side` is set when the click
+   * came from an edge dot or an OUT row (08: "jump straight to one side").
+   */
+  onSelect?: (key: StepKey | string, side?: PaneSide) => void
 }
 
 export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphViewProps) {
@@ -89,21 +90,21 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
   const height =
     PAD * 2 + rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(rows - 1, 0) * ROW_GAP
 
-  const pick = (key: StepKey, step: Step, side?: PaneSide) => {
+  const pick = (key: StepKey, step: Step) => {
     if (mode !== 'run') setDeclared({ key, step })
     // A chip's click carries no side — the owner's pane opens as it likes.
-    else if (side === undefined) onSelect?.(key)
-    else onSelect?.(key, side)
+    else onSelect?.(key)
   }
 
-  /** The dot's click: the job's first/last step, on that side. */
-  const pickSide = (job: Job, side: PaneSide) => {
-    const step = dotStep(job, side)
-    if (!step) return
-    // In run mode the card may be showing a matrix item other than 0; the
-    // chip's own click carries the shown index, but a dot has no chip, so it
-    // opens item 0 — the card then follows the selection (JobCard).
-    pick(stepKey(job.id, 0, step.id), step, side)
+  /** The job as the selection (strip, dots, OUT rows) — run mode only; definition mode has no job pane. */
+  const pickJob = (job: Job, side?: PaneSide) => {
+    if (mode !== 'run') {
+      const step = job.steps[0]
+      if (step) setDeclared({ key: stepKey(job.id, 0, step.id), step })
+      return
+    }
+    if (side === undefined) onSelect?.(job.id)
+    else onSelect?.(job.id, side)
   }
 
   return (
@@ -164,6 +165,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
                   state={state}
                   selectedKey={selectedKey}
                   onPick={pick}
+                  onPickJob={(id, side) => pickJob(def.jobs[id]!, side)}
                   flow={flow}
                   style={{
                     gridColumn: col + 1,
@@ -194,7 +196,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
                     left: side === 'Input' ? columnLeft(col) - DOT / 2 : columnLeft(col) + COL_W - DOT / 2,
                     top: y,
                   }}
-                  onClick={() => pickSide(job, side)}
+                  onClick={() => pickJob(job, side)}
                 />
               ))
             }),

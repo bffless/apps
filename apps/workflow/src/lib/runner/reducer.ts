@@ -130,7 +130,13 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
     case 'step.waiting': {
       const step = getStep(state, event.key)
       assertTransition(step.status, 'waiting', event.key)
-      return withStep(state, event.key, { ...step, status: 'waiting' })
+      // A form goes queued → waiting with no `step.started`, so this is the
+      // one event that can record what it was shown with (its evaluated `with`).
+      return withStep(state, event.key, {
+        ...step,
+        status: 'waiting',
+        ...(event.inputs === undefined ? {} : { inputs: event.inputs }),
+      })
     }
 
     case 'step.retrying': {

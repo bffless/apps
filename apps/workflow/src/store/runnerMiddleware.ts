@@ -21,6 +21,7 @@ import type { IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { toFileRef } from '../lib/coerce'
 import type { RunStore } from '../lib/runStore'
 import { buildRunContexts, evalOutputDecl } from '../lib/runner/contexts'
+import { formInputs } from '../lib/runner/adapters/form'
 import { runPipelineStep } from '../lib/runner/adapters/pipeline'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
 import { nextActions } from '../lib/runner/next'
@@ -783,7 +784,10 @@ async function handleNextAction(
         }
         void runPipelineStep({ step, key: a.key, job: a.job, index: a.index, def, state: runState }, rt)
       } else if (step.uses === 'form') {
-        dispatch(runEvent({ type: 'step.waiting', key: a.key, at: deps.clock.now() }))
+        // The form's evaluated `with` is what it is shown with; it rides on
+        // `step.waiting` since a form never emits `step.started`.
+        const inputs = formInputs({ step, job: a.job, index: a.index, def, state: runState })
+        dispatch(runEvent({ type: 'step.waiting', key: a.key, inputs, at: deps.clock.now() }))
       } else if (step.uses === 'island') {
         // The middleware has no DOM (09): it builds the host and parks a
         // handle, and the *pane* mounts it. `step.waiting` is dispatched from

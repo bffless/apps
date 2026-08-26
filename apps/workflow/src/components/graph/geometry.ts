@@ -73,8 +73,17 @@ export const CARD = {
   note: 20,
   /** The matrix item selector row. */
   select: 34,
+  /** One declared job-output line under the steps (run mode). */
+  out: 20,
+  /** Breathing room under the last output line. */
+  outPad: 8,
   /** Top + bottom border. */
   border: 2,
+}
+
+/** The job's declared `outputs:` names — the rows a run-mode card lists under its steps. */
+export function jobOutputNames(job: Job): string[] {
+  return Object.keys(job.outputs ?? {})
 }
 
 /** "For each who · max 2 at once" — the strategy, as the prototype phrases it. */
@@ -107,12 +116,15 @@ function hasSelector(job: Job, mode: 'definition' | 'run', state?: RunState): bo
 export function cardHeight(job: Job, mode: 'definition' | 'run', state?: RunState): number {
   const single = isSingle(job)
   const chips = job.steps.reduce((sum, step) => sum + chipHeight(step, mode, single), 0)
-  if (single) return chips + CARD.border
+  const outs = mode === 'run' ? jobOutputNames(job).length : 0
+  const outRows = outs === 0 ? 0 : outs * CARD.out + CARD.outPad
+  if (single) return chips + outRows + CARD.border
   return (
     CARD.strip +
     (matrixNote(job) ? CARD.note : 0) +
     (hasSelector(job, mode, state) ? CARD.select : 0) +
     chips +
+    outRows +
     CARD.border
   )
 }

@@ -125,8 +125,9 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
     events.push({ type: 'step.started', key, inputs, at: startedAt })
   } else if (row.status === 'succeeded' || row.status === 'failed') {
     // A form/island step that finished without ever running went through
-    // `waiting` — `queued → succeeded` is not a legal transition.
-    events.push({ type: 'step.waiting', key, at: startedAt })
+    // `waiting` — `queued → succeeded` is not a legal transition. The row's
+    // `inputs` (the form's evaluated `with`) ride on it, as they did live.
+    events.push({ type: 'step.waiting', key, inputs, at: startedAt })
   }
 
   switch (row.status) {
@@ -136,7 +137,7 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
       events.push({ type: 'step.polling', key, initial: response?.initial, at: startedAt })
       break
     case 'waiting':
-      events.push({ type: 'step.waiting', key, at: startedAt })
+      events.push({ type: 'step.waiting', key, inputs, at: startedAt })
       break
     case 'succeeded':
       events.push({
