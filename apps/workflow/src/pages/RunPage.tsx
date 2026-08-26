@@ -53,7 +53,7 @@ import type { Annotation, Definition, RunState, StepState } from '../lib/runner/
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { RunStoreError } from '../lib/runStore'
 import { LeaseTransportError, cancelRun, deleteRun, openRun, takeOver } from '../store/lifecycleActions'
-import { islandDisplayChanged, stepSelected } from '../store/uiSlice'
+import { islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
 import { workflowApi, useGetRunQuery, useWhoamiQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
@@ -273,6 +273,11 @@ export function RunPage() {
   // block *that* run's own waiting-step auto-select below (`!selectedStep`).
   useEffect(() => {
     dispatch(stepSelected(null))
+    // The hovered value is the same process-global, step-key-repeats-across-
+    // runs shape `selectedStep` is (fix round 1, finding 1) — a hover left
+    // over from the run just navigated away from would highlight a graph
+    // chip on the new run that never produced it.
+    dispatch(valueHovered(null))
   }, [runId, dispatch])
 
   // The live path (Task 18): this tab is driving `runId` right now.

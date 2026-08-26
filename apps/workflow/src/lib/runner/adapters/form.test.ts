@@ -403,12 +403,12 @@ describe('completeFormStep — evaluated options and file fields', () => {
     expect(result.errors.cover).toMatch(/not one of/)
   })
 
-  it('rejects every value when the options expression did not evaluate to a list', () => {
+  it('rejects every value when the options expression did not evaluate to a list, naming the unresolved options', () => {
     const result = completeFormStep(coverArgs({ cover: COVER_A.path }, null))
 
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.errors.cover).toMatch(/not one of/)
+    expect(result.errors.cover).toMatch(/could not be resolved/)
   })
 
   it('accepts a File ref for a `file` field, and null for an unanswered one', () => {

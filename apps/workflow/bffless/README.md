@@ -27,6 +27,10 @@ M2 Task 6 — analyze; 5/5 hello surface rules).
 - **Rule-set isolation**: these two sets live in project `bffless/workflow`, NOT in
   `.bffless/config.json`'s `ruleSets` globs — that file drives the nightly drift check against
   project `bffless/apps`. Keep them out of it.
+- **Mocks**: the MSW mock backend (and its `?as=admin` identity switch) is only ever loaded
+  behind `import.meta.env.DEV` — `src/main.tsx` returns before importing `mocks/browser` in any
+  other build — so no mock and no identity switch can reach a production build regardless of
+  query string or `MOCKS_ENABLED`.
 - **Storage**: a default storage backend must be configured (bucket or local ≥ CE 0.3.15) —
   the files trio (presigned PUT → register → serve) is the upload path.
 - **External connections / AI tokens**: none. **Secrets**: none.

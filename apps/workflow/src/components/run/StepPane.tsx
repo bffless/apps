@@ -29,7 +29,7 @@
  * philosophy: an action that cannot be honoured is worse than an action that
  * is not offered yet.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { stepOutputDecl } from '../../lib/outputDecls'
@@ -122,6 +122,16 @@ function OutputTab({
   const recorded = step.outputs ?? {}
   const names = (declared && stepOutputNames(declared)) ?? Object.keys(recorded)
   const dispatch = useAppDispatch()
+  // A hover this tab leaves mid-flight — the tab switched, another step got
+  // selected (StepPane is remounted with `key={selectedStep}`) — must not
+  // outlive the pointer leaving the DOM node that set it: `onMouseLeave`
+  // never fires for an element that was unmounted out from under the cursor.
+  useEffect(
+    () => () => {
+      dispatch(valueHovered(null))
+    },
+    [dispatch],
+  )
   if (names.length === 0) return <p className="note">This step declares no outputs.</p>
 
   return (

@@ -30,6 +30,9 @@ import { CodeView } from './renderers/CodeView'
 
 export type { ValueDecl }
 
+/** Every `render` name this dispatch actually knows how to draw (island's M2 fallback aside). */
+const KNOWN_RENDERERS = new Set(['island', 'transcript', 'images', 'chart', 'code'])
+
 /**
  * An output the writer offloaded (`{"$file"}`, Task 12) whose bytes the read
  * path could not fetch back (`lib/payloadFetch`). The declared renderer is no
@@ -137,14 +140,20 @@ export function ValueView({
     body = <CodeView value={value} mapping={decl.mapping} />
   } else {
     // `island` keeps its historical "(M2)" badge when it can't dispatch (no
-    // src, or no implementation known); any other named `render` this
-    // dispatch doesn't recognise gets the "(unknown)" badge instead.
-    const isIslandFallback = decl.render === 'island'
+    // src, or no implementation known). Any other named `render` reaching
+    // this branch got here because its payload is unavailable — the badge
+    // would only repeat what the `payload-unavailable` chip already says, and
+    // for a *known* renderer it would say it wrongly ("(unknown)" on a
+    // renderer this dispatch knows perfectly well) — so a known renderer gets
+    // no badge at all here, and only a genuinely unrecognised `render` value
+    // keeps the "(unknown)" badge.
+    const isKnownRenderer = typeof decl.render === 'string' && KNOWN_RENDERERS.has(decl.render)
+    const showBadge = Boolean(decl.render) && !(unavailable && isKnownRenderer)
     body = (
       <>
-        {decl.render && (
+        {showBadge && (
           <p className="value-renderer-badge">
-            {`renderer: ${decl.render} (${isIslandFallback ? 'M2' : 'unknown'})`}
+            {`renderer: ${decl.render} (${isKnownRenderer ? 'M2' : 'unknown'})`}
           </p>
         )}
         <ValueBody decl={decl} value={value} />

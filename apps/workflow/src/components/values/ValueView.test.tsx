@@ -193,6 +193,36 @@ describe('ValueView', () => {
     expect(screen.queryByTestId('renderer')).not.toBeInTheDocument()
   })
 
+  // Final review, finding 3: the badge used to say "(unknown)" on a *known*
+  // renderer just because its payload was unavailable — worse than useless,
+  // since it misnamed a renderer this dispatch understands perfectly well.
+  // The chip alone says everything there is to say here.
+  it('shows the payload-unavailable chip with no badge at all for a known renderer (transcript)', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'transcript.json',
+      contentType: 'application/json',
+      size: 300,
+      url: '/api/uploads/transcript.json',
+    }
+    render(<ValueView decl={{ type: 'json', render: 'transcript' }} value={{ $file: ref, $error: '500' }} />)
+    expect(screen.getByTestId('payload-unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/^renderer:/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the "(unknown)" badge alongside the chip for an unrecognised render name with an unavailable payload', () => {
+    const ref: FileRef = {
+      path: 'p',
+      name: 'report.json',
+      contentType: 'application/json',
+      size: 300,
+      url: '/api/uploads/report.json',
+    }
+    render(<ValueView decl={{ type: 'json', render: 'bogus' }} value={{ $file: ref, $error: '500' }} />)
+    expect(screen.getByTestId('payload-unavailable')).toBeInTheDocument()
+    expect(screen.getByText('renderer: bogus (unknown)')).toBeInTheDocument()
+  })
+
   it('renders a render: chart declaration through ChartView, with no badge', () => {
     render(
       <ValueView

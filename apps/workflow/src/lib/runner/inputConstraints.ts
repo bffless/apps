@@ -84,7 +84,15 @@ function scalarConstraintError(def: InputDef, value: unknown): string | undefine
 
   if (type === 'choice' && typeof value === 'string') {
     const allowed = allowedChoices(def.options)
-    if (allowed && !allowed.includes(value)) return 'Is not one of the allowed choices'
+    if (allowed) {
+      // Readable and empty is not the same fact as readable and non-matching:
+      // an `options` expression that evaluated to something other than a list
+      // leaves the field with `[]` (`formFieldDefs`), not with its unresolved
+      // expression — so an empty list here means the options never resolved,
+      // not that the field genuinely offers no choices at all.
+      if (allowed.length === 0) return "this field's options could not be resolved"
+      if (!allowed.includes(value)) return 'Is not one of the allowed choices'
+    }
     return undefined
   }
 

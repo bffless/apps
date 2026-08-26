@@ -180,6 +180,24 @@ describe('run deletion (rows + file-prefix GC)', () => {
     expect(db.files.has(INPUT_KEY)).toBe(true)
   })
 
+  // Final review, finding 4: `undefined !== undefined` is `false` — an
+  // id-less caller (`function_handler` could not resolve one to a person)
+  // must never fall through the ownership comparison just because a row
+  // written before `startedBy` existed is *also* id-less. Mirrors
+  // `run/delete/post/gate.fn.js`'s `!caller.id ||` guard.
+  it('refuses an id-less caller even when the row also has no startedBy (403, not a false-positive match)', async () => {
+    const row = { ...db.runs.get(RUN_ID)! }
+    delete row.startedBy
+    db.runs.set(RUN_ID, row)
+    setMockUser({ ...MOCK_MEMBER, id: '' })
+
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('only the run owner or an admin can delete a run')
+    expect(db.runs.has(RUN_ID)).toBe(true)
+  })
+
   it('lets an admin delete a run they did not start', async () => {
     setMockUser(MOCK_ADMIN)
 

@@ -178,4 +178,30 @@ describe('StepPane — Output tab hover dispatches the value under the pointer',
     fireEvent.mouseLeave(wrapper)
     expect(store.getState().ui.hoveredValue).toBeNull()
   })
+
+  // Final review, finding 1: a hover left mid-flight when the Output tab goes
+  // away (switching tabs, or — via `StepPane`'s `key={selectedStep}` — picking
+  // a different step) must not survive the unmount. `onMouseLeave` never
+  // fires for a DOM node that was removed out from under the cursor, so the
+  // cleanup has to be the unmount itself, not the pointer.
+  it('clears ui.hoveredValue when the Output tab unmounts (switching away without a mouseleave)', () => {
+    const def = toDefinition(FINISHED_RUN.run.definition)
+    const state = replayRun(FINISHED_RUN.run, FINISHED_RUN.steps, def)
+    const store = makeStore()
+
+    render(
+      <Provider store={store}>
+        <StepPane def={def} state={state} stepKey="greet/0/say" live={false} />
+      </Provider>,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
+    const wrapper = screen.getByText('line').closest('.value')!
+    fireEvent.mouseEnter(wrapper)
+    expect(store.getState().ui.hoveredValue).not.toBeNull()
+
+    // Switch tabs without ever firing `mouseleave` on the hovered value.
+    fireEvent.click(screen.getByRole('tab', { name: 'Input' }))
+    expect(store.getState().ui.hoveredValue).toBeNull()
+  })
 })

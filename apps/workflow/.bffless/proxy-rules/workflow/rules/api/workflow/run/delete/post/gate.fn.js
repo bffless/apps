@@ -30,7 +30,11 @@ function handler({ steps, request, user }) {
   // (users.dto.ts: admin | user | member); 'owner' is accepted for the project-role
   // vocabulary. A row written before startedBy existed is admin-only, by construction.
   const admin = role === 'admin' || role === 'owner'
-  if (!admin && row.startedBy !== caller.id) {
+  // `undefined !== undefined` is `false` — an id-less caller (one
+  // `function_handler` could not resolve to a person) must never fall through
+  // that comparison just because a row written before `startedBy` existed is
+  // *also* missing one. `!caller.id` closes that: no id, no ownership match.
+  if (!admin && (!caller.id || row.startedBy !== caller.id)) {
     return refuse('forbidden', 'only the run owner or an admin can delete a run')
   }
 

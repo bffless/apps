@@ -280,7 +280,10 @@ const runRecord = [
     if (!run) return refuse(404, 'run not found')
     if (run.status === 'running') return refuse(409, 'cancel the run first')
     const admin = ADMIN_ROLES.has(String(user.role ?? '').toLowerCase())
-    if (!admin && run.startedBy !== user.id) {
+    // `undefined !== undefined` is `false` — an id-less user must never fall
+    // through that comparison just because a row with no `startedBy` is
+    // *also* id-less (gate.fn.js's `!caller.id ||` guard, mirrored here).
+    if (!admin && (!user.id || run.startedBy !== user.id)) {
       return refuse(403, 'only the run owner or an admin can delete a run')
     }
 

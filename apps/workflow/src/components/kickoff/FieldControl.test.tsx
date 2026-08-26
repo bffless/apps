@@ -122,6 +122,22 @@ describe('FieldControl — tile picker (02: options with a preview)', () => {
     expect(screen.queryByTestId('tile-picker')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox')).toBeInTheDocument()
   })
+
+  // A zero-tile options list can never reach the tile picker itself: `choice`
+  // only takes that branch when some option carries a preview
+  // (`options.some((opt) => opt.preview !== undefined)`), and `.some` on an
+  // empty array is always `false` — so an evaluated-to-nothing `options`
+  // always falls through to the plain `<select>`, which must still show its
+  // disabled placeholder rather than an empty, unusable dropdown.
+  it('keeps the select and its disabled placeholder when options evaluated to nothing', () => {
+    render(<Controlled def={{ type: 'choice', options: [] }} />)
+
+    expect(screen.queryByTestId('tile-picker')).not.toBeInTheDocument()
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.options).toHaveLength(1)
+    expect(select.options[0]?.textContent).toBe('Choose…')
+    expect(select.options[0]?.disabled).toBe(true)
+  })
 })
 
 describe('FieldControl — markdown preview', () => {
