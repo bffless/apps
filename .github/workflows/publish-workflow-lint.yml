@@ -6,24 +6,64 @@ name: publish-workflow-lint
 #                             repo runs over npx in its own CI
 #   @bffless/workflow-script  the types-only `script` step contract
 #
-# Release-please owns the versions and the tags (release-please-config.json:
-# `include-component-in-tag`), so this workflow's only trigger is the tag it cuts —
-# `workflow-lint-v0.1.0` / `workflow-script-v0.1.0`. Nothing here bumps a version:
-# a publish that could invent one would drift from the tag and the changelog.
+# Called by release.yml's `publish-packages` job — one leg per packages/* component
+# release-please just released, carrying that component's npm name and the tag it
+# cut.
+#
+# There is deliberately NO `push: tags:` trigger. Release-please creates the tags
+# with the default GITHUB_TOKEN, and GitHub does not raise `push` events for refs
+# created with it: "events triggered by the GITHUB_TOKEN will not create a new
+# workflow run" (docs: actions/using-workflows/triggering-a-workflow). A tag trigger
+# here can therefore never fire — which is exactly what happened on 2026-08-27:
+# workflow-lint-v1.0.0 and workflow-script-v1.0.0 were tagged, no run appeared, and
+# nothing reached npm. Driving the publish from inside the release run is the fix.
+#
+# Release-please still owns the versions and the tags. Nothing here bumps a version,
+# and the guard below refuses to publish when the checked-out package.json disagrees
+# with the tag being published.
 
 on:
-  push:
-    tags:
-      - 'workflow-lint-v*'
-      - 'workflow-script-v*'
+  workflow_call:
+    inputs:
+      package:
+        description: 'npm package name: @bffless/workflow-lint or @bffless/workflow-script'
+        required: true
+        type: string
+      ref:
+        description: 'the release tag to check out and publish, e.g. workflow-lint-v1.0.0'
+        required: true
+        type: string
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+  # Recovery / manual publish. Dispatch from main and name the tag: the checkout
+  # below uses `ref`, not the dispatch ref, so what gets published is always the
+  # tagged tree — the same bytes the workflow_call path would publish.
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'npm package to publish'
+        required: true
+        type: choice
+        options:
+          - '@bffless/workflow-lint'
+          - '@bffless/workflow-script'
+      ref:
+        description: 'the release tag to check out and publish, e.g. workflow-lint-v1.0.0'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
-# One publish at a time — npm rejects a duplicate version, and a failed race is
-# indistinguishable from a real failure in the log.
+# One publish at a time per package — npm rejects a duplicate version, and a failed
+# race is indistinguishable from a real failure in the log. Scoped by package rather
+# than shared across both: GitHub keeps at most ONE pending run per concurrency group
+# and cancels any older pending one, so a single shared group would silently drop a
+# leg the moment a third package joins the release.
 concurrency:
-  group: publish-workflow-packages
+  group: publish-workflow-packages-${{ inputs.package }}
   cancel-in-progress: false
 
 jobs:
@@ -31,6 +71,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -45,32 +87,59 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Which package this tag is for. Both components are cut from this repo, so
-      # the tag prefix is the only thing that distinguishes them.
-      - name: Resolve the package from the tag
-        id: pkg
+      # The tag is `<component>-v<version>`, so the checked-out package.json version
+      # has to equal what is left after stripping that prefix. A mismatch means the
+      # ref and the tree disagree — a mis-typed dispatch, a hand-moved tag, or a
+      # release.yml mapping bug — and npm is the one copy nobody can take back.
+      #
+      # This also re-derives the npm name from package.json and cross-checks it
+      # against the input: release.yml builds the name by convention
+      # (packages/<name> -> @bffless/<name>), and this is where that convention is
+      # actually verified rather than assumed.
+      - name: Verify the checked-out package matches the tag
+        env:
+          PKG: ${{ inputs.package }}
+          REF: ${{ inputs.ref }}
         run: |
-          case "$GITHUB_REF_NAME" in
-            workflow-lint-v*)   echo "name=@bffless/workflow-lint" >> "$GITHUB_OUTPUT" ;;
-            workflow-script-v*) echo "name=@bffless/workflow-script" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::unexpected tag $GITHUB_REF_NAME"; exit 1 ;;
+          case "$PKG" in
+            @bffless/workflow-lint)   DIR=packages/workflow-lint ;;
+            @bffless/workflow-script) DIR=packages/workflow-script ;;
+            *) echo "::error::unknown package $PKG"; exit 1 ;;
           esac
+          COMPONENT="${DIR#packages/}"
+          case "$REF" in
+            "$COMPONENT-v"*) ;;
+            *) echo "::error::ref $REF is not a $COMPONENT release tag"; exit 1 ;;
+          esac
+          TAG_VERSION="${REF#"$COMPONENT-v"}"
+          PKG_NAME="$(jq -r .name "$DIR/package.json")"
+          PKG_VERSION="$(jq -r .version "$DIR/package.json")"
+          if [ "$PKG_NAME" != "$PKG" ]; then
+            echo "::error::$DIR/package.json is named $PKG_NAME but this run was asked to publish $PKG"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::$PKG_NAME at $REF is version $PKG_VERSION but the tag says $TAG_VERSION"
+            exit 1
+          fi
+          echo "publishing $PKG_NAME@$PKG_VERSION from $REF"
 
       # workflow-lint ships built output (`files: ["dist", …]`), and its bin is
       # dist/cli.js — publishing without this would put an empty package on npm.
       # workflow-script is a single hand-written .d.ts with nothing to build.
       - name: Build
-        if: startsWith(github.ref_name, 'workflow-lint-v')
+        if: inputs.package == '@bffless/workflow-lint'
         run: pnpm --filter @bffless/workflow-lint build
 
       # The tag is already cut, so this cannot stop a bad release — but it does stop
       # a bad release reaching npm, which is the copy nobody can take back.
       - name: Test
-        if: startsWith(github.ref_name, 'workflow-lint-v')
+        if: inputs.package == '@bffless/workflow-lint'
         run: pnpm --filter @bffless/workflow-lint test:run
 
       # --no-git-checks: the checkout is a detached tag, which pnpm otherwise refuses.
       - name: Publish to npm
-        run: pnpm --filter ${{ steps.pkg.outputs.name }} publish --access public --no-git-checks
         env:
+          PKG: ${{ inputs.package }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter "$PKG" publish --access public --no-git-checks

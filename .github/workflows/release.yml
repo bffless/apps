@@ -3,8 +3,9 @@ name: Release
 # The single owner of app versioning and of the app-registry alias.
 #
 #   release          release-please keeps the Release PR current; merging that PR
-#                    bumps versions and cuts one tag + GitHub Release per app
+#                    bumps versions and cuts one tag + GitHub Release per component
 #   bundles          builds each released app's bundle, attached to its release
+#   publish-packages npm-publishes each released packages/* component
 #   publish-registry full snapshot of every app -> registry.json + site + assets
 #
 # publish-registry is chained with `needs` rather than triggered by an event because
@@ -39,6 +40,7 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       paths_released: ${{ steps.release.outputs.paths_released }}
       apps_released: ${{ steps.apps.outputs.apps_released }}
+      packages_released: ${{ steps.apps.outputs.packages_released }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -53,22 +55,70 @@ jobs:
       # expression — those accept only a restricted expression set, and a round-trip
       # through fromJSON/format there would not actually strip the prefix.
       #
-      # Only apps/* survives the filter: release-please also owns the publishable
-      # packages/* components (workflow-lint, workflow-script), and those have no
-      # catalog bundle — an unfiltered list would hand app-bundles.yml a path that
-      # is not an app id and fail the release on a package-only release.
-      - name: Map released paths to bare app ids
+      # Two disjoint lists come out, because the two halves of the manifest are released
+      # by different machinery:
+      #
+      #   apps_released      apps/* -> bare app id, one `bundles` leg each. Only apps/*
+      #                      survives: the packages/* components have no catalog bundle,
+      #                      and an unfiltered list would hand app-bundles.yml a path
+      #                      that is not an app id and fail every package-only release.
+      #   packages_released  packages/* -> [{ package, ref }], one `publish-packages` leg
+      #                      each. The reusable publish workflow needs the npm name *and*
+      #                      the tag, so this emits objects and the matrix consumes them
+      #                      through `include:`.
+      #
+      # The npm name is derived by convention (packages/<name> -> @bffless/<name>) because
+      # this job has no checkout to read package.json from; publish-workflow-lint.yml
+      # re-derives it from the tagged package.json and fails the publish if the two
+      # disagree, so the convention is checked rather than trusted.
+      #
+      # The tags come from release-please-action's per-path `<path>--tag_name` outputs
+      # (v4 README, "Path outputs"), which is the tag it actually cut — safer than
+      # re-assembling `<component>-v<version>` here. They cannot be looked up
+      # dynamically, so each packages/* component needs a line in the env block below;
+      # the empty-ref check turns a forgotten one into a loud failure instead of a
+      # silently unpublished package.
+      - name: Map released paths to bare app ids and publishable packages
         id: apps
+        env:
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released || '[]' }}
+          WORKFLOW_LINT_TAG: ${{ steps.release.outputs['packages/workflow-lint--tag_name'] }}
+          WORKFLOW_SCRIPT_TAG: ${{ steps.release.outputs['packages/workflow-script--tag_name'] }}
         run: |
-          echo '${{ steps.release.outputs.paths_released || '[]' }}' \
+          echo "$PATHS_RELEASED" \
             | jq -c '[.[] | select(startswith("apps/")) | sub("^apps/"; "")]' \
             > /tmp/apps_released.json
           echo "apps_released=$(cat /tmp/apps_released.json)" >> "$GITHUB_OUTPUT"
 
+          echo "$PATHS_RELEASED" \
+            | jq -c \
+                --arg workflow_lint "$WORKFLOW_LINT_TAG" \
+                --arg workflow_script "$WORKFLOW_SCRIPT_TAG" \
+                '[ .[]
+                   | select(startswith("packages/"))
+                   | sub("^packages/"; "") as $name
+                   | { package: ("@bffless/" + $name),
+                       ref: ({ "workflow-lint": $workflow_lint,
+                               "workflow-script": $workflow_script }[$name] // "") } ]' \
+            > /tmp/packages_released.json
+          if jq -e 'any(.[]; .ref == "" or .ref == null)' /tmp/packages_released.json > /dev/null; then
+            echo "::error::a released packages/* component has no tag_name mapped in this step's env — add it"
+            cat /tmp/packages_released.json
+            exit 1
+          fi
+          echo "packages_released=$(cat /tmp/packages_released.json)" >> "$GITHUB_OUTPUT"
+
   # One leg per app release-please just released.
+  #
+  # apps_released != '[]' is not redundant with releases_created: a package-only release
+  # (workflow-lint / workflow-script, which have no catalog bundle) creates releases but
+  # leaves this list empty, and GitHub refuses to *evaluate* a strategy whose matrix
+  # vector is empty — "Matrix vector 'app' does not contain any values" fails the whole
+  # run, not just this job. Guarding here skips the job instead; publish-registry already
+  # accepts `bundles` being skipped.
   bundles:
     needs: release
-    if: needs.release.outputs.releases_created == 'true'
+    if: needs.release.outputs.releases_created == 'true' && needs.release.outputs.apps_released != '[]'
     strategy:
       # One app's bundle failure must not cancel another app's leg that would have
       # succeeded — recovery for a genuine failure is then one dispatch, not two.
@@ -82,6 +132,37 @@ jobs:
     # github.token, passed to called workflows regardless of this line). This job must
     # not carry BFFLESS_REGISTRY_API_KEY: it never publishes the registry, and it is
     # workflow_dispatch-able on its own.
+
+  # One leg per publishable package release-please just released. Chained off the
+  # release run rather than triggered by the tag: see publish-workflow-lint.yml — a
+  # tag release-please cuts with GITHUB_TOKEN raises no push event, so the tag-driven
+  # publish never fired.
+  #
+  # Same empty-matrix guard as `bundles`: an app-only release leaves packages_released
+  # at '[]', which would otherwise fail the whole run rather than skip this job.
+  # publish-registry deliberately does not `needs` this job — a registry publish has
+  # nothing to do with npm, and must not wait on it or fail with it.
+  publish-packages:
+    needs: release
+    if: |
+      needs.release.outputs.releases_created == 'true'
+      && contains(needs.release.outputs.paths_released, 'packages/')
+      && needs.release.outputs.packages_released != '[]'
+    strategy:
+      # One package's publish failure must not cancel the other's leg — recovery is
+      # then one workflow_dispatch of publish-workflow-lint.yml, not two.
+      fail-fast: false
+      matrix:
+        # `include:` with no base axis: one leg per object, each carrying the npm name
+        # and the tag to check out. GitHub accepts `include` from an expression, which
+        # a plain vector could not express — the reusable workflow needs both values.
+        include: ${{ fromJSON(needs.release.outputs.packages_released) }}
+    uses: ./.github/workflows/publish-workflow-lint.yml
+    with:
+      package: ${{ matrix.package }}
+      ref: ${{ matrix.ref }}
+    # NPM_TOKEN, which the called workflow declares as required.
+    secrets: inherit
 
   publish-registry:
     needs: [release, bundles]
