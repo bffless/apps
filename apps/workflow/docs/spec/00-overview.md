@@ -26,15 +26,16 @@ harness is never executed server-side; unattended use is a headless browser (Pla
 ```
 project  bffless/workflow                     (one BFFless project; phase 1 on j5s.dev)
 │
-├── alias  workflow   ← the harness app              https://workflow.<domain>
-│     rule set  workflow      /api/workflow/*  (runs, files, discovery)
+├── alias  workflow          ← the harness app              https://workflow.<domain>
+│     rule set  workflow            /api/workflow/*  (runs, files, discovery)
 │
-├── alias  studio     ← implementation workflow-studio  https://studio.<domain>
+├── alias  workflow-studio   ← implementation workflow-studio  https://workflow-studio.<domain>
 │     files: /.bffless/workflows/{index.json,*.yaml}, /islands/*.html, /scripts/*.js
-│     rule set  studio        /api/studio/*  — attached to BOTH aliases `studio` and `workflow`
-│                             + GET /w/studio/[...path] → https://studio.<domain>/[...path]
+│     rule set  workflow-studio     /api/workflow-studio/*  — attached to BOTH aliases
+│                                   `workflow-studio` and `workflow`
+│                             + GET /w/workflow-studio/[...path] → https://workflow-studio.<domain>/[...path]
 │
-└── alias  studio-pr-12 … (previews are just more aliases)
+└── alias  workflow-studio-pr-12 … (previews are just more aliases)
 ```
 
 The browser only ever talks to the harness host (ADR-0001): implementation pipelines are

@@ -1,14 +1,13 @@
 # Workflow harness backend — BFFless proxy rule sets
 
-Two authored sets: `workflow` (run records, lease, files trio — spec 05/06) and, from M1
-Phase 3, `hello` (the workflow-hello test implementation: echo, slow+poll, fail, and — from
-M2 Task 6 — analyze; 5/5 hello surface rules).
-
-**hello's directory names are load-bearing**, and now enforced: a workflow's
-`with: { path: echo }` resolves to `POST /api/hello/echo`, which is
-`rules/api/hello/echo/post/rule.yaml` here. `pnpm stage` lints the example YAMLs against
-this set (`rule-missing`, spec 06), so renaming a rule directory without renaming the step's
-path — or vice versa — fails CI instead of 404-ing at run time.
+One authored set: `workflow` (run records, lease, files trio — spec 05/06). Through M2 this
+directory also carried `hello` (the workflow-hello test implementation: echo, slow+poll,
+fail, analyze). As of M3 Task 7 (Decision 5, "one source") `hello` lives in its own repo,
+[`bffless/workflow-hello`](https://github.com/bffless/workflow-hello): its rule set, workflow
+YAMLs, islands and scripts are authored and published from there, via
+`bffless/publish-workflow@v1` in that repo's own `deploy.yml` (see
+`docs/writing-an-implementation.md`). This monorepo pins the commit it stages for local
+dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
 
 ## Manual setup (admin panel)
 
@@ -32,14 +31,19 @@ path — or vice versa — fails CI instead of 404-ing at run time.
   or `POST /api/projects/<owner>/<name>/permissions/users` `{ userEmail, role: "viewer" }`). The
   scoped build's empty state says so.
 - **Aliases + domains**: alias `workflow` (the harness SPA) on `workflow.<domain>`, alias
-  `hello` (the test implementation bundle) on `hello.<domain>`. Attach rule set `workflow`
-  to alias `workflow`; attach rule set `hello` to BOTH aliases (ADR-0001 single origin).
-  The deploy workflow creates both aliases (and attaches the sets) on its first run — the
-  domains are the manual half: `workflow.<domain>` → alias `workflow`, path
-  `/apps/workflow/dist`, **SPA fallback on**, `unauthorizedBehavior: redirect_login` +
-  `requiredRole: authenticated` (a signed-out member lands on the login page instead of a
-  404); `hello.<domain>` → alias `hello`, path `/apps/workflow/hello-dist`, no SPA fallback.
-- **Rule-set isolation**: these two sets live in project `bffless/workflow`, NOT in
+  `hello` (the test implementation bundle, published by `bffless/workflow-hello`'s own
+  `deploy.yml`) on `hello.<domain>`. Rule set `workflow` is attached to alias `workflow` by
+  this repo's deploy; rule set `hello` is attached to BOTH the `hello` alias and the
+  `workflow` (harness) alias by `bffless/publish-workflow@v1` running in workflow-hello's own
+  CI (ADR-0001 single origin) — nothing in this repo's deploy touches it. The domains are the
+  manual half: `workflow.<domain>` → alias `workflow`, path `/apps/workflow/dist`, **SPA
+  fallback on**, `unauthorizedBehavior: redirect_login` + `requiredRole: authenticated` (a
+  signed-out member lands on the login page instead of a 404); `hello.<domain>` → alias
+  `hello`, path **`/dist`** — `bffless/upload-artifact` keeps the uploaded directory name as
+  the bundle's root, so `hello`'s deployment root is `dist/` (`dist/index.html`,
+  `dist/islands/*.html`, `dist/.bffless/workflows/index.json`, …); a domain path of `/` (or
+  empty) 400s or 404s.
+- **Rule-set isolation**: `workflow` lives in project `bffless/workflow`, NOT in
   `.bffless/config.json`'s `ruleSets` globs — that file drives the nightly drift check against
   project `bffless/apps`. Keep them out of it.
 - **Mocks**: the MSW mock backend (and its `?as=admin` identity switch) is only ever loaded
@@ -71,8 +75,10 @@ path — or vice versa — fails CI instead of 404-ing at run time.
 
   (COOP/COEP only becomes relevant if a script needs threads — `SharedArrayBuffer`,
   ffmpeg core-mt — which nothing in hello does.)
-- The `/w/hello/[...path]` forwarding rule bakes `targetUrl: https://hello.j5s.dev` — edit it
-  for a different install domain (CE follow-up `targetUrl: alias://hello` removes this).
+- The `/w/hello/[...path]` forwarding rule is no longer authored here: `bffless/publish-workflow@v1`
+  generates it (`targetUrl` = the deployed `hello` alias URL) as part of workflow-hello's own
+  `deploy.yml`. A different install domain follows from `target-url` in that action's inputs,
+  not from anything in this repo (CE follow-up `targetUrl: alias://hello` would remove even that).
 - **Run deletion** (`POST /api/workflow/run/delete`, M2 Phase 3): deletes the run's storage
   prefix `workflows/<impl>/<workflow>/runs/<runId>/` **first** (`file_delete`, idempotent), then
   the `workflow_files` records under it, then the step rows, then the run row — bytes before
