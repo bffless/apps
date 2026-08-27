@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { lintFile, resolveRuleSet, type LintResult, type RuleSetContext } from './index.js'
 import { defaultCommit, defaultVersion, writeIndex } from './index/write.js'
 import type { Counts } from './findings.js'
@@ -287,8 +287,22 @@ export function runCli(
   return parsed.command === 'lint' ? runLint(parsed, out, err) : runIndex(parsed, out, err)
 }
 
-// Only run when invoked as a script (not when imported by tests).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** realpathSync, tolerant of a path that doesn't resolve (falls back to itself). */
+function realOrSelf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+// Only run when invoked as a script (not when imported by tests). A published
+// `bin` is launched through a symlink (npm) or shim (pnpm) — Node resolves
+// the main module through the link, so import.meta.url is already the
+// realpath while process.argv[1] is still the link path. Compare realpaths
+// on both sides, or this guard is false for every `bin` invocation and the
+// CLI silently no-ops.
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   process.exitCode = runCli(
     process.argv.slice(2),
     (l) => console.log(l),

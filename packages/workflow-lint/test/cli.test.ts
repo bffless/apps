@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +20,8 @@ function run(argv: string[]) {
   const code = runCli(argv, (l) => out.push(l), (l) => err.push(l))
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
+
+const tmpDirs: string[] = []
 
 test('clean file (notice only) exits 0', () => {
   const r = run(['lint', '--rules', helloRules, example('hello.workflow.yaml')])
@@ -110,12 +112,34 @@ test('built dist/cli.js runs and exits 0 on the studio example', () => {
   expect(out).toMatch(/0 error\(s\), 0 warning\(s\)/)
 })
 
+// A published `bin` is invoked through a symlink (npm) or shim (pnpm) whose
+// realpath differs from argv[1] — Node resolves the main module through the
+// link before import.meta.url is set. The self-invocation guard at the
+// bottom of cli.ts must compare realpaths, not raw paths, or the CLI
+// silently no-ops (exit 0, no output) exactly like `npx @bffless/workflow-lint --help` did.
+test('runs when invoked through a bin symlink, same as invoked directly', () => {
+  const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
+  const dir = mkdtempSync(join(tmpdir(), 'workflow-lint-bin-'))
+  tmpDirs.push(dir)
+  const link = join(dir, 'workflow')
+  symlinkSync(cli, link)
+
+  const viaSymlink = execFileSync(process.execPath, [link, 'lint', '--quiet', example('studio.workflow.yaml')], {
+    encoding: 'utf8',
+  })
+  expect(viaSymlink).toMatch(/0 error\(s\), 0 warning\(s\)/)
+
+  const viaRealPath = execFileSync(process.execPath, [cli, 'lint', '--quiet', example('studio.workflow.yaml')], {
+    encoding: 'utf8',
+  })
+  expect(viaRealPath).toMatch(/0 error\(s\), 0 warning\(s\)/)
+})
+
 // ---------------------------------------------------------------------------
 // `workflow index` — the publish-side verb a separate implementation repo runs
 // ---------------------------------------------------------------------------
 
 const plainImpl = (rel: string) => fileURLToPath(new URL(`./fixtures/plain-impl/${rel}`, import.meta.url))
-const tmpDirs: string[] = []
 
 function outDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'workflow-index-'))
