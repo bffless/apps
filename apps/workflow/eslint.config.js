@@ -21,16 +21,6 @@ export default defineConfig([
     },
   },
   {
-    // The hello bundle's `script` step modules: plain JS run in a Worker, copied
-    // verbatim by the stager — linted here, type-checked by `tsconfig.scripts.json`
-    // (apps#375).
-    files: ['hello/scripts/**/*.{js,mjs}'],
-    extends: [js.configs.recommended],
-    languageOptions: {
-      globals: globals.worker,
-    },
-  },
-  {
     files: ['src/lib/runner/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', {
