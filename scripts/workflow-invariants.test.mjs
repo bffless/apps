@@ -48,15 +48,20 @@ test('the bundles matrix only ever carries catalog apps', () => {
 // matrix fed from a release-please output needs a non-empty guard in its `if`, or the
 // first release that touches only the other half of the manifest kills the run. That is
 // exactly what the 2026-08-27 workflow-lint-v1.0.0 / workflow-script-v1.0.0 release did.
-for (const [job, output] of [
-  ['bundles', 'apps_released'],
-  ['publish-packages', 'packages_released'],
+// The window has to stop at the *next* job: sliced to the end of the file, or even to
+// publish-registry, the bundles case would span publish-packages too and pass on that
+// job's guard while bundles had none.
+for (const [job, output, endsAt] of [
+  ['bundles', 'apps_released', '\n  publish-packages:'],
+  ['publish-packages', 'packages_released', '\n  publish-registry:'],
 ]) {
   test(`${job} skips itself rather than failing the run on an empty matrix`, () => {
     const src = read('release.yml')
     const start = src.indexOf(`\n  ${job}:\n`)
     assert.ok(start > -1, `release.yml must define a ${job} job`)
-    const body = src.slice(start, src.indexOf('\n  publish-registry:'))
+    const end = src.indexOf(endsAt, start)
+    assert.ok(end > start, `release.yml must still define ${endsAt.trim()} after ${job}`)
+    const body = src.slice(start, end)
     assert.ok(
       body.includes(`needs.release.outputs.${output} != '[]'`),
       `${job} must guard on ${output} != '[]' — an empty matrix vector fails the whole run`,
@@ -77,7 +82,12 @@ test('publish-packages publishes the released packages from inside the release r
     /uses:\s*\.\/\.github\/workflows\/publish-workflow-lint\.yml/,
     'publish-packages must call the publish workflow',
   )
-  assert.match(body, /secrets:\s*inherit/, 'the called workflow requires NPM_TOKEN')
+  assert.match(
+    body,
+    /secrets:\s*\n\s*NPM_TOKEN:/,
+    'publish-packages must pass NPM_TOKEN explicitly — this repo does not inherit secrets into called workflows',
+  )
+  assert.doesNotMatch(body, /secrets:\s*inherit/, 'a called workflow gets only the secret it needs')
 })
 
 test('publish-registry does not wait on publish-packages', () => {

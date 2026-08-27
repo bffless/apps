@@ -146,7 +146,6 @@ jobs:
     needs: release
     if: |
       needs.release.outputs.releases_created == 'true'
-      && contains(needs.release.outputs.paths_released, 'packages/')
       && needs.release.outputs.packages_released != '[]'
     strategy:
       # One package's publish failure must not cancel the other's leg — recovery is
@@ -161,8 +160,10 @@ jobs:
     with:
       package: ${{ matrix.package }}
       ref: ${{ matrix.ref }}
-    # NPM_TOKEN, which the called workflow declares as required.
-    secrets: inherit
+    # Named rather than `inherit`, for the reason `bundles` gives above: a called
+    # workflow gets only the secret it needs, never the whole repository's set.
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-registry:
     needs: [release, bundles]
