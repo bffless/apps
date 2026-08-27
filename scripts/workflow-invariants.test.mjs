@@ -43,18 +43,99 @@ test('the bundles matrix only ever carries catalog apps', () => {
   )
 })
 
-test('every publishable package component has a publish workflow', () => {
+// GitHub refuses to *evaluate* a strategy whose matrix vector is empty — "Matrix vector
+// 'app' does not contain any values" fails the entire run, not just the job. So every
+// matrix fed from a release-please output needs a non-empty guard in its `if`, or the
+// first release that touches only the other half of the manifest kills the run. That is
+// exactly what the 2026-08-27 workflow-lint-v1.0.0 / workflow-script-v1.0.0 release did.
+// The window has to stop at the *next* job: sliced to the end of the file, or even to
+// publish-registry, the bundles case would span publish-packages too and pass on that
+// job's guard while bundles had none.
+for (const [job, output, endsAt] of [
+  ['bundles', 'apps_released', '\n  publish-packages:'],
+  ['publish-packages', 'packages_released', '\n  publish-registry:'],
+]) {
+  test(`${job} skips itself rather than failing the run on an empty matrix`, () => {
+    const src = read('release.yml')
+    const start = src.indexOf(`\n  ${job}:\n`)
+    assert.ok(start > -1, `release.yml must define a ${job} job`)
+    const end = src.indexOf(endsAt, start)
+    assert.ok(end > start, `release.yml must still define ${endsAt.trim()} after ${job}`)
+    const body = src.slice(start, end)
+    assert.ok(
+      body.includes(`needs.release.outputs.${output} != '[]'`),
+      `${job} must guard on ${output} != '[]' — an empty matrix vector fails the whole run`,
+    )
+  })
+}
+
+test('publish-packages publishes the released packages from inside the release run', () => {
+  // The publish cannot be driven by the tag: release-please cuts tags with
+  // GITHUB_TOKEN, and GitHub raises no push event for those refs.
+  const src = read('release.yml')
+  const start = src.indexOf('\n  publish-packages:\n')
+  assert.ok(start > -1, 'release.yml must define a publish-packages job')
+  const body = src.slice(start, src.indexOf('\n  publish-registry:'))
+  assert.match(body, /needs:\s*release\b/, 'publish-packages must run after release')
+  assert.match(
+    body,
+    /uses:\s*\.\/\.github\/workflows\/publish-workflow-lint\.yml/,
+    'publish-packages must call the publish workflow',
+  )
+  assert.match(
+    body,
+    /secrets:\s*\n\s*NPM_TOKEN:/,
+    'publish-packages must pass NPM_TOKEN explicitly — this repo does not inherit secrets into called workflows',
+  )
+  assert.doesNotMatch(body, /secrets:\s*inherit/, 'a called workflow gets only the secret it needs')
+})
+
+test('publish-registry does not wait on publish-packages', () => {
+  // An npm publish has nothing to do with the registry; chaining them would make an
+  // npm outage withhold the app registry.
+  const src = read('release.yml')
+  const job = src.slice(src.indexOf('publish-registry:'))
+  const needs = /needs:\s*\[([^\]]+)\]/.exec(job)
+  const names = needs[1].split(',').map((s) => s.trim())
+  assert.equal(names.includes('publish-packages'), false, names)
+})
+
+test('the package publish workflow is called, never triggered by its tag', () => {
+  // Release-please creates the release tags with the default GITHUB_TOKEN, and
+  // "events triggered by the GITHUB_TOKEN will not create a new workflow run"
+  // (GitHub docs). A `push: tags:` trigger here can therefore never fire — on
+  // 2026-08-27 both tags were cut, no run appeared, and npm got nothing.
+  const src = read('publish-workflow-lint.yml')
+  assert.match(src, /^\s{2}workflow_call:/m, 'release.yml calls this workflow')
+  assert.match(src, /^\s{2}workflow_dispatch:/m, 'manual recovery must stay possible')
+  assert.doesNotMatch(
+    src,
+    /^\s{2}push:/m,
+    'a tag-push trigger cannot fire for a tag release-please cut with GITHUB_TOKEN',
+  )
+})
+
+test('every publishable package component is wired into the release run', () => {
+  // The contract that replaced "a workflow triggers on the <component>-v* tag":
+  // release.yml must be able to resolve the component's tag, and the publish
+  // workflow must know its npm package — otherwise the release cuts a tag that
+  // nothing publishes, silently.
   const config = JSON.parse(
     readFileSync(join(workflowsDir, '..', '..', 'release-please-config.json'), 'utf8'),
   )
   const packages = Object.keys(config.packages).filter((k) => k.startsWith('packages/'))
   assert.ok(packages.length > 0, 'expected at least one packages/* component')
-  const publishers = all().map(read).join('\n')
+  const release = read('release.yml')
+  const publish = read('publish-workflow-lint.yml')
   for (const key of packages) {
     const component = config.packages[key].component
     assert.ok(
-      publishers.includes(`${component}-v*`),
-      `no workflow triggers on the ${component}-v* tag — the release would cut a tag nothing publishes`,
+      release.includes(`${key}--tag_name`),
+      `release.yml cannot resolve the tag for ${key} — add its ${key}--tag_name output to the map step's env`,
+    )
+    assert.ok(
+      publish.includes(`@bffless/${component}`),
+      `publish-workflow-lint.yml does not know the @bffless/${component} package — the release would cut a tag nothing publishes`,
     )
   }
 })
