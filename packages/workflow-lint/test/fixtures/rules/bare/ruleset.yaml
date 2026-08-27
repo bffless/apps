@@ -1,0 +1,2 @@
+name: bare
+description: "Fixture rule set in the published shape: no `api/` segment at all — `publish-workflow --path-prefix` supplies the whole prefix at sync time."

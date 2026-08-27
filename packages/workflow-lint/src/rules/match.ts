@@ -31,11 +31,19 @@ export interface RuleSetIndex {
   /** Absolute path of the rule-set directory (`…/.bffless/proxy-rules/<name>`). */
   dir: string
   /**
-   * Where this set's API rules live, read off the set itself — the same place
-   * the publisher will read it from. `/api/<alias>` while implementations
-   * author the prefix by hand; `/api` once `publish-workflow` rewrites it (06).
+   * The URL prefix a relative `with.path` resolves against — what the *server*
+   * will see. Read off the set (`/api/<alias>` while implementations author the
+   * prefix by hand, `/api` otherwise), or handed in as `--path-prefix`, which
+   * is what the publisher applies at sync time (06).
    */
   prefix: string
+  /**
+   * The same prefix as it appears *on disk*, under `rules/`. The two differ
+   * exactly when `--path-prefix` is in play: the publisher adds those segments
+   * at sync time, so the author never types them and the directory a missing
+   * rule should be added at carries no prefix at all (`''`).
+   */
+  layout: string
   rules: RuleEntry[]
 }
 
@@ -73,7 +81,7 @@ export function resolveUrl(index: RuleSetIndex, path: string): string {
 /** The manifest a missing rule should be authored as, relative to the set directory. */
 export function expectedRuleFile(index: RuleSetIndex, path: string, method: string): string {
   const segments = [
-    ...index.prefix.split('/').filter(Boolean),
+    ...index.layout.split('/').filter(Boolean),
     ...path.split('/').filter(Boolean),
     method.toLowerCase(),
   ]

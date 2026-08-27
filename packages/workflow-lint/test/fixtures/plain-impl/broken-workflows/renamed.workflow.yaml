@@ -1,0 +1,11 @@
+spec: 1
+name: Renamed
+description: The step names a path the rule set does not serve.
+on:
+  manual: {}
+jobs:
+  echo:
+    steps:
+      - id: echo
+        uses: pipeline
+        with: { path: echoo }

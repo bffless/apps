@@ -1,0 +1,5 @@
+targetUrl: pipeline
+# An explicit pathPattern opts out of the derivation entirely, so the publisher
+# leaves it verbatim — no --path-prefix is added to it.
+pathPattern: /w/bare/*
+description: GET /w/bare/* (verbatim, prefix-exempt)

@@ -12,14 +12,24 @@ This package lives in `packages/` (not `apps/`) deliberately: `apps/workflow/`
 stays spec-only until M1 builds the harness, and spec 07 already plans
 `packages/workflow-headless` alongside it.
 
-## CLI
+## Install
 
-```
-workflow lint <file...> [--json] [--quiet] [--rules <dir>] [--alias <alias>]
+Published to npm as **`@bffless/workflow-lint`**, so an implementation repo that
+lives outside this monorepo can run it without vendoring anything:
+
+```bash
+npx @bffless/workflow-lint lint .bffless/workflows/*.yaml
 ```
 
 Inside the monorepo: `pnpm --filter @bffless/workflow-lint build`, then
 `node packages/workflow-lint/dist/cli.js lint <file...>`.
+
+## CLI
+
+```
+workflow lint  <file...> [--json] [--quiet] [--rules <dir>] [--alias <alias>] [--path-prefix <p>]
+workflow index <workflows-dir> --out <dir> --impl <alias> --name <display> [options]
+```
 
 - `--json` — machine-readable `{ version, files: [{ file, findings, counts }], summary }`
 - `--quiet` — hide notices
@@ -27,7 +37,63 @@ Inside the monorepo: `pnpm --filter @bffless/workflow-lint build`, then
   check every relative `with.path` against the rule that serves it
 - `--alias <alias>` — which set under `.bffless/proxy-rules/` to use; only
   needed when the search finds several
+- `--path-prefix <p>` — see [below](#--path-prefix)
 - Exit codes: **0** clean (notices allowed) · **1** any error or warning · **2** usage/IO error
+
+### `workflow index`
+
+The publish step. It lints every workflow in `<workflows-dir>` and — **only if
+they all pass** — writes the bundle an implementation deploys:
+
+```bash
+npx @bffless/workflow-lint index .bffless/workflows \
+  --out dist --impl hello --name Hello \
+  --rules .bffless/proxy-rules/hello --path-prefix /api/hello
+```
+
+writes
+
+```
+dist/.bffless/workflows/index.json      the generated listing the harness reads
+dist/.bffless/workflows/*.workflow.yaml the YAMLs, copied verbatim
+dist/index.html                         a landing page, so the alias is not a bare 404
+```
+
+`index.json` also lists the `dist/islands/*.html` and `dist/scripts/*.js` that
+are **already** staged under `--out`: this verb never builds them, it records
+what the implementation's own build put there. Only
+`dist/.bffless/workflows/` is cleared on each run, so a renamed workflow cannot
+linger while an island someone else staged survives.
+
+| Option | |
+| --- | --- |
+| `--out <dir>` | bundle root (required) |
+| `--impl <alias>` | the alias the bundle deploys to (required) |
+| `--name <display>` | shown on the harness's Implementations screen (required) |
+| `--description <text>` | one line about the bundle |
+| `--version <v>` | default: the nearest `package.json` above `<workflows-dir>`, else `0.0.0` |
+| `--commit <sha>` | default: `$GITHUB_SHA` (7 chars), else `unknown` — never a `git` shell-out |
+
+Exit codes match `lint`: **1** if any workflow fails, and then nothing is
+written at all — a bundle whose `index.json` predates the failure is worse than
+no bundle.
+
+### `--path-prefix`
+
+At publish time the `bffless` CLI prepends `/api/<alias>` to every **derived**
+`pathPattern`, so an implementation repo authors its rules prefix-free
+(`rules/echo/post/rule.yaml`, not `rules/api/hello/echo/post/rule.yaml`). Pass
+the same prefix here and the check resolves the way the deployed set will:
+
+```
+with: { path: echo }  →  POST /api/hello/echo  →  rules/echo/post/rule.yaml
+```
+
+A manifest that spells `pathPattern:` out has opted out of the derivation and is
+left verbatim — the prefix is not added to it, here or at publish time.
+
+Without the flag, nothing changes: the prefix is read off the set on disk and
+the expected file keeps the prefix the author typed.
 
 ### Checking paths against the rule set
 
@@ -45,8 +111,9 @@ found, or several are, the check is skipped with a **notice**: the harness lints
 in the browser with no repo in sight (09) and must keep working.
 
 The prefix comes off the set itself — `/api/<alias>` while implementations
-author it by hand, `/api` once `publish-workflow` rewrites it at sync time (06)
-— so the check follows the layout instead of dictating it.
+author it by hand, `/api` otherwise — so the check follows the layout instead
+of dictating it. A repo that publishes with `--path-prefix` passes the same
+flag here; see [`--path-prefix`](#--path-prefix).
 
 ## Severity policy
 
@@ -87,18 +154,24 @@ deliberately omits `outputs`, which 03 says the linter flags) — asserted in
 ## Programmatic API
 
 ```ts
-import { lintSource, lintFile, resolveRuleSet, scanRuleSet } from '@bffless/workflow-lint'
+import { lintSource, lintFile, resolveRuleSet, scanRuleSet, buildIndex } from '@bffless/workflow-lint'
 
 const { findings, counts } = lintSource(yamlText, { file: 'x.workflow.yaml' })
 
 // repo-aware: also check every relative path against the rule that serves it
 lintSource(yamlText, { file, rules: scanRuleSet('.bffless/proxy-rules/hello') })
 lintFile(file, { rules: resolveRuleSet({ file }) })   // what the CLI does
+lintFile(file, { rules: scanRuleSet(dir, { pathPrefix: '/api/hello' }) })
+
+// what `workflow index` computes, as a pure function of its arguments
+const built = buildIndex({ impl, name, version, commit, workflows, islands, scripts, rules })
+if (built.ok) console.log(built.index.workflows)
 ```
 
 `scanRuleSet`/`resolveRuleSet` are the only filesystem-touching exports and
 live on the package root; `@bffless/workflow-lint/lint` stays importable from
-the browser.
+the browser. `buildIndex` is pure too — the writer half (`src/index/write.ts`)
+owns the reads, the `generatedAt` timestamp and the landing page.
 
 Findings carry `rule`, `severity`, `message`, a JSON-pointer `path`, a 1-based
 `pos` (line/col) and an optional `hint`.

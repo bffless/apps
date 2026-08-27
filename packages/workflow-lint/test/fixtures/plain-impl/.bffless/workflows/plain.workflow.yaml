@@ -1,0 +1,11 @@
+spec: 1
+name: Plain
+description: One echo step, checked against a prefix-free rule set.
+on:
+  manual: {}
+jobs:
+  echo:
+    steps:
+      - id: echo
+        uses: pipeline
+        with: { path: echo }

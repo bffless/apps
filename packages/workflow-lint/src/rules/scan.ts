@@ -42,27 +42,44 @@ function methodsOf(stem: string, manifest: Record<string, unknown>): string[] | 
   return undefined
 }
 
-function collect(dir: string, segments: string[], setDir: string, out: RuleEntry[]): void {
+function collect(
+  dir: string,
+  segments: string[],
+  setDir: string,
+  out: RuleEntry[],
+  pathPrefix: string,
+): void {
   if (!existsSync(dir)) return
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const full = join(dir, entry.name)
     if (entry.isFile()) {
       const stem = RULE_FILE_RE.exec(entry.name)?.[1]
-      if (stem) push(full, stem, segments, setDir, out)
+      if (stem) push(full, stem, segments, setDir, out, pathPrefix)
       continue
     }
     if (!entry.isDirectory()) continue
     const ruleYaml = join(full, 'rule.yaml')
-    if (METHOD_STEMS.has(entry.name) && existsSync(ruleYaml)) push(ruleYaml, entry.name, segments, setDir, out)
-    else collect(full, [...segments, entry.name], setDir, out)
+    if (METHOD_STEMS.has(entry.name) && existsSync(ruleYaml)) {
+      push(ruleYaml, entry.name, segments, setDir, out, pathPrefix)
+    } else collect(full, [...segments, entry.name], setDir, out, pathPrefix)
   }
 }
 
-function push(manifestPath: string, stem: string, segments: string[], setDir: string, out: RuleEntry[]): void {
+function push(
+  manifestPath: string,
+  stem: string,
+  segments: string[],
+  setDir: string,
+  out: RuleEntry[],
+  pathPrefix: string,
+): void {
   const manifest = readYaml(manifestPath)
   if (manifest.isEnabled === false) return
+  // The publisher's `--path-prefix` is added to *derived* patterns only: a
+  // manifest that spells `pathPattern:` out has opted out of the derivation
+  // entirely, and the CLI syncs it verbatim (06).
   const pattern =
-    typeof manifest.pathPattern === 'string' ? manifest.pathPattern : segmentsToPattern(segments)
+    typeof manifest.pathPattern === 'string' ? manifest.pathPattern : pathPrefix + segmentsToPattern(segments)
   out.push({
     pattern,
     methods: methodsOf(stem, manifest),
@@ -70,21 +87,34 @@ function push(manifestPath: string, stem: string, segments: string[], setDir: st
   })
 }
 
+export interface ScanOptions {
+  /** The alias the set deploys to; defaults to the set's `name:`. */
+  alias?: string
+  /**
+   * `--path-prefix`: the prefix the publisher prepends to every *derived*
+   * pathPattern at sync time. Given it, the set on disk is prefix-free and the
+   * URL prefix is this flag; without it the prefix is read off the set.
+   */
+  pathPrefix?: string
+}
+
 /**
  * Index the rule set at `dir`. `alias` defaults to the set's `name:` — the
  * name it syncs under, which is also the alias it is attached to (06).
  */
-export function scanRuleSet(dir: string, opts: { alias?: string } = {}): RuleSetIndex {
+export function scanRuleSet(dir: string, opts: ScanOptions = {}): RuleSetIndex {
   const setDir = resolve(dir)
   const manifest = existsSync(join(setDir, 'ruleset.yaml')) ? readYaml(join(setDir, 'ruleset.yaml')) : {}
   const alias = opts.alias ?? (typeof manifest.name === 'string' ? manifest.name : basename(setDir))
   const rules: RuleEntry[] = []
-  collect(join(setDir, 'rules'), [], setDir, rules)
-  // The prefix is read off the set, so the check follows the layout rather than
-  // dictating it: hand-prefixed today, bare `/api` once publish-workflow adds
-  // the prefix at sync time (06).
-  const prefix = existsSync(join(setDir, 'rules', 'api', alias)) ? `/api/${alias}` : '/api'
-  return { found: true, alias, dir: setDir, prefix, rules }
+  collect(join(setDir, 'rules'), [], setDir, rules, opts.pathPrefix ?? '')
+  // Without --path-prefix the prefix is read off the set, so the check follows
+  // the layout rather than dictating it (hand-prefixed `/api/<alias>`, or bare
+  // `/api`). With it, the URL prefix is the flag and the disk layout is bare —
+  // which is exactly what `expectedRuleFile` has to name (06).
+  const prefix = opts.pathPrefix ?? (existsSync(join(setDir, 'rules', 'api', alias)) ? `/api/${alias}` : '/api')
+  const layout = opts.pathPrefix === undefined ? prefix : ''
+  return { found: true, alias, dir: setDir, prefix, layout, rules }
 }
 
 export interface ResolveOptions {
@@ -94,6 +124,8 @@ export interface ResolveOptions {
   rulesDir?: string
   /** `--alias`: picks one set when several are found, and names the deployed alias. */
   alias?: string
+  /** `--path-prefix`: the prefix the publisher adds to every derived pathPattern. */
+  pathPrefix?: string
 }
 
 /** The nearest `.bffless/proxy-rules` at or above `from`. */
@@ -118,7 +150,7 @@ export function resolveRuleSet(opts: ResolveOptions): RuleSetContext {
     if (opts.rulesDir) {
       const dir = resolve(opts.rulesDir)
       if (!existsSync(dir)) return { found: false, reason: `no such rule-set directory: ${opts.rulesDir}` }
-      return scanRuleSet(dir, { alias: opts.alias })
+      return scanRuleSet(dir, { alias: opts.alias, pathPrefix: opts.pathPrefix })
     }
 
     if (!opts.file) return { found: false, reason: 'no file to search from; pass --rules <dir>' }
@@ -137,13 +169,13 @@ export function resolveRuleSet(opts: ResolveOptions): RuleSetContext {
       if (!sets.includes(opts.alias)) {
         return { found: false, reason: `no \`${opts.alias}\` rule set in ${proxyRules} (found ${sets.join(', ')})` }
       }
-      return scanRuleSet(join(proxyRules, opts.alias), { alias: opts.alias })
+      return scanRuleSet(join(proxyRules, opts.alias), { alias: opts.alias, pathPrefix: opts.pathPrefix })
     }
     const only = sets[0]
     if (sets.length > 1 || only === undefined) {
       return { found: false, reason: `several rule sets in ${proxyRules} (${sets.join(', ')}) — pass --alias` }
     }
-    return scanRuleSet(join(proxyRules, only))
+    return scanRuleSet(join(proxyRules, only), { pathPrefix: opts.pathPrefix })
   } catch (err) {
     return { found: false, reason: (err as Error).message }
   }

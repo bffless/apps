@@ -1,17 +1,22 @@
 {
   "name": "@bffless/workflow-lint",
-  "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "description": "Parser, schema validation, expression engine and static checks for BFFless Workflow YAML (spec: apps/workflow/docs/spec/)",
+  "keywords": ["bffless", "workflow", "lint", "yaml"],
+  "repository": { "type": "git", "url": "git+https://github.com/bffless/apps.git", "directory": "packages/workflow-lint" },
+  "publishConfig": { "access": "public" },
   "bin": { "workflow": "dist/cli.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./lint": "./dist/lint.js",
-    "./expressions": "./dist/expressions/index.js",
-    "./definition": "./dist/model/definition.js"
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./lint": { "types": "./dist/lint.d.ts", "default": "./dist/lint.js" },
+    "./expressions": { "types": "./dist/expressions/index.d.ts", "default": "./dist/expressions/index.js" },
+    "./definition": { "types": "./dist/model/definition.d.ts", "default": "./dist/model/definition.js" }
   },
-  "files": ["dist", "schema"],
+  "files": ["dist", "schema", "README.md"],
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc -b",

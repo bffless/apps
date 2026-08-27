@@ -1,8 +1,11 @@
 {
   "name": "@bffless/workflow-script",
-  "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "private": false,
   "description": "Types for the `script` step module contract (spec apps/workflow/docs/spec/03-step-kinds.md) — zero runtime.",
+  "keywords": ["bffless", "workflow", "types"],
+  "repository": { "type": "git", "url": "git+https://github.com/bffless/apps.git", "directory": "packages/workflow-script" },
+  "publishConfig": { "access": "public" },
   "types": "./index.d.ts",
-  "files": ["index.d.ts"]
+  "files": ["index.d.ts", "README.md"]
 }
