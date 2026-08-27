@@ -15,7 +15,7 @@ stays spec-only until M1 builds the harness, and spec 07 already plans
 ## CLI
 
 ```
-workflow lint <file...> [--json] [--quiet]
+workflow lint <file...> [--json] [--quiet] [--rules <dir>] [--alias <alias>]
 ```
 
 Inside the monorepo: `pnpm --filter @bffless/workflow-lint build`, then
@@ -23,7 +23,30 @@ Inside the monorepo: `pnpm --filter @bffless/workflow-lint build`, then
 
 - `--json` — machine-readable `{ version, files: [{ file, findings, counts }], summary }`
 - `--quiet` — hide notices
+- `--rules <dir>` — the implementation's proxy-rule set, so `rule-missing` can
+  check every relative `with.path` against the rule that serves it
+- `--alias <alias>` — which set under `.bffless/proxy-rules/` to use; only
+  needed when the search finds several
 - Exit codes: **0** clean (notices allowed) · **1** any error or warning · **2** usage/IO error
+
+### Checking paths against the rule set
+
+A `pipeline` step names its endpoint relative to the implementation
+(`with: { path: echo }` → `POST /api/<alias>/echo`, 01) while the endpoint is a
+directory in the implementation's rule set
+(`rules/api/<alias>/echo/post/rule.yaml`). Nothing else links the two, so
+`rule-missing` does: given a rule set it resolves each relative path and fails
+when no rule would serve it.
+
+Without `--rules`, the nearest `.bffless/proxy-rules/` **above the file** is
+used — the real implementation layout (`.bffless/workflows/x.yaml` beside
+`.bffless/proxy-rules/<alias>/`) resolves with no flags at all. When no set is
+found, or several are, the check is skipped with a **notice**: the harness lints
+in the browser with no repo in sight (09) and must keep working.
+
+The prefix comes off the set itself — `/api/<alias>` while implementations
+author it by hand, `/api` once `publish-workflow` rewrites it at sync time (06)
+— so the check follows the layout instead of dictating it.
 
 ## Severity policy
 
@@ -58,14 +81,24 @@ deliberately omits `outputs`, which 03 says the linter flags) — asserted in
 | `interactive-headless` | notice | island/form steps with no `headless` (not headless-safe) | 07 |
 | `outputs-omitted` | notice | pipeline steps with no `outputs` map (exposes only `outputs.response`) | 03 |
 | `untyped-job-output` | notice | computed job outputs that will type as `json` — suggest `{ type, value }` | 01 |
+| `rule-missing` | error | a relative `with.path`/`poll.path` with no rule behind it in the implementation's rule set (a run-time 404); a **notice** when no rule set could be resolved | 06 |
 | `tool-name-dot` | notice | a pipeline `with.path` containing `.`, in a workflow with ≥1 island step — only reachable by its slash-form tool name | Decision 1 |
 
 ## Programmatic API
 
 ```ts
-import { lintSource, lintFile } from '@bffless/workflow-lint'
+import { lintSource, lintFile, resolveRuleSet, scanRuleSet } from '@bffless/workflow-lint'
+
 const { findings, counts } = lintSource(yamlText, { file: 'x.workflow.yaml' })
+
+// repo-aware: also check every relative path against the rule that serves it
+lintSource(yamlText, { file, rules: scanRuleSet('.bffless/proxy-rules/hello') })
+lintFile(file, { rules: resolveRuleSet({ file }) })   // what the CLI does
 ```
+
+`scanRuleSet`/`resolveRuleSet` are the only filesystem-touching exports and
+live on the package root; `@bffless/workflow-lint/lint` stays importable from
+the browser.
 
 Findings carry `rule`, `severity`, `message`, a JSON-pointer `path`, a 1-based
 `pos` (line/col) and an optional `hint`.

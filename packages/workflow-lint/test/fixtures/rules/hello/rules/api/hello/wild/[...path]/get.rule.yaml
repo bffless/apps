@@ -1,0 +1,2 @@
+targetUrl: pipeline
+description: GET /api/hello/wild/* — a catch-all in the single-file form

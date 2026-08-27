@@ -12,8 +12,10 @@ import { checkPaths } from './paths.js'
 import { checkBody } from './body.js'
 import { checkHeadless } from './headless.js'
 import { checkOutputs } from './outputs.js'
+import { checkRules } from './rules.js'
+import type { RuleSetContext } from '../rules/match.js'
 
-export function runChecks(def: Definition, sites: ExprSite[]): Finding[] {
+export function runChecks(def: Definition, sites: ExprSite[], rules?: RuleSetContext): Finding[] {
   return [
     ...checkIds(def),
     ...checkGraph(def),
@@ -26,5 +28,6 @@ export function runChecks(def: Definition, sites: ExprSite[]): Finding[] {
     ...checkBody(def, sites),
     ...checkHeadless(def, sites),
     ...checkOutputs(def),
+    ...checkRules(def, rules),
   ]
 }

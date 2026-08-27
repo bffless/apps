@@ -1,0 +1,2 @@
+name: solo
+description: "Fixture: the real implementation layout — one rule set next to .bffless/workflows/, so the linter can resolve it with no flags."

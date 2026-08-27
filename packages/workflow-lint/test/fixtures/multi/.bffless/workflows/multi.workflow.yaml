@@ -1,0 +1,10 @@
+spec: 1
+name: Multi
+on:
+  manual: {}
+jobs:
+  ping:
+    steps:
+      - id: ping
+        uses: pipeline
+        with: { path: ping }

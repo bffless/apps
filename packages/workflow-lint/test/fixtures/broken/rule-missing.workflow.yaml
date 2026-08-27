@@ -1,0 +1,29 @@
+# Every relative path here is checked against a rule set the linter is pointed
+# at (--rules). `echo` is real; `echoo` and the `jobs` poll are the two typos
+# the `rule-missing` check exists to catch (06). With no rule set in sight the
+# file lints clean — see the corpus expectation.
+spec: 1
+name: Missing rules
+on:
+  manual: {}
+jobs:
+  work:
+    steps:
+      - id: ok
+        uses: pipeline
+        with: { path: echo, body: { text: hi } }
+        outputs:
+          line: { type: string, value: "${{ response.text }}" }
+      - id: typo
+        uses: pipeline
+        with: { path: echoo, body: { text: hi } }
+        outputs:
+          line: { type: string, value: "${{ response.text }}" }
+      - id: polled
+        uses: pipeline
+        with: { path: slow, body: {} }
+        poll:
+          path: jobs
+          until: ${{ response.status == 'done' }}
+        outputs:
+          done: { type: boolean, value: "${{ response.status == 'done' }}" }

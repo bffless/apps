@@ -1,0 +1,2 @@
+targetUrl: pipeline
+description: GET /api/hello/job — what a `poll` block reads
