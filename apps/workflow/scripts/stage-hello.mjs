@@ -22,8 +22,8 @@ const repo = process.env.WORKFLOW_HELLO_REPO ?? 'https://github.com/bffless/work
 if (!existsSync(src) || execFileSync('git', ['-C', src, 'rev-parse', 'HEAD']).toString().trim() !== ref) {
   rmSync(src, { recursive: true, force: true })
   // A `file://` remote (WORKFLOW_HELLO_REPO, for iterating on both repos at
-  // once) is a plain local path as far as git clone is concerned — a shallow
-  // clone works the same way it does over the network.
+  // once) clones the same way a real GitHub URL does — `git clone` treats it
+  // as just another remote.
   execFileSync('git', ['clone', '--quiet', repo, src], { stdio: 'inherit' })
   execFileSync('git', ['-C', src, 'checkout', '--quiet', ref], { stdio: 'inherit' })
 }
