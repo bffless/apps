@@ -1,0 +1,13 @@
+# Changelog
+
+## 1.0.0 (2026-08-27)
+
+
+### Features
+
+* **workflow-lint:** publish the package, add the index verb and --path-prefix ([#396](https://github.com/bffless/apps/issues/396)) ([a900b9d](https://github.com/bffless/apps/commit/a900b9d506fb025b2e5deb099b205ae931ed571d))
+* **workflow-lint:** workflow lint prototype for M0 ([#356](https://github.com/bffless/apps/issues/356)) ([806d5a6](https://github.com/bffless/apps/commit/806d5a67cb14a6c2f699f298099ee27fb49fba8b))
+* **workflow:** harness scaffold, rule set and pure run engine ([#357](https://github.com/bffless/apps/issues/357)) ([7c74d24](https://github.com/bffless/apps/commit/7c74d24fe03d1e31355ef0d93b6acb57d11ca5ed))
+* **workflow:** island host and the island step ([#368](https://github.com/bffless/apps/issues/368)) ([189f2a5](https://github.com/bffless/apps/commit/189f2a52dae3d639a5547c7a0e31baa99cac02f5))
+* **workflow:** lint a relative pipeline path against the rule that serves it ([#394](https://github.com/bffless/apps/issues/394)) ([6e2bbc7](https://github.com/bffless/apps/commit/6e2bbc7e0125f9932b556ed372c3d9e8e407bdfc)), closes [#388](https://github.com/bffless/apps/issues/388)
+* **workflow:** named renderers, form upgrades and run deletion ([#378](https://github.com/bffless/apps/issues/378)) ([a5221a0](https://github.com/bffless/apps/commit/a5221a0ba5e6b0a1c56ecb6c93fa2858e87d7196))
