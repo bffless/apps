@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/bffless/apps/compare/workflow-lint-v1.0.0...workflow-lint-v1.0.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **workflow-lint:** run the CLI when invoked through a bin symlink ([#401](https://github.com/bffless/apps/issues/401)) ([677f0b7](https://github.com/bffless/apps/commit/677f0b7dbebe067c64c137cd0f62bc98aff6cfc7))
+
 ## 1.0.0 (2026-08-27)
 
 
