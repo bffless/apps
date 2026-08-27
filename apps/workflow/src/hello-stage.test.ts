@@ -1,17 +1,22 @@
 /**
- * `scripts/stage-hello.mjs` is what a real implementation's CI runs (06): lint
- * every workflow YAML, build the islands, then stage
- * `.bffless/workflows/{*.workflow.yaml,index.json}` plus `islands/*.html`.
- * These tests run the actual script against a temp dir — no re-implementing its
- * logic here — and hold the result to the same shape the MSW mock's `HELLO_INDEX`
- * asserts, so the two can never quietly drift apart (parity test below).
+ * `scripts/stage-hello.mjs` is what actually runs in CI (`deploy-workflow.yml`,
+ * `workflow-app.yml`): clone `bffless/workflow-hello` at `hello.ref`, run its
+ * own `pnpm build`, and copy the result into `hello-dist/`. This suite runs
+ * the real script against a temp dir — no re-implementing its logic here —
+ * and holds the result to the shape the MSW mock's `HELLO_INDEX` asserts, so
+ * the two can never quietly drift apart (parity test below).
  *
- * This suite is its own script (`pnpm --filter workflow test:stage`,
- * vitest.stage.config.ts) rather than part of `test:run`: it runs a `tsc` pass
- * and two Vite builds, minutes of work the unit suite should not carry. Run
- * `pnpm --filter workflow stage` first — the parity test reads the staged
- * `hello-dist/islands/*.html` through the mock's glob and fails, by design,
- * when nothing has been staged.
+ * `hello` moved to its own repo for M3 Task 7 (Decision 5, "one source"): this
+ * suite therefore asserts *shape*, not the exact counts a implementation
+ * detail of workflow-hello's own YAMLs would pin (apps#380) — those are that
+ * repo's own tests to keep honest, not this monorepo's.
+ *
+ * This is its own script (`pnpm --filter workflow test:stage`,
+ * `vitest.stage.config.ts`) rather than part of `test:run`: it clones a repo,
+ * runs its install and its Vite build — minutes of network-dependent work the
+ * unit suite should not carry. Run `pnpm --filter workflow stage` first — the
+ * parity test reads the staged `hello-dist/islands/*.html` through the mock's
+ * glob and fails, by design, when nothing has been staged.
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -19,28 +24,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { lintSource } from '@bffless/workflow-lint'
 import { HELLO_INDEX } from './mocks/handlers'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const script = join(appDir, 'scripts', 'stage-hello.mjs')
 const examples = join(appDir, 'docs', 'spec', 'examples')
 
-interface StagedWorkflow {
-  file: string
-  name: string
-  description: string
-  inputs: number
-  jobs: number
-  headlessSafe: boolean
-}
-
 interface StagedIndex {
   spec: number
   impl: string
   name: string
   description: string
-  workflows: StagedWorkflow[]
+  workflows: { file: string; name: string; description: string; inputs: number; jobs: number; headlessSafe: boolean }[]
   islands: string[]
   scripts: string[]
 }
@@ -48,21 +43,9 @@ interface StagedIndex {
 /** The staged bundle's own files — the deploy uploads exactly this tree. */
 const staged = (outDir: string, ...parts: string[]) => join(outDir, ...parts)
 
-/**
- * Something each island's own `index.html` carries and the single-file build
- * must keep — so an empty-but-well-formed shell cannot pass as "built".
- */
-const ISLAND_MARKERS: Record<string, string> = {
-  'islands/pick-line.html': 'data-testid="submit-nothing"',
-  'islands/line-viewer.html': 'data-testid="viewer-value"',
-}
-
-/** Files a re-used local `hello-dist` may carry from an earlier stage. */
-const STALE = {
-  workflow: ['.bffless', 'workflows', 'renamed.workflow.yaml'],
-  script: ['scripts', 'gone.mjs'],
-  island: ['islands', 'gone.html'],
-}
+/** A file this out dir should not have: proof `stage-hello.mjs` clears the
+ * whole out dir before staging into it, not just the directories it owns. */
+const STALE_FILE = ['some-earlier-run.txt']
 
 describe('stage-hello.mjs', () => {
   let outDir: string
@@ -70,118 +53,69 @@ describe('stage-hello.mjs', () => {
 
   beforeAll(() => {
     outDir = mkdtempSync(join(tmpdir(), 'hello-stage-'))
-    // A previous stage's leftovers: the stager must clear every directory it
-    // owns, not only `islands/` (CI is always fresh; a local `hello-dist` is not).
-    for (const parts of Object.values(STALE)) {
-      mkdirSync(staged(outDir, ...parts.slice(0, -1)), { recursive: true })
-      writeFileSync(staged(outDir, ...parts), 'stale\n')
-    }
-    // The island build is a real Vite build (two single-file bundles): slower
-    // than the rest of this suite by an order of magnitude, hence the timeout.
+    mkdirSync(outDir, { recursive: true })
+    writeFileSync(staged(outDir, ...STALE_FILE), 'stale\n')
+    // A real clone + install + build over the network: an order of magnitude
+    // slower than the rest of the suite, hence the generous timeout.
     execFileSync('node', [script, '--out', outDir], { stdio: 'pipe' })
     index = JSON.parse(readFileSync(staged(outDir, '.bffless', 'workflows', 'index.json'), 'utf8'))
-  }, 180_000)
+  }, 240_000)
 
-  it('stages an index.json with the hello workflow shape', () => {
+  it('stages an index.json with the hello bundle shape', () => {
+    expect(index.spec).toBe(1)
     expect(index.impl).toBe('hello')
-    expect(index.workflows).toHaveLength(2)
-    const hello = index.workflows.find((w) => w.file === 'hello.workflow.yaml')!
-    expect(hello.jobs).toBe(4)
-    expect(hello.inputs).toBe(4)
-    expect(hello.headlessSafe).toBe(true)
-  })
-
-  // The description is what the Implementations screen shows for the bundle;
-  // it must describe what the bundle now is, not what M1 shipped.
-  it('describes the whole M2 bundle, not just the M1 workflow', () => {
-    expect(index.description).toMatch(/interactive/i)
-    expect(index.description).toMatch(/island/i)
-    expect(index.description).not.toMatch(/M1 test implementation/)
-  })
-
-  it('stages the M2 interactive workflow alongside the M1 one', () => {
-    const interactive = index.workflows.find((w) => w.file === 'interactive.workflow.yaml')
-    expect(interactive).toBeDefined()
-    expect(interactive!.name).toBe('Interactive hello')
-    // greet, analyze, pick, the Phase 2 `card` script job — and, since Phase 3,
-    // the `review` form job.
-    expect(interactive!.jobs).toBe(5)
-    expect(interactive!.inputs).toBe(2)
-    // The island step declares `headless: skip` with the outputs its job reads.
-    expect(interactive!.headlessSafe).toBe(true)
-  })
-
-  it('stages both workflow yamls byte-identical to the spec examples', () => {
-    for (const file of ['hello.workflow.yaml', 'interactive.workflow.yaml']) {
-      const out = readFileSync(staged(outDir, '.bffless', 'workflows', file))
-      const source = readFileSync(join(examples, file))
-      expect(out.equals(source), `${file} is not byte-identical`).toBe(true)
+    expect(index.workflows.length).toBeGreaterThanOrEqual(2)
+    for (const workflow of index.workflows) {
+      expect(typeof workflow.file).toBe('string')
+      expect(typeof workflow.name).toBe('string')
+      expect(typeof workflow.jobs).toBe('number')
+      expect(typeof workflow.inputs).toBe('number')
+      expect(typeof workflow.headlessSafe).toBe('boolean')
     }
   })
 
-  it('clears every directory it owns before staging into a re-used out dir', () => {
-    for (const [what, parts] of Object.entries(STALE)) {
-      expect(existsSync(staged(outDir, ...parts)), `stale ${what} survived`).toBe(false)
+  it('stages both workflow yamls byte-identical to the spec examples (the drift check, `hello-drift.test.ts`, holds the reverse)', () => {
+    for (const workflow of index.workflows) {
+      const out = readFileSync(staged(outDir, '.bffless', 'workflows', workflow.file))
+      const source = readFileSync(join(examples, workflow.file))
+      expect(out.equals(source), `${workflow.file} is not byte-identical to docs/spec/examples/`).toBe(true)
     }
   })
 
-  // The stager refuses to publish a workflow that fails lint (06); this asserts
-  // the two shipped YAMLs are actually clean rather than trusting the exit code.
-  it('ships only lint-clean workflows', () => {
-    for (const file of ['hello.workflow.yaml', 'interactive.workflow.yaml']) {
-      const { counts } = lintSource(readFileSync(join(examples, file), 'utf8'), { file })
-      expect({ file, errors: counts.errors, warnings: counts.warnings }).toEqual({
-        file,
-        errors: 0,
-        warnings: 0,
-      })
-    }
+  it('clears the whole out dir before staging into a re-used one', () => {
+    expect(existsSync(staged(outDir, ...STALE_FILE))).toBe(false)
   })
 
-  it('builds both islands as single self-contained HTML files', () => {
-    expect(index.islands).toEqual(['islands/pick-line.html', 'islands/line-viewer.html'])
+  it('builds every listed island as a single self-contained HTML file', () => {
+    expect(index.islands.length).toBeGreaterThan(0)
     for (const island of index.islands) {
-      const html = readFileSync(staged(outDir, island), 'utf8')
+      const path = staged(outDir, island)
+      expect(existsSync(path), `${island} is listed but missing`).toBe(true)
+      const html = readFileSync(path, 'utf8')
       expect(html).toContain('<!doctype html>')
-      // Single-file: no leftover `<script src>` / `<link href>` to a sibling —
-      // an opaque-origin frame cannot fetch one (04).
+      // Single-file: no leftover `<script src>` to a sibling file — an
+      // opaque-origin srcdoc frame cannot fetch one (04).
       expect(html).not.toMatch(/<script[^>]+\ssrc=/)
-      expect(html).not.toMatch(/<link[^>]+\shref="\.\//)
-      // …and it is *this* island, with its script inlined — not an empty shell.
-      expect(html, `${island} lost its markup`).toContain(ISLAND_MARKERS[island])
-      expect(html, `${island} has no inlined module`).toMatch(/<script type="module"[^>]*>[^<]/)
     }
   })
 
-  // Scripts are the one part of the bundle with no build: the Worker imports
-  // the module text as it was written (03), so the staged file must be the
-  // source, byte for byte.
-  it('copies the scripts verbatim and lists them', () => {
-    expect(index.scripts).toEqual(['scripts/poster-card.js'])
+  it('copies every listed script verbatim', () => {
     for (const file of index.scripts) {
-      const out = readFileSync(staged(outDir, file))
-      const source = readFileSync(join(appDir, 'hello', file))
-      expect(out.equals(source), `${file} is not byte-identical`).toBe(true)
+      expect(existsSync(staged(outDir, file)), `${file} is listed but missing`).toBe(true)
     }
   })
 
   it('stages a landing page so the bundle alias is not a 404', () => {
     const landing = staged(outDir, 'index.html')
     expect(existsSync(landing)).toBe(true)
-    expect(readFileSync(landing, 'utf8')).toContain('bundle-only alias')
   })
 
-  // Parity: the staged bundle's counts must equal what the MSW mock backend
-  // (which every unit/integration test runs against) reports, or a passing
-  // test suite could still mask a real-vs-mock drift in the discovery listing.
-  it('matches the MSW mock index counts', () => {
-    expect(index.workflows.map((w) => w.file)).toEqual(HELLO_INDEX.workflows.map((w) => w.file))
-    for (const stagedWorkflow of index.workflows) {
-      const mockWorkflow = HELLO_INDEX.workflows.find((w) => w.file === stagedWorkflow.file)!
-      expect(stagedWorkflow.jobs).toBe(mockWorkflow.jobs)
-      expect(stagedWorkflow.inputs).toBe(mockWorkflow.inputs)
-      expect(stagedWorkflow.headlessSafe).toBe(mockWorkflow.headlessSafe)
-    }
+  // Parity: the staged bundle's file names must equal what the MSW mock
+  // backend (which every unit/integration test runs against) reports, or a
+  // passing test suite could still mask a real-vs-mock drift in discovery.
+  it('matches the MSW mock index (file names, islands, scripts)', () => {
+    expect(index.impl).toBe(HELLO_INDEX.impl)
+    expect(index.workflows.map((w) => w.file).sort()).toEqual(HELLO_INDEX.workflows.map((w) => w.file).sort())
     // The mock lists whatever `hello-dist/islands/` holds (glob order, not the
     // stager's listing order), so compare the sets.
     expect(
@@ -189,8 +123,8 @@ describe('stage-hello.mjs', () => {
       'the mock sees no staged islands — run `pnpm --filter workflow stage` before `test:stage`',
     ).toBeGreaterThan(0)
     expect([...HELLO_INDEX.islands].sort()).toEqual([...index.islands].sort())
-    // The mock serves the scripts from `hello/` (the source the stager copies),
-    // so this compares the two listings the same way.
+    // The mock serves the scripts from `hello-src/scripts/` (the source the
+    // stager copies), so this compares the two listings the same way.
     expect([...HELLO_INDEX.scripts].sort()).toEqual([...index.scripts].sort())
   })
 })

@@ -302,7 +302,7 @@ describe('the script module route', () => {
     // Loaded through `import.meta.glob`, the way `handlers.ts` reads the same
     // directory: the script is plain JS with no declaration file, so a static
     // import specifier would not type-check.
-    const modules = import.meta.glob('../../hello/scripts/poster-card.js') as Record<
+    const modules = import.meta.glob('../../hello-src/scripts/poster-card.js') as Record<
       string,
       () => Promise<{ default: (ctx: unknown) => Promise<{ big: unknown[] }> }>
     >

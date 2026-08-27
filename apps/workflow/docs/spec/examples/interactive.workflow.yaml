@@ -50,7 +50,7 @@ jobs:
         outputs:
           line:  { type: string, required: true }
           index: { type: number }
-        headless: { mode: skip, outputs: { line: "${{ needs.greet.outputs.lines[0] }}", index: 0 } }
+        headless: auto
         summary: "Picked **${{ steps.choose.outputs.line }}** (#${{ steps.choose.outputs.index }})"
     outputs:
       line:  ${{ steps.choose.outputs.line }}
