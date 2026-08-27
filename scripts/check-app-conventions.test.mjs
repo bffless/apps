@@ -94,6 +94,21 @@ test('rejects a component missing from .release-please-manifest.json', () => {
   assert.match(errors[0], /release-please-manifest/)
 })
 
+// release-please also owns the publishable packages/* components (workflow-lint,
+// workflow-script). Those ship no bffless-app.json and never appear in the catalog, so
+// this check must stay blind to them — otherwise publishing a package would fail
+// `pnpm apps:check` on every run.
+test('ignores a packages/* component that ships no bffless-app.json', () => {
+  const config = {
+    packages: {
+      ...CONFIG.packages,
+      'packages/workflow-lint': { component: 'workflow-lint', 'include-component-in-tag': true },
+    },
+  }
+  const manifest = { ...MANIFEST, 'packages/workflow-lint': '0.1.0' }
+  assert.deepEqual(checkReleaseComponents(config, ['reader', 'handoff'], manifest), [])
+})
+
 test('rejects a component whose tag would not match <app>-v<version>', () => {
   const config = {
     packages: {

@@ -52,11 +52,16 @@ jobs:
       # the prefix here, in plain shell, rather than in a reusable-workflow `with:`
       # expression — those accept only a restricted expression set, and a round-trip
       # through fromJSON/format there would not actually strip the prefix.
+      #
+      # Only apps/* survives the filter: release-please also owns the publishable
+      # packages/* components (workflow-lint, workflow-script), and those have no
+      # catalog bundle — an unfiltered list would hand app-bundles.yml a path that
+      # is not an app id and fail the release on a package-only release.
       - name: Map released paths to bare app ids
         id: apps
         run: |
           echo '${{ steps.release.outputs.paths_released || '[]' }}' \
-            | jq -c '[.[] | sub("^apps/"; "")]' \
+            | jq -c '[.[] | select(startswith("apps/")) | sub("^apps/"; "")]' \
             > /tmp/apps_released.json
           echo "apps_released=$(cat /tmp/apps_released.json)" >> "$GITHUB_OUTPUT"
 

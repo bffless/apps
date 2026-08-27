@@ -1,11 +1,12 @@
 import { fileURLToPath } from 'node:url'
 import { test, expect } from 'vitest'
 import { scanRuleSet, resolveRuleSet } from '../../src/rules/scan.js'
-import { findRule, expectedRuleFile } from '../../src/rules/match.js'
+import { findRule, expectedRuleFile, resolveUrl } from '../../src/rules/match.js'
 
 const fixtures = fileURLToPath(new URL('../fixtures/', import.meta.url))
 const helloDir = `${fixtures}rules/hello`
 const plainDir = `${fixtures}rules/plain`
+const bareDir = `${fixtures}rules/bare`
 const impl = (rel: string) => `${fixtures}impl/${rel}`
 
 test('scanRuleSet reads the alias from ruleset.yaml and indexes every rule', () => {
@@ -25,6 +26,35 @@ test('a set authored with no alias segment reports the bare /api prefix (post-M3
   expect(index.alias).toBe('plain')
   expect(index.prefix).toBe('/api')
   expect(findRule(index, '/api/echo', 'POST')).toBeTruthy()
+})
+
+test('a pathPrefix set means the URL prefix is the flag and the layout is bare', () => {
+  const index = scanRuleSet(bareDir, { alias: 'hello', pathPrefix: '/api/hello' })
+  expect(index.prefix).toBe('/api/hello')
+  expect(index.layout).toBe('')
+  expect(resolveUrl(index, 'echo')).toBe('/api/hello/echo')
+  expect(expectedRuleFile(index, 'echo', 'POST')).toBe('rules/echo/post/rule.yaml')
+  expect(findRule(index, '/api/hello/echo', 'POST')?.source).toBe('rules/echo/post/rule.yaml')
+})
+
+test('without a pathPrefix the layout is the prefix — the hand-authored shape is unchanged', () => {
+  expect(scanRuleSet(helloDir).layout).toBe('/api/hello')
+  expect(scanRuleSet(plainDir).layout).toBe('/api')
+})
+
+test('an explicit pathPattern is verbatim — the prefix is only added to derived patterns', () => {
+  const index = scanRuleSet(bareDir, { pathPrefix: '/api/hello' })
+  expect(findRule(index, '/w/bare/anything', 'GET')?.source).toBe('rules/share/get.rule.yaml')
+  expect(findRule(index, '/api/hello/w/bare/anything', 'GET')).toBeUndefined()
+})
+
+test('resolveRuleSet threads --path-prefix through to the scan', () => {
+  const ctx = resolveRuleSet({ rulesDir: bareDir, pathPrefix: '/api/hello' })
+  expect(ctx.found).toBe(true)
+  if (ctx.found) {
+    expect(ctx.prefix).toBe('/api/hello')
+    expect(ctx.layout).toBe('')
+  }
 })
 
 test('findRule matches on path and method, and honours wildcards', () => {

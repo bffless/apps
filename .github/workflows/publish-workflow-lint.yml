@@ -1,0 +1,76 @@
+name: publish-workflow-lint
+
+# Publishes the two public Workflow toolchain packages to npm:
+#
+#   @bffless/workflow-lint    the `workflow` CLI (lint + index) an implementation
+#                             repo runs over npx in its own CI
+#   @bffless/workflow-script  the types-only `script` step contract
+#
+# Release-please owns the versions and the tags (release-please-config.json:
+# `include-component-in-tag`), so this workflow's only trigger is the tag it cuts —
+# `workflow-lint-v0.1.0` / `workflow-script-v0.1.0`. Nothing here bumps a version:
+# a publish that could invent one would drift from the tag and the changelog.
+
+on:
+  push:
+    tags:
+      - 'workflow-lint-v*'
+      - 'workflow-script-v*'
+
+permissions:
+  contents: read
+
+# One publish at a time — npm rejects a duplicate version, and a failed race is
+# indistinguishable from a real failure in the log.
+concurrency:
+  group: publish-workflow-packages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Which package this tag is for. Both components are cut from this repo, so
+      # the tag prefix is the only thing that distinguishes them.
+      - name: Resolve the package from the tag
+        id: pkg
+        run: |
+          case "$GITHUB_REF_NAME" in
+            workflow-lint-v*)   echo "name=@bffless/workflow-lint" >> "$GITHUB_OUTPUT" ;;
+            workflow-script-v*) echo "name=@bffless/workflow-script" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::unexpected tag $GITHUB_REF_NAME"; exit 1 ;;
+          esac
+
+      # workflow-lint ships built output (`files: ["dist", …]`), and its bin is
+      # dist/cli.js — publishing without this would put an empty package on npm.
+      # workflow-script is a single hand-written .d.ts with nothing to build.
+      - name: Build
+        if: startsWith(github.ref_name, 'workflow-lint-v')
+        run: pnpm --filter @bffless/workflow-lint build
+
+      # The tag is already cut, so this cannot stop a bad release — but it does stop
+      # a bad release reaching npm, which is the copy nobody can take back.
+      - name: Test
+        if: startsWith(github.ref_name, 'workflow-lint-v')
+        run: pnpm --filter @bffless/workflow-lint test:run
+
+      # --no-git-checks: the checkout is a detached tag, which pnpm otherwise refuses.
+      - name: Publish to npm
+        run: pnpm --filter ${{ steps.pkg.outputs.name }} publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

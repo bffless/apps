@@ -1,6 +1,9 @@
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { beforeAll, test, expect } from 'vitest'
+import { afterAll, beforeAll, test, expect } from 'vitest'
 import { runCli } from '../src/cli.js'
 
 const fixture = (n: string) => fileURLToPath(new URL(`./fixtures/broken/${n}.workflow.yaml`, import.meta.url))
@@ -105,4 +108,158 @@ test('built dist/cli.js runs and exits 0 on the studio example', () => {
     encoding: 'utf8',
   })
   expect(out).toMatch(/0 error\(s\), 0 warning\(s\)/)
+})
+
+// ---------------------------------------------------------------------------
+// `workflow index` — the publish-side verb a separate implementation repo runs
+// ---------------------------------------------------------------------------
+
+const plainImpl = (rel: string) => fileURLToPath(new URL(`./fixtures/plain-impl/${rel}`, import.meta.url))
+const tmpDirs: string[] = []
+
+function outDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'workflow-index-'))
+  tmpDirs.push(dir)
+  return dir
+}
+
+afterAll(() => {
+  for (const dir of tmpDirs) rmSync(dir, { recursive: true, force: true })
+})
+
+function indexRun(out: string, extra: string[] = []) {
+  return run([
+    'index',
+    plainImpl('.bffless/workflows'),
+    '--out', out,
+    '--impl', 'plain',
+    '--name', 'Plain',
+    '--rules', plainImpl('.bffless/proxy-rules/plain'),
+    '--path-prefix', '/api/plain',
+    ...extra,
+  ])
+}
+
+test('index writes index.json, the YAMLs and a landing page', () => {
+  const out = outDir()
+  const r = indexRun(out, ['--version', '1.2.3', '--commit', 'deadbee'])
+  expect(r.err).toBe('')
+  expect(r.code).toBe(0)
+
+  const index = JSON.parse(readFileSync(join(out, '.bffless/workflows/index.json'), 'utf8'))
+  expect(index).toMatchObject({
+    spec: 1,
+    impl: 'plain',
+    name: 'Plain',
+    description: '',
+    version: '1.2.3',
+    commit: 'deadbee',
+    islands: [],
+    scripts: [],
+  })
+  expect(index.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  expect(index.workflows).toEqual([
+    {
+      file: 'plain.workflow.yaml',
+      name: 'Plain',
+      description: 'One echo step, checked against a prefix-free rule set.',
+      inputs: 0,
+      jobs: 1,
+      headlessSafe: true,
+    },
+  ])
+
+  expect(readFileSync(join(out, '.bffless/workflows/plain.workflow.yaml'), 'utf8')).toMatch(/path: echo/)
+
+  const landing = readFileSync(join(out, 'index.html'), 'utf8')
+  expect(landing).toMatch(/<title>workflow-plain<\/title>/)
+  expect(landing).toMatch(/\/\^plain\\\./)
+})
+
+test('index lists the islands and scripts already staged under --out', () => {
+  const out = outDir()
+  mkdirSync(join(out, 'islands'), { recursive: true })
+  mkdirSync(join(out, 'scripts'), { recursive: true })
+  writeFileSync(join(out, 'islands/pick-line.html'), '<!doctype html>')
+  writeFileSync(join(out, 'islands/line-viewer.html'), '<!doctype html>')
+  writeFileSync(join(out, 'islands/notes.txt'), 'not an island')
+  writeFileSync(join(out, 'scripts/analyze.js'), 'export default {}')
+  writeFileSync(join(out, 'scripts/helper.mjs'), 'export default {}')
+
+  expect(indexRun(out).code).toBe(0)
+  const index = JSON.parse(readFileSync(join(out, '.bffless/workflows/index.json'), 'utf8'))
+  expect(index.islands).toEqual(['islands/line-viewer.html', 'islands/pick-line.html'])
+  expect(index.scripts).toEqual(['scripts/analyze.js', 'scripts/helper.mjs'])
+})
+
+test('a re-run drops a workflow the implementation removed', () => {
+  const out = outDir()
+  expect(indexRun(out).code).toBe(0)
+  writeFileSync(join(out, '.bffless/workflows/stale.workflow.yaml'), 'spec: 1\n')
+  expect(indexRun(out).code).toBe(0)
+  expect(existsSync(join(out, '.bffless/workflows/stale.workflow.yaml'))).toBe(false)
+})
+
+test('a workflow whose path no rule serves fails the index, and nothing is written', () => {
+  const out = outDir()
+  const r = run([
+    'index', plainImpl('broken-workflows'),
+    '--out', out, '--impl', 'plain', '--name', 'Plain',
+    '--rules', plainImpl('.bffless/proxy-rules/plain'),
+    '--path-prefix', '/api/plain',
+  ])
+  expect(r.code).toBe(1)
+  expect(r.err).toMatch(/rule-missing/)
+  expect(r.err).toMatch(/renamed\.workflow\.yaml/)
+  expect(existsSync(join(out, '.bffless/workflows/index.json'))).toBe(false)
+})
+
+test('index needs --out, --impl and --name, and reports a missing directory', () => {
+  expect(run(['index', plainImpl('.bffless/workflows')]).err).toMatch(/--out is required/)
+  expect(run(['index', '--out', '/tmp/x']).err).toMatch(/no workflows directory given/)
+  expect(run(['index', '/no/such/dir', '--out', '/tmp/x', '--impl', 'p', '--name', 'P']).code).toBe(2)
+  const r = run(['index', plainImpl('.bffless/workflows'), '--out', '/tmp/x', '--impl', 'p'])
+  expect(r.code).toBe(2)
+  expect(r.err).toMatch(/--name is required/)
+})
+
+test('lint accepts --path-prefix, resolving a prefix-free set the way the publisher will', () => {
+  const r = run([
+    'lint',
+    '--rules', plainImpl('.bffless/proxy-rules/plain'),
+    '--path-prefix', '/api/plain',
+    plainImpl('.bffless/workflows/plain.workflow.yaml'),
+  ])
+  expect(r.code).toBe(0)
+  expect(r.out).not.toMatch(/no rule serves/)
+})
+
+test('--path-prefix needs a value', () => {
+  expect(run(['lint', '--path-prefix']).err).toMatch(/--path-prefix needs a value/)
+})
+
+test('an explicit --rules that does not resolve fails loudly, before anything is written', () => {
+  const out = outDir()
+  const r = run([
+    'index', plainImpl('.bffless/workflows'),
+    '--out', out, '--impl', 'plain', '--name', 'Plain',
+    '--rules', plainImpl('.bffless/proxy-rules/nope'),
+  ])
+  // Exit 2, not the rule-missing notice: the caller named the set, so failing to
+  // read it is an environment error and the paths were never actually checked.
+  expect(r.code).toBe(2)
+  expect(r.err).toMatch(/proxy-rules\/nope/)
+  expect(existsSync(join(out, '.bffless/workflows/index.json'))).toBe(false)
+})
+
+test('no --rules and nothing to auto-resolve stays a notice — the index still publishes', () => {
+  const src = outDir()
+  const out = outDir()
+  writeFileSync(
+    join(src, 'plain.workflow.yaml'),
+    readFileSync(plainImpl('.bffless/workflows/plain.workflow.yaml'), 'utf8'),
+  )
+  const r = run(['index', src, '--out', out, '--impl', 'plain', '--name', 'Plain'])
+  expect(r.code).toBe(0)
+  expect(existsSync(join(out, '.bffless/workflows/index.json'))).toBe(true)
 })

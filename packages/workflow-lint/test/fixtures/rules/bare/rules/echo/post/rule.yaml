@@ -1,0 +1,2 @@
+targetUrl: pipeline
+description: POST <prefix>/echo (the prefix is added at publish time)
