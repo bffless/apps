@@ -99,7 +99,8 @@ bffless/ce#698), `path`, `workflows`, `rules`, `harness-alias`, `name`, `descrip
    (no write when already attached). The publish key needs the **contributor** project role
    on the harness project;
 5. on PR close: delete the preview alias and its rule set (detaching from the harness) —
-   **not yet built**, bffless/apps#399.
+   `mode: teardown` on the same action; refuses a non-preview alias (`<impl>-pr-<n>` or an
+   explicit `preview: true`). Built in M3 Phase 2 (bffless/apps#399).
 
 PR previews are therefore first-class: `alias: studio-pr-12` (with `rules:` passed
 explicitly — the set directory is named for the implementation, not the alias) yields `/api/studio-pr-12/...`,

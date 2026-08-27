@@ -38,7 +38,7 @@ Locked D1–D18, the M1 decisions and the M2 decisions are not re-litigated. The
 
 ## Deferred out of M3, explicitly
 
-- Preview aliases of an implementation and their teardown (06 step 5) — new issue (Decision 3).
+- ~~Preview aliases of an implementation and their teardown (06 step 5) — new issue (Decision 3).~~ **Amended 2026-08-27: pulled into Phase 2 as Task 6b (apps#399)** — `workflow-hello` is the first repo with PR previews, so teardown is built and proven there.
 - `targetUrl: alias://` for the forwarder, `run.impl` validation on the read-only page, runtime project self-discovery — M4 (apps#363/#364, ce#698).
 - Cancel-time semantics (`if: cancelled()`/`always()`) — M4, decided against the first implementation that has a cleanup step (Decision 14).
 - COOP/COEP / threads in scripts; per-island CSP; double-iframe island proxy — 03/04 "Later" (Decision 4).
@@ -163,7 +163,7 @@ localdev-tools/workflow-live.mjs   --headless and --studio walks                
 > - **Versions.** The CLI released as **`bffless@0.3.3`** (CE's release-please bumps patch for `feat` pre-1.0; a `Release-As: 0.4.0` footer was not used — it leaks into other CE components). `@bffless/workflow-lint` and `@bffless/workflow-script` released as **`1.0.0`** (a `0.0.0` manifest seed makes release-please use its initial version 1.0.0, not 0.1.0). `deploy-proxy-rules` is **v1.3.0** (`bffless ^0.3.3` frozen, `v1` moved). `bffless/publish-workflow` is **v1.0.0** / `v1`; its `lint-version` default is `^1.0.0`. Wherever the text says `0.4.0` / `0.1.0` / `^0.1.0`, read `0.3.3` / `1.0.0` / `^1.0.0`.
 > - **The CE aliases API** is not what Task 5 assumed. Real: `GET /api/repo/<owner>/<repo>/aliases` → `{ repository, aliases: [{ name, proxyRuleSetIds, … }] }` (viewer) and **`PATCH`** `/api/repo/<owner>/<repo>/aliases/<name>` with `{ proxyRuleSetIds }` (replaces the join set; needs the **contributor** project role). `scripts/attach.mjs` sends the union.
 > - **Ordering under a prefix** (Task 1): derived `order:` is computed from the *exported* (prefixed) pattern — CE picks the first match by `order` over what it stores — so an explicit `pathPattern: /api/<alias>/*` catch-all orders after the specific derived routes; relative order among derived rules is prefix-invariant. A prefixed root rule collapses to the prefix (`/api/hello`, not `/api/hello/`). The reference doc's "derived `order:` is unaffected" sentence was wrong and is amended.
-> - **Previews** must pass `rules: .bffless/proxy-rules/<impl>` explicitly — the set directory is named for the implementation, not the alias (the default `.bffless/proxy-rules/<alias>` would not resolve for `hello-pr-12`; `workflow index` exits 2 on an explicit `--rules` that does not resolve). Preview teardown (spec 06 step 5) is **#399**.
+> - **Previews** must pass `rules: .bffless/proxy-rules/<impl>` explicitly — the set directory is named for the implementation, not the alias (the default `.bffless/proxy-rules/<alias>` would not resolve for `hello-pr-12`; `workflow index` exits 2 on an explicit `--rules` that does not resolve). Preview teardown (spec 06 step 5) is **#399 — built in Phase 2, Task 6b** (amended 2026-08-27).
 >
 > Also: `publish-workflow-lint.yml` is a `workflow_call`/`workflow_dispatch` workflow invoked from `release.yml` (tags cut with `GITHUB_TOKEN` never fire `push` workflows — apps#398); `release.yml`'s `bundles` skips on a package-only release. Session ledger with every ruling: `.superpowers/sdd/2026-08-27-workflow-m3-publish-headless-studio/progress.md` (git-ignored, local).
 
@@ -552,7 +552,7 @@ runs:
 
 # Phase 2 — hello moves to `bffless/workflow-hello`
 
-The first customer of Phase 1. Two repos: the new one (Task 6) and the monorepo (Task 7). Hello ships **headless-ready** here (the `headless:` declarations and the islands' auto-submit branch) so Phase 3 needs no second round trip: `hostContext.bffless` is simply absent until 3a lands.
+The first customer of Phase 1. Two repos: the new one (Task 6), the teardown half of the toolchain that only a repo with PR previews can prove (Task 6b, `bffless/publish-workflow` — apps#399, pulled in from "Deferred" on 2026-08-27), and the monorepo (Task 7). Hello ships **headless-ready** here (the `headless:` declarations and the islands' auto-submit branch) so Phase 3 needs no second round trip: `hostContext.bffless` is simply absent until 3a lands.
 
 ### Task 6: The `bffless/workflow-hello` repo
 
@@ -606,6 +606,21 @@ Repo settings: variable `BFFLESS_URL=https://admin.j5s.dev`, secret `BFFLESS_WOR
 
 - [ ] **Step 4: First publish** — dispatch `deploy.yml`. Live checks: `GET https://workflow.j5s.dev/w/hello/.bffless/workflows/index.json` (through the forwarder — now the generated one), `POST /api/hello/echo` on the harness host, `list_aliases` shows the `hello` alias's set attached and the `workflow` alias carrying both ids. **Manual, once:** the `hello.j5s.dev` domain's path `/apps/workflow/hello-dist` → `/` (admin UI or MCP `update_domain`).
 - [ ] **Step 5: README** — the repo is the reference for "writing an implementation" now: layout, the relative-path convention, the four manual per-install items, and a link to `apps/workflow/docs/writing-an-implementation.md`.
+
+### Task 6b: Preview teardown — `bffless/publish-workflow` `mode: teardown` (apps#399, spec 06 step 5)
+
+**Files (`bffless/publish-workflow`, v1.1.0):**
+- Modify: `action.yml` (input `mode: publish | teardown`, default `publish`; `target-url`/`path`/`workflows` not required in teardown), `README.md` (obligation 5 no longer "not yet"; the preview recipe)
+- Create: `scripts/teardown.mjs` (`detach({ …, ruleSetName })` = the inverse of `attach.mjs`, then delete the alias, then delete the set), `test/teardown.test.mjs`
+- Consumer: `bffless/workflow-hello/.github/workflows/preview.yml` (`pull_request: [opened, synchronize, reopened]` → `mode: publish`, `alias: hello-pr-${{ github.event.number }}`, `rules: .bffless/proxy-rules/hello`; `pull_request: [closed]` → `mode: teardown`, same alias)
+
+**Interfaces:** in teardown mode the action (1) `GET /api/repo/<owner>/<repo>/aliases`, finds the harness alias and PATCHes `proxyRuleSetIds` **minus** every id whose set is named `<alias>` (no write if none); (2) deletes alias `<alias>` (`DELETE /api/repo/<owner>/<repo>/aliases/<alias>` — verify the CE route and whether deleting an alias with an attached set is allowed or needs the set detached first); (3) deletes the rule set named `<alias>` (`DELETE /api/proxy-rule-sets/<id>` — verify; `rules push --prune` cannot delete a set). Idempotent: every step tolerates "already gone". **Refuses** unless `alias` matches `^[a-z][a-z0-9-]*-pr-[0-9]+$` or `preview: true` is passed — the contributor-role key can repoint any alias on the harness project, and a typo must not tear down production. Outputs: `detached` (bool), `deleted-alias` (bool), `deleted-rule-set` (bool).
+
+- [ ] **Step 1: Failing tests (node --test)** — `unionIds` inverse (`withoutIds(['a','b'],'b')` → `['a']`, no-op when absent); `teardown` against a fake `fetchImpl`: GET → PATCH with the reduced list → DELETE alias → DELETE set, in that order; a second run (GET returns no such alias/set) makes no writes and exits 0; `alias: hello` without `preview: true` rejects before any request.
+- [ ] **Step 2: Verify fail.**
+- [ ] **Step 3: Implement** — `scripts/teardown.mjs` + the `mode` branch in `action.yml` (the composite's publish steps get `if: inputs.mode == 'publish'`, the teardown step `if: inputs.mode == 'teardown'`; `actionlint` cannot lint composite `action.yml` — `test/action.test.mjs` is the contract check). README: obligation 5, the `preview.yml` recipe, the refusal rule.
+- [ ] **Step 4: Verify** — `npm test`; then the live proof is Task 6 Step 4's PR preview: open a PR on `workflow-hello`, confirm `hello-pr-N` appears on the harness Implementations screen, close the PR, confirm the alias, the set and the harness attachment are gone (admin UI / `GET …/aliases`).
+- [ ] **Step 5: Commit + release** — `feat: teardown mode` → release-please v1.1.0, `v1` moves; close apps#399.
 
 ### Task 7: The monorepo stops shipping hello
 
@@ -1498,7 +1513,7 @@ Common shape (from Studio's rules, kept): `prep` → `createJob` (`data_create` 
 - [ ] **Step 2: headless hello** — `workflow-headless run https://workflow.j5s.dev hello/interactive --inputs '{}' --out …` as `workflow-ci` → exit 0; `run.json` shows `pick/0/choose` succeeded by the island's own submit under `hostContext.bffless.headless` (Decision 7), `review/0/confirm` skipped with outputs (Decision 11), the run row `headless: true`; then the same through `workflow-headless-run.yml` (the artifact). Negative: an `inputs` with a wrong type → exit 3.
 - [ ] **Step 3: Studio, 3-minute clip, interactive** — kick off with one short recording (real credits: WhisperX, Gemini director + refiner, Claude describe/blog, nano-banana ×2 — note the cost in the README). Checks, each a Decision: `video/contact-sheet` returns labelled sheets (Decision 2; `labelled: true` in the job result — else the drawtext fallback fired, record it), `scenes` rows carry `source`/`sourceIndex`/`spans`, the cut-editor island plays the clip and WAV through signed URLs (Decision 6) and its Done submits `keep`, `assemble` → `concat` → `short.mp4` downloads, `describe`/`blog`/`frames`/`bundle` produce `post.md` + `zip` with `images/frame-NN.jpg`, two covers → `pick` → `cover` File ref. `words` for the clip is under 256 KB (no offload) — note that a 1-hour source would offload (Decision 16).
 - [ ] **Step 4: Studio, headless** — same clip through the driver with `--timeout 90m`: `trim` auto-submits the refiner's cuts (`headless: auto`, its 240-minute declared budget irrelevant), `edit`/`pick` skip, exit 0, `outputs/short.mp4` + `outputs/blog.zip` + `outputs/cover.png` saved. Compare `run.json` outputs with Step 3's.
-- [ ] **Step 5: Record** — README checklists (PASS/FAIL + evidence per Decision), a `fix(…)` PR for anything disproved (M1/M2 precedent), issues for the deferred list (preview teardown; `silence` op; `bffless/run-workflow`; workflow-studio mocks; `https://` inputs), tick the epic, write the memory note (what the walk disproved; the Studio port's per-run cost).
+- [ ] **Step 5: Record** — README checklists (PASS/FAIL + evidence per Decision), a `fix(…)` PR for anything disproved (M1/M2 precedent), issues for the deferred list (`silence` op; `bffless/run-workflow`; workflow-studio mocks; `https://` inputs), tick the epic, write the memory note (what the walk disproved; the Studio port's per-run cost).
 
 ---
 
