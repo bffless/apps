@@ -6,7 +6,7 @@
 
 **Architecture:** Five phases, each its own PR set, in dependency order. Phase 1 changes three repos outside the monorepo (CE's CLI, `deploy-proxy-rules`, a new `publish-workflow` action) and publishes `@bffless/workflow-lint` so a separate implementation repo can lint and index. Phase 2 moves hello out (`bffless/workflow-hello`) and turns the monorepo's hello into a pinned checkout the harness's mock-backed e2e builds from. Phase 3 is harness-only: the script Worker moves inside a `sandbox="allow-scripts"` iframe (a `data:`-URL module Worker there has origin `null` — spiked in Chromium and Firefox 2026-08-27), islands get a clock and a `workflow.sign` host tool, and the headless page contract lands with `packages/workflow-headless` driving it. Phase 4 is the port: CE gains `contact_sheet` + `frames` ops (a Worker script cannot touch `<video>`), and `apps/workflow-studio` re-authors Studio's rules as `auth_required`, prefix-free, `outPrefix`-taking pipelines, reusing Studio's pure libs through a workspace dependency. Phase 5 walks it all live. The engine (`src/lib/runner/**`) stays pure; the only new persisted vocabulary is `outputs` on `step.skipped`.
 
-**Tech Stack:** Everything M2 pinned (TypeScript ~6.0.2, React ^19.2, RTK ^2.12, `@modelcontextprotocol/ext-apps ^1.7.5`, MSW ^2, vitest ^4, Playwright 1.61.1, eslint ^10, pnpm 10 / Node ≥20). New: `@bffless/workflow-lint` and `@bffless/workflow-script` **published** to npm (release-please components `workflow-lint` / `workflow-script`); `bffless` CLI **0.4.0** (`--path-prefix`); `@bffless/deploy-proxy-rules` **1.3.0** (`path-prefix` input, `bffless ^0.4.0` re-frozen into `dist/`); new composite action `bffless/publish-workflow@v1` (bash + two Node scripts, no ncc); new package `packages/workflow-headless` (Playwright + Chromium from `~/.cache/ms-playwright`, bin `workflow-headless`); `apps/workflow-studio` (Vite single-file islands with React + `studio` workspace dep, Vite lib-mode scripts, `fflate`); CE backend `ffmpeg_handler` ops `contact_sheet` + `frames` (ffmpeg `-ss` fast-seek stills + `drawtext` + `tile`).
+**Tech Stack:** Everything M2 pinned (TypeScript ~6.0.2, React ^19.2, RTK ^2.12, `@modelcontextprotocol/ext-apps ^1.7.5`, MSW ^2, vitest ^4, Playwright 1.61.1, eslint ^10, pnpm 10 / Node ≥20). New: `@bffless/workflow-lint` and `@bffless/workflow-script` **published** to npm (release-please components `workflow-lint` / `workflow-script`); `bffless` CLI **0.4.0** (`--path-prefix`; shipped as **0.3.3**); `@bffless/deploy-proxy-rules` **1.3.0** (`path-prefix` input, `bffless ^0.3.3` re-frozen into `dist/`); new composite action `bffless/publish-workflow@v1` (bash + two Node scripts, no ncc); new package `packages/workflow-headless` (Playwright + Chromium from `~/.cache/ms-playwright`, bin `workflow-headless`); `apps/workflow-studio` (Vite single-file islands with React + `studio` workspace dep, Vite lib-mode scripts, `fflate`); CE backend `ffmpeg_handler` ops `contact_sheet` + `frames` (ffmpeg `-ss` fast-seek stills + `drawtext` + `tile`).
 
 **Spec:** `apps/workflow/docs/spec/` — 00-overview.md (M3 bullet, D1/D2/D11/D12/D15/D17), 01-workflow-yaml.md (`timeout-minutes`, `headless:`, Paths), 03-step-kinds.md (`script` — **amended by Decision 4**, `island`), 04-islands.md (Headless — **amended by Decision 7**; Sandbox), 05-runs-and-persistence.md (rows, Resume), 06-discovery-publishing-files.md (Implementation CI obligations — **amended by Decisions 3/5/6**, files trio + `sign`), 07-headless.md (page contract, driver — **amended by Decisions 10–13**), 08-harness-ui.md (Kickoff route), 09-state-management.md ("from M3 the headless CLI *is* the e2e"), ADR-0001/0002/0004, `workflow.schema.json` (`headless` = `skip|auto` — unchanged), `examples/hello.workflow.yaml` + `examples/interactive.workflow.yaml` (now mirrors of `bffless/workflow-hello`, drift-tested), `examples/studio.workflow.yaml` (**replaced** by `apps/workflow-studio/.bffless/workflows/studio.workflow.yaml`). Prior plans: M1 `docs/superpowers/plans/2026-08-19-workflow-m1-harness-core.md` (Decisions 2 and 3 are paid down here), M2 `docs/superpowers/plans/2026-08-24-workflow-m2-interactive-steps.md` (its "Deferred out of M2" list is this plan's input). Live state: `apps/workflow/bffless/README.md`. Epic: bffless/apps#359 (M3 block). Related issues folded in: apps#382 (its "M3 item" is superseded, see Decision 19), apps#362/ce#697 (`?download=1` — the driver GETs the url, Decision 12), ce#700 (header rules stay manual, recorded per new install). Not in scope: apps#363/#364 + ce#698 (M4), preview teardown (Decision 3, new issue), COOP/COEP (Decision 4).
 
@@ -38,7 +38,7 @@ Locked D1–D18, the M1 decisions and the M2 decisions are not re-litigated. The
 
 ## Deferred out of M3, explicitly
 
-- Preview aliases of an implementation and their teardown (06 step 5) — new issue (Decision 3).
+- ~~Preview aliases of an implementation and their teardown (06 step 5) — new issue (Decision 3).~~ **Amended 2026-08-27: pulled into Phase 2 as Task 6b (apps#399)** — `workflow-hello` is the first repo with PR previews, so teardown is built and proven there.
 - `targetUrl: alias://` for the forwarder, `run.impl` validation on the read-only page, runtime project self-discovery — M4 (apps#363/#364, ce#698).
 - Cancel-time semantics (`if: cancelled()`/`always()`) — M4, decided against the first implementation that has a cleanup step (Decision 14).
 - COOP/COEP / threads in scripts; per-island CSP; double-iframe island proxy — 03/04 "Later" (Decision 4).
@@ -81,7 +81,7 @@ repos/deploy-proxy-rules/
 bffless/publish-workflow/  (new repo)
   action.yml                       composite: index → rules → upload → attach                             Task 5
   scripts/prepare-rules.mjs        copy set, rename to <alias>, write the forwarder                        Task 5
-  scripts/attach.mjs               PUT /api/aliases/<repo>/<harness-alias> with the id union              Task 5
+  scripts/attach.mjs               PATCH /api/repo/<owner>/<repo>/aliases/<harness-alias> with the id union   Task 5
   test/*.test.mjs (node --test), README.md, .github/workflows/ci.yml                                      Task 5
 packages/workflow-lint/
   package.json                     private:false, version from release-please, files, bin                 Task 4
@@ -158,6 +158,15 @@ localdev-tools/workflow-live.mjs   --headless and --studio walks                
 
 # Phase 1 — The publish toolchain
 
+> **As shipped (2026-08-27, epic #359 Phase 1 ticked).** The tasks below are the plan as written; four things came out differently and later phases must use the shipped values:
+>
+> - **Versions.** The CLI released as **`bffless@0.3.3`** (CE's release-please bumps patch for `feat` pre-1.0; a `Release-As: 0.4.0` footer was not used — it leaks into other CE components). `@bffless/workflow-lint` and `@bffless/workflow-script` released as **`1.0.0`** (a `0.0.0` manifest seed makes release-please use its initial version 1.0.0, not 0.1.0). `deploy-proxy-rules` is **v1.3.0** (`bffless ^0.3.3` frozen, `v1` moved). `bffless/publish-workflow` is **v1.0.0** / `v1`; its `lint-version` default is `^1.0.0`. Wherever the text says `0.4.0` / `0.1.0` / `^0.1.0`, read `0.3.3` / `1.0.0` / `^1.0.0`.
+> - **The CE aliases API** is not what Task 5 assumed. Real: `GET /api/repo/<owner>/<repo>/aliases` → `{ repository, aliases: [{ name, proxyRuleSetIds, … }] }` (viewer) and **`PATCH`** `/api/repo/<owner>/<repo>/aliases/<name>` with `{ proxyRuleSetIds }` (replaces the join set; needs the **contributor** project role). `scripts/attach.mjs` sends the union.
+> - **Ordering under a prefix** (Task 1): derived `order:` is computed from the *exported* (prefixed) pattern — CE picks the first match by `order` over what it stores — so an explicit `pathPattern: /api/<alias>/*` catch-all orders after the specific derived routes; relative order among derived rules is prefix-invariant. A prefixed root rule collapses to the prefix (`/api/hello`, not `/api/hello/`). The reference doc's "derived `order:` is unaffected" sentence was wrong and is amended.
+> - **Previews** must pass `rules: .bffless/proxy-rules/<impl>` explicitly — the set directory is named for the implementation, not the alias (the default `.bffless/proxy-rules/<alias>` would not resolve for `hello-pr-12`; `workflow index` exits 2 on an explicit `--rules` that does not resolve). Preview teardown (spec 06 step 5) is **#399 — built in Phase 2, Task 6b** (amended 2026-08-27).
+>
+> Also: `publish-workflow-lint.yml` is a `workflow_call`/`workflow_dispatch` workflow invoked from `release.yml` (tags cut with `GITHUB_TOKEN` never fire `push` workflows — apps#398); `release.yml`'s `bundles` skips on a package-only release. Session ledger with every ruling: `.superpowers/sdd/2026-08-27-workflow-m3-publish-headless-studio/progress.md` (git-ignored, local).
+
 Three repos change before any implementation can move: the CE CLI (the rewrite), `deploy-proxy-rules` (carries it into CI), and the lint package (the index + prefix-aware `rule-missing`); then the new composite action ties them together. Work in `repos/ce/.claude/worktrees/cli-path-prefix` (branch `feat/cli-path-prefix` off `origin/main`), `repos/deploy-proxy-rules` (branch `feat/path-prefix`), `repos/apps/.claude/worktrees/workflow-m3-toolchain` (branch `feat/workflow-lint-publish`), and a fresh clone of the new `bffless/publish-workflow` repo.
 
 ### Task 1: `applyPathPrefix` + `buildRuleSet({ pathPrefix })` (CE CLI)
@@ -170,7 +179,7 @@ Three repos change before any implementation can move: the CE CLI (the rewrite),
 **Interfaces:**
 - Produces: `applyPathPrefix(pattern: string, prefix?: string): string`, `assertPathPrefix(prefix: string): void` (throws `Error('--path-prefix must start with "/" …')`), `buildRuleSet(setDir, opts?: { exportedAt?: string; pathPrefix?: string })`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // packages/cli/test/routes.test.ts (append)
@@ -217,9 +226,9 @@ describe('buildRuleSet with pathPrefix', () => {
 
 Fixture (`plain`): `ruleset.yaml` = `name: plain`; `rules/echo/post/rule.yaml` = a one-step `function_handler` pipeline with `code: ./echo.fn.js` (`function handler({ request }) { return { text: String((request.body || {}).text || '') } }`); `rules/job/get.rule.yaml` = `pipeline: { steps: [{ name: respond, handler: response_handler, config: { body: '{}', status: 200, contentType: application/json } }] }`; `rules/_custom/forward/get.rule.yaml` = `pathPattern: /w/hello/*` + `targetUrl: https://hello.example.test` + `forwardCookies: true` + `order: 5`.
 
-- [ ] **Step 2: Run to verify they fail** — `cd packages/cli && pnpm build && pnpm vitest run test/routes.test.ts test/build.test.ts` → FAIL (`applyPathPrefix is not exported`, `pathPrefix` ignored).
+- [x] **Step 2: Run to verify they fail** — `cd packages/cli && pnpm build && pnpm vitest run test/routes.test.ts test/build.test.ts` → FAIL (`applyPathPrefix is not exported`, `pathPrefix` ignored).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 // packages/cli/src/format/routes.ts (append)
@@ -258,9 +267,9 @@ export async function buildRuleSet(
     const pathPattern = manifest.pathPattern ?? applyPathPrefix(relPathToPattern(d.dirSegments), opts?.pathPrefix);
 ```
 
-- [ ] **Step 4: Run to verify they pass** — same command → PASS. Also `pnpm vitest run` (whole suite) stays green: the existing fixtures never pass a prefix.
+- [x] **Step 4: Run to verify they pass** — same command → PASS. Also `pnpm vitest run` (whole suite) stays green: the existing fixtures never pass a prefix.
 
-- [ ] **Step 5: Commit** — `git commit -am "feat(cli): buildRuleSet takes a pathPrefix for derived patterns"`.
+- [x] **Step 5: Commit** — `git commit -am "feat(cli): buildRuleSet takes a pathPrefix for derived patterns"`.
 
 ### Task 2: `--path-prefix` on `rules build`, `push`, `diff` + docs (CE CLI)
 
@@ -271,7 +280,7 @@ export async function buildRuleSet(
 **Interfaces:**
 - Produces: `PushOptions.pathPrefix?`, `DiffOptions.pathPrefix?`, `buildOne(setDir, { output?, pathPrefix? })`; `bffless/lib` exports `applyPathPrefix`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // packages/cli/test/cli.test.ts (append inside describe('bffless rules build'))
@@ -302,9 +311,9 @@ it('sends prefixed pathPatterns in the sync body when pathPrefix is set', async 
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail** — `pnpm test -- test/cli.test.ts test/push.test.ts` → FAIL (`unknown option '--path-prefix'`).
+- [x] **Step 2: Run to verify they fail** — `pnpm test -- test/cli.test.ts test/push.test.ts` → FAIL (`unknown option '--path-prefix'`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 // push.ts
@@ -334,8 +343,8 @@ implementations, which author prefix-free rules and are published under one alia
 deploy (`bffless/publish-workflow`); `rules diff` needs the same flag or it reports permanent drift.
 ```
 
-- [ ] **Step 4: Run to verify** — `pnpm test` (builds first) → PASS.
-- [ ] **Step 5: Commit + PR** — `git commit -am "feat(cli): --path-prefix for rules build, push and diff"`; push; `gh pr create --title "feat(cli): --path-prefix for rules build, push and diff" --body-file -` (body: what/why, the exemption rule, the workflow spec pointer). **Ask the user to merge and cut the CLI release** (`bffless-v0.4.0` via release-please; the `publish-cli` job publishes). Tasks 3–5 wait on `npm view bffless version` = `0.4.x`.
+- [x] **Step 4: Run to verify** — `pnpm test` (builds first) → PASS.
+- [x] **Step 5: Commit + PR** — `git commit -am "feat(cli): --path-prefix for rules build, push and diff"`; push; `gh pr create --title "feat(cli): --path-prefix for rules build, push and diff" --body-file -` (body: what/why, the exemption rule, the workflow spec pointer). **Ask the user to merge and cut the CLI release** (`bffless-v0.4.0` via release-please; the `publish-cli` job publishes). Tasks 3–5 wait on `npm view bffless version` = `0.4.x`.
 
 ### Task 3: `path-prefix` input on `deploy-proxy-rules` (v1.3.0)
 
@@ -343,9 +352,9 @@ deploy (`bffless/publish-workflow`); `rules diff` needs the same flag or it repo
 - Modify: `action.yml` (inputs), `src/inputs.ts:36-40,50-65`, `src/types.ts` (`ActionInputs.pathPrefix?: string`), `src/run-sets.ts:104-117`, `package.json` (`"bffless": "^0.4.0"`, version 1.3.0), `README.md` (inputs table + a "Workflow implementations" note), `dist/**` (rebuilt)
 - Test: `__tests__/inputs.test.ts`, `__tests__/run-sets.test.ts`
 
-- [ ] **Step 1: Failing tests** — in `inputs.test.ts` (mirroring the `name-suffix` cases): `path-prefix` read as `pathPrefix`, empty string → `undefined`. In `run-sets.test.ts`: `runPushOne` is called with `pathPrefix: '/api/hello'` when the input is set (the file already spies on `lib.runPushOne`; add the assertion on the options object).
-- [ ] **Step 2: Verify fail** — `pnpm test` → FAIL.
-- [ ] **Step 3: Implement**
+- [x] **Step 1: Failing tests** — in `inputs.test.ts` (mirroring the `name-suffix` cases): `path-prefix` read as `pathPrefix`, empty string → `undefined`. In `run-sets.test.ts`: `runPushOne` is called with `pathPrefix: '/api/hello'` when the input is set (the file already spies on `lib.runPushOne`; add the assertion on the options object).
+- [x] **Step 2: Verify fail** — `pnpm test` → FAIL.
+- [x] **Step 3: Implement**
 
 ```yaml
 # action.yml (after name-suffix)
@@ -364,8 +373,8 @@ deploy (`bffless/publish-workflow`); `rules diff` needs the same flag or it repo
 ```
 
 `pnpm install` (bumps `bffless` to 0.4.x in the lockfile), `pnpm build` (regenerates `dist/index.js` and `dist/vendor/esbuild` — build on linux-x64), commit `dist/`.
-- [ ] **Step 4: Verify** — `pnpm test` → PASS including `dist-smoke.test.ts`; `node -e "require('./dist/index.js')"` loads.
-- [ ] **Step 5: Commit + PR + release** — `feat: path-prefix input`; after merge, release-please cuts `v1.3.0`; **move the `v1` tag** (`git tag -f v1 v1.3.0 && git push -f origin v1` — the repo's documented release step; confirm in `README.md`/`release.yml` first and ask before the force-push of a tag).
+- [x] **Step 4: Verify** — `pnpm test` → PASS including `dist-smoke.test.ts`; `node -e "require('./dist/index.js')"` loads.
+- [x] **Step 5: Commit + PR + release** — `feat: path-prefix input`; after merge, release-please cuts `v1.3.0`; **move the `v1` tag** (`git tag -f v1 v1.3.0 && git push -f origin v1` — the repo's documented release step; confirm in `README.md`/`release.yml` first and ask before the force-push of a tag).
 
 ### Task 4: `@bffless/workflow-lint` goes public: `workflow index`, `--path-prefix`, release component
 
@@ -379,7 +388,7 @@ deploy (`bffless/publish-workflow`); `rules diff` needs the same flag or it repo
 **Interfaces:**
 - Produces: `scanRuleSet(dir, { alias?: string; pathPrefix?: string }): RuleSetIndex` where `index.prefix` is the URL prefix (`pathPrefix ?? (rules/api/<alias> exists ? '/api/<alias>' : '/api')`) and `index.layout` is the on-disk prefix (`''` when `pathPrefix` is given, else `index.prefix`); `expectedRuleFile` uses `layout`. `buildIndex(a: { impl, name, description?, version, commit, workflows: { file, yaml }[], islands: string[], scripts: string[], rules: RuleSetContext }): { ok: true; index: IndexJson } | { ok: false; findings }`. CLI: `workflow index <workflows-dir> --out <dist> --impl <alias> --name <display> [--description <text>] [--rules <dir>] [--alias <alias>] [--path-prefix <p>] [--version <v>] [--commit <sha>]` (exit 0/1/2 like `lint`).
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```ts
 // test/rules/scan.test.ts (append)
@@ -409,8 +418,8 @@ it('a lint error fails the index', () => {
 ```
 And in `test/cli.test.ts`: `workflow index <fixture>/.bffless/workflows --out <tmp> --impl plain --name Plain --rules <fixture>/.bffless/proxy-rules/plain --path-prefix /api/plain` writes `<tmp>/.bffless/workflows/index.json` + the YAML + `index.html`, exit 0; with a renamed step path exit 1 mentioning `rule-missing`.
 
-- [ ] **Step 2: Verify fail.**
-- [ ] **Step 3: Implement** — `match.ts`: add `layout: string` to `RuleSetIndex`; `expectedRuleFile` builds from `index.layout.split('/')`. `scan.ts`: in `scanRuleSet`, `const prefix = opts.pathPrefix ?? (existsSync(join(setDir,'rules','api',alias)) ? `/api/${alias}` : '/api')`; `const layout = opts.pathPrefix ? '' : prefix`; and in `push()` the derived pattern becomes `(opts.pathPrefix ?? '') + segmentsToPattern(segments)` for manifests without `pathPattern` (thread `pathPrefix` through `collect`). `resolveRuleSet` gains `pathPrefix` in `ResolveOptions`. `src/index/index.ts` is `stage-hello.mjs` lines 48–69 + 141–150 made pure (takes YAML texts, returns the JSON); `src/index/write.ts` does the fs half (read YAMLs, list `islands/*.html` + `scripts/*.js` under `--out`, write `index.json` + the landing `index.html` — the exact HTML from `stage-hello.mjs:156-165` with `hello.` generalised to the `--impl` value). `cli.ts` gains the `index` command with its own `parseArgs` branch; `--path-prefix` accepted by both verbs.
+- [x] **Step 2: Verify fail.**
+- [x] **Step 3: Implement** — `match.ts`: add `layout: string` to `RuleSetIndex`; `expectedRuleFile` builds from `index.layout.split('/')`. `scan.ts`: in `scanRuleSet`, `const prefix = opts.pathPrefix ?? (existsSync(join(setDir,'rules','api',alias)) ? `/api/${alias}` : '/api')`; `const layout = opts.pathPrefix ? '' : prefix`; and in `push()` the derived pattern becomes `(opts.pathPrefix ?? '') + segmentsToPattern(segments)` for manifests without `pathPattern` (thread `pathPrefix` through `collect`). `resolveRuleSet` gains `pathPrefix` in `ResolveOptions`. `src/index/index.ts` is `stage-hello.mjs` lines 48–69 + 141–150 made pure (takes YAML texts, returns the JSON); `src/index/write.ts` does the fs half (read YAMLs, list `islands/*.html` + `scripts/*.js` under `--out`, write `index.json` + the landing `index.html` — the exact HTML from `stage-hello.mjs:156-165` with `hello.` generalised to the `--impl` value). `cli.ts` gains the `index` command with its own `parseArgs` branch; `--path-prefix` accepted by both verbs.
 
 Release wiring: `release-please-config.json` gains
 ```json
@@ -419,8 +428,8 @@ Release wiring: `release-please-config.json` gains
 ```
 and the manifest `"packages/workflow-lint": "0.1.0", "packages/workflow-script": "0.1.0"`. `checkReleaseComponents` (line 282–288) currently errors on any component that is not a catalog app — change the guard to `key.startsWith('apps/')` only, with a test. `.github/workflows/publish-workflow-lint.yml`: on `push` tags `workflow-lint-v*` / `workflow-script-v*` → pnpm install → build → `pnpm --filter <pkg> publish --access public --no-git-checks` with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` (**ask the user whether `NPM_TOKEN` exists on `bffless/apps`; the CE repo has one**).
 
-- [ ] **Step 4: Verify** — `pnpm --filter @bffless/workflow-lint build && pnpm --filter @bffless/workflow-lint test:run && pnpm --filter @bffless/workflow-lint lint && pnpm scripts:test && pnpm apps:check`. `apps/workflow/scripts/stage-hello.mjs` still works unchanged (it imports `scanRuleSet`, whose default behaviour is unchanged).
-- [ ] **Step 5: Commit + PR** — `feat(workflow-lint): publish the package, add the index verb and --path-prefix`. After merge: release-please PR for the two components → merge → tags → `npm view @bffless/workflow-lint version` = `0.1.0`.
+- [x] **Step 4: Verify** — `pnpm --filter @bffless/workflow-lint build && pnpm --filter @bffless/workflow-lint test:run && pnpm --filter @bffless/workflow-lint lint && pnpm scripts:test && pnpm apps:check`. `apps/workflow/scripts/stage-hello.mjs` still works unchanged (it imports `scanRuleSet`, whose default behaviour is unchanged).
+- [x] **Step 5: Commit + PR** — `feat(workflow-lint): publish the package, add the index verb and --path-prefix`. After merge: release-please PR for the two components → merge → tags → `npm view @bffless/workflow-lint version` = `0.1.0`.
 
 ### Task 5: The `bffless/publish-workflow` composite action (v1.0.0)
 
@@ -429,7 +438,7 @@ and the manifest `"packages/workflow-lint": "0.1.0", "packages/workflow-script":
 
 **Interfaces (action inputs):** `alias` (required), `api-url` (required), `api-key` (required), `repository` (required, `owner/name` — the harness's project), `path` (built bundle dir, default `dist`), `workflows` (default `.bffless/workflows`), `rules` (default `.bffless/proxy-rules/<alias>` — a rule-set dir), `harness-alias` (default `workflow`), `target-url` (required until ce#698 — the alias host, e.g. `https://hello.j5s.dev`), `name` (display name, default `alias`), `description`, `prune` (default `true`), `lint-version` (default `^0.1.0`). Outputs: `rule-set-id`, `deployment-id`, `index` (path of the written `index.json`).
 
-- [ ] **Step 1: Failing tests (node --test)**
+- [x] **Step 1: Failing tests (node --test)**
 
 ```js
 // test/prepare-rules.test.mjs
@@ -462,8 +471,8 @@ test('attach GETs the alias then PUTs the union', async () => {
 })
 ```
 
-- [ ] **Step 2: Verify fail.**
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Verify fail.**
+- [x] **Step 3: Implement**
 
 `scripts/prepare-rules.mjs` — `prepareRules({ rulesDir, alias, targetUrl, outDir })`: validate `alias` against `^[a-z][a-z0-9-]*$` and the reserved list (`workflow`, `w`, `auth`, `_bffless`); `cpSync(rulesDir, outDir, { recursive: true })`; rewrite `ruleset.yaml`'s `name:` to `alias` (parse with a 20-line YAML-safe replace: the file is `name:` + optional `description:`; use `yaml` — vendored? no deps allowed → use `npx --yes yaml`? Simpler: the action's `package.json` has `"dependencies": { "yaml": "^2.8.0" }` and the composite runs `npm ci --omit=dev` in `$GITHUB_ACTION_PATH` first — accepted); throw if `rules/_custom/forward` exists; write the forwarder:
 
@@ -536,14 +545,14 @@ runs:
 
 `README.md`: the five obligations from spec 06, the inputs table, "what is still manual per install" (domain → alias with path `/`, the two `no-transform` header rules until ce#700, bucket CORS, member project role ce#701), and the preview-teardown deferral. `.github/workflows/ci.yml`: `npm ci && npm test` + `rhysd/actionlint`.
 
-- [ ] **Step 4: Verify** — `npm test` green; `actionlint action.yml`.
-- [ ] **Step 5: Commit, push, tag** — `git tag v1.0.0 && git tag v1 && git push --tags` (ask first — the repo is new, the tags are the contract). The first real run is Phase 2, Task 6.
+- [x] **Step 4: Verify** — `npm test` green; `actionlint action.yml`.
+- [x] **Step 5: Commit, push, tag** — `git tag v1.0.0 && git tag v1 && git push --tags` (ask first — the repo is new, the tags are the contract). The first real run is Phase 2, Task 6.
 
 ---
 
 # Phase 2 — hello moves to `bffless/workflow-hello`
 
-The first customer of Phase 1. Two repos: the new one (Task 6) and the monorepo (Task 7). Hello ships **headless-ready** here (the `headless:` declarations and the islands' auto-submit branch) so Phase 3 needs no second round trip: `hostContext.bffless` is simply absent until 3a lands.
+The first customer of Phase 1. Two repos: the new one (Task 6), the teardown half of the toolchain that only a repo with PR previews can prove (Task 6b, `bffless/publish-workflow` — apps#399, pulled in from "Deferred" on 2026-08-27), and the monorepo (Task 7). Hello ships **headless-ready** here (the `headless:` declarations and the islands' auto-submit branch) so Phase 3 needs no second round trip: `hostContext.bffless` is simply absent until 3a lands.
 
 ### Task 6: The `bffless/workflow-hello` repo
 
@@ -556,7 +565,7 @@ The first customer of Phase 1. Two repos: the new one (Task 6) and the monorepo 
 { "name": "workflow-hello", "private": true, "type": "module", "packageManager": "pnpm@10.33.0",
   "scripts": { "build": "node scripts/build.mjs", "check": "tsc -p tsconfig.json && node scripts/build.mjs --check", "test": "vitest run" },
   "dependencies": { "@modelcontextprotocol/ext-apps": "^1.7.5", "@modelcontextprotocol/sdk": "^1.30.0", "zod": "^4.4.3" },
-  "devDependencies": { "@bffless/workflow-lint": "^0.1.0", "@bffless/workflow-script": "^0.1.0", "typescript": "~6.0.2", "vite": "^8.0.12", "vite-plugin-singlefile": "^2.3.3", "vitest": "^4.1.7", "@types/node": "^24.12.3" } }
+  "devDependencies": { "@bffless/workflow-lint": "^1.0.0", "@bffless/workflow-script": "^1.0.0", "typescript": "~6.0.2", "vite": "^8.0.12", "vite-plugin-singlefile": "^2.3.3", "vitest": "^4.1.7", "@types/node": "^24.12.3" } }
 ```
 
 `scripts/build.mjs` = `stage-hello.mjs` lines 87–132 (the island builds + script copy, `--out dist`) followed by `execFileSync('npx', ['workflow', 'index', '.bffless/workflows', '--out', 'dist', '--impl', 'hello', '--name', 'Hello', '--description', '…', '--rules', '.bffless/proxy-rules/hello', '--path-prefix', '/api/hello'])` — the linter package's bin, resolved from `node_modules/.bin`. The `WORKFLOWS`/`ISLANDS` lists are read from the directories, not hard-coded.
@@ -597,6 +606,21 @@ Repo settings: variable `BFFLESS_URL=https://admin.j5s.dev`, secret `BFFLESS_WOR
 
 - [ ] **Step 4: First publish** — dispatch `deploy.yml`. Live checks: `GET https://workflow.j5s.dev/w/hello/.bffless/workflows/index.json` (through the forwarder — now the generated one), `POST /api/hello/echo` on the harness host, `list_aliases` shows the `hello` alias's set attached and the `workflow` alias carrying both ids. **Manual, once:** the `hello.j5s.dev` domain's path `/apps/workflow/hello-dist` → `/` (admin UI or MCP `update_domain`).
 - [ ] **Step 5: README** — the repo is the reference for "writing an implementation" now: layout, the relative-path convention, the four manual per-install items, and a link to `apps/workflow/docs/writing-an-implementation.md`.
+
+### Task 6b: Preview teardown — `bffless/publish-workflow` `mode: teardown` (apps#399, spec 06 step 5)
+
+**Files (`bffless/publish-workflow`, v1.1.0):**
+- Modify: `action.yml` (input `mode: publish | teardown`, default `publish`; `target-url`/`path`/`workflows` not required in teardown), `README.md` (obligation 5 no longer "not yet"; the preview recipe)
+- Create: `scripts/teardown.mjs` (`detach({ …, ruleSetName })` = the inverse of `attach.mjs`, then delete the alias, then delete the set), `test/teardown.test.mjs`
+- Consumer: `bffless/workflow-hello/.github/workflows/preview.yml` (`pull_request: [opened, synchronize, reopened]` → `mode: publish`, `alias: hello-pr-${{ github.event.number }}`, `rules: .bffless/proxy-rules/hello`; `pull_request: [closed]` → `mode: teardown`, same alias)
+
+**Interfaces:** in teardown mode the action (1) `GET /api/repo/<owner>/<repo>/aliases`, finds the harness alias and PATCHes `proxyRuleSetIds` **minus** every id whose set is named `<alias>` (no write if none); (2) deletes alias `<alias>` (`DELETE /api/repo/<owner>/<repo>/aliases/<alias>` — verify the CE route and whether deleting an alias with an attached set is allowed or needs the set detached first); (3) deletes the rule set named `<alias>` (`DELETE /api/proxy-rule-sets/<id>` — verify; `rules push --prune` cannot delete a set). Idempotent: every step tolerates "already gone". **Refuses** unless `alias` matches `^[a-z][a-z0-9-]*-pr-[0-9]+$` or `preview: true` is passed — the contributor-role key can repoint any alias on the harness project, and a typo must not tear down production. Outputs: `detached` (bool), `deleted-alias` (bool), `deleted-rule-set` (bool).
+
+- [ ] **Step 1: Failing tests (node --test)** — `unionIds` inverse (`withoutIds(['a','b'],'b')` → `['a']`, no-op when absent); `teardown` against a fake `fetchImpl`: GET → PATCH with the reduced list → DELETE alias → DELETE set, in that order; a second run (GET returns no such alias/set) makes no writes and exits 0; `alias: hello` without `preview: true` rejects before any request.
+- [ ] **Step 2: Verify fail.**
+- [ ] **Step 3: Implement** — `scripts/teardown.mjs` + the `mode` branch in `action.yml` (the composite's publish steps get `if: inputs.mode == 'publish'`, the teardown step `if: inputs.mode == 'teardown'`; `actionlint` cannot lint composite `action.yml` — `test/action.test.mjs` is the contract check). README: obligation 5, the `preview.yml` recipe, the refusal rule.
+- [ ] **Step 4: Verify** — `npm test`; then the live proof is Task 6 Step 4's PR preview: open a PR on `workflow-hello`, confirm `hello-pr-N` appears on the harness Implementations screen, close the PR, confirm the alias, the set and the harness attachment are gone (admin UI / `GET …/aliases`).
+- [ ] **Step 5: Commit + release** — `feat: teardown mode` → release-please v1.1.0, `v1` moves; close apps#399.
 
 ### Task 7: The monorepo stops shipping hello
 
@@ -1489,7 +1513,7 @@ Common shape (from Studio's rules, kept): `prep` → `createJob` (`data_create` 
 - [ ] **Step 2: headless hello** — `workflow-headless run https://workflow.j5s.dev hello/interactive --inputs '{}' --out …` as `workflow-ci` → exit 0; `run.json` shows `pick/0/choose` succeeded by the island's own submit under `hostContext.bffless.headless` (Decision 7), `review/0/confirm` skipped with outputs (Decision 11), the run row `headless: true`; then the same through `workflow-headless-run.yml` (the artifact). Negative: an `inputs` with a wrong type → exit 3.
 - [ ] **Step 3: Studio, 3-minute clip, interactive** — kick off with one short recording (real credits: WhisperX, Gemini director + refiner, Claude describe/blog, nano-banana ×2 — note the cost in the README). Checks, each a Decision: `video/contact-sheet` returns labelled sheets (Decision 2; `labelled: true` in the job result — else the drawtext fallback fired, record it), `scenes` rows carry `source`/`sourceIndex`/`spans`, the cut-editor island plays the clip and WAV through signed URLs (Decision 6) and its Done submits `keep`, `assemble` → `concat` → `short.mp4` downloads, `describe`/`blog`/`frames`/`bundle` produce `post.md` + `zip` with `images/frame-NN.jpg`, two covers → `pick` → `cover` File ref. `words` for the clip is under 256 KB (no offload) — note that a 1-hour source would offload (Decision 16).
 - [ ] **Step 4: Studio, headless** — same clip through the driver with `--timeout 90m`: `trim` auto-submits the refiner's cuts (`headless: auto`, its 240-minute declared budget irrelevant), `edit`/`pick` skip, exit 0, `outputs/short.mp4` + `outputs/blog.zip` + `outputs/cover.png` saved. Compare `run.json` outputs with Step 3's.
-- [ ] **Step 5: Record** — README checklists (PASS/FAIL + evidence per Decision), a `fix(…)` PR for anything disproved (M1/M2 precedent), issues for the deferred list (preview teardown; `silence` op; `bffless/run-workflow`; workflow-studio mocks; `https://` inputs), tick the epic, write the memory note (what the walk disproved; the Studio port's per-run cost).
+- [ ] **Step 5: Record** — README checklists (PASS/FAIL + evidence per Decision), a `fix(…)` PR for anything disproved (M1/M2 precedent), issues for the deferred list (`silence` op; `bffless/run-workflow`; workflow-studio mocks; `https://` inputs), tick the epic, write the memory note (what the walk disproved; the Studio port's per-run cost).
 
 ---
 

@@ -71,8 +71,11 @@ Session cookies, CSP and the MCP Apps bridge (04) all assume this single origin.
 
 ## Implementation CI obligations → `publish-workflow`
 
-Every implementation repeats the same five steps, so they live in one composite action /
-CLI verb (`bffless workflows publish`), the way `upload-artifact` owns deploys:
+Every implementation repeats the same five steps, so they live in one composite action —
+**`bffless/publish-workflow@v1`** (M3 Phase 1, 2026-08-27) — the way `upload-artifact` owns
+deploys. Inputs: `alias`, `api-url`, `api-key`, `repository`, `target-url` (required until
+bffless/ce#698), `path`, `workflows`, `rules`, `harness-alias`, `name`, `description`,
+`prune`, `lint-version` (`^1.0.0`):
 
 1. build the implementation (`dist/` = islands, scripts, any standalone UI);
 2. copy `.bffless/workflows/*.yaml` into `dist/.bffless/workflows/` and generate
@@ -81,21 +84,34 @@ CLI verb (`bffless workflows publish`), the way `upload-artifact` owns deploys:
    serves it — a typo on either side would otherwise be a run-time 404; a failing lint fails
    the publish);
 3. deploy `dist/` to alias `<alias>` (`bffless/upload-artifact`);
-4. `bffless rules sync` the rule set as **`<alias>`** with every rule path rewritten under
-   `/api/<alias>/` (authored in the repo as `rules/api/…` with no impl prefix — the CLI adds
-   it; a CLI enhancement, `--path-prefix`), generate the `/w/<alias>/[...path]` forwarding
-   rule with `targetUrl` = the deployed alias URL, and attach the set to **both** `<alias>`
-   and the harness alias (`workflow` by default, input `harness-alias`) — idempotent;
-5. on PR close: delete the preview alias and its rule set (detaching from the harness).
+4. push the rule set as **`<alias>`** with every *derived* rule path rewritten under
+   `/api/<alias>/` — `bffless rules push --path-prefix /api/<alias>` (`bffless` ≥ 0.3.3;
+   `deploy-proxy-rules@v1` ≥ 1.3.0 input `path-prefix`). Rules are authored **prefix-free**
+   (`rules/echo/post/` → `POST /api/<alias>/echo`); a manifest with an explicit
+   `pathPattern:` is left verbatim, which is how the generated
+   `rules/_custom/forward/get.rule.yaml` forwarder (`pathPattern: /w/<alias>/*`,
+   `targetUrl` = the deployed alias URL, `forwardCookies: true`, `order: 5`) rides in the
+   same set. The action copies the set to a temp dir, renames it, writes the forwarder
+   (and refuses an authored one), syncs with `prune: true`, and attaches the set to **both**
+   `<alias>` (via `upload-artifact`'s `proxy-rule-set-names`) and the harness alias
+   (`workflow` by default, input `harness-alias`) — `GET /api/repo/<owner>/<repo>/aliases`,
+   then `PATCH …/aliases/<harness-alias>` with the union of `proxyRuleSetIds`; idempotent
+   (no write when already attached). The publish key needs the **contributor** project role
+   on the harness project;
+5. on PR close: delete the preview alias and its rule set (detaching from the harness) —
+   `mode: teardown` on the same action; refuses a non-preview alias (`<impl>-pr-<n>` or an
+   explicit `preview: true`). Built in M3 Phase 2 (bffless/apps#399).
 
-PR previews are therefore first-class: `alias: studio-pr-12` yields `/api/studio-pr-12/...`,
+PR previews are therefore first-class: `alias: studio-pr-12` (with `rules:` passed
+explicitly — the set directory is named for the implementation, not the alias) yields `/api/studio-pr-12/...`,
 `/w/studio-pr-12/...`, a `studio-pr-12` rule set on the harness alias, and the harness lists
 it as an implementation with a *preview* badge. The workflow YAML is byte-identical between
 production and preview because paths are relative (D17).
 
-`rule-missing` reads the path prefix off the rule set on disk, the same place step 4 reads
-it: `/api/<alias>` while implementations author the prefix by hand, `/api` once
-`--path-prefix` lands. Where the linter cannot see a rule set — the harness lints in the
+`rule-missing` takes the URL prefix from `--path-prefix` when given (`workflow index …
+--path-prefix /api/<alias>`, which is what `publish-workflow` passes) and the on-disk layout
+is then bare (`rules/echo/post/`); without the flag it reads the prefix off the rule set on
+disk (`/api/<alias>` if `rules/api/<alias>/` exists, else `/api`) for hand-prefixed sets. Where the linter cannot see a rule set — the harness lints in the
 browser (09) — the check is skipped with a notice, never an error.
 
 ## Files — harness-owned run storage (D7)
