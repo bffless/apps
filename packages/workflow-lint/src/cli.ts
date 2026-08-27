@@ -234,6 +234,16 @@ function runIndex(parsed: IndexArgs, out: (line: string) => void, err: (line: st
     pathPrefix: parsed.pathPrefix,
   })
 
+  // An explicit --rules that does not resolve is an environment error, not a
+  // notice. The caller named the set, so degrading to "skipped the rule check"
+  // would publish a bundle whose paths were never actually verified — the exact
+  // failure the check exists to prevent. Auto-resolution finding nothing is
+  // different, and keeps the notice: nobody claimed there was a set to read.
+  if (parsed.rules && !rules.found) {
+    err(`workflow: ${rules.reason}`)
+    return 2
+  }
+
   let result
   try {
     result = writeIndex({

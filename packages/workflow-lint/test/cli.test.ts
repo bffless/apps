@@ -237,3 +237,29 @@ test('lint accepts --path-prefix, resolving a prefix-free set the way the publis
 test('--path-prefix needs a value', () => {
   expect(run(['lint', '--path-prefix']).err).toMatch(/--path-prefix needs a value/)
 })
+
+test('an explicit --rules that does not resolve fails loudly, before anything is written', () => {
+  const out = outDir()
+  const r = run([
+    'index', plainImpl('.bffless/workflows'),
+    '--out', out, '--impl', 'plain', '--name', 'Plain',
+    '--rules', plainImpl('.bffless/proxy-rules/nope'),
+  ])
+  // Exit 2, not the rule-missing notice: the caller named the set, so failing to
+  // read it is an environment error and the paths were never actually checked.
+  expect(r.code).toBe(2)
+  expect(r.err).toMatch(/proxy-rules\/nope/)
+  expect(existsSync(join(out, '.bffless/workflows/index.json'))).toBe(false)
+})
+
+test('no --rules and nothing to auto-resolve stays a notice — the index still publishes', () => {
+  const src = outDir()
+  const out = outDir()
+  writeFileSync(
+    join(src, 'plain.workflow.yaml'),
+    readFileSync(plainImpl('.bffless/workflows/plain.workflow.yaml'), 'utf8'),
+  )
+  const r = run(['index', src, '--out', out, '--impl', 'plain', '--name', 'Plain'])
+  expect(r.code).toBe(0)
+  expect(existsSync(join(out, '.bffless/workflows/index.json'))).toBe(true)
+})
