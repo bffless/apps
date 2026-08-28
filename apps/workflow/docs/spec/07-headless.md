@@ -15,20 +15,36 @@ and interactive runs are the same code, the same rows, the same history.
   dropped — the same resolution the form's own initial state uses. The parameter itself is
   **required**: a workflow that takes no inputs is started with `inputs=e30` (`{}`), so a
   mistyped parameter is a refusal rather than a silent run on defaults.
-- `file` inputs are given as **already-stored paths** — the driver uploads through
-  `/api/workflow/files/prepare|register` (06) before it opens the page. The page never fetches a
-  url a caller handed it; `https://` input values are deliberately not supported.
+- A `file` input's value is a **whole File ref** — `{ path, name, contentType, size, url }`,
+  exactly the object `/api/workflow/files/register` hands back (06) — not a bare path. The
+  driver uploads through `prepare` → PUT → `register` before it opens the page and puts the
+  registered ref in the JSON; run inputs are stored verbatim, and nothing on this side turns a
+  path into a ref, so a bare string fails validation like any other wrong-shaped value. The
+  page never fetches a url a caller handed it; `https://` input values are deliberately not
+  supported.
 - The values are validated against `on.manual.inputs` by the very same function the kickoff
   form's own Start runs (`lib/autoStart.ts`), so a driver's inputs and a person's are never
   judged differently.
 - Valid → the run starts immediately (no Start click) with `run.headless = true` on the row, and
   the page navigates to it. In place of the form the kickoff page shows a `kickoff-auto`
   ("Starting…") notice — auto mode never renders a form, since there is nobody to fill it in.
-- Invalid → nothing starts, and the refusal is reported **twice**: as a `kickoff-invalid` list in
-  the DOM, and as `status: 'invalid'` on the global below. Three things count as invalid — values
-  that do not validate, an `inputs` parameter that does not decode, and a workflow whose file
-  could not be read or does not lint. To a driver they are one fact ("this is not going to
-  start"), and hanging is not an acceptable way to say it.
+- Invalid → nothing starts, and `status: 'invalid'` goes on the global below. **Everything** that
+  can stop a `?auto=1` start publishes it — they are one fact to a driver ("this is not going to
+  start"), and hanging is not an acceptable way to say it — but only two of them also render the
+  `kickoff-invalid` list, because the rest already have their own screen:
+
+  | cause | `kickoff-invalid` | what the page shows |
+  |---|---|---|
+  | values that do not validate | yes | the per-input errors |
+  | an `inputs` parameter that does not decode | yes | one error under `inputs` |
+  | the workflow does not lint | no | the usual lint report |
+  | the workflow file could not be fetched | no | "Couldn't read the workflow file" |
+  | no such implementation / workflow | no | "No such workflow" |
+  | discovery itself failed | no | the discovery error |
+
+  So a driver waits on the **global**, not on `kickoff-invalid`: waiting on the testid (or on
+  `run-status`) hangs through the last four rows, which are also the likeliest ways a CI run
+  goes wrong — a typo'd alias, an unreachable instance.
 
 **Observe:** every run page — headless or not — publishes
 
@@ -39,12 +55,17 @@ window.__workflow = {
   currentSteps: string[],  // keys whose status is running | polling | waiting
   outputs: Record<string, unknown>,  // the run's outputs, filled at completion (File refs, not bytes)
   steps: Record<string, StepStatus>, // every step the run has reached → its status
-  errors?: Record<string, string>,   // only on 'invalid': why, keyed by input name
+  errors?: Record<string, string>,   // only on 'invalid': why. Keyed by the input that
+                                     // failed, or by the part of the start that did:
+                                     // `inputs`, `workflow`, `discovery`.
 }
 ```
 
 It is `undefined` when no run page is mounted, and is cleared on unmount so a stale snapshot
-never outlives the page that wrote it. `invalid` is a **page** state, not a run status: no row
+never outlives the page that wrote it. That includes the seam a start goes through: between the
+kickoff page navigating and the run page's first publish there is one commit with no global at
+all, so a driver **polls for `runId` to appear** rather than reading the global the instant the
+navigation lands. `invalid` is a **page** state, not a run status: no row
 ever carries it, and it is deliberately absent from the persisted `RunStatus` vocabulary.
 
 And stable `data-testid`s: `run-status[data-state=…]`, `step[data-key][data-state]`,
@@ -102,10 +123,17 @@ server-side runner: it is Playwright in CI.
 ## Resume
 
 Headless runs **do not resume**; a failed CI step re-runs the workflow. That is a rule the
-harness leans on, not just advice: a `headless: auto` form that was `waiting` when the run died
-replays as `waiting` with its wait clock re-armed and nothing re-fires its auto-submit, so a
-resumed headless run would sit there until `HEADLESS_TIMEOUT`. Re-running the workflow is the
-supported answer, and the one that leaves CI a clean record.
+harness leans on, not just advice: a `headless: auto` **form** that was `waiting` when the run
+died replays as `waiting` and nothing re-fires its auto-submit, and because the wait clock is
+measured from the step's recorded `startedAt` — not from when the timer was armed — a run
+adopted after its budget has passed fails `HEADLESS_TIMEOUT` *immediately* rather than waiting
+again. Either way the step is lost. Re-running the workflow is the supported answer, and the one
+that leaves CI a clean record.
+
+An `island` is the exception that proves the rule: the resume path re-mounts a `waiting`/
+`running` island on its recorded inputs, so a `headless: auto` island reads
+`hostContext.bffless.headless` again and submits itself as it did the first time. It still rides
+the same `startedAt`-based clock, so a long-dead run fails it just as fast.
 
 A headless run that dies still leaves a `running` row like any other (the lease expires; anyone
 can open it and see where it got to) — and because the interactive path is untouched, a person

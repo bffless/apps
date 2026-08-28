@@ -106,17 +106,28 @@ export function KickoffPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart])
 
-  // Every way `?auto=1` can end without a run: bad inputs, a workflow file
-  // that could not be read, a workflow that does not validate. All three are
-  // the same fact to a driver — "this is not going to start" — so all three
-  // publish `invalid` rather than only the first.
+  // Every way `?auto=1` can end without a run: discovery that failed, a url
+  // naming an implementation or workflow that is not there, a workflow file
+  // that could not be read, a workflow that does not validate, and inputs
+  // that do not. They are one fact to a driver — "this is not going to
+  // start" — so every one of them publishes `invalid`, not only the ones with
+  // something to render. The first two are the likeliest ways a CI run goes
+  // wrong (a typo'd alias, an offline instance) *and* the two this page
+  // answers with an early return above the JSX, so they would otherwise be
+  // the states that hang a driver for its whole timeout.
   const blocked = useMemo<Record<string, string> | null>(() => {
     if (!auto) return null
     if (invalid) return invalid
+    // Nothing has gone wrong while discovery is still in flight.
+    if (isLoading) return null
+    if (isError) return { discovery: 'The implementations could not be listed' }
+    // One guard, because `listing` is derived from `impl`'s own workflows: no
+    // such alias, or no workflow by that name in it.
+    if (!impl || !listing) return { workflow: 'No implementation here publishes that workflow' }
     if (yamlFailed) return { workflow: "This workflow's file could not be fetched" }
     if (loaded && !loaded.ok) return { workflow: 'This workflow does not validate, so it cannot be run' }
     return null
-  }, [auto, invalid, yamlFailed, loaded])
+  }, [auto, invalid, isLoading, isError, impl, listing, yamlFailed, loaded])
 
   useEffect(() => {
     if (!blocked) return

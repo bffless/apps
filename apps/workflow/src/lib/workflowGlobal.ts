@@ -23,7 +23,13 @@ export interface WorkflowGlobal {
   /** The run's top-level outputs — filled at completion (File refs, not bytes). */
   outputs: Record<string, unknown>
   steps: Record<StepKey, StepStatus>
-  /** Only on `invalid`: why the start was refused, keyed by input name. */
+  /**
+   * Only on `invalid`: why the start was refused. Keyed by the input that
+   * failed — or, for a refusal no single input is to blame for, by the part of
+   * the start that did: `inputs` (the parameter would not decode), `workflow`
+   * (no such workflow, its file could not be read, or it does not lint),
+   * `discovery` (the implementations could not be listed).
+   */
   errors?: Record<string, string>
 }
 

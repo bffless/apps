@@ -150,6 +150,42 @@ describe('KickoffPage — ?auto=1', () => {
     await waitFor(() => expect(window.__workflow?.status).toBe('invalid'))
   })
 
+  it('reports a discovery failure as invalid — the likeliest way a CI run goes wrong', async () => {
+    // The page answers this one with an early return above the JSX, so there
+    // is no `kickoff-invalid` to wait for: without the global, a driver waits
+    // out its whole timeout on an instance that is simply unreachable.
+    server.use(http.get('/api/workflow/aliases', () => new HttpResponse(null, { status: 500 })))
+
+    const { page, store } = renderApp('/hello/hello/run?auto=1&inputs=e30')
+
+    await waitFor(() => expect(window.__workflow?.status).toBe('invalid'))
+    expect(Object.keys(window.__workflow?.errors ?? {})).toEqual(['discovery'])
+    expect(store.getState().run.state).toBeNull()
+    expect(within(page).queryByTestId('kickoff-form')).not.toBeInTheDocument()
+  })
+
+  it('reports an implementation or workflow that is not there as invalid', async () => {
+    const { page, store } = renderApp('/hello/nope/run?auto=1&inputs=e30')
+
+    expect(await within(page).findByText('No such workflow')).toBeInTheDocument()
+    await waitFor(() => expect(window.__workflow?.status).toBe('invalid'))
+    expect(Object.keys(window.__workflow?.errors ?? {})).toEqual(['workflow'])
+    expect(store.getState().run.state).toBeNull()
+  })
+
+  it('publishes nothing while discovery is still in flight — loading is not a refusal', async () => {
+    server.use(
+      http.get('/api/workflow/aliases', async () => {
+        await delay('infinite')
+        return HttpResponse.json([])
+      }),
+    )
+    const { page } = renderApp('/hello/hello/run?auto=1&inputs=e30')
+
+    expect(await within(page).findByText('Loading…')).toBeInTheDocument()
+    expect(window.__workflow).toBeUndefined()
+  })
+
   it('leaves an ordinary kickoff alone: no `auto`, no global, and the form as before', async () => {
     const { page } = renderApp('/hello/hello/run')
 
