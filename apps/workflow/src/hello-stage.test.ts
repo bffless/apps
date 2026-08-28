@@ -45,7 +45,7 @@ const staged = (outDir: string, ...parts: string[]) => join(outDir, ...parts)
 
 /** A file this out dir should not have: proof `stage-hello.mjs` clears the
  * whole out dir before staging into it, not just the directories it owns. */
-const STALE_FILE = ['some-earlier-run.txt']
+const STALE_FILE = ['.bffless', 'workflows', 'some-earlier-run.txt']
 
 describe('stage-hello.mjs', () => {
   let outDir: string
@@ -53,7 +53,12 @@ describe('stage-hello.mjs', () => {
 
   beforeAll(() => {
     outDir = mkdtempSync(join(tmpdir(), 'hello-stage-'))
-    mkdirSync(outDir, { recursive: true })
+    // Under `.bffless/`, like a real leftover from an earlier run of this
+    // exact script would be — a mistyped `--out` guard (stage-hello.mjs)
+    // refuses to clear a non-empty directory with no `.bffless/` in it at
+    // all, so a bare file at the out dir's root would trip that guard instead
+    // of exercising what this test is actually about.
+    mkdirSync(staged(outDir, ...STALE_FILE.slice(0, -1)), { recursive: true })
     writeFileSync(staged(outDir, ...STALE_FILE), 'stale\n')
     // A real clone + install + build over the network: an order of magnitude
     // slower than the rest of the suite, hence the generous timeout.

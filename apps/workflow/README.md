@@ -12,3 +12,12 @@ code yet.
 - Decisions: [`docs/adr/`](docs/adr/)
 
 Milestones M0–M4 are in the overview; each gets its own implementation plan and session.
+
+## Development
+
+`pnpm --filter workflow stage` clones `bffless/workflow-hello` at the commit pinned in
+`hello.ref` and builds it into `hello-dist/` + `hello-src/` — run it once before
+`pnpm --filter workflow test:run` (or `dev`/`build`) for the **full** suite: a handful of
+mock-backed tests skip cleanly without it (see `vite.config.ts`), so `test:run` alone on a
+fresh checkout is still green, just not complete. `pnpm --filter workflow test:stage` (its
+own script) exercises the stager itself and needs the same network access.

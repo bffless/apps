@@ -5,9 +5,17 @@
  * hello pipelines the M1 implementation calls.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { MOCK_ADMIN, MOCK_MEMBER, db, filesUnder, seedFinishedRun, setMockUser, stepsOf } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { PAYLOAD_BUDGET_BYTES } from '../lib/runner/payload'
+
+/** `hello-src/` only exists once `pnpm --filter workflow stage` has cloned bffless/workflow-hello (a network call) — skip this block cleanly on an unstaged checkout instead of failing on a 404/undefined module. */
+const posterCardStaged = existsSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'hello-src', 'scripts', 'poster-card.js'),
+)
 
 const json = (path: string, body: unknown) =>
   fetch(path, {
@@ -272,7 +280,7 @@ describe('the files trio', () => {
   })
 })
 
-describe('the script module route', () => {
+describe.skipIf(!posterCardStaged)('the script module route', () => {
   it('serves a bundle script as JavaScript, and 404s anything else', async () => {
     const res = await fetch('/w/hello/scripts/poster-card.js')
     expect(res.status).toBe(200)

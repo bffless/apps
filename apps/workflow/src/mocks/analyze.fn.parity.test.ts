@@ -9,7 +9,7 @@
  * clone) — and skips cleanly when unstaged, the same way `hello-scripts.test.ts`
  * does.
  */
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +25,14 @@ function loadFnHandler(): (ctx: { request: { body?: Record<string, unknown> } })
 }
 
 describe.skipIf(!existsSync(FN_PATH))('analyze.fn.js parity with the mock helper', () => {
-  const handler = loadFnHandler()
+  // Not a module-scope `const`: vitest still calls a `describe.skipIf` body to
+  // *collect* the tests inside even when every one of them ends up skipped, so
+  // loading the fixture file here would still throw on an unstaged checkout.
+  let handler: (ctx: { request: { body?: Record<string, unknown> } }) => unknown
+
+  beforeAll(() => {
+    handler = loadFnHandler()
+  })
 
   const cases: unknown[] = [
     ['Hello, world!'],
