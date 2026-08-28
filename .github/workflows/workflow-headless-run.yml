@@ -1,0 +1,118 @@
+name: Workflow headless run
+
+# One unattended run of a workflow against a real harness deployment, driven by
+# `@bffless/workflow-headless` (spec `apps/workflow/docs/spec/07-headless.md`).
+# Nothing of the harness runs server-side: this is Playwright in CI, opening the
+# same page a person would.
+#
+# Dispatch-only, deliberately — a run here is a *live* run: it writes a run row,
+# uploads files to the deployment's storage, and calls whatever pipelines the
+# workflow calls. Nothing about a push should spend that.
+on:
+  workflow_dispatch:
+    inputs:
+      workflow:
+        description: '<impl>/<workflow> to run'
+        required: true
+        type: string
+        default: 'hello/interactive'
+      inputs:
+        description: 'Kickoff values as a JSON object (a workflow that takes none still needs {})'
+        required: true
+        type: string
+        default: '{}'
+      harness_url:
+        description: 'Harness origin to drive'
+        required: false
+        type: string
+        default: 'https://workflow.j5s.dev'
+      timeout_minutes:
+        description: 'How long the driver waits for a terminal status — digits only, in minutes (e.g. 60). No unit suffix: an "m" is appended for --timeout, and the job ceiling is this + 10 for install and browser.'
+        required: false
+        type: string
+        default: '60'
+    # NOTE: workflow_dispatch caps at 10 inputs. Four here; `WORKFLOW_TOKEN` is
+    # deliberately not one of them — a credential on a command line lands in
+    # process listings and CI logs (Decision 13), so the environment is the only
+    # way in.
+
+# A live run touches a real deployment; queue them rather than interleave.
+concurrency:
+  group: workflow-headless-run
+  cancel-in-progress: false
+
+permissions: { contents: read }
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # The driver's own ceiling plus headroom for install + Chromium download, so
+    # a driver timeout surfaces as exit 4 (its own verdict) rather than as the
+    # runner killing the job.
+    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) + 10 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bffless/workflow-headless build
+      - run: pnpm --filter @bffless/workflow-headless exec playwright install chromium --with-deps
+
+      # Through the environment, not through the command line: a dispatch input
+      # interpolated into a `run:` string is shell source, and a JSON body full
+      # of quotes is exactly the shape that breaks out of it.
+      - name: Write the kickoff inputs
+        env:
+          WORKFLOW_INPUTS: ${{ inputs.inputs }}
+        run: printf '%s' "$WORKFLOW_INPUTS" > inputs.json
+
+      - name: Run the workflow
+        id: run
+        env:
+          HARNESS_URL: ${{ inputs.harness_url }}
+          TARGET: ${{ inputs.workflow }}
+          DRIVER_TIMEOUT: ${{ inputs.timeout_minutes }}
+          # The member the harness relays a login for. Both already exist on
+          # this repo (workflow-ci@bffless.app); the driver cannot use an API
+          # key instead — an API key cannot mint a SuperTokens session, and two
+          # of the harness's relays forward the caller's cookies.
+          WORKFLOW_EMAIL: ${{ secrets.WORKFLOW_EMAIL }}
+          WORKFLOW_PASSWORD: ${{ secrets.WORKFLOW_PASSWORD }}
+        run: |
+          node packages/workflow-headless/dist/cli.js run "$HARNESS_URL" "$TARGET" \
+            --inputs inputs.json --out output --timeout "${DRIVER_TIMEOUT}m"
+
+      # Always: a failed run's artifacts (failed.png, steps.log, console.log)
+      # are the whole reason to look.
+      - name: Summarise
+        if: always()
+        env:
+          TARGET: ${{ inputs.workflow }}
+          HARNESS_URL: ${{ inputs.harness_url }}
+        run: |
+          {
+            echo "## Headless run"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| workflow | \`$TARGET\` |"
+            echo "| harness | $HARNESS_URL |"
+            if [ -f output/run.json ]; then
+              node --input-type=module -e '
+                import fs from "node:fs"
+                const { run } = JSON.parse(fs.readFileSync("output/run.json", "utf8"))
+                console.log(`| run | \`${run.runId}\` |`)
+                console.log(`| status | **${run.status}** |`)
+              '
+            else
+              echo "| run | none — the start never happened |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workflow-run-output
+          path: output/
+          if-no-files-found: warn

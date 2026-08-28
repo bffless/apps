@@ -166,11 +166,45 @@ export function jobOutcome(def: Definition, state: RunState, job: string): Outco
   // run — plus any downstream `if: failure()` — must still see a failure.
   if (states.some((s) => stepConclusion(def, s) === 'failure')) return 'failure'
   if (states.some((s) => s.status === 'cancelled')) return 'cancelled'
-  if (states.every((s) => s.status === 'skipped')) return 'skipped'
+  // "A job that was skipped has null outputs" (01) is about a job that
+  // *produced nothing* — and a `headless: skip` step produces (07/Decision 11:
+  // it stands its declared outputs in for the work, and spec 07 already
+  // promises later expressions can reference them). So a job is only skipped
+  // when every step was skipped **and none carried an outputs map**; one that
+  // holds a headless skip succeeds, and `jobRef` yields its outputs instead of
+  // null. Without this the same workflow answers differently attended and
+  // unattended — hello's run-level `cover` would be the File ref interactively
+  // and `null` headless — which is exactly what headless mode must not do.
+  //
+  // "Carried an outputs map" is deliberately wider than "stood values in":
+  // a **bare** `headless: skip` (a legal shape, 07) produces `{}`, and that
+  // counts too. Narrowing this to a non-empty map would make a job whose only
+  // step is a bare skip read `skipped` headless and `success` attended, so
+  // every downstream `needs` on it would gate differently — which is the
+  // divergence this rule exists to stop, not an edge case outside it.
+  // An `if:`-skipped step carries nothing at all and still skips its job.
+  if (states.every((s) => s.status === 'skipped') && !states.some(skippedWithOutputs)) {
+    return 'skipped'
+  }
   return 'success'
 }
 
-/** A matrix item contributes an output only when it ran and did not fail. */
+/**
+ * A `headless: skip` (07) — the one skip that stands *something* in for the
+ * work it did not do. Any of them: an `outputs` map at all is the marker, and a
+ * bare `headless: skip` carries `{}`. Only a scheduler/`if:` skip leaves it
+ * `undefined`.
+ */
+function skippedWithOutputs(s: StepState): boolean {
+  return s.status === 'skipped' && s.outputs !== undefined
+}
+
+/**
+ * A matrix item contributes an output only when it ran and did not fail — which
+ * already counts a skipped-with-outputs step as producing (a skip is neither
+ * cancelled nor a failure), so it agrees with `jobOutcome` above without
+ * needing its own reading of R66.
+ */
 function itemProduced(def: Definition, state: RunState, job: string, index: number): boolean {
   const states = itemSteps(def, state, job, index)
   if (states.length === 0) return false

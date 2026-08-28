@@ -2,13 +2,14 @@
  * The `form` step adapter (03): the built-in schema-driven form, used mid-run.
  *
  * A form step has no `outputs` map — **the field values are the outputs**,
- * typed by their own definitions (02/03) — so this module is exactly two
- * functions: the initial values the form UI opens with (defaults may be
+ * typed by their own definitions (02/03) — so this module is essentially two
+ * things: the initial values the form UI opens with (defaults may be
  * expressions, which is how an upstream output becomes an editable field), and
- * the validation + `step.succeeded` event a submit produces. Both halves of
- * that second function are the declaration walk shared with the island adapter
- * (`./declared`); a form's declarations are its fields, untyped meaning
- * `string` (02).
+ * the acceptance of a set of values (`validateFormOutputs`), which
+ * `completeFormStep` wraps in the `step.succeeded` a submit produces and a
+ * `headless: skip` reuses whole. Both halves of that second thing are the
+ * declaration walk shared with the island adapter (`./declared`); a form's
+ * declarations are its fields, untyped meaning `string` (02).
  *
  * A field's `options` may itself be an expression (03) — "the four covers the
  * previous step drew" — so the fields the UI renders and the fields a submit
@@ -58,14 +59,76 @@ export function completeFormStep(a: FormStepArgs): FormResult {
   // A form's fields *are* its declarations; an untyped field is a string (02).
   // Evaluated, so `choice` membership is checked against the options the form
   // actually offered rather than the expression that produced them.
-  const fields = formFieldDefs(a)
-  const { outputs, errors } = validateDeclared(fields, a.values, {
+  const result = validateFormOutputs(formFieldDefs(a), a.values)
+  if (!result.ok) return { ok: false, errors: result.errors }
+  return { ok: true, event: succeededEvent(a, result.outputs, a.at) }
+}
+
+export type FormOutputs =
+  | { ok: true; outputs: Record<string, unknown> }
+  | { ok: false; errors: Record<string, string> }
+
+/**
+ * Field values → the step's outputs: the whole acceptance decision for a form,
+ * with no event and no clock around it.
+ *
+ * Extracted from `completeFormStep` (Task 12) because a **headless skip** is
+ * the same decision made without a person: `headless: { mode: skip, outputs: … }`
+ * (07) declares values for a form step's fields, and they must be accepted or
+ * refused on exactly the terms a submit would be — including the File-ref
+ * round trip below, which the live `interactive.workflow.yaml` depends on
+ * (its `cover` field is a `choice` over File refs and its skip value is one of
+ * those refs). Two readings of "is this a valid answer to this form" would be
+ * a run that a person can finish and CI cannot, or the reverse.
+ */
+export function validateFormOutputs(
+  fields: Record<string, InputDef>,
+  values: Record<string, unknown>,
+): FormOutputs {
+  const { outputs, errors } = validateDeclared(fields, withOptionPaths(fields, values), {
     defaultType: 'string',
   })
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
-  return { ok: true, event: succeededEvent(a, withFileRefs(fields, outputs), a.at) }
+  return { ok: true, outputs: withFileRefs(fields, outputs) }
+}
+
+/** `path -> ref` for a `choice` whose options are File refs (02's shorthand); `undefined` for every other field. */
+function fileRefOptions(field: InputDef): Map<string, unknown> | undefined {
+  if (field.type !== 'choice' || !Array.isArray(field.options)) return undefined
+  const refs = new Map<string, unknown>()
+  for (const option of field.options) {
+    if (isFileRefLike(option)) refs.set(option.path, option)
+  }
+  return refs.size === 0 ? undefined : refs
+}
+
+/**
+ * The inverse of `withFileRefs`, applied *before* validation: a `choice` is
+ * only ever a **string** to `validateValue` (`../outputs`) and membership is
+ * checked against `optionValue(entry)` — a File-ref option's `path` — so a
+ * value that arrives as the ref itself is normalised to the path it names.
+ *
+ * The UI's own submit already sends paths, so this changes nothing there. It
+ * exists for the headless skip, whose declared value is written as an
+ * expression over an upstream step's outputs (`${{ needs.card.outputs.posters[0] }}`)
+ * and therefore evaluates to the ref object, not to its path.
+ */
+function withOptionPaths(
+  fields: Record<string, InputDef>,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...values }
+  for (const [name, field] of Object.entries(fields)) {
+    if (!fileRefOptions(field)) continue
+    const value = normalized[name]
+    if (isFileRefLike(value)) normalized[name] = value.path
+    else if (Array.isArray(value)) {
+      normalized[name] = value.map((v) => (isFileRefLike(v) ? v.path : v))
+    }
+  }
+  return normalized
 }
 
 /**
@@ -82,12 +145,8 @@ function withFileRefs(
 ): Record<string, unknown> {
   const upgraded: Record<string, unknown> = { ...outputs }
   for (const [name, field] of Object.entries(fields)) {
-    if (field.type !== 'choice' || !Array.isArray(field.options)) continue
-    const refs = new Map<string, unknown>()
-    for (const option of field.options) {
-      if (isFileRefLike(option)) refs.set(option.path, option)
-    }
-    if (refs.size === 0) continue
+    const refs = fileRefOptions(field)
+    if (!refs) continue
     const value = outputs[name]
     if (typeof value === 'string') upgraded[name] = refs.get(value) ?? value
     else if (Array.isArray(value)) {

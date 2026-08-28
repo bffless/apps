@@ -104,6 +104,9 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         status: 'skipped', // terminal
         attempt: 1,
         annotations: [],
+        // Only a `headless: skip` carries any (Task 12); the key stays absent
+        // for a scheduler skip rather than becoming an explicit `undefined`.
+        ...(event.outputs ? { outputs: event.outputs } : {}),
       })
 
     case 'step.started': {

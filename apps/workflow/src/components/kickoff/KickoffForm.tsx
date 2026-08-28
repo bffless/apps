@@ -9,8 +9,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { InputDef } from '@bffless/workflow-lint/definition'
-import { validateInputConstraints } from '../../lib/runner/inputConstraints'
-import { validateValue } from '../../lib/runner/outputs'
+import { blank, initialValues, validateInputs } from '../../lib/autoStart'
 import type { FileRef } from '../../lib/runner/types'
 import { FieldControl } from './FieldControl'
 
@@ -20,28 +19,6 @@ export interface KickoffFormProps {
   initial?: Record<string, unknown>
   uploading: (file: File, onProgress: (fraction: number) => void) => Promise<FileRef>
   onStart: (values: Record<string, unknown>) => void
-}
-
-/** "Unanswered" for `required` — `false` and `0` are answers (03's own rule). */
-function blank(value: unknown, list: boolean): boolean {
-  if (value === null || value === undefined || value === '') return true
-  return list && Array.isArray(value) && value.length === 0
-}
-
-function initialValues(
-  inputs: Record<string, InputDef>,
-  initial: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  const values: Record<string, unknown> = {}
-  for (const [name, def] of Object.entries(inputs)) {
-    if (initial && name in initial) values[name] = initial[name]
-    else values[name] = def.default === undefined ? null : def.default
-  }
-  return values
-}
-
-function typeOf(def: InputDef): string {
-  return typeof def.type === 'string' ? def.type : 'string'
 }
 
 export function KickoffForm({ inputs, initial, uploading, onStart }: KickoffFormProps) {
@@ -68,22 +45,10 @@ export function KickoffForm({ inputs, initial, uploading, onStart }: KickoffForm
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
-    const nextErrors: Record<string, string> = {}
-    for (const [name, def] of Object.entries(inputs)) {
-      const type = typeOf(def)
-      const list = def.list === true
-      const value = values[name] ?? null
-      if (def.required === true && blank(value, list)) {
-        nextErrors[name] = 'This field is required'
-        continue
-      }
-      if (!validateValue(type, list, value)) {
-        nextErrors[name] = `Expected a valid ${type} value`
-        continue
-      }
-      const constraintError = validateInputConstraints(def, value)
-      if (constraintError) nextErrors[name] = constraintError
-    }
+    // The same loop `?auto=1` runs (`lib/autoStart`) — deliberately one
+    // function, so a driver's inputs and a person's can never be judged
+    // differently.
+    const nextErrors = validateInputs(inputs, values)
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors)
       return

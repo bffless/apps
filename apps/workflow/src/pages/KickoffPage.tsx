@@ -6,16 +6,29 @@
  *
  * `?from=<runId>` (Re-run, 08) prefills the form from that run's own
  * `inputs`; its File refs are reused untouched, no re-upload.
+ *
+ * `?auto=1&inputs=<base64url(JSON)>` is the headless entry point (07/D12):
+ * the same start, with the values off the URL instead of the form and nobody
+ * to press Start. **Everything** it refuses reaches `window.__workflow` as
+ * `status: 'invalid'` — a driver watching the global would otherwise wait out
+ * its whole timeout on a run that never began. Only two of those refusals also
+ * render the `kickoff-invalid` list (values that do not validate, and an
+ * `inputs` parameter that does not decode); the other four — a workflow that
+ * does not lint, a file that could not be read, no such implementation or
+ * workflow, and a failed discovery — keep their own screens, which is why the
+ * global is the contract and the testid is not (07's table).
  */
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { KickoffForm } from '../components/kickoff/KickoffForm'
+import { decodeInputs, initialValues, validateInputs } from '../lib/autoStart'
 import { workflowId } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
 import { uploadFile } from '../lib/upload'
+import { publishWorkflowGlobal } from '../lib/workflowGlobal'
 import { useAppDispatch } from '../store/hooks'
 import { startRun } from '../store/runnerActions'
 import { useWorkflowListing } from '../store/useWorkflowListing'
@@ -28,6 +41,8 @@ export function KickoffPage() {
   const dispatch = useAppDispatch()
   const [searchParams] = useSearchParams()
   const from = searchParams.get('from') ?? undefined
+  const auto = searchParams.get('auto') === '1'
+  const inputsParam = searchParams.get('inputs')
 
   const { impl, listing, isLoading, isError, error } = useWorkflowListing()
 
@@ -40,6 +55,96 @@ export function KickoffPage() {
     () => (yaml !== undefined && listing ? loadWorkflow(yaml, listing.file) : null),
     [yaml, listing],
   )
+
+  // One auto-start per mount. Without it, any re-render between the dispatch
+  // and the navigation would start the workflow a second time.
+  const started = useRef(false)
+
+  // What `?auto=1` makes of the URL — derived, not state: decoding and
+  // validating are pure, so there is nothing here for an effect to
+  // synchronise, and the render that shows the errors is the same render that
+  // computed them.
+  const autoStart = useMemo<{ values?: Record<string, unknown>; errors?: Record<string, string> } | null>(() => {
+    if (!auto || !loaded?.ok || !loaded.def) return null
+    const decoded = decodeInputs(inputsParam)
+    if (!decoded.ok) return { errors: { inputs: decoded.error } }
+    // Resolved against the declarations first, exactly as the form's own
+    // initial state is: an input the driver left out takes its `default`, and
+    // one the workflow does not declare is dropped rather than carried into
+    // the run's `inputs`.
+    const values = initialValues(loaded.def.inputs, decoded.values)
+    const errors = validateInputs(loaded.def.inputs, values)
+    return Object.keys(errors).length > 0 ? { errors } : { values }
+  }, [auto, inputsParam, loaded])
+
+  const invalid = autoStart?.errors ?? null
+
+  function start(values: Record<string, unknown>, headless: boolean) {
+    if (!impl || !listing || !loaded?.ok || !loaded.def) return
+    // `workflow` (the route param) already equals this whenever `listing` was
+    // found (`useWorkflowListing` matches on it) — computed directly here so
+    // this page never trusts a raw filename as the id (R1).
+    const wfId = workflow ?? workflowId(listing.file)
+    const runId = dispatch(
+      startRun({
+        impl: impl.alias,
+        workflow: wfId,
+        def: loaded.def,
+        yaml: loaded.yaml,
+        workflowName: loaded.def.name,
+        ...(impl.version === undefined ? {} : { workflowVersion: impl.version }),
+        values,
+        headless,
+      }),
+    )
+    void navigate(`/${impl.alias}/${wfId}/runs/${runId}`)
+  }
+
+  useEffect(() => {
+    if (started.current || autoStart?.values === undefined) return
+    started.current = true
+    start(autoStart.values, true)
+    // `start` closes over this render's discovery result; the `started` guard
+    // is what makes the effect run-once, so re-listing it would only re-run
+    // the effect on every render for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart])
+
+  // Every way `?auto=1` can end without a run: discovery that failed, a url
+  // naming an implementation or workflow that is not there, a workflow file
+  // that could not be read, a workflow that does not validate, and inputs
+  // that do not. They are one fact to a driver — "this is not going to
+  // start" — so every one of them publishes `invalid`, not only the ones with
+  // something to render. The first two are the likeliest ways a CI run goes
+  // wrong (a typo'd alias, an offline instance) *and* the two this page
+  // answers with an early return above the JSX, so they would otherwise be
+  // the states that hang a driver for its whole timeout.
+  const blocked = useMemo<Record<string, string> | null>(() => {
+    if (!auto) return null
+    if (invalid) return invalid
+    // Nothing has gone wrong while discovery is still in flight.
+    if (isLoading) return null
+    if (isError) return { discovery: 'The implementations could not be listed' }
+    // One guard, because `listing` is derived from `impl`'s own workflows: no
+    // such alias, or no workflow by that name in it.
+    if (!impl || !listing) return { workflow: 'No implementation here publishes that workflow' }
+    if (yamlFailed) return { workflow: "This workflow's file could not be fetched" }
+    if (loaded && !loaded.ok) return { workflow: 'This workflow does not validate, so it cannot be run' }
+    return null
+  }, [auto, invalid, isLoading, isError, impl, listing, yamlFailed, loaded])
+
+  useEffect(() => {
+    if (!blocked) return
+    publishWorkflowGlobal({
+      runId: '',
+      status: 'invalid',
+      currentSteps: [],
+      outputs: {},
+      steps: {},
+      errors: blocked,
+    })
+    return () => publishWorkflowGlobal(null)
+  }, [blocked])
 
   if (isLoading) return <p className="note">Loading…</p>
   if (isError) return <DiscoveryError error={error} />
@@ -56,29 +161,10 @@ export function KickoffPage() {
     )
   }
 
-  // `workflow` (the route param) already equals this whenever `listing` was
-  // found (`useWorkflowListing` matches on it) — computed directly here so
-  // this page never trusts a raw filename as the id (R1).
   const wfId = workflow ?? workflowId(listing.file)
 
   function upload(file: File, onProgress: (fraction: number) => void): Promise<FileRef> {
     return uploadFile({ impl: impl!.alias, workflow: wfId, scope: 'inputs', file, onProgress })
-  }
-
-  function handleStart(values: Record<string, unknown>) {
-    if (!loaded?.ok || !loaded.def) return
-    const runId = dispatch(
-      startRun({
-        impl: impl!.alias,
-        workflow: wfId,
-        def: loaded.def,
-        yaml: loaded.yaml,
-        workflowName: loaded.def.name,
-        ...(impl!.version === undefined ? {} : { workflowVersion: impl!.version }),
-        values,
-      }),
-    )
-    navigate(`/${impl!.alias}/${wfId}/runs/${runId}`)
   }
 
   return (
@@ -96,7 +182,7 @@ export function KickoffPage() {
         </EmptyState>
       )}
 
-      {!loaded && !yamlFailed && <p className="note">Loading…</p>}
+      {!loaded && !yamlFailed && !auto && <p className="note">Loading…</p>}
 
       {loaded && !loaded.ok && (
         <div className="lint">
@@ -116,13 +202,35 @@ export function KickoffPage() {
         </div>
       )}
 
-      {loaded?.ok && loaded.def && (
+      {auto && invalid && (
+        <div className="lint" data-testid="kickoff-invalid">
+          <p className="empty-title">These inputs cannot start a run</p>
+          <ul className="findings">
+            {Object.entries(invalid).map(([name, message]) => (
+              <li className="finding" key={name} data-severity="error">
+                <span className="finding-rule">{name}</span>
+                <span className="finding-message">{message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Auto mode replaces the form outright: there is no Start to press, and
+          a form rendered here would be one a driver could never fill in. */}
+      {auto && !blocked && (
+        <p className="note" data-testid="kickoff-auto">
+          Starting…
+        </p>
+      )}
+
+      {!auto && loaded?.ok && loaded.def && (
         <div className="panel form-panel">
           <KickoffForm
             inputs={loaded.def.inputs}
             initial={previousRun?.run?.inputs}
             uploading={upload}
-            onStart={handleStart}
+            onStart={(values) => start(values, false)}
           />
         </div>
       )}

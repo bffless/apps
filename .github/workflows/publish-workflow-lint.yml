@@ -1,10 +1,15 @@
 name: publish-workflow-lint
 
-# Publishes the two public Workflow toolchain packages to npm:
+# Publishes the public Workflow toolchain packages to npm:
 #
-#   @bffless/workflow-lint    the `workflow` CLI (lint + index) an implementation
-#                             repo runs over npx in its own CI
-#   @bffless/workflow-script  the types-only `script` step contract
+#   @bffless/workflow-lint      the `workflow` CLI (lint + index) an implementation
+#                               repo runs over npx in its own CI
+#   @bffless/workflow-script    the types-only `script` step contract
+#   @bffless/workflow-headless  the Playwright driver CLI that runs a harness
+#                               workflow unattended
+#
+# (The file keeps its workflow-lint name because release.yml calls it by path; it
+# has published more than that package since the second one joined.)
 #
 # Called by release.yml's `publish-packages` job — one leg per packages/* component
 # release-please just released, carrying that component's npm name and the tag it
@@ -26,7 +31,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: 'npm package name: @bffless/workflow-lint or @bffless/workflow-script'
+        description: 'npm package name, e.g. @bffless/workflow-lint'
         required: true
         type: string
       ref:
@@ -49,6 +54,7 @@ on:
         options:
           - '@bffless/workflow-lint'
           - '@bffless/workflow-script'
+          - '@bffless/workflow-headless'
       ref:
         description: 'the release tag to check out and publish, e.g. workflow-lint-v1.0.0'
         required: true
@@ -97,13 +103,15 @@ jobs:
       # (packages/<name> -> @bffless/<name>), and this is where that convention is
       # actually verified rather than assumed.
       - name: Verify the checked-out package matches the tag
+        id: verify
         env:
           PKG: ${{ inputs.package }}
           REF: ${{ inputs.ref }}
         run: |
           case "$PKG" in
-            @bffless/workflow-lint)   DIR=packages/workflow-lint ;;
-            @bffless/workflow-script) DIR=packages/workflow-script ;;
+            @bffless/workflow-lint)     DIR=packages/workflow-lint ;;
+            @bffless/workflow-script)   DIR=packages/workflow-script ;;
+            @bffless/workflow-headless) DIR=packages/workflow-headless ;;
             *) echo "::error::unknown package $PKG"; exit 1 ;;
           esac
           COMPONENT="${DIR#packages/}"
@@ -123,19 +131,70 @@ jobs:
             exit 1
           fi
           echo "publishing $PKG_NAME@$PKG_VERSION from $REF"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-      # workflow-lint ships built output (`files: ["dist", …]`), and its bin is
-      # dist/cli.js — publishing without this would put an empty package on npm.
-      # workflow-script is a single hand-written .d.ts with nothing to build.
+      # A package that ships built output (`files: ["dist", …]`) with its bin at
+      # dist/cli.js is an empty tarball without this — workflow-lint and
+      # workflow-headless both are. workflow-script is a single hand-written .d.ts
+      # with nothing to build.
+      #
+      # The gate asks the checked-out package.json whether it *has* a build script
+      # rather than naming the packages that do. An `if:` expression cannot read a
+      # file, so the decision lives in the shell — and that is the point: a fourth
+      # package joins by existing, not by remembering to widen an equality here.
+      # Forgetting this is how a bin package reaches npm with no dist/ in it.
       - name: Build
-        if: inputs.package == '@bffless/workflow-lint'
-        run: pnpm --filter @bffless/workflow-lint build
+        env:
+          PKG: ${{ inputs.package }}
+          DIR: ${{ steps.verify.outputs.dir }}
+        run: |
+          if jq -e '.scripts.build // empty' "$DIR/package.json" > /dev/null; then
+            pnpm --filter "$PKG" build
+          else
+            echo "$PKG declares no build script — nothing to build"
+          fi
+
+      # C1's failure *class*, not just its instance. The gate above keys on whether a
+      # package declares a build script, so a future package with `bin: dist/cli.js`
+      # and no build script would sail past it and publish an empty tarball — and npm
+      # does not care that a bin target is missing until someone runs the command, so
+      # nothing downstream would notice either. This is the last cheap place to catch
+      # it. Package-agnostic (it reads whatever `bin` the package declares, string or
+      # object form) and a no-op for a package that declares none.
+      - name: Verify every bin target exists
+        env:
+          DIR: ${{ steps.verify.outputs.dir }}
+        run: |
+          jq -r '.bin | if . == null then empty elif type == "string" then . else .[] end' \
+            "$DIR/package.json" > /tmp/bin-targets.txt
+          if [ ! -s /tmp/bin-targets.txt ]; then
+            echo "$DIR declares no bin — nothing to check"
+            exit 0
+          fi
+          missing=0
+          while IFS= read -r target; do
+            if [ -f "$DIR/$target" ]; then
+              echo "ok  $DIR/$target"
+            else
+              echo "::error::$DIR/package.json declares bin \"$target\" but $DIR/$target does not exist — this tarball would ship a broken command"
+              missing=1
+            fi
+          done < /tmp/bin-targets.txt
+          exit "$missing"
 
       # The tag is already cut, so this cannot stop a bad release — but it does stop
-      # a bad release reaching npm, which is the copy nobody can take back.
+      # a bad release reaching npm, which is the copy nobody can take back. Same
+      # ask-the-package rule as Build above.
       - name: Test
-        if: inputs.package == '@bffless/workflow-lint'
-        run: pnpm --filter @bffless/workflow-lint test:run
+        env:
+          PKG: ${{ inputs.package }}
+          DIR: ${{ steps.verify.outputs.dir }}
+        run: |
+          if jq -e '.scripts["test:run"] // empty' "$DIR/package.json" > /dev/null; then
+            pnpm --filter "$PKG" test:run
+          else
+            echo "$PKG declares no test:run script — nothing to test"
+          fi
 
       # --no-git-checks: the checkout is a detached tag, which pnpm otherwise refuses.
       - name: Publish to npm

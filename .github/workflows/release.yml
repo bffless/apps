@@ -84,6 +84,7 @@ jobs:
           PATHS_RELEASED: ${{ steps.release.outputs.paths_released || '[]' }}
           WORKFLOW_LINT_TAG: ${{ steps.release.outputs['packages/workflow-lint--tag_name'] }}
           WORKFLOW_SCRIPT_TAG: ${{ steps.release.outputs['packages/workflow-script--tag_name'] }}
+          WORKFLOW_HEADLESS_TAG: ${{ steps.release.outputs['packages/workflow-headless--tag_name'] }}
         run: |
           echo "$PATHS_RELEASED" \
             | jq -c '[.[] | select(startswith("apps/")) | sub("^apps/"; "")]' \
@@ -94,12 +95,14 @@ jobs:
             | jq -c \
                 --arg workflow_lint "$WORKFLOW_LINT_TAG" \
                 --arg workflow_script "$WORKFLOW_SCRIPT_TAG" \
+                --arg workflow_headless "$WORKFLOW_HEADLESS_TAG" \
                 '[ .[]
                    | select(startswith("packages/"))
                    | sub("^packages/"; "") as $name
                    | { package: ("@bffless/" + $name),
                        ref: ({ "workflow-lint": $workflow_lint,
-                               "workflow-script": $workflow_script }[$name] // "") } ]' \
+                               "workflow-script": $workflow_script,
+                               "workflow-headless": $workflow_headless }[$name] // "") } ]' \
             > /tmp/packages_released.json
           if jq -e 'any(.[]; .ref == "" or .ref == null)' /tmp/packages_released.json > /dev/null; then
             echo "::error::a released packages/* component has no tag_name mapped in this step's env — add it"

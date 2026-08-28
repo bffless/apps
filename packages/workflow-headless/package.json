@@ -1,0 +1,60 @@
+{
+  "name": "@bffless/workflow-headless",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Playwright driver that runs a BFFless Workflow harness workflow unattended (spec apps/workflow/docs/spec/07-headless.md)",
+  "keywords": [
+    "bffless",
+    "workflow",
+    "headless",
+    "playwright",
+    "ci"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bffless/apps.git",
+    "directory": "packages/workflow-headless"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "workflow-headless": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "playwright": "1.61.1",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.3",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^4.1.7"
+  }
+}

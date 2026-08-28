@@ -81,7 +81,9 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
     | { initial?: unknown; last?: unknown; truncated?: boolean }
     | undefined
 
-  // A skipped step never entered the queue: its creation event *is* `step.skipped`.
+  // A skipped step never entered the queue: its creation event *is* `step.skipped`
+  // — and it carries whatever a `headless: skip` stood in for it (Task 12), so a
+  // resumed run's downstream expressions read the same values the live run did.
   if (row.status === 'skipped') {
     return [
       {
@@ -91,6 +93,7 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
         index: row.index,
         stepId: row.step,
         kind: row.kind,
+        ...(row.outputs ? { outputs: row.outputs as Record<string, unknown> } : {}),
         at: finishedAt,
       },
     ]

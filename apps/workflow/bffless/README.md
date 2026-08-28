@@ -124,6 +124,30 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   `srcdoc` frame — so bucket storage (GCS/S3) needs nothing, and a local-storage install must
   set `PUBLIC_ORIGIN` or island media will not load. j5s.dev is GCS, so it signs absolute live.
 
+- **Headless / unattended runs (M3)**: the harness always runs in a browser, so an unattended
+  run is a headless browser on the *same page* — `GET /<impl>/<workflow>/run?auto=1&inputs=<base64url(JSON)>`,
+  followed on `window.__workflow` (spec `docs/spec/07-headless.md`). The driver is
+  `@bffless/workflow-headless` (`packages/workflow-headless`), and its exit code is the contract
+  CI reads: `0` succeeded · `1` the run failed/cancelled · `2` a driver-side fault · `3` the page
+  refused the start · `4` the driver timed out · `130` SIGINT after Cancel. Nothing manual to set
+  up on the BFFless side — no rule, no key, no domain: a headless run is an ordinary member
+  session and leaves an ordinary run row (`headless: true`).
+  - **Credentials are the two repo secrets `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD`** on
+    `bffless/apps` — the member `workflow-ci@bffless.app` the M1/M2 live walks used (which needs
+    at least `viewer` on the project, per *Members need a project role* above). They are what
+    `.github/workflows/workflow-headless-run.yml` passes to the driver. An **API key is not an
+    alternative**: it cannot mint a SuperTokens session, and two of the harness's relays forward
+    the caller's cookies, so `WORKFLOW_TOKEN` is only ever an extra `X-API-Key` on
+    `/api/workflow/*` GETs, never a replacement for the login.
+  - **Every interactive step needs a `headless:`** or the run fails fast at it (`HEADLESS_REQUIRED`)
+    rather than hanging on a person who is not there. Hello's `interactive` workflow declares both
+    shapes — `headless: auto` on the island (it submits itself) and `headless: { mode: skip, … }`
+    on the form — and `index.json` marks each workflow `headlessSafe` so the UI can say so before
+    a run is attempted.
+  - **CI proves the whole chain without a deployment**: `apps/workflow/e2e/headless.spec.ts` spawns
+    the built driver against the Playwright dev harness in `--mocks` mode and reads the artifacts
+    back off disk. The live half is the dispatch below.
+
 ### Islands (M2)
 
 Island HTML is served straight out of the hello bundle at `/w/hello/islands/*.html` (the
@@ -297,3 +321,30 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   bffless/ce#697 still open.
 - [ ] **M2 Phase 3 — Annotations column.** Shows real counts for the new (M2) run and an em dash
   `—` for pre-M2 rows that predate `annotationCounts`.
+
+### M3 — sandbox and `workflow.sign`
+
+- [x] **M3 Phase 3a — `workflow.sign` and the sandboxed Worker — PASSED 2026-08-28.** After
+  apps#408, runs `run_01M13ZRAKGPBDDJBK4YM1EXVQB` (hello) and
+  `run_01M13ZRZTNJQ7QH9KEJ478S7HR` (interactive) on `workflow.j5s.dev` both succeeded, the
+  `card` job's poster script having run inside the sandbox frame. On the interactive run the
+  `poster_view` viewer's `<img src>` was a `storage.googleapis.com` presigned URL
+  (`X-Goog-Expires=3600`) that decoded 640×360 and fetched **credential-less**;
+  `island-sign-error` was empty. So the sign rule (`order: 19`), `confine.fn.js` and the
+  opaque-origin `<img>` path all hold live on bucket storage. A **local-FS** install would need
+  `PUBLIC_ORIGIN` set — its presigned URL is relative — and that is still unproven live.
+
+### M3 — headless
+
+- [ ] **M3 Task 15 — the dispatch runs live.** Dispatch `workflow-headless-run.yml`
+  (Actions → *Workflow headless run*) for `hello/interactive` with `inputs` `{}` against
+  `https://workflow.j5s.dev`: the job goes green, the step summary names the run and reports
+  **succeeded**, and the `workflow-run-output` artifact carries `run.json` (`run.headless: true`),
+  `steps.log` with `pick/0/choose → succeeded` and `review/0/confirm → skipped`, and
+  `outputs/poster.svg`. Record the run URL here. Not yet walked — the workflow is dispatch-only
+  and only exists on `main` once this branch merges.
+- [ ] **M3 Task 15 — the mock-only download caveat does not bite live.** Against the dev mock the
+  storage lives in page memory, so bytes uploaded for a `file` *input* are gone by the time a step
+  asks for them (the ref is still correct; only a download of it 404s). Against a deployment the
+  bytes are in the bucket — confirm on the live dispatch by running a workflow that takes a `file`
+  input.
