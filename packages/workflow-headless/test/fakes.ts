@@ -26,6 +26,13 @@ export interface FakeOptions {
   onGlobalRead?: (n: number) => void
   /** Console lines the page emits on its first navigation. */
   consoleLines?: string[]
+  /**
+   * `'stuck'` makes the page sit on the relay's `/login` and never come back —
+   * a bot challenge, a wrong password, a changed form. The default signs in.
+   */
+  login?: 'ok' | 'stuck'
+  /** What the page reports as `document.title | innerText` for the login diagnostic. */
+  pageText?: string
 }
 
 export interface FakePage extends PageLike {
@@ -81,6 +88,11 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     },
 
     async evaluate(_fn: unknown, arg?: unknown) {
+      // Two no-argument evaluates exist: the login diagnostic reads the page's
+      // own title and text, everything else is `readGlobal`.
+      if (arg === undefined && /document\.title/.test(String(_fn))) {
+        return o.pageText ?? 'Just a moment… | Checking your browser'
+      }
       // No argument is `readGlobal`; an argument is the in-page fetch (api.ts).
       if (arg === undefined) {
         page.globalReads += 1
@@ -100,12 +112,17 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
       }
     },
 
-    url: () => 'https://harness.test/',
+    url: () => (o.login === 'stuck' ? 'https://admin.test/login' : 'https://harness.test/'),
     async fill() {},
     async click(selector: string) {
       page.clicks.push(selector)
     },
-    async waitForURL() {},
+    async waitForURL() {
+      // The relay bounce resolves either way; only the return trip hangs.
+      if (o.login === 'stuck' && page.clicks.includes('button[type="submit"]')) {
+        throw new Error('page.waitForURL: Timeout 30000ms exceeded.')
+      }
+    },
     async screenshot(options: { path: string }) {
       page.screenshots.push(options.path)
       writeFileSync(options.path, 'png')

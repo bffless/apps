@@ -56,3 +56,43 @@ describe('runWorkflow — a start that never settles', () => {
     expect(page.screenshots).toEqual([])
   })
 })
+
+describe('runWorkflow — a login that never returns', () => {
+  /**
+   * The relay login is the driver's least-covered path — `--mocks` skips it
+   * entirely — and it runs before any artifact exists, so its first live
+   * failure (a GitHub runner, 2026-08-28) produced an empty `output/` and no
+   * way to tell a bot challenge from a wrong password. What the browser is
+   * *looking at* is the whole diagnosis, so it goes into both the message and
+   * the artifacts.
+   */
+  test('captures the page it is stuck on, in the error and on disk', async () => {
+    const dir = out()
+    const { browser, page } = fakeBrowser({
+      globals: [undefined],
+      routes: helloRoutes('succeeded'),
+      login: 'stuck',
+      pageText: 'Just a moment… | Checking your browser before accessing workflow.j5s.dev',
+      consoleLines: ['error: challenge script'],
+    })
+
+    const live = { ...options(50, dir), mocks: false, credentials: { email: 'a@b.c', password: 'x' } }
+
+    // One call, not two: a second run into the same `--out` would rewrite the
+    // very console.log this asserts on.
+    const error = await runWorkflow(live, { browser, log: () => {}, warn: () => {} }).then(
+      () => null,
+      (thrown: unknown) => thrown as { code: number; message: string },
+    )
+
+    expect(error?.code).toBe(EXIT.USAGE)
+    // The URL it is stuck on and the page's own words — enough to tell a
+    // challenge from a refusal without re-running anything.
+    expect(error?.message).toContain('https://admin.test/login')
+    expect(error?.message).toContain('Checking your browser')
+
+    expect(existsSync(join(dir, 'failed.png'))).toBe(true)
+    expect(readFileSync(join(dir, 'console.log'), 'utf8')).toContain('challenge script')
+    expect(page.clicks).toContain('button[type="submit"]')
+  })
+})

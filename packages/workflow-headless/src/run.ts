@@ -116,7 +116,26 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
       if (!o.credentials) {
         throw new DriverError('no credentials: set WORKFLOW_EMAIL / WORKFLOW_PASSWORD', EXIT.USAGE)
       }
-      await loginViaRelay(page, base, o.credentials)
+      // A login failure is the driver's least-covered path and, until this,
+      // its least diagnosable: it happens before any artifact exists, so a
+      // failed CI run had nothing to look at. The evidence that identifies a
+      // bot challenge, an expired password or a changed form — the page the
+      // browser is actually sitting on — is captured here.
+      try {
+        await loginViaRelay(page, base, o.credentials)
+      } catch (error) {
+        await shot('failed')
+        await writeLogs()
+        // `evaluate` rather than a new seam method: the page's own title and
+        // first line of text is what distinguishes a bot challenge ("Just a
+        // moment…") from a refused credential or a changed form.
+        const seen = await page
+          .evaluate(() => `${document.title} | ${document.body?.innerText?.slice(0, 200) ?? ''}`)
+          .catch(() => '')
+        const where = ` (stuck at ${page.url()}${seen ? `, showing ${JSON.stringify(seen)}` : ''})`
+        if (error instanceof DriverError) throw new DriverError(error.message + where, error.code)
+        throw error
+      }
     }
 
     const definition = await definitionWithRetry(api, o.impl, o.workflow, warn, sleep)
