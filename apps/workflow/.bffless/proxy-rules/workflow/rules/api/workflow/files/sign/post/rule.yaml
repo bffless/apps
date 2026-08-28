@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 19
 pipeline:
   name: Sign workflow file
-  description: "POST { path } -> { url, expiresIn }: a presigned GET for an object under the harness prefix (workflows/…), so a sandboxed island (opaque origin, no cookie) can play media (plan Decision 6). Range on the presigned URL is the bucket's; local-FS storage cannot presign (501)."
+  description: "POST { path } -> { url, expiresIn }: a presigned GET for an object under the harness prefix (workflows/…), so a sandboxed island (opaque origin, no cookie) can play media (plan Decision 6). Bucket storage (GCS/S3) presigns an absolute URL and needs nothing. Local-FS storage presigns too (an HMAC /api/storage/presigned/local URL), but that URL is RELATIVE unless PUBLIC_ORIGIN is set — and a relative src cannot resolve inside an opaque-origin srcdoc frame, so a local-storage install must set PUBLIC_ORIGIN. Range on the presigned URL is the storage backend's."
   steps:
     - id: confine
       name: confine

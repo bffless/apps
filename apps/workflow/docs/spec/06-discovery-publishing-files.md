@@ -170,10 +170,13 @@ standalone UI can ship the same four with its own prefix):
   opaque origin carries no cookie, so the serve route above 401s on it — the island asks the
   host for a URL instead (`workflow.sign`, 04/Decision 6). `confine.fn.js` narrows what is
   signable to the harness prefix (an uploads-relative key under `workflows/`, no traversal);
-  anything else is a 400, and the presigned URL is the bucket's, so Range behaviour is the
-  bucket's too. **Local-FS storage cannot presign**: on a self-hosted CE with local storage
-  this rule answers 501 and an island's media stays unreachable — a bucket backend (GCS/S3) is
-  the requirement for `render: island` media.
+  anything else is a 400, and Range behaviour on the signed URL is the storage backend's.
+  **Both backends presign** — CE's `signed_url` calls the adapter's `getUrl`, and the local-FS
+  adapter mints an HMAC-signed `/api/storage/presigned/local?key=…&exp=…&sig=…` (there is no
+  501 path). The local-FS caveat is a different one: that URL is **relative unless
+  `PUBLIC_ORIGIN` is configured**, and a relative `src` has nothing to resolve against inside
+  an opaque-origin `srcdoc` frame. So bucket storage (GCS/S3) needs nothing, and a
+  local-storage install must set `PUBLIC_ORIGIN` for island media to load.
 
 The runner uses the first three for kickoff uploads, `form` uploads, `script` Blobs and for registering
 bare paths a pipeline returns where a `file` is declared. Run deletion removes the run prefix
@@ -191,7 +194,10 @@ file's bytes read storage by path (Replicate/ffmpeg handlers already do).
   the other apps do; `/_bffless/auth/*` only for custom-domain installs.
 - All members see all runs; `started_by` is recorded; delete = owner or admin.
 - Islands and scripts have no credentials of their own; every call goes through the harness
-  (bridge / Worker same-origin fetch) under the user's session.
+  (bridge / Worker same-origin fetch) under the user's session. The one exception is
+  `workflow.sign`'s answer: a signed URL **is** a bearer credential the frame then holds — but a
+  narrow one, scoped to a single object under `workflows/`, expiring in an hour, and mintable
+  only through the session-gated rule that confined the path in the first place.
 - Guest / public runs are **backlog** (per-workflow `access: public`, guest ids, stricter
   file ACLs — a design, not a flag).
 

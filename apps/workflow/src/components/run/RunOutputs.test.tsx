@@ -99,6 +99,37 @@ describe('RunOutputs', () => {
     expect(screen.getByTestId('renderer')).toHaveAttribute('data-render', 'island')
   })
 
+  // The other half of the same rule, pinned so the fix above cannot be widened
+  // into "never infer": a declaration that names **no** renderer still learns
+  // it is a file from its value, which is how every bare
+  // `poster: ${{ steps.draw.outputs.poster }}` gets its Download.
+  it('still infers a file card for a bare json output whose value is a File ref', () => {
+    const def = toDefinition({
+      spec: 1,
+      name: 'Poster',
+      jobs: {},
+      outputs: { poster: '${{ jobs.card.outputs.poster }}' },
+    })
+    const state = {
+      outputs: {
+        poster: {
+          path: 'workflows/hello/interactive/runs/run_1/poster.svg',
+          name: 'poster.svg',
+          contentType: 'image/svg+xml',
+          size: 399,
+          url: '/api/uploads/workflows/hello/interactive/runs/run_1/poster.svg',
+        },
+      },
+    } as unknown as RunState
+
+    const { container } = render(<RunOutputs def={def} state={state} impl="hello" />)
+
+    expect(screen.queryByTestId('renderer')).toBeNull()
+    expect(container.querySelector('.file-card-download')).not.toBeNull()
+    // The tag beside the label reports the *inferred* type, not the resolved `json`.
+    expect(screen.getByText('file')).toBeInTheDocument()
+  })
+
   it('still renders the M1 fixture, with no badge, through the same component', () => {
     const def = toDefinition(FINISHED_RUN.run.definition)
     const state = replayRun(FINISHED_RUN.run, FINISHED_RUN.steps, def)

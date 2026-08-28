@@ -117,8 +117,12 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   `deployment.owner`/`deployment.repo`, so an import into any project signs its own objects);
   anything else is a literal-status 400. Like the delete rule this is a **multi-branch
   conditional `response_handler` rule — edit it as rules-as-code only** (bffless/ce#502).
-  **Local-FS storage cannot presign**: CE's `signed_url` answers **501** on a local-storage
-  install, so island media needs a bucket backend (GCS/S3). j5s.dev is GCS, so it signs live.
+  **Both storage backends presign** — CE's `signed_url` calls the adapter's `getUrl`, and the
+  local-FS adapter mints an HMAC-signed `/api/storage/presigned/local?key=…&exp=…&sig=…`
+  (`local.adapter.ts`); there is no 501. The local-FS caveat is that this URL is **relative
+  unless `PUBLIC_ORIGIN` is set**, and a relative `src` cannot resolve inside an opaque-origin
+  `srcdoc` frame — so bucket storage (GCS/S3) needs nothing, and a local-storage install must
+  set `PUBLIC_ORIGIN` or island media will not load. j5s.dev is GCS, so it signs absolute live.
 
 ### Islands (M2)
 

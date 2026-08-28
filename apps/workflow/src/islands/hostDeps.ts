@@ -39,6 +39,9 @@ export function openLink(url: string): void {
  */
 const NOT_CONFINED = 'path must be an uploads-relative key under workflows/ with no traversal'
 
+/** The `expiresIn` the rule mints, and what a body that omits it is read as. */
+const DEFAULT_EXPIRES_IN = 3600
+
 /**
  * The `files/sign` rule's own confinement, applied before the request rather
  * than after it. Deliberately the *narrower* half: the rule additionally
@@ -79,6 +82,9 @@ export function signFile(http: HttpJson): (path: string) => Promise<{ url: strin
     const body = res.body !== null && typeof res.body === 'object' ? (res.body as Record<string, unknown>) : {}
     const url = typeof body.url === 'string' ? body.url : ''
     if (url === '') throw new Error(`${path}: the sign rule returned no url`)
-    return { url, expiresIn: typeof body.expiresIn === 'number' ? body.expiresIn : 0 }
+    // The rule always sends one; the fallback is the rule's own hour rather
+    // than `0`, which an island would read as "already expired" and could
+    // reasonably refuse to render.
+    return { url, expiresIn: typeof body.expiresIn === 'number' ? body.expiresIn : DEFAULT_EXPIRES_IN }
   }
 }

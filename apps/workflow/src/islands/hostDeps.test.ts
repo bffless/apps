@@ -39,6 +39,14 @@ describe('signFile', () => {
     )
   })
 
+  it("reads a body with no expiresIn as the rule's own hour, never as already-expired", async () => {
+    const http = vi.fn(async () => ({ status: 200, ok: true, body: { url: 'https://b/p.svg' } }))
+    await expect(signFile(http as unknown as HttpJson)('workflows/x.svg')).resolves.toEqual({
+      url: 'https://b/p.svg',
+      expiresIn: 3600,
+    })
+  })
+
   it('rejects an answer with no usable url', async () => {
     const http = vi.fn(async () => ({ status: 200, ok: true, body: { url: '' } }))
     await expect(signFile(http as unknown as HttpJson)('workflows/x.svg')).rejects.toThrow(/no url/)
