@@ -21,6 +21,18 @@ if (outIdx > -1 && process.argv[outIdx + 1] === undefined) {
 }
 const out = outIdx > -1 ? process.argv[outIdx + 1] : join(appDir, 'hello-dist')
 
+// Guard against a mistyped --out, checked before anything else runs (a bad
+// path should fail fast, not after a clone/install/build): only ever clear a
+// directory this script (or an earlier run of it) actually staged. The
+// stager's own marker is `.bffless/workflows/index.json` — the last thing a
+// successful run writes — not merely a `.bffless/` directory existing, which
+// e.g. `apps/workflow` itself also has (that would let `--out apps/workflow`
+// silently delete the harness's own source).
+if (existsSync(out) && readdirSync(out).length > 0 && !existsSync(join(out, '.bffless', 'workflows', 'index.json'))) {
+  console.error(`stage-hello: refusing to clear ${out} — it exists, is non-empty, and has no .bffless/workflows/index.json (looks like the wrong --out)`)
+  process.exit(1)
+}
+
 const repo = process.env.WORKFLOW_HELLO_REPO ?? 'https://github.com/bffless/workflow-hello.git'
 
 /** `git -C src rev-parse HEAD`, or `undefined` for anything that isn't a clean, checked-out repo at HEAD (missing dir, half-finished clone, corrupt .git). Never throws — the caller treats that the same as "wrong commit": remove and re-clone. */
@@ -55,14 +67,6 @@ if (headOf(src) !== ref) {
 execFileSync('pnpm', ['install', '--ignore-workspace', '--frozen-lockfile'], { cwd: src, stdio: 'inherit' })
 execFileSync('pnpm', ['build'], { cwd: src, stdio: 'inherit' })
 
-// Guard against a mistyped --out: only ever clear a directory this script (or
-// a previous run of it) actually owns. An existing, non-empty directory with
-// no `.bffless/` in it doesn't look like a prior stage — refuse rather than
-// silently deleting whatever the caller actually meant.
-if (existsSync(out) && readdirSync(out).length > 0 && !existsSync(join(out, '.bffless'))) {
-  console.error(`stage-hello: refusing to clear ${out} — it exists, is non-empty, and has no .bffless/ (looks like the wrong --out)`)
-  process.exit(1)
-}
 rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 cpSync(join(src, 'dist'), out, { recursive: true })

@@ -43,9 +43,17 @@ interface StagedIndex {
 /** The staged bundle's own files — the deploy uploads exactly this tree. */
 const staged = (outDir: string, ...parts: string[]) => join(outDir, ...parts)
 
-/** A file this out dir should not have: proof `stage-hello.mjs` clears the
- * whole out dir before staging into it, not just the directories it owns. */
-const STALE_FILE = ['.bffless', 'workflows', 'some-earlier-run.txt']
+/**
+ * Seeded as `.bffless/workflows/index.json`'s content before staging — the
+ * stager's own out-dir-ownership marker (the `--out` guard in
+ * `stage-hello.mjs` refuses to clear a non-empty dir unless this exact file
+ * exists), so a re-used out dir still passes that guard. Deliberately not
+ * valid JSON: if the stager merged into the existing directory instead of
+ * clearing it first, this text would still be sitting there — proof
+ * `stage-hello.mjs` clears the whole out dir before staging into it.
+ */
+const STALE_MARKER = 'stale — should never survive a re-stage\n'
+const STALE_INDEX_JSON = ['.bffless', 'workflows', 'index.json']
 
 describe('stage-hello.mjs', () => {
   let outDir: string
@@ -53,13 +61,8 @@ describe('stage-hello.mjs', () => {
 
   beforeAll(() => {
     outDir = mkdtempSync(join(tmpdir(), 'hello-stage-'))
-    // Under `.bffless/`, like a real leftover from an earlier run of this
-    // exact script would be — a mistyped `--out` guard (stage-hello.mjs)
-    // refuses to clear a non-empty directory with no `.bffless/` in it at
-    // all, so a bare file at the out dir's root would trip that guard instead
-    // of exercising what this test is actually about.
-    mkdirSync(staged(outDir, ...STALE_FILE.slice(0, -1)), { recursive: true })
-    writeFileSync(staged(outDir, ...STALE_FILE), 'stale\n')
+    mkdirSync(staged(outDir, ...STALE_INDEX_JSON.slice(0, -1)), { recursive: true })
+    writeFileSync(staged(outDir, ...STALE_INDEX_JSON), STALE_MARKER)
     // A real clone + install + build over the network: an order of magnitude
     // slower than the rest of the suite, hence the generous timeout.
     execFileSync('node', [script, '--out', outDir], { stdio: 'pipe' })
@@ -88,7 +91,7 @@ describe('stage-hello.mjs', () => {
   })
 
   it('clears the whole out dir before staging into a re-used one', () => {
-    expect(existsSync(staged(outDir, ...STALE_FILE))).toBe(false)
+    expect(readFileSync(staged(outDir, ...STALE_INDEX_JSON), 'utf8')).not.toBe(STALE_MARKER)
   })
 
   it('builds every listed island as a single self-contained HTML file', () => {
