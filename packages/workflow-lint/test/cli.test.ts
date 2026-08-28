@@ -142,14 +142,21 @@ test('runs when invoked through a bin symlink, same as invoked directly', () => 
   const link = join(dir, 'workflow')
   symlinkSync(cli, link)
 
-  const viaSymlink = execFileSync(process.execPath, [link, 'lint', '--quiet', example('studio.workflow.yaml')], {
-    encoding: 'utf8',
-  })
+  // --alias workflow-studio: see the --json test above for why (studio has
+  // no rule set of its own yet, and an unscoped search now resolves to this
+  // repo's own sole `workflow` set instead of finding none).
+  const viaSymlink = execFileSync(
+    process.execPath,
+    [link, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
+    { encoding: 'utf8' },
+  )
   expect(viaSymlink).toMatch(/0 error\(s\), 0 warning\(s\)/)
 
-  const viaRealPath = execFileSync(process.execPath, [cli, 'lint', '--quiet', example('studio.workflow.yaml')], {
-    encoding: 'utf8',
-  })
+  const viaRealPath = execFileSync(
+    process.execPath,
+    [cli, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
+    { encoding: 'utf8' },
+  )
   expect(viaRealPath).toMatch(/0 error\(s\), 0 warning\(s\)/)
 })
 
