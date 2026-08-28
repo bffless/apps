@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -121,5 +121,48 @@ describe('summary.mjs CLI', () => {
     const outputDirMatch = outputText.match(/output-dir<<(ghadelim_[a-f0-9]+)\n([\s\S]*?)\n\1/)
     expect(outputDirMatch?.[2]).toBe(tmpDir)
     expect(summaryText).toContain('## ✅ Studio headless run complete')
+  })
+
+  // bffless/apps#401: the main-module guard used to compare process.argv[1] (the
+  // as-invoked path) against realpath'd import.meta.url, which is false when the
+  // script is launched through a symlink — the script would silently no-op.
+  it('runs when invoked through a symlink, same as invoked directly', () => {
+    const tmpDir = resolve(mkdtempSync(join(tmpdir(), 'studio-headless-out-')))
+    const outFile = join(tmpDir, 'github-output')
+    const sumFile = join(tmpDir, 'github-summary')
+    const linkDir = mkdtempSync(join(tmpdir(), 'studio-headless-link-'))
+    try {
+      writeFileSync(
+        join(tmpDir, 'run-summary.json'),
+        JSON.stringify({
+          ok: true,
+          phase: 'done',
+          openUrl: 'https://studio.example.com/project/p1/export',
+          projectId: 'p1',
+          error: null,
+          title: 'My Video',
+          description: 'a description',
+          thumbnail: false,
+          blogBundle: false,
+          timings: {},
+        }),
+      )
+
+      const link = join(linkDir, 'summary.mjs')
+      symlinkSync(join(__dirname, '../../scripts/summary.mjs'), link)
+
+      const stdout = execFileSync(process.execPath, [link], {
+        encoding: 'utf8',
+        // GITHUB_OUTPUT points at a temp file, same as the sibling test above — without
+        // it a CI run would append to the real runner's step-output file.
+        env: { ...process.env, STUDIO_HEADLESS_OUT: tmpDir, GITHUB_OUTPUT: outFile, GITHUB_STEP_SUMMARY: sumFile },
+      })
+
+      expect(stdout).toContain('## ✅ Studio headless run complete')
+      expect(readFileSync(sumFile, 'utf8')).toContain('## ✅ Studio headless run complete')
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+      rmSync(linkDir, { recursive: true, force: true })
+    }
   })
 })

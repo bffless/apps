@@ -10,9 +10,9 @@
 // Env: GITHUB_REPOSITORY (required), ASSET_BASE_URL (default https://apps.bffless.dev),
 //      GITHUB_STEP_SUMMARY (optional — omission lines are appended when set).
 
-import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/i
 
@@ -140,6 +140,21 @@ function main() {
   console.log(JSON.stringify(registry, null, 2))
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** realpathSync, tolerant of a path that doesn't resolve (falls back to itself). */
+function realOrSelf(path) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+// Only run when invoked as a script. A published `bin` (or a symlinked
+// checkout) is launched through a symlink — Node resolves the main module
+// through the link, so import.meta.url is already the realpath while
+// process.argv[1] is still the link path. Compare realpaths on both sides,
+// or this guard is false through a symlink and the script silently no-ops
+// (bffless/apps#401).
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   main()
 }

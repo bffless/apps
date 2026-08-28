@@ -1,5 +1,10 @@
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, symlinkSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { checkManualSteps, checkReleaseComponents, checkVersionParity } from './check-app-conventions.mjs'
 
 const REL = 'apps/demo/bffless-app.json'
@@ -149,3 +154,25 @@ test('rejects bffless-app.json behind package.json and the release-please manife
   assert.equal(errors.length, 1)
   assert.match(errors[0], /handoff/)
 })
+
+// bffless/apps#401: the main-module guard used to compare the as-invoked
+// process.argv[1] against a realpath'd import.meta.url, which is false when the
+// script is launched through a symlink — the script would silently no-op instead
+// of running the check. Spawn it through a symlink and confirm it still runs.
+{
+  const tmpDirs = []
+  after(() => {
+    for (const dir of tmpDirs) rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('runs when invoked through a symlink, same as invoked directly', () => {
+    const script = fileURLToPath(new URL('./check-app-conventions.mjs', import.meta.url))
+    const linkDir = mkdtempSync(join(tmpdir(), 'check-app-conventions-link-'))
+    tmpDirs.push(linkDir)
+    const link = join(linkDir, 'check-app-conventions.mjs')
+    symlinkSync(script, link)
+
+    const stdout = execFileSync(process.execPath, [link], { encoding: 'utf8' })
+    assert.match(stdout, /All 5 app\(s\) satisfy the per-app pipelines convention\./)
+  })
+}

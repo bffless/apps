@@ -7,7 +7,7 @@
 //   • appends step outputs to $GITHUB_OUTPUT (if set)
 //   • prints the markdown to stdout
 // <out> = $STUDIO_HEADLESS_OUT, default ../output relative to this file.
-import { readFileSync, appendFileSync } from 'node:fs'
+import { readFileSync, appendFileSync, realpathSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -104,4 +104,19 @@ function main() {
   process.stdout.write(markdown)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main()
+/** realpathSync, tolerant of a path that doesn't resolve (falls back to itself). */
+function realOrSelf(path) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+// Only run when invoked as a script. A published `bin` (or a symlinked
+// checkout) is launched through a symlink — Node resolves the main module
+// through the link, so import.meta.url is already the realpath while
+// process.argv[1] is still the link path. Compare realpaths on both sides,
+// or this guard is false through a symlink and the script silently no-ops
+// (bffless/apps#401).
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) main()

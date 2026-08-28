@@ -17,8 +17,8 @@
 //
 // Run: node scripts/check-app-conventions.mjs   (pnpm apps:check)
 
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { readdirSync, readFileSync, statSync, existsSync, realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -413,6 +413,21 @@ function main() {
   console.log(`\nAll ${apps.length} app(s) satisfy the per-app pipelines convention.`)
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** realpathSync, tolerant of a path that doesn't resolve (falls back to itself). */
+function realOrSelf(path) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+// Only run when invoked as a script. A published `bin` (or a symlinked
+// checkout) is launched through a symlink — Node resolves the main module
+// through the link, so import.meta.url is already the realpath while
+// process.argv[1] is still the link path. Compare realpaths on both sides,
+// or this guard is false through a symlink and the script silently no-ops
+// (bffless/apps#401).
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   main()
 }
