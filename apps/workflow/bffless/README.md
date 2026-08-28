@@ -70,7 +70,7 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
     no-cache`** (rule "Islands: no Cloudflare script injection"). Why: see *Islands (M2) →
     Cloudflare* below.
   - required from M2 Phase 2 — **`**/scripts/*.js` → `Cache-Control: no-transform,
-    no-cache`**. Worker module text is fetched by the harness and turned into a Blob URL
+    no-cache`**. Worker module text is fetched by the harness and handed to the sandbox
     verbatim — an edge-injected script would break the import; same reason as islands.
     Not yet automatable — bffless/ce#700.
 
@@ -152,8 +152,12 @@ forwarder half of which is resolved by the in-process target above).
 A `script` step's module is served straight out of the hello bundle at
 `/w/hello/scripts/<file>.js` (the same forwarder as the islands and the workflow YAMLs). The
 **page** fetches it — the bundle is behind the member's session — and hands the text to a
-Worker as a Blob URL, so the module is imported verbatim; it has no cookies of its own and
-reaches the network only through the host's relay (03). Scripts are copied into the bundle
+hidden `sandbox="allow-scripts"` iframe, which spawns the Worker from two `data:` URLs (the
+module and the shim). The Worker therefore runs on an **opaque origin**: the module is
+imported verbatim, it has no cookies of its own, a `fetch` of its own has no origin to reach
+the harness with, and it reaches the network only through the host's relay (03). The page
+still does the fetching, so the `**/scripts/*.js` `no-transform` header rule above is still
+required. Scripts are copied into the bundle
 **verbatim** by `scripts/stage-hello.mjs` (no build step, unlike islands) and listed in
 `index.json`'s `scripts` array; hello's first one is `scripts/poster-card.js`, the `card` job
 of `interactive.workflow.yaml`.

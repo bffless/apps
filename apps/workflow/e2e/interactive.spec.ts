@@ -121,6 +121,11 @@ test('interactive hello runs an island step end to end against the mock backend'
   const drawStep = page.locator('[data-testid="step"][data-key="card/0/draw"]')
   await expect(drawStep).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
 
+  // Decision 4: the module ran in a Worker spawned inside a hidden
+  // opaque-origin sandbox, and the frame goes with the Worker the moment the
+  // step settles — a run that succeeded leaves none of them on the page.
+  await expect(page.locator('iframe[data-script-sandbox]')).toHaveCount(0)
+
   // The Blob the module returned is a File ref by the time it is an output, and
   // a `file` output always offers Download (02).
   const posterDownload = outputs.locator('[data-output="poster"] .file-card-download')

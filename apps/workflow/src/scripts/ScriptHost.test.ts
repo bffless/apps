@@ -1,17 +1,24 @@
 /**
  * The script host (03): the Worker half of a script step, driven against
- * `fakeWorker` — jsdom has neither `Worker` nor `URL.createObjectURL`, so both
- * are supplied here (the seam for the first is `ScriptHostDeps.spawn`, which
- * every test injects; the second is stubbed per test and doubles as the
- * assertion that the two Blob URLs are revoked when a run settles).
+ * `fakeWorker` — jsdom has no `Worker`, so every test injects one through
+ * `ScriptHostDeps.spawn`, the seam whose shipped implementation mounts the
+ * opaque-origin sandbox (`sandbox-frame.ts`, Decision 4) and is proven in its
+ * own suite.
  *
  * What is *not* asserted here is that the shim actually runs: that is
  * `rpc.test.ts` (the text parses and has no static imports) plus the
  * real-browser check in the task report.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFakeWorker, type FakeWorker } from './fakeWorker'
-import { createScriptHost, ScriptError, type ScriptHostDeps, type ScriptRun } from './ScriptHost'
+import {
+  createScriptHost,
+  DEFAULT_SPAWN,
+  ScriptError,
+  type ScriptHostDeps,
+  type ScriptRun,
+} from './ScriptHost'
+import { createSandboxWorker, type SandboxSpawnArgs } from './sandbox-frame'
 import type { FromWorker, RpcReqMessage, RpcResMessage, RunMessage, ToWorker } from './rpc'
 import { SHIM_SOURCE } from './worker-shim'
 
@@ -25,38 +32,9 @@ const REF = {
   url: '/api/uploads/runs/1/in.txt',
 }
 
-// --- `URL.createObjectURL` (absent in jsdom) -------------------------------
-
-interface ObjectUrl {
-  url: string
-  blob: Blob
-  revoked: boolean
-}
-
-let objectUrls: ObjectUrl[] = []
-
-const entry = (url: string): ObjectUrl => {
-  const found = objectUrls.find((o) => o.url === url)
-  if (!found) throw new Error(`no object URL ${url} was created`)
-  return found
-}
-
-beforeEach(() => {
-  objectUrls = []
-  URL.createObjectURL = vi.fn((blob: Blob) => {
-    const url = `blob:mock/${objectUrls.length}`
-    objectUrls.push({ url, blob, revoked: false })
-    return url
-  })
-  URL.revokeObjectURL = vi.fn((url: string) => {
-    entry(url).revoked = true
-  })
-})
-
 afterEach(() => {
   vi.restoreAllMocks()
-  Reflect.deleteProperty(URL, 'createObjectURL')
-  Reflect.deleteProperty(URL, 'revokeObjectURL')
+  for (const frame of document.querySelectorAll('iframe[data-script-sandbox]')) frame.remove()
 })
 
 // --- harness ---------------------------------------------------------------
@@ -64,7 +42,7 @@ afterEach(() => {
 interface Harness {
   host: ReturnType<typeof createScriptHost>
   worker: FakeWorker
-  shimUrls: string[]
+  spawns: SandboxSpawnArgs[]
   fetchText: ReturnType<typeof vi.fn>
   fetchBytes: ReturnType<typeof vi.fn>
   onLog: ReturnType<typeof vi.fn>
@@ -76,7 +54,7 @@ function bytes(text: string): ArrayBuffer {
 }
 
 function makeHarness(worker: FakeWorker, over: Partial<ScriptHostDeps> = {}): Harness {
-  const shimUrls: string[] = []
+  const spawns: SandboxSpawnArgs[] = []
   const fetchText = vi.fn(async () => ({ ok: true, status: 200, text: MODULE_TEXT }))
   const fetchBytes = vi.fn(async () => ({
     ok: true,
@@ -92,14 +70,14 @@ function makeHarness(worker: FakeWorker, over: Partial<ScriptHostDeps> = {}): Ha
     fetchBytes: fetchBytes as unknown as ScriptHostDeps['fetchBytes'],
     onLog,
     onAnnotate,
-    spawn: (shimUrl) => {
-      shimUrls.push(shimUrl)
+    spawn: async (args) => {
+      spawns.push(args)
       return worker
     },
     ...over,
   })
 
-  return { host, worker, shimUrls, fetchText, fetchBytes, onLog, onAnnotate }
+  return { host, worker, spawns, fetchText, fetchBytes, onLog, onAnnotate }
 }
 
 function start(h: Harness, over: { impl?: string; src?: string; signal?: AbortSignal } = {}) {
@@ -150,14 +128,15 @@ describe('createScriptHost', () => {
     const run = start(h)
     await expect(run.outputs).resolves.toEqual({ n: 1 })
 
-    // The module came from the bundle, and both halves went across as Blob URLs.
+    // The module came from the bundle, and both halves went to the sandbox as
+    // source text — the `data:` URLs are minted inside it (Decision 4).
     expect(h.fetchText).toHaveBeenCalledWith('/w/hello/scripts/bundle.js')
-    const { moduleUrl, inputs } = runMessage(worker)
-    expect(inputs).toEqual({ markdown: '# hi' })
-    await expect(entry(moduleUrl).blob.text()).resolves.toBe(MODULE_TEXT)
-    expect(entry(moduleUrl).blob.type).toBe('text/javascript')
-    expect(h.shimUrls).toHaveLength(1)
-    await expect(entry(h.shimUrls[0]).blob.text()).resolves.toBe(SHIM_SOURCE)
+    expect(h.spawns).toHaveLength(1)
+    expect(h.spawns[0].shimSource).toBe(SHIM_SOURCE)
+    expect(h.spawns[0].moduleSource).toBe(MODULE_TEXT)
+    // The shim already has the module URL from the handover, so `run` carries
+    // nothing but the inputs.
+    expect(runMessage(worker)).toEqual({ t: 'run', inputs: { markdown: '# hi' } })
 
     // `ctx.log` reached the step card.
     expect(h.onLog).toHaveBeenCalledWith('zipping')
@@ -170,9 +149,8 @@ describe('createScriptHost', () => {
     expect(new TextDecoder().decode(body)).toBe('hi!')
     expect(worker.transfers[worker.received.indexOf(answer!)]).toEqual([body])
 
-    // Settled: the Worker is gone and neither Blob URL is left dangling.
+    // Settled: the Worker is gone, and with it the sandbox it ran in.
     expect(worker.terminated).toBe(1)
-    expect(objectUrls.map((o) => o.revoked)).toEqual([true, true])
   })
 
   it('forwards ctx.annotate', async () => {
@@ -208,9 +186,8 @@ describe('createScriptHost', () => {
       fetchText: async () => ({ ok: false, status: 404, text: '<!doctype html>' }),
     })
     await expect(codeOf(start(notFound))).resolves.toBe('SCRIPT_LOAD')
-    // Nothing was spawned, so nothing needs revoking either.
-    expect(notFound.shimUrls).toEqual([])
-    expect(objectUrls).toEqual([])
+    // Nothing was spawned, so no sandbox was ever mounted either.
+    expect(notFound.spawns).toEqual([])
 
     const offline = makeHarness(createFakeWorker(), {
       fetchText: async () => {
@@ -334,11 +311,9 @@ describe('createScriptHost', () => {
     // Delivered *before* the Worker is torn down — the whole point of the defer.
     expect(worker.received.at(-1)).toEqual({ t: 'abort' })
     expect(worker.terminated).toBe(0)
-    expect(objectUrls.some((o) => o.revoked)).toBe(false)
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(worker.terminated).toBe(1)
-    expect(objectUrls.every((o) => o.revoked)).toBe(true)
   })
 
   it('does not terminate twice when the signal aborts a run that is already aborting', async () => {
@@ -372,13 +347,42 @@ describe('createScriptHost', () => {
     const early = start(pre, { signal: aborted })
     await expect(early.outputs).rejects.toMatchObject({ name: 'AbortError' })
     expect(pre.fetchText).not.toHaveBeenCalled()
-    expect(pre.shimUrls).toEqual([])
+    expect(pre.spawns).toEqual([])
   })
 
   it('throws synchronously on a src that escapes the implementation bundle', () => {
     const h = makeHarness(createFakeWorker())
     expect(() => start(h, { src: '../other/steal.js' })).toThrow(/script src/)
     expect(() => start(h, { src: 'https://evil.example/x.js' })).toThrow(/script src/)
+  })
+
+  /**
+   * The seam's default is the sandbox, not a bare `new Worker` — the whole
+   * point of Decision 4. Asserted by identity *and* by effect: a host built
+   * without a `spawn` mounts the frame, and gives it back when the run ends.
+   */
+  it('spawns into the opaque-origin sandbox by default', async () => {
+    expect(DEFAULT_SPAWN).toBe(createSandboxWorker)
+
+    const host = createScriptHost({
+      fetchText: async () => ({ ok: true, status: 200, text: MODULE_TEXT }),
+      fetchBytes: async () => ({ ok: true, status: 200, body: bytes(''), headers: [] }),
+      onLog: vi.fn(),
+      onAnnotate: vi.fn(),
+    })
+    const run = host.run({
+      impl: 'hello',
+      src: 'scripts/bundle.js',
+      inputs: {},
+      signal: new AbortController().signal,
+    })
+    const sandboxes = () => document.querySelectorAll('iframe[data-script-sandbox]')
+    // Nothing in jsdom ever answers the handshake, so the run stays pending
+    // until it is cancelled — which is also what has to take the frame down.
+    await vi.waitFor(() => expect(sandboxes()).toHaveLength(1))
+    run.abort()
+    await expect(run.outputs).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(sandboxes()).toHaveLength(0))
   })
 
   it('ignores messages that arrive after the run settled', async () => {

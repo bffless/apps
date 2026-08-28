@@ -112,8 +112,10 @@ editable field.
 
 ## `script`
 
-An ES module from the implementation, executed **in a Worker** in the harness page (same-origin
-via `/w/<impl>/...`, so a plain `new Worker(url, {type: 'module'})` is allowed). This is
+An ES module from the implementation, executed **in a Worker** in the harness page. The *page*
+fetches it (same-origin via `/w/<impl>/...`, so the member's session reaches the private
+bundle) and hands the text to the sandbox, which spawns the Worker; see the opaque-origin
+bullet below for why it is never a plain `new Worker(url, {type: 'module'})`. This is
 GitHub's `run:`; it exists because real work happens client-side (Studio's contact sheets,
 filmstrips, blog-bundle zip, ffmpeg.wasm).
 
@@ -143,15 +145,10 @@ export default async function run(ctx: {
   becomes a File ref — scripts never do uploads themselves.
 - `files.fetch` only accepts the harness's file-serve urls (`/api/uploads/…`) — a script,
   like an island, cannot reach other routes.
-- The harness ships **no CSP today**, so the Worker inherits none. `ctx.files.fetch` is gated
-  to the file-serve route, but a module Worker spawned from a Blob URL runs at the harness
-  origin and can call `fetch` itself — same-origin, with the member's cookie — so that gate
-  bounds the *relay*, not the Worker; what bounds the Worker is that a script comes from the
-  implementation's own bundle (`resolveScriptSrc`), i.e. code a project member published. A
-  CSP (`connect-src`/`worker-src`) is what would close the gap, and it is decided together
-  with the M3 COOP/COEP item: threads (`SharedArrayBuffer`, ffmpeg core-mt) need the harness
-  served cross-origin-isolated (COOP/COEP response-header rules on the harness alias) —
-  **open item**, decide at M3 with the Studio port.
+- The Worker has an **opaque origin** (spawned from `data:` URLs inside a sandboxed iframe,
+  the same sandbox islands get): no cookies, a relative `fetch` throws, an absolute one is
+  refused by CORS — `ctx.files.fetch` is the only way to bytes. COOP/COEP stays undecided;
+  nothing in M3 needs threads.
 - Failure = rejected promise (`error.code` from `err.code` or `SCRIPT`), or `timeout-minutes`.
 
 ## Choosing

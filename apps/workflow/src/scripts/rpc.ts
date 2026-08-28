@@ -8,12 +8,24 @@
  * because the Worker has no cookies of its own and may not fetch. Keeping the
  * union in its own module means the shim text, the host and the tests all
  * quote the same shapes.
+ *
+ * The wire runs over a `MessageChannel`, not over the Worker's own `self`: the
+ * Worker is spawned inside a sandbox frame (`sandbox-frame.ts`, Decision 4),
+ * so `self` reaches the *frame*. `port` is the handover that starts it and
+ * `ready` the acknowledgement that ends it; everything after those two is the
+ * conversation the step is actually made of.
  */
 import type { FileRef } from '../lib/runner/types'
 
 /** Page → Worker. */
 export type ToWorker =
-  | { t: 'run'; inputs: Record<string, unknown>; moduleUrl: string }
+  /**
+   * The handover, and the only message that arrives on the Worker's `self`:
+   * the port is the transfer, and `moduleUrl` the `data:` URL the shim will
+   * `import()` when the step runs.
+   */
+  | { t: 'port'; moduleUrl: string }
+  | { t: 'run'; inputs: Record<string, unknown> }
   | { t: 'abort' }
   | {
       t: 'rpc:res'
@@ -28,6 +40,8 @@ export type ToWorker =
 
 /** Worker → page. */
 export type FromWorker =
+  /** The shim has the port and the module URL — the sandbox is up. */
+  | { t: 'ready' }
   | { t: 'log'; line: string }
   | { t: 'annotate'; args: unknown }
   | { t: 'rpc:req'; id: number; op: 'files.fetch'; ref: FileRef }
@@ -42,7 +56,10 @@ export type RpcReqMessage = Extract<FromWorker, { t: 'rpc:req' }>
  * The slice of `Worker` the host uses — the test seam
  * (`ScriptHostDeps.spawn`). Handler *properties* rather than
  * `addEventListener`, because there is only ever one listener per run and
- * jsdom has no `Worker` to inherit an `EventTarget` from.
+ * jsdom has no `Worker` to inherit an `EventTarget` from. What the shipped
+ * seam returns is not a `Worker` at all but the sandbox's port wearing this
+ * shape (`sandbox-frame.ts`), which is the other reason the surface is this
+ * narrow.
  */
 export interface WorkerLike {
   postMessage(message: unknown, transfer?: Transferable[]): void
