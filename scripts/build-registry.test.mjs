@@ -1,8 +1,10 @@
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { buildRegistry } from './build-registry.mjs'
 
 const ASSET_BASE = 'https://apps.bffless.dev'
@@ -124,3 +126,31 @@ test('an app without catalog/ still gets an entry, with metadata fields absent',
   assert.equal(entry.thumbnailUrl, undefined)
   assert.equal(entry.screenshots, undefined)
 })
+
+// bffless/apps#401: the main-module guard used to compare import.meta.url against
+// pathToFileURL(process.argv[1]), which is false when the script is launched through
+// a symlink — the script would silently no-op instead of running (and, for a no-args
+// invocation, silently exit 0 instead of failing with the usage message).
+{
+  const tmpDirs = []
+  after(() => {
+    for (const dir of tmpDirs) rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('runs when invoked through a symlink, same as invoked directly', () => {
+    const script = fileURLToPath(new URL('./build-registry.mjs', import.meta.url))
+    const linkDir = mkdtempSync(join(tmpdir(), 'build-registry-link-'))
+    tmpDirs.push(linkDir)
+    const link = join(linkDir, 'build-registry.mjs')
+    symlinkSync(script, link)
+
+    assert.throws(
+      () => execFileSync(process.execPath, [link], { encoding: 'utf8', stdio: 'pipe' }),
+      (err) => {
+        assert.equal(err.status, 1)
+        assert.match(err.stderr, /^usage: node scripts\/build-registry\.mjs --out <file>/)
+        return true
+      },
+    )
+  })
+}
