@@ -113,6 +113,15 @@ describe('BOOTSTRAP_HTML', () => {
     expect(BOOTSTRAP_HTML).toContain('parent.postMessage')
     expect(BOOTSTRAP_HTML).toMatch(/postMessage\(\s*\{\s*t:\s*'port'/)
   })
+
+  it('acts on only the first spawn message: postMessage targets \'*\', so any window that can reach the frame could post a second one', () => {
+    // jsdom never runs the srcdoc script, so this can only assert the source
+    // carries the guard (like the "no external URL" test above) — the guard
+    // actually holding is proven by the real-Chromium e2e.
+    expect(BOOTSTRAP_HTML).toMatch(/let spawned = false/)
+    expect(BOOTSTRAP_HTML).toMatch(/if \(spawned\) return/)
+    expect(BOOTSTRAP_HTML).toMatch(/spawned = true/)
+  })
 })
 
 describe('createSandboxWorker', () => {

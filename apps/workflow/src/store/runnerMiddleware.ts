@@ -1086,6 +1086,13 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         armWaitingStep(event.key, after, deps, listenerApi.dispatch, getRunState)
       }
 
+      // `armWaitingStep` can fail the step synchronously (`waitClock.ts`'s
+      // `remaining <= 0` branch), so the schedule pass below reads `after` —
+      // captured before that call — as a stale, pre-fail snapshot. Safe
+      // anyway: `handleNextAction` re-checks every proposal against fresh
+      // state, and a positive `timeout-minutes` (the schema's own
+      // `exclusiveMinimum: 0`) makes `remaining <= 0` unreachable on a step
+      // that only just reached `waiting`.
       if (after.mode === 'live' && !after.paused && after.meta && after.state?.status === 'running') {
         for (const a of nextActions(after.meta.def, after.state)) {
           await handleNextAction(a, after.meta.def, after.state, deps, listenerApi.dispatch, getRunState)

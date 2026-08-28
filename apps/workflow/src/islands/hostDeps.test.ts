@@ -23,6 +23,18 @@ describe('signFile', () => {
     expect(signed).toEqual({ url: 'https://b/p.svg?sig=1', expiresIn: 3600 })
   })
 
+  it('forwards an optional AbortSignal to http, the way the pipeline branch does', async () => {
+    const http = okHttp()
+    const controller = new AbortController()
+    await signFile(http as unknown as HttpJson)('workflows/hello/runs/r1/poster.svg', controller.signal)
+
+    expect(http).toHaveBeenCalledWith('/api/workflow/files/sign', {
+      method: 'POST',
+      body: { path: 'workflows/hello/runs/r1/poster.svg' },
+      signal: controller.signal,
+    })
+  })
+
   it.each(['uploads/other/x.svg', '/workflows/x.svg', 'workflows/../secrets/x', 'workflows//x', ''])(
     'refuses %o before any request',
     async (path) => {

@@ -15,7 +15,11 @@
  * The frame is a courier, not a participant. It receives the two sources and
  * one end of a `MessageChannel`, hands that port straight to the Worker, and
  * says nothing else — a transferred port is neutered, so the frame could not
- * speak on it afterwards even if it wanted to. Every message the step actually
+ * speak on it afterwards even if it wanted to. It also acts on the *first*
+ * `spawn` message only: `postMessage` targets `'*'` because the frame has no
+ * origin to check, so any window that can reach `frame.contentWindow` (e.g. a
+ * sibling island) could otherwise post a second one and race the host's own
+ * Worker with one it never asked for. Every message the step actually
  * cares about (`run`, `log`, `annotate`, the `ctx.files.fetch` round trip) is
  * therefore one hop, page ↔ Worker, and the only thing the frame reports back
  * is the one thing the port cannot carry: a Worker that never came up at all.
@@ -29,8 +33,11 @@ import type { ToWorker, WorkerLike } from './rpc'
  * harness origin leaks into the sandbox.
  */
 export const BOOTSTRAP_HTML = `<!doctype html><meta charset="utf-8"><script>
+let spawned = false
 addEventListener('message', (e) => {
   if (!e.data || e.data.t !== 'spawn' || !e.ports[0]) return
+  if (spawned) return
+  spawned = true
   const fail = (message) => { parent.postMessage({ t: 'sandbox-error', message: String(message) }, '*') }
   let worker
   try { worker = new Worker(e.data.shim, { type: 'module' }) } catch (err) { fail(err); return }

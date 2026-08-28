@@ -271,7 +271,13 @@ describe('tools/call → the host tools', () => {
       arguments: { path: 'workflows/hello/interactive/runs/run_1/poster.svg' },
     })
 
-    expect(h.sign).toHaveBeenCalledWith('workflows/hello/interactive/runs/run_1/poster.svg')
+    // The sign branch forwards the call's own abort signal, the way the
+    // pipeline branch does — a signed URL that never resolves should be
+    // cancellable the same way a pipeline call is.
+    expect(h.sign).toHaveBeenCalledWith(
+      'workflows/hello/interactive/runs/run_1/poster.svg',
+      expect.any(AbortSignal),
+    )
     expect(result.isError).toBeFalsy()
     expect(result.structuredContent).toEqual({
       url: 'https://bucket.example/poster.svg?sig=1',
@@ -302,7 +308,7 @@ describe('tools/call → the host tools', () => {
     })
 
     expect(result.isError).toBeFalsy()
-    expect(h.sign).toHaveBeenCalledWith('workflows/x/p.svg')
+    expect(h.sign).toHaveBeenCalledWith('workflows/x/p.svg', expect.any(AbortSignal))
   })
 
   it('rejects workflow.submit in viewer mode without calling onSubmit', async () => {

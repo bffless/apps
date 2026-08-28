@@ -118,7 +118,7 @@ export interface IslandHostDeps {
    * `workflow.sign` — `hostDeps`'s `signFile`, bound to the caller's `http`
    * (Decision 6). Rejects with the message the island should see.
    */
-  sign: (path: string) => Promise<{ url: string; expiresIn: number }>
+  sign: (path: string, signal?: AbortSignal) => Promise<{ url: string; expiresIn: number }>
   /** The island asked to go fullscreen (or back); the page owns the layout. */
   onDisplayMode: (mode: IslandDisplayMode) => void
   /** `ui/message` / `notifications/message` — a live line on the step card. */
@@ -457,7 +457,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         // has no other way to load it (Decision 6).
         if (target.tool === 'sign') {
           try {
-            const signed = await deps.sign(typeof args.path === 'string' ? args.path : '')
+            const signed = await deps.sign(typeof args.path === 'string' ? args.path : '', extra.signal)
             return {
               content: [{ type: 'text', text: signed.url }],
               structuredContent: { url: signed.url, expiresIn: signed.expiresIn },

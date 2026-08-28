@@ -72,11 +72,13 @@ function errorOf(body: unknown): string | undefined {
  * than returning an error shape — `IslandHost` turns a rejection into the MCP
  * tool error the island reads, which is the only vocabulary it has.
  */
-export function signFile(http: HttpJson): (path: string) => Promise<{ url: string; expiresIn: number }> {
-  return async (path) => {
+export function signFile(
+  http: HttpJson,
+): (path: string, signal?: AbortSignal) => Promise<{ url: string; expiresIn: number }> {
+  return async (path, signal) => {
     if (!confined(path)) throw new Error(NOT_CONFINED)
 
-    const res = await http('/api/workflow/files/sign', { method: 'POST', body: { path } })
+    const res = await http('/api/workflow/files/sign', { method: 'POST', body: { path }, signal })
     if (!res.ok) throw new Error(errorOf(res.body) ?? `sign failed with status ${res.status}`)
 
     const body = res.body !== null && typeof res.body === 'object' ? (res.body as Record<string, unknown>) : {}
