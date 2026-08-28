@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/bffless/apps/compare/studio-v1.12.0...studio-v1.12.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **scripts:** main-module guards survive symlinked invocation ([#405](https://github.com/bffless/apps/issues/405)) ([e79e6bc](https://github.com/bffless/apps/commit/e79e6bc42ad2cc7ad53316384a2cf8787ad945fa))
+
 ## [1.12.0](https://github.com/bffless/apps/compare/studio-v1.11.1...studio-v1.12.0) (2026-08-18)
 
 
