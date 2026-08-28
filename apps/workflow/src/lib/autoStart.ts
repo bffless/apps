@@ -11,11 +11,14 @@
  * bookkeeping, per-field errors as you go — this owns only the answer to "are
  * these values startable?".
  *
- * `file` inputs arrive as **already-stored paths**: the driver uploads through
- * `/api/workflow/files/prepare|register` (06) before it opens the page, so
- * nothing here fetches anything. `https://` values are deliberately not
- * supported (07's own note, deferred): the page never fetches a URL a caller
- * handed it.
+ * `file` inputs arrive as **whole File refs** — `{ path, name, contentType,
+ * size, url }`, exactly what `/api/workflow/files/register` hands back (06) —
+ * because that is what `validateValue('file')` checks. The driver uploads
+ * through `prepare` → PUT → `register` before it opens the page and puts the
+ * registered ref in the JSON, so nothing here fetches anything and a bare path
+ * fails validation like any other wrong-shaped value. `https://` values are
+ * deliberately not supported (07's own note, deferred): the page never fetches
+ * a URL a caller handed it.
  */
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import { validateInputConstraints } from './runner/inputConstraints'

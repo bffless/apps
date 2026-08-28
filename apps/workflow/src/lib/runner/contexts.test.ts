@@ -404,6 +404,32 @@ const skipDef: Definition = toDefinition({
   outputs: { cover: '${{ jobs.review.outputs.cover }}' },
 })
 
+/**
+ * The **bare** `headless: skip` form (07's own table): no `outputs:` map at
+ * all, which `evaluateSkipOutputs` turns into `{}`. It still stands in for the
+ * work, so R66 must count it — a job that read `skipped` here and `success`
+ * attended would gate every downstream `needs` differently.
+ */
+const bareSkipDef: Definition = toDefinition({
+  name: 'Bare headless skip',
+  jobs: {
+    review: {
+      steps: [
+        {
+          id: 'confirm',
+          uses: 'form',
+          with: { title: 'Have a look', fields: {}, submit: 'Approve' },
+          headless: 'skip',
+        },
+      ],
+    },
+    ship: {
+      needs: 'review',
+      steps: [{ id: 'send', uses: 'pipeline', with: { path: 'echo' } }],
+    },
+  },
+})
+
 /** The same shape, but the job's one step was skipped by `if:` and carries nothing. */
 const ifSkipDef: Definition = toDefinition({
   name: 'if-skipped',
@@ -431,6 +457,15 @@ describe('jobOutcome — a skipped step that carries outputs', () => {
     const shipCtx = buildJobContexts(skipDef, state, 'ship')
     expect(evalValue('${{ needs.review.result }}', shipCtx)).toBe('success')
     expect(evalValue('${{ needs.review.outputs.cover.name }}', shipCtx)).toBe('poster.svg')
+  })
+
+  it('counts a bare `headless: skip` too — its outputs are {}, which is not nothing', () => {
+    const state = withSteps(makeState(), skipped({ outputs: {} }))
+
+    expect(jobOutcome(bareSkipDef, state, 'review')).toBe('success')
+    expect(
+      evalValue('${{ needs.review.result }}', buildJobContexts(bareSkipDef, state, 'ship')),
+    ).toBe('success')
   })
 
   it('leaves an if-skipped job skipped, with null outputs (the pre-existing rule)', () => {

@@ -27,3 +27,9 @@ Milestones M0–M4 are in the overview; each gets its own implementation plan an
 mock-backed tests skip cleanly without it (see `vite.config.ts`), so `test:run` alone on a
 fresh checkout is still green, just not complete. `pnpm --filter workflow test:stage` (its
 own script) exercises the stager itself and needs the same network access.
+
+`pnpm --filter workflow test:e2e` needs one more thing first:
+`pnpm --filter @bffless/workflow-headless build`. From M3 the headless driver *is* the e2e
+(`e2e/headless.spec.ts` spawns the built `dist/cli.js` in `--mocks` mode), and it **fails**
+rather than skips when the driver is not built — a silently skipped end-to-end proof is worse
+than a red one.

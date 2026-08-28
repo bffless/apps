@@ -170,19 +170,31 @@ export function jobOutcome(def: Definition, state: RunState, job: string): Outco
   // *produced nothing* — and a `headless: skip` step produces (07/Decision 11:
   // it stands its declared outputs in for the work, and spec 07 already
   // promises later expressions can reference them). So a job is only skipped
-  // when every step was skipped **and none carried outputs**; one that holds a
-  // skipped-with-outputs step succeeds, and `jobRef` yields its outputs instead
-  // of null. Without this the same workflow answers differently attended and
+  // when every step was skipped **and none carried an outputs map**; one that
+  // holds a headless skip succeeds, and `jobRef` yields its outputs instead of
+  // null. Without this the same workflow answers differently attended and
   // unattended — hello's run-level `cover` would be the File ref interactively
   // and `null` headless — which is exactly what headless mode must not do.
-  // An `if:`-skipped step still carries nothing and still skips its job.
+  //
+  // "Carried an outputs map" is deliberately wider than "stood values in":
+  // a **bare** `headless: skip` (a legal shape, 07) produces `{}`, and that
+  // counts too. Narrowing this to a non-empty map would make a job whose only
+  // step is a bare skip read `skipped` headless and `success` attended, so
+  // every downstream `needs` on it would gate differently — which is the
+  // divergence this rule exists to stop, not an edge case outside it.
+  // An `if:`-skipped step carries nothing at all and still skips its job.
   if (states.every((s) => s.status === 'skipped') && !states.some(skippedWithOutputs)) {
     return 'skipped'
   }
   return 'success'
 }
 
-/** A `headless: skip` (07) — the one skip that stands values in for the work it did not do. */
+/**
+ * A `headless: skip` (07) — the one skip that stands *something* in for the
+ * work it did not do. Any of them: an `outputs` map at all is the marker, and a
+ * bare `headless: skip` carries `{}`. Only a scheduler/`if:` skip leaves it
+ * `undefined`.
+ */
 function skippedWithOutputs(s: StepState): boolean {
   return s.status === 'skipped' && s.outputs !== undefined
 }

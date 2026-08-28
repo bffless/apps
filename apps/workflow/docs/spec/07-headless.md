@@ -79,7 +79,9 @@ island itself whenever nothing is selected or the selected step has finished. Wi
 `headless: auto` island would sit at `running` until its wait budget expired.
 
 **Results:** read `/api/workflow/run?id=<runId>` for the full record; download `file` outputs
-via their `url` (`?download=1`). The driver never scrapes the DOM for data.
+from their `url`, with **no** `?download=1` — the harness serves the bytes either way, so the
+flag is not something the driver relies on (apps#362). The driver never scrapes the DOM for
+data.
 
 ## Interactive steps without a person
 
@@ -102,9 +104,14 @@ a person is allowed to take as long as they like. It is measured from the step's
 
 A `skip` produces its outputs the way a submit would: they are validated against the step's own
 declared map — a `form`'s *evaluated* fields, an `island`'s `outputs` — and a `choice` over File
-refs may be given the whole ref, since the field is picked by path either way. A skip that
-carries outputs counts as a **producing** step, so its job reads `success` and a headless run's
-job and run outputs match an interactive run's.
+refs may be given the whole ref, since the field is picked by path either way. **Any** `headless: skip`
+counts as a **producing** step — a bare `skip` as much as one with an `outputs:` map, because a
+bare skip produces an empty map rather than nothing — so its job reads `success` and a headless
+run's job and run outputs match an interactive run's. Narrowing that to "a skip that produced
+*values*" would leave a job whose only step is a bare skip reading `skipped` unattended and
+`success` attended, and gate every downstream `needs` on it differently: the exact divergence
+this rule exists to prevent. An `if:`-skipped step carries nothing at all and still skips its
+job.
 
 The linter reports every interactive step lacking `headless` as a notice ("not headless-safe"),
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say
@@ -154,6 +161,11 @@ occurred — assert on `run.json`. An output is downloaded when its **value** is
 when its declared type is `file`: a run-level output that forwards a step's file declares no type
 at all.
 
+`--timeout` bounds the **run**; the start is separately capped at **120 s** within it, because a
+harness that has not published a `runId` by then is not slow. A start that times out still writes
+`failed.png`, `console.log` and `steps.log` before it leaves with 4 — it is the one refusal with
+no run record behind it, since everything the page can explain comes back as `invalid` (3).
+
 **Exit codes** (the contract CI reads):
 
 | code | |
@@ -163,7 +175,7 @@ at all.
 | `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault — never a run that ran and failed |
 | `3` | the page refused the start (`status: 'invalid'`) |
 | `4` | the driver timed out (the run may still be going) |
-| `130` | SIGINT: Cancel was clicked and the run reached `cancelled` |
+| `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first |
 
 SIGINT is the driver's own (Playwright's handler is disabled at launch, because it kills the
 browser and exits 130 immediately, which loses the Cancel-then-wait). A second Ctrl-C closes the

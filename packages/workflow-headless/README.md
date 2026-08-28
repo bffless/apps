@@ -47,6 +47,10 @@ file input takes an array of paths.
 | `--headed` | show the browser |
 | `--last <n>` | (`runs`) how many past runs to list |
 
+`--timeout` bounds the **run**. The *start* is separately capped at **120 s** inside it: a
+harness that has not published a `runId` by then is not slow, it is wrong, so a generous
+`--timeout` never turns a bad harness url into an hour of waiting.
+
 ### Environment
 
 | variable | |
@@ -70,6 +74,10 @@ console.log       the page console
 02-<status>.png   the run page at its terminal status
 failed.png        written whenever the run did not succeed
 ```
+
+A start that times out (exit `4`) writes `failed.png`, `console.log` and `steps.log` too. That
+is the one refusal with no record to fall back on — every refusal the page can explain arrives
+as exit `3` — so the page's console is the whole diagnosis.
 
 The run's status is `run.json.run.status`, and each step's settled status is a row of
 `run.json.steps` (`{ key, status, … }`). Read verdicts from there rather than
@@ -102,7 +110,7 @@ and this does not arise.
 | `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault (a failed upload, an API read that would not answer, an unexpected exception) — deliberately never `1`, so `if: failure()` can tell "the run failed" from "the driver could not reach the harness" |
 | `3` | the page refused the start (`status: 'invalid'`) — bad values, an undecodable `inputs`, a workflow that does not lint or could not be read, no such implementation/workflow, or a discovery failure |
 | `4` | the driver timed out (the run may still be going) |
-| `130` | SIGINT: Cancel was clicked and the run ended `cancelled` |
+| `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first (see *Signals*) |
 
 Exit `3` is watched on `window.__workflow`, not on the `kickoff-invalid`
 element: only two of the six refusals render that list, and the four that do

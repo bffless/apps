@@ -53,7 +53,9 @@ Exit codes:
   3    the page refused the start (bad values, bad \`inputs\`, no such workflow,
        a workflow that does not lint, discovery)
   4    the driver timed out; the run may still be going
-  130  SIGINT: Cancel was clicked and the run reached \`cancelled\`
+  130  SIGINT: the driver was interrupted. Before the run page exists it closes
+       the browser and leaves; once the run is up it clicks Cancel and follows
+       the run to \`cancelled\` first
 
 SIGTERM/SIGHUP are Playwright's: the browser closes under the driver and the
 run is left running, which comes out as exit 2.`

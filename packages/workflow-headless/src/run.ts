@@ -136,10 +136,26 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
     deps.log(`opening ${url}`)
     await page.goto(url, { waitUntil: 'domcontentloaded' })
 
-    const started = await waitForStart(page, {
-      timeoutMs: Math.min(o.timeoutMs, 120_000),
-      pollMs: 250,
-    })
+    let started
+    try {
+      // The start is capped at two minutes however long `--timeout` is: a
+      // harness that has not published a `runId` by then is not slow, it is
+      // wrong.
+      started = await waitForStart(page, {
+        timeoutMs: Math.min(o.timeoutMs, 120_000),
+        pollMs: 250,
+      })
+    } catch (error) {
+      // Wrapped for the same reason `waitForTerminal` is, and with more at
+      // stake: a timeout here is the one *un-diagnosable* refusal. Every
+      // diagnosable one comes back as `invalid` (exit 3) and writes its own
+      // artifacts, so an auth bounce loop, a JS error on the run page or a
+      // harness that renders but never publishes would otherwise leave an
+      // empty `--out` and nothing to look at.
+      await shot('failed')
+      await writeLogs()
+      throw error
+    }
     await shot('01-start')
 
     if (started.status === 'invalid') {

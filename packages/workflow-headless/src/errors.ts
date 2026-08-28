@@ -21,7 +21,12 @@ export const EXIT = {
   INVALID: 3,
   /** The driver gave up waiting — the run may well still be going. */
   TIMEOUT: 4,
-  /** SIGINT: Cancel was clicked and the run ended `cancelled`. */
+  /**
+   * SIGINT — whenever the driver is interrupted, whether or not there was a
+   * run to cancel. Before the run page exists there is nothing to click, so
+   * the handler closes the browser and leaves with this; once the run is up it
+   * clicks Cancel and follows the run to `cancelled` first.
+   */
   SIGINT: 130,
 } as const
 
