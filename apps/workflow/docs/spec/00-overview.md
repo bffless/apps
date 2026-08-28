@@ -29,11 +29,12 @@ project  bffless/workflow                     (one BFFless project; phase 1 on j
 ├── alias  workflow          ← the harness app              https://workflow.<domain>
 │     rule set  workflow            /api/workflow/*  (runs, files, discovery)
 │
-├── alias  workflow-studio   ← implementation workflow-studio  https://workflow-studio.<domain>
+├── alias  workflow-studio   ← implementation workflow-studio  (domain optional, cosmetic)
 │     files: /.bffless/workflows/{index.json,*.yaml}, /islands/*.html, /scripts/*.js
 │     rule set  workflow-studio     /api/workflow-studio/*  — attached to BOTH aliases
 │                                   `workflow-studio` and `workflow`
-│                             + GET /w/workflow-studio/[...path] → https://workflow-studio.<domain>/[...path]
+│                             + GET /w/workflow-studio/[...path]
+│                                   → backend /public/<owner>/<repo>/alias/workflow-studio/dist/[...path]
 │
 └── alias  workflow-studio-pr-12 … (previews are just more aliases)
 ```
@@ -41,7 +42,9 @@ project  bffless/workflow                     (one BFFless project; phase 1 on j
 The browser only ever talks to the harness host (ADR-0001): implementation pipelines are
 reachable at `workflow.<domain>/api/<impl>/...` because the implementation attaches its rule
 set to the harness alias too, and implementation files are reachable same-origin at
-`/w/<impl>/...` through a forwarding rule. Discovery is file-based (ADR-0004): the harness
+`/w/<impl>/...` through a forwarding rule — which targets the CE backend's alias serve route
+in-process, so an implementation (or a preview) needs no domain of its own (ADR-0001
+amendment, 2026-08-28). Discovery is file-based (ADR-0004): the harness
 lists the project's aliases and probes `/w/<alias>/.bffless/workflows/index.json`; a deploy
 *is* the publish.
 
@@ -73,9 +76,10 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
   `render: island`.
 - **M3 — Studio port + headless.** `workflow-studio` (pipelines path-in/path-out, cut-editor
   island, blog-bundle script), `publish-workflow` action/CLI, `headless/` Playwright CLI.
-- **M4 — Catalog packaging** (phase 2). Follow-ups: CE `targetUrl: alias://<name>`, WebMCP on
-  the harness page, attestations, guest/public runs, reusable workflows, deployment-pinned
-  `/w/<alias>@<deployment>/`.
+- **M4 — Catalog packaging** (phase 2). Follow-ups: CE `targetUrl: alias://<name>` (optional
+  since 2026-08-28 — a declarative spelling of the in-process forwarder, not a dependency),
+  WebMCP on the harness page, attestations, guest/public runs, reusable workflows,
+  deployment-pinned `/w/<alias>@<deployment>/`.
 
 ## Decisions at a glance
 
