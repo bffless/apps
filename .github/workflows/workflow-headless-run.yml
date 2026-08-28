@@ -27,7 +27,7 @@ on:
         type: string
         default: 'https://workflow.j5s.dev'
       timeout_minutes:
-        description: 'How long the driver waits for a terminal status (the job gets 10 minutes more, for install + browser)'
+        description: 'How long the driver waits for a terminal status — digits only, in minutes (e.g. 60). No unit suffix: an "m" is appended for --timeout, and the job ceiling is this + 10 for install and browser.'
         required: false
         type: string
         default: '60'
