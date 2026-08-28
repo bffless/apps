@@ -1,0 +1,13 @@
+targetUrl: pipeline
+pipeline:
+  steps:
+    - id: analyze
+      handler: function_handler
+      code: ./analyze.fn.js
+    - id: respond
+      handler: response_handler
+      config: { body: "{{{steps.analyze}}}", status: 200, contentType: application/json }
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 5/5: analyze (fixture stub)."

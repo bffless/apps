@@ -1,0 +1,10 @@
+targetUrl: pipeline
+pipeline:
+  steps:
+    - id: respond
+      handler: response_handler
+      config: { body: '{"ok":true}', status: 200, contentType: application/json }
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Fixture stub — one rule is enough to make this a real, if tiny, set."

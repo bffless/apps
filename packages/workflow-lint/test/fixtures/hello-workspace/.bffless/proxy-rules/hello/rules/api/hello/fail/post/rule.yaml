@@ -1,0 +1,13 @@
+targetUrl: pipeline
+pipeline:
+  steps:
+    - id: fail
+      handler: function_handler
+      code: ./fail.fn.js
+    - id: respond
+      handler: response_handler
+      config: { body: "{{{steps.fail}}}", status: 418, contentType: application/json }
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 4/5: fails on purpose (fixture stub)."

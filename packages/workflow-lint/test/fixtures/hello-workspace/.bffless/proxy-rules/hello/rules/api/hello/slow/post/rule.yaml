@@ -1,0 +1,17 @@
+targetUrl: pipeline
+pipeline:
+  steps:
+    - id: createJob
+      handler: data_create
+      config: { schemaId: $schema:hello_jobs, fields: { status: "'pending'" } }
+    - id: respond
+      handler: response_handler
+      config: { body: "{\"jobId\":\"{{steps.createJob.id}}\",\"status\":\"pending\"}", status: 200, contentType: application/json }
+  postSteps:
+    - id: work
+      handler: function_handler
+      code: ./work.fn.js
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 2/5: slow job + poll (fixture stub)."

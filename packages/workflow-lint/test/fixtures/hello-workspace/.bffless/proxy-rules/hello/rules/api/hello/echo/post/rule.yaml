@@ -1,0 +1,13 @@
+targetUrl: pipeline
+pipeline:
+  steps:
+    - id: echo
+      handler: function_handler
+      code: ./echo.fn.js
+    - id: respond
+      handler: response_handler
+      config: { body: "{{{steps.echo}}}", status: 200, contentType: application/json }
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 1/5: echo (fixture stub)."

@@ -1,0 +1,16 @@
+targetUrl: pipeline
+pipeline:
+  steps:
+    - id: query
+      handler: data_query
+      config: { schemaId: $schema:hello_jobs, recordId: request.query.id }
+    - id: shape
+      handler: function_handler
+      code: ./shape.fn.js
+    - id: respond
+      handler: response_handler
+      config: { body: "{{{steps.shape}}}", status: 200, contentType: application/json }
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Hello implementation surface 3/5: job poll (fixture stub)."

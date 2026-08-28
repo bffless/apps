@@ -1,0 +1,3 @@
+targetUrl: https://hello.example.test
+forwardCookies: true
+description: "Forwarder fixture stub (never queried by the rule-missing check)."
