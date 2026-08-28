@@ -75,6 +75,11 @@ jobs:
     outputs:
       poster: ${{ steps.draw.outputs.poster }}
       posters: ${{ steps.draw.outputs.posters }}
+      # Task 10 / `workflow.sign` proof: the same poster File ref, viewed
+      # through a sandboxed island. The island has no cookie, so it must
+      # exchange the ref's `path` for a presigned URL over the host tool
+      # rather than pointing an <img> straight at the deployment.
+      poster_view: { type: json, value: "${{ steps.draw.outputs.poster }}", render: island, src: islands/line-viewer.html }
 
   review:
     needs: [card, pick]
@@ -102,4 +107,5 @@ outputs:
   line: ${{ jobs.pick.outputs.line }}
   view: ${{ jobs.pick.outputs.view }}
   poster: ${{ jobs.card.outputs.poster }}
+  poster_view: ${{ jobs.card.outputs.poster_view }}
   cover: ${{ jobs.review.outputs.cover }}

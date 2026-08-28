@@ -152,8 +152,8 @@ Re-run, so they live in the per-workflow `inputs/` area and runs *reference* the
 `step.prefix`. Pipelines that write files should take an explicit prefix in their body
 (`outPrefix: "${{ step.prefix }}"`).
 
-Harness rules (the reusable **files trio**, published as a rule-set template `files` so a
-standalone UI can ship the same three with its own prefix):
+Harness rules (the reusable **files quartet**, published as a rule-set template `files` so a
+standalone UI can ship the same four with its own prefix):
 
 - `POST /api/workflow/files/prepare` `{ impl, workflow, scope: "inputs" | "<runId>/<stepKey>", filename, contentType, size }` →
   presigned PUT into the matching prefix (`presigned_upload`, `maxFileSize` from the input's
@@ -165,8 +165,20 @@ standalone UI can ship the same three with its own prefix):
   CE's `file_serve_handler` derives the object from a `/api/uploads/<subDir>/` request path
   only, and that is also the `publicPath` `presigned_upload` mints — so the serve route is
   CE's, not a `/api/workflow/files/` one, and a File ref's `url` is `/api/uploads/` + `path`.)
+- `POST /api/workflow/files/sign` `{ path }` → `{ url, expiresIn }`, a **presigned GET**
+  (1 hour) for that object (`signed_url`). It exists for one caller: a sandboxed island, whose
+  opaque origin carries no cookie, so the serve route above 401s on it — the island asks the
+  host for a URL instead (`workflow.sign`, 04/Decision 6). `confine.fn.js` narrows what is
+  signable to the harness prefix (an uploads-relative key under `workflows/`, no traversal);
+  anything else is a 400, and Range behaviour on the signed URL is the storage backend's.
+  **Both backends presign** — CE's `signed_url` calls the adapter's `getUrl`, and the local-FS
+  adapter mints an HMAC-signed `/api/storage/presigned/local?key=…&exp=…&sig=…` (there is no
+  501 path). The local-FS caveat is a different one: that URL is **relative unless
+  `PUBLIC_ORIGIN` is configured**, and a relative `src` has nothing to resolve against inside
+  an opaque-origin `srcdoc` frame. So bucket storage (GCS/S3) needs nothing, and a
+  local-storage install must set `PUBLIC_ORIGIN` for island media to load.
 
-The runner uses these for kickoff uploads, `form` uploads, `script` Blobs and for registering
+The runner uses the first three for kickoff uploads, `form` uploads, `script` Blobs and for registering
 bare paths a pipeline returns where a `file` is declared. Run deletion removes the run prefix
 only (05). There is no reserved key injected into requests — the workflow passes
 `"${{ step.prefix }}"` where a pipeline needs it. A returned path outside the run prefix is a
@@ -182,7 +194,10 @@ file's bytes read storage by path (Replicate/ffmpeg handlers already do).
   the other apps do; `/_bffless/auth/*` only for custom-domain installs.
 - All members see all runs; `started_by` is recorded; delete = owner or admin.
 - Islands and scripts have no credentials of their own; every call goes through the harness
-  (bridge / Worker same-origin fetch) under the user's session.
+  (bridge / Worker same-origin fetch) under the user's session. The one exception is
+  `workflow.sign`'s answer: a signed URL **is** a bearer credential the frame then holds — but a
+  narrow one, scoped to a single object under `workflows/`, expiring in an hour, and mintable
+  only through the session-gated rule that confined the path in the first place.
 - Guest / public runs are **backlog** (per-workflow `access: public`, guest ids, stricter
   file ACLs — a design, not a flag).
 

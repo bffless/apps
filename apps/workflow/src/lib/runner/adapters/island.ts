@@ -142,16 +142,18 @@ export function resolveSrc(impl: string, src: string, kind = 'island'): string {
 }
 
 export type ToolTarget =
-  | { kind: 'host'; tool: 'submit' | 'annotate' }
+  | { kind: 'host'; tool: 'submit' | 'annotate' | 'sign' }
   | { kind: 'pipeline'; path: string; method: 'GET' | 'POST'; url: string }
   | { kind: 'rejected'; reason: string }
 
-/** The two host tools, dot-canonical and slash-tolerant (Decision 1). */
-const HOST_TOOLS = new Map<string, 'submit' | 'annotate'>([
+/** The three host tools, dot-canonical and slash-tolerant (Decision 1). */
+const HOST_TOOLS = new Map<string, 'submit' | 'annotate' | 'sign'>([
   ['workflow.submit', 'submit'],
   ['workflow/submit', 'submit'],
   ['workflow.annotate', 'annotate'],
   ['workflow/annotate', 'annotate'],
+  ['workflow.sign', 'sign'],
+  ['workflow/sign', 'sign'],
 ])
 
 /** `_meta: { bffless: { method: 'GET' } }` — only the island knows a rule's verb (Decision 10). */
@@ -173,7 +175,7 @@ function rejected(reason: string): ToolTarget {
  * `feed/xml`) is therefore only reachable by its slash form — the documented
  * lossy case, which the linter notices rather than the host special-cases.
  *
- * An island may only reach its own implementation's rules plus the two
+ * An island may only reach its own implementation's rules plus the three
  * `workflow.*` host tools (04), so anything absolute, empty, whitespace-bearing
  * or traversing out of `/api/<impl>/` comes back rejected — a tool error the
  * bridge reports to the island, never a throw.

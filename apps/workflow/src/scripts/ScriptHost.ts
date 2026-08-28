@@ -3,50 +3,41 @@
  *
  * A script step is an ES module from the implementation's own bundle, run in a
  * Worker. The page — not the Worker — fetches it, because the bundle is behind
- * the member's session cookie; the module text then becomes a Blob URL, and a
- * second Blob URL carries the shim (`worker-shim.ts`) the Worker is actually
- * spawned from. The shim dynamically imports the module and builds its `ctx`,
- * so every capability the module has is one this host answers over
- * `postMessage`: `ctx.log`, `ctx.annotate`, and `ctx.files.fetch` — the only
- * network any of this performs, and only ever for a url on the harness's own
- * file-serve route (`lib/url`'s `isServeUrl`): a script, like an island, may
- * not reach any other route with the member's cookies.
+ * the member's session cookie; the text then goes to `sandbox-frame.ts`, which
+ * mounts an opaque-origin sandbox and spawns the Worker in there from `data:`
+ * URLs — the module's, and the shim's (`worker-shim.ts`). The shim dynamically
+ * imports the module and builds its `ctx`, so every capability the module has
+ * is one this host answers over `postMessage`: `ctx.log`, `ctx.annotate`, and
+ * `ctx.files.fetch` — the only network any of this performs, and only ever for
+ * a url on the harness's own file-serve route (`lib/url`'s `isServeUrl`): a
+ * script, like an island, may not reach any other route with the member's
+ * cookies. Since Decision 4 that gate is a wall rather than a fence: the
+ * Worker's own `fetch` has no origin to reach the harness with.
  *
- * This module owns the *effects*: the fetch, the two object URLs, the Worker,
- * the RPC relay, cancellation. Everything decidable from plain data — where a
- * `src` resolves to, what the module's return value must look like — lives in
- * the pure adapter (`lib/runner/adapters/script.ts`) and is imported from here,
- * the same one-way fence `islands/IslandHost.ts` keeps: `lib/runner/**` must
- * never import this file.
+ * This module owns the *effects*: the fetch, the sandbox, the RPC relay,
+ * cancellation. Everything decidable from plain data — where a `src` resolves
+ * to, what the module's return value must look like — lives in the pure
+ * adapter (`lib/runner/adapters/script.ts`) and is imported from here, the
+ * same one-way fence `islands/IslandHost.ts` keeps: `lib/runner/**` must never
+ * import this file.
  */
 import { resolveScriptSrc } from '../lib/runner/adapters/script'
 import { SERVE_PREFIX } from '../lib/coerce'
 import { isServeUrl } from '../lib/url'
 import type { FileRef } from '../lib/runner/types'
+import { abortError, ScriptError } from './errors'
 import type { FromWorker, RpcReqMessage, ToWorker, WorkerLike } from './rpc'
+import { createSandboxWorker, type SandboxSpawnArgs } from './sandbox-frame'
 import { SHIM_SOURCE } from './worker-shim'
 
-/**
- * The step failed. `code` is the module's own `err.code` where it set one, else
- * `SCRIPT` for a module that threw and `SCRIPT_LOAD` for one that could not be
- * loaded at all (non-2xx, an unreachable bundle, a module with no default
- * export). Mirrors `IslandLoadError`'s shape — an `Error` carrying the `code`
- * the step's `error` will be recorded under — but the code is not fixed, so the
- * two are not one class.
- *
- * Cancellation is deliberately *not* a `ScriptError`: an aborted run rejects
- * with a plain `AbortError`, and the caller — which knows whether it was the
- * user or `timeout-minutes` that fired — decides what that means.
- */
-export class ScriptError extends Error {
-  readonly code: string
+export { ScriptError } from './errors'
 
-  constructor(code: string, message: string) {
-    super(message)
-    this.name = 'ScriptError'
-    this.code = code
-  }
-}
+/**
+ * The shipped `spawn`: the sandbox, not a bare `new Worker` (Decision 4).
+ * Named so a test can assert the seam's default *is* it, rather than
+ * re-deriving what "the real one" means.
+ */
+export const DEFAULT_SPAWN = createSandboxWorker
 
 export interface ScriptHostDeps {
   /** The module text, from `/w/<impl>/<src>` — same-origin, with cookies. */
@@ -60,11 +51,11 @@ export interface ScriptHostDeps {
   /** `ctx.annotate` — the middleware's `annotateEvent` (Decision 12). */
   onAnnotate: (args: unknown) => void
   /**
-   * Test seam. The default spawns the real module Worker from the shim's Blob
-   * URL; jsdom has no `Worker` (nor `URL.createObjectURL`), so every unit test
-   * injects a `fakeWorker` instead.
+   * Test seam. The default (`DEFAULT_SPAWN`) mounts the opaque-origin sandbox
+   * and resolves once the shim inside it has the port; jsdom has no `Worker`,
+   * so every unit test injects a `fakeWorker` instead.
    */
-  spawn?: (shimUrl: string) => WorkerLike
+  spawn?: (a: SandboxSpawnArgs) => Promise<WorkerLike>
 }
 
 export interface ScriptRunArgs {
@@ -119,19 +110,8 @@ function textOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && value !== '' ? value : fallback
 }
 
-/** An abort is not a failure — the caller distinguishes cancel from timeout. */
-function abortError(message: string): Error {
-  const err = new Error(message)
-  err.name = 'AbortError'
-  return err
-}
-
-function objectUrl(source: string): string {
-  return URL.createObjectURL(new Blob([source], { type: 'text/javascript' }))
-}
-
 export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
-  const spawn = deps.spawn ?? ((shimUrl: string) => new Worker(shimUrl, { type: 'module' }))
+  const spawn = deps.spawn ?? DEFAULT_SPAWN
 
   return {
     run(a) {
@@ -147,7 +127,12 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
        * failing, before it the script failing to *load*.
        */
       let progressed = false
-      const urls: string[] = []
+      /**
+       * The host's own cancel line to the sandbox. `a.signal` is not enough:
+       * `run.abort()` is a second way to cancel that never touches it, and a
+       * sandbox left half-spawned would keep its frame on the page forever.
+       */
+      const spawning = new AbortController()
 
       let resolveOutputs!: (outputs: unknown) => void
       let rejectOutputs!: (err: unknown) => void
@@ -159,7 +144,7 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
       const onSignalAbort = () => abort()
 
       /**
-       * Terminate, revoke, unsubscribe. Idempotent, because the abort path
+       * Terminate, unmount, unsubscribe. Idempotent, because the abort path
        * defers it by a macrotask and a second settle may land in between.
        */
       let disposed = false
@@ -175,7 +160,9 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           worker.terminate()
           worker = null
         }
-        for (const revoke of urls.splice(0)) URL.revokeObjectURL(revoke)
+        // A no-op once the handover happened (the sandbox stops listening
+        // then); everything before it, this is what takes the frame down.
+        spawning.abort()
       }
 
       /** Every settle path goes through here; only `abort` defers the teardown. */
@@ -316,22 +303,31 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
           return
         }
 
-        // Two object URLs: the module, and the shim the Worker is spawned from.
-        // Both are revoked by `dispose`, whichever way the run ends. Minting
-        // one can itself throw (no `URL.createObjectURL`, a blocked Blob), and
-        // inside this floating async that would be an unhandled rejection
-        // rather than a step failure — so it is caught with the spawn.
-        let moduleUrl: string
+        // Both halves cross as source text: the `data:` URLs are minted inside
+        // the sandbox, which is the only place a Worker made from them lands
+        // on an opaque origin (Decision 4).
+        let spawned: WorkerLike
         try {
-          moduleUrl = objectUrl(module.text)
-          urls.push(moduleUrl)
-          const shimUrl = objectUrl(SHIM_SOURCE)
-          urls.push(shimUrl)
-          worker = spawn(shimUrl)
+          spawned = await spawn({
+            shimSource: SHIM_SOURCE,
+            moduleSource: module.text,
+            signal: spawning.signal,
+          })
         } catch (err) {
-          fail(new ScriptError('SCRIPT_LOAD', `script ${url}: ${messageOf(err)}`))
+          // Cancellation has already rejected the run and disposed the
+          // sandbox; anything else is a Worker that never came up.
+          if (settled) return
+          const code = err instanceof ScriptError ? err.code : 'SCRIPT_LOAD'
+          fail(new ScriptError(code, `script ${url}: ${messageOf(err)}`))
           return
         }
+        // The run may have settled while the sandbox was coming up, in which
+        // case `dispose` has already been and gone: this one is ours to unmount.
+        if (settled) {
+          spawned.terminate()
+          return
+        }
+        worker = spawned
 
         worker.onmessage = (event: MessageEvent) => receive(event.data as FromWorker)
         worker.onerror = (event: ErrorEvent) => {
@@ -342,7 +338,7 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
             ),
           )
         }
-        send({ t: 'run', inputs: a.inputs, moduleUrl })
+        send({ t: 'run', inputs: a.inputs })
       })()
 
       return { outputs, abort }

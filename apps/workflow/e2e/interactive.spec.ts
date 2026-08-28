@@ -100,13 +100,31 @@ test('interactive hello runs an island step end to end against the mock backend'
   await expect(outputs).toContainText('line')
   await expect(outputs).toContainText('Hello, world!')
 
-  // The `render: island` viewer for the `view` output — a second, distinct
-  // `island-frame`, scoped by its renderer wrapper this time.
-  const viewerFrame = page
-    .locator('[data-testid="renderer"][data-render="island"] [data-testid="island-frame"]')
-    .contentFrame()
+  // The `render: island` viewer for the `view` output — a distinct
+  // `island-frame`, scoped by its own run output this time: the run now
+  // declares *two* `render: island` outputs (`view` and `poster_view`), so the
+  // renderer wrapper alone is no longer unique.
+  const islandOutput = (name: string) =>
+    outputs
+      .locator(`[data-output="${name}"] [data-testid="renderer"][data-render="island"] [data-testid="island-frame"]`)
+      .contentFrame()
+
+  const viewerFrame = islandOutput('view')
   await expect(viewerFrame.getByTestId('viewer-value')).toContainText('"line"')
   await expect(viewerFrame.getByTestId('viewer-value')).toContainText('Hello, world!')
+
+  // Task 10 (`workflow.sign`): `poster_view` is the poster File ref shown by
+  // the same viewer island. The frame has an opaque origin and no cookie, so it
+  // can only get a loadable URL by asking the host — the mock signs with an
+  // absolute `?signed=mock` URL. MSW's service worker does not control a
+  // `srcdoc` frame, so the proof is the `src` the island set from the tool
+  // result, not that the bytes decoded.
+  const posterViewerFrame = islandOutput('poster_view')
+  await expect(posterViewerFrame.getByTestId('viewer-image')).toHaveAttribute(
+    'src',
+    /\/api\/uploads\/workflows\/.*poster\.svg\?signed=mock$/,
+  )
+  await expect(posterViewerFrame.getByTestId('island-sign-error')).toBeEmpty()
 
   // The live `workflow.annotate` call the preview made (Decision 12: a step's
   // annotation becomes a persisted `step.annotated` event) surfaces in the
@@ -120,6 +138,11 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   const drawStep = page.locator('[data-testid="step"][data-key="card/0/draw"]')
   await expect(drawStep).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
+
+  // Decision 4: the module ran in a Worker spawned inside a hidden
+  // opaque-origin sandbox, and the frame goes with the Worker the moment the
+  // step settles — a run that succeeded leaves none of them on the page.
+  await expect(page.locator('iframe[data-script-sandbox]')).toHaveCount(0)
 
   // The Blob the module returned is a File ref by the time it is an output, and
   // a `file` output always offers Download (02).

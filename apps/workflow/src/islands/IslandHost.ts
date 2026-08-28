@@ -5,7 +5,7 @@
  * whose HTML the harness fetched and injected as `srcdoc`. The frame therefore
  * has an opaque origin — no cookies, no storage, no same-origin fetch — so every
  * capability the island has is one it asks the host for: `tools/call` (its own
- * implementation's pipelines, plus the two `workflow.*` host tools),
+ * implementation's pipelines, plus the three `workflow.*` host tools),
  * `resources/read` for sibling bundle assets, `ui/open-link`, `ui/message`,
  * `ui/request-display-mode`.
  *
@@ -24,9 +24,11 @@
  *   `permissions` prop is wired through `buildAllowAttribute` for the day that
  *   changes; nothing supplies it today.
  * - The View's zod schema for `ui/notifications/tool-input` strips unknown keys,
- *   so the `_meta.bffless.headless` stamp below leaves the host on the wire but
- *   does **not** reach `app.ontoolinput`. Harmless in M2 (`headless` is always
- *   false, Decision 14); M3's headless auto-submit needs another channel.
+ *   so a headless flag cannot ride `_meta` there. `hostContext` is `.passthrough()`
+ *   on both `McpUiHostContextSchema` and the `ui/initialize` result, so
+ *   `hostContext.bffless.headless` is the channel instead (Decision 7): the host
+ *   sets it below and it is delivered on `ui/initialize`, readable from the View
+ *   as `app.getHostContext().bffless`.
  * - The View-side method is `app.callServerTool(...)`, not `app.callTool(...)`
  *   as spec 04's example still writes it.
  */
@@ -112,6 +114,11 @@ export interface IslandHostDeps {
   onSubmit: (outputs: unknown) => { ok: true } | { ok: false; errors: Record<string, string> }
   /** `workflow.annotate` — the middleware's `annotateEvent` (Decision 12). */
   onAnnotate: (args: unknown) => { ok: true } | { ok: false; error: string }
+  /**
+   * `workflow.sign` — `hostDeps`'s `signFile`, bound to the caller's `http`
+   * (Decision 6). Rejects with the message the island should see.
+   */
+  sign: (path: string, signal?: AbortSignal) => Promise<{ url: string; expiresIn: number }>
   /** The island asked to go fullscreen (or back); the page owns the layout. */
   onDisplayMode: (mode: IslandDisplayMode) => void
   /** `ui/message` / `notifications/message` — a live line on the step card. */
@@ -368,7 +375,6 @@ interface Session {
   displayMode: IslandDisplayMode
   /** `render: island` — tool-input may be re-sent; `workflow.submit` is refused. */
   viewer: boolean
-  headless: boolean
   /**
    * `bridge.connect` has resolved and the transport has not closed since —
    * i.e. there is a transport to notify over. Cleared by the bridge's
@@ -443,6 +449,21 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
             isError: true,
             content: [{ type: 'text', text: JSON.stringify(submitted.errors) }],
             structuredContent: { errors: submitted.errors },
+          }
+        }
+
+        // Unlike `submit`/`annotate` a viewer may sign: signing changes
+        // nothing about the run, and a `render: island` viewer showing media
+        // has no other way to load it (Decision 6).
+        if (target.tool === 'sign') {
+          try {
+            const signed = await deps.sign(typeof args.path === 'string' ? args.path : '', extra.signal)
+            return {
+              content: [{ type: 'text', text: signed.url }],
+              structuredContent: { url: signed.url, expiresIn: signed.expiresIn },
+            }
+          } catch (err) {
+            return toolError(messageOf(err))
           }
         }
 
@@ -580,13 +601,15 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       // never opens a socket or a request.
       if (a.signal.aborted) throw cancelledWhileLoading(url)
 
-      const hostContext: McpUiHostContext = {
+      const hostContext = {
         theme: currentTheme(),
         displayMode: 'inline',
         availableDisplayModes: [...DISPLAY_MODES],
         platform: 'web',
         containerDimensions: containerDimensions(iframe),
-      }
+        // Plan Decision 7: the View's tool-input schema strips `_meta`, but hostContext is passthrough.
+        bffless: { headless: a.headless },
+      } as McpUiHostContext & { bffless: { headless: boolean } }
 
       // The bridge keeps this exact object and answers `ui/initialize` with it,
       // so a pre-connect `applyDisplayMode` mutation reaches the View through
@@ -597,7 +620,6 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         hostContext,
         displayMode: 'inline',
         viewer: a.viewer === true,
-        headless: a.headless,
         connected: false,
         ready: false,
         disposed: false,
@@ -667,8 +689,8 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
       }
 
       // The step's `with` (minus `src`/`title`/`display`), verbatim — and in
-      // viewer mode the caller's `{ value }`. See the `_meta` note at the top:
-      // the stamp is sent, but ext-apps 1.7.5's View strips it.
+      // viewer mode the caller's `{ value }`. The headless flag does not ride
+      // here (see the top-of-file note); it went out on `ui/initialize` above.
       try {
         await sendToolInput(current, a.arguments)
       } catch (err) {
@@ -722,15 +744,11 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
 
 /**
  * `ui/notifications/tool-input`: the step's `with` (minus `src`/`title`/
- * `display`) verbatim, or a viewer's `{ value }`. See the `_meta` note at the
- * top of the file: the headless stamp is sent, but ext-apps 1.7.5's View
- * strips it.
+ * `display`) verbatim, or a viewer's `{ value }`. No `_meta` — the headless
+ * flag rides `hostContext.bffless.headless` instead (see the top-of-file note).
  */
 function sendToolInput(current: Session, args: Record<string, unknown>): Promise<void> {
-  return current.bridge.sendToolInput({
-    arguments: args,
-    _meta: { bffless: { headless: current.headless } },
-  } as Parameters<AppBridge['sendToolInput']>[0])
+  return current.bridge.sendToolInput({ arguments: args })
 }
 
 /** The text blocks of an MCP content list, joined — the only modality the step card shows. */

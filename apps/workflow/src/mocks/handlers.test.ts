@@ -1,7 +1,7 @@
 /**
  * The mock backend is a stand-in for the harness rule set (Task 1), so it is
  * held to the same request/response contract: the write surface of 05 (create,
- * patch whitelist, step upsert, the lease gate), the files trio of 06, and the
+ * patch whitelist, step upsert, the lease gate), the files quartet of 06, and the
  * hello pipelines the M1 implementation calls.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -234,7 +234,7 @@ describe('whoami', () => {
   })
 })
 
-describe('the files trio', () => {
+describe('the files quartet', () => {
   it('prepares, uploads, registers and serves', async () => {
     const prepared = await (
       await json('/api/workflow/files/prepare', {
@@ -277,6 +277,29 @@ describe('the files trio', () => {
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]))
 
     expect((await fetch('/api/uploads/workflows/hello/nope.png')).status).toBe(404)
+  })
+
+  it('signs a confined path with an absolute url an opaque-origin frame can load', async () => {
+    const res = await json('/api/workflow/files/sign', {
+      path: 'workflows/hello/interactive/runs/run_1/poster.svg',
+    })
+    expect(res.status).toBe(200)
+    const signed = await res.json()
+    expect(signed.expiresIn).toBe(3600)
+    // Absolute on purpose: a sandboxed island has an opaque origin, so a
+    // relative `src` has nothing to resolve against (R53).
+    expect(new URL(signed.url).pathname).toBe(
+      '/api/uploads/workflows/hello/interactive/runs/run_1/poster.svg',
+    )
+    expect(signed.url).toContain('?signed=mock')
+  })
+
+  it('refuses a path outside the harness prefix the way confine.fn.js does', async () => {
+    for (const path of ['uploads/other/x.svg', 'workflows/../secrets/x', 'workflows//x', '']) {
+      const res = await json('/api/workflow/files/sign', { path })
+      expect(res.status, path).toBe(400)
+      expect((await res.json()).error, path).toContain('workflows/')
+    }
   })
 })
 

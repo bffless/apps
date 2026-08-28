@@ -25,7 +25,7 @@
 import { useEffect, useState } from 'react'
 import { IslandFrame } from '../../../islands/IslandFrame'
 import { createIslandHost } from '../../../islands/IslandHost'
-import { fetchText, openLink } from '../../../islands/hostDeps'
+import { fetchText, openLink, signFile } from '../../../islands/hostDeps'
 import { httpJsonWithReauth } from '../../../lib/http'
 import type { ValueDecl } from '../../../lib/valueDecl'
 
@@ -46,6 +46,10 @@ export function IslandView({ decl, value, impl }: IslandViewProps) {
       fetchText,
       onSubmit: () => ({ ok: false, errors: { outputs: READ_ONLY } }),
       onAnnotate: () => ({ ok: false, error: READ_ONLY }),
+      // Signing is the one host tool a viewer keeps: it records nothing, and a
+      // viewer showing media has no other way to load it — the frame is
+      // opaque-origin and carries no cookie (Decision 6).
+      sign: signFile(httpJsonWithReauth),
       // A viewer is one of many things on a page; it does not get to take the
       // page over. `ui/request-display-mode` is answered with the mode in force.
       onDisplayMode: () => {},

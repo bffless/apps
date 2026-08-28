@@ -18,6 +18,7 @@ import { server } from '../../mocks/server'
 import { FINISHED_RUN } from '../../mocks/fixtures/finishedRun'
 import { RENDERED_RUN } from '../../mocks/fixtures/renderedRun'
 import { replayRun } from '../../lib/runner/replay'
+import type { RunState } from '../../lib/runner/types'
 import { RunOutputs } from './RunOutputs'
 
 // jsdom has no canvas (`ChartView.test.tsx` explains why); this test only
@@ -54,6 +55,79 @@ describe('RunOutputs', () => {
     )
     expect(within(runScope as HTMLElement).queryAllByText(/^renderer:/)).toHaveLength(0)
     expect(within(runScope as HTMLElement).getByTestId('island-frame')).toBeInTheDocument()
+  })
+
+  // The run-level `poster_view` of `interactive.workflow.yaml` (M3 Task 10):
+  // a `json` output declared `render: island` whose recorded value happens to
+  // be a File ref. The "a bare json output holding a File ref is a file"
+  // inference is for declarations that name *no* renderer — one that does said
+  // what it wants drawn, and a file card is not it.
+  it('keeps a named renderer on a json output whose recorded value is a File ref', () => {
+    server.use(
+      http.get('/w/hello/islands/line-viewer.html', () =>
+        HttpResponse.text('<!doctype html><p>viewer</p>'),
+      ),
+    )
+
+    const def = toDefinition({
+      spec: 1,
+      name: 'Poster view',
+      jobs: {},
+      outputs: {
+        poster_view: {
+          type: 'json',
+          value: '${{ jobs.card.outputs.poster }}',
+          render: 'island',
+          src: 'islands/line-viewer.html',
+        },
+      },
+    })
+    const state = {
+      outputs: {
+        poster_view: {
+          path: 'workflows/hello/interactive/runs/run_1/poster.svg',
+          name: 'poster.svg',
+          contentType: 'image/svg+xml',
+          size: 399,
+          url: '/api/uploads/workflows/hello/interactive/runs/run_1/poster.svg',
+        },
+      },
+    } as unknown as RunState
+
+    render(<RunOutputs def={def} state={state} impl="hello" />)
+
+    expect(screen.getByTestId('renderer')).toHaveAttribute('data-render', 'island')
+  })
+
+  // The other half of the same rule, pinned so the fix above cannot be widened
+  // into "never infer": a declaration that names **no** renderer still learns
+  // it is a file from its value, which is how every bare
+  // `poster: ${{ steps.draw.outputs.poster }}` gets its Download.
+  it('still infers a file card for a bare json output whose value is a File ref', () => {
+    const def = toDefinition({
+      spec: 1,
+      name: 'Poster',
+      jobs: {},
+      outputs: { poster: '${{ jobs.card.outputs.poster }}' },
+    })
+    const state = {
+      outputs: {
+        poster: {
+          path: 'workflows/hello/interactive/runs/run_1/poster.svg',
+          name: 'poster.svg',
+          contentType: 'image/svg+xml',
+          size: 399,
+          url: '/api/uploads/workflows/hello/interactive/runs/run_1/poster.svg',
+        },
+      },
+    } as unknown as RunState
+
+    const { container } = render(<RunOutputs def={def} state={state} impl="hello" />)
+
+    expect(screen.queryByTestId('renderer')).toBeNull()
+    expect(container.querySelector('.file-card-download')).not.toBeNull()
+    // The tag beside the label reports the *inferred* type, not the resolved `json`.
+    expect(screen.getByText('file')).toBeInTheDocument()
   })
 
   it('still renders the M1 fixture, with no badge, through the same component', () => {

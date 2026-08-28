@@ -7,7 +7,7 @@
  * through the same coercers (09). When a rule changes, this file changes with
  * it; a divergence here is a bug that only shows up in production.
  *
- * Sections: discovery (06) · the run record (05) · the files trio (06) ·
+ * Sections: discovery (06) · the run record (05) · the files quartet (06) ·
  * the hello pipelines · auth.
  */
 import { http, HttpResponse } from 'msw'
@@ -315,7 +315,7 @@ const runRecord = [
 ]
 
 // ---------------------------------------------------------------------------
-// The files trio (06) — the harness owns where bytes live
+// The files quartet (06) — the harness owns where bytes live
 // ---------------------------------------------------------------------------
 
 const MOCK_UPLOAD_PREFIX = '/mock-upload/'
@@ -355,6 +355,28 @@ const files = [
         size: stored?.bytes.byteLength ?? 0,
       }),
     )
+  }),
+
+  // `workflow.sign` (Decision 6). Stands in for `confine.fn.js` + `signed_url`:
+  // the same normalisation and the same refusal, and — where the real rule
+  // answers a bucket URL — a serve URL with a marker query. **Absolute**, and
+  // that matters: the island that reads it lives in an opaque-origin `srcdoc`
+  // frame, which has no base URL to resolve a relative one against.
+  http.post('/api/workflow/files/sign', async ({ request }) => {
+    const path = String((await body(request)).path ?? '')
+      .replace(/^\/+/, '')
+      .replace(/^api\/uploads\//, '')
+      .split('?')[0]
+
+    if (!path.startsWith('workflows/') || path.includes('..') || path.includes('//')) {
+      return HttpResponse.json(
+        { error: 'path must be an uploads-relative key under workflows/ with no traversal' },
+        { status: 400 },
+      )
+    }
+
+    const url = new URL(`/api/uploads/${path}?signed=mock`, request.url).href
+    return HttpResponse.json({ url, expiresIn: 3600 })
   }),
 
   // The serve rule is CE's file_serve_handler at /api/uploads/<subDir>/…, so the

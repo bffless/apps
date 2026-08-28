@@ -25,7 +25,7 @@
  */
 import { createIslandHost, IslandMountAbandoned } from '../islands/IslandHost'
 import type { IslandDisplayMode, IslandHost, IslandHostDeps } from '../islands/IslandHost'
-import { fetchText, openLink } from '../islands/hostDeps'
+import { fetchText, openLink, signFile } from '../islands/hostDeps'
 import { annotateEvent, completeIslandStep, islandInputs } from '../lib/runner/adapters/island'
 import type { HttpJson } from '../lib/runner/adapters/pipeline'
 import type { Definition, RunState, Step, StepKey, StepStatus } from '../lib/runner/types'
@@ -209,6 +209,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
   const hostDeps: IslandHostDeps = {
     http: a.deps.http,
     fetchText,
+    sign: signFile(a.deps.http),
     onSubmit: (outputs) => {
       const state = a.getRunState()
       if (!state || !isOpen()) {

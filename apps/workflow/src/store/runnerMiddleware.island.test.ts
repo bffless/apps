@@ -10,12 +10,15 @@
  * leave the iframe to `IslandStepPane.test.tsx`.
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { toDefinition } from '@bffless/workflow-lint/definition'
 import { IslandLoadError, IslandMountAbandoned } from '../islands/IslandHost'
 import { replayRun } from '../lib/runner/replay'
 import type { RunRow, StepRow } from '../lib/runner/rows'
+import type { Definition } from '../lib/runner/types'
 import { getIslandHandle } from './islandLaunch'
 import { cancelRun } from './lifecycleActions'
-import { runOpened, runReplaced } from './runSlice'
+import { runEvent, runOpened, runReplaced } from './runSlice'
+import type { FakeIslandHost } from '../test/islandHarness'
 import {
   ISLAND_DEF,
   ISLAND_FULLSCREEN_DEF,
@@ -380,5 +383,122 @@ describe('island steps — lease loss', () => {
     expect(host.teardowns).toEqual(['unmounted'])
     // The record is untouched: readonly means "not ours to drive", not "cancelled".
     expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task 9 — `timeout-minutes` on a step that is waiting on a person, and the
+// 5-minute default a headless run gives an `auto` island (Decision 10, 07).
+// ---------------------------------------------------------------------------
+
+/** `ISLAND_DEF`, with whatever extra step keys a budget test needs. */
+function islandDefWith(extra: Record<string, unknown>): Definition {
+  return toDefinition({
+    name: 'Island',
+    jobs: {
+      a: {
+        steps: [
+          {
+            id: 'pick',
+            uses: 'island',
+            ...extra,
+            with: { src: 'islands/pick.html', title: 'Pick one', mode: 'quick' },
+            outputs: { choice: { type: 'string' } },
+          },
+        ],
+      },
+    },
+  }) as Definition
+}
+
+/** Start `def` as a **headless** run — `startRun` only ever starts interactive ones (07 drives the page). */
+async function startHeadlessIslandRun(def: Definition) {
+  const { store, advance, host, writes, setLease } = islandStore()
+  store.dispatch(runOpened({ meta: { def, yaml: ISLAND_YAML, workflowName: 'Island' } }))
+  store.dispatch(
+    runEvent({
+      type: 'run.started',
+      runId: 'run_headless',
+      impl: 'test',
+      workflow: 'island',
+      inputs: {},
+      headless: true,
+      at: 1_000,
+    }),
+  )
+  await pumpUntil(advance, () => store.getState().run.state?.steps[ISLAND_KEY]?.status === 'running')
+  return { store, advance, host, writes, setLease, runId: 'run_headless' }
+}
+
+/** Take a launched island all the way to `waiting` (the pane mounts it, the island comes up). */
+async function mountToWaiting(runId: string, host: FakeIslandHost): Promise<void> {
+  void getIslandHandle(runId, ISLAND_KEY)!.mount(frame())
+  await flush()
+  host.settle()
+  await flush()
+}
+
+describe('island steps — timeout-minutes (Decision 10)', () => {
+  it('fails a headless auto island with HEADLESS_TIMEOUT after the 5-minute default', async () => {
+    const { store, advance, host, runId } = await startHeadlessIslandRun(
+      islandDefWith({ headless: 'auto' }),
+    )
+    await mountToWaiting(runId, host)
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
+
+    await advance(4 * 60_000)
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
+
+    await advance(60_000)
+    expect(store.getState().run.state!.steps[ISLAND_KEY]).toMatchObject({
+      status: 'failed',
+      error: { code: 'HEADLESS_TIMEOUT', message: 'the step exceeded its `timeout-minutes` budget' },
+    })
+  })
+
+  it('prefers the declared budget over the headless default', async () => {
+    const { store, advance, host, runId } = await startHeadlessIslandRun(
+      islandDefWith({ headless: 'auto', 'timeout-minutes': 1 }),
+    )
+    await mountToWaiting(runId, host)
+
+    await advance(60_000)
+    expect(store.getState().run.state!.steps[ISLAND_KEY]).toMatchObject({
+      status: 'failed',
+      error: { code: 'HEADLESS_TIMEOUT' },
+    })
+  })
+
+  it('fails an interactive island with TIMEOUT — the code says which kind of run ran out', async () => {
+    const { store, advance, host, runId } = await startIslandRun(islandDefWith({ 'timeout-minutes': 1 }))
+    await mountToWaiting(runId, host)
+
+    await advance(60_000)
+    expect(store.getState().run.state!.steps[ISLAND_KEY]).toMatchObject({
+      status: 'failed',
+      error: { code: 'TIMEOUT' },
+    })
+  })
+
+  it('waits indefinitely for a person when an interactive island declares no budget', async () => {
+    const { store, advance, host, runId } = await startIslandRun()
+    await mountToWaiting(runId, host)
+
+    await advance(30 * 60_000)
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting')
+  })
+
+  it('is disarmed by a submit', async () => {
+    const { store, advance, host, runId } = await startHeadlessIslandRun(
+      islandDefWith({ headless: 'auto' }),
+    )
+    await mountToWaiting(runId, host)
+
+    expect(host.deps!.onSubmit({ choice: 'b' })).toEqual({ ok: true })
+    await flush()
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('succeeded')
+
+    await advance(10 * 60_000)
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('succeeded')
   })
 })

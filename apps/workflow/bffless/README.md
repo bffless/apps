@@ -1,6 +1,6 @@
 # Workflow harness backend — BFFless proxy rule sets
 
-One authored set: `workflow` (run records, lease, files trio — spec 05/06). Through M2 this
+One authored set: `workflow` (run records, lease, files quartet — spec 05/06). Through M2 this
 directory also carried `hello` (the workflow-hello test implementation: echo, slow+poll,
 fail, analyze). As of M3 Task 7 (Decision 5, "one source") `hello` lives in its own repo,
 [`bffless/workflow-hello`](https://github.com/bffless/workflow-hello): its rule set, workflow
@@ -70,7 +70,7 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
     no-cache`** (rule "Islands: no Cloudflare script injection"). Why: see *Islands (M2) →
     Cloudflare* below.
   - required from M2 Phase 2 — **`**/scripts/*.js` → `Cache-Control: no-transform,
-    no-cache`**. Worker module text is fetched by the harness and turned into a Blob URL
+    no-cache`**. Worker module text is fetched by the harness and handed to the sandbox
     verbatim — an edge-injected script would break the import; same reason as islands.
     Not yet automatable — bffless/ce#700.
 
@@ -107,6 +107,22 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
   Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty
   strings rather than an error, so readers must tolerate them.
+- **`POST /api/workflow/files/sign`** (M3 Task 10): `{ path }` → `{ url, expiresIn: 3600 }`, a
+  presigned GET for one object. Nothing manual to do — the rule ships with the set and
+  `deploy-workflow.yml` deploys it on merge. It exists for the sandboxed island: an
+  opaque-origin frame sends no cookie, so `/api/uploads/…` 401s on it and an `<img>`/`<video>`
+  can only be pointed at a signed URL the *host* fetched on its behalf (`workflow.sign`, spec
+  04/Decision 6). `confine.fn.js` narrows the signable set to the harness prefix (an
+  uploads-relative key under `workflows/`, no traversal, and the project prefix comes from
+  `deployment.owner`/`deployment.repo`, so an import into any project signs its own objects);
+  anything else is a literal-status 400. Like the delete rule this is a **multi-branch
+  conditional `response_handler` rule — edit it as rules-as-code only** (bffless/ce#502).
+  **Both storage backends presign** — CE's `signed_url` calls the adapter's `getUrl`, and the
+  local-FS adapter mints an HMAC-signed `/api/storage/presigned/local?key=…&exp=…&sig=…`
+  (`local.adapter.ts`); there is no 501. The local-FS caveat is that this URL is **relative
+  unless `PUBLIC_ORIGIN` is set**, and a relative `src` cannot resolve inside an opaque-origin
+  `srcdoc` frame — so bucket storage (GCS/S3) needs nothing, and a local-storage install must
+  set `PUBLIC_ORIGIN` or island media will not load. j5s.dev is GCS, so it signs absolute live.
 
 ### Islands (M2)
 
@@ -115,9 +131,9 @@ same forwarder as the workflow YAMLs) and injected verbatim into a sandboxed
 `<iframe sandbox="allow-scripts">` `srcdoc` host — an opaque origin, so no cookies, no
 storage, no same-origin fetch (Decision 9); the harness never parses, sanitises or rewrites
 the HTML. Tool names between the island and the host are dot-canonical, slash-tolerant
-(Decision 1): `workflow.submit` and `workflow.annotate` are the two host tools every island
-gets, and pipelines-as-tools are restricted to the implementation's own `/api/<impl>/`
-namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
+(Decision 1): `workflow.submit`, `workflow.annotate` and `workflow.sign` are the three host
+tools every island gets, and pipelines-as-tools are restricted to the implementation's own
+`/api/<impl>/` namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
 addition — and the staged bundle now carries `islands/*.html` (`pick-line.html`,
 `line-viewer.html`) alongside `index.html` and the two workflow YAMLs.
 
@@ -152,8 +168,12 @@ forwarder half of which is resolved by the in-process target above).
 A `script` step's module is served straight out of the hello bundle at
 `/w/hello/scripts/<file>.js` (the same forwarder as the islands and the workflow YAMLs). The
 **page** fetches it — the bundle is behind the member's session — and hands the text to a
-Worker as a Blob URL, so the module is imported verbatim; it has no cookies of its own and
-reaches the network only through the host's relay (03). Scripts are copied into the bundle
+hidden `sandbox="allow-scripts"` iframe, which spawns the Worker from two `data:` URLs (the
+module and the shim). The Worker therefore runs on an **opaque origin**: the module is
+imported verbatim, it has no cookies of its own, a `fetch` of its own has no origin to reach
+the harness with, and it reaches the network only through the host's relay (03). The page
+still does the fetching, so the `**/scripts/*.js` `no-transform` header rule above is still
+required. Scripts are copied into the bundle
 **verbatim** by `scripts/stage-hello.mjs` (no build step, unlike islands) and listed in
 `index.json`'s `scripts` array; hello's first one is `scripts/poster-card.js`, the `card` job
 of `interactive.workflow.yaml`.

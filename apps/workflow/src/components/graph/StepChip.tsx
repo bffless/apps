@@ -14,6 +14,7 @@
  * without measuring anything.
  */
 import { formatDuration } from '../../lib/duration'
+import { headlessMode } from '../../lib/runner/headless'
 import { StatusGlyph } from '../StatusPill'
 import type { Step, StepKey, StepKind, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
@@ -25,23 +26,6 @@ const KIND_ICON: Record<StepKind, string> = {
   island: '◧',
   form: '☑',
   script: '⌘',
-}
-
-/**
- * `headless: skip|auto` (bare form) or `headless: { mode: skip|auto, ... }`
- * (07) — `undefined` for a step that declares no `headless` at all. Defensive
- * on a headless block with no `mode`: the schema requires one, but `auto` is
- * the harness's own default if that ever slips through.
- */
-function headlessMode(step: Step): 'skip' | 'auto' | undefined {
-  const h = step.raw?.headless as unknown
-  if (h === 'skip' || h === 'auto') return h
-  if (h !== null && typeof h === 'object') {
-    const mode = (h as { mode?: unknown }).mode
-    if (mode === 'skip' || mode === 'auto') return mode
-    if (mode === undefined) return 'auto'
-  }
-  return undefined
 }
 
 /** What the right-hand mono slot says about a run-mode step. */

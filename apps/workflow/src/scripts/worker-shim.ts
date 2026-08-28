@@ -2,32 +2,41 @@
  * The Worker's own bootstrap, as text (03).
  *
  * A script step's module is fetched by the *page* (it needs the member's
- * cookie) and handed to the Worker as a Blob URL, so the Worker cannot simply
- * be `new Worker(moduleUrl)`: something has to build the `ctx` the module is
- * called with first. That something is this shim — a second Blob URL, spawned
- * as `{ type: 'module' }`, which dynamically imports the script's URL and
- * relays every capability the module asks for back to the page.
+ * cookie) and handed to the Worker as a `data:` URL, so the Worker cannot
+ * simply be `new Worker(moduleUrl)`: something has to build the `ctx` the
+ * module is called with first. That something is this shim — a second `data:`
+ * URL, spawned as `{ type: 'module' }`, which dynamically imports the script's
+ * URL and relays every capability the module asks for back to the page.
  *
  * Why a **string** rather than a `new Worker(new URL('./worker-shim.ts', import.meta.url))`
- * entry: the shim has to reach the browser as a Blob URL either way (the page
- * has nothing to serve a compiled worker chunk from in dev, and a bundled entry
- * would drag the app's module graph into the Worker), and a literal is the one
- * form no bundler rewrites. The rules that keep it honest — no static
- * `import`/`export`, the only import is `import(msg.moduleUrl)` — are asserted
- * in `rpc.test.ts`, which is also the only place the app parses it.
+ * entry: the shim has to reach the browser as a URL built at runtime either way
+ * (the page has nothing to serve a compiled worker chunk from in dev, and a
+ * bundled entry would drag the app's module graph into the Worker), and a
+ * literal is the one form no bundler rewrites. The rules that keep it honest —
+ * no static `import`/`export`, the only import is `import(moduleUrl)`, and it
+ * answers on the port rather than on `self` — are asserted in `rpc.test.ts`,
+ * which is also the only place the app parses it.
+ *
+ * The port matters (Decision 4): the Worker is spawned inside a sandboxed
+ * iframe, so `self.postMessage` would reach the *frame*, not the page. The
+ * frame's one job is to hand over the page's `MessagePort`; from `{ t: 'port' }`
+ * on, everything goes down that port and the frame is out of the conversation.
  *
  * Keep it plain ES2022 JavaScript: nothing type-checks this text.
  */
 
 /** @see ToWorker / FromWorker in `rpc.ts` — the two ends must agree by hand. */
 export const SHIM_SOURCE = `
-// The script step's Worker bootstrap. Built from a Blob URL by ScriptHost.ts;
-// see apps/workflow/src/scripts/worker-shim.ts for why this is a string.
+// The script step's Worker bootstrap. Built from a data: URL by ScriptHost.ts,
+// inside the sandbox frame; see apps/workflow/src/scripts/worker-shim.ts for
+// why this is a string.
 const pending = new Map()
 let nextId = 1
 let controller = null
+let port = null
+let moduleUrl = ''
 
-const post = (msg) => { self.postMessage(msg) }
+const post = (msg) => { port.postMessage(msg) }
 
 const textOf = (err) => {
   if (err && typeof err.message === 'string' && err.message !== '') return err.message
@@ -67,7 +76,7 @@ const run = async (msg) => {
 
   let mod
   try {
-    mod = await import(msg.moduleUrl)
+    mod = await import(moduleUrl)
   } catch (err) {
     post({ t: 'error', code: 'SCRIPT_LOAD', message: textOf(err) })
     return
@@ -95,11 +104,21 @@ const run = async (msg) => {
   }
 }
 
-self.onmessage = (event) => {
-  const msg = event.data
+const handle = (msg) => {
   if (!msg) return
   if (msg.t === 'run') { void run(msg); return }
   if (msg.t === 'rpc:res') { answer(msg); return }
   if (msg.t === 'abort' && controller) controller.abort()
+}
+
+// The handover, and the only thing this Worker ever takes off self: the frame
+// that spawned it is not the page, so the page is reachable only on the port.
+self.onmessage = (event) => {
+  if (!event.data || event.data.t !== 'port' || !event.ports[0]) return
+  self.onmessage = null
+  port = event.ports[0]
+  moduleUrl = event.data.moduleUrl
+  port.onmessage = (ev) => { handle(ev.data) }
+  post({ t: 'ready' })
 }
 `
