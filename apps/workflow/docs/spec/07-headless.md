@@ -40,13 +40,12 @@ Each `island` / `form` step declares what to do under `run.headless`:
 | `headless` | behaviour |
 |---|---|
 | `skip` / `{ mode: skip, outputs: {…} }` | step is `skipped`; its outputs are the literal `outputs` (expressions allowed; must satisfy the declared map). **Lint error** if a declared output that a later expression references has no skip value |
-| `auto` | the island/form is still mounted; an island gets `_meta.bffless.headless = true` on `tool-input` and must `workflow.submit` on its own; a `form` auto-submits its defaults. Timeout → `HEADLESS_TIMEOUT` |
+| `auto` | the island/form is still mounted; an island reads `hostContext.bffless.headless` and must `workflow.submit` on its own; a `form` auto-submits its defaults. Timeout → `HEADLESS_TIMEOUT` |
 | *(none)* | the run **fails fast** at that step with annotation `step <key> needs a person; declare headless:` — never hangs |
 
-> The `tool-input` stamp does not reach the island as written: ext-apps 1.7.5's View strips
-> unknown `tool-input` keys before `app.ontoolinput` (the host still sends it, harmlessly), so
-> headless needs another channel — a `headless` key inside `arguments`, or `hostContext` —
-> decided at M3 along with `HEADLESS_TIMEOUT` itself.
+> When `run.headless`, the host sets `hostContext.bffless.headless = true` (delivered on
+> `ui/initialize`, readable as `app.getHostContext().bffless`); a `headless: auto` island must
+> `workflow.submit` on its own within its budget (Decision 10) or fails `HEADLESS_TIMEOUT`.
 
 The linter reports every interactive step lacking `headless` as a notice ("not headless-safe"),
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say

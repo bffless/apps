@@ -24,6 +24,6 @@ authors code against a public SDK, not ours; the security model (no cookies, eve
 the bridge) matches ADR-0001.
 
 **Consequences:** `uses: island` takes an `.html`, not a JS module; islands cannot `poll` (they
-call the job tool themselves); a BFFless-specific `_meta.bffless.headless` flag rides on
-`tool-input` for headless runs. WebMCP (`navigator.modelContext`) is a separate, later layer on
+call the job tool themselves); a BFFless-specific `hostContext.bffless.headless` flag rides on
+`ui/initialize` for headless runs. WebMCP (`navigator.modelContext`) is a separate, later layer on
 the harness page.

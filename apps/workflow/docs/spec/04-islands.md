@@ -20,7 +20,7 @@ implementation's pipelines as its tools; authors write against the public
 | island writes a summary / annotation | `tools/call { name: "workflow.annotate", arguments: { summary?, annotations? } }` |
 | island needs media (an image/video/audio the run produced) | `tools/call { name: "workflow.sign", arguments: { path } }` → `{ url, expiresIn }` — a presigned GET for an object under `workflows/`, because the frame is opaque-origin and carries no cookie |
 | theme, dark mode, size | `ui/notifications/initialized.hostContext` (`theme`, `styles`, `displayMode`, `containerDimensions`), `ui/notifications/size-changed`, `ui/notifications/host-context-changed` — the host re-sends `theme` on an OS theme flip and `containerDimensions` on a frame resize |
-| headless run | `hostContext.platform = "web"`, plus `_meta.bffless.headless = true` on `tool-input` (07) — but see below: ext-apps 1.7.5 strips it |
+| headless run | `hostContext.platform = "web"`; `hostContext.bffless.headless = true` (delivered on `ui/initialize`, readable as `app.getHostContext().bffless`) (07) |
 | step cancelled / run leaves the page | `ui/resource-teardown { reason }` |
 | output viewer (`render: island`) | same file; `tool-input.arguments = { value }`; `workflow.submit` and `workflow.annotate` are rejected (`workflow.sign` is not — see below). A changed value is a **fresh `tool-input`** over the same bridge, never a remount — a viewer must handle `ontoolinput` more than once. A step's island is sent `tool-input` exactly once |
 
@@ -107,15 +107,9 @@ can fix and resubmit.
 
 ## Headless
 
-When `run.headless`, a `headless: auto` island receives `tool-input` with
-`_meta.bffless.headless = true` and is expected to submit on its own (e.g. accept the AI's
-cuts unchanged). If it has not submitted within its `timeout-minutes` (default 5 in headless),
-the step fails with `HEADLESS_TIMEOUT` (07). All of this is **M3**: the M2 harness applies no
-`timeout-minutes` to island steps at all, and the stamp does not arrive — the host sends
-`_meta.bffless.headless` on the wire, but ext-apps 1.7.5's View validates
-`ui/notifications/tool-input` with a schema that **strips unknown keys** before
-`app.ontoolinput`, so an island never sees it. Headless needs another channel (a `headless`
-key inside `arguments`, or `hostContext`) — decided at M3.
+When `run.headless`, the host sets `hostContext.bffless.headless = true` (delivered on
+`ui/initialize`, readable as `app.getHostContext().bffless`); a `headless: auto` island must
+`workflow.submit` on its own within its budget (Decision 10) or fails `HEADLESS_TIMEOUT`.
 
 ## Later
 

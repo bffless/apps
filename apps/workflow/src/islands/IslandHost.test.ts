@@ -106,12 +106,13 @@ describe('mount', () => {
     expect(h.island.frames).toEqual([h.iframe])
   })
 
-  it('sends the step arguments as ui/notifications/tool-input', async () => {
+  it('sends the step arguments as ui/notifications/tool-input, with no _meta', async () => {
     const h = await mounted()
     await tick()
 
     expect(h.island.toolInputs).toHaveLength(1)
     expect(h.island.toolInputs[0].arguments).toEqual({ lines: ['a', 'b'] })
+    expect((h.island.toolInputs[0] as Record<string, unknown>)._meta).toBeUndefined()
   })
 
   it('hands the View a host context with a theme, the display mode and the platform', async () => {
@@ -120,6 +121,21 @@ describe('mount', () => {
 
     expect(context).toMatchObject({ displayMode: 'inline', platform: 'web' })
     expect(context?.theme === 'light' || context?.theme === 'dark').toBe(true)
+  })
+
+  // Decision 7: `_meta` on `tool-input` is stripped by ext-apps 1.7.5's View
+  // before `app.ontoolinput` (see the test above), but `hostContext` is
+  // passthrough, so the headless flag rides `ui/initialize` instead.
+  it('carries the headless flag on hostContext.bffless, not on tool-input', async () => {
+    const h = await mounted({}, { headless: true })
+
+    expect(h.island.app.getHostContext()).toMatchObject({ bffless: { headless: true } })
+  })
+
+  it('carries headless: false on hostContext.bffless for an interactive mount', async () => {
+    const h = await mounted()
+
+    expect(h.island.app.getHostContext()).toMatchObject({ bffless: { headless: false } })
   })
 
   // apps#363: `render: island` (IslandView) hands its `decl.src` to this same
