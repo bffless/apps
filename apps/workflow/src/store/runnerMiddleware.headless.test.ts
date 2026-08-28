@@ -191,6 +191,41 @@ describe('headless: skip', () => {
     expect(stepOf(s.store)!.outputs).toEqual({ cover: poster })
   })
 
+  it("carries the skip's outputs all the way to the run's own outputs", async () => {
+    const poster: FileRef = {
+      path: 'runs/r1/poster.svg',
+      name: 'poster.svg',
+      contentType: 'image/svg+xml',
+      size: 42,
+      url: '/api/uploads/runs/r1/poster.svg',
+    }
+    // hello's `review` job end to end (R66): its only step is the skip, so the
+    // job would read `skipped` — and its outputs `null` — under the pre-R66
+    // rule, giving the same workflow two different answers attended and
+    // unattended. It must produce the File ref either way.
+    const def = toDefinition({
+      name: 'Headless',
+      jobs: {
+        review: {
+          steps: [
+            form(
+              { cover: { type: 'choice', options: '${{ inputs.posters }}', required: true } },
+              { headless: { mode: 'skip', outputs: { cover: '${{ inputs.posters[0] }}' } } },
+            ),
+          ],
+          outputs: { cover: { type: 'file', value: '${{ steps.review.outputs.cover }}' } },
+        },
+      },
+      outputs: { cover: '${{ jobs.review.outputs.cover }}' },
+    }) as Definition
+
+    const s = await start(def, { inputs: { posters: [poster] } })
+    await pumpUntil(s.advance, () => runState(s.store).status !== 'running')
+
+    expect(runState(s.store).status).toBe('succeeded')
+    expect(runState(s.store).outputs).toEqual({ cover: poster })
+  })
+
   it("fails HEADLESS_SKIP when a declared value fails the step's own map", async () => {
     const def = withSteps([
       form(

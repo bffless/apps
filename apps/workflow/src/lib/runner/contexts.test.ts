@@ -11,6 +11,7 @@ import {
   evalDeep,
   evalIf,
   evalValue,
+  jobOutcome,
   statusFns,
 } from './contexts'
 
@@ -352,5 +353,119 @@ describe('response overlay', () => {
       response: { text: 'Hello, world!' },
     })
     expect(evalValue('${{ response.text }}', ctx)).toBe('Hello, world!')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A skipped step that CARRIES outputs is a producing step (R66, Task 12)
+// ---------------------------------------------------------------------------
+
+/**
+ * hello's `review` job in miniature (`interactive.workflow.yaml`): one `form`
+ * step whose `headless: skip` stands a File ref in for the cover a person would
+ * have picked, a job output that passes the ref through whole, and a dependent
+ * job that reads it. The state is built by hand — how the skip arrived at its
+ * outputs is `evaluateSkipOutputs`' business (and the middleware suite's); what
+ * is pinned here is that a job holding one is `success`, so its outputs are
+ * readable rather than nulled.
+ */
+const POSTER = {
+  path: 'runs/run_TEST/poster.svg',
+  name: 'poster.svg',
+  contentType: 'image/svg+xml',
+  size: 42,
+  url: '/api/uploads/runs/run_TEST/poster.svg',
+}
+
+const skipDef: Definition = toDefinition({
+  name: 'Headless skip',
+  jobs: {
+    review: {
+      steps: [
+        {
+          id: 'confirm',
+          uses: 'form',
+          with: {
+            title: 'Review the card',
+            fields: { cover: { type: 'choice', options: '${{ inputs.posters }}', required: true } },
+            submit: 'Approve',
+          },
+          headless: { mode: 'skip', outputs: { cover: '${{ inputs.posters[0] }}' } },
+        },
+      ],
+      outputs: { cover: { type: 'file', value: '${{ steps.confirm.outputs.cover }}' } },
+    },
+    ship: {
+      needs: 'review',
+      steps: [{ id: 'send', uses: 'pipeline', with: { path: 'echo' } }],
+      outputs: { name: '${{ needs.review.outputs.cover.name }}' },
+    },
+  },
+  outputs: { cover: '${{ jobs.review.outputs.cover }}' },
+})
+
+/** The same shape, but the job's one step was skipped by `if:` and carries nothing. */
+const ifSkipDef: Definition = toDefinition({
+  name: 'if-skipped',
+  jobs: {
+    review: {
+      steps: [{ id: 'confirm', uses: 'pipeline', if: '${{ false }}', with: { path: 'echo' } }],
+      outputs: { cover: '${{ steps.confirm.outputs.cover }}' },
+    },
+  },
+  outputs: { cover: '${{ jobs.review.outputs.cover }}' },
+})
+
+describe('jobOutcome — a skipped step that carries outputs', () => {
+  const skipped = (over: Partial<StepState> = {}) =>
+    step('review', 0, 'confirm', { kind: 'form', status: 'skipped', ...over })
+
+  it('makes its job succeed, so the job and run outputs carry the skip values', () => {
+    const state = withSteps(makeState(), skipped({ outputs: { cover: POSTER } }))
+
+    expect(jobOutcome(skipDef, state, 'review')).toBe('success')
+    expect(evalValue('${{ jobs.review.outputs.cover }}', buildRunContexts(skipDef, state))).toEqual(
+      POSTER,
+    )
+    // …and a dependent job reads it exactly as it would in an interactive run.
+    const shipCtx = buildJobContexts(skipDef, state, 'ship')
+    expect(evalValue('${{ needs.review.result }}', shipCtx)).toBe('success')
+    expect(evalValue('${{ needs.review.outputs.cover.name }}', shipCtx)).toBe('poster.svg')
+  })
+
+  it('leaves an if-skipped job skipped, with null outputs (the pre-existing rule)', () => {
+    const state = withSteps(makeState(), skipped({ kind: 'pipeline' }))
+
+    expect(jobOutcome(ifSkipDef, state, 'review')).toBe('skipped')
+    expect(
+      evalValue('${{ jobs.review.outputs.cover }}', buildRunContexts(ifSkipDef, state)),
+    ).toBeNull()
+  })
+
+  it('leaves a mixed job succeeding, as it already did', () => {
+    const state = withSteps(
+      makeState(),
+      step('a', 0, 's1', { status: 'skipped', outputs: { x: 'stood in' } }),
+      step('a', 0, 's2'),
+    )
+
+    expect(jobOutcome(smallDef, state, 'a')).toBe('success')
+    expect(evalValue('${{ jobs.a.outputs.y }}', buildRunContexts(smallDef, state))).toBe('stood in')
+  })
+
+  it('counts a skipped-with-outputs step as a producing matrix item', () => {
+    // `itemProduced` already agrees — a skip is neither cancelled nor a failure
+    // — and this pins that agreement rather than changing it.
+    const state = withSteps(
+      makeState({ expansions: { greet: { total: 2, items: [{ who: 'a' }, { who: 'b' }] } } }),
+      step('greet', 0, 'say', { status: 'skipped', outputs: { line: 'stood in' } }),
+      step('greet', 1, 'say', { outputs: { line: 'Hello, b!' } }),
+    )
+
+    expect(jobOutcome(hello, state, 'greet')).toBe('success')
+    expect(evalValue('${{ jobs.greet.outputs.lines }}', buildRunContexts(hello, state))).toEqual([
+      'stood in',
+      'Hello, b!',
+    ])
   })
 })
