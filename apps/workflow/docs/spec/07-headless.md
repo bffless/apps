@@ -39,9 +39,9 @@ Each `island` / `form` step declares what to do under `run.headless`:
 
 | `headless` | behaviour |
 |---|---|
-| `skip` / `{ mode: skip, outputs: {…} }` | step is `skipped`; its outputs are the literal `outputs` (expressions allowed; must satisfy the declared map). **Lint error** if a declared output that a later expression references has no skip value |
-| `auto` | the island/form is still mounted; an island reads `hostContext.bffless.headless` and must `workflow.submit` on its own; a `form` auto-submits its defaults. Timeout → `HEADLESS_TIMEOUT` |
-| *(none)* | the run **fails fast** at that step with annotation `step <key> needs a person; declare headless:` — never hangs |
+| `skip` / `{ mode: skip, outputs: {…} }` | step is `skipped` without ever being queued; its outputs are the literal `outputs` (expressions allowed; must satisfy the declared map — a value that does not fails `HEADLESS_SKIP`). **Lint error** if a declared output that a later expression references has no skip value |
+| `auto` | the island/form is still mounted; an island reads `hostContext.bffless.headless` and must `workflow.submit` on its own; a `form` auto-submits its defaults through the same path a person's submit takes (defaults its own fields refuse → `HEADLESS_FORM`). Timeout → `HEADLESS_TIMEOUT` |
+| *(none)* | the run **fails fast** at that step — `HEADLESS_REQUIRED`, plus a run annotation `step <key> needs a person; declare headless:` — never hangs |
 
 > When `run.headless`, the host sets `hostContext.bffless.headless = true` (delivered on
 > `ui/initialize`, readable as `app.getHostContext().bffless`); a `headless: auto` island must

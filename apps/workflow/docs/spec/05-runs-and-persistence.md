@@ -68,7 +68,7 @@ paused with an error banner rather than continuing unrecorded).
 | `run.started` | insert `workflow_runs` (status `running`, lease set) |
 | `step.queued` / `step.started` / `step.polling` / `step.waiting` | upsert step row status (+ `inputs` on start, `response.initial` (trimmed) on polling) |
 | `step.succeeded` | row: status, `outputs`, `response`, `summary`, `annotations`, `finished_at` |
-| `step.failed` / `step.skipped` / `step.cancelled` | row: status, `error`, `finished_at` |
+| `step.failed` / `step.skipped` / `step.cancelled` | row: status, `error`, `finished_at` (a `headless: skip` also writes the `outputs` it stood in for, 07) |
 | `step.retrying` | row: `attempt++`, status `queued` |
 | `run.heartbeat` | `workflow_runs.lease_until`, active rows' `heartbeat_at` (every 15 s) |
 | `run.finished` | `workflow_runs.status`, `outputs`, `finished_at`, lease cleared |

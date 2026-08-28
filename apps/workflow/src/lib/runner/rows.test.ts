@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { eventToWrites } from './rows'
 import type { RunRow } from './rows'
+import type { StepRow } from './rows'
 import type { Annotation, RunEvent, RunState, StepKey, StepState } from './types'
 
 const RUN_ID = 'run_ROLLUP'
@@ -144,5 +145,60 @@ describe('eventToWrites — run.annotation annotationCounts', () => {
     expect(runPatch({ type: 'run.annotation', annotation, at: 11 }, after).annotationCounts).toEqual(
       { error: 0, warning: 1, notice: 1 },
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// step.skipped — the outputs a headless skip stood in for (Task 12)
+// ---------------------------------------------------------------------------
+
+describe('eventToWrites — step.skipped', () => {
+  const KEY: StepKey = 'confirm/0/review'
+
+  /** The state after a skip of `KEY`, with whatever outputs the skip carried. */
+  function skipped(outputs?: Record<string, unknown>): RunState {
+    const state = stateWith()
+    return {
+      ...state,
+      status: 'running',
+      steps: {
+        [KEY]: {
+          key: KEY,
+          job: 'confirm',
+          index: 0,
+          stepId: 'review',
+          kind: 'form',
+          status: 'skipped',
+          attempt: 1,
+          annotations: [],
+          ...(outputs ? { outputs } : {}),
+        },
+      },
+    }
+  }
+
+  const skipPatch = (state: RunState): Partial<StepRow> => {
+    const writes = eventToWrites(
+      { type: 'step.skipped', key: KEY, job: 'confirm', index: 0, stepId: 'review', kind: 'form', at: 9 },
+      { state },
+    )
+    expect(writes).toHaveLength(1)
+    const write = writes[0]
+    if (write.table !== 'steps') throw new Error('expected a steps upsert')
+    return write.patch
+  }
+
+  it('writes the outputs a headless skip stood in for', () => {
+    expect(skipPatch(skipped({ approved: true }))).toMatchObject({
+      status: 'skipped',
+      finishedAt: 9,
+      outputs: { approved: true },
+    })
+  })
+
+  it('writes no outputs column for a scheduler skip', () => {
+    const patch = skipPatch(skipped())
+    expect(patch.status).toBe('skipped')
+    expect('outputs' in patch).toBe(false)
   })
 })

@@ -515,6 +515,29 @@ describe('step.skipped', () => {
       at: 1_002,
     })
     expect(next.steps[skipKey]).toMatchObject({ status: 'skipped', attempt: 1, annotations: [] })
+    expect(next.steps[skipKey].outputs).toBeUndefined()
+  })
+
+  // Task 12: a `headless: skip` stands the step's declared outputs in for the
+  // work it never did, so downstream expressions read them like any other
+  // step's. A scheduler skip (`if:` false, a failed need) carries none.
+  it('keeps the outputs a headless skip stood in for', () => {
+    const state = baseline()
+    const skipKey = stepKey('a', 0, 's2')
+    const next = runReducer(state, {
+      type: 'step.skipped',
+      key: skipKey,
+      job: 'a',
+      index: 0,
+      stepId: 's2',
+      kind: 'form',
+      outputs: { approved: true },
+      at: 1_002,
+    })
+    expect(next.steps[skipKey]).toMatchObject({
+      status: 'skipped',
+      outputs: { approved: true },
+    })
   })
 })
 

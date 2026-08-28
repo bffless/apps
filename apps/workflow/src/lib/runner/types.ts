@@ -52,7 +52,23 @@ export type RunEvent =
     }
   | { type: 'step.succeeded'; key: StepKey; outputs: Record<string, unknown>; response?: { initial?: unknown; last?: unknown; truncated?: boolean }; summary?: string; annotations?: Annotation[]; at: number }
   | { type: 'step.failed'; key: StepKey; error: StepError; annotations?: Annotation[]; at: number }
-  | { type: 'step.skipped'; key: StepKey; job: string; index: number; stepId: string; kind: StepKind; at: number }
+  | {
+      type: 'step.skipped'
+      key: StepKey
+      job: string
+      index: number
+      stepId: string
+      kind: StepKind
+      /**
+       * What a `headless: skip` (07, Decision 11) stands in for the work the
+       * step never did — validated against the step's own declared map before
+       * this event is emitted, so downstream expressions read it exactly as
+       * they would read a real submit. A scheduler skip (`if:` false, a failed
+       * need) carries none, and its outputs read `null` as they always have.
+       */
+      outputs?: Record<string, unknown>
+      at: number
+    }
   | { type: 'step.retrying'; key: StepKey; error: StepError; at: number }
   | { type: 'step.cancelled'; key: StepKey; at: number }
   /**

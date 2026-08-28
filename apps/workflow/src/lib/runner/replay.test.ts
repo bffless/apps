@@ -873,3 +873,39 @@ describe('step.annotated (Decision 12)', () => {
     expect(replayed.steps[REVIEW].summary).toBe(state.steps[REVIEW].summary)
   })
 })
+
+// ---------------------------------------------------------------------------
+// A headless skip's outputs survive the round trip (Task 12)
+// ---------------------------------------------------------------------------
+
+describe('replayRun — a skipped step that carries outputs', () => {
+  it('replays the outputs a headless skip stood in for', () => {
+    const store = newStore()
+    let state = startRun(store)
+    const key = stepKey('seed', 0, 'make')
+    state = dispatch(store, state, {
+      type: 'step.skipped',
+      key,
+      job: 'seed',
+      index: 0,
+      stepId: 'make',
+      kind: 'form',
+      outputs: { names: ['ada', 'grace'] },
+      at: now(),
+    })
+
+    expect(store.steps[`${RUN_ID}::${key}`].outputs).toEqual({ names: ['ada', 'grace'] })
+
+    // The creation event a skipped row replays to is the skip itself, and it
+    // must carry the outputs — otherwise a resumed run's downstream
+    // expressions would read `null` where the live run read a value.
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), def)
+    expect(events.filter((e) => 'key' in e && e.key === key).map((e) => e.type)).toEqual([
+      'step.skipped',
+    ])
+
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    expect(replayed.steps[key].status).toBe('skipped')
+    expect(replayed.steps[key].outputs).toEqual(state.steps[key].outputs)
+  })
+})

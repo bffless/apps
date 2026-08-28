@@ -21,16 +21,18 @@ import type { IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { toFileRef } from '../lib/coerce'
 import type { RunStore } from '../lib/runStore'
 import { buildRunContexts, evalOutputDecl } from '../lib/runner/contexts'
-import { formInputs } from '../lib/runner/adapters/form'
+import { completeFormStep, formInitialValues, formInputs } from '../lib/runner/adapters/form'
 import { runPipelineStep } from '../lib/runner/adapters/pipeline'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
+import type { StepScope } from '../lib/runner/adapters/declared'
+import { evaluateSkipOutputs, headlessMode } from '../lib/runner/headless'
 import { nextActions } from '../lib/runner/next'
 import type { NextAction } from '../lib/runner/next'
 import { isUnavailablePayload, offloadOutputs } from '../lib/runner/payload'
 import { isTruncatedStub } from '../lib/runner/results'
 import { eventToWrites } from '../lib/runner/rows'
 import type { PersistWrite, RunRow } from '../lib/runner/rows'
-import type { Definition, FileRef, RunEvent, RunState, Step, StepKey, StepState } from '../lib/runner/types'
+import type { Definition, FileRef, RunEvent, RunState, Step, StepError, StepKey, StepState } from '../lib/runner/types'
 import { uploadBlob } from '../lib/upload'
 import type { ScriptHost, ScriptHostDeps } from '../scripts/ScriptHost'
 import { clearAllScriptLogs } from '../scripts/logStore'
@@ -714,6 +716,140 @@ function registerFileForStep(
   }
 }
 
+/**
+ * Per-field messages → one error message, `field: message` joined by `"; "`.
+ * The one spelling, shared by `HEADLESS_SKIP` (a declared skip value the step's
+ * own map refused) and `HEADLESS_FORM` (an auto-submit its own fields refused):
+ * both are "these answers were not acceptable", and a reader should not have to
+ * learn two formats for the same news.
+ */
+function joinFieldErrors(errors: Record<string, string>): string {
+  return Object.entries(errors)
+    .map(([field, message]) => `${field}: ${message}`)
+    .join('; ')
+}
+
+type HeadlessDecision =
+  | { act: 'run' }
+  | { act: 'skip'; outputs: Record<string, unknown> }
+  | { act: 'fail'; error: StepError; annotate: boolean }
+
+/**
+ * What an unattended run does with a step that would otherwise wait on a person
+ * (07, Decision 11).
+ *
+ * `form` and `island` are the only two kinds with nobody to drive them in CI,
+ * so each one has to have said how it runs unattended: `skip` stands its
+ * declared outputs in for the work (and never creates the pane at all), `auto`
+ * runs the step exactly as an interactive run would — bounded by the wait clock
+ * of Task 9 — and a step that declared neither is a definition that simply
+ * cannot run headless, which is `HEADLESS_REQUIRED` rather than a run that
+ * hangs until its budget runs out.
+ *
+ * An interactive run never reaches any of this: `headless:` is not read at all
+ * when a person is driving, so a workflow behaves identically with and without
+ * the declaration.
+ */
+function headlessDecision(a: StepScope): HeadlessDecision {
+  if (!a.state.headless) return { act: 'run' }
+  if (a.step.uses !== 'form' && a.step.uses !== 'island') return { act: 'run' }
+
+  const mode = headlessMode(a.step)
+  if (mode === undefined) {
+    return {
+      act: 'fail',
+      error: {
+        code: 'HEADLESS_REQUIRED',
+        message: `step ${a.key} needs a person; declare headless:`,
+      },
+      // The one failure worth a run-level annotation: it is a fact about the
+      // *definition*, not about this run's data, and the run list is where
+      // somebody notices that their workflow cannot be automated at all.
+      annotate: true,
+    }
+  }
+  if (mode === 'auto') return { act: 'run' }
+
+  const skip = evaluateSkipOutputs(a)
+  if (skip.ok) return { act: 'skip', outputs: skip.outputs }
+  return {
+    act: 'fail',
+    error: { code: 'HEADLESS_SKIP', message: joinFieldErrors(skip.errors) },
+    annotate: false,
+  }
+}
+
+/**
+ * `headless: auto` on a `form` step: the submit nobody is there to make.
+ *
+ * The values are the form's *own* initial values — every field's evaluated
+ * `default` (03) — and they go through `completeFormStep`, the identical path a
+ * person's click takes, so an unattended run and an attended one where nobody
+ * changed anything cannot produce different outputs. Defaults that do not
+ * satisfy the fields (a `required` field with no default) are the honest
+ * failure they would be for a person who submitted an empty form, reported as
+ * `HEADLESS_FORM` rather than as a form that sits there.
+ *
+ * Deferred by one microtask so the step is genuinely `waiting` when it is
+ * submitted: that is the status the row records, the wait clock arms off, and
+ * the submit's own contexts are built from — and going straight from `queued`
+ * to `succeeded` is not a legal transition anyway.
+ */
+function autoSubmitForm(a: {
+  step: Step
+  key: StepKey
+  job: string
+  index: number
+  def: Definition
+  state: RunState
+  deps: RunnerDeps
+  dispatch: (action: unknown) => unknown
+  getRunState: () => RunState | undefined
+}): void {
+  const scoped = scopedDispatch(a.state.runId, a.dispatch, a.getRunState)
+
+  void Promise.resolve().then(() => {
+    const state = a.getRunState()
+    // A run abandoned, adopted elsewhere or already settled in between has no
+    // form left to submit. `scoped` would drop the event anyway; this also
+    // keeps us from evaluating a submit against somebody else's run state.
+    if (!state || state.runId !== a.state.runId) return
+    if (state.steps[a.key]?.status !== 'waiting') return
+
+    const values = formInitialValues({
+      step: a.step,
+      def: a.def,
+      state,
+      job: a.job,
+      index: a.index,
+    })
+    const at = a.deps.clock.now()
+    const result = completeFormStep({
+      step: a.step,
+      key: a.key,
+      job: a.job,
+      index: a.index,
+      def: a.def,
+      state,
+      values,
+      at,
+    })
+
+    scoped(
+      runEvent(
+        result.ok
+          ? result.event
+          : {
+              type: 'step.failed',
+              key: a.key,
+              error: { code: 'HEADLESS_FORM', message: joinFieldErrors(result.errors) },
+              at,
+            },
+      ),
+    )
+  })
+}
+
 async function handleNextAction(
   a: NextAction,
   def: Definition,
@@ -763,6 +899,35 @@ async function handleNextAction(
       const step = stepOf(def, a.job, a.stepId)
       if (!step) return
 
+      const scope: StepScope = {
+        step,
+        key: a.key,
+        job: a.job,
+        index: a.index,
+        def,
+        state: runState,
+      }
+      const headless = headlessDecision(scope)
+
+      // A skip replaces `step.queued` rather than following it: `step.skipped`
+      // is itself a *creation* event (the reducer's `assertNewStep`), and a
+      // step that never runs takes no controller and no clock either.
+      if (headless.act === 'skip') {
+        dispatch(
+          runEvent({
+            type: 'step.skipped',
+            key: a.key,
+            job: a.job,
+            index: a.index,
+            stepId: a.stepId,
+            kind: step.uses,
+            outputs: headless.outputs,
+            at: deps.clock.now(),
+          }),
+        )
+        return
+      }
+
       const controller = new AbortController()
       controllers.set(controllerKey(runState.runId, a.key), controller)
 
@@ -777,6 +942,27 @@ async function handleNextAction(
           at: deps.clock.now(),
         }),
       )
+
+      if (headless.act === 'fail') {
+        // `queued -> failed` is not a legal transition (transitions.ts), so
+        // this passes through `running` first like every other kind's
+        // definition-level failure. The annotation goes *before* the failure:
+        // `run.finished` is what rolls the annotation counts up (rows.ts), and
+        // the terminal step event is what can reach it.
+        const at = deps.clock.now()
+        dispatch(runEvent({ type: 'step.started', key: a.key, inputs: {}, at }))
+        if (headless.annotate) {
+          dispatch(
+            runEvent({
+              type: 'run.annotation',
+              annotation: { level: 'error', message: headless.error.message, stepKey: a.key },
+              at,
+            }),
+          )
+        }
+        dispatch(runEvent({ type: 'step.failed', key: a.key, error: headless.error, at }))
+        return
+      }
 
       if (step.uses === 'pipeline') {
         // Scoped, not the raw `dispatch`: this launches a fire-and-forget
@@ -796,6 +982,11 @@ async function handleNextAction(
         // `step.waiting` since a form never emits `step.started`.
         const inputs = formInputs({ step, job: a.job, index: a.index, def, state: runState })
         dispatch(runEvent({ type: 'step.waiting', key: a.key, inputs, at: deps.clock.now() }))
+        // `headless: auto`: nobody is going to click Approve, so the harness
+        // submits the form's own defaults once it is `waiting` (see below).
+        if (runState.headless) {
+          autoSubmitForm({ ...scope, deps, dispatch, getRunState })
+        }
       } else if (step.uses === 'island') {
         // The middleware has no DOM (09): it builds the host and parks a
         // handle, and the *pane* mounts it. `step.waiting` is dispatched from

@@ -174,6 +174,10 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       return [upsert(runId, event.key, { ...identity(s), status: 'queued', attempt: s.attempt })]
     }
 
+    // A `headless: skip` stands its declared outputs in for the step (Task 12),
+    // and the row is what a resumed run reads them back from — so the column is
+    // written here, off the post-event state like every other. A scheduler skip
+    // has none and writes no column at all.
     case 'step.skipped': {
       const s = after(state, event.key)
       return [
@@ -181,6 +185,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           ...identity(s),
           status: 'skipped',
           attempt: s.attempt,
+          ...(s.outputs ? { outputs: s.outputs } : {}),
           finishedAt: event.at,
         }),
       ]
