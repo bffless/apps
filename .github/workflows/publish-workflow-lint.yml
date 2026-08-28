@@ -154,6 +154,34 @@ jobs:
             echo "$PKG declares no build script — nothing to build"
           fi
 
+      # C1's failure *class*, not just its instance. The gate above keys on whether a
+      # package declares a build script, so a future package with `bin: dist/cli.js`
+      # and no build script would sail past it and publish an empty tarball — and npm
+      # does not care that a bin target is missing until someone runs the command, so
+      # nothing downstream would notice either. This is the last cheap place to catch
+      # it. Package-agnostic (it reads whatever `bin` the package declares, string or
+      # object form) and a no-op for a package that declares none.
+      - name: Verify every bin target exists
+        env:
+          DIR: ${{ steps.verify.outputs.dir }}
+        run: |
+          jq -r '.bin | if . == null then empty elif type == "string" then . else .[] end' \
+            "$DIR/package.json" > /tmp/bin-targets.txt
+          if [ ! -s /tmp/bin-targets.txt ]; then
+            echo "$DIR declares no bin — nothing to check"
+            exit 0
+          fi
+          missing=0
+          while IFS= read -r target; do
+            if [ -f "$DIR/$target" ]; then
+              echo "ok  $DIR/$target"
+            else
+              echo "::error::$DIR/package.json declares bin \"$target\" but $DIR/$target does not exist — this tarball would ship a broken command"
+              missing=1
+            fi
+          done < /tmp/bin-targets.txt
+          exit "$missing"
+
       # The tag is already cut, so this cannot stop a bad release — but it does stop
       # a bad release reaching npm, which is the copy nobody can take back. Same
       # ask-the-package rule as Build above.

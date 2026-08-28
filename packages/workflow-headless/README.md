@@ -111,10 +111,12 @@ running it clicks Cancel and waits for the run to reach `cancelled` first, so
 CI's record says the run was cancelled rather than that the driver vanished. A
 second Ctrl-C closes the browser and leaves without waiting.
 
-`SIGTERM` and `SIGHUP` stay Playwright's, which closes the browser and exits
-without asking the run anything. A CI job cancellation is therefore **exit 1
-with the run left `running`**, not `130` — if you need the run cancelled on a
-job cancellation, send `SIGINT`.
+`SIGTERM` and `SIGHUP` stay Playwright's, whose handlers close the browser but
+do **not** exit the process. So the driver survives the signal, its in-flight
+call rejects against a browser that is no longer there, and that lands in the
+driver-fault branch: a CI job cancellation ends as **exit 2 with the run left
+`running`** — not `130`, and not `1`, which stays reserved for a run that
+really did fail. Send `SIGINT` if you want the run cancelled first.
 
 ## As a library
 

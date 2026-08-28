@@ -113,12 +113,14 @@ workflow-headless runs <harness-url> <impl>/<workflow> [--last 10] [--mocks]
 **Auth is a member login through the admin relay** (Decision 13) — `WORKFLOW_EMAIL` /
 `WORKFLOW_PASSWORD`, required unless `--mocks`. The driver opens the harness, is bounced to the
 relay's `/login`, fills the two fields and waits for the URL to come back to the harness origin,
-exactly as a person does.
+exactly as a person does. There is deliberately no `--token` flag to match `WORKFLOW_TOKEN`: a
+credential on a command line lands in process listings and CI logs, so the environment is the
+only way in.
 
 > This replaces an earlier claim in this file that the driver injects `X-API-Key` on every
 > request via route interception and needs no session exchange. That is **wrong** and was never
 > implemented: two of the harness's relays forward the caller's cookies, and an API key cannot
-> mint a SuperTokens session. `WORKFLOW_TOKEN` (`--token`) survives only as an *optional extra*
+> mint a SuperTokens session. `WORKFLOW_TOKEN` survives only as an *optional extra*
 > header on `/api/workflow/*` **GETs** — never on a write, because a CE API key is pinned to role
 > `user` regardless of who owns it, so a POST carrying both a cookie and a key can resolve to a
 > different identity than the member who logged in.
@@ -149,8 +151,9 @@ output, `steps.log`, `console.log` and milestone screenshots (`01-start.png`,
 
 SIGINT is the driver's own (Playwright's handler is disabled at launch, because it kills the
 browser and exits 130 immediately, which loses the Cancel-then-wait). A second Ctrl-C closes the
-browser and leaves. `SIGTERM`/`SIGHUP` stay Playwright's, so a CI cancellation closes the browser
-under the driver and ends as exit 1, not 130.
+browser and leaves. `SIGTERM`/`SIGHUP` stay Playwright's, whose handlers close the browser without
+exiting the process — the driver survives, its in-flight call rejects, and that is a driver fault,
+so a CI cancellation ends as **exit 2** with the run left `running` (not 130, and not 1).
 
 A GitHub Action `bffless/run-workflow` is a thin wrapper around the CLI (Playwright + Chromium
 install step, inputs from `with`, outputs as step outputs / artifacts). It is **not** a

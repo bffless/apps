@@ -105,6 +105,21 @@ describe('parseArgs — no command', () => {
     expect(USAGE).toContain('workflow-headless run')
     expect(USAGE).toContain('workflow-headless runs')
   })
+
+  test('USAGE tells the truth about exit 2 and the token, which is what --help prints', () => {
+    // These two drifted once already: `--help` still said "usage/auth" and
+    // "reads" after the code had widened 2 to any driver fault and narrowed
+    // the token to GETs. A CI author branches on this text.
+    expect(USAGE).toMatch(/2\s+any driver-side fault/)
+    expect(USAGE).toContain('Never a run')
+    expect(USAGE).toContain('GETs of')
+    expect(USAGE).not.toContain('usage/auth')
+    // There is no --token flag; parseArgs rejects one, so USAGE must not offer it.
+    expect(USAGE).not.toContain('--token')
+    expect(() =>
+      parseArgs(['run', 'http://h', 'hello/interactive', '--inputs', inputsFile, '--token', 'k']),
+    ).toThrow(UsageError)
+  })
 })
 
 describe('parseDuration', () => {

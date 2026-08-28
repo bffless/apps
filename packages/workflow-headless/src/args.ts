@@ -39,11 +39,24 @@ Options (runs):
 Environment:
   WORKFLOW_EMAIL / WORKFLOW_PASSWORD   the member login the harness relays
                                        (required unless --mocks)
-  WORKFLOW_TOKEN                       optional X-API-Key, added to
-                                       /api/workflow/* reads
+  WORKFLOW_TOKEN                       optional X-API-Key, added to GETs of
+                                       /api/workflow/* only — never to a write,
+                                       because a CE API key is role \`user\`
+                                       whoever owns it
 
-Exit codes: 0 succeeded · 1 failed/cancelled · 2 usage/auth · 3 invalid inputs
-            · 4 driver timeout · 130 SIGINT (Cancel clicked)`
+Exit codes:
+  0    the run succeeded
+  1    the run failed or was cancelled
+  2    any driver-side fault: usage, an unreadable --inputs, a refused login, a
+       failed upload, an unreachable harness, an unexpected error. Never a run
+       that ran and failed — that is 1.
+  3    the page refused the start (bad values, bad \`inputs\`, no such workflow,
+       a workflow that does not lint, discovery)
+  4    the driver timed out; the run may still be going
+  130  SIGINT: Cancel was clicked and the run reached \`cancelled\`
+
+SIGTERM/SIGHUP are Playwright's: the browser closes under the driver and the
+run is left running, which comes out as exit 2.`
 
 export interface RunCommand {
   command: 'run'
