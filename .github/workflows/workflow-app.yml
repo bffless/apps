@@ -2,7 +2,13 @@ name: workflow-app
 on:
   pull_request:
     paths:
-      ['apps/workflow/**', 'packages/workflow-lint/**', 'packages/workflow-script/**', '.github/workflows/workflow-app.yml']
+      [
+        'apps/workflow/**',
+        'packages/workflow-lint/**',
+        'packages/workflow-script/**',
+        'packages/workflow-headless/**',
+        '.github/workflows/workflow-app.yml',
+      ]
   workflow_dispatch:
 permissions: { contents: read }
 jobs:
@@ -15,6 +21,12 @@ jobs:
         with: { node-version: '20', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-lint build
+      # The driver CLI (M3 Task 14). Its unit suite mocks Playwright behind a
+      # PageLike seam, so it launches no browser and needs no harness — Task 15
+      # adds the end-to-end smoke that does.
+      - run: pnpm --filter @bffless/workflow-headless build
+      - run: pnpm --filter @bffless/workflow-headless lint
+      - run: pnpm --filter @bffless/workflow-headless test:run
       - run: pnpm --filter workflow lint
       # Both the MSW mock's island route and the Playwright smoke read
       # `hello-dist/islands/*.html`, so the bundle is staged before either runs.

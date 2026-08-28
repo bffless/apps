@@ -34,6 +34,11 @@
       "release-type": "node",
       "component": "workflow-script",
       "include-component-in-tag": true
+    },
+    "packages/workflow-headless": {
+      "release-type": "node",
+      "component": "workflow-headless",
+      "include-component-in-tag": true
     }
   },
   "changelog-sections": [
