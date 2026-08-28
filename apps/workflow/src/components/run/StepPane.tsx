@@ -46,7 +46,7 @@ import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
-import { isFileRef } from '../values/fileRef'
+import { isFileRef, withFileRefValue } from '../values/fileRef'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
 import { PaneCrumbs } from './PaneCrumbs'
@@ -189,10 +189,7 @@ function OutputValues({
           const value =
             name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
           const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
-          const decl =
-            declaredDecl.type === 'json' && !declaredDecl.list && isFileRef(value)
-              ? { type: 'file' }
-              : declaredDecl
+          const decl = withFileRefValue(declaredDecl, value)
           return (
             <ValueView
               key={name}

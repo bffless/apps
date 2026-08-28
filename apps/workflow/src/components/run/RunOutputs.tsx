@@ -14,12 +14,7 @@ import type { Definition, RunState } from '../../lib/runner/types'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
-import { isFileRef } from '../values/fileRef'
-
-/** A bare `${{ … }}` output can only be known to be a file by its value (02). */
-function withValue(decl: ValueDecl, value: unknown): ValueDecl {
-  return decl.type === 'json' && !decl.list && isFileRef(value) ? { type: 'file' } : decl
-}
+import { withFileRefValue } from '../values/fileRef'
 
 /** Declaration order first, then anything the run recorded but never declared. */
 function outputNames(declared: string[], recorded: Record<string, unknown>): string[] {
@@ -56,7 +51,7 @@ export function RunOutputs({
         <MediaSeekProvider>
           <div className="output-group pane-values" data-scope="run">
             {topLevel.map((name) => {
-              const decl = withValue(resolveOutputDecl(def, RUN_SCOPE, name), recorded[name])
+              const decl = withFileRefValue(resolveOutputDecl(def, RUN_SCOPE, name), recorded[name])
               return (
                 <div className="output" data-output={name} key={name}>
                   <ValueView

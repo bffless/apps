@@ -16,9 +16,28 @@
  * `lib/url`'s `isSafeUrl` before it reaches an attribute.
  */
 import type { FileRef } from '../../lib/runner/types'
+import type { ValueDecl } from '../../lib/valueDecl'
 
 export function isFileRef(value: unknown): value is FileRef {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   return typeof v.path === 'string' && typeof v.name === 'string' && typeof v.url === 'string'
+}
+
+/**
+ * A bare `${{ … }}` output carries no type, so `outputDecls` resolves it to
+ * `json` and only the *value* can say it is a file (02) — that inference is
+ * what turns a job's `poster: ${{ steps.draw.outputs.poster }}` into a file
+ * card. It stops at a declaration that **names a renderer**: `render: island`
+ * over a File ref is a viewer for that file (M3 Task 10's `poster_view`), and
+ * coercing it to `file` would silently overrule what the author asked for.
+ *
+ * Shared by the three panes that show a declared value beside a recorded one
+ * (run, job, step) — the rule is one rule, and three copies of it drifted
+ * apart is exactly how `poster_view` came out as a file card.
+ */
+export function withFileRefValue(decl: ValueDecl, value: unknown): ValueDecl {
+  return decl.type === 'json' && !decl.list && decl.render === undefined && isFileRef(value)
+    ? { type: 'file' }
+    : decl
 }

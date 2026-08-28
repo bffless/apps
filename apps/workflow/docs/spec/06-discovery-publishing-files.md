@@ -152,8 +152,8 @@ Re-run, so they live in the per-workflow `inputs/` area and runs *reference* the
 `step.prefix`. Pipelines that write files should take an explicit prefix in their body
 (`outPrefix: "${{ step.prefix }}"`).
 
-Harness rules (the reusable **files trio**, published as a rule-set template `files` so a
-standalone UI can ship the same three with its own prefix):
+Harness rules (the reusable **files quartet**, published as a rule-set template `files` so a
+standalone UI can ship the same four with its own prefix):
 
 - `POST /api/workflow/files/prepare` `{ impl, workflow, scope: "inputs" | "<runId>/<stepKey>", filename, contentType, size }` →
   presigned PUT into the matching prefix (`presigned_upload`, `maxFileSize` from the input's
@@ -165,8 +165,17 @@ standalone UI can ship the same three with its own prefix):
   CE's `file_serve_handler` derives the object from a `/api/uploads/<subDir>/` request path
   only, and that is also the `publicPath` `presigned_upload` mints — so the serve route is
   CE's, not a `/api/workflow/files/` one, and a File ref's `url` is `/api/uploads/` + `path`.)
+- `POST /api/workflow/files/sign` `{ path }` → `{ url, expiresIn }`, a **presigned GET**
+  (1 hour) for that object (`signed_url`). It exists for one caller: a sandboxed island, whose
+  opaque origin carries no cookie, so the serve route above 401s on it — the island asks the
+  host for a URL instead (`workflow.sign`, 04/Decision 6). `confine.fn.js` narrows what is
+  signable to the harness prefix (an uploads-relative key under `workflows/`, no traversal);
+  anything else is a 400, and the presigned URL is the bucket's, so Range behaviour is the
+  bucket's too. **Local-FS storage cannot presign**: on a self-hosted CE with local storage
+  this rule answers 501 and an island's media stays unreachable — a bucket backend (GCS/S3) is
+  the requirement for `render: island` media.
 
-The runner uses these for kickoff uploads, `form` uploads, `script` Blobs and for registering
+The runner uses the first three for kickoff uploads, `form` uploads, `script` Blobs and for registering
 bare paths a pipeline returns where a `file` is declared. Run deletion removes the run prefix
 only (05). There is no reserved key injected into requests — the workflow passes
 `"${{ step.prefix }}"` where a pipeline needs it. A returned path outside the run prefix is a

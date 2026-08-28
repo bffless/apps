@@ -30,6 +30,7 @@ interface Harness {
   fetchText: ReturnType<typeof vi.fn>
   onSubmit: ReturnType<typeof vi.fn>
   onAnnotate: ReturnType<typeof vi.fn>
+  sign: ReturnType<typeof vi.fn>
   onDisplayMode: ReturnType<typeof vi.fn>
   onLog: ReturnType<typeof vi.fn>
   openLink: ReturnType<typeof vi.fn>
@@ -46,6 +47,7 @@ function makeHarness(over: Partial<IslandHostDeps> = {}, island = createFakeIsla
   const fetchText = vi.fn(async () => ({ ok: true, status: 200, text: HTML }))
   const onSubmit = vi.fn(() => ({ ok: true }) as const)
   const onAnnotate = vi.fn(() => ({ ok: true }) as const)
+  const sign = vi.fn(async () => ({ url: 'https://bucket.example/poster.svg?sig=1', expiresIn: 3600 }))
   const onDisplayMode = vi.fn()
   const onLog = vi.fn()
   const openLink = vi.fn()
@@ -55,6 +57,7 @@ function makeHarness(over: Partial<IslandHostDeps> = {}, island = createFakeIsla
     fetchText: fetchText as unknown as IslandHostDeps['fetchText'],
     onSubmit: onSubmit as unknown as IslandHostDeps['onSubmit'],
     onAnnotate: onAnnotate as unknown as IslandHostDeps['onAnnotate'],
+    sign: sign as unknown as IslandHostDeps['sign'],
     onDisplayMode,
     onLog,
     openLink,
@@ -63,7 +66,7 @@ function makeHarness(over: Partial<IslandHostDeps> = {}, island = createFakeIsla
     ...over,
   })
 
-  return { host, iframe, island, http, fetchText, onSubmit, onAnnotate, onDisplayMode, onLog, openLink }
+  return { host, iframe, island, http, fetchText, onSubmit, onAnnotate, sign, onDisplayMode, onLog, openLink }
 }
 
 async function mounted(
@@ -242,6 +245,48 @@ describe('tools/call → the host tools', () => {
     const bad = await h.island.app.callServerTool({ name: 'workflow.annotate', arguments: {} })
     expect(bad.isError).toBe(true)
     expect(firstText(bad)).toContain('`summary` must be a string')
+  })
+
+  it('routes workflow.sign to deps.sign and answers with the presigned url', async () => {
+    const h = await mounted()
+
+    const result = await h.island.app.callServerTool({
+      name: 'workflow.sign',
+      arguments: { path: 'workflows/hello/interactive/runs/run_1/poster.svg' },
+    })
+
+    expect(h.sign).toHaveBeenCalledWith('workflows/hello/interactive/runs/run_1/poster.svg')
+    expect(result.isError).toBeFalsy()
+    expect(result.structuredContent).toEqual({
+      url: 'https://bucket.example/poster.svg?sig=1',
+      expiresIn: 3600,
+    })
+    expect(firstText(result)).toBe('https://bucket.example/poster.svg?sig=1')
+  })
+
+  it('reports a refused or failed sign as a tool error', async () => {
+    const h = await mounted()
+    h.sign.mockRejectedValueOnce(new Error('path must be under workflows/'))
+
+    const result = await h.island.app.callServerTool({
+      name: 'workflow/sign',
+      arguments: { path: '../secrets' },
+    })
+
+    expect(result.isError).toBe(true)
+    expect(firstText(result)).toContain('path must be under workflows/')
+  })
+
+  it('lets a viewer sign — a render: island viewer showing media needs it', async () => {
+    const h = await mounted({}, { viewer: true, arguments: { value: { path: 'workflows/x/p.svg' } } })
+
+    const result = await h.island.app.callServerTool({
+      name: 'workflow.sign',
+      arguments: { path: 'workflows/x/p.svg' },
+    })
+
+    expect(result.isError).toBeFalsy()
+    expect(h.sign).toHaveBeenCalledWith('workflows/x/p.svg')
   })
 
   it('rejects workflow.submit in viewer mode without calling onSubmit', async () => {

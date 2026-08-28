@@ -12,7 +12,8 @@ iframe anyway.
 self-contained `text/html;profile=mcp-app` file; the harness embeds
 `@modelcontextprotocol/ext-apps` AppBridge as the host; step `with` arrives as
 `ui/notifications/tool-input`; pipelines are `tools/call` proxied same-origin; completion is
-our single host tool `workflow.submit` (plus `workflow.annotate`); tool names are
+our host tool `workflow.submit` (the other two are `workflow.annotate` and `workflow.sign`,
+which trades a run object's path for a presigned GET the opaque-origin frame can load); tool names are
 dot-canonical and slash-tolerant (M2 plan Decision 1). v1 renders a single `srcdoc` iframe
 with `sandbox="allow-scripts"` (opaque origin); the web-host double-iframe proxy is a later
 upgrade.

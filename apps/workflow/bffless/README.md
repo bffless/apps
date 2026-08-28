@@ -1,6 +1,6 @@
 # Workflow harness backend — BFFless proxy rule sets
 
-One authored set: `workflow` (run records, lease, files trio — spec 05/06). Through M2 this
+One authored set: `workflow` (run records, lease, files quartet — spec 05/06). Through M2 this
 directory also carried `hello` (the workflow-hello test implementation: echo, slow+poll,
 fail, analyze). As of M3 Task 7 (Decision 5, "one source") `hello` lives in its own repo,
 [`bffless/workflow-hello`](https://github.com/bffless/workflow-hello): its rule set, workflow
@@ -107,6 +107,18 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
   Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty
   strings rather than an error, so readers must tolerate them.
+- **`POST /api/workflow/files/sign`** (M3 Task 10): `{ path }` → `{ url, expiresIn: 3600 }`, a
+  presigned GET for one object. Nothing manual to do — the rule ships with the set and
+  `deploy-workflow.yml` deploys it on merge. It exists for the sandboxed island: an
+  opaque-origin frame sends no cookie, so `/api/uploads/…` 401s on it and an `<img>`/`<video>`
+  can only be pointed at a signed URL the *host* fetched on its behalf (`workflow.sign`, spec
+  04/Decision 6). `confine.fn.js` narrows the signable set to the harness prefix (an
+  uploads-relative key under `workflows/`, no traversal, and the project prefix comes from
+  `deployment.owner`/`deployment.repo`, so an import into any project signs its own objects);
+  anything else is a literal-status 400. Like the delete rule this is a **multi-branch
+  conditional `response_handler` rule — edit it as rules-as-code only** (bffless/ce#502).
+  **Local-FS storage cannot presign**: CE's `signed_url` answers **501** on a local-storage
+  install, so island media needs a bucket backend (GCS/S3). j5s.dev is GCS, so it signs live.
 
 ### Islands (M2)
 
@@ -115,9 +127,9 @@ same forwarder as the workflow YAMLs) and injected verbatim into a sandboxed
 `<iframe sandbox="allow-scripts">` `srcdoc` host — an opaque origin, so no cookies, no
 storage, no same-origin fetch (Decision 9); the harness never parses, sanitises or rewrites
 the HTML. Tool names between the island and the host are dot-canonical, slash-tolerant
-(Decision 1): `workflow.submit` and `workflow.annotate` are the two host tools every island
-gets, and pipelines-as-tools are restricted to the implementation's own `/api/<impl>/`
-namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
+(Decision 1): `workflow.submit`, `workflow.annotate` and `workflow.sign` are the three host
+tools every island gets, and pipelines-as-tools are restricted to the implementation's own
+`/api/<impl>/` namespace. Hello's surface is still 5/5 (Task 6) — `analyze` is a pipeline, not a rule-set
 addition — and the staged bundle now carries `islands/*.html` (`pick-line.html`,
 `line-viewer.html`) alongside `index.html` and the two workflow YAMLs.
 

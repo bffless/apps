@@ -5,7 +5,7 @@
  * whose HTML the harness fetched and injected as `srcdoc`. The frame therefore
  * has an opaque origin — no cookies, no storage, no same-origin fetch — so every
  * capability the island has is one it asks the host for: `tools/call` (its own
- * implementation's pipelines, plus the two `workflow.*` host tools),
+ * implementation's pipelines, plus the three `workflow.*` host tools),
  * `resources/read` for sibling bundle assets, `ui/open-link`, `ui/message`,
  * `ui/request-display-mode`.
  *
@@ -112,6 +112,11 @@ export interface IslandHostDeps {
   onSubmit: (outputs: unknown) => { ok: true } | { ok: false; errors: Record<string, string> }
   /** `workflow.annotate` — the middleware's `annotateEvent` (Decision 12). */
   onAnnotate: (args: unknown) => { ok: true } | { ok: false; error: string }
+  /**
+   * `workflow.sign` — `hostDeps`'s `signFile`, bound to the caller's `http`
+   * (Decision 6). Rejects with the message the island should see.
+   */
+  sign: (path: string) => Promise<{ url: string; expiresIn: number }>
   /** The island asked to go fullscreen (or back); the page owns the layout. */
   onDisplayMode: (mode: IslandDisplayMode) => void
   /** `ui/message` / `notifications/message` — a live line on the step card. */
@@ -443,6 +448,21 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
             isError: true,
             content: [{ type: 'text', text: JSON.stringify(submitted.errors) }],
             structuredContent: { errors: submitted.errors },
+          }
+        }
+
+        // Unlike `submit`/`annotate` a viewer may sign: signing changes
+        // nothing about the run, and a `render: island` viewer showing media
+        // has no other way to load it (Decision 6).
+        if (target.tool === 'sign') {
+          try {
+            const signed = await deps.sign(typeof args.path === 'string' ? args.path : '')
+            return {
+              content: [{ type: 'text', text: signed.url }],
+              structuredContent: { url: signed.url, expiresIn: signed.expiresIn },
+            }
+          } catch (err) {
+            return toolError(messageOf(err))
           }
         }
 

@@ -26,16 +26,11 @@ import { StatusGlyph, StatusPill } from '../StatusPill'
 import { jobLabel, matrixNote, stepLabel } from '../graph/geometry'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
-import { isFileRef } from '../values/fileRef'
+import { withFileRefValue } from '../values/fileRef'
 import { PaneCrumbs } from './PaneCrumbs'
 import type { Tab } from './StepPane'
 
 const TABS: Tab[] = ['Input', 'Output']
-
-/** A bare `${{ … }}` output can only be known to be a file by its value (02). */
-function withValue(decl: ValueDecl, value: unknown): ValueDecl {
-  return decl.type === 'json' && !decl.list && isFileRef(value) ? { type: 'file' } : decl
-}
 
 /** The mono tag beside a value's name: its declared type, and its renderer when named. */
 function kindTag(decl: ValueDecl): string {
@@ -178,7 +173,7 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
               <div className="pane-values">
                 {outputNames.map((name) => {
                   const value = outputs?.[name] ?? null
-                  const d = withValue(resolveOutputDecl(def, { kind: 'job', job }, name), value)
+                  const d = withFileRefValue(resolveOutputDecl(def, { kind: 'job', job }, name), value)
                   return (
                     <ValueView
                       key={name}

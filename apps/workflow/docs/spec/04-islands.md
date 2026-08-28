@@ -18,10 +18,11 @@ implementation's pipelines as its tools; authors write against the public
 | island calls a pipeline | `tools/call { name, arguments }` → host proxies to `/api/<alias>/<name>` (see tool naming) |
 | island finishes the step | `tools/call { name: "workflow.submit", arguments: { outputs } }` — our one host tool for completion |
 | island writes a summary / annotation | `tools/call { name: "workflow.annotate", arguments: { summary?, annotations? } }` |
+| island needs media (an image/video/audio the run produced) | `tools/call { name: "workflow.sign", arguments: { path } }` → `{ url, expiresIn }` — a presigned GET for an object under `workflows/`, because the frame is opaque-origin and carries no cookie |
 | theme, dark mode, size | `ui/notifications/initialized.hostContext` (`theme`, `styles`, `displayMode`, `containerDimensions`), `ui/notifications/size-changed`, `ui/notifications/host-context-changed` — the host re-sends `theme` on an OS theme flip and `containerDimensions` on a frame resize |
 | headless run | `hostContext.platform = "web"`, plus `_meta.bffless.headless = true` on `tool-input` (07) — but see below: ext-apps 1.7.5 strips it |
 | step cancelled / run leaves the page | `ui/resource-teardown { reason }` |
-| output viewer (`render: island`) | same file; `tool-input.arguments = { value }`; `workflow.submit` is rejected. A changed value is a **fresh `tool-input`** over the same bridge, never a remount — a viewer must handle `ontoolinput` more than once. A step's island is sent `tool-input` exactly once |
+| output viewer (`render: island`) | same file; `tool-input.arguments = { value }`; `workflow.submit` and `workflow.annotate` are rejected (`workflow.sign` is not — see below). A changed value is a **fresh `tool-input`** over the same bridge, never a remount — a viewer must handle `ontoolinput` more than once. A step's island is sent `tool-input` exactly once |
 
 Host capabilities declared on `ui/initialize`: `tools/call`, `ui/message` (no-op: logs to the
 step card), `ui/open-link` (opens a new tab, same as GitHub), `ui/request-display-mode`
@@ -36,12 +37,19 @@ API prefix**, with `/` written as `.` (MCP tool names are `[A-Za-z0-9_.-]`):
 `tools/call { name: "video.slice", arguments: {...} }` → `POST /api/<alias>/video/slice` with
 `arguments` as the JSON body. The host is **slash-tolerant**: `"video/slice"` is accepted and
 means the same thing — and a pipeline whose path itself contains a `.` (`feed.xml`) is only
-callable by its slash name (the linter notices). The two host tools are `workflow.submit` and
-`workflow.annotate` (slash forms accepted). A call may carry
+callable by its slash name (the linter notices). The three host tools are `workflow.submit`,
+`workflow.annotate` and `workflow.sign` (slash forms accepted). A call may carry
 `_meta: { bffless: { method: "GET" } }` to send `arguments` as the query string; the default
 is POST. The host restricts islands to **their own implementation's** rules plus the
 `workflow.*` host tools: absolute paths and other aliases are a tool error. `poll` is not
 available to islands — an island that enqueues a job polls it itself.
+
+`workflow.sign` takes one `path` — an uploads-relative key under `workflows/` (a File ref's
+own `path`) — and answers `{ url, expiresIn }`, a presigned GET the frame can put straight in
+an `<img>`/`<video>`/`<audio>` `src`. Nothing else is signable: a path outside the harness
+prefix, or one with traversal, is a tool error. It is the **one host tool a `render: island`
+viewer keeps** — signing records nothing, and a viewer showing media has no other way to load
+it. See 06 for the rule behind it (and its local-FS caveat).
 
 `workflow.annotate` is budgeted **per step**, because its `annotations`/`summary` land in
 persisted columns that are never offloaded the way large `outputs` are (05): at most **100

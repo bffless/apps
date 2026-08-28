@@ -177,6 +177,10 @@ describe('resolveToolName', () => {
     expect(resolveToolName('studio', name)).toEqual({ kind: 'host', tool: 'annotate' })
   })
 
+  it.each(['workflow.sign', 'workflow/sign'])('maps %s to the host sign tool', (name) => {
+    expect(resolveToolName('studio', name)).toEqual({ kind: 'host', tool: 'sign' })
+  })
+
   it.each(['video.slice', 'video/slice'])('maps %s onto the implementation rule', (name) => {
     expect(resolveToolName('studio', name)).toEqual({
       kind: 'pipeline',
