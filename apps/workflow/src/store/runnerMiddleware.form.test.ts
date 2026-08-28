@@ -13,9 +13,11 @@
  * budget that is never armed shows up as a step that never fails.
  */
 import { afterEach, describe, expect, it } from 'vitest'
+import { HttpResponse, http } from 'msw'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { completeFormStep, formInitialValues } from '../lib/runner/adapters/form'
 import { db, nextId, stepRowKey } from '../mocks/db'
+import { server } from '../mocks/server'
 import { replayRun } from '../lib/runner/replay'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepKey } from '../lib/runner/types'
@@ -90,6 +92,10 @@ function submitReview(store: AppStore, def: Definition): void {
 
 const stepState = (store: AppStore) => store.getState().run.state!.steps[REVIEW]
 
+/** The step row as the mock backend holds it — the record the live state must not run ahead of. */
+const stepRow = (store: AppStore) =>
+  db.steps.get(stepRowKey(store.getState().run.state!.runId, REVIEW))
+
 describe('form steps — timeout-minutes (Decision 10)', () => {
   it('fails TIMEOUT when nobody submits inside the budget', async () => {
     const def = withForm({ 'timeout-minutes': 1 })
@@ -126,6 +132,50 @@ describe('form steps — timeout-minutes (Decision 10)', () => {
     // and the terminal event disarmed it anyway.
     expect(stepState(store).status).toBe('succeeded')
     expect(store.getState().run.state!.status).toBe('succeeded')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A parked run: the clock stops with everything else that writes
+// ---------------------------------------------------------------------------
+
+describe('form steps — a run parked by a write failure', () => {
+  it('disarms the clock: a paused run gets no timeout, and its row stays waiting', async () => {
+    const def = withForm({ 'timeout-minutes': 1 })
+    const { store, advance } = await startFormRun(def)
+    expect(stepRow(store)!.status).toBe('waiting')
+
+    // Every write from here on fails, both tries (05: a run whose write still
+    // fails is parked rather than continuing unrecorded).
+    let stepWrites = 0
+    server.use(
+      http.post('/api/workflow/run/update', () => new HttpResponse(null, { status: 500 })),
+      http.post('/api/workflow/run-step', () => {
+        stepWrites += 1
+        return new HttpResponse(null, { status: 500 })
+      }),
+    )
+
+    // Any event will do — this one only patches the run row.
+    store.dispatch(
+      runEvent({
+        type: 'run.annotation',
+        annotation: { level: 'notice', message: 'something to write' },
+        at: 1_500,
+      }),
+    )
+    await flush()
+    expect(store.getState().run.paused).toBeDefined()
+
+    await advance(5 * 60_000)
+
+    // No `step.failed`: the timeout would have been written into a run whose
+    // writes are failing, parking it again and putting live state ahead of a
+    // row that still says `waiting`.
+    expect(stepState(store).status).toBe('waiting')
+    expect(store.getState().run.state!.status).toBe('running')
+    expect(stepWrites).toBe(0)
+    expect(stepRow(store)!.status).toBe('waiting')
   })
 })
 

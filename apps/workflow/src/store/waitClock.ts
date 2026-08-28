@@ -119,6 +119,9 @@ export function armWaitClock(a: ArmWaitClockArgs): () => void {
     },
   )
 
+  // The brief's interface. The middleware disarms through the registry
+  // (`disarmWaitClock` / `disarmAllWaitClocks`) instead — the clock outlives
+  // the effect that armed it, and every disarming point is somewhere else.
   return disarm
 }
 

@@ -1028,6 +1028,15 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       if (!outcome.ok) {
         listenerApi.dispatch(runPaused(pauseMessage(event, outcome.error)))
         runnerControllers.abortAll()
+        // Wait clocks too (review round 1): a parked run's writes are failing,
+        // and `scopedDispatch` would still let a fired clock through (same
+        // run, same generation, status still `running`) — it would land a
+        // `step.failed` whose own write fails, parking the run a second time
+        // and leaving live state ahead of a row that still says `waiting`.
+        // `armWaitingStep` already refuses to arm while paused, so this is
+        // what makes the two halves symmetric; the `runReplaced` resume path
+        // re-arms from the record when the run is picked back up.
+        disarmAllWaitClocks()
         stopHeartbeat(runState.runId)
         return
       }
