@@ -30,6 +30,14 @@ export interface StartRunArgs {
   workflowName: string
   workflowVersion?: string
   values: Record<string, unknown>
+  /**
+   * The run's own headless flag (07): `?auto=1` sets it, a person pressing
+   * Start does not. It rides on `run.started` because every branch that reads
+   * it — the `headless:` declarations, the wait budgets, the island's
+   * `hostContext.bffless.headless` — reads it off `runState.headless`, and a
+   * resumed run must see the same answer the run started with.
+   */
+  headless?: boolean
 }
 
 export function startRun(a: StartRunArgs): AppThunk<string> {
@@ -51,7 +59,7 @@ export function startRun(a: StartRunArgs): AppThunk<string> {
         impl: a.impl,
         workflow: a.workflow,
         inputs: a.values,
-        headless: false,
+        headless: a.headless ?? false,
         at: Date.now(),
       }),
     )

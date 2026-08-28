@@ -13,7 +13,7 @@ prototype's "Workflow Graph A" artboard.
 | `/` | **Implementations** — every alias that answered discovery (06), with name, version, workflow count, preview badge, last run; invalid `index.json` shown with its error |
 | `/<impl>` | **Workflows** of one implementation — list with description, inputs count, jobs count, headless-safe, last run status |
 | `/<impl>/<workflow>` | **Workflow** — the graph (below) in *definition* mode + "Start a run" + recent runs |
-| `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it; `?auto=1&inputs=` is the headless entry (07) |
+| `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it. `?from=<runId>` prefills it for Re-run; `?auto=1&inputs=<base64url(JSON)>` is the headless entry (07) — no form at all, a `kickoff-auto` notice while the run starts, or a `kickoff-invalid` list of the values it refused |
 | `/<impl>/<workflow>/runs` | **Past runs** — table: status, started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
 | `/<impl>/<workflow>/runs/<runId>` | **Run** — the graph in *run* mode + step panes + run summary + outputs |
 | `/<impl>/<workflow>/file` | **View workflow file** — YAML with lint results (also linked from a run: the snapshot) |
@@ -107,8 +107,9 @@ annotations; row click → run; "Re-run" per row; filters: status, started by, d
 ## Headless-visible contract
 
 `data-testid`s: `run-status`, `step`, `run-outputs`, `kickoff-form`, `kickoff-start`,
-`implementations`, `workflow-list`; `data-state` as in 07. Treated as a contract (Studio
-rule): rename in the driver only with a matching harness change.
+`kickoff-auto`, `kickoff-invalid`, `implementations`, `workflow-list`; `data-state` as in 07.
+Every run page also publishes `window.__workflow` (07's page contract). Treated as a contract
+(Studio rule): rename in the driver only with a matching harness change.
 
 ## Not in v1
 

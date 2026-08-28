@@ -9,26 +9,53 @@ and interactive runs are the same code, the same rows, the same history.
 
 **Start:** `GET /<impl>/<workflow>/run?auto=1&inputs=<base64url(JSON)>`
 
-- `inputs` is the kickoff form's values. `file` inputs are given as already-stored paths (the
-  driver uploads first through `/api/workflow/files/prepare|register`, 06) or as `https://`
-  URLs the harness fetches into run storage before starting (size-capped by `maxSize`).
-- The page validates inputs against `on.manual.inputs`; invalid → the page renders the errors
-  and sets `data-state="invalid"` without starting.
-- Valid → the run starts immediately (no Start click), `run.headless = true` on the row.
+- `inputs` decodes to a JSON **object** of kickoff values, keyed by the names in
+  `on.manual.inputs`; base64url padding is optional and the bytes are read as UTF-8. A name the
+  object leaves out takes its declared `default`, and a key the workflow does not declare is
+  dropped — the same resolution the form's own initial state uses. The parameter itself is
+  **required**: a workflow that takes no inputs is started with `inputs=e30` (`{}`), so a
+  mistyped parameter is a refusal rather than a silent run on defaults.
+- `file` inputs are given as **already-stored paths** — the driver uploads through
+  `/api/workflow/files/prepare|register` (06) before it opens the page. The page never fetches a
+  url a caller handed it; `https://` input values are deliberately not supported.
+- The values are validated against `on.manual.inputs` by the very same function the kickoff
+  form's own Start runs (`lib/autoStart.ts`), so a driver's inputs and a person's are never
+  judged differently.
+- Valid → the run starts immediately (no Start click) with `run.headless = true` on the row, and
+  the page navigates to it. In place of the form the kickoff page shows a `kickoff-auto`
+  ("Starting…") notice — auto mode never renders a form, since there is nobody to fill it in.
+- Invalid → nothing starts, and the refusal is reported **twice**: as a `kickoff-invalid` list in
+  the DOM, and as `status: 'invalid'` on the global below. Three things count as invalid — values
+  that do not validate, an `inputs` parameter that does not decode, and a workflow whose file
+  could not be read or does not lint. To a driver they are one fact ("this is not going to
+  start"), and hanging is not an acceptable way to say it.
 
-**Observe:** the page exposes
+**Observe:** every run page — headless or not — publishes
 
 ```ts
 window.__workflow = {
-  runId: string, status: 'running'|'succeeded'|'failed'|'cancelled'|'invalid',
-  currentSteps: string[],            // keys of active steps
-  outputs: Record<string, unknown>   // filled at completion (File refs, not bytes)
+  runId: string,           // '' when a start was refused before a run existed
+  status: 'running'|'succeeded'|'failed'|'cancelled'|'invalid',
+  currentSteps: string[],  // keys whose status is running | polling | waiting
+  outputs: Record<string, unknown>,  // the run's outputs, filled at completion (File refs, not bytes)
+  steps: Record<string, StepStatus>, // every step the run has reached → its status
+  errors?: Record<string, string>,   // only on 'invalid': why, keyed by input name
 }
 ```
 
-and stable `data-testid`s: `run-status[data-state=…]`, `step[data-key][data-state]`,
-`run-outputs`. `data-testid`s are a **contract** (Studio rule): the driver depends on them, a
-UI change that breaks one breaks headless.
+It is `undefined` when no run page is mounted, and is cleared on unmount so a stale snapshot
+never outlives the page that wrote it. `invalid` is a **page** state, not a run status: no row
+ever carries it, and it is deliberately absent from the persisted `RunStatus` vocabulary.
+
+And stable `data-testid`s: `run-status[data-state=…]`, `step[data-key][data-state]`,
+`run-outputs`, and on the kickoff page `kickoff-auto` / `kickoff-invalid` (plus, inside the
+hello bundle's own poster island, `island-sign-error`). `data-testid`s are a **contract**
+(Studio rule): the driver depends on them, a UI change that breaks one breaks headless.
+
+**Islands, unattended:** the pane is the only thing that mounts an island (Decision 11), and in
+a headless run nobody clicks a chip — so the run page opens the oldest `running`/`waiting`
+island itself whenever nothing is selected or the selected step has finished. Without it a
+`headless: auto` island would sit at `running` until its wait budget expired.
 
 **Results:** read `/api/workflow/run?id=<runId>` for the full record; download `file` outputs
 via their `url` (`?download=1`). The driver never scrapes the DOM for data.
@@ -74,6 +101,12 @@ server-side runner: it is Playwright in CI.
 
 ## Resume
 
-Headless runs do not resume; a failed CI step re-runs the workflow. A headless run that dies
-leaves a `running` row like any other (lease expires; anyone can open it and see where it got
-to).
+Headless runs **do not resume**; a failed CI step re-runs the workflow. That is a rule the
+harness leans on, not just advice: a `headless: auto` form that was `waiting` when the run died
+replays as `waiting` with its wait clock re-armed and nothing re-fires its auto-submit, so a
+resumed headless run would sit there until `HEADLESS_TIMEOUT`. Re-running the workflow is the
+supported answer, and the one that leaves CI a clean record.
+
+A headless run that dies still leaves a `running` row like any other (the lease expires; anyone
+can open it and see where it got to) — and because the interactive path is untouched, a person
+who opens that row can resume it and submit the waiting step by hand.

@@ -49,6 +49,7 @@ import { ImplContext } from '../components/values/implContext'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
+import { publishWorkflowGlobal, snapshotOf } from '../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
@@ -68,6 +69,9 @@ const STEP_PARAM = 'step'
 
 /** A run that is no longer in flight. */
 const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
+
+/** A step that has finished, whatever it finished as — it holds nothing open. */
+const TERMINAL_STEP: ReadonlySet<string> = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
 
 /**
  * A refusal from the delete rule, in the words of the person who asked. The
@@ -370,6 +374,18 @@ export function RunPage() {
 
   const annotations = useMemo(() => (state ? collectAnnotations(state) : []), [state])
 
+  // The observe half of the page contract (07/D12): `window.__workflow` is
+  // what a headless driver polls to follow the run it started. Published from
+  // whichever state this page is rendering — live slice or replayed record,
+  // headless run or not — because the driver's question ("where has it got
+  // to?") is the same one this page answers, and a second source of truth for
+  // it would be one more thing to keep in step. Cleared when the page goes:
+  // a snapshot of a run nobody is showing any more is worse than none.
+  useEffect(() => {
+    publishWorkflowGlobal(state ? snapshotOf(state) : null)
+    return () => publishWorkflowGlobal(null)
+  }, [state])
+
   // A `waiting` step opens as its own pane the moment the run reaches it —
   // first by topo order (08: "the pane is the form") — as long as nothing
   // else is already selected, so a click elsewhere is never fought back over.
@@ -448,6 +464,34 @@ export function RunPage() {
     // listing it would only re-run this effect on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLive, openStep, selectedStep, selectedStepState, selectionIsInteractive, def, state])
+
+  // Nobody clicks in a headless run (07), and the pane is still the only thing
+  // that mounts an island (Decision 11) — so the page has to keep an active
+  // island in the pane by itself, or the run sits at `running` until its wait
+  // budget expires. Deliberately a *second* effect rather than a branch in the
+  // claim-once one above: that rule is about not fighting a person for the
+  // pane, and it spends its claim per island, which is exactly the budget an
+  // unattended run must not depend on. Here there is no person to protect, so
+  // the rule is simpler and can re-open the same island as often as it takes.
+  //
+  // It only ever acts when nothing is selected or the selection has finished:
+  // an island or form that is itself still going keeps the pane, so two
+  // islands in flight do not take turns evicting each other.
+  useEffect(() => {
+    if (!isLive || !def || !state || !sliceState?.headless) return
+    const selected = selectedStep ? state.steps[selectedStep] : undefined
+    if (selected && !TERMINAL_STEP.has(selected.status)) return
+    const active = firstStepWhere(
+      def,
+      state,
+      (step) => step.kind === 'island' && (step.status === 'running' || step.status === 'waiting'),
+    )
+    if (!active || active === selectedStep) return
+    // Replace, never push: an auto-open is the page keeping up with the run,
+    // not a place anyone navigated to.
+    setStep(active, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `setStep` is stable (see above)
+  }, [isLive, sliceState, def, state, selectedStep])
 
   // A live run that just finished returns the page to the run level (08): the
   // results are the reason the person is here, and the step that happened to
