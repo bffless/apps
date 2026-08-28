@@ -1,7 +1,13 @@
 # Workflow
 
-A browser-driven, GitHub-Actions-inspired workflow runner for BFFless. **Spec phase** — no
-code yet.
+A browser-driven, GitHub-Actions-inspired workflow runner for BFFless. The harness app lives
+here; each **implementation** (its workflows, pipelines, islands and scripts) is a separate repo
+that deploys to its own alias — [`bffless/workflow-hello`](https://github.com/bffless/workflow-hello)
+is the reference one.
+
+Unattended runs use the same page: [`@bffless/workflow-headless`](../../packages/workflow-headless/README.md)
+is the Playwright **driver** that opens `?auto=1&inputs=…`, follows `window.__workflow` and
+writes the run's artifacts down. Its exit code is the contract CI reads.
 
 - Vocabulary: [`CONTEXT.md`](CONTEXT.md)
 - Writing an implementation: [`docs/writing-an-implementation.md`](docs/writing-an-implementation.md)

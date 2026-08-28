@@ -322,6 +322,18 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
 - [ ] **M2 Phase 3 — Annotations column.** Shows real counts for the new (M2) run and an em dash
   `—` for pre-M2 rows that predate `annotationCounts`.
 
+### M3 — sandbox and `workflow.sign`
+
+- [x] **M3 Phase 3a — `workflow.sign` and the sandboxed Worker — PASSED 2026-08-28.** After
+  apps#408, runs `run_01M13ZRAKGPBDDJBK4YM1EXVQB` (hello) and
+  `run_01M13ZRZTNJQ7QH9KEJ478S7HR` (interactive) on `workflow.j5s.dev` both succeeded, the
+  `card` job's poster script having run inside the sandbox frame. On the interactive run the
+  `poster_view` viewer's `<img src>` was a `storage.googleapis.com` presigned URL
+  (`X-Goog-Expires=3600`) that decoded 640×360 and fetched **credential-less**;
+  `island-sign-error` was empty. So the sign rule (`order: 19`), `confine.fn.js` and the
+  opaque-origin `<img>` path all hold live on bucket storage. A **local-FS** install would need
+  `PUBLIC_ORIGIN` set — its presigned URL is relative — and that is still unproven live.
+
 ### M3 — headless
 
 - [ ] **M3 Task 15 — the dispatch runs live.** Dispatch `workflow-headless-run.yml`

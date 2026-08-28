@@ -691,6 +691,71 @@ console.log('staged', join(out, '.bffless/workflows/index.json'), 'from', repo, 
 
 # Phase 3a — Sandboxed script Workers, interactive-step clocks, `workflow.sign`
 
+> **As shipped (2026-08-28, epic #359 Phase 3a).** Built in worktree `workflow-m3-3a` on branch
+> `feat/workflow-m3-sandbox-clocks-sign` (not the names below); apps#408 merged as `d8a9131`, with
+> `bffless/workflow-hello#3` and the `hello.ref` follow-up apps#409 (`f389504`). The tasks below are
+> the plan as written; these came out differently, and later phases must use the shipped values:
+>
+> - **The sign rule ships at `order: 19`, not 22.** `order: 22` collides with
+>   `/api/uploads/workflows/[...path]`: `bffless rules validate` warns, and CE picks the first match
+>   by `order`, so the clash is a real ambiguity rather than a cosmetic one (R56).
+> - **"Local-FS cannot presign (501)" is DISPROVED** (R57). CE's `LocalStorageAdapter.getUrl` *does*
+>   presign — an HMAC `/api/storage/presigned/local?key=…&exp=…&sig=…`; no 501 path exists anywhere.
+>   The real caveat is that that URL is **relative unless `PUBLIC_ORIGIN` is set**, and a relative
+>   `src` has nothing to resolve against inside an opaque-origin `srcdoc` frame. So a local-storage
+>   install must set `PUBLIC_ORIGIN` for island media to load; bucket storage (GCS/S3 — j5s.dev is
+>   GCS) needs nothing. Spec 06, `apps/workflow/bffless/README.md` and the rule's own description
+>   say this now.
+> - **`hello.ref` moved twice:** `1b7f460` → `9bea638` (the *unmerged* head of workflow-hello#3,
+>   taken deliberately so the staged bundle carried the new island) → **`195b5a2`**, workflow-hello's
+>   `main` after that PR merged — the value in the tree. A ref that names a PR head is reachable only
+>   while that branch lives: never delete a branch `hello.ref` still points at.
+> - **hello gained a second viewer output, `poster_view`** (R51): a `render: island` output over
+>   `islands/line-viewer.html` that signs an `image/*` File ref and renders it, JSON otherwise. It is
+>   what proves `workflow.sign` with a real image. Live proof on `workflow.j5s.dev`: the viewer's
+>   `<img src>` is a `storage.googleapis.com` presigned URL (`X-Goog-Expires=3600`) that decodes
+>   640×360 and fetches credential-less. The `island-sign-error` testid lives in **hello's** DOM, not
+>   the harness's (R52).
+> - **The bootstrap frame keeps the page's port** (R42/R43). The plan's frame transfers `e.ports[0]`
+>   to the Worker and then uses the same port for `w.onerror` — but a transferred port is neutered,
+>   so nothing would ever arrive. As built, the frame hands the port to the Worker and reports spawn
+>   failures and `worker.onerror` to the page with
+>   `parent.postMessage({ t: 'sandbox-error', message }, '*')`; `createSandboxWorker` listens on
+>   `window`, filtered on `event.source === frame.contentWindow` and removed on dispose. The data
+>   path is still one hop. A frame-reported worker error carries no code, so `ScriptHost` maps it
+>   `progressed ? 'SCRIPT' : 'SCRIPT_LOAD'` exactly as `worker.onerror` did.
+> - **The spawn seam is async and crosses source text, not URLs** (R44):
+>   `ScriptHostDeps.spawn = (a: { shimSource; moduleSource; signal }) => Promise<WorkerLike>`, with
+>   `createSandboxWorker` re-exported as `DEFAULT_SPAWN` so the "default spawn by name" test asserts
+>   identity. Both `data:` URLs are minted **inside** the frame. A second `AbortController` guards
+>   the spawn itself (an abort mid-spawn leaked the frame), and the error taxonomy moved into
+>   `src/scripts/errors.ts` to break an import cycle.
+> - **`headless.ts` shipped `headlessMode`, `budgetMs`, `waitBudgetMs` and
+>   `HEADLESS_AUTO_DEFAULT_MS` only** — `skipOutputs` was deliberately deferred to Phase 3b, where it
+>   lands as `evaluateSkipOutputs` alongside `step.skipped.outputs` (R47).
+> - **No `store/formLaunch.ts`, and no `clock` on `IslandLaunchDeps`** (R45/R46): the `form` branch
+>   stays inline in `runnerMiddleware.ts` and the wait clock arms from the `runEvent` listener for
+>   both interactive kinds. The form-clock tests are `src/store/runnerMiddleware.form.test.ts`.
+> - **Replay keeps a form's `queued → waiting` shape** (R48/R49): a `waiting` row replays as
+>   `step.waiting { at: startedAt }` and never emits `step.started`, and the `step.waiting` row write
+>   always carries the reduced step's `startedAt`. Accepted consequence (R55): a submitted form now
+>   shows a wait duration — how long the person took — which is what Decision 10's `startedAt` means.
+>   No testid moved.
+> - **The `sign` dep is built once and shared** (R50): `islands/hostDeps.ts` `signFile(http)` (POST
+>   `/api/workflow/files/sign`, client-gated to `workflows/`), passed by both `islandLaunch` **and**
+>   `IslandView`, so a `render: island` viewer signs through the same path a step's island does. The
+>   MSW mock answers an **absolute** URL and the e2e asserts the `<img src>` carries `?signed=mock`
+>   rather than that the image decoded — MSW's service worker cannot serve an opaque-origin frame
+>   (R53).
+> - **`hostContext.bffless.headless` is delivered in the `ui/initialize` *result*.** The View's
+>   `tool-input` zod schema strips unknown keys, so a flag cannot ride `_meta` there; `hostContext`
+>   is `.passthrough()` on both `McpUiHostContextSchema` and the initialize result. `tool-input`
+>   carries no `_meta` at all, and `ui/notifications/initialized` has empty params — it can carry
+>   nothing. Later changes go out as `ui/notifications/host-context-changed`.
+> - **Gotcha that cost a process slip:** a fresh `apps` worktree must run
+>   `pnpm --filter @bffless/workflow-lint build` before any workflow test — otherwise the workflow
+>   suite reports "no tests" and a verify chain that greps for failures reads that as green.
+
 Harness-only, no UI-contract change. Worktree `workflow-m3-harness-a`, branch `feat/workflow-sandbox-clocks-sign`.
 
 ### Task 8: The script Worker runs inside a sandboxed iframe (Decision 4)
@@ -893,6 +958,117 @@ function handler({ request, deployment }) {
 ---
 
 # Phase 3b — Headless execution and the driver CLI
+
+> **As shipped (2026-08-28, epic #359 Phase 3b).** Built in worktree `workflow-m3-3b` on branch
+> `feat/workflow-m3-headless` off `f389504` — Tasks 12–16 in one monorepo PR. The tasks below are
+> the plan as written; these came out differently, and Phase 4 must use the shipped values:
+>
+> - **No `src/store/formLaunch.ts`** (R59, following 3a's R45): the `form` branch stayed inline in
+>   `runnerMiddleware.ts` and gained the headless auto-submit there. Three helpers sit above
+>   `handleNextAction` — `joinFieldErrors`, `headlessDecision(scope)` (`{act:'run'|'skip'|'fail'}`,
+>   returning `run` immediately for an interactive run and for every kind that is not
+>   `form`/`island`, so interactive behaviour never touches any of it) and `autoSubmitForm` (one
+>   microtask after `step.waiting`, re-reading run state, through `completeFormStep` — the same path
+>   a person's click takes). `evaluateSkipOutputs` takes **one** argument, the `StepScope`. A
+>   `HEADLESS_REQUIRED` run annotation is dispatched **before** `step.failed`, so `run.finished`
+>   rolls it into the run row's annotation counts.
+> - **A skip's outputs are validated per kind** (R60): a `form`'s declared map is its *evaluated*
+>   fields (`formFieldDefs`, untyped ⇒ `string`), an `island`'s is `outputDecls(step)` (untyped ⇒
+>   `json`). Every declared name is evaluated even if an earlier one throws, so all bad names are
+>   reported at once; a throwing expression is reported as that name's field error.
+> - **A `choice` over File refs is picked by *path*** (R61), so a skip value that *is* a ref is
+>   normalised to its `path` before validation and upgraded back to the ref afterwards. Without it
+>   hello's live `review/confirm` skip (`cover: ${{ needs.card.outputs.posters[0] }}`) fails
+>   `HEADLESS_SKIP`. The validate+upgrade was extracted out of `completeFormStep` as
+>   `validateFormOutputs` / `withOptionPaths` in `adapters/form.ts`, so a submit and a skip accept
+>   and record identically.
+> - **A `skipped` step that CARRIES outputs is a *producing* step** (R66): `jobOutcome` returns
+>   `skipped` only when every step is skipped **and none carried outputs**. Without this hello's
+>   one-step `review` job read `skipped`, `jobRef` nulled it, and a headless run's `outputs.cover`
+>   was `null` where the interactive run's was the File ref — a headless/interactive difference the
+>   spec forbids. Scheduling follows: such a job satisfies `needs` as `success`. An `if:`-skipped
+>   step still carries nothing and still nulls its job, unchanged.
+> - **A skip's outputs take the same `{"$file"}` offload path as a succeeded step's**, which
+>   required moving the step's `AbortController` registration **above** the skip dispatch:
+>   `offloadController` hands back an already-aborted stand-in for an unregistered key, so without
+>   the move every oversized skip's row would have been dropped silently as `{ ok: 'stale' }`.
+> - **`invalid` covers six causes; only two render `kickoff-invalid`** — values that do not validate
+>   and an `inputs` parameter that does not decode. A workflow that does not lint, a file that could
+>   not be fetched, an unknown implementation/workflow and a failed discovery are **global-only**
+>   and keep their existing screens. So a driver waits on `window.__workflow`, never on the testid
+>   or on `run-status`: those four global-only causes are the likeliest ways a CI run goes wrong (a
+>   typo'd alias, an unreachable instance). There is also a **publish seam** — between the kickoff
+>   page's navigate and the run page's first publish there is one commit with no global at all, so a
+>   driver polls for `runId` to appear rather than reading the global the instant navigation lands.
+> - **`file` inputs are whole File refs, not paths.** Where the plan text says a `file` input is an
+>   already-stored path, it is **wrong**: `validateValue('file', …)` → `isFileRef` requires all five
+>   of `{ path, name, contentType, size, url }`, run inputs are stored verbatim, and nothing
+>   materialises a path into a ref — a bare string fails validation like any other wrong-shaped
+>   value. The driver uploads (`prepare` → PUT → `register`) and puts the registered ref in the URL.
+>   `https://` values stay refused; the page fetches nothing a caller handed it.
+> - **Headless island mounting is a *second* `RunPage` effect** (R65) guarded on
+>   `sliceState.headless && isLive`: it selects the oldest `running|waiting` island whenever nothing
+>   is selected or the selection has finished. The interactive claim-once effect (apps#370) is
+>   byte-identical, so interactive behaviour is unchanged. The two effects' declaration order is
+>   load-bearing in headless.
+> - **Headless runs do not resume, and the harness leans on that.** A `headless: auto` **form** that
+>   was `waiting` replays as `waiting` and nothing re-fires its auto-submit; because the wait clock
+>   measures from the recorded `startedAt` rather than from when it was armed, a run adopted after
+>   its budget has passed fails `HEADLESS_TIMEOUT` immediately. An **island** is the exception — the
+>   resume path re-mounts a `waiting`/`running` island on its recorded inputs, so it reads
+>   `hostContext.bffless.headless` again and submits itself. Re-running the workflow is the supported
+>   answer either way; a person can still open the row and finish the step by hand.
+> - **The driver's exit codes as shipped:** `0` succeeded · `1` the run `failed` or was `cancelled` ·
+>   **`2` any driver-side fault** (usage, an unreadable `--inputs`, a refused login, a failed upload,
+>   an unreadable API read, an unexpected exception) — deliberately never `1` · `3` the page refused
+>   the start (`status: 'invalid'`) · `4` the driver timed out · `130` SIGINT, after Cancel was
+>   clicked and the run reached `cancelled`. A **SIGTERM'd driver exits 2**, not 1 and not 130
+>   (measured): Playwright's SIGTERM/SIGHUP handlers close the browser without exiting the process,
+>   so the in-flight call rejects into the driver-fault branch and the run is left `running` — hence
+>   `cancel-in-progress: false` on the dispatch workflow. Playwright's own SIGINT handler is
+>   **disabled at launch** (`handleSIGINT: false`); it exits 130 before Cancel can be clicked. There
+>   is no `--token` flag: a credential on a command line lands in process listings and CI logs.
+> - **Every HTTP call is an in-page `fetch`, not `page.request`** — `page.request` bypasses the
+>   service worker, and in `--mocks` mode the entire backend is MSW running as one. Bytes cross the
+>   Node↔page bridge as base64. The one exception to `credentials: 'include'` is the
+>   direct-to-bucket PUT, sent `same-origin` exactly as the harness's own upload does (`include`
+>   cross-origin additionally needs `Access-Control-Allow-Credentials`, which typical S3/GCS CORS
+>   does not set). `WORKFLOW_TOKEN` rides only on `/api/workflow/*` **GETs** — never a write,
+>   because a CE API key is pinned to role `user` whoever owns it. `yaml` is a second runtime
+>   dependency: the driver reads `on.manual.inputs` to learn which inputs are `file`.
+> - **`run.json` is `{ run, steps }`** — the `/api/workflow/run?id=` record verbatim — so the status
+>   is `run.json.run.status`, and the per-step verdicts read off `run.json.steps[].status` rather
+>   than off the 1 s `steps.log` sampler. An output is downloaded when its **value** is a File ref
+>   (there is no type information at that point), which is why `poster_view` is saved beside
+>   `poster`. In a headless run `pick/0/choose` reaches **`succeeded`**, never `skipped` — it is
+>   `headless: auto`, so the island really mounts and submits.
+> - **The release wiring needed a THIRD file** beyond R63's two. `release-please-config.json` +
+>   `.release-please-manifest.json` (seeded `0.0.0` ⇒ first release 1.0.0) + `release.yml`'s
+>   `WORKFLOW_HEADLESS_TAG` env entry and jq map were not enough: `publish-workflow-lint.yml` carries
+>   a hard-coded package allow-list, and its Build/Test steps were gated to `workflow-lint` by an
+>   `if:` equality — a case-line-only fix would have published an **empty tarball whose `bin` points
+>   at a missing `dist/cli.js`**. As shipped those steps ask the checked-out `package.json` whether
+>   it has a `build` / `test:run` script (an `if:` expression cannot read a file, so the decision
+>   moved into the shell), and a package-agnostic **"Verify every bin target exists"** step sits
+>   between Build and Test (R69) — closing the failure *class*, not just its instance. The file keeps
+>   its `publish-workflow-lint` name because `release.yml` calls it by path.
+> - **The dispatch workflow uses the repo's existing secrets** `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD`
+>   (member `workflow-ci@bffless.app`), not the plan's `WORKFLOW_CI_*` (R62).
+>   `.github/workflows/workflow-headless-run.yml` is `workflow_dispatch`-only; every input reaches
+>   the shell through `env:`, never interpolated into a `run:` string; `timeout_minutes` is a
+>   **string** input (digits only) so `fromJSON` is defined, and the job ceiling is
+>   `fromJSON(inputs.timeout_minutes) + 10`.
+> - **There is no `bffless/run-workflow` GitHub Action.** Spec 07 promised one; what shipped is the
+>   repo-local dispatch workflow above plus `apps/workflow/e2e/headless.spec.ts` — the built driver
+>   spawned with `execFile` against Playwright's own `webServer` in `--mocks` mode, with no `page`
+>   fixture. It **fails loudly** (never skips) when `packages/workflow-headless/dist/cli.js` is
+>   missing (R64). From M3 the headless CLI *is* the e2e. The Action remains a follow-up.
+> - **CI order** (R64): install → workflow-lint build → workflow lint → stage → build → **driver
+>   build** → driver lint + `test:run` → `test:run` → `test:stage` → playwright install chromium →
+>   `test:e2e`.
+> - **`pnpm --filter workflow build` (`tsc -b`) belongs in every verify chain** (R70): vitest
+>   transpiles without typechecking, so a red `tsc -b` sat on committed Task-12/13 code for two
+>   tasks and was only found when Task 15 wired the CI that runs it.
 
 Worktree `workflow-m3-harness-b`, branch `feat/workflow-headless`.
 

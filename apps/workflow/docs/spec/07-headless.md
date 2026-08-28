@@ -91,9 +91,20 @@ Each `island` / `form` step declares what to do under `run.headless`:
 | `auto` | the island/form is still mounted; an island reads `hostContext.bffless.headless` and must `workflow.submit` on its own; a `form` auto-submits its defaults through the same path a person's submit takes (defaults its own fields refuse → `HEADLESS_FORM`). Timeout → `HEADLESS_TIMEOUT` |
 | *(none)* | the run **fails fast** at that step — `HEADLESS_REQUIRED`, plus a run annotation `step <key> needs a person; declare headless:` — never hangs |
 
-> When `run.headless`, the host sets `hostContext.bffless.headless = true` (delivered on
-> `ui/initialize`, readable as `app.getHostContext().bffless`); a `headless: auto` island must
-> `workflow.submit` on its own within its budget (Decision 10) or fails `HEADLESS_TIMEOUT`.
+> When `run.headless`, the host sets `hostContext.bffless.headless = true` (delivered in the
+> `ui/initialize` result, readable as `app.getHostContext().bffless`); a `headless: auto` island
+> must `workflow.submit` on its own within its budget (Decision 10) or fails `HEADLESS_TIMEOUT`.
+
+The budget an `auto` step is bounded by is its own `timeout-minutes` (01) when it declares one,
+and otherwise **5 minutes** — `HEADLESS_AUTO_DEFAULT_MS`, applied only in a headless run, because
+a person is allowed to take as long as they like. It is measured from the step's recorded
+`startedAt`, not from when the clock was armed (see *Resume*).
+
+A `skip` produces its outputs the way a submit would: they are validated against the step's own
+declared map — a `form`'s *evaluated* fields, an `island`'s `outputs` — and a `choice` over File
+refs may be given the whole ref, since the field is picked by path either way. A skip that
+carries outputs counts as a **producing** step, so its job reads `success` and a headless run's
+job and run outputs match an interactive run's.
 
 The linter reports every interactive step lacking `headless` as a notice ("not headless-safe"),
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say
@@ -134,9 +145,14 @@ does — because `include` cross-origin additionally requires the bucket to answ
 
 What it does: uploads `file` inputs through the files trio (so the values in the URL are whole
 File refs), opens the start URL, follows `window.__workflow`, and — with `--out` — writes
-`run.json` (the `/api/workflow/run?id=` record), `outputs/<name>.<ext>` for every File-ref
-output, `steps.log`, `console.log` and milestone screenshots (`01-start.png`,
-`02-<status>.png`, `failed.png`). It logs step transitions as they happen.
+`run.json` (the `/api/workflow/run?id=` record verbatim, i.e. `{ run, steps }` — the run's status
+is `run.json.run.status` and each step's settled status is a row of `run.json.steps`),
+`outputs/<name>.<ext>` for every File-ref output, `steps.log`, `console.log` and milestone
+screenshots (`01-start.png`, `02-<status>.png`, `failed.png`). It logs step transitions as they
+happen; `steps.log` is a 1 s sampler, so it is a narrative, not evidence that a status never
+occurred — assert on `run.json`. An output is downloaded when its **value** is a File ref, not
+when its declared type is `file`: a run-level output that forwards a step's file declares no type
+at all.
 
 **Exit codes** (the contract CI reads):
 
@@ -155,9 +171,30 @@ browser and leaves. `SIGTERM`/`SIGHUP` stay Playwright's, whose handlers close t
 exiting the process — the driver survives, its in-flight call rejects, and that is a driver fault,
 so a CI cancellation ends as **exit 2** with the run left `running` (not 130, and not 1).
 
-A GitHub Action `bffless/run-workflow` is a thin wrapper around the CLI (Playwright + Chromium
-install step, inputs from `with`, outputs as step outputs / artifacts). It is **not** a
-server-side runner: it is Playwright in CI.
+## In CI
+
+Two things exist, and a third does not.
+
+- **`.github/workflows/workflow-headless-run.yml`** (`bffless/apps`) — the live run.
+  `workflow_dispatch` only, deliberately: a run there writes a real row, uploads to the
+  deployment's storage and calls whatever pipelines the workflow calls. Inputs `workflow`,
+  `inputs`, `harness_url` (default `https://workflow.j5s.dev`) and `timeout_minutes` (digits
+  only, a **string** so `fromJSON` is defined; the job ceiling is that + 10). Credentials are the
+  repo's existing `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` secrets. Every input reaches the shell
+  through `env:` rather than being interpolated into a `run:` string. It uploads `output/` as the
+  `workflow-run-output` artifact and writes the run id and status to the step summary.
+  `concurrency` queues rather than cancels, because cancelling would SIGTERM the driver — exit 2
+  with the run left `running` (above), not a cancelled run.
+- **`apps/workflow/e2e/headless.spec.ts`** — the proof without a deployment. It spawns the built
+  `packages/workflow-headless/dist/cli.js` against the Playwright `webServer` in `--mocks` mode
+  (no `page` fixture, so only the driver's Chromium runs) and reads the artifacts back off disk.
+  From M3 the headless CLI *is* the e2e (09). It **fails**, rather than skipping, when the driver
+  is not built.
+- **There is no `bffless/run-workflow` GitHub Action.** Earlier drafts of this file promised one —
+  a thin `with`-inputs wrapper around the CLI. It was not built: the repo-local dispatch workflow
+  is the right shape for a single monorepo, and the Action is a follow-up for the day a second
+  repo wants to run a workflow in CI. Either way it would be Playwright in CI, never a
+  server-side runner.
 
 ## Resume
 

@@ -153,9 +153,10 @@ const discovery = [
   }),
 
   // The script modules, served the way the bundle alias serves them: the
-  // harness fetches this with the member's session and turns the text into a
-  // Blob URL the Worker imports (03), so the response is JavaScript — an HTML
-  // error page with a 200 would be imported as a module and fail obscurely.
+  // harness fetches this with the member's session and hands the text to the
+  // sandbox frame, which mints the `data:` URL the Worker imports (03). So the
+  // response must be JavaScript — an HTML error page with a 200 would be
+  // imported as a module and fail obscurely.
   http.get('/w/:alias/scripts/:name', ({ params }) => {
     const source = params.alias === 'hello' ? SCRIPT_SOURCE[String(params.name)] : undefined
     return source === undefined

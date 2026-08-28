@@ -9,10 +9,14 @@
  *
  * `?auto=1&inputs=<base64url(JSON)>` is the headless entry point (07/D12):
  * the same start, with the values off the URL instead of the form and nobody
- * to press Start. Everything it refuses it reports twice — in the DOM
- * (`kickoff-invalid`) for a person who opened the link, and on
- * `window.__workflow` for the driver that did, which is watching a global and
- * would otherwise wait out its whole timeout on a run that never began.
+ * to press Start. **Everything** it refuses reaches `window.__workflow` as
+ * `status: 'invalid'` — a driver watching the global would otherwise wait out
+ * its whole timeout on a run that never began. Only two of those refusals also
+ * render the `kickoff-invalid` list (values that do not validate, and an
+ * `inputs` parameter that does not decode); the other four — a workflow that
+ * does not lint, a file that could not be read, no such implementation or
+ * workflow, and a failed discovery — keep their own screens, which is why the
+ * global is the contract and the testid is not (07's table).
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'

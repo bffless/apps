@@ -308,8 +308,8 @@ describe.skipIf(!posterCardStaged)('the script module route', () => {
     const res = await fetch('/w/hello/scripts/poster-card.js')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/javascript')
-    // The text the harness turns into a Blob URL: a module with a default
-    // export, not an HTML error page answered with a 200.
+    // The text the sandbox frame turns into a `data:` URL: a module with a
+    // default export, not an HTML error page answered with a 200.
     expect(await res.text()).toContain('export default async function run')
 
     expect((await fetch('/w/hello/scripts/nope.js')).status).toBe(404)

@@ -23,8 +23,18 @@ lib/runner/
   transitions.ts   per-step allowed-transition table; illegal transition throws
   next.ts          nextActions(RunState, Definition) → Action[]   (what to start/poll/mount)
   replay.ts        rows → RunEvent[] → RunState        (Resume, read-only views)
+  rows.ts          RunEvent → the row writes that persist it (05)
+  contexts.ts      the run's `inputs`/`needs`/`steps`/`matrix` scopes, and job outcome
+  headless.ts      `headless:` and `timeout-minutes` read off `step.raw`: mode, budgets,
+                   and what a `skip` stands in for (`evaluateSkipOutputs`)
   adapters/        pipeline.ts (fetch+poll+retry), island.ts (AppBridge), form.ts, script.ts
 ```
+
+The wait clock those budgets feed (`store/waitClock.ts`) lives with the side effects, not here:
+a step that is `waiting` has no work of its own to hang a timer off, so the timer belongs to
+whoever owns the step's lifecycle — the middleware. It measures from the step's recorded
+`startedAt`, never from when it was armed, so a run cannot wait forever by being adopted
+repeatedly.
 
 - **Events** are the vocabulary in 05 (`run.started`, `step.queued`, `step.started`,
   `step.polling`, `step.waiting`, `step.succeeded`, `step.failed`, `step.skipped`,
@@ -55,11 +65,14 @@ adopted *inside that adapter* without touching the engine.
 
 ## The linter shares the engine
 
-`bffless workflows lint` (M0 prototype; later a CLI verb) = `definition.ts` + schema +
-expression parse + static checks (upstream references only, unknown `render`, interactive
-steps without `headless`, `file` refs passed whole into bodies, absolute paths into another
-implementation's API, `headless: skip` missing a value for a referenced output).
-No React, no network — runs in CI and in the harness's "View workflow file" screen alike.
+`@bffless/workflow-lint` (bin `workflow`: `workflow lint <file…>`, and `workflow index` — the
+publish step `bffless/publish-workflow` runs) = `definition.ts` + schema + expression parse +
+static checks (upstream references only, unknown `render`, interactive steps without `headless`,
+`file` refs passed whole into bodies, absolute paths into another implementation's API,
+`headless: skip` missing a value for a referenced output, and `rule-missing` — every relative
+`with.path`/`poll.path` held to the rule directory that serves it, when the rule set is
+visible). No React, no network — runs in CI and in the harness's "View workflow file" screen
+alike.
 
 ## Testing stance
 

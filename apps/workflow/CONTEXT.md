@@ -114,6 +114,12 @@ A run driven by a headless browser (Playwright) rather than a person; the same h
 auto-started by URL, with interactive steps skipped, auto-submitted, or failing fast.
 _Avoid_: server-side run, CI run (as the concept), background run
 
+**Driver**:
+`@bffless/workflow-headless`, the Playwright CLI that *performs* a headless run: it opens the
+start URL, follows `window.__workflow` and writes the run's artifacts down. It re-implements no
+harness behaviour, and its exit code is what CI branches on.
+_Avoid_: runner (the harness runs the workflow), agent, bot, worker
+
 **Island**:
 A custom micro-UI shipped by an implementation as a self-contained HTML resource in the MCP
 Apps format, rendered by the harness in a sandboxed iframe as a step or as an output viewer.
@@ -123,6 +129,19 @@ _Avoid_: widget, component, micro-app, plugin UI, iframe (as the concept)
 An implementation's ES module the harness runs in a Worker as a step; the browser-CPU step
 kind.
 _Avoid_: task, function, worker (as the concept)
+
+**Sandbox**:
+The `sandbox="allow-scripts"` iframe with no `allow-same-origin` that implementation code runs
+inside — an island's UI directly, and a script's Worker spawned from `data:` URLs within a
+hidden one. Its origin is **opaque**: no cookies, no storage, no same-origin fetch, so every
+capability arrives from the harness (the MCP Apps bridge, or the Worker's port).
+_Avoid_: iframe (as the concept), jail, container, isolate
+
+**Signed URL**:
+A short-lived presigned GET for one object under the harness's `workflows/` prefix, minted by
+`POST /api/workflow/files/sign` and handed to a sandbox through `workflow.sign`. It is the only
+bearer credential the harness ever gives out, and the only way opaque-origin media loads.
+_Avoid_: share link, token URL, public URL, presign (as a noun)
 
 ### Publishing
 

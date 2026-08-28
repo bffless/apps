@@ -62,7 +62,7 @@ session, and two of the harness's relays forward the caller's cookies, so
 ## Artifacts (`--out`)
 
 ```
-run.json          the /api/workflow/run?id=… record, verbatim
+run.json          the /api/workflow/run?id=… record, verbatim: { run, steps }
 outputs/          every File-ref output, named after the output (poster.svg, posters-1.png…)
 steps.log         one timestamped line per status transition
 console.log       the page console
@@ -70,6 +70,11 @@ console.log       the page console
 02-<status>.png   the run page at its terminal status
 failed.png        written whenever the run did not succeed
 ```
+
+The run's status is `run.json.run.status`, and each step's settled status is a row of
+`run.json.steps` (`{ key, status, … }`). Read verdicts from there rather than
+from `steps.log`, which is a 1 s sampler: it can miss a status a run passed
+through, so it is a narrative, not proof that something never happened.
 
 An output is saved when its **value is a File ref**, not when its declared type
 is `file`: a run-level `outputs:` entry that simply forwards a step's file
@@ -117,6 +122,27 @@ call rejects against a browser that is no longer there, and that lands in the
 driver-fault branch: a CI job cancellation ends as **exit 2 with the run left
 `running`** — not `130`, and not `1`, which stays reserved for a run that
 really did fail. Send `SIGINT` if you want the run cancelled first.
+
+## In CI
+
+Two pieces of wiring live in [`bffless/apps`](https://github.com/bffless/apps), and they are the
+worked examples for anyone wiring this up elsewhere:
+
+- **`.github/workflows/workflow-headless-run.yml`** — the live run. `workflow_dispatch` only, on
+  purpose: a run there writes a real row, uploads to the deployment's storage and calls whatever
+  pipelines the workflow calls. It takes `workflow`, `inputs`, `harness_url` and
+  `timeout_minutes` (digits only), passes `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` from repo
+  secrets, uploads `output/` as an artifact and summarises the run id and status. Note that
+  cancelling the job sends `SIGTERM`, which is **exit 2 with the run left `running`** (see
+  *Signals*) — hence `cancel-in-progress: false`.
+- **`apps/workflow/e2e/headless.spec.ts`** — the end-to-end proof of this package, with no
+  deployment involved: Playwright spawns the built `dist/cli.js` against the harness dev server
+  in `--mocks` mode and reads the artifacts back off disk. It fails, rather than skipping, when
+  `dist/cli.js` is missing — so `pnpm --filter @bffless/workflow-headless build` comes before
+  `test:e2e` in CI.
+
+There is deliberately no `bffless/run-workflow` GitHub Action yet; a dispatch workflow calling
+the CLI is all a single repo needs.
 
 ## As a library
 

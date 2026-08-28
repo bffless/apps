@@ -93,14 +93,19 @@ A run stays `running` when its tab closes; nothing server-side notices. When som
    the last 60 s) the page is **read-only live view** (it polls the rows) with "Take over"
    behind a confirm.
 3. Otherwise **Resume** is offered. On resume: `queued`/`running` pipeline steps restart
-   their request (idempotency is the pipeline's business — Studio's enqueue pattern is safe to
-   re-enqueue; the definition can mark a step `resume: poll-only` … *open: decide at M1 with
-   the hello implementation whether a `resume:` hint is needed*); `polling` steps resume polling
-   with their recorded `response.initial`; `waiting` steps re-mount the island/form;
-   `succeeded` rows are not re-run.
+   their request; `polling` steps resume polling with their recorded `response.initial`;
+   `waiting` steps re-mount the island/form; `succeeded` rows are not re-run.
+
+   There is **no `resume:` hint** (M3 Decision 15, closing M1 Decision 3). Idempotency is the
+   pipeline's business, and every pipeline the harness has met is enqueue-and-poll: a `running`
+   row resumes as a re-enqueue — a duplicate job row, but no duplicate side effect on the run's
+   outputs, since each run writes under its own `step.prefix` (06) — and a `polling` row simply
+   resumes polling. A per-step hint would buy nothing that the two shapes do not already give.
 4. The heartbeat restarts; `lease_owner` becomes this tab.
 
-Headless runs never resume (a failed CI step re-runs the workflow).
+Headless runs never resume (a failed CI step re-runs the workflow) — with one mechanical
+exception, an `island`, which the resume path re-mounts and which then submits itself again. 07
+*Resume* has the detail and the reason a `form` cannot do the same.
 
 ## Summaries and annotations
 
