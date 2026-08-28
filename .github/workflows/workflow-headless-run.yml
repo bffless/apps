@@ -27,11 +27,16 @@ on:
         type: string
         default: 'https://workflow.j5s.dev'
       timeout_minutes:
-        description: 'How long the driver waits for a terminal status — digits only, in minutes (e.g. 60). No unit suffix: an "m" is appended for --timeout, and the job ceiling is this + 10 for install and browser.'
+        description: 'How long the driver waits for a terminal status — digits only, in minutes (e.g. 60). No unit suffix: an "m" is appended for --timeout.'
         required: false
         type: string
         default: '60'
-    # NOTE: workflow_dispatch caps at 10 inputs. Four here; `WORKFLOW_TOKEN` is
+      job_timeout_minutes:
+        description: 'Runner ceiling, digits only. Keep it ABOVE timeout_minutes (~10 min of headroom) so a driver timeout surfaces as its own exit 4 with artifacts, rather than the runner killing the job.'
+        required: false
+        type: string
+        default: '70'
+    # NOTE: workflow_dispatch caps at 10 inputs. Five here; `WORKFLOW_TOKEN` is
     # deliberately not one of them — a credential on a command line lands in
     # process listings and CI logs (Decision 13), so the environment is the only
     # way in.
@@ -46,10 +51,13 @@ permissions: { contents: read }
 jobs:
   run:
     runs-on: ubuntu-latest
-    # The driver's own ceiling plus headroom for install + Chromium download, so
-    # a driver timeout surfaces as exit 4 (its own verdict) rather than as the
-    # runner killing the job.
-    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) + 10 }}
+    # Deliberately a separate input rather than `timeout_minutes + 10`: GitHub
+    # Actions expressions have NO arithmetic operators, and a `+` here is a
+    # lexer error that invalidates the whole file — the run then fails on push
+    # with no jobs at all (2026-08-28). The ceiling must stay above
+    # `timeout_minutes` so a driver timeout surfaces as exit 4, with its
+    # artifacts, rather than as the runner killing the job.
+    timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes) }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
