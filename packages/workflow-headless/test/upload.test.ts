@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import type { ApiLike } from '../src/api.js'
+import { DriverError, EXIT } from '../src/errors.js'
 import { contentTypeFor, toFileRef, uploadFileInputs } from '../src/upload.js'
 
 interface Call {
@@ -164,14 +165,63 @@ describe('uploadFileInputs', () => {
     ).rejects.toThrow(/upload url/i)
   })
 
-  test('a non-2xx prepare fails loudly', async () => {
+  test('a non-2xx prepare fails loudly, with a driver-side exit code', async () => {
     const { api } = fakeApi()
     const failing: ApiLike = { ...api, async json() {
       return { status: 403, body: { error: 'nope' } }
     } }
-    await expect(
-      uploadFileInputs(failing, ctx, { clip: { type: 'file' } }, { clip: './clip.png' }, deps),
-    ).rejects.toThrow(/403/)
+    const error = await uploadFileInputs(
+      failing,
+      ctx,
+      { clip: { type: 'file' } },
+      { clip: './clip.png' },
+      deps,
+    ).catch((e: unknown) => e)
+    // Never exit 1: an upload the harness refused is a driver-side failure, not
+    // a run that ran and failed (errors.ts's rule).
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toMatch(/403/)
+  })
+
+  test('a non-2xx register is a DriverError too', async () => {
+    const { api } = fakeApi()
+    const failing: ApiLike = { ...api, async json(path, init) {
+      if (path.endsWith('/files/register')) return { status: 500, body: {} }
+      return api.json(path, init)
+    } }
+    const error = await uploadFileInputs(
+      failing,
+      ctx,
+      { clip: { type: 'file' } },
+      { clip: './clip.png' },
+      deps,
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toMatch(/register answered 500/)
+  })
+
+  test('a PUT that never got a response keeps the harness\'s own CORS diagnosis', async () => {
+    // status 0 is "no response at all" — the symptom a live run trips over
+    // first when the bucket's CORS allow-list omits the app origin.
+    const { api } = fakeApi()
+    const blocked: ApiLike = { ...api, async put() {
+      return { status: 0, error: 'Failed to fetch' }
+    } }
+    const error = await uploadFileInputs(
+      blocked,
+      ctx,
+      { clip: { type: 'file' } },
+      { clip: './clip.png' },
+      deps,
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toContain(
+      "the upload PUT failed before a response — usually the storage bucket's CORS allow-list",
+    )
+    expect((error as Error).message).toContain('Failed to fetch')
   })
 })
 

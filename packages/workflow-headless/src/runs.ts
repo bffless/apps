@@ -7,6 +7,7 @@
  * applies, for the same reason: the rule has answered more than one of these.
  */
 import type { ApiLike } from './api.js'
+import { DriverError, EXIT } from './errors.js'
 
 export interface RunRow {
   runId: string
@@ -68,6 +69,10 @@ export async function listRuns(
 ): Promise<RunRow[]> {
   const query = `impl=${encodeURIComponent(impl)}&workflow=${encodeURIComponent(workflow)}`
   const res = await api.json(`/api/workflow/runs?${query}`)
-  if (res.status !== 200) throw new Error(`/api/workflow/runs answered ${res.status}`)
+  if (res.status !== 200) {
+    // A driver-side failure, not a failed run — hence the explicit code rather
+    // than letting a bare Error fall into a catch-all (errors.ts's rule).
+    throw new DriverError(`/api/workflow/runs answered ${res.status}`, EXIT.USAGE)
+  }
   return toRunRows(res.body).slice(0, last)
 }

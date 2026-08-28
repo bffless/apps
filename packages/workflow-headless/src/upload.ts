@@ -11,6 +11,7 @@
 import { readFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { ApiLike } from './api.js'
+import { DriverError, EXIT } from './errors.js'
 
 export interface FileRef {
   path: string
@@ -98,7 +99,10 @@ function prepared(raw: unknown): { uploadUrl: string; storageKey: string } {
   const uploadUrl = str(r.uploadUrl) ?? str(r.url)
   const storageKey = str(r.storageKey) ?? str(r.key)
   if (!uploadUrl || !storageKey) {
-    throw new Error('files/prepare did not answer an upload url and storage key')
+    throw new DriverError(
+      'files/prepare did not answer an upload url and storage key',
+      EXIT.USAGE,
+    )
   }
   return { uploadUrl, storageKey }
 }
@@ -134,13 +138,27 @@ export async function uploadOne(
     },
   })
   if (prepare.status < 200 || prepare.status >= 300) {
-    throw new Error(`files/prepare answered ${prepare.status} for ${localPath}`)
+    throw new DriverError(
+      `files/prepare answered ${prepare.status} for ${localPath}`,
+      EXIT.USAGE,
+    )
   }
   const { uploadUrl, storageKey } = prepared(prepare.body)
 
   const put = await api.put(uploadUrl, bytes, contentType)
+  if (put.status === 0) {
+    // No status at all: the browser refused to send (or to read) the request.
+    // For a direct-to-bucket PUT that is almost always the bucket's CORS
+    // allow-list missing this origin — the harness's own upload says exactly
+    // this, and it is the first thing a live run trips over.
+    throw new DriverError(
+      "the upload PUT failed before a response — usually the storage bucket's CORS allow-list " +
+        `does not include this origin (${put.error ?? 'no detail'}) while uploading ${localPath}`,
+      EXIT.USAGE,
+    )
+  }
   if (put.status < 200 || put.status >= 300) {
-    throw new Error(`the upload PUT answered ${put.status} for ${localPath}`)
+    throw new DriverError(`the upload PUT answered ${put.status} for ${localPath}`, EXIT.USAGE)
   }
 
   const register = await api.json('/api/workflow/files/register', {
@@ -148,7 +166,10 @@ export async function uploadOne(
     body: { impl: ctx.impl, workflow: ctx.workflow, scope, storageKey, originalName: filename },
   })
   if (register.status < 200 || register.status >= 300) {
-    throw new Error(`files/register answered ${register.status} for ${localPath}`)
+    throw new DriverError(
+      `files/register answered ${register.status} for ${localPath}`,
+      EXIT.USAGE,
+    )
   }
   return toFileRef(register.body)
 }

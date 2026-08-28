@@ -94,7 +94,7 @@ and this does not arise.
 |---|---|
 | `0` | the run succeeded |
 | `1` | the run failed or was cancelled |
-| `2` | usage, an unreadable `--inputs`, or a refused login |
+| `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault (a failed upload, an API read that would not answer, an unexpected exception) — deliberately never `1`, so `if: failure()` can tell "the run failed" from "the driver could not reach the harness" |
 | `3` | the page refused the start (`status: 'invalid'`) — bad values, an undecodable `inputs`, a workflow that does not lint or could not be read, no such implementation/workflow, or a discovery failure |
 | `4` | the driver timed out (the run may still be going) |
 | `130` | SIGINT: Cancel was clicked and the run ended `cancelled` |
@@ -102,6 +102,19 @@ and this does not arise.
 Exit `3` is watched on `window.__workflow`, not on the `kickoff-invalid`
 element: only two of the six refusals render that list, and the four that do
 not are the likeliest ways a CI run goes wrong.
+
+### Signals
+
+SIGINT is the driver's own, from the moment the browser exists: before a run
+page is up it closes the browser and leaves with `130`; once the run is
+running it clicks Cancel and waits for the run to reach `cancelled` first, so
+CI's record says the run was cancelled rather than that the driver vanished. A
+second Ctrl-C closes the browser and leaves without waiting.
+
+`SIGTERM` and `SIGHUP` stay Playwright's, which closes the browser and exits
+without asking the run anything. A CI job cancellation is therefore **exit 1
+with the run left `running`**, not `130` — if you need the run cancelled on a
+job cancellation, send `SIGINT`.
 
 ## As a library
 

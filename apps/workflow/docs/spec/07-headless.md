@@ -99,22 +99,58 @@ The linter reports every interactive step lacking `headless` as a notice ("not h
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say
 so before a run is attempted.
 
-## The driver — `headless/` package
+## The driver — `packages/workflow-headless`
 
-`packages/workflow-headless` (Node + Playwright, Chromium from `~/.cache/ms-playwright`):
+`@bffless/workflow-headless` (Node + Playwright, Chromium from `~/.cache/ms-playwright`), bin
+`workflow-headless`:
 
 ```
-workflow run <harness-url> <impl>/<workflow> --inputs inputs.json [--out ./outputs] [--timeout 60m] [--token <api-key>]
-workflow runs <harness-url> <impl>/<workflow> --last 10
+workflow-headless run  <harness-url> <impl>/<workflow> --inputs inputs.json
+                       [--out ./artifacts] [--timeout 60m] [--mocks] [--headed]
+workflow-headless runs <harness-url> <impl>/<workflow> [--last 10] [--mocks]
 ```
 
-- Auth: the driver injects `X-API-Key: <key>` on every request via Playwright route
-  interception (BFFless pipelines and CE APIs accept API keys; no session exchange needed), or
-  a session cookie can be passed in. The key's project role applies (06).
-- Uploads `file` inputs, opens the start URL, waits for `data-state` terminal, fetches the
-  record, writes `run.json` and downloads file outputs into `--out`, exits non-zero on
-  `failed`/`cancelled`. SIGINT → clicks Cancel (run → `cancelled`), exits 130.
-- Logs step transitions as they happen (polls `window.__workflow`).
+**Auth is a member login through the admin relay** (Decision 13) — `WORKFLOW_EMAIL` /
+`WORKFLOW_PASSWORD`, required unless `--mocks`. The driver opens the harness, is bounced to the
+relay's `/login`, fills the two fields and waits for the URL to come back to the harness origin,
+exactly as a person does.
+
+> This replaces an earlier claim in this file that the driver injects `X-API-Key` on every
+> request via route interception and needs no session exchange. That is **wrong** and was never
+> implemented: two of the harness's relays forward the caller's cookies, and an API key cannot
+> mint a SuperTokens session. `WORKFLOW_TOKEN` (`--token`) survives only as an *optional extra*
+> header on `/api/workflow/*` **GETs** — never on a write, because a CE API key is pinned to role
+> `user` regardless of who owns it, so a POST carrying both a cookie and a key can resolve to a
+> different identity than the member who logged in.
+
+Every HTTP call the driver makes is an **in-page `fetch`**, not `page.request`: the session
+cookie is the credential, and in `--mocks` mode the backend is an MSW service worker that
+`page.request` bypasses entirely. The one exception to the credentials rule is the
+direct-to-bucket PUT, which is sent `same-origin` — the same thing the harness's own upload
+does — because `include` cross-origin additionally requires the bucket to answer
+`Access-Control-Allow-Credentials`, which typical S3/GCS CORS configs do not set.
+
+What it does: uploads `file` inputs through the files trio (so the values in the URL are whole
+File refs), opens the start URL, follows `window.__workflow`, and — with `--out` — writes
+`run.json` (the `/api/workflow/run?id=` record), `outputs/<name>.<ext>` for every File-ref
+output, `steps.log`, `console.log` and milestone screenshots (`01-start.png`,
+`02-<status>.png`, `failed.png`). It logs step transitions as they happen.
+
+**Exit codes** (the contract CI reads):
+
+| code | |
+|---|---|
+| `0` | the run succeeded |
+| `1` | the run `failed` or was `cancelled` |
+| `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault — never a run that ran and failed |
+| `3` | the page refused the start (`status: 'invalid'`) |
+| `4` | the driver timed out (the run may still be going) |
+| `130` | SIGINT: Cancel was clicked and the run reached `cancelled` |
+
+SIGINT is the driver's own (Playwright's handler is disabled at launch, because it kills the
+browser and exits 130 immediately, which loses the Cancel-then-wait). A second Ctrl-C closes the
+browser and leaves. `SIGTERM`/`SIGHUP` stay Playwright's, so a CI cancellation closes the browser
+under the driver and ends as exit 1, not 130.
 
 A GitHub Action `bffless/run-workflow` is a thin wrapper around the CLI (Playwright + Chromium
 install step, inputs from `with`, outputs as step outputs / artifacts). It is **not** a

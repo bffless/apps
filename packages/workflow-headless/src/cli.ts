@@ -26,6 +26,11 @@ import type { BrowserLike } from './page.js'
 import { formatRunsTable, listRuns } from './runs.js'
 import { runWorkflow, type RunReport } from './run.js'
 
+/** Shared with the catch-all so a Ctrl-C's own fallout is not reported as a fault. */
+interface Interrupt {
+  leaving: boolean
+}
+
 export interface CliIo {
   out: (line: string) => void
   err: (line: string) => void
@@ -37,6 +42,27 @@ export interface CliIo {
   forceExit?: (code: number) => void
 }
 
+/**
+ * The SIGINT of last resort: close the browser, then leave with 130.
+ *
+ * Something has to do this from the moment the browser exists. Playwright's
+ * own SIGINT handler is off (see `browser.ts`), and the cleanup it would
+ * otherwise fall back on runs on `process.on('exit')`, which an unhandled
+ * signal never reaches — so a Ctrl-C during the login, the uploads, the start
+ * wait, or anywhere in `runs` would leave a headless Chromium behind.
+ */
+function closeAndExit(browser: BrowserLike, io: CliIo, why: string, state: Interrupt): void {
+  // Closing the browser aborts whatever navigation or evaluate was in flight,
+  // which surfaces a moment later as an exception. It is not news — we are
+  // already leaving — so the catch-all is told to stay quiet.
+  state.leaving = true
+  io.err(why)
+  void browser
+    .close()
+    .catch(() => {})
+    .then(() => io.forceExit?.(EXIT.SIGINT))
+}
+
 function exitFor(report: RunReport, sigint: boolean): ExitCode {
   if (report.status === 'invalid') return EXIT.INVALID
   if (report.status === 'succeeded') return EXIT.OK
@@ -44,13 +70,18 @@ function exitFor(report: RunReport, sigint: boolean): ExitCode {
   return EXIT.FAILED
 }
 
-async function doRun(command: RunCommand, io: CliIo): Promise<ExitCode> {
+async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
   const inputs = loadInputs(command.inputsFile)
   const credentials = command.mocks ? undefined : credentialsFromEnv(io.env)
   const browser = await (io.launch ?? launchBrowser)({ headed: command.headed })
 
   let sigint = false
-  let cancel: (() => Promise<void>) | undefined
+  // Registered once, immediately: everything before the run page exists (the
+  // relay login, discovery, the uploads, the start wait) has nothing to Cancel
+  // but does have a browser to close. `onReady` upgrades it in place rather
+  // than adding a second listener.
+  let onInterrupt = () => closeAndExit(browser, io, 'SIGINT — closing the browser', state)
+  io.onSigint?.(() => onInterrupt())
 
   try {
     const report = await runWorkflow(
@@ -70,23 +101,18 @@ async function doRun(command: RunCommand, io: CliIo): Promise<ExitCode> {
         log: io.out,
         warn: io.err,
         onReady: (control) => {
-          cancel = control.cancel
-          io.onSigint?.(() => {
+          onInterrupt = () => {
             if (sigint) {
               // A second Ctrl-C is the escape hatch: the first waits for the
               // run to actually end, which is the whole point, but a harness
               // that will not answer must not hold the terminal hostage.
-              io.err('SIGINT again — leaving without waiting')
-              void browser
-                .close()
-                .catch(() => {})
-                .then(() => io.forceExit?.(EXIT.SIGINT))
+              closeAndExit(browser, io, 'SIGINT again — leaving without waiting', state)
               return
             }
             sigint = true
             io.err('SIGINT — clicking Cancel; waiting for the run to end')
-            void cancel?.()
-          })
+            void control.cancel()
+          }
         },
       },
     )
@@ -100,9 +126,12 @@ async function doRun(command: RunCommand, io: CliIo): Promise<ExitCode> {
   }
 }
 
-async function doRuns(command: RunsCommand, io: CliIo): Promise<ExitCode> {
+async function doRuns(command: RunsCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
   const credentials = command.mocks ? undefined : credentialsFromEnv(io.env)
   const browser = await (io.launch ?? launchBrowser)({})
+  // `runs` never has a run page, so this is its only SIGINT handling — without
+  // it the whole command is a window where Ctrl-C orphans a Chromium.
+  io.onSigint?.(() => closeAndExit(browser, io, 'SIGINT — closing the browser', state))
   const base = command.harnessUrl
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
@@ -127,10 +156,16 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     return EXIT.OK
   }
 
+  const state: Interrupt = { leaving: false }
   try {
     const command = parseArgs(argv)
-    return command.command === 'run' ? await doRun(command, io) : await doRuns(command, io)
+    return command.command === 'run'
+      ? await doRun(command, io, state)
+      : await doRuns(command, io, state)
   } catch (error) {
+    // A Ctrl-C that closed the browser aborts the in-flight call; that
+    // exception is the interrupt's own wake, not a fault to report.
+    if (state.leaving) return EXIT.SIGINT
     if (error instanceof UsageError) {
       io.err(`error: ${error.message}`)
       io.err(USAGE)
@@ -140,8 +175,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       io.err(`error: ${error.message}`)
       return error.code
     }
+    // Never EXIT.FAILED: an exception the driver did not expect is a driver
+    // fault, and `errors.ts` forbids it looking like a run that ran and
+    // failed. The stack still goes out — this is the case nobody predicted.
     io.err(`driver error: ${(error as Error).stack ?? String(error)}`)
-    return EXIT.FAILED
+    return EXIT.USAGE
   }
 }
 

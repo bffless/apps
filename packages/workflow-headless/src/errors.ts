@@ -9,7 +9,13 @@ export const EXIT = {
   OK: 0,
   /** The run reached `failed` or `cancelled` — the harness ran, the work did not. */
   FAILED: 1,
-  /** Bad argv, an unreadable `--inputs`, or a login the harness refused. */
+  /**
+   * The driver never got a run going: bad argv, an unreadable `--inputs`, a
+   * login the harness refused, an upload or an API read that failed, or any
+   * other driver-side fault. Deliberately *not* 1 — the rule above is that a
+   * run that ended `failed` and a driver that could not reach the harness must
+   * never look the same to `if: failure()`, and 1 belongs to the run.
+   */
   USAGE: 2,
   /** The page refused the start: `status: 'invalid'` (bad values, bad `inputs`, no such workflow, discovery). */
   INVALID: 3,
