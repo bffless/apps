@@ -35,14 +35,15 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   `deploy.yml`) on `hello.<domain>`. Rule set `workflow` is attached to alias `workflow` by
   this repo's deploy; rule set `hello` is attached to BOTH the `hello` alias and the
   `workflow` (harness) alias by `bffless/publish-workflow@v1` running in workflow-hello's own
-  CI (ADR-0001 single origin) — nothing in this repo's deploy touches it. The domains are the
-  manual half: `workflow.<domain>` → alias `workflow`, path `/apps/workflow/dist`, **SPA
+  CI (ADR-0001 single origin) — nothing in this repo's deploy touches it. The harness domain is
+  the manual half: `workflow.<domain>` → alias `workflow`, path `/apps/workflow/dist`, **SPA
   fallback on**, `unauthorizedBehavior: redirect_login` + `requiredRole: authenticated` (a
-  signed-out member lands on the login page instead of a 404); `hello.<domain>` → alias
-  `hello`, path **`/dist`** — `bffless/upload-artifact` keeps the uploaded directory name as
-  the bundle's root, so `hello`'s deployment root is `dist/` (`dist/index.html`,
-  `dist/islands/*.html`, `dist/.bffless/workflows/index.json`, …); a domain path of `/` (or
-  empty) 400s or 404s.
+  signed-out member lands on the login page instead of a 404). An implementation domain is
+  **optional** since 2026-08-28 (the forwarder no longer goes through it — see below); j5s
+  keeps `hello.<domain>` → alias `hello`, path **`/dist`** for humans who want the bundle
+  directly — `bffless/upload-artifact` keeps the uploaded directory name as the bundle's root,
+  so `hello`'s deployment root is `dist/` (`dist/index.html`, `dist/islands/*.html`,
+  `dist/.bffless/workflows/index.json`, …); a domain path of `/` (or empty) 400s or 404s.
 - **Rule-set isolation**: `workflow` lives in project `bffless/workflow`, NOT in
   `.bffless/config.json`'s `ruleSets` globs — that file drives the nightly drift check against
   project `bffless/apps`. Keep them out of it.
@@ -76,9 +77,19 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   (COOP/COEP only becomes relevant if a script needs threads — `SharedArrayBuffer`,
   ffmpeg core-mt — which nothing in hello does.)
 - The `/w/hello/[...path]` forwarding rule is no longer authored here: `bffless/publish-workflow@v1`
-  generates it (`targetUrl` = the deployed `hello` alias URL) as part of workflow-hello's own
-  `deploy.yml`. A different install domain follows from `target-url` in that action's inputs,
-  not from anything in this repo (CE follow-up `targetUrl: alias://hello` would remove even that).
+  generates it as part of workflow-hello's own `deploy.yml`. Since v1.2.0 its `targetUrl` is the
+  CE backend's own serve route for the alias, in-process —
+  `http://localhost:3000/public/bffless/workflow/alias/hello/dist`, `forwardCookies: true` (the
+  member's session is what makes the private alias answer 200 instead of 404). "In-process" is
+  literal: a rule with no `authTransform` is never rendered into nginx, so the **backend**
+  matches `/w/hello/*` itself (`proxy.service.ts` `buildTargetUrl`) and calls itself at
+  `localhost:3000` — the assumption is that it can reach itself there, not that nginx can. So **no
+  per-install hostname lives in a rule set**, an implementation domain is optional, and a
+  preview alias is browsable at `/w/<alias>/…` — its alias *is* `hello-pr-N` — with nothing set
+  up by hand. `target-url` overrides
+  it with a public host (legacy), `backend-url` if the backend is not on `localhost:3000`. See
+  the ADR-0001 amendment (2026-08-28); CE's `targetUrl: alias://hello` (ce#698) would only be a
+  more declarative spelling.
 - **Run deletion** (`POST /api/workflow/run/delete`, M2 Phase 3): deletes the run's storage
   prefix `workflows/<impl>/<workflow>/runs/<runId>/` **first** (`file_delete`, idempotent), then
   the `workflow_files` records under it, then the step rows, then the run row — bytes before
@@ -115,24 +126,26 @@ JavaScript-Detections `<script>` into **every** `text/html` response — includi
 HTML the harness fetches. Inside the opaque-origin frame that script (it creates a hidden
 iframe and reads `contentWindow.document`) throws
 `SecurityError: Failed to read a named property 'document' from 'Window'` at
-`about:srcdoc:<line>`, once per proxy hop (the `/w/hello` forwarder re-fetches through the
-edge, so twice). The island still works — the error is the injected script's, not ours — but
-the fix is the response-header rule above: Cloudflare skips the injection when the origin
-answers `Cache-Control: no-transform`
-([docs](https://developers.cloudflare.com/bots/additional-configurations/javascript-detections/)),
-and the forwarder passes the header through so both hops come back clean. Cache rules cannot
+`about:srcdoc:<line>`, once per Cloudflare pass. Until 2026-08-28 the forwarder re-fetched
+through the edge, so it fired twice; with the in-process target only the browser's own request
+to `workflow.<domain>` crosses the edge (confirm on the next live walk). The island still
+works — the error is the injected script's, not ours — but the fix is the response-header rule
+above: Cloudflare skips the injection when the origin answers `Cache-Control: no-transform`
+([docs](https://developers.cloudflare.com/bots/additional-configurations/javascript-detections/)).
+Both rules stay **required** — they match the harness-facing path. Cache rules cannot
 express `no-transform` (they only take max-age numbers). Seen and fixed 2026-08-25;
 rules-as-code follow-up: bffless/ce#700.
 
 **Trust boundary.** Which bundle an island loads from is the run's `impl`, and on the
 read-only run page that value comes from the **run row** — a field any project member can
 write when they `POST /api/workflow/runs` (the rule is gated by `auth_required`, nothing
-narrower). That is safe today only because `/w/` forwards to exactly one fixed alias
-(`/w/hello`), so a planted `impl` resolves to nothing else. Before `targetUrl: alias://`
-generalises the forwarder (apps#364 / ce#698, M4), `run.impl` must be validated against the
-discovered aliases — or taken from the route rather than the row — or a member-planted run
-row could point another member's viewer at a foreign bundle while the host proxies its
-`tools/call` under the viewer's own session.
+narrower). That is safe today only because each `/w/<alias>` forwarder is a separate rule
+pointing at exactly one alias (`/w/hello` here), so a planted `impl` resolves to nothing else.
+As soon as a second implementation (or a preview) publishes its own forwarder, `run.impl` must
+be validated against the discovered aliases — or taken from the route rather than the row —
+or a member-planted run row could point another member's viewer at a foreign bundle while the
+host proxies its `tools/call` under the viewer's own session. Tracked in apps#364 (the
+forwarder half of which is resolved by the in-process target above).
 
 ### Scripts (M2 Phase 2)
 
