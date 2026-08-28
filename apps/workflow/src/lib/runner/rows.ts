@@ -103,9 +103,10 @@ export interface WriteContext {
   /** Builds the insert row for `run.started`; the caller owns yaml/definition/lease. */
   runRow?: () => RunRow
   /**
-   * The offloaded outputs map (Task 12: `{"$file"}` payload offload),
+   * The offloaded outputs map (M2 Task 12: `{"$file"}` payload offload),
    * computed by the middleware *before* calling `eventToWrites` whenever any
-   * `step.succeeded`/`run.finished` output exceeded the persistence budget.
+   * `step.succeeded`/`step.skipped`/`run.finished` output exceeded the
+   * persistence budget — all three carry outputs, so all three can offload.
    * Substitutes for the post-event `outputs` on the **persisted row only** —
    * the live Redux state (and this function's own purity) never sees it;
    * this module stays a pure mapper over whatever the caller decided to
@@ -174,10 +175,13 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       return [upsert(runId, event.key, { ...identity(s), status: 'queued', attempt: s.attempt })]
     }
 
-    // A `headless: skip` stands its declared outputs in for the step (Task 12),
-    // and the row is what a resumed run reads them back from — so the column is
-    // written here, off the post-event state like every other. A scheduler skip
-    // has none and writes no column at all.
+    // A `headless: skip` stands its declared outputs in for the step (M3 Task
+    // 12), and the row is what a resumed run reads them back from — so the
+    // column is written here, off the post-event state like every other, and
+    // through `outputsOverride` like `step.succeeded`'s: a skip is an output
+    // carrier too, so an oversized one is offloaded to a `{"$file"}` stub
+    // rather than inlined past the record budget. A scheduler skip has no
+    // outputs and writes no column at all.
     case 'step.skipped': {
       const s = after(state, event.key)
       return [
@@ -185,7 +189,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           ...identity(s),
           status: 'skipped',
           attempt: s.attempt,
-          ...(s.outputs ? { outputs: s.outputs } : {}),
+          ...(s.outputs ? { outputs: ctx.outputsOverride ?? s.outputs } : {}),
           finishedAt: event.at,
         }),
       ]

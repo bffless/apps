@@ -361,10 +361,22 @@ async function writeEvent(
   const runId = runState.runId
   let outputsOverride: Record<string, unknown> | undefined
 
-  if (event.type === 'step.succeeded' || event.type === 'run.finished') {
-    const outputs = event.type === 'step.succeeded' ? runState.steps[event.key]?.outputs : runState.outputs
+  // `step.skipped` is here alongside `step.succeeded` because a `headless: skip`
+  // is the run's *other* output carrier (M3 Task 12): its declared value can be
+  // an expression over an upstream output — `${{ needs.card.outputs.big }}` —
+  // and an oversized one must become a `{"$file"}` stub for exactly the same
+  // reason a succeeded step's does, or the row write exceeds the record budget
+  // and parks the run. A scheduler skip carries no outputs and falls straight
+  // through the `if (outputs)` guard below.
+  if (
+    event.type === 'step.succeeded' ||
+    event.type === 'step.skipped' ||
+    event.type === 'run.finished'
+  ) {
+    const outputs =
+      event.type === 'run.finished' ? runState.outputs : runState.steps[event.key]?.outputs
     if (outputs) {
-      const key = event.type === 'step.succeeded' ? event.key : undefined
+      const key = event.type === 'run.finished' ? undefined : event.key
       const controller = offloadController(runId, key)
       try {
         outputsOverride = await offloadOutputs(outputs, offloadStore(runState, key, controller.signal))
@@ -909,9 +921,22 @@ async function handleNextAction(
       }
       const headless = headlessDecision(scope)
 
+      // Registered *before* the headless skip below, not just for the kinds
+      // that run: a skip carries outputs, and an oversized one is offloaded
+      // inside its own write (`writeEvent`), which watches the step's
+      // controller exactly as `step.succeeded`'s offload does. Without one
+      // registered here `offloadController` would hand that upload an
+      // already-aborted stand-in and the row would be dropped silently. The
+      // terminal-cleanup block clears it again on `step.skipped` like any
+      // other terminal event. (The *scheduler's* skips — `case 'skip'` above —
+      // still need none: they carry no outputs, so nothing is ever offloaded
+      // for them and `offloadController` is never reached.)
+      const controller = new AbortController()
+      controllers.set(controllerKey(runState.runId, a.key), controller)
+
       // A skip replaces `step.queued` rather than following it: `step.skipped`
       // is itself a *creation* event (the reducer's `assertNewStep`), and a
-      // step that never runs takes no controller and no clock either.
+      // step that never runs needs no wait clock.
       if (headless.act === 'skip') {
         dispatch(
           runEvent({
@@ -927,9 +952,6 @@ async function handleNextAction(
         )
         return
       }
-
-      const controller = new AbortController()
-      controllers.set(controllerKey(runState.runId, a.key), controller)
 
       dispatch(
         runEvent({

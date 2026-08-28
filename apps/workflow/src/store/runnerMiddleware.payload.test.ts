@@ -27,8 +27,9 @@ import type { AppStore } from './index'
 import { makeStore } from './index'
 import { runnerControllers } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
+import { newRunId } from '../lib/runner/ids'
 import { startRun } from './runnerActions'
-import { runClosed } from './runSlice'
+import { runClosed, runEvent, runOpened } from './runSlice'
 import { workflowApi } from './workflowApi'
 
 // ---------------------------------------------------------------------------
@@ -406,5 +407,149 @@ describe('payload offload — a stale run.finished still runs the terminal clean
     await pumpUntil(advance, () => listReads > before, { stepMs: 10, maxSteps: 50 })
     expect(listReads).toBeGreaterThan(before)
     listing.unsubscribe()
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// step.skipped — a `headless: skip` is the run's other output carrier
+// ---------------------------------------------------------------------------
+
+/**
+ * hello's `card` → `review` pair in miniature: a pipeline step produces an
+ * oversized `big`, and the form step's `headless: skip` stands
+ * `${{ needs.card.outputs.big }}` in for the cover a person would have picked
+ * (M3 Task 12). A skip's outputs are persisted from the same column the
+ * succeeded path writes, so they must go through the same offload — otherwise
+ * the giant value is inlined into the step row and the oversized record write
+ * parks the run.
+ */
+const SKIP_DEF = toDefinition({
+  name: 'Skip payload offload',
+  jobs: {
+    card: {
+      steps: [
+        {
+          id: 'draw',
+          uses: 'pipeline',
+          with: { path: 'x' },
+          outputs: {
+            big: { type: 'string', value: '${{ response.v }}' },
+            small: { type: 'string', value: '${{ response.s }}' },
+          },
+        },
+      ],
+      outputs: {
+        big: '${{ steps.draw.outputs.big }}',
+        small: '${{ steps.draw.outputs.small }}',
+      },
+    },
+    review: {
+      needs: 'card',
+      steps: [
+        {
+          id: 'confirm',
+          uses: 'form',
+          with: {
+            title: 'Review the card',
+            fields: { big: { type: 'string' }, small: { type: 'string' } },
+            submit: 'Approve',
+          },
+          headless: {
+            mode: 'skip',
+            outputs: {
+              big: '${{ needs.card.outputs.big }}',
+              small: '${{ needs.card.outputs.small }}',
+            },
+          },
+        },
+      ],
+      outputs: {},
+    },
+  },
+  outputs: {},
+}) as Definition
+
+const CONFIRM_KEY = stepKey('review', 0, 'confirm')
+
+/** `startRun` still hardcodes `headless: false` (Task 13 owns that), so the run's first event is dispatched here. */
+function startHeadlessRun(store: AppStore, def: Definition): void {
+  store.dispatch(
+    runOpened({ meta: { def, yaml: 'name: Skip payload offload', workflowName: 'Skip payload offload' } }),
+  )
+  store.dispatch(
+    runEvent({
+      type: 'run.started',
+      runId: newRunId(),
+      impl: 'test',
+      workflow: 'payload',
+      inputs: {},
+      headless: true,
+      at: 1_000,
+    }),
+  )
+}
+
+describe('payload offload — step.skipped (a headless skip)', () => {
+  it('offloads a >256 KB skip output to {$file}, keeps the live state inline, and never parks the run', async () => {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: BIG, s: SMALL } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    startHeadlessRun(store, SKIP_DEF)
+
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+    const runId = store.getState().run.state!.runId
+
+    // The write never failed: an inlined giant value would have blown the
+    // record budget and parked the run with a persistence banner.
+    expect(store.getState().run.paused).toBeUndefined()
+    expect(store.getState().run.state!.steps[CONFIRM_KEY].status).toBe('skipped')
+
+    // Live slice state stays inline — expressions must stay synchronous.
+    const liveStep = store.getState().run.state!.steps[CONFIRM_KEY]
+    expect(liveStep.outputs!.big).toBe(BIG)
+    expect(liveStep.outputs!.small).toBe(SMALL)
+
+    // The persisted row got {$file} for the oversized output only, under the
+    // skipped step's own scope (not the upstream step that produced the value).
+    const skipped = writes.find(
+      (w): w is Extract<Recorded, { op: 'upsert' }> =>
+        w.op === 'upsert' && w.key === CONFIRM_KEY && w.patch.status === 'skipped',
+    )
+    expect(skipped).toBeDefined()
+    const outputs = skipped!.patch.outputs as Record<string, unknown>
+    const path = `workflows/test/payload/runs/${runId}/${CONFIRM_KEY}/big.json`
+    expect(outputs.big).toEqual({ $file: expect.objectContaining({ path }) })
+    expect(outputs.small).toBe(SMALL)
+
+    // And the bytes really landed in the mock files trio.
+    const stored = db.files.get(path)
+    expect(stored).toBeDefined()
+    expect(stored!.contentType).toBe('application/json')
+  })
+
+  it('leaves a small skip inline, offloading nothing', async () => {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: SMALL, s: SMALL } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore, writes } = fakeRunStore()
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    startHeadlessRun(store, SKIP_DEF)
+
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+    const runId = store.getState().run.state!.runId
+
+    expect(store.getState().run.paused).toBeUndefined()
+
+    const skipped = writes.find(
+      (w): w is Extract<Recorded, { op: 'upsert' }> =>
+        w.op === 'upsert' && w.key === CONFIRM_KEY && w.patch.status === 'skipped',
+    )
+    expect(skipped!.patch.outputs).toEqual({ big: SMALL, small: SMALL })
+    expect(db.files.get(`workflows/test/payload/runs/${runId}/${CONFIRM_KEY}/big.json`)).toBeUndefined()
   })
 })
