@@ -131,10 +131,16 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
       const step = getStep(state, event.key)
       assertTransition(step.status, 'waiting', event.key)
       // A form goes queued → waiting with no `step.started`, so this is the
-      // one event that can record what it was shown with (its evaluated `with`).
+      // one event that can record what it was shown with (its evaluated `with`)
+      // — and the one event that can stamp when it began (Task 9). An island
+      // was already `running` while it loaded, so it keeps the `startedAt` it
+      // has: its wait clock counts from the moment the step began, and a
+      // re-emitted `step.waiting` (Resume re-affirming the status) must not
+      // hand it a fresh budget.
       return withStep(state, event.key, {
         ...step,
         status: 'waiting',
+        startedAt: step.startedAt ?? event.at,
         ...(event.inputs === undefined ? {} : { inputs: event.inputs }),
       })
     }

@@ -121,7 +121,16 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
   // earlier attempt, so only the status decides whether it starts again.
   if (row.status === 'queued') return events
 
-  if (row.startedAt != null || row.status === 'running' || row.status === 'polling') {
+  // A form never runs: it goes `queued → waiting` and stays there until a
+  // person answers, so `step.started` is not part of its story — even though
+  // its row *does* carry a `startedAt` (Task 9 stamps one at `step.waiting`, so
+  // a resumed wait clock knows how much of its budget is left). Replaying one
+  // through `running` would put a transition in the stream that never happened
+  // live. Every other kind — an island included, which is `running` while it
+  // loads — keeps the started hop.
+  const runsBeforeWaiting = row.kind !== 'form'
+
+  if (runsBeforeWaiting && (row.startedAt != null || row.status === 'running' || row.status === 'polling')) {
     events.push({ type: 'step.started', key, inputs, at: startedAt })
   } else if (row.status === 'succeeded' || row.status === 'failed') {
     // A form/island step that finished without ever running went through

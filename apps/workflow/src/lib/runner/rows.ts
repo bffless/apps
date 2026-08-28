@@ -203,13 +203,21 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
       return [upsert(runId, event.key, { status: 'polling', response: trimResponse(s.response ?? {}) })]
     }
 
-    case 'step.waiting':
+    // `startedAt` comes off the reduced step, not the event: for a form this
+    // event is what stamped it, for an island it is the one `step.started`
+    // already wrote (rewriting the same value is a no-op). It is the column a
+    // resumed wait clock measures its remaining `timeout-minutes` against, so
+    // the row has to carry it before the step can be adopted by another tab.
+    case 'step.waiting': {
+      const s = after(state, event.key)
       return [
         upsert(runId, event.key, {
           status: 'waiting',
+          startedAt: s.startedAt,
           ...(event.inputs === undefined ? {} : { inputs: event.inputs }),
         }),
       ]
+    }
 
     // The reducer clears the previous attempt's annotations/summary; the row
     // must forget them too, or Resume would hand a fresh attempt the last

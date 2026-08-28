@@ -189,6 +189,28 @@ describe('form step lifecycle', () => {
     })
     expect(state.steps[KEY]).toMatchObject({ status: 'succeeded', outputs: { confirmed: true } })
   })
+
+  // Task 9: the wait clock measures its `timeout-minutes` budget from here, and
+  // a form emits no `step.started` to stamp it.
+  it('step.waiting stamps startedAt when the step never ran (a form)', () => {
+    const state = runReducer(baseline(), {
+      type: 'step.waiting',
+      key: KEY,
+      inputs: { title: 'Approve?' },
+      at: 1_002,
+    })
+    expect(state.steps[KEY].startedAt).toBe(1_002)
+  })
+
+  it('step.waiting keeps the startedAt a running step already has (an island)', () => {
+    let state = runReducer(baseline(), { type: 'step.started', key: KEY, inputs: {}, at: 1_002 })
+    state = runReducer(state, { type: 'step.waiting', key: KEY, at: 1_009 })
+    // An island is `running` while it loads: the wait began when it did, and a
+    // re-emitted `step.waiting` (Resume) must not move it either.
+    expect(state.steps[KEY].startedAt).toBe(1_002)
+    state = runReducer(state, { type: 'step.waiting', key: KEY, at: 1_050 })
+    expect(state.steps[KEY].startedAt).toBe(1_002)
+  })
 })
 
 // ---------------------------------------------------------------------------

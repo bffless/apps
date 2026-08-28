@@ -19,6 +19,7 @@
  */
 import { fetchText } from '../islands/hostDeps'
 import { annotateEvent } from '../lib/runner/adapters/island'
+import { budgetMs } from '../lib/runner/headless'
 import { timeoutError, toStepError } from '../lib/runner/adapters/pipeline'
 import type { Clock } from '../lib/runner/adapters/pipeline'
 import { succeededEvent } from '../lib/runner/adapters/declared'
@@ -93,12 +94,6 @@ function toScriptError(err: unknown): StepError {
 /** Cancellation is not a `ScriptError` — the host rejects with a plain `AbortError`. */
 function isAbort(err: unknown): boolean {
   return (err as { name?: unknown } | null)?.name === 'AbortError'
-}
-
-/** The step's `timeout-minutes` budget in ms, if it declared one (03). */
-function budgetMs(step: Step): number | undefined {
-  const minutes = ((step.raw ?? {}) as Record<string, unknown>)['timeout-minutes']
-  return typeof minutes === 'number' ? minutes * 60_000 : undefined
 }
 
 /**

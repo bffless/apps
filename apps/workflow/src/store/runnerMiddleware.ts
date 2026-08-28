@@ -38,6 +38,7 @@ import { disposeAllIslandHandles, disposeIslandHandle, launchIslandStep } from '
 import type { IslandLaunchDeps } from './islandLaunch'
 import { launchScriptStep } from './scriptLaunch'
 import type { ScriptLaunchDeps } from './scriptLaunch'
+import { armWaitClock, disarmAllWaitClocks, disarmWaitClock } from './waitClock'
 import { getOwnerId } from './runnerActions'
 import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
@@ -446,6 +447,9 @@ function resetRunnerState(): void {
   // that produced them: the moment a different run becomes the one this tab
   // drives, nothing from the old one may stay on the page.
   clearAllScriptLogs()
+  // The wait clocks of the run being abandoned (Task 9): a fired timer would
+  // otherwise fail a step of a run this tab no longer drives.
+  disarmAllWaitClocks()
   writeQueues.clear()
   finishing.clear()
   currentRunId = null
@@ -463,6 +467,10 @@ function loseLease(dispatch: (action: unknown) => unknown): void {
   dispatch(runModeChanged('readonly'))
   runnerControllers.abortAll()
   void disposeAllIslandHandles('unmounted')
+  // Same reason the bridges close: a `timeout-minutes` clock still armed here
+  // would write a terminal row for a run another tab now owns — the run's own
+  // status is still `running`, so `scopedDispatch` would let it through.
+  disarmAllWaitClocks()
 }
 
 const NON_TERMINAL_STEP = new Set(['queued', 'running', 'polling', 'waiting'])
@@ -913,6 +921,52 @@ async function handleNextAction(
 }
 
 /**
+ * Put a `timeout-minutes` clock on a step that has just reached `waiting`
+ * (Task 9, Decision 10) — the one arming point for both the kinds that wait.
+ *
+ * Both paths lead here: the `runEvent` listener on every `step.waiting` (a
+ * form's, dispatched inline by `handleNextAction`; an island's, dispatched by
+ * its handle's `mount`), and the `runReplaced` listener for a row that replayed
+ * straight back to `waiting`. Same call, same budget arithmetic — a resumed
+ * step differs only in the `startedAt` the record hands back, which is exactly
+ * the difference that should matter.
+ *
+ * Reads the *freshest* slice rather than a captured state: only a tab that is
+ * live, unpaused and still holding this step may arm a timer that will
+ * eventually write a terminal row.
+ */
+function armWaitingStep(
+  key: StepKey,
+  slice: RunSliceState,
+  deps: RunnerDeps,
+  dispatch: (action: unknown) => unknown,
+  getRunState: () => RunState | undefined,
+): void {
+  const state = slice.state
+  const def = slice.meta?.def
+  if (!state || !def || slice.mode !== 'live' || slice.paused !== undefined) return
+
+  const step = state.steps[key]
+  if (!step || step.status !== 'waiting') return
+  // The only two kinds that wait on somebody; nothing else emits `step.waiting`.
+  if (step.kind !== 'form' && step.kind !== 'island') return
+
+  const decl = stepOf(def, step.job, step.stepId)
+  if (!decl) return
+
+  armWaitClock({
+    step: decl,
+    key,
+    state,
+    clock: deps.clock,
+    headless: state.headless,
+    scoped: scopedDispatch(state.runId, dispatch, getRunState),
+    now: deps.clock.now(),
+    getRunState,
+  })
+}
+
+/**
  * What a `run.finished` leaves behind once it has been written — or dropped
  * as stale (apps#375): the heartbeat, the run's write queue and its
  * `finishing` guard are done with, and the caches that show this run are
@@ -924,6 +978,7 @@ async function handleNextAction(
  */
 function finishRunCleanup(runId: string, dispatch: (action: unknown) => unknown): void {
   stopHeartbeat(runId)
+  disarmAllWaitClocks()
   writeQueues.delete(runId)
   finishing.delete(runId)
   dispatch(workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: runId }]))
@@ -997,6 +1052,8 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // Bookkeeping cleanup — harmless even on a natural (non-abort) terminal.
       if (isTerminalStepEvent(event)) {
         runnerControllers.abort(event.key)
+        // A step that reached a terminal state is no longer waiting on anyone.
+        disarmWaitClock(runState.runId, event.key)
         // An island step's bridge closes on every terminal path — a submit that
         // succeeded, an ISLAND_LOAD failure, a skip, or `cancelRun`'s
         // `step.cancelled` (which is also what gives cancel its own teardown
@@ -1011,8 +1068,16 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       if (event.type === 'run.finished') finishRunCleanup(runState.runId, listenerApi.dispatch)
 
       const after = (listenerApi.getState() as HasRunSlice).run
+      const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
+
+      // A step that just parked on a person (or on an island answering for
+      // one) gets its `timeout-minutes` clock — after the write, so a run
+      // parked by a persistence failure never starts one.
+      if (event.type === 'step.waiting') {
+        armWaitingStep(event.key, after, deps, listenerApi.dispatch, getRunState)
+      }
+
       if (after.mode === 'live' && !after.paused && after.meta && after.state?.status === 'running') {
-        const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
         for (const a of nextActions(after.meta.def, after.state)) {
           await handleNextAction(a, after.meta.def, after.state, deps, listenerApi.dispatch, getRunState)
         }
@@ -1248,6 +1313,22 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             scoped,
             getRunState,
           })
+        }
+
+        // The wait clocks, last (Task 9): a row that replayed to `waiting` gets
+        // what is *left* of its `timeout-minutes`, measured from the
+        // `startedAt` the record kept. After the island loop on purpose — a
+        // budget already spent fails the step immediately, and a handle
+        // registered after that terminal event would never be disposed.
+        for (const step of Object.values(state.steps)) {
+          if (step.status !== 'waiting') continue
+          armWaitingStep(
+            step.key,
+            (listenerApi.getState() as HasRunSlice).run,
+            deps,
+            listenerApi.dispatch,
+            getRunState,
+          )
         }
       }
 

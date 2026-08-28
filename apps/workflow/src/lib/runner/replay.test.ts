@@ -440,6 +440,25 @@ const formDef: Definition = toDefinition({
 
 const REVIEW = stepKey('confirm', 0, 'review')
 
+/** The other waiting kind — an island, which *does* run (it loads) before it waits. */
+const islandDef: Definition = toDefinition({
+  name: 'IslandReplay',
+  jobs: {
+    pick: {
+      steps: [
+        {
+          id: 'choose',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+    },
+  },
+})
+
+const CHOOSE = stepKey('pick', 0, 'choose')
+
 function reviewStep() {
   const found = formDef.jobs.confirm?.steps[0]
   if (!found) throw new Error('no confirm/review step')
@@ -469,8 +488,9 @@ function openForm(store: Store): RunState {
     },
     formDef,
   )
-  // No `step.started`: a form goes straight from queued to waiting for a human,
-  // so its row never gets a `startedAt`.
+  // No `step.started`: a form goes straight from queued to waiting for a human.
+  // `step.waiting` is what stamps its `startedAt` (Task 9) — the moment the
+  // wait began, and what a `timeout-minutes` budget is measured from.
   return dispatch(store, state, { type: 'step.waiting', key: REVIEW, at: now() }, formDef)
 }
 
@@ -490,13 +510,20 @@ function submitForm(store: Store, state: RunState, values: Record<string, unknow
 }
 
 describe('replayRun — a form step', () => {
-  it('leaves a finished form row with no startedAt (the shape replay must handle)', () => {
+  it('writes the startedAt stamped at step.waiting onto the row (Task 9)', () => {
     const store = newStore()
-    submitForm(store, openForm(store), { approved: true, report: 'looks good' })
+    const state = openForm(store)
 
-    const row = store.steps[`${RUN_ID}::${REVIEW}`]
-    expect(row.status).toBe('succeeded')
-    expect(row.startedAt ?? null).toBeNull()
+    const waitingRow = store.steps[`${RUN_ID}::${REVIEW}`]
+    expect(waitingRow.status).toBe('waiting')
+    expect(waitingRow.startedAt).toBe(state.steps[REVIEW].startedAt)
+    expect(waitingRow.startedAt).toBeGreaterThan(0)
+
+    // And it survives the submit: the terminal write patches other columns.
+    submitForm(store, state, { approved: true, report: 'looks good' })
+    const finishedRow = store.steps[`${RUN_ID}::${REVIEW}`]
+    expect(finishedRow.status).toBe('succeeded')
+    expect(finishedRow.startedAt).toBe(waitingRow.startedAt)
   })
 
   it('replays queued → waiting → succeeded, never queued → succeeded', () => {
@@ -535,20 +562,63 @@ describe('replayRun — a form step', () => {
     expect(nextActions(formDef, replayed)).toEqual([])
   })
 
-  it('replays an in-flight form row (waiting, no startedAt) back to waiting', () => {
+  it('replays an in-flight form row back to waiting, keeping the startedAt the clock resumes from', () => {
     const store = newStore()
-    openForm(store)
+    const state = openForm(store)
 
     const row = store.steps[`${RUN_ID}::${REVIEW}`]
     expect(row.status).toBe('waiting')
-    expect(row.startedAt ?? null).toBeNull()
+
+    const events = rowsToEvents(store.runs[RUN_ID], storedSteps(store), formDef)
+      .filter((e) => 'key' in e && e.key === REVIEW)
+      .map((e) => e.type)
+    // No `step.started`: a form that is waiting never ran, whatever its row's
+    // `startedAt` says (Task 9) — replaying one would put a transition in the
+    // stream that never happened live.
+    expect(events).toEqual(['step.queued', 'step.waiting'])
 
     const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), formDef)
     expect(replayed.steps[REVIEW].status).toBe('waiting')
-    expect(replayed.steps[REVIEW].startedAt).toBeUndefined()
+    // The resumed wait clock measures its remaining budget from this.
+    expect(replayed.steps[REVIEW].startedAt).toBe(state.steps[REVIEW].startedAt)
     expect(replayed.status).toBe('running')
     // The form is still open: the scheduler must not re-propose the step.
     expect(nextActions(formDef, replayed)).toEqual([])
+  })
+
+  it('still replays a legacy form row that has no startedAt at all', () => {
+    const store = newStore()
+    submitForm(store, openForm(store), { approved: true, report: 'looks good' })
+    // A row written before Task 9 stamped one — the shape the mock fixtures
+    // (and every run recorded in M2) still have.
+    const legacy = storedSteps(store).map((row) =>
+      row.key === REVIEW ? { ...row, startedAt: null } : row,
+    )
+
+    const types = rowsToEvents(store.runs[RUN_ID], legacy, formDef)
+      .filter((e) => 'key' in e && e.key === REVIEW)
+      .map((e) => e.type)
+    expect(types).toEqual(['step.queued', 'step.waiting', 'step.succeeded'])
+    expect(replayRun(store.runs[RUN_ID], legacy, formDef).steps[REVIEW].status).toBe('succeeded')
+  })
+
+  it('keeps an island through step.started — it is running while it loads', () => {
+    const store = newStore()
+    let state = startRun(store, islandDef)
+    state = dispatch(store, state, { type: 'job.expanded', job: 'pick', total: 1, items: [{}] }, islandDef)
+    state = dispatch(
+      store,
+      state,
+      { type: 'step.queued', key: CHOOSE, job: 'pick', index: 0, stepId: 'choose', kind: 'island', at: now() },
+      islandDef,
+    )
+    state = dispatch(store, state, { type: 'step.started', key: CHOOSE, inputs: { mode: 'quick' }, at: now() }, islandDef)
+    dispatch(store, state, { type: 'step.waiting', key: CHOOSE, at: now() }, islandDef)
+
+    const types = rowsToEvents(store.runs[RUN_ID], storedSteps(store), islandDef)
+      .filter((e) => 'key' in e && e.key === CHOOSE)
+      .map((e) => e.type)
+    expect(types).toEqual(['step.queued', 'step.started', 'step.waiting'])
   })
 })
 
