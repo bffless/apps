@@ -26,7 +26,11 @@ function step(key: string, status: StepStatus, outputs?: Record<string, unknown>
   }
 }
 
-function runState(a: Partial<RunState> & { steps?: StepState[] } = {}): RunState {
+// `steps` is `Record<string, StepState>` on RunState and a list here, so the
+// list has to *replace* that member rather than intersect with it — an
+// intersection makes the parameter unsatisfiable and only `tsc -b` says so
+// (vitest transpiles without typechecking).
+function runState(a: Omit<Partial<RunState>, 'steps'> & { steps?: StepState[] } = {}): RunState {
   const steps: Record<string, StepState> = {}
   for (const s of a.steps ?? []) steps[s.key] = s
   return {
