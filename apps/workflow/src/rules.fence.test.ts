@@ -15,7 +15,11 @@ function ruleFiles(dir: string): string[] {
   })
 }
 
-/** Path fragments each set's rule files must include, one per required route. */
+/**
+ * Path fragments each set's rule files must include, one per required route.
+ * `hello` moved to its own repo (`bffless/workflow-hello`, M3 Task 7) — that
+ * repo's own tests hold its rule set to its own surface now, not this one.
+ */
 const SURFACE: Record<string, string[]> = {
   workflow: [
     '/runs/post/', '/runs/get/', '/run/get/', '/run/update/post/', '/run-step/post/',
@@ -23,19 +27,14 @@ const SURFACE: Record<string, string[]> = {
     '/files/prepare/post/', '/files/register/post/', '/uploads/workflows/[...path]/',
     '/api/auth/',
   ],
-  hello: [
-    '/hello/echo/post/', '/hello/slow/post/', '/hello/job/get/', '/hello/fail/post/',
-    '/hello/analyze/post/', '/w/hello/[...path]/',
-  ],
 }
 
 /** Schemas each set ships, checked by name (`schemas/<name>.schema.yaml`). */
 const SCHEMAS: Record<string, string[]> = {
   workflow: ['workflow_runs', 'workflow_run_steps', 'workflow_files'],
-  hello: ['hello_jobs'],
 }
 
-describe.each(['workflow', 'hello'])('%s rule set fence', (name) => {
+describe.each(['workflow'])('%s rule set fence', (name) => {
   const SET = join(ROOT, name)
   const files = ruleFiles(join(SET, 'rules'))
 

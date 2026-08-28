@@ -9,10 +9,17 @@ import { runCli } from '../src/cli.js'
 const fixture = (n: string) => fileURLToPath(new URL(`./fixtures/broken/${n}.workflow.yaml`, import.meta.url))
 const example = (n: string) =>
   fileURLToPath(new URL(`../../../apps/workflow/docs/spec/examples/${n}`, import.meta.url))
-/** workflow-hello's real rule set — what `pnpm stage` lints the examples against. */
-const helloRules = fileURLToPath(
-  new URL('../../../apps/workflow/.bffless/proxy-rules/hello', import.meta.url),
-)
+/**
+ * A self-contained fixture (R35: this package must not depend on another
+ * workspace's app) vendored from the pre-extraction
+ * `apps/workflow/.bffless/proxy-rules/hello` tree (git a74e339, before M3 Task 7
+ * moved hello to bffless/workflow-hello) — the `api/hello/*` layout these tests
+ * were written against, alongside a minimal `workflow` set so the "search finds
+ * several" / `--alias` semantics have a real second set to disambiguate from.
+ */
+const helloRules = fileURLToPath(new URL('./fixtures/hello-workspace/.bffless/proxy-rules/hello', import.meta.url))
+/** Lives inside the fixture so the CLI's upward search for `.bffless/proxy-rules` finds the fixture's own two sets (hello, workflow), not the real app's (now down to one). */
+const helloWorkspaceExample = fileURLToPath(new URL('./fixtures/hello-workspace/hello.workflow.yaml', import.meta.url))
 
 function run(argv: string[]) {
   const out: string[] = []
@@ -42,13 +49,15 @@ test('a path with no rule behind it is an error naming the file to add', () => {
 })
 
 test('--alias picks the set when the search finds several', () => {
-  const r = run(['lint', '--alias', 'hello', example('hello.workflow.yaml')])
+  const r = run(['lint', '--alias', 'hello', helloWorkspaceExample])
   expect(r.code).toBe(0)
   expect(r.out).not.toMatch(/no rule serves|skipping the rule check/)
 })
 
 test('no rule set in sight: a notice, never a failure', () => {
-  const r = run(['lint', example('studio.workflow.yaml')])
+  // The fixture's own search root: two real sets, no --alias to pick one —
+  // ambiguous, same as genuinely finding none (checkRules degrades either way).
+  const r = run(['lint', helloWorkspaceExample])
   expect(r.code).toBe(0)
   expect(r.out).toMatch(/notice\s+rule-missing\s+no rule set found/)
 })
@@ -77,7 +86,13 @@ test('--quiet hides notices but keeps the summary', () => {
 })
 
 test('--json emits the stable shape', () => {
-  const r = run(['lint', '--json', fixture('skip-missing-output'), example('studio.workflow.yaml')])
+  // studio has no rule set of its own yet (M3, later phase); --alias a name
+  // nothing in this repo's own .bffless/proxy-rules matches, so the
+  // rule-missing check degrades to a notice instead of resolving to this
+  // repo's own `workflow` set by search-ambiguity accident (post M3 Task 7
+  // there is exactly one set here, so an unscoped search is no longer
+  // ambiguous — it would silently "find" the wrong one).
+  const r = run(['lint', '--json', '--alias', 'workflow-studio', fixture('skip-missing-output'), example('studio.workflow.yaml')])
   expect(r.code).toBe(1)
   const data = JSON.parse(r.out)
   expect(data.version).toBe(1)
@@ -106,9 +121,12 @@ beforeAll(() => {
 
 test('built dist/cli.js runs and exits 0 on the studio example', () => {
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
-  const out = execFileSync(process.execPath, [cli, 'lint', '--quiet', example('studio.workflow.yaml')], {
-    encoding: 'utf8',
-  })
+  // See the --json test above for why --alias workflow-studio is here.
+  const out = execFileSync(
+    process.execPath,
+    [cli, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
+    { encoding: 'utf8' },
+  )
   expect(out).toMatch(/0 error\(s\), 0 warning\(s\)/)
 })
 
@@ -124,14 +142,21 @@ test('runs when invoked through a bin symlink, same as invoked directly', () => 
   const link = join(dir, 'workflow')
   symlinkSync(cli, link)
 
-  const viaSymlink = execFileSync(process.execPath, [link, 'lint', '--quiet', example('studio.workflow.yaml')], {
-    encoding: 'utf8',
-  })
+  // --alias workflow-studio: see the --json test above for why (studio has
+  // no rule set of its own yet, and an unscoped search now resolves to this
+  // repo's own sole `workflow` set instead of finding none).
+  const viaSymlink = execFileSync(
+    process.execPath,
+    [link, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
+    { encoding: 'utf8' },
+  )
   expect(viaSymlink).toMatch(/0 error\(s\), 0 warning\(s\)/)
 
-  const viaRealPath = execFileSync(process.execPath, [cli, 'lint', '--quiet', example('studio.workflow.yaml')], {
-    encoding: 'utf8',
-  })
+  const viaRealPath = execFileSync(
+    process.execPath,
+    [cli, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
+    { encoding: 'utf8' },
+  )
   expect(viaRealPath).toMatch(/0 error\(s\), 0 warning\(s\)/)
 })
 

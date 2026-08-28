@@ -68,15 +68,16 @@ const ISLAND_HTML: Record<string, string> = Object.fromEntries(
 )
 
 /**
- * The scripts, read straight out of `hello/scripts/` — the **source**, not
- * `hello-dist/`: the stager copies a script verbatim (a Worker fetches it as a
- * module, so there is no build step to mirror), which makes the source file
- * the staged bytes. Unlike the islands above, this glob is therefore populated
- * whether or not `stage` has run.
+ * The scripts, read straight out of `hello-src/scripts/` — the **source**
+ * `stage-hello.mjs` clones from `bffless/workflow-hello` and copies verbatim
+ * into the bundle (a Worker fetches it as a module, so there is no build step
+ * to mirror). Populated once `pnpm --filter workflow stage` has cloned the
+ * implementation — like the island glob above, empty (and this route 404s)
+ * before that.
  */
 const SCRIPT_SOURCE: Record<string, string> = Object.fromEntries(
   Object.entries(
-    import.meta.glob('../../hello/scripts/*.js', {
+    import.meta.glob('../../hello-src/scripts/*.js', {
       query: '?raw',
       import: 'default',
       eager: true,

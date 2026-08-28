@@ -45,11 +45,18 @@ jobs:
       - name: Test
         run: pnpm --filter @bffless/workflow-lint test:run
 
-      # hello ships a real rule set, so it is linted against it (`rule-missing`
-      # holds every relative `with.path` to the rule that serves it); `--alias`
-      # only picks `hello` out of the two sets under apps/workflow/.bffless.
-      # studio is spec-only — no rule set, so that check is skipped with a notice.
+      # Neither example is checked against a real rule set here anymore.
+      # hello's now lives in bffless/workflow-hello (M3 Task 7) — that repo's
+      # own CI lints hello.workflow.yaml/interactive.workflow.yaml against it
+      # (this repo only mirrors the two YAMLs for drift-checking, see
+      # apps/workflow/src/hello-drift.test.ts); studio's rule set doesn't exist
+      # yet. `--alias` a name nothing under this repo's own
+      # apps/workflow/.bffless/proxy-rules matches, so `rule-missing` degrades
+      # to a notice instead of silently resolving to this repo's own
+      # `workflow` set — with hello's set gone there is exactly one set left
+      # here, so an unscoped search is no longer ambiguous and would otherwise
+      # "find" the wrong one.
       - name: Lint the spec examples with the built CLI
         run: |
           node packages/workflow-lint/dist/cli.js lint --alias hello apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/interactive.workflow.yaml
-          node packages/workflow-lint/dist/cli.js lint apps/workflow/docs/spec/examples/studio.workflow.yaml
+          node packages/workflow-lint/dist/cli.js lint --alias workflow-studio apps/workflow/docs/spec/examples/studio.workflow.yaml

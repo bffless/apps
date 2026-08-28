@@ -1,4 +1,0 @@
-targetUrl: https://hello.j5s.dev
-order: 5
-forwardCookies: true
-description: 'Single-origin forwarding (ADR-0001): /w/hello/[...path] on the harness host → the hello alias. targetUrl is per-install until CE grows targetUrl: alias://hello. forwardCookies carries the member session across — without it the private hello alias answers 404 for every probe.'

@@ -6,7 +6,7 @@ generates one from the other.
 | You write | Where | What it is |
 |---|---|---|
 | **Workflow YAML** | `.bffless/workflows/<name>.yaml` | *What* runs: inputs, jobs, steps. Spec 01. |
-| **Rule set** | `.bffless/proxy-rules/<alias>/rules/api/<alias>/<path>/<method>/rule.yaml` | *How* each pipeline step works: a BFFless pipeline (handlers, `.fn.js`). Rules-as-code. |
+| **Rule set** | `.bffless/proxy-rules/<alias>/rules/<path>/<method>/rule.yaml` | *How* each pipeline step works: a BFFless pipeline (handlers, `.fn.js`). Authored **prefix-free** — `bffless/publish-workflow@v1` prepends `/api/<alias>/` at publish time. Rules-as-code. |
 
 Mental model: the **rule set is the backend** (every pipeline step is an HTTP endpoint, a
 BFFless pipeline you author as code) and the **workflow YAML is the frontend's script** — it
@@ -23,12 +23,14 @@ The link is the step's `path`:
 ```
 
 At run time the harness calls `POST /api/<alias>/echo` (`path` is relative to the
-implementation's alias; spec 01 *Paths*). So a rule must exist at
-`rules/api/<alias>/echo/post/rule.yaml`. Rules-as-code derives the route from the directory:
-`api/hello/echo/post` → `POST /api/hello/echo`. A typo on either side is a 404 at run time —
-there is no build step that checks the two agree ([issue](#what-the-tooling-does-not-do-yet)).
+implementation's alias; spec 01 *Paths*). So a rule must exist at `rules/echo/post/rule.yaml`
+— authored **prefix-free**; `bffless/publish-workflow@v1` rewrites it to `/api/<alias>/echo`
+at publish time (`--path-prefix`, step 4). A typo on either side is a 404 at run time — there
+is no build step that checks the two agree ([issue](#what-the-tooling-does-not-do-yet)).
 
-`hello` (`apps/workflow`, alias `hello`) is the reference implementation: copy it.
+[`bffless/workflow-hello`](https://github.com/bffless/workflow-hello) (alias `hello`) is the
+reference implementation: a separate repo, not part of this monorepo — copy it, or read it
+alongside this doc for the layout every step below refers to.
 
 ## 1. Pick an alias
 
@@ -45,15 +47,18 @@ Lint it: `pnpm --filter @bffless/workflow-lint build && node packages/workflow-l
 
 ## 3. Write one rule per pipeline step
 
-For each distinct `path` (+ method) a step uses, one directory:
+For each distinct `path` (+ method) a step uses, one directory — no alias prefix in the
+path, that is added at publish time (step 4):
 
 ```
 .bffless/proxy-rules/<alias>/
-  ruleset.yaml                              # name: <alias>
-  rules/api/<alias>/echo/post/rule.yaml     # targetUrl: pipeline + the handler chain
-  rules/api/<alias>/echo/post/echo.fn.js    # a function_handler, referenced as ./echo.fn.js
-  rules/w/<alias>/[...path]/get.rule.yaml   # the forwarding rule (step 5)
+  ruleset.yaml                    # name: <alias>
+  rules/echo/post/rule.yaml       # targetUrl: pipeline + the handler chain
+  rules/echo/post/echo.fn.js      # a function_handler, referenced as ./echo.fn.js
 ```
+
+The forwarding rule that makes the bundle reachable at `/w/<alias>/…` on the harness host is
+**generated**, not authored here — `bffless/publish-workflow@v1` writes it (step 4).
 
 The smallest possible rule (`hello`'s `echo`):
 
@@ -75,7 +80,7 @@ pipeline:
 Contract for a pipeline step's rule (spec 03): JSON in, JSON out; a non-2xx with
 `{ code, error }` becomes the step's error; bodies carry storage **paths**, never file bytes;
 a pipeline that writes files takes the prefix from its body (`outPrefix: "${{ step.prefix }}"`).
-A `poll:` block uses a second rule, `GET` by default (`rules/api/<alias>/job/get/`).
+A `poll:` block uses a second rule, `GET` by default (`rules/job/get/`).
 
 ## 4. Build the bundle
 
@@ -89,44 +94,58 @@ dist/
   scripts/*.js                # copied verbatim — the Worker imports the module text as written
 ```
 
-`index.json` is **generated, never hand-written** — `hello` does it in
-`scripts/stage-hello.mjs` (lints every YAML first; a failing lint fails the build). The harness
+`index.json` is **generated, never hand-written** — `workflow-hello`'s `scripts/build.mjs`
+does it (`workflow index`, lints every YAML first; a failing lint fails the build). The harness
 finds an implementation by fetching `/w/<alias>/.bffless/workflows/index.json` — a deploy *is*
 the publish; there is no registration step.
 
-## 5. Deploy: bundle + rules, attached to both aliases
+## 5. Deploy: use `bffless/publish-workflow@v1`
 
-Two actions, in this order (see `.github/workflows/deploy-workflow.yml`):
+One action does everything steps 3–4 used to take multiple hand-wired steps for: lints the
+rule set against the YAMLs, pushes it with the path prefix rewritten per alias, generates and
+uploads `index.json`, deploys the bundle, generates the `/w/<alias>/…` forwarder, and attaches
+the rule set to **both** `<alias>` and the harness alias (`workflow` by default). See
+`docs/spec/06-discovery-publishing-files.md` for the full contract; `deploy.yml` in
+[`bffless/workflow-hello`](https://github.com/bffless/workflow-hello) is the reference:
 
-1. `bffless/deploy-proxy-rules@v1` with `path: .bffless/proxy-rules/<alias>` and
-   `prune: true` — syncs the rule set named `<alias>`.
-2. `bffless/upload-artifact@v1` with `path: dist`, `alias: <alias>`,
-   `proxy-rule-set-names: <alias>` — deploys the bundle and attaches the set.
+```yaml
+- uses: bffless/publish-workflow@v1
+  with:
+    alias: hello
+    name: Hello
+    description: '…'
+    repository: bffless/workflow
+    api-url: ${{ vars.BFFLESS_URL }}
+    api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
+    target-url: https://hello.j5s.dev
+```
 
-The set must also be attached to the **harness** alias (`workflow`), because the browser only
-ever talks to the harness host (single origin, ADR-0001): add `<alias>` to the harness deploy's
-`proxy-rule-set-names`. The `rules/w/<alias>/[...path]/get.rule.yaml` forwarder
-(`targetUrl: https://<alias>.<domain>`, `forwardCookies: true`) is what makes the bundle
-reachable on the harness host as `/w/<alias>/…`.
+PR previews pass `rules:` explicitly (the rule-set directory is named for the implementation,
+not the per-PR alias) and tear themselves down on close with `mode: teardown`:
 
-Manual, once per install: the `<alias>.<domain>` domain → alias `<alias>` (no SPA fallback), and
-the bucket's CORS allow-list must include the harness origin (browser presigned PUTs). Islands
-and scripts need the `Cache-Control: no-transform` response-header rules (`bffless/README.md`).
+```yaml
+- uses: bffless/publish-workflow@v1   # on push / dispatch
+  with: { alias: hello-pr-12, rules: .bffless/proxy-rules/hello, target-url: https://hello-pr-12.j5s.dev, … }
+
+- uses: bffless/publish-workflow@v1   # on PR close
+  with: { mode: teardown, alias: hello-pr-12, repository: bffless/workflow, api-url: …, api-key: … }
+```
+
+Manual, once per install: the `<alias>.<domain>` domain → alias `<alias>`, path **`/dist`**
+(`bffless/upload-artifact` keeps the uploaded directory name as the bundle's root — see
+`bffless/README.md`), no SPA fallback; the bucket's CORS allow-list must include the harness
+origin (browser presigned PUTs); islands and scripts need the `Cache-Control: no-transform`
+response-header rules (`bffless/README.md`).
 
 ## Checklist
 
-- [ ] every relative `with.path` has a `rules/api/<alias>/<path>/<method>/rule.yaml`
+- [ ] every relative `with.path` has a `rules/<path>/<method>/rule.yaml` (prefix-free)
 - [ ] every `poll.path` has a `…/<poll.method or get>/` rule
 - [ ] every `src:` (island, script, `render: island`) is a file in `dist/`
 - [ ] `index.json` is generated by the build, and the lint passes
-- [ ] the rule set is attached to `<alias>` **and** `workflow`
-- [ ] the forwarding rule's `targetUrl` is the deployed alias URL
+- [ ] `publish-workflow`'s `target-url` and `repository` inputs are right for this install
 
 ## What the tooling does not do yet
 
 - **No cross-check between YAML and rules.** The linter validates the YAML alone; a `path` with
   no matching rule directory is a run-time 404. Tracked as a lint rule: bffless/apps#388.
-- **The prefix is typed by hand.** `hello` bakes `api/hello/…` into its rule directories. Spec
-  06's `publish-workflow` (M3) will let you author `rules/api/echo/post/…` with no prefix and
-  rewrite it per alias at deploy (`--path-prefix`), generate `index.json` and the forwarder,
-  and attach the set to both aliases — one action instead of steps 4–5 above.

@@ -1,0 +1,2 @@
+name: workflow
+description: "Minimal fixture set — just enough for cli.test.ts to prove `--alias` disambiguates when the search finds several sets (paired with the sibling `hello` set)."

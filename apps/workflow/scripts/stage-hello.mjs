@@ -1,167 +1,74 @@
 #!/usr/bin/env node
-// Stage the workflow-hello bundle (06): the workflow YAMLs, the single-file
-// islands, any scripts, and the generated index.json that lists all three.
-//
-// This is what a real implementation's CI runs, and it is deliberately strict:
-// a workflow that fails lint is never published (06), because the harness would
-// then discover a workflow it cannot run.
-import { mkdirSync, copyFileSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs'
+// Stage the `hello` implementation: clone `bffless/workflow-hello` at the
+// commit pinned by `hello.ref`, build it (its own `pnpm build`), and land the
+// result — `.bffless/workflows/{*.yaml,index.json}`, `islands/*.html`,
+// `scripts/*.js`, `index.html` — in `hello-dist/`. `hello` moved to its own
+// repo (M3 Task 7, Decision 5 "one source"): this monorepo no longer owns the
+// implementation's sources, only the pin.
+import { execFileSync } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync, rmSync, cpSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execSync, execFileSync } from 'node:child_process'
-import { lintSource, loadDefinition, scanRuleSet } from '@bffless/workflow-lint'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const examples = join(appDir, 'docs/spec/examples')
+const ref = readFileSync(join(appDir, 'hello.ref'), 'utf8').trim()
+const src = join(appDir, 'hello-src')
 
-/**
- * The app's own binaries, not `npx`: `npx` will happily reach the network for a
- * package this workspace already pins, and a stage that silently installs a
- * different `vite` is not a reproducible publish.
- */
-const bin = (name) => join(appDir, 'node_modules', '.bin', name)
 const outIdx = process.argv.indexOf('--out')
+if (outIdx > -1 && process.argv[outIdx + 1] === undefined) {
+  console.error('stage-hello: --out needs a value')
+  process.exit(1)
+}
 const out = outIdx > -1 ? process.argv[outIdx + 1] : join(appDir, 'hello-dist')
 
-/** The workflows this implementation publishes, in listing order (Decision 3). */
-const WORKFLOWS = ['hello.workflow.yaml', 'interactive.workflow.yaml']
-
-/**
- * The islands, in listing order. Each is a directory under `hello/islands/`
- * holding `index.html` + `main.ts`; the build turns each into one
- * self-contained `islands/<name>.html` (04).
- */
-const ISLANDS = ['pick-line', 'line-viewer']
-
-// ---------------------------------------------------------------------------
-// Workflows — lint, then copy
-// ---------------------------------------------------------------------------
-
-/**
- * hello's own rule set, so the lint can check every relative `with.path`
- * against the rule that serves it (06). The YAMLs live in `docs/spec/examples/`
- * rather than beside the set, so the linter's search cannot find it — the
- * stage, which knows the implementation it is publishing, passes it in.
- */
-const rules = scanRuleSet(join(appDir, '.bffless/proxy-rules/hello'))
-
-const workflows = WORKFLOWS.map((file) => {
-  const source = join(examples, file)
-  const yaml = readFileSync(source, 'utf8')
-
-  const { findings } = lintSource(yaml, { file, rules })
-  if (findings.some((f) => f.severity === 'error' || f.severity === 'warning')) {
-    console.error(`${file} fails lint — a failing lint fails the publish (06):`, findings)
-    process.exit(1)
-  }
-
-  const { def } = loadDefinition(yaml)
-  return {
-    source,
-    file,
-    name: def.name,
-    description: def.raw.description ?? '',
-    inputs: Object.keys(def.inputs).length,
-    jobs: Object.keys(def.jobs).length,
-    // 07: a workflow is headless-safe when no interactive step would fail fast.
-    headlessSafe: !findings.some((f) => f.rule === 'interactive-headless'),
-  }
-})
-
-// Every directory this script owns is cleared before it is written, so a
-// renamed or deleted YAML / script / island never lingers in a re-used local
-// `hello-dist` (CI is always fresh). Only these three — never `<out>` itself,
-// which `--out` lets the caller point anywhere.
-const workflowDir = join(out, '.bffless', 'workflows')
-const islandDir = join(out, 'islands')
-const scriptOut = join(out, 'scripts')
-for (const dir of [workflowDir, islandDir, scriptOut]) rmSync(dir, { recursive: true, force: true })
-
-mkdirSync(workflowDir, { recursive: true })
-for (const workflow of workflows) copyFileSync(workflow.source, join(workflowDir, workflow.file))
-
-// ---------------------------------------------------------------------------
-// Islands — one single-file Vite build each (see hello/vite.islands.config.ts)
-// ---------------------------------------------------------------------------
-
-mkdirSync(islandDir, { recursive: true })
-
-// The islands are type-checked *here*, by the thing that publishes them, and
-// deliberately **not** by the harness's `tsc -b`: `pnpm --filter workflow build`
-// and `test:run` must never fail because a bundle file has a type error, so
-// `tsconfig.islands.json` is not referenced from `tsconfig.json` and the suite
-// that runs this script is its own `test:stage`. An island type error still
-// fails a CI job at the `stage` step — before anything is uploaded — which is
-// the right place: a bundle that does not build is not published (06).
-execFileSync(bin('tsc'), ['-p', 'tsconfig.islands.json'], { cwd: appDir, stdio: 'inherit' })
-
-for (const island of ISLANDS) {
-  execFileSync(bin('vite'), ['build', '-c', 'hello/vite.islands.config.ts'], {
-    cwd: appDir,
-    stdio: 'inherit',
-    env: { ...process.env, WORKFLOW_ISLAND: island, WORKFLOW_ISLANDS_OUT: islandDir },
-  })
+// Guard against a mistyped --out, checked before anything else runs (a bad
+// path should fail fast, not after a clone/install/build): only ever clear a
+// directory this script (or an earlier run of it) actually staged. The
+// stager's own marker is `.bffless/workflows/index.json` — the last thing a
+// successful run writes — not merely a `.bffless/` directory existing, which
+// e.g. `apps/workflow` itself also has (that would let `--out apps/workflow`
+// silently delete the harness's own source).
+if (existsSync(out) && readdirSync(out).length > 0 && !existsSync(join(out, '.bffless', 'workflows', 'index.json'))) {
+  console.error(`stage-hello: refusing to clear ${out} — it exists, is non-empty, and has no .bffless/workflows/index.json (looks like the wrong --out)`)
+  process.exit(1)
 }
-const islands = ISLANDS.map((island) => `islands/${island}.html`)
 
-// ---------------------------------------------------------------------------
-// Scripts — copied verbatim; the Worker fetches them as modules (Decision 2)
-// ---------------------------------------------------------------------------
+const repo = process.env.WORKFLOW_HELLO_REPO ?? 'https://github.com/bffless/workflow-hello.git'
 
-const scriptSrc = join(appDir, 'hello', 'scripts')
-
-// Type-checked *as JavaScript* here, by the thing that publishes them
-// (`tsconfig.scripts.json`: `allowJs` + `checkJs` against each module's JSDoc
-// `@type` import of `@bffless/workflow-script`), for the same reason the
-// islands are: a broken script must fail the bundle stage, never the harness
-// build. Before apps#375 nothing checked these at all.
-execFileSync(bin('tsc'), ['-p', 'tsconfig.scripts.json'], { cwd: appDir, stdio: 'inherit' })
-// Phase 2 (Decision 13) adds the first one; until then the directory is absent
-// and `scripts: []` is the honest answer, not a missing-file crash.
-const scriptFiles = existsSync(scriptSrc)
-  ? readdirSync(scriptSrc, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.m?js$/.test(entry.name))
-      .map((entry) => entry.name)
-      .sort()
-  : []
-
-if (scriptFiles.length > 0) {
-  mkdirSync(scriptOut, { recursive: true })
-  for (const file of scriptFiles) copyFileSync(join(scriptSrc, file), join(scriptOut, file))
+/** `git -C src rev-parse HEAD`, or `undefined` for anything that isn't a clean, checked-out repo at HEAD (missing dir, half-finished clone, corrupt .git). Never throws — the caller treats that the same as "wrong commit": remove and re-clone. */
+function headOf(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+  } catch {
+    return undefined
+  }
 }
-const scripts = scriptFiles.map((file) => `scripts/${file}`)
 
-// ---------------------------------------------------------------------------
-// index.json (06) + a landing page, so the bundle alias is not a bare 404
-// ---------------------------------------------------------------------------
+// Re-clone whenever the checkout is missing, sitting on a different commit
+// than `hello.ref`, or too broken to even answer `rev-parse HEAD` (a stale
+// local `hello-src/` from an earlier pin, or an interrupted clone, must never
+// silently stage the wrong bundle — or crash on one that isn't a repo at all).
+if (headOf(src) !== ref) {
+  rmSync(src, { recursive: true, force: true })
+  // A `file://` remote (WORKFLOW_HELLO_REPO, for iterating on both repos at
+  // once) clones the same way a real GitHub URL does — `git clone` treats it
+  // as just another remote.
+  execFileSync('git', ['clone', '--quiet', repo, src], { stdio: 'inherit' })
+  execFileSync('git', ['-C', src, 'checkout', '--quiet', ref], { stdio: 'inherit' })
+}
 
-const version = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8')).version
-const commit = process.env.GITHUB_SHA?.slice(0, 7) ?? execSync('git rev-parse --short HEAD').toString().trim()
+// `--ignore-workspace`: `hello-src` is cloned *inside* this monorepo's own
+// pnpm workspace, so a plain `pnpm install` here would walk up, find the
+// monorepo's `pnpm-workspace.yaml`, and install workflow-hello as a member of
+// it instead of as its own standalone project — no local `node_modules/.bin`,
+// none of its own deps resolved.
+execFileSync('pnpm', ['install', '--ignore-workspace', '--frozen-lockfile'], { cwd: src, stdio: 'inherit' })
+execFileSync('pnpm', ['build'], { cwd: src, stdio: 'inherit' })
 
-writeFileSync(join(workflowDir, 'index.json'), JSON.stringify({
-  spec: 1, impl: 'hello', name: 'Hello',
-  // Shown on the Implementations screen — keep it true to what the bundle holds.
-  description: 'M2 test implementation: hello (echo, slow job + poll, fail-on-purpose) and an interactive island round-trip; two islands (pick-line, line-viewer); analyze.',
-  version, commit, generatedAt: new Date().toISOString(),
-  workflows: workflows.map(({ file, name, description, inputs, jobs, headlessSafe }) => ({
-    file, name, description, inputs, jobs, headlessSafe,
-  })),
-  islands, scripts,
-}, null, 2))
+rmSync(out, { recursive: true, force: true })
+mkdirSync(out, { recursive: true })
+cpSync(join(src, 'dist'), out, { recursive: true })
 
-// The hello alias serves a bundle, not a site — but a member who follows the
-// implementation link deserves a sentence rather than a 404 (M1 minor). The
-// harness's own host is this alias with `hello.` swapped for `workflow.`, which
-// only the browser knows, so the link is computed there.
-writeFileSync(join(out, 'index.html'), `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>workflow-hello</title></head>
-<body style="font:15px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:34rem;padding:0 1rem">
-<p>workflow-hello — a bundle-only alias; open <a id="harness" href="/.bffless/workflows/index.json">the harness</a>.</p>
-<script>
-  var host = location.hostname.replace(/^hello\\./, 'workflow.')
-  if (host !== location.hostname) document.getElementById('harness').href = location.protocol + '//' + host
-</script>
-</body></html>
-`)
-
-console.log('staged', join(workflowDir, 'index.json'))
+console.log('staged', join(out, '.bffless/workflows/index.json'), 'from', repo, '@', ref)

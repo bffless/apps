@@ -1,12 +1,23 @@
 /**
  * The hello bundle's `script` modules, run as modules (no Worker, no stager):
- * what `hello/scripts/*.js` promise the workflows that call them. Cheap enough
- * to live in `test:run` — the stager suite (`hello-stage.test.ts`) only proves
- * the files get *copied*.
+ * what `hello-src/scripts/*.js` promise the workflows that call them. Cheap
+ * enough to live in `test:run` — the stager suite (`hello-stage.test.ts`)
+ * only proves the files get *copied*.
+ *
+ * `hello-src/` only exists once `pnpm --filter workflow stage` has cloned
+ * `bffless/workflow-hello` (a network call) — `describe.skipIf` skips this
+ * suite cleanly rather than crashing a fresh checkout's `test:run`, and the
+ * import is dynamic (a variable specifier) precisely so `tsc` never needs the
+ * file to exist either.
  */
-import { describe, expect, it } from 'vitest'
-import posterCard from '../hello/scripts/poster-card.js'
+import { describe, expect, it, beforeAll } from 'vitest'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PAYLOAD_BUDGET_BYTES, byteSize } from './lib/runner/payload'
+
+const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
+const posterCardPath = join(appDir, 'hello-src', 'scripts', 'poster-card.js')
 
 function ctx(inputs: Record<string, unknown>) {
   return {
@@ -18,7 +29,14 @@ function ctx(inputs: Record<string, unknown>) {
   }
 }
 
-describe('hello/scripts/poster-card.js', () => {
+describe.skipIf(!existsSync(posterCardPath))('hello-src/scripts/poster-card.js', () => {
+  let posterCard: (ctx: unknown) => Promise<{ big: unknown[]; poster: unknown; posters: unknown[] }>
+
+  beforeAll(async () => {
+    const mod = await import(pathToFileURL(posterCardPath).href)
+    posterCard = mod.default
+  })
+
   it('returns a `big` output that clears the offload budget with room to spare, even for a one-character line (apps#375)', async () => {
     const out = await posterCard(ctx({ line: 'a', counts: [1] }))
     // The interactive workflow exists to exercise the `{"$file"}` offload end

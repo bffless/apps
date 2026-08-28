@@ -1,0 +1,3 @@
+name: hello
+description: "Fixture vendored from the pre-extraction apps/workflow/.bffless/proxy-rules/hello tree (git a74e339) for cli.test.ts — hello's real rule set now lives in bffless/workflow-hello, not this repo (M3 Task 7). Kept here only so the CLI's `--rules`/search-ambiguity behavior has a real, self-contained fixture to exercise; fn.js bodies are stubs (the linter never reads them)."
+
