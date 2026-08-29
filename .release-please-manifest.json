@@ -1,7 +1,7 @@
 {
   "apps/reader": "1.0.2",
   "apps/handoff": "1.1.0",
-  "apps/studio": "1.13.0",
+  "apps/studio": "1.14.0",
   "apps/recall": "0.3.1",
   "packages/workflow-lint": "1.1.0",
   "packages/workflow-script": "1.0.0",
