@@ -289,7 +289,7 @@ export function Review({ args, bridge }: ReviewProps): React.JSX.Element {
         </p>
       )}
 
-      <main className="mx-auto max-w-3xl px-5 py-6">
+      <main className="mx-auto max-w-6xl px-5 py-6">
         {view === 'preview' ? (
           <div data-testid="island-preview" className="rounded-md border border-line bg-surface p-5">
             <MarkdownBody
