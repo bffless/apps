@@ -2,25 +2,45 @@ targetUrl: pipeline
 order: 21
 pipeline:
   name: Register workflow file
-  description: "Verify the uploaded object and return the File ref { path, name, contentType, size, url } (spec 02). The record row lands in workflow_files."
+  description: "Verify the uploaded object and return the File ref { path, name, contentType, size, url } (spec 02). storageKey may be the full key `prepare` minted or the uploads-relative path a pipeline step returned (spec 02) — `normalize` prefixes the latter before register_upload sees it, since CE only accepts a full <owner>/<repo>/uploads/ key. The record row lands in workflow_files."
   steps:
+    - id: normalize
+      name: normalize
+      handler: function_handler
+      code: ./normalize.fn.js
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.normalize.notOk
+        body: |-
+          {
+            "success": false,
+            "error": { "code": "BAD_PATH", "message": "{{steps.normalize.error}}" }
+          }
+        status: 400
+        contentType: application/json
     - id: register
       name: register
       handler: register_upload
       config:
+        condition: steps.normalize.ok
         subDir: workflows/{{request.body.impl}}/{{request.body.workflow}}/{{request.body.scope}}
         schemaId: $schema:workflow_files
-        storageKey: request.body.storageKey
+        storageKey: steps.normalize.storageKey
         originalName: request.body.originalName
         maxFileSize: 5368709120
     - id: shape
       name: shape
       handler: function_handler
       code: ./shape.fn.js
+      config:
+        condition: steps.normalize.ok
     - id: respond
       name: respond
       handler: response_handler
       config:
+        condition: steps.normalize.ok
         body: "{{{steps.shape}}}"
         status: 200
         contentType: application/json

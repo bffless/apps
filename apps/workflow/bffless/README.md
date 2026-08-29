@@ -235,7 +235,10 @@ of `interactive.workflow.yaml`.
 
 **Oversized outputs.** An output whose JSON exceeds 256 KB is not stored in the row: the
 runner uploads it as `<name>.json` under the step's own `runs/<runId>/<job>/<index>/<step>/`
-prefix (the files trio, 06) and the row holds `{ "$file": <File ref> }` in its place. Every
+prefix (the files trio, 06) and the row holds `{ "$file": <File ref> }` in its place. `register`
+accepts either kind of `storageKey` a caller may have — the full key `prepare` mints, or the
+bare uploads-relative path a pipeline step's own `outputs.<name>.value` can return per spec
+02 — prefixing the latter itself, since CE's `register_upload` only accepts a full key. Every
 read path hydrates it back before the page sees it, so nothing downstream — renderers,
 expressions — knows the difference. The bytes therefore live under the run prefix and go with
 the run when it is deleted.
