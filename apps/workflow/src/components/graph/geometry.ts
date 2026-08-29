@@ -11,6 +11,7 @@
  */
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import type { Job, RunState, Step } from '../../lib/runner/types'
+import { isFileRef } from '../values/fileRef'
 
 /** Row geometry in px — mirrored by `.step-chip` sizing in `index.css`; change both. */
 export const CHIP = {
@@ -89,6 +90,30 @@ export function matrixNote(job: Job): string | null {
 /** The job's `name` when it declares one, else its id. */
 export function jobLabel(job: Job): string {
   return job.raw?.name ?? job.id
+}
+
+/**
+ * One matrix variable's bound value, as shown by `JobCard`'s item selector: a
+ * string or number stands for itself, a File ref (a take, a contact sheet,
+ * ...) shows its own `name`, and any other object shows the first of
+ * `title`/`name`/`label`/`id` that is a non-empty string. hello's matrix
+ * items are strings; the Studio port's (`per-scene`) are objects
+ * (`{ number, title, source, ... }`) — `String(value)` on one of those reads
+ * as `[object Object]`, which is the bug this fixes. Anything left with
+ * nothing readable on it falls back to its position, so the selector never
+ * goes blank.
+ */
+export function matrixItemLabel(value: unknown, index: number): string {
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (isFileRef(value)) return value.name
+  if (value !== null && typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    for (const key of ['title', 'name', 'label', 'id']) {
+      const candidate = obj[key]
+      if (typeof candidate === 'string' && candidate !== '') return candidate
+    }
+  }
+  return `#${index + 1}`
 }
 
 
