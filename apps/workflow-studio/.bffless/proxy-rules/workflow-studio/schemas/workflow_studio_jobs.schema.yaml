@@ -1,0 +1,23 @@
+name: workflow_studio_jobs
+fields:
+  - name: kind
+    type: string
+    required: true
+  - name: status
+    type: string
+    required: true
+  - name: request
+    type: json
+    required: false
+  - name: result
+    type: json
+    required: false
+  - name: error
+    type: string
+    required: false
+  - name: prompt
+    type: text
+    required: false
+  - name: system
+    type: text
+    required: false

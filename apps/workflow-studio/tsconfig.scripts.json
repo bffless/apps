@@ -1,0 +1,33 @@
+{
+  /* `script` steps run inside a Web Worker on an opaque origin (spec 03/09) — no DOM,
+     no window, no Node. `WebWorker` lib gives `self`, `postMessage`, `fetch`, etc.
+     without pulling in `DOM`. The Vite config that builds these modules
+     (`vite.scripts.config.ts`) is Node-side tooling and is checked separately under
+     `tsconfig.node.json` — `"types": []` here so a `scripts/**` module can't
+     accidentally type-check against `process`/`Buffer`/`node:*` it will never have at
+     runtime. */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "WebWorker"],
+    "module": "esnext",
+    "types": [],
+    "skipLibCheck": true,
+
+    /* Bundler mode — also how `studio/lib/*` etc. resolve through the workspace
+       dependency's `package.json` "exports" (apps/studio/package.json). */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["scripts"]
+}

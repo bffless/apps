@@ -1,0 +1,2 @@
+name: workflow-studio
+description: "Workflow-harness implementation of Studio's video pipelines — kickoff, scene director/refiner and video ops (Task 18 scaffold; rules land in Tasks 20-21)."
