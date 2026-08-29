@@ -1,0 +1,78 @@
+handler: ./parse.fn.js
+cases:
+  - name: clamps and sorts the cuts to the scene span and reports that the refiner heard the audio
+    data:
+      steps:
+        prep: { start: 100, end: 160 }
+        refiner:
+          output: '{"cuts":[{"start":140,"end":150},{"start":90,"end":110}]}'
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          cuts:
+            - { start: 100, end: 110 }
+            - { start: 140, end: 150 }
+          heardAudio: true
+  - name: an empty cuts array is a valid answer for an already-tight scene
+    data:
+      steps:
+        prep: { start: 0, end: 30 }
+        refiner:
+          output: '{"cuts":[]}'
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          cuts: []
+          heardAudio: true
+  - name: falls back to the deaf re-run and flags heardAudio false
+    data:
+      steps:
+        prep: { start: 0, end: 30 }
+        refiner: {}
+        refinerNoAudio:
+          output: '{"cuts":[{"start":5,"end":9}]}'
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          cuts: [{ start: 5, end: 9 }]
+          heardAudio: false
+  - name: neither refiner answered - a failure
+    data:
+      steps:
+        prep: { start: 0, end: 30 }
+        refiner: {}
+        refinerNoAudio: {}
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: The AI model did not return a result for this scene - it may be temporarily overloaded, or the scene may be too long. Please try refining again.
+        code: ""
+        data: { cuts: [], heardAudio: false }
+  - name: a response with no readable cuts key is a failure carrying what the model said
+    data:
+      steps:
+        prep: { start: 0, end: 30 }
+        refiner:
+          output: "I could not process this scene."
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: "The AI model's response could not be read as a scene cut. Please try refining again. Model said: I could not process this scene."
+        code: ""
+        data: { cuts: [], heardAudio: true }
+  # NOTE: no `stepErrors` case - the CLI fixture schema rejects that data root (see
+  # video/extract-audio/post/check.fn.test.yaml).

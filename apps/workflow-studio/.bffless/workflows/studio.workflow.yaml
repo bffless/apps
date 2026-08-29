@@ -231,6 +231,7 @@ jobs:
           path: blog
           body:
             timed: ${{ needs.per-video.outputs.timed }}
+            durations: ${{ needs.per-video.outputs.duration }}
             script: ${{ needs.stitch.outputs.script }}
             title: ${{ needs.describe.outputs.title }}
             summary: ${{ needs.describe.outputs.summary }}

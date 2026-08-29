@@ -1,8 +1,8 @@
 targetUrl: pipeline
 timeout: 120000
 pipeline:
-  name: Master director (async enqueue + poll)
-  description: "POST { timed, sheets, durations, sources, direction } -> ENQUEUE a job (kind 'scenes') and return { jobId, status: 'pending' }; the slow Gemini call + parse run in postSteps and write the row to done/error. Result { synopsis, scenes } is polled via GET job?id=. Ported from apps/studio /api/scenes: the prompt and system instruction are verbatim, prep builds the combined transcript from the per-source `timed` strings, re-stamping each line's [m:ss] label onto the ONE GLOBAL clock the director reasons on (offsets from `durations`) rather than shifting words as Studio did, and parse additionally maps every scene back to its source in LOCAL seconds (director.ts toScenes)."
+  name: Blog writer (async enqueue + poll)
+  description: "POST { timed, durations, script, title, summary, synopsis, scenes, sheets, direction } -> ENQUEUE a job (kind 'blog') and return { jobId, status: 'pending' }; the multimodal Claude call + parse run in postSteps and write the row to done/error. Result { markdown } is polled via GET job?id=. Ported from apps/studio's `studio-blog` /api/blog: the prompt and system instruction are verbatim, but prep builds the timestamped narration itself from the per-source `timed` strings + `durations` (R135 - the same globally-clocked transcript the director read, so the writer's `frame:<seconds>` tokens land on the right source), and the contact sheets arrive as uploads-relative paths nested per source. TWO interchangeable writer steps, exactly as Studio ships them: `blogClaude` (anthropic ai_handler, ON) and `blog` (replicate Gemini, OFF). Enable exactly one; parse reads whichever ran."
   steps:
     - id: prep
       name: prep
@@ -26,7 +26,7 @@ pipeline:
       config:
         condition: steps.prep.ok
         fields:
-          kind: "'scenes'"
+          kind: "'blog'"
           prompt: steps.prep.prompt
           status: "'pending'"
           system: steps.prep.system
@@ -49,8 +49,8 @@ pipeline:
   # `terminates` and ai_handler ONLY in `stream` mode (CE ai.handler.ts:665; every ai_handler
   # step in this set uses responseMode: message, so none of them terminate) - so postSteps
   # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
-  # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
-  # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not
+  # run the paid work anyway. finishOk/finishErr need no gate of their own: with `parse`
+  # skipped, `steps.parse.ok` resolves to null (a missing key returns null, it does not
   # throw) and both branches stay off.
   postSteps:
     - id: setRunning
@@ -138,8 +138,8 @@ pipeline:
       code: ./collect.fn.js
       config:
         condition: steps.prep.ok
-    - id: director
-      name: director
+    - id: blog
+      name: blog
       handler: replicate
       config:
         condition: steps.prep.ok
@@ -152,6 +152,23 @@ pipeline:
           system_instruction: steps.prep.system
         model: google/gemini-3.1-pro
         timeout: 280000
+      isEnabled: false
+    - id: blogClaude
+      name: blogClaude
+      handler: ai_handler
+      config:
+        condition: steps.prep.ok
+        model: claude-opus-4-6
+        timeout: 280000
+        provider: anthropic
+        maxTokens: 64000
+        attachments:
+          - type: image
+            source: steps.collect.images
+        temperature: 0.6
+        messageField: steps.prep.prompt
+        systemPrompt: "{{steps.prep.system}}"
+      isEnabled: true
     - id: parse
       name: parse
       handler: function_handler
@@ -182,4 +199,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Master director. prep builds the globally-clocked transcript, the prompt/system instruction and the storage paths of up to 10 contact sheets, createJob stores the row (with the prompt + system instruction, for disclosure), and respond returns { jobId } immediately. The Gemini 3.1 Pro call and parse run off the response path in postSteps. Refuses (400) any path outside the harness's workflows/ run prefix before a job row is created."
+description: "Companion blog post: the globally-clocked narration, the scene outline and up to 10 contact sheets go to Claude, which answers with a complete Markdown document (front-matter + body) carrying `frame:<seconds>` image tokens the workflow later resolves to real stills. Refuses (400) any path outside the harness's workflows/ run prefix before a job row exists. Studio pointed this step at its own `bffless-docs` skill; the port carries no skills directory, and the system prompt is self-contained."

@@ -1,8 +1,12 @@
 # Workflow Studio backend — BFFless proxy rule set
 
-One authored set, [`workflow-studio`](../.bffless/proxy-rules/workflow-studio/) — currently just
-`ruleset.yaml` (name + description); the pipelines it will carry (kickoff, scene director/refiner,
-video ops) land in Tasks 20–21. Like `apps/workflow`'s own `workflow` set (see
+One authored set, [`workflow-studio`](../.bffless/proxy-rules/workflow-studio/) — thirteen rules
+serving every `uses: pipeline` step in [`studio.workflow.yaml`](../.bffless/workflows/studio.workflow.yaml):
+the job poll (`job`), the video ops (`video/extract-audio`, `video/contact-sheet`, `video/slice`,
+`video/concat`, `video/frames`), the AI stages (`transcribe`, `scenes`, `refine-scene`, `describe`,
+`blog`) and the cover (`thumbnail/draft`, `thumbnail/render`), over two schemas
+(`workflow_studio_jobs` for the async job rows, `workflow_studio_uploads` for the stored cover).
+Like `apps/workflow`'s own `workflow` set (see
 `apps/workflow/bffless/README.md` → "Rule-set isolation"), it lives in project
 **`bffless/workflow`**, NOT in `.bffless/config.json`'s `ruleSets` globs — that file drives the
 nightly drift check against project `bffless/apps`. Keep it out of it.
@@ -26,10 +30,21 @@ settings, not rule-set JSON).
   as `hello.<domain>` in the harness's own README.
 - **`HF_TOKEN` secret** and the **Replicate + Anthropic provider tokens**, all on project
   `bffless/workflow` (Settings → AI). Same roles as in Studio's own backend
-  (`apps/studio/bffless/README.md` → "Prerequisites"): `HF_TOKEN` for WhisperX diarization,
-  Replicate for transcribe/director/refiner/voice/thumbnail, Anthropic for the description
-  writer and thumbnail drafts. These are project-level, so if `bffless/workflow` already runs
-  other implementations, they're shared with this one — set once.
+  (`apps/studio/bffless/README.md` → "Prerequisites"), and these are the only credentials the
+  rule set names — `secrets.HF_TOKEN` is referenced once (`transcribe`, WhisperX diarization);
+  everything else is a project **provider token**, never a `secrets.*` reference:
+
+  | Credential | Where the rule set uses it |
+  | --- | --- |
+  | `HF_TOKEN` secret | `transcribe` → `victor-upmeet/whisperx` (`huggingface_access_token`) |
+  | Replicate provider token | `transcribe` (WhisperX), `scenes` (`google/gemini-3.1-pro`), `refine-scene` (`google/gemini-3.5-flash`, both the hearing and the deaf pass), `thumbnail/render` (`google/nano-banana-2`), and `blog`'s disabled Gemini writer |
+  | Anthropic provider token | `describe` (`claude-opus-4-6`), `blog` (`claude-opus-4-6`, the enabled writer), `thumbnail/draft` (`claude-sonnet-4-6`) |
+
+  These are project-level, so if `bffless/workflow` already runs other implementations,
+  they're shared with this one — set once. Studio pointed its `describe`, `thumbnail/draft`
+  and `blog` steps at skills under `apps/studio/dist/bffless/skills`; this app ships no skills
+  directory, so those steps run on their self-contained system prompts (each says in as many
+  words that its defaults are complete without a skill).
 - **Server video ops enabled** — Admin → Settings → Features → Server video ops, **CE ≥ 0.4.37**
   with `frames` present in the capabilities probe's `probe.ops` (the contact-sheet stage needs
   it; earlier CE has `slice`/`concat`/`extract-audio` but not `frames`). Without it the

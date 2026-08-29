@@ -1,0 +1,76 @@
+handler: ./parse.fn.js
+cases:
+  - name: plain text is the prompt
+    data:
+      steps:
+        draft:
+          content: "16:9 YouTube thumbnail. Vintage technical manual."
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        promptJson: '{"prompt":"16:9 YouTube thumbnail. Vintage technical manual."}'
+  - name: strips a markdown fence the model wrapped the prompt in
+    data:
+      steps:
+        draft:
+          content: "```text\n16:9 YouTube thumbnail.\n```"
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        promptJson: '{"prompt":"16:9 YouTube thumbnail."}'
+  - name: unwraps a JSON object the model returned instead of plain text
+    data:
+      steps:
+        draft:
+          content: '{"prompt": "16:9 YouTube thumbnail."}'
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        promptJson: '{"prompt":"16:9 YouTube thumbnail."}'
+  - name: still reads the legacy replicate output shape
+    data:
+      steps:
+        draft:
+          output: ["16:9 ", "thumbnail."]
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        promptJson: '{"prompt":"16:9 thumbnail."}'
+  - name: an empty answer is an error envelope (R120), never an empty prompt
+    data:
+      steps:
+        draft:
+          content: "   "
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.
+        # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
+        # the rule's fail branch emits THIS value, not a hard-coded one.
+        code: AI_UNREADABLE
+        promptJson: ""
+  - name: a missing step is an error envelope too
+    data:
+      steps: {}
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.
+        # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
+        # the rule's fail branch emits THIS value, not a hard-coded one.
+        code: AI_UNREADABLE
+        promptJson: ""

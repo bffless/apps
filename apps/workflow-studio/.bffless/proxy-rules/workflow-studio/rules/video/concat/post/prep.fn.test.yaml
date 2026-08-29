@@ -1,0 +1,52 @@
+handler: ./prep.fn.js
+cases:
+  - name: keeps the clips in order and normalises the out prefix
+    data:
+      request:
+        body:
+          clips:
+            - workflows/run-1/s1/assemble/clip.mp4
+            - workflows/run-1/s2/assemble/clip.mp4
+          outPrefix: workflows/run-1/stitch/
+          executor: remote
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        clips:
+          - workflows/run-1/s1/assemble/clip.mp4
+          - workflows/run-1/s2/assemble/clip.mp4
+        outPrefix: workflows/run-1/stitch
+        executor: remote
+  - name: refuses a clip outside the run prefix
+    data:
+      request:
+        body:
+          clips:
+            - workflows/run-1/s1/assemble/clip.mp4
+            - projects/p1/export/other.mp4
+          outPrefix: workflows/run-1/stitch
+          executor: auto
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Refused - every path must be an uploads-relative path under workflows/
+        clips: []
+        outPrefix: ""
+        executor: ""
+  - name: refuses an empty clip list
+    data:
+      request:
+        body:
+          clips: []
+          outPrefix: workflows/run-1/stitch
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Refused - clips must be a non-empty list of uploads-relative paths
+        clips: []
+        outPrefix: ""
+        executor: ""

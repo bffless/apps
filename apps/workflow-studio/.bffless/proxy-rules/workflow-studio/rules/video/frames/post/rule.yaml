@@ -43,7 +43,9 @@ pipeline:
         status: 200
         contentType: application/json
   # Every postStep is gated on `steps.prep.ok`. A response_handler does NOT terminate a CE
-  # pipeline (only file-serve / stripe-webhook / ai / form set `terminates`), so postSteps
+  # pipeline - of the handlers that can, file-serve / stripe-webhook / form always set
+  # `terminates` and ai_handler ONLY in `stream` mode (CE ai.handler.ts:665; every ai_handler
+  # step in this set uses responseMode: message, so none of them terminate) - so postSteps
   # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
   # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
   # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not

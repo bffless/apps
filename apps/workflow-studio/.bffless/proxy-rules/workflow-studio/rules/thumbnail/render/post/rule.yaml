@@ -1,0 +1,90 @@
+targetUrl: pipeline
+timeout: 120000
+pipeline:
+  name: thumbnail-render
+  description: "POST { prompt, outPrefix } -> SYNC { path }: google/nano-banana-2 draws the cover, file_upload_handler stores it under the run prefix, and `shape` hands back the uploads-relative path the harness registers as a file output. Ported from apps/studio /api/thumbnail/render: the image is stored under `<outPrefix>` (a run-prefixed uploads-relative subDir) instead of projects/<id>/youtube-thumbnail, the response is a path rather than an /api/uploads/ serve URL, and the optional reference photo is dropped - the workflow sends none, so Studio's prepImages step and the model's `image_input` go with it."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    # R129: the refusal lands BEFORE the paid image call. A response_handler does not
+    # terminate a CE pipeline, so every later step is gated on `steps.prep.ok`.
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.prep.notOk
+        body: |-
+          {
+            "error": "{{steps.prep.error}}",
+            "code": "BAD_REQUEST"
+          }
+        status: 400
+        contentType: application/json
+    - id: generate
+      name: generate
+      handler: replicate
+      config:
+        condition: steps.prep.ok
+        input:
+          prompt: steps.prep.prompt
+          aspect_ratio: "'16:9'"
+        model: google/nano-banana-2
+        timeout: 110000
+    - id: pickUrl
+      name: pickUrl
+      handler: function_handler
+      code: ./pickUrl.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: store
+      name: store
+      handler: file_upload_handler
+      config:
+        condition: steps.prep.ok
+        # `subDir` is UNDER the uploads root (like presigned_upload's), so the stored
+        # object is <owner>/<repo>/uploads/<outPrefix>/<uuid>-<name> - `shape` strips the
+        # uploads root back off. file_upload_handler needs an UPLOAD schema, hence
+        # workflow_studio_uploads (Studio's youtube_thumbnail fields, renamed).
+        subDir: "{{steps.prep.outPrefix}}"
+        schemaId: $schema:workflow_studio_uploads
+        sourceUrl: steps.pickUrl.url
+        # 25 MB, not file_upload_handler's 10 MB default: a 16:9 nano-banana PNG can run past
+        # 10 MB, and a `covers` leg that fails in a headless run is not a retryable click.
+        maxFileSize: 26214400
+        allowedMimeTypes:
+          - image/*
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.shape.ok
+        body: "{{{steps.shape.pathJson}}}"
+        status: 200
+        contentType: application/json
+    # R120: a SYNC rule has no job row to write an error onto, so a failed render or store
+    # comes back as an error envelope carrying `code` - the value `shape` computed (R137:
+    # the CE step code once ce#662 lands, else its 'RENDER_FAILED' fallback).
+    - id: fail
+      name: fail
+      handler: response_handler
+      config:
+        condition: steps.shape.notOk
+        body: |-
+          {
+            "error": "{{steps.shape.error}}",
+            "code": "{{steps.shape.code}}"
+          }
+        status: 502
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Draws the cover from the (possibly edited) prompt with google/nano-banana-2 and stores it under the run's prefix. Sync: the workflow reads response.path directly. Needs the project Replicate token. Refuses (400) an out prefix outside the harness's workflows/ run prefix, or an empty prompt, before the image call."
