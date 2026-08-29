@@ -34,6 +34,17 @@ gives it, and a failing lint fails the publish.
 reference implementation: a separate repo, not part of this monorepo — copy it, or read it
 alongside this doc for the layout every step below refers to.
 
+For a full-size one, [`apps/workflow-studio`](../../workflow-studio/) (alias `workflow-studio`)
+is the worked example: the Studio port, in this monorepo. Nine jobs over thirteen rules and two
+schemas, five `script` modules built from TypeScript, one React island, a matrix job, async
+video ops behind a job-poll, and `headless:` declarations that keep the whole thing runnable
+without a person. Where hello shows the smallest shape of each piece, workflow-studio shows what
+each one looks like at scale — including the parts this doc only gestures at: its
+[`scripts/stage.mjs`](../../workflow-studio/scripts/stage.mjs) is step 4's build,
+[`.github/workflows/deploy-workflow-studio.yml`](../../../.github/workflows/deploy-workflow-studio.yml)
+its publish, and [`bffless/README.md`](../../workflow-studio/bffless/README.md) the per-project
+setup that is not carried by any rule set.
+
 ## 1. Pick an alias
 
 `<alias>` is the implementation's name in the harness's project: `^[a-z][a-z0-9-]*$`,

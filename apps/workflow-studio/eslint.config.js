@@ -8,10 +8,22 @@ export default defineConfig([
   // Build output is not ours to lint.
   globalIgnores(['dist', 'coverage']),
   {
-    files: ['**/*.{ts,tsx}'],
+    // `.mjs` is here for the stager (`scripts/stage.mjs`): it is real, shipped code — the
+    // thing CI and the deploy both run — and was going unlinted while every other file in
+    // the app was checked.
+    files: ['**/*.{ts,tsx,mjs}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       globals: globals.browser,
+    },
+  },
+  {
+    // …but the stager is Node, not a browser: `process`, `console` and friends come from
+    // there. Scoped to `scripts/*.mjs` so the browser/Worker globals above stay the default
+    // for everything else in `scripts/` (which is TypeScript, and runs in a Worker).
+    files: ['scripts/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
     },
   },
   {

@@ -59,9 +59,11 @@ jobs:
       #
       # studio.workflow.yaml is no longer a spec example — it ships with its
       # implementation (apps/workflow-studio) and is checked against that
-      # app's own (real, on-disk) rule set with --rules/--path-prefix. Until
-      # Tasks 20-21 add the rules it calls, this step is expected to fail with
-      # `rule-missing` errors naming exactly those paths (Task 19).
+      # app's own (real, on-disk) rule set with --rules/--path-prefix, which is
+      # now complete, so this is a clean lint. The same check runs again inside
+      # the app's own stager (apps/workflow-studio/scripts/stage.mjs) and a
+      # third time inside `bffless/publish-workflow@v1` at deploy time; it is
+      # here so a change to the LINTER cannot silently break the workflow.
       - name: Lint the spec examples with the built CLI
         run: |
           node packages/workflow-lint/dist/cli.js lint --alias hello apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/interactive.workflow.yaml

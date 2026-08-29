@@ -5,7 +5,12 @@
      under `tsconfig.islands.json`/`tsconfig.scripts.json`) keeps `"node"` types out of
      both browser projects, so a `scripts/**` or `islands/**` module can't accidentally
      type-check against `process`/`Buffer`/`node:*` it will never actually have at
-     runtime (apps/studio/tsconfig.node.json is the same split for the same reason). */
+     runtime (apps/studio/tsconfig.node.json is the same split for the same reason).
+
+     `src/` is the same category: the stager's suite (`src/stage.test.ts`, Task 24) spawns
+     `scripts/stage.mjs` and reads the bundle it writes, so it needs `node:*` too.
+     `scripts/stage.mjs` itself is plain JS and deliberately outside every TS project —
+     the same choice workflow-hello makes for its `scripts/build.mjs`. */
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "es2023",
@@ -27,5 +32,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.islands.config.ts", "vite.scripts.config.ts"]
+  "include": ["vite.islands.config.ts", "vite.scripts.config.ts", "src"]
 }

@@ -1,10 +1,11 @@
 /**
- * Two run environments in one config, via Vitest 4's `test.projects` (the
+ * Three run environments in one config, via Vitest 4's `test.projects` (the
  * successor to a separate `vitest.workspace.ts`): `scripts/**` runs headless in a
  * Web Worker with no DOM (Node is the closest environment Vitest ships), `islands/**`
- * is React and needs `jsdom`. `scripts/` holds the workflow's five `script` modules and
- * their suites; `islands/` holds the cut-editor island and its suites (Task 23), which
- * is why `passWithNoTests` is gone — both projects match test files now.
+ * is React and needs `jsdom`, and `src/**` is the Node-side build tooling. `scripts/` holds
+ * the workflow's five `script` modules and their suites; `islands/` holds the cut-editor
+ * island and its suites (Task 23), which is why `passWithNoTests` is gone — every project
+ * matches test files now.
  *
  * The `node` environment is also the RUNTIME fence behind `tsconfig.scripts.json`
  * carrying `DOM` in its `lib` for types only — a script that really reached for
@@ -22,6 +23,21 @@ export default defineConfig({
           name: 'scripts',
           environment: 'node',
           include: ['scripts/**/*.{test,spec}.ts'],
+        },
+      },
+      {
+        // The stager (`scripts/stage.mjs`, Task 24) and nothing else: real Node, real
+        // child processes, a real build. It cannot live in the `scripts` project — that
+        // one is the Worker fence (`environment: 'node'` there exists to make a stray
+        // `document` reference throw), and its files are type-checked under
+        // `tsconfig.scripts.json` with `"types": []`, where `node:child_process` has no
+        // types. `src/**` is type-checked under `tsconfig.node.json` instead, beside the
+        // Vite configs the stager drives.
+        extends: true,
+        test: {
+          name: 'stage',
+          environment: 'node',
+          include: ['src/**/*.{test,spec}.ts'],
         },
       },
       {

@@ -8,7 +8,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "typecheck": "tsc -p tsconfig.islands.json && tsc -p tsconfig.scripts.json && tsc -p tsconfig.node.json",
-    "build": "pnpm typecheck",
+    "build": "node scripts/stage.mjs",
+    "stage": "node scripts/stage.mjs",
     "rules:validate": "bffless rules validate .bffless/proxy-rules/workflow-studio",
     "rules:test": "bffless rules test .bffless/proxy-rules/workflow-studio"
   },
