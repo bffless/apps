@@ -56,6 +56,7 @@ export const runSlice = createSlice({
           workflow: event.workflow,
           inputs: event.inputs,
           headless: event.headless,
+          unattended: event.unattended,
           startedAt: event.at,
         })
         // Only the tab driving the run emits events into the slice.

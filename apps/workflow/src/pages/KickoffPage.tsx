@@ -18,13 +18,14 @@
  * workflow, and a failed discovery — keep their own screens, which is why the
  * global is the contract and the testid is not (07's table).
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { KickoffForm } from '../components/kickoff/KickoffForm'
 import { decodeInputs, initialValues, validateInputs } from '../lib/autoStart'
+import { offersUnattended } from '../lib/runner/headless'
 import { workflowId } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
 import { uploadFile } from '../lib/upload'
@@ -60,6 +61,11 @@ export function KickoffPage() {
   // and the navigation would start the workflow a second time.
   const started = useRef(false)
 
+  // "Don't wait for me" (07): a run-level choice, so it lives here beside the
+  // form rather than in its values — the form only renders the toggle when
+  // the workflow has a step it could apply to.
+  const [unattended, setUnattended] = useState(false)
+
   // What `?auto=1` makes of the URL — derived, not state: decoding and
   // validating are pure, so there is nothing here for an effect to
   // synchronise, and the render that shows the errors is the same render that
@@ -79,7 +85,7 @@ export function KickoffPage() {
 
   const invalid = autoStart?.errors ?? null
 
-  function start(values: Record<string, unknown>, headless: boolean) {
+  function start(values: Record<string, unknown>, headless: boolean, unattendedRun = false) {
     if (!impl || !listing || !loaded?.ok || !loaded.def) return
     // `workflow` (the route param) already equals this whenever `listing` was
     // found (`useWorkflowListing` matches on it) — computed directly here so
@@ -95,6 +101,7 @@ export function KickoffPage() {
         ...(impl.version === undefined ? {} : { workflowVersion: impl.version }),
         values,
         headless,
+        unattended: unattendedRun,
       }),
     )
     void navigate(`/${impl.alias}/${wfId}/runs/${runId}`)
@@ -230,7 +237,10 @@ export function KickoffPage() {
             inputs={loaded.def.inputs}
             initial={previousRun?.run?.inputs}
             uploading={upload}
-            onStart={(values) => start(values, false)}
+            onStart={(values) => start(values, false, unattended)}
+            unattended={
+              offersUnattended(loaded.def) ? { value: unattended, onChange: setUnattended } : undefined
+            }
           />
         </div>
       )}

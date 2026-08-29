@@ -61,6 +61,26 @@ export const ISLAND_DEF = toDefinition({
 
 export const ISLAND_KEY: StepKey = stepKey('a', 0, 'pick')
 
+/** The same workflow, but its island declares `headless: auto` (07) — the shape Accept is offered on. */
+export const ISLAND_AUTO_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    a: {
+      steps: [
+        {
+          id: 'pick',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+          headless: 'auto',
+        },
+      ],
+      outputs: { choice: '${{ steps.pick.outputs.choice }}' },
+    },
+  },
+  outputs: { choice: '${{ jobs.a.outputs.choice }}' },
+}) as Definition
+
 /** The same workflow, but its island declares `display: fullscreen` (04). */
 export const ISLAND_FULLSCREEN_DEF = toDefinition({
   name: 'Island',
@@ -192,6 +212,8 @@ export interface FakeIslandHost {
   frames: HTMLIFrameElement[]
   teardowns: string[]
   displayModes: IslandDisplayMode[]
+  /** Every `setHeadless` the page made (Accept, apps#432), in order. */
+  headlessChanges: boolean[]
   /** Resolve the oldest pending mount (the island finished `ui/initialize`). */
   settle(): void
   /** Reject the oldest pending mount (an `ISLAND_LOAD`). */
@@ -220,6 +242,7 @@ export function fakeIslandHost(): FakeIslandHost {
     frames: [],
     teardowns: [],
     displayModes: [],
+    headlessChanges: [],
     pending: () => settlers.length,
     settle() {
       const next = settlers.shift()
@@ -250,6 +273,9 @@ export function fakeIslandHost(): FakeIslandHost {
         },
         setDisplayMode(mode) {
           fake.displayModes.push(mode)
+        },
+        setHeadless(headless) {
+          fake.headlessChanges.push(headless)
         },
         async sendToolInput() {
           // A step's island is never re-sent tool-input (apps#370); the pane's

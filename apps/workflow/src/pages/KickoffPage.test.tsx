@@ -3,13 +3,13 @@
  * broken workflow gets instead of a form (Task 14's rule), Re-run prefill via
  * `?from=`, and `startRun` + navigation on submit.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
-import { seedFinishedRun } from '../mocks/db'
+import { db, seedFinishedRun } from '../mocks/db'
 import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
@@ -77,5 +77,35 @@ describe('KickoffPage', () => {
 
     const form = await within(page).findByTestId('kickoff-form')
     expect(within(form).getByLabelText('studio')).toBeChecked()
+  })
+})
+
+describe('KickoffPage — "Don\'t wait for me" (07)', () => {
+  it('starts the run unattended when the toggle is ticked, and the row records it apart from headless', async () => {
+    // hello's `review` form declares `headless: skip`, so the toggle is offered.
+    const { page, store } = renderApp()
+    const form = await within(page).findByTestId('kickoff-form')
+
+    fireEvent.click(within(form).getByTestId('kickoff-unattended'))
+    fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+    const run = store.getState().run.state!
+    expect(run.unattended).toBe(true)
+    expect(run.headless).toBe(false)
+    // Not an input.
+    expect(run.inputs).toEqual({ greeting: 'Hello', names: ['world'], photo: null, shout: false })
+
+    await waitFor(() => expect(db.runs.get(run.runId)).toBeDefined())
+    expect(db.runs.get(run.runId)).toMatchObject({ unattended: true, headless: false })
+    expect(await within(page).findByTestId('run-unattended')).toBeInTheDocument()
+  })
+
+  it('starts an ordinary run when the toggle is left alone', async () => {
+    const { page, store } = renderApp()
+    const form = await within(page).findByTestId('kickoff-form')
+
+    fireEvent.click(within(form).getByTestId('kickoff-start'))
+
+    expect(store.getState().run.state!.unattended).toBe(false)
   })
 })

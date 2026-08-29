@@ -18,6 +18,8 @@ export function initialRunState(a: {
   workflow: string
   inputs: Record<string, unknown>
   headless: boolean
+  /** Absent on rows written before the column existed (07) — read as `false`. */
+  unattended?: boolean
   startedAt: number
 }): RunState {
   return {
@@ -26,6 +28,7 @@ export function initialRunState(a: {
     workflow: a.workflow,
     status: 'running',
     headless: a.headless,
+    unattended: a.unattended ?? false,
     inputs: a.inputs,
     steps: {},
     expansions: {},

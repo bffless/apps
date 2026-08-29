@@ -19,7 +19,8 @@ goes away.
 | `yaml` | the YAML text, for "View workflow file" on the run page |
 | `inputs` | kickoff values (File refs, not bytes) |
 | `status` | `running \| succeeded \| failed \| cancelled` |
-| `headless` | bool |
+| `headless` | bool — the driver started it (07) |
+| `unattended` | bool — "Don't wait for me" was ticked at kickoff (07); absent on older rows, read as `false` |
 | `started_by`, `started_at`, `finished_at` | |
 | `lease_owner`, `lease_until` | the tab currently driving the run; heartbeat every 15 s sets `lease_until = now + 60 s` (see Resume) |
 | `outputs` | top-level `outputs` map, filled at completion |

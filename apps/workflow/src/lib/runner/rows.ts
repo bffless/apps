@@ -60,6 +60,8 @@ export interface RunRow {
   inputs: Record<string, unknown>
   status: RunStatus
   headless: boolean
+  /** "Don't wait for me" (07) — a person's choice, distinct from the driver's `headless`. Absent on older rows. */
+  unattended?: boolean
   startedBy?: string
   startedAt: number
   finishedAt?: number | null

@@ -167,6 +167,15 @@ export interface IslandHost {
    */
   setDisplayMode(mode: IslandDisplayMode): void
   /**
+   * The page changed its mind about who is driving (07 "Accept", apps#432):
+   * re-send `hostContext.bffless.headless` through `host-context-changed`,
+   * so a `headless: auto` island that mounted attended takes its own
+   * self-submit path on request. Like `setDisplayMode`, a value set before
+   * the bridge connects rides `ui/initialize` instead; no-op with no session,
+   * or when unchanged.
+   */
+  setHeadless(headless: boolean): void
+  /**
    * A **viewer's** value changed: send a fresh `ui/notifications/tool-input`
    * over the live bridge instead of remounting the island (apps#370). A step's
    * island is sent tool-input exactly once, by `mount` — re-sending would
@@ -373,6 +382,8 @@ interface Session {
   iframe: HTMLIFrameElement
   hostContext: McpUiHostContext
   displayMode: IslandDisplayMode
+  /** What `hostContext.bffless.headless` currently says (mount's value, then `setHeadless`). */
+  headless: boolean
   /** `render: island` — tool-input may be re-sent; `workflow.submit` is refused. */
   viewer: boolean
   /**
@@ -619,6 +630,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
         iframe,
         hostContext,
         displayMode: 'inline',
+        headless: a.headless,
         viewer: a.viewer === true,
         connected: false,
         ready: false,
@@ -702,6 +714,16 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
 
     setDisplayMode(mode) {
       if (session) applyDisplayMode(session, mode)
+    },
+
+    setHeadless(headless) {
+      const current = session
+      if (!current || current.disposed || current.headless === headless) return
+      current.headless = headless
+      // The whole `bffless` object, not a nested patch: the View merges a
+      // diff one level deep (`{ ...hostContext, ...diff }`), so a partial
+      // `bffless` would drop any sibling key.
+      notifyHostContext(current, { bffless: { headless } } as Partial<McpUiHostContext>)
     },
 
     async sendToolInput(args) {

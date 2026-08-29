@@ -100,6 +100,7 @@ function baseState(over: Partial<RunState> = {}): RunState {
     workflow: 'hello',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: { greeting: 'Hello', names: ['world'], photo: null, shout: false },
     steps: {},
     expansions: {},

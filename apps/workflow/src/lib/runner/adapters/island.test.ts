@@ -78,6 +78,7 @@ function state(): RunState {
     workflow: 'islands',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: { greeting: 'hi' },
     steps: { [TRIM]: stepState('trim') },
     expansions: { edit: { total: 1, items: [{}] } },

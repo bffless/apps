@@ -20,7 +20,7 @@
  *   `<audio>` on unmount, so every test would otherwise print one.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Editor } from './App'
 import { createFakeHost, toolError, type FakeHost } from '../test/fakeIsland'
 
@@ -57,6 +57,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  // The player's corner / hidden preference is remembered per browser.
+  window.localStorage.clear()
 })
 
 /** The scene's transcript words, in ORIGINAL-source seconds (the editor's clock). */
@@ -296,6 +298,85 @@ describe('the cut editor island', () => {
     expect(screen.getByTestId('island-done')).toBeEnabled()
   })
 
+  describe('the floating player (apps#432)', () => {
+    it('floats the clip over the grid, bottom-right by default, with the grid at full width', async () => {
+      renderEditor()
+      await settled()
+
+      const player = await screen.findByTestId('island-player')
+      expect(player).toHaveAttribute('data-corner', 'bottom-right')
+      expect(player).not.toHaveAttribute('data-hidden')
+      // Floating from 720 px up; the same box docks full-width below that.
+      expect(player.className).toContain('min-[720px]:fixed')
+      expect(player.className).toContain('min-[720px]:w-[360px]')
+      expect(player.className).toContain('min-[720px]:bottom-4')
+      expect(player.className).toContain('w-full')
+      expect(within(player).getByTestId('island-clip')).toHaveAttribute(
+        'src',
+        'https://bucket.example/runs/7/clip.mp4?sig=1',
+      )
+      // The grid itself is not narrowed to make room: nothing wraps it in a column.
+      expect(screen.getByText('alpha').closest('[data-testid="island-player"]')).toBeNull()
+    })
+
+    it('moves between the two corners', async () => {
+      renderEditor()
+      await settled()
+
+      const player = await screen.findByTestId('island-player')
+      fireEvent.click(screen.getByTestId('island-player-corner'))
+      expect(player).toHaveAttribute('data-corner', 'top-right')
+      expect(player.className).toContain('min-[720px]:top-16')
+      expect(player.className).not.toContain('min-[720px]:bottom-4')
+
+      fireEvent.click(screen.getByTestId('island-player-corner'))
+      expect(player).toHaveAttribute('data-corner', 'bottom-right')
+    })
+
+    it('hides without unmounting the element, so the editor keeps driving it', async () => {
+      renderEditor()
+      await settled()
+
+      const video = await screen.findByTestId('island-clip')
+      fireEvent.click(screen.getByTestId('island-player-hide'))
+
+      const player = screen.getByTestId('island-player')
+      expect(player).toHaveAttribute('data-hidden', 'true')
+      expect(player.className).toMatch(/(^|\s)hidden(\s|$)/)
+      // The same `<video>`: `CutEditor`'s `video.ref` still points at it (row
+      // click → seek), it is only not shown.
+      expect(screen.getByTestId('island-clip')).toBe(video)
+
+      fireEvent.click(screen.getByTestId('island-player-show'))
+      expect(screen.getByTestId('island-player')).not.toHaveAttribute('data-hidden')
+      expect(screen.queryByTestId('island-player-show')).toBeNull()
+    })
+
+    it('remembers the corner and the hidden state per browser', async () => {
+      const first = render(<Editor args={toolInput()} bridge={createFakeHost()} />)
+      await settled()
+      fireEvent.click(screen.getByTestId('island-player-corner'))
+      fireEvent.click(screen.getByTestId('island-player-hide'))
+      first.unmount()
+
+      renderEditor()
+      await settled()
+      const player = await screen.findByTestId('island-player')
+      expect(player).toHaveAttribute('data-corner', 'top-right')
+      expect(player).toHaveAttribute('data-hidden', 'true')
+    })
+
+    it('shows no player at all when the clip did not sign', async () => {
+      const host = createFakeHost()
+      host.answer('workflow.sign', () => toolError('deployment not found'))
+      renderEditor(toolInput(), host)
+      await settled()
+
+      expect(screen.queryByTestId('island-player')).toBeNull()
+      expect(screen.queryByTestId('island-player-show')).toBeNull()
+    })
+  })
+
   describe('headless', () => {
     it('submits the refiner’s cuts at once, without waiting to sign anything', async () => {
       const host = createFakeHost({ headless: true })
@@ -334,6 +415,56 @@ describe('the cut editor island', () => {
       await waitFor(() => expect(host.callsTo('workflow.submit')).toHaveLength(1))
       await new Promise((resolve) => setTimeout(resolve, 10))
       expect(host.callsTo('workflow.submit')).toHaveLength(1)
+    })
+  })
+
+  describe('Accept — the flag arriving after mount (apps#432)', () => {
+    it('submits the cuts as they stand when host-context-changed flips bffless.headless', async () => {
+      const host = renderEditor(toolInput({ cuts: [{ start: 10, end: 12 }] }))
+      await settled()
+      expect(host.lastSubmit()).toBeUndefined()
+
+      // The person painted one more cut before pressing Accept in the harness.
+      fireEvent.pointerDown(screen.getByText('beta'))
+      fireEvent.pointerUp(window)
+
+      host.setHostContext({ bffless: { headless: true } })
+
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+      type Span = { start: number; end: number }
+      const outputs = host.lastSubmit() as { cuts: Span[]; keep: Span[] }
+      expect(outputs.cuts).toHaveLength(2)
+      expect(outputs.cuts[0].start).toBeCloseTo(2)
+      expect(outputs.cuts[1]).toEqual({ start: 10, end: 12 })
+      expect(screen.getByTestId('island-submitted')).toBeInTheDocument()
+    })
+
+    it('submits exactly once, and ignores an unrelated context change', async () => {
+      const host = renderEditor()
+      await settled()
+
+      host.setHostContext({ theme: 'dark' })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(host.callsTo('workflow.submit')).toEqual([])
+
+      host.setHostContext({ bffless: { headless: true } })
+      await waitFor(() => expect(host.callsTo('workflow.submit')).toHaveLength(1))
+      host.setHostContext({ bffless: { headless: true } })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(host.callsTo('workflow.submit')).toHaveLength(1)
+    })
+
+    it('keeps the whole scene if everything is cut when Accept arrives, rather than hanging', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const host = renderEditor(toolInput({ cuts: [{ start: 0, end: 30 }] }))
+      await settled()
+      expect(screen.getByTestId('island-done')).toBeDisabled()
+
+      host.setHostContext({ bffless: { headless: true } })
+
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+      expect(host.lastSubmit()).toEqual({ cuts: [], keep: [{ start: 0, end: 30 }] })
+      warn.mockRestore()
     })
   })
 

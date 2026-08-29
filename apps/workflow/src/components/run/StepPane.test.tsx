@@ -61,6 +61,7 @@ function readonlyConfirmWaiting(): RunState {
     workflow: 'hello',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: { greeting: 'Hello', names: ['world'], photo: null, shout: false },
     steps: {
       [stepKey('slow', 0, 'start')]: stepState('slow', 0, 'start', {

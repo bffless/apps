@@ -26,6 +26,14 @@ export interface StepState {
 export interface RunState {
   runId: string; impl: string; workflow: string
   status: RunStatus; headless: boolean
+  /**
+   * "Don't wait for me" (07): a person's choice on an *interactive* run to
+   * honour every step's `headless:` declaration exactly as a headless run does
+   * — `auto` islands self-submit, `skip` forms skip with their declared outputs
+   * — while steps that declared neither still wait for the person. `headless`
+   * stays what the driver sets; the two are never conflated on the row.
+   */
+  unattended: boolean
   /** Session user that pressed Start; surfaced as `run.started_by` (01). */
   startedBy?: string
   inputs: Record<string, unknown>
@@ -38,7 +46,17 @@ export interface RunState {
 }
 
 export type RunEvent =
-  | { type: 'run.started'; runId: string; impl: string; workflow: string; inputs: Record<string, unknown>; headless: boolean; at: number }
+  | {
+      type: 'run.started'
+      runId: string
+      impl: string
+      workflow: string
+      inputs: Record<string, unknown>
+      headless: boolean
+      /** Optional on the event so rows written before the column existed replay unchanged. */
+      unattended?: boolean
+      at: number
+    }
   | { type: 'job.expanded'; job: string; total: number; items: Record<string, unknown>[] } // derived — never persisted
   | { type: 'step.queued'; key: StepKey; job: string; index: number; stepId: string; kind: StepKind; at: number }
   | { type: 'step.started'; key: StepKey; inputs: Record<string, unknown>; at: number }

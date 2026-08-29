@@ -30,6 +30,41 @@ step card), `ui/open-link` (opens a new tab, same as GitHub), `ui/request-displa
 → `/w/<impl>/...` (lets an island load sibling assets through the bridge when CSP forbids
 direct fetch). `ui/update-model-context` is accepted and ignored in v1.
 
+## Display modes
+
+`with.display` is `inline` (the default) or `fullscreen`, and it is a **size, not a
+capability** (apps#432): every action an island offers works in either mode, so the harness
+never opens an island enlarged.
+
+- **Every island mounts inline** — in the step pane under the graph, the same "one level under
+  the graph" pane every step uses. `display: fullscreen` is the island's *preferred enlarged
+  mode*: the pane offers an **Expand** control, and the person decides.
+- **Fullscreen is an overlay, not a route.** Expand fixes the same pane over the viewport with a
+  strip (Run › job, the step key, **Exit fullscreen**) in place of the graph; Esc or Exit
+  returns to the pane. The `<iframe>` is **the same element** in both modes — nothing remounts,
+  so edit state inside the island survives, and the bridge never reconnects.
+- `inline` islands are never offered Expand. An island may still ask through
+  `ui/request-display-mode` (the host advertises `availableDisplayModes: [inline, fullscreen]`)
+  and is answered the same way; the store is the source of truth and the mode flows back to it
+  as `hostContext.displayMode`.
+- The mode is view state (09): a reload, another step, or the step finishing puts the page back
+  inline. No `data-testid` depends on it; the headless driver never relies on fullscreen.
+
+## Accept
+
+A step whose island declares `headless: auto` (07) can be accepted without being edited: its
+pane offers an **Accept** control (`island-accept`) from the moment the island starts loading
+until it submits. Pressing it tells the island it is driving itself — the host sends
+`ui/notifications/host-context-changed` with `bffless: { headless: true }` (or folds the flag
+into `ui/initialize` if the mount is still in flight) — and the island's own self-submit path
+does the rest, with the step's *current* state (an island that has been painted on since it
+mounted submits what is on screen, not what it was given). One step, one click: nothing on the
+run changes — not `unattended`, not `headless`, nothing on the row — and the island is never
+remounted. An island that already mounted self-driving (a headless or unattended run) has no
+Accept to offer. An island therefore has to read `bffless.headless` **both** on
+`ui/initialize` and on `host-context-changed`; `hostContext` is merged by the SDK before the
+handler runs, so `app.getHostContext().bffless` is current in either.
+
 ## Tool naming — pipelines as tools
 
 Inside an island a pipeline is a tool named after its path **relative to the implementation's

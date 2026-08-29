@@ -62,6 +62,7 @@ function runState(over: Partial<StepState> = {}): RunState {
     workflow: 'interactive',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: {},
     steps: { [KEY]: stepState(over) },
     expansions: {},

@@ -42,6 +42,7 @@ function stateWith(a: { run?: Annotation[]; steps?: StepState[] } = {}): RunStat
     workflow: 'hello',
     status: 'succeeded',
     headless: false,
+    unattended: false,
     inputs: {},
     steps,
     expansions: {},

@@ -29,6 +29,12 @@ export function useIslandHandle(runId: string, key: StepKey): IslandHandle | und
   )
 }
 
+/** Whether Accept was pressed on this step's island (apps#432) — a snapshot, like the log. */
+export function useIslandAccepted(runId: string, key: StepKey): boolean {
+  const read = () => getIslandHandle(runId, key)?.accepted ?? false
+  return useSyncExternalStore(subscribeIslandHandles, read, read)
+}
+
 /** The handle's `ui/message` lines — a new array per line, `[]` with no handle. */
 export function useIslandLog(runId: string, key: StepKey): readonly string[] {
   const read = () => getIslandHandle(runId, key)?.log ?? NO_LOG

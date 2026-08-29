@@ -59,8 +59,12 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
   finished / took, attempt, kind, the pipeline path, the error (`code`, message; the raw
   response behind a disclosure), the step's `summary` rendered, its annotations, and a live
   script's log.
-- Interactive steps in `waiting`: the pane **is** the island (inline) or the form; `display:
-  fullscreen` islands take over the main area with the graph collapsed to a strip.
+- Interactive steps in `waiting`: the pane **is** the island or the form. An island always opens
+  inline; one that declared `display: fullscreen` offers **Expand**, which overlays the same
+  pane over the page with the graph collapsed to a strip (Esc / Exit returns) — the iframe is
+  not remounted either way (04 "Display modes"). An island that declared `headless: auto`
+  also offers **Accept** (`island-accept`): submit its current state without editing it
+  (04 "Accept").
 
 ## Run page sections
 
@@ -90,6 +94,11 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 Generated from `on.manual.inputs` (02 controls). `file` inputs upload on select (prepare → PUT
 → register, progress per file) so Start is instant; the form is valid only when uploads are
 registered. Re-run pre-fills from a previous run's `inputs` (file refs reused, no re-upload).
+
+Below the inputs, when the workflow has an interactive step that declares `headless:`, a
+run-level **"Don't wait for me"** toggle (`kickoff-unattended`) starts the run `unattended`
+(07): `auto` islands self-submit, `skip` forms skip, undeclared steps still wait. It is not an
+input — it never lands in the run's `inputs`.
 
 ## Past runs
 

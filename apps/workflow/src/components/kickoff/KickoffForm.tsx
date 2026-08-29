@@ -19,9 +19,15 @@ export interface KickoffFormProps {
   initial?: Record<string, unknown>
   uploading: (file: File, onProgress: (fraction: number) => void) => Promise<FileRef>
   onStart: (values: Record<string, unknown>) => void
+  /**
+   * "Don't wait for me" (07): offered when the workflow has a step that would
+   * otherwise wait on the person, controlled by the page (it is a run-level
+   * fact, not an input, so it never lands in `values`). Absent = not offered.
+   */
+  unattended?: { value: boolean; onChange: (value: boolean) => void }
 }
 
-export function KickoffForm({ inputs, initial, uploading, onStart }: KickoffFormProps) {
+export function KickoffForm({ inputs, initial, uploading, onStart, unattended }: KickoffFormProps) {
   const names = Object.keys(inputs)
   const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(inputs, initial))
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -76,6 +82,25 @@ export function KickoffForm({ inputs, initial, uploading, onStart }: KickoffForm
           error={errors[name]}
         />
       ))}
+      {unattended && (
+        <div className="field kickoff-unattended">
+          <label className="field-checkbox">
+            <input
+              type="checkbox"
+              data-testid="kickoff-unattended"
+              checked={unattended.value}
+              onChange={(e) => unattended.onChange(e.target.checked)}
+            />
+            <span className="field-label">Don&apos;t wait for me</span>
+          </label>
+          <p className="field-description">
+            Apply each step&apos;s <code>headless:</code> declaration as a headless run would:
+            islands that declare <code>auto</code> submit by themselves, forms that declare{' '}
+            <code>skip</code> use their declared outputs. Steps that declare neither still wait
+            for you.
+          </p>
+        </div>
+      )}
       <button type="submit" data-testid="kickoff-start" disabled={disabled}>
         Start
       </button>

@@ -92,6 +92,7 @@ function state(): RunState {
     workflow: 'scripts',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: { greeting: 'hi' },
     steps: { [stepKey('bundle', 0, 'zip')]: stepState('zip') },
     expansions: { bundle: { total: 1, items: [{}] } },
