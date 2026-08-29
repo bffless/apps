@@ -5,8 +5,9 @@
  * come from `studio/index.css`, and `source(none)` + explicit `@source`s keep Tailwind
  * from sweeping the whole monorepo for class names.
  *
- * What this island renders: its own `App.tsx`, Studio's `MarkdownBody` (the post) and the
- * `BlogFigure` it renders for every frame the sidecar knows (the Change-frame picker).
+ * What this island renders: its own `App.tsx`, Studio's `MarkdownBody` (the post), the
+ * `BlogFigure` it renders for every frame the sidecar knows (the Change-frame picker), and
+ * the `MermaidDiagramView` renderer behind its ```mermaid fences (apps#441).
  */
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 @import 'studio/index.css';
@@ -14,6 +15,7 @@
 @source './App.tsx';
 @source '../../node_modules/studio/src/components/Studio/MarkdownBody.tsx';
 @source '../../node_modules/studio/src/components/Studio/BlogFigure.tsx';
+@source '../../node_modules/studio/src/components/Studio/MermaidDiagramView.tsx';
 
 .island-waiting {
   display: flex;

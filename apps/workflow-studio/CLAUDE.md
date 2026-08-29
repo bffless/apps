@@ -39,7 +39,8 @@ import 'studio/index.css'
 ```
 
 `studio`'s `package.json` `exports` is the contract (`./lib/*`, `./components/Studio/CutEditor`,
-`./components/Studio/clipPlayer`, `./index.css`) — see `apps/studio/CLAUDE.md` → "Public
+`./components/Studio/clipPlayer`, `./components/Studio/MarkdownBody`,
+`./components/Studio/MermaidDiagramView`, `./index.css`) — see `apps/studio/CLAUDE.md` → "Public
 surface (consumed by workflow-studio)". If a lib module workflow-studio needs isn't exported
 yet, add it to that map (and keep it store-free) rather than reaching into `studio/src/...`
 directly, which the `exports` map blocks.
@@ -106,8 +107,9 @@ WORKFLOW_SCRIPT=scripts/<name>.ts pnpm exec vite build -c vite.scripts.config.ts
 `islands/<island>/build.test.ts` is the same idea for an island: the built
 `dist/islands/<island>.html` must reference nothing external AND must already carry the
 Tailwind utilities the Studio components it renders are styled with (and, for `blog-editor`,
-must NOT carry `mermaid` — it renders `MarkdownBody`, not `MarkdownPreview`, for exactly that
-reason). Build it the same way, then open it standalone
+must NOT carry `mermaid`'s code — its ```mermaid fences load the library at runtime from the
+pinned CDN URL in `islands/blog-editor/mermaid.ts`, so the built HTML carries that URL and
+nothing of the library; apps#441). Build it the same way, then open it standalone
 to smoke-check it renders (a built island with no host on the other end shows its "waiting"
 shell — that is what a clean `consoleErrors:0` looks like):
 

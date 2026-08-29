@@ -12,6 +12,14 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('**hi**')).toContain('<strong>hi</strong>')
   })
 
+  it('renders a GFM table as <table> with its header and body rows (marked has GFM on)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = renderMarkdown('| Field | Type |\n| --- | :-: |\n| id | string |')
+    expect(div.querySelector('table thead th')?.textContent).toBe('Field')
+    expect(div.querySelectorAll('table tbody td')).toHaveLength(2)
+    expect(div.querySelector('table tbody td:nth-child(2)')?.textContent).toBe('string')
+  })
+
   it('escapes a block-level html token instead of interpreting it', () => {
     const html = renderMarkdown('**hi** <script>alert(1)</script>')
     expect(html).toContain('<strong>hi</strong>')

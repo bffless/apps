@@ -73,7 +73,7 @@ ffmpeg.wasm (story 05+).
 
 `package.json` `exports` publishes `./lib/*` (a **wildcard over all of `src/lib/*.ts`** — every
 module, not a curated subset), `./components/Studio/CutEditor`, `./components/Studio/clipPlayer`,
-`./components/Studio/MarkdownBody` and `./index.css` so `apps/workflow-studio` (a re-authoring of this app's video pipelines as a
+`./components/Studio/MarkdownBody`, `./components/Studio/MermaidDiagramView` and `./index.css` so `apps/workflow-studio` (a re-authoring of this app's video pipelines as a
 Workflow-harness implementation) can depend on `studio: workspace:*` and import them directly
 instead of forking the source.
 
@@ -82,11 +82,15 @@ instead of forking the source.
 pulls `@reduxjs/toolkit` into any consumer at runtime, and `studioSlice.ts` imports
 `projectSync` back — a cycle); `projects.ts`, `transcriptText.ts` and `studioRoute.ts` import
 `ProjectWorkingState`/`TranscriptWord` from the slice as **types only** (erased at runtime, but
-still a coupling). `CutEditor.tsx`, `clipPlayer.ts` and `MarkdownBody.tsx` (with the
-`BlogFigure.tsx` it renders) are clean. `MarkdownBody` is `MarkdownPreview` minus the ```mermaid
-renderer, which is injected (`diagram` prop) rather than imported: `MermaidDiagram`'s lazy
-`import('mermaid')` would be inlined wholesale into a single-file workflow island, so the island
-imports the body and the in-app preview adds the diagram back.
+still a coupling). `CutEditor.tsx`, `clipPlayer.ts`, `MarkdownBody.tsx` (with the
+`BlogFigure.tsx` it renders) and `MermaidDiagramView.tsx` are clean. `MarkdownBody` is
+`MarkdownPreview` minus the ```mermaid renderer, which is injected (`diagram` prop) rather than
+imported: `MermaidDiagram`'s lazy `import('mermaid')` would be inlined wholesale into a single-file
+workflow island. The renderer itself — load once, render, fall back to the source with a note — is
+`MermaidDiagramView`'s `createMermaidDiagram(load)`, which is mermaid-free: `MermaidDiagram` is it
+over `import('mermaid')` (and stays OFF the export map for that reason), and the island is it over
+a pinned CDN URL fetched at runtime (`islands/blog-editor/mermaid.ts`, apps#441). Keep
+`MermaidDiagramView.tsx` free of any `mermaid` import, value or type.
 
 The modules workflow-studio actually consumes are store-free (verified against the tree):
 `director`, `refiner`, `describe`, `blog`, `sources`, `contactSheet`, `filmstrip`, `scenes`,

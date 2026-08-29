@@ -23,8 +23,9 @@ export type MarkdownBodyProps = {
   /**
    * What a ```mermaid fence renders as. `MarkdownPreview` supplies `MermaidDiagram`;
    * a consumer that cannot carry the `mermaid` dependency (a single-file workflow
-   * island, where a lazy `import('mermaid')` would be inlined wholesale) leaves it
-   * out and the fence renders as a plain code block with its language chip.
+   * island, where a lazy `import('mermaid')` would be inlined wholesale) builds one
+   * over its own loader with `MermaidDiagramView`'s `createMermaidDiagram`, or leaves
+   * it out and the fence renders as a plain code block with its language chip.
    */
   diagram?: ComponentType<{ code: string }>
 }
@@ -34,8 +35,8 @@ export type MarkdownBodyProps = {
  * dependency — the ```mermaid diagram component — injected rather than imported,
  * so this module is store-free AND mermaid-free. Everything else is here: YAML
  * front-matter (shown as a title/description header), ATX headings, unordered
- * lists, blockquotes, and paragraphs, with inline `**bold**`, `*italic*`, and
- * `` `code` ``, plus fenced code blocks. Anything it doesn't recognize falls
+ * lists, blockquotes, GFM tables, and paragraphs, with inline `**bold**`, `*italic*`,
+ * and `` `code` ``, plus fenced code blocks. Anything it doesn't recognize falls
  * through as plain text, so a post always renders SOMETHING rather than breaking.
  * Not a prose editor — there is no text-editing affordance.
  *
@@ -93,8 +94,11 @@ function splitFrontMatter(md: string): {
 /** A line that is exactly a Markdown image: `![alt](url)`. */
 const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)]+)\)$/
 
-/** Render the body as a sequence of blocks: fenced code (incl. mermaid diagrams)
- *  and blank-line-separated text blocks. */
+/** A table column's text alignment, from its delimiter cell (`markdownBlocks`). */
+const ALIGN_CLASS = { left: 'text-left', center: 'text-center', right: 'text-right' } as const
+
+/** Render the body as a sequence of blocks: fenced code (incl. mermaid diagrams),
+ *  GFM tables, and blank-line-separated text blocks. */
 function renderBlocks(
   body: string,
   editing: Editing | null,
@@ -114,6 +118,37 @@ function renderBlocks(
           <pre className="overflow-x-auto rounded-md border border-line bg-surface-dim/30 p-3 font-mono text-[12.5px] leading-snug">
             <code data-lang={blk.lang || undefined}>{blk.code}</code>
           </pre>
+        </div>
+      )
+    }
+    if (blk.kind === 'table') {
+      // The wrapper scrolls, never the page: a wide table stays inside whatever column
+      // the body sits in (`min-w-0` so a flex parent can't be pushed wider either).
+      const cls = (col: number) => (blk.align[col] ? ALIGN_CLASS[blk.align[col]] : 'text-left')
+      return (
+        <div key={i} className="min-w-0 max-w-full overflow-x-auto">
+          <table className="min-w-full border-collapse text-[13px] leading-snug">
+            <thead>
+              <tr>
+                {blk.header.map((cell, j) => (
+                  <th key={j} className={`border border-line bg-surface-dim/30 px-2.5 py-1.5 font-semibold text-ink ${cls(j)}`}>
+                    {renderInline(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {blk.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, j) => (
+                    <td key={j} className={`border border-line px-2.5 py-1.5 align-top ${cls(j)}`}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )
     }
