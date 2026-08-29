@@ -1,0 +1,74 @@
+handler: ./normalize.fn.js
+cases:
+  - name: passes through a full key already minted by prepare
+    data:
+      request:
+        body:
+          storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/inputs/a.mp4
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/inputs/a.mp4
+        error: ""
+  - name: prefixes a bare uploads-relative path a pipeline step returned
+    data:
+      request:
+        body:
+          storageKey: workflows/workflow-studio/studio/runs/run-1/per-video/0/audio/audio.wav
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/per-video/0/audio/audio.wav
+        error: ""
+  - name: normalises a leading /api/uploads/ prefix
+    data:
+      request:
+        body:
+          storageKey: /api/uploads/workflows/workflow-studio/studio/runs/run-1/inputs/a.mp4
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/inputs/a.mp4
+        error: ""
+  - name: refuses a path outside the harness's workflows/ prefix
+    data:
+      request:
+        body:
+          storageKey: projects/p1/uploads/a.mp4
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        storageKey: ""
+        error: storageKey must be an uploads-relative path under workflows/ with no traversal
+  - name: refuses path traversal
+    data:
+      request:
+        body:
+          storageKey: workflows/../etc/passwd
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        storageKey: ""
+        error: storageKey must be an uploads-relative path under workflows/ with no traversal
+  - name: refuses an empty storageKey
+    data:
+      request:
+        body:
+          storageKey: ""
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        storageKey: ""
+        error: storageKey must be an uploads-relative path under workflows/ with no traversal

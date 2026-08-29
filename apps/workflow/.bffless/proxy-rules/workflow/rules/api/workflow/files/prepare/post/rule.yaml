@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 20
 pipeline:
   name: Prepare workflow file upload
-  description: "Mint a presigned PUT under workflows/<impl>/<workflow>/<scope>/ (D7/D18). Per-input accept/maxSize are enforced client-side in M1; the static 100 MB cap is the server backstop."
+  description: "Mint a presigned PUT under workflows/<impl>/<workflow>/<scope>/ (D7/D18). Per-input accept/maxSize are enforced client-side in M1; the static 5 GB cap is the server backstop (the Studio port's recordings input allows up to 5GB, and the bucket PUT is direct so this only bounds the register-side sanity check)."
   steps:
     - id: prepare
       name: prepare
@@ -11,7 +11,7 @@ pipeline:
         subDir: workflows/{{request.body.impl}}/{{request.body.workflow}}/{{request.body.scope}}
         filename: request.body.filename
         expiresIn: 3600
-        maxFileSize: 104857600
+        maxFileSize: 5368709120
     - id: respond
       name: respond
       handler: response_handler

@@ -11,7 +11,6 @@ on:
       direction:  { type: string, format: textarea, label: Note to the director }
       write_blog: { type: boolean, default: true, label: Write a blog post }
       cover:      { type: boolean, default: true, label: Draw a cover }
-      executor:   { type: choice, options: [auto, local, remote], default: auto, label: Video backend }
 
 jobs:
   per-video:
@@ -23,7 +22,13 @@ jobs:
         uses: pipeline
         with:
           path: video/extract-audio
-          body: { source: "${{ matrix.video.path }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+          # No executor input here — the kickoff form is static, so it can't reflect what an
+          # instance actually has enabled. Every video step below omits `executor` from its
+          # body; the rules' `prep` still passes it through, so an absent field resolves to
+          # '', CE omits it, and the instance's configured default executor runs (Admin →
+          # Features → Executor). API callers hitting the rules directly can still pass an
+          # explicit `executor` to override it.
+          body: { source: "${{ matrix.video.path }}", outPrefix: "${{ step.prefix }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
         retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
         outputs:
@@ -90,7 +95,7 @@ jobs:
         if: "${{ length(matrix.plan.times) > 0 }}"
         with:
           path: video/contact-sheet
-          body: { source: "${{ matrix.plan.source }}", outPrefix: "${{ step.prefix }}", times: "${{ matrix.plan.times }}", labels: "${{ matrix.plan.labels }}", executor: "${{ inputs.executor }}" }
+          body: { source: "${{ matrix.plan.source }}", outPrefix: "${{ step.prefix }}", times: "${{ matrix.plan.times }}", labels: "${{ matrix.plan.labels }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
         retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
         outputs:
@@ -137,7 +142,7 @@ jobs:
         uses: pipeline
         with:
           path: video/slice
-          body: { source: "${{ matrix.scene.source }}", spans: "${{ matrix.scene.spans }}", wantAudio: true, outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+          body: { source: "${{ matrix.scene.source }}", spans: "${{ matrix.scene.spans }}", wantAudio: true, outPrefix: "${{ step.prefix }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
         retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
         outputs:
@@ -204,7 +209,7 @@ jobs:
         uses: pipeline
         with:
           path: video/slice
-          body: { source: "${{ steps.cut.outputs.clip.path }}", spans: "${{ steps.trim.outputs.keep }}", wantAudio: false, audioFades: true, outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+          body: { source: "${{ steps.cut.outputs.clip.path }}", spans: "${{ steps.trim.outputs.keep }}", wantAudio: false, audioFades: true, outPrefix: "${{ step.prefix }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
         retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
         outputs:
@@ -222,7 +227,7 @@ jobs:
         uses: pipeline
         with:
           path: video/concat
-          body: { clips: "${{ pluck(needs.per-scene.outputs.clips, 'path') }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+          body: { clips: "${{ pluck(needs.per-scene.outputs.clips, 'path') }}", outPrefix: "${{ step.prefix }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 30m }
         outputs:
           short: { type: file, value: "${{ response.result.path }}" }
@@ -258,7 +263,10 @@ jobs:
   blog:
     name: Blog post
     needs: [stitch, describe, per-video, director, sheets]
-    if: ${{ inputs.write_blog }}
+    # An explicit `if` REPLACES the implicit default `success()` (GitHub job-`if` semantics,
+    # spec 01 "Control flow & failure") — a failed/skipped `need` is terminal but not success,
+    # so this job would still run its turn on a failed `per-video` without the `success() &&`.
+    if: ${{ success() && inputs.write_blog }}
     steps:
       - id: write
         uses: pipeline
@@ -295,7 +303,7 @@ jobs:
         uses: pipeline
         with:
           path: video/frames
-          body: { captures: "${{ steps.times.outputs.captures }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+          body: { captures: "${{ steps.times.outputs.captures }}", outPrefix: "${{ step.prefix }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 10m }
         outputs:
           frames: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
@@ -317,7 +325,7 @@ jobs:
   cover:
     name: Cover
     needs: [describe, stitch]
-    if: ${{ inputs.cover }}
+    if: ${{ success() && inputs.cover }}
     steps:
       - id: brief
         uses: pipeline
@@ -330,7 +338,7 @@ jobs:
   covers:
     name: Draw two covers
     needs: cover
-    if: ${{ inputs.cover }}
+    if: ${{ success() && inputs.cover }}
     strategy: { matrix: { take: [1, 2] } }
     steps:
       - id: draw
@@ -345,7 +353,7 @@ jobs:
   pick:
     name: Pick a cover
     needs: covers
-    if: ${{ inputs.cover }}
+    if: ${{ success() && inputs.cover }}
     steps:
       - id: pick
         uses: form
