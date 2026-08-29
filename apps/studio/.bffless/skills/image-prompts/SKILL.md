@@ -33,9 +33,9 @@ Ask just enough to lock the spec. Don't ask all four — pick the 1–2 that are
 
 If the user pastes a reference image, **read it first** (the Read tool works on local images). Don't write the prompt from your imagination of what they sent.
 
-### 2. Pick a style anchor — by content type first
+### 2. Pick a style anchor — the creator's named style first, then content type
 
-**The style anchor is a 1:1 routing decision from content type, not a vibe call.** Picking the wrong content type produces an on-brand-but-wrong thumbnail — it will look great and the user will tell you it's the wrong kind of thumbnail for the video. Read the brief for content-type signals BEFORE thinking about visuals.
+**If the creator names a house style ("tutorial theme", "watch-me-code look", "the poster one"), that IS the anchor — use it and adapt it to whatever else they asked for. Never pick a different template than the one they named.** Only when no style is named is the anchor a 1:1 routing decision from content type, not a vibe call. Picking the wrong content type produces an on-brand-but-wrong thumbnail — it will look great and the user will tell you it's the wrong kind of thumbnail for the video. Read the brief for content-type signals BEFORE thinking about visuals.
 
 | Content type signal                                          | → Style anchor       | Anchor phrase                                                       |
 | ------------------------------------------------------------ | -------------------- | ------------------------------------------------------------------- |
@@ -46,7 +46,7 @@ If the user pastes a reference image, **read it first** (the Read tool works on 
 
 **Disambiguation rule when more than one could fit:** does the video teach a concept (tutorial → retro-blueprint), ship a deliverable in one sitting (watch-me-code → modern-dev-tool), or show off a finished give-away app (app showcase → electric-poster)? Watch-me-code shows the *building*; app showcase shows the *built thing* — if the thumbnail's hero is the app's own UI rather than a code editor, it's electric-poster. When in doubt, ask the user which content-type the video is before picking the anchor.
 
-**Creator wishes outrank the routing.** If the brief or NOTES name a house style ("tutorial theme", "watch-me-code look"), use that style — do not re-route to a different one because the notes also ask for something that style avoids by default. A deviation ("tutorial theme but with a dark background", "put the presenter in the centre") is a *variant* of the named style: keep its content-type markers (the `TUTORIAL · S01 EP##` strip, body copy and hand-drawn schematic for tutorial; the `WATCH ME CODE` pill and editor mock for watch-me-code), apply the deviation, and drop the contradicted item from the negatives. A creator who asked for dark tutorial wants a tutorial that is dark, not a watch-me-code thumbnail.
+**Adapt the named style; do not re-route.** When the creator names a style and also asks for something it avoids by default, that is not a signal to switch templates. A deviation ("tutorial theme but with a dark background", "put the presenter in the centre") is a *variant* of the named style: keep its content-type markers (the `TUTORIAL · S01 EP##` strip, body copy and hand-drawn schematic for tutorial; the `WATCH ME CODE` pill and editor mock for watch-me-code), apply the deviation, and drop the contradicted item from the negatives. A creator who asked for dark tutorial wants a tutorial that is dark, not a watch-me-code thumbnail.
 
 Other valid choices (custom, hand-drawn, isometric, photographic, 3D render) — but always name the anchor explicitly. "Make it pop" is not a style; "Braun product brochure crossed with Linear" is.
 
