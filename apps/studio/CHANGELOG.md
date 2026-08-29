@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.14.0](https://github.com/bffless/apps/compare/studio-v1.13.0...studio-v1.14.0) (2026-08-29)
+
+
+### Features
+
+* **studio:** GFM tables in MarkdownBody; blog island renders mermaid from a pinned CDN ([#445](https://github.com/bffless/apps/issues/445)) ([1674f75](https://github.com/bffless/apps/commit/1674f755703fe48aa27d064e4c33151f0ec856cf))
+
+
+### Bug Fixes
+
+* **studio:** image-prompts skill — creator wishes outrank house-style negatives ([#442](https://github.com/bffless/apps/issues/442)) ([8b9f4be](https://github.com/bffless/apps/commit/8b9f4be836bd48eefd154bafab005a833400103c))
+
 ## [1.13.0](https://github.com/bffless/apps/compare/studio-v1.12.1...studio-v1.13.0) (2026-08-29)
 
 
