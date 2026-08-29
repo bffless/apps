@@ -5,7 +5,7 @@ import { planScene } from '../../lib/export/assemble'
 import { assembleSceneBlob } from '../../lib/export/assembleScene'
 import { getVideoBackend } from '../../lib/videoBackend'
 import { useSignedBytes } from './useSignedBytes'
-import { useSignDownloadQuery } from '../../store/studioApi'
+import { useSignDownloadQuery, useSignAttachmentQuery } from '../../store/studioApi'
 import { skipToken } from '@reduxjs/toolkit/query'
 
 type Props = {
@@ -75,13 +75,20 @@ export function SceneAssembleBar({ scene, saving, onSave, onAssembleServer, onPr
   const canAssemble = hasClip && plan.video.length > 0
 
   const savedCurrent = !!resultBlob && savedBlob === resultBlob
-  // Playback of the SAVED cut signs the serve path to a direct bucket URL (a
-  // big MP4 must never stream through file_serve — it buffers/OOMs the
-  // backend). The download link keeps the serve path: `download` is ignored on
-  // cross-origin URLs, so signing it would cost the filename.
+  // Both playback and download read the SAVED cut straight from the bucket — a
+  // big MP4 must never stream through file_serve (it buffers/OOMs the backend,
+  // bffless/ce#317). They need DIFFERENT signatures: playback must render
+  // inline, the download must be `attachment` so the browser saves it under
+  // `downloadName` (an `<a download>` is ignored cross-origin). Mirrors
+  // FinalCutBar (#421).
+  const downloadName = `scene-${scene.index + 1}.mp4`
   const { data: signedAssembled } = useSignDownloadQuery(scene.assembledUrl ?? skipToken)
+  const { data: signedAttachment } = useSignAttachmentQuery(
+    scene.assembledUrl ? { url: scene.assembledUrl, filename: downloadName } : skipToken,
+  )
   const playbackSrc = resultUrl ?? (scene.assembledUrl ? (signedAssembled?.url ?? null) : null)
-  const downloadHref = resultUrl ?? scene.assembledUrl ?? null
+  // `resultUrl` is a same-origin blob: URL, where the `download` attr DOES apply.
+  const downloadHref = resultUrl ?? (scene.assembledUrl ? (signedAttachment?.url ?? null) : null)
 
   const run = useCallback(async () => {
     if (running || !canAssemble || !scene.clipUrl) return
@@ -197,7 +204,19 @@ export function SceneAssembleBar({ scene, saving, onSave, onAssembleServer, onPr
         {savedCurrent && <span className="text-[12.5px] text-ink-soft">✓ Saved</span>}
 
         {downloadHref && !running && (
-          <a className="pill-ghost" href={downloadHref} download={`scene-${scene.index + 1}.mp4`}>
+          // `target="_blank"` is load-bearing, not cosmetic: the saved cut's href is a
+          // cross-origin bucket URL, so `download` is ignored and the click becomes a real
+          // top-level navigation — which aborts every in-flight request on the page
+          // (NS_BINDING_ABORTED), including the project autosave. Giving it its own
+          // browsing context keeps the navigation off this page; the bucket answers with
+          // `Content-Disposition: attachment`, so it downloads and the tab never appears.
+          <a
+            className="pill-ghost"
+            href={downloadHref}
+            download={downloadName}
+            target="_blank"
+            rel="noopener"
+          >
             Download
           </a>
         )}
