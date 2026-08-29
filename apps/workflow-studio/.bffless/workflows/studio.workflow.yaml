@@ -41,25 +41,6 @@ jobs:
         summary: "Transcribed **${{ matrix.video.name }}** — ${{ length(steps.transcribe.outputs.words) }} words."
         annotations:
           - { level: warning, if: "${{ length(steps.transcribe.outputs.words) < 50 }}", message: "Very short transcript for ${{ matrix.video.name }} — is the audio silent?" }
-      - id: plan
-        name: Plan the contact sheets
-        uses: script
-        with: { src: scripts/sheet-plan.js, duration: "${{ steps.transcribe.outputs.duration }}" }
-        outputs:
-          times:  { type: json }
-          labels: { type: json }
-          interval: { type: number }
-      - id: sheets
-        name: Grab still frames
-        uses: pipeline
-        with:
-          path: video/contact-sheet
-          body: { source: "${{ matrix.video.path }}", outPrefix: "${{ step.prefix }}", times: "${{ steps.plan.outputs.times }}", labels: "${{ steps.plan.outputs.labels }}", executor: "${{ inputs.executor }}" }
-        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
-        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
-        outputs:
-          sheets: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
-          times:  { type: json, value: "${{ response.result.times }}" }
     outputs:
       source: { type: file, value: "${{ matrix.video }}" }
       # The SOURCE's extracted audio, not a scene clip's. The cut editor's transport
@@ -70,12 +51,58 @@ jobs:
       words:  ${{ steps.transcribe.outputs.words }}
       timed:  ${{ steps.transcribe.outputs.timed }}
       duration: ${{ steps.transcribe.outputs.duration }}
+
+  # R147: the contact sheets are planned ONCE, across every recording laid end to end on
+  # one global timeline - Studio's own `planGlobalSheetCaptures`. Planning per recording
+  # (which is what `per-video` used to do) got both halves wrong: it burned each frame's
+  # LOCAL clock while the director and the blog read a GLOBAL one, and it spent the whole
+  # 10-sheet budget on each recording, so `scenes`/`blog` - which sign the first 10 sheets
+  # - never saw the second recording at all. One plan, one budget, one clock.
+  plan:
+    name: Plan the contact sheets
+    needs: per-video
+    steps:
+      - id: plan
+        name: Plan the contact sheets
+        uses: script
+        with:
+          src: scripts/sheet-plan.js
+          sources: ${{ needs.per-video.outputs.source }}
+          durations: ${{ needs.per-video.outputs.duration }}
+        outputs:
+          plans: { type: json }
+    outputs:
+      plans: ${{ steps.plan.outputs.plans }}
+
+  # One matrix leg per SOURCE - `plans` carries exactly one entry per `per-video` item, in
+  # the same order, so `needs.sheets.outputs.sheets[matrix.scene.sourceIndex]` still lines
+  # up with the director's `sourceIndex`. A recording with no spoken audio plans no times;
+  # its leg is `if:`-skipped (`video/contact-sheet` refuses an empty plan) and its collected
+  # `sheets`/`times` entry is null, which every consumer tolerates.
+  sheets:
+    name: Grab still frames
+    needs: plan
+    strategy: { matrix: { plan: "${{ needs.plan.outputs.plans }}" }, max-parallel: 2 }
+    steps:
+      - id: sheets
+        name: Grab still frames
+        uses: pipeline
+        if: "${{ length(matrix.plan.times) > 0 }}"
+        with:
+          path: video/contact-sheet
+          body: { source: "${{ matrix.plan.source }}", outPrefix: "${{ step.prefix }}", times: "${{ matrix.plan.times }}", labels: "${{ matrix.plan.labels }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          sheets: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
+          times:  { type: json, value: "${{ response.result.times }}" }
+    outputs:
       sheets: ${{ steps.sheets.outputs.sheets }}
       times: ${{ steps.sheets.outputs.times }}
 
   director:
     name: Director's take
-    needs: per-video
+    needs: [per-video, sheets]
     steps:
       - id: scenes
         uses: pipeline
@@ -83,7 +110,7 @@ jobs:
           path: scenes
           body:
             timed:     ${{ needs.per-video.outputs.timed }}
-            sheets:    ${{ pluck(needs.per-video.outputs.sheets, 'path') }}
+            sheets:    ${{ pluck(needs.sheets.outputs.sheets, 'path') }}
             durations: ${{ needs.per-video.outputs.duration }}
             sources:   ${{ pluck(needs.per-video.outputs.source, 'path') }}
             direction: ${{ inputs.direction }}
@@ -102,7 +129,7 @@ jobs:
 
   per-scene:
     name: For each scene
-    needs: [director, per-video]
+    needs: [director, per-video, sheets]
     strategy: { matrix: { scene: "${{ needs.director.outputs.scenes }}" }, max-parallel: 3, fail-fast: false }
     steps:
       - id: cut
@@ -138,7 +165,7 @@ jobs:
             start: ${{ matrix.scene.start }}
             end: ${{ matrix.scene.end }}
             audio: ${{ steps.cut.outputs.wav.path }}
-            sheets: ${{ pluck(needs.per-video.outputs.sheets[matrix.scene.sourceIndex], 'path') }}
+            sheets: ${{ pluck(needs.sheets.outputs.sheets[matrix.scene.sourceIndex], 'path') }}
             wordTimings: ${{ steps.inputs.outputs.word_timings }}
             brief: ${{ matrix.scene.brief }}
             direction: ${{ inputs.direction }}
@@ -158,13 +185,14 @@ jobs:
           display: fullscreen
           clip:  ${{ steps.cut.outputs.clip }}
           # The SOURCE's WAV (see `per-video.outputs.wav`) — the editor's transport is
-          # on the source's clock. `refine` and `assemble` still take the CLIP's wav.
+          # on the source's clock. `refine` still takes the clip's wav; `assemble` takes
+          # the clip video.
           wav:   ${{ needs.per-video.outputs.wav[matrix.scene.sourceIndex] }}
           scene: ${{ matrix.scene }}
           words: ${{ steps.inputs.outputs.scene_words }}
           cuts:  ${{ steps.refine.outputs.cuts }}
-          sheets: ${{ needs.per-video.outputs.sheets[matrix.scene.sourceIndex] }}
-          times: ${{ needs.per-video.outputs.times[matrix.scene.sourceIndex] }}
+          sheets: ${{ needs.sheets.outputs.sheets[matrix.scene.sourceIndex] }}
+          times: ${{ needs.sheets.outputs.times[matrix.scene.sourceIndex] }}
         outputs:
           cuts: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
           keep: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
@@ -229,7 +257,7 @@ jobs:
 
   blog:
     name: Blog post
-    needs: [stitch, describe, per-video, director]
+    needs: [stitch, describe, per-video, director, sheets]
     if: ${{ inputs.write_blog }}
     steps:
       - id: write
@@ -244,7 +272,7 @@ jobs:
             summary: ${{ needs.describe.outputs.summary }}
             synopsis: ${{ needs.director.outputs.synopsis }}
             scenes: ${{ needs.director.outputs.scenes }}
-            sheets: ${{ pluck(needs.per-video.outputs.sheets, 'path') }}
+            sheets: ${{ pluck(needs.sheets.outputs.sheets, 'path') }}
             direction: ${{ inputs.direction }}
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
         outputs:

@@ -211,4 +211,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Per-scene refiner: the scene's own soundtrack, up to 10 dense contact sheets and the per-word timings go to Gemini, which answers with the cuts to drop inside this scene (an empty list is a valid answer). prep stores the prompt + system instruction on the job row for disclosure. Refuses (400) any path outside the harness's workflows/ run prefix before a job row exists."
+description: "Per-scene refiner: the scene's own soundtrack, up to 10 contact sheets and the per-word timings go to Gemini, which answers with the cuts to drop inside this scene (an empty list is a valid answer). prep stores the prompt + system instruction on the job row for disclosure. Refuses (400) any path outside the harness's workflows/ run prefix before a job row exists."

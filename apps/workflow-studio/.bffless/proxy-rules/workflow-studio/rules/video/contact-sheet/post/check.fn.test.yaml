@@ -3,7 +3,6 @@ cases:
   - name: reports the sheets, their cell times and CE's drawn telemetry
     data:
       steps:
-        prep: { interval: 8 }
         sheets:
           sheets:
             - storage_path: o/r/uploads/workflows/run-1/sheets/sheets/sheet-01.jpg
@@ -27,12 +26,10 @@ cases:
             - workflows/run-1/sheets/sheets/sheet-02.jpg
           times: [[0, 8, 16], [24]]
           columns: 3
-          interval: 8
           drawn: true
   - name: no sheets is a failure
     data:
-      steps:
-        prep: { interval: 8 }
+      steps: {}
       deployment: { owner: o, repo: r }
     expect:
       result:

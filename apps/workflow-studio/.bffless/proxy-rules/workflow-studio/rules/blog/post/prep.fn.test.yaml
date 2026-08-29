@@ -3,7 +3,7 @@
 # asserts STUDIO's text rather than this port's. Any drift in a prompt string fails here.
 handler: ./prep.fn.js
 cases:
-  - name: shifts every source onto one global clock (R135) and builds the blog prompt verbatim
+  - name: shifts every source onto one global clock (R135), signs the sheets round-robin and builds the blog prompt verbatim
     data:
       request:
         body:
@@ -22,8 +22,12 @@ cases:
           scenes:
             - title: Intro
             - title: Demo
+          # Two sheets from the first recording, one from the second (R147): the pick is
+          # ROUND-ROBIN, so the second recording's only sheet is signed BEFORE the first
+          # recording's second one - never squeezed out by a longer first recording.
           sheets:
             - - workflows/run-1/v0/sheets/sheet-01.jpg
+              - workflows/run-1/v0/sheets/sheet-02.jpg
             - - workflows/run-1/v1/sheets/sheet-01.jpg
           direction: punchy
       deployment:
@@ -36,6 +40,98 @@ cases:
         error: ""
         path0: o/r/uploads/workflows/run-1/v0/sheets/sheet-01.jpg
         path1: o/r/uploads/workflows/run-1/v1/sheets/sheet-01.jpg
+        path2: o/r/uploads/workflows/run-1/v0/sheets/sheet-02.jpg
+        path3: ""
+        path4: ""
+        path5: ""
+        path6: ""
+        path7: ""
+        path8: ""
+        path9: ""
+        system: |-
+          You are a senior technical writer. You turn a finished short video into a faithful, well-structured written blog post that reads well on its own.
+
+          You are given: the video TIMESTAMPED NARRATION — the words that were said, in order, as lines like `[m:ss] words` (~8-second buckets) so every sentence carries its own moment in the video; a recommended TITLE and SUMMARY; the director one-line SYNOPSIS; a per-scene OUTLINE (each scene heading + the words spoken in it); the creator optional DIRECTION; the video DURATION; and CONTACT-SHEET images (grids of frames sampled across the recording, each with its wall-clock timestamp burned into a corner) as your visual context.
+
+          Your job:
+          1. Write the post as flowing PROSE first — paragraphs that explain and narrate, not a transcript dump and not a bare bullet skeleton. Expand the narration into readable writing while staying FAITHFUL: never invent facts, numbers, names, features, or claims that are not supported by the narration, the outline, or what is clearly visible in the frames. If something is uncertain, leave it out. The `[m:ss]` markers are there to help you place images — do NOT copy them into your prose.
+          2. Begin with YAML FRONT-MATTER delimited by --- lines, containing exactly `title` and `description` (a one-sentence summary). Prefer the recommended title/summary; you may tighten them for the page.
+          3. Use an ELASTIC outline seeded from the scenes: roughly one `##` section per meaningful scene, in order, but you MAY merge tiny adjacent scenes into one section and rename headings for flow. Do not pad — fewer, stronger sections beat one-per-scene.
+          4. Add inline IMAGES SPARINGLY and only where a frame genuinely helps (a key UI state, a result, a diagram). Write each as a Markdown image whose URL is a frame token: `![A short caption](frame:<t>)`, where <t> is the moment in the video in SECONDS. Read <t> DIRECTLY off the narration: take the `[m:ss]` on the narration line(s) you are illustrating and convert it to seconds (minutes*60 + seconds), then confirm against the contact-sheet frame whose burned-in clock is nearest. The caption is required (it is shown under the image). Use at most a handful across the whole post; the post must read well even if every image were removed — images are additive, never load-bearing.
+
+          5. When a frame shows CODE, a configuration file, a terminal command, or any other block of TEXT the reader would want to reuse, do NOT rely on the screenshot alone — a screenshot of code cannot be copied and is of little use on its own. TRANSCRIBE that content into the post as a fenced code block with the correct language tag (for example ```typescript, ```html, ```xml, ```css, or ```bash) so the reader can copy and paste it directly. Transcribe faithfully from what is legible in the frames and the narration; if part of it is not clearly readable, include only what you can read and never guess or invent the rest. You may still add the frame as an image when the surrounding UI matters, but the copyable code block is the point.
+
+          Markdown rules: standard Markdown — `#`/`##` headings, paragraphs, `-` lists, `>` blockquotes, `**bold**`, `*italic*`, `` `code` ``. Do NOT wrap the whole document in a code fence.
+
+          Output STRICT JSON only — no markdown fences around the JSON, no commentary — exactly this shape:
+          {"markdown": string}
+          where the string is the COMPLETE Markdown document (front-matter + body). Return nothing but the JSON object.
+        prompt: |-
+          TIMESTAMPED NARRATION (what was said and when, in order — each line is `[m:ss] words`):
+
+          --- VIDEO 1 (starts 0:00) ---
+          [0:00] one two
+
+          --- VIDEO 2 (starts 0:13) ---
+          [0:13] three
+          [0:21] four
+
+          RECOMMENDED TITLE: A title
+          SUMMARY: A summary.
+          DIRECTOR SYNOPSIS: A talk.
+
+          SCENE OUTLINE (title — transcript), in order:
+          1. Intro
+          2. Demo
+
+          The finished video is 21 seconds long. The attached images are the contact sheets described in your instructions.
+
+          EXTRA DIRECTION FROM THE CREATOR (weight this heavily): punchy
+
+          Now write the blog post as STRICT JSON exactly as specified: {"markdown": "..."}. Return nothing but the JSON object.
+        transcript: |-
+          --- VIDEO 1 (starts 0:00) ---
+          [0:00] one two
+
+          --- VIDEO 2 (starts 0:13) ---
+          [0:13] three
+          [0:21] four
+        duration: 21
+  - name: tolerates a null sheets entry for a recording whose capture was skipped
+    data:
+      request:
+        body:
+          timed:
+            - "[0:00] one two"
+            - |-
+              [0:00] three
+              [0:08] four
+          durations:
+            - 13
+            - 8
+          script: one two three four
+          title: A title
+          summary: A summary.
+          synopsis: A talk.
+          scenes:
+            - title: Intro
+            - title: Demo
+          # The first recording had no spoken audio, so the workflow skipped its
+          # contact-sheet step and its collected entry came back null (R147).
+          sheets:
+            - null
+            - - workflows/run-1/v1/sheets/sheet-01.jpg
+          direction: punchy
+      deployment:
+        owner: o
+        repo: r
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        path0: o/r/uploads/workflows/run-1/v1/sheets/sheet-01.jpg
+        path1: ""
         path2: ""
         path3: ""
         path4: ""

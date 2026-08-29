@@ -23,7 +23,6 @@ function handler({ steps, deployment, stepErrors }) {
     times.push(s.times || [])
   }
 
-  var prep = (steps && steps.prep) || {}
   // `drawn` is CE's telemetry, not the request: false means the sheets came back
   // un-labelled (no drawtext filter). Surfaced, never fatal.
   return {
@@ -35,7 +34,6 @@ function handler({ steps, deployment, stepErrors }) {
       paths: paths,
       times: times,
       columns: 3,
-      interval: (typeof prep.interval === 'number' && isFinite(prep.interval)) ? prep.interval : 0,
       drawn: out.drawn === true,
     },
   }

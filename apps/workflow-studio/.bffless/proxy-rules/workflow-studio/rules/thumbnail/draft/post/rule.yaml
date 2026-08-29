@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: thumbnail-draft
-  description: "POST { title, description, script, notes } -> SYNC { prompt }: one Claude completion drafts the `google/nano-banana` image prompt that the render step draws. Ported from apps/studio /api/thumbnail/draft: the system prompt (in this manifest) and the user message (prep.fn.js) are verbatim. Studio pointed the step at its own `image-prompts` skill; the port carries no skills directory, and the system prompt says in as many words that its defaults are complete without one. The harness attaches no reference photo, so the REFERENCE IMAGE line always reads `none.` - the section is kept verbatim rather than trimmed. No paths in or out, so nothing to confine (R129)."
+  description: "POST { title, description, script, notes } -> SYNC { prompt }: one Claude completion drafts the `google/nano-banana-2` image prompt that the render step draws. Ported from apps/studio /api/thumbnail/draft: the system prompt (in this manifest) and the user message (prep.fn.js) are verbatim. Studio pointed the step at its own `image-prompts` skill; the port carries no skills directory, and the system prompt says in as many words that its defaults are complete without one. The harness attaches no reference photo, so the REFERENCE IMAGE line always reads `none.` - the section is kept verbatim rather than trimmed. No paths in or out, so nothing to confine (R129)."
   steps:
     - id: prep
       name: prep

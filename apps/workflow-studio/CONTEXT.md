@@ -14,7 +14,18 @@ re-authored here against the harness's step/payload model instead.
 
 ## Status
 
-Scaffold only (M3 Task 18): package, tsconfigs, Vite build configs and the empty
-`workflow-studio` rule set. No workflow YAML, rules, islands or scripts yet — those land in
-Tasks 19–23; the stager/CI/deploy that turn this into a publishable implementation land in
-Task 24.
+Complete and publishable. The tree is:
+
+| Piece | Where | What it is |
+| --- | --- | --- |
+| The workflow | `.bffless/workflows/studio.workflow.yaml` | 11 jobs, upload → short + blog + cover |
+| The backend | `.bffless/proxy-rules/workflow-studio/` | 13 rules over 2 data schemas |
+| The `script` steps | `scripts/*.ts` | 5 modules (`sheet-plan`, `scene-inputs`, `final-script`, `frame-times`, `blog-bundle`) |
+| The one island | `islands/cut-editor/` | the `trim` step, mounting Studio's own `CutEditor` |
+| The bundle | `scripts/stage.mjs` | type-check → island → scripts → `workflow index` |
+
+`pnpm build` **is** the stager (`node scripts/stage.mjs`), and
+`.github/workflows/deploy-workflow-studio.yml` runs it and hands `dist/` to
+`bffless/publish-workflow@v1`. What has NOT happened is the live side: the one-time project
+setup and the first end-to-end run — see [`bffless/README.md`](bffless/README.md) for the
+checklist and the first-success checkpoint.

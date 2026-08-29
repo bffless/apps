@@ -14,11 +14,19 @@ follows the same contract `bffless/workflow-hello` does.
 
 ## Source of truth
 
-This is the first task of the port; there is no design doc of its own yet beyond
-`CONTEXT.md` and this file. Later tasks (19–24, tracked in the M3 plan under
-`.superpowers/sdd/2026-08-27-workflow-m3-publish-headless-studio/`) add the workflow YAML,
-the rule set, the built scripts, the cut-editor island and the stager/CI/deploy. Don't
-invent structure ahead of them — extend what a later task actually adds.
+`.bffless/workflows/studio.workflow.yaml` is the contract: every rule, script and island
+here exists to serve a step in it, and the workflow lint
+(`pnpm --filter workflow-studio stage`, or `workflow lint … --rules … --path-prefix
+/api/workflow-studio`) is what proves the four halves still agree. `CONTEXT.md` is the map
+of the tree, `bffless/README.md` is the backend + one-time project setup, and the port's
+own design record is the M3 plan under
+`.superpowers/sdd/2026-08-27-workflow-m3-publish-headless-studio/` (the `R###` markers in
+the comments here are its rulings — cite them the same way when you add one).
+
+`apps/studio` is the other source of truth: this app is a PORT, so where a prompt, a
+constant or a piece of arithmetic came from Studio, it is Studio's — verbatim, and the
+fixtures assert it. Change Studio's, not the copy, unless the harness genuinely forces a
+deviation (and then say so in a comment, with the ruling).
 
 ## Reusing Studio
 

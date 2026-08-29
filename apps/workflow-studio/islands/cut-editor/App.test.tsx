@@ -234,6 +234,57 @@ describe('the cut editor island', () => {
     expect(outputs.keep[1].end).toBe(30)
   })
 
+  it('renders the grid with no filmstrip when this recording has no sheets', async () => {
+    // R147: a recording with no spoken audio plans no captures, so the workflow skips its
+    // contact-sheet step and this scene's `sheets`/`times` arrive null. The grid is the
+    // point of the step and works off `words`/`cuts` — only the gutter is missing.
+    const host = renderEditor(toolInput({ sheets: null, times: null }))
+    await settled()
+
+    expect(sheetSprite()).toBeNull()
+    expect(host.callsTo('workflow.sign').map((c) => c.arguments.path)).toEqual([
+      'runs/7/clip.mp4',
+      'runs/7/source.wav',
+    ])
+    done()
+    await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+    expect(host.lastSubmit()).toEqual({ cuts: [], keep: [{ start: 0, end: 30 }] })
+  })
+
+  it('renders the grid with no filmstrip when `times` fell out of step with `sheets`', async () => {
+    renderEditor(toolInput({ times: [] }))
+    await settled()
+    expect(sheetSprite()).toBeNull()
+  })
+
+  describe('when every span is cut', () => {
+    it('disables Done and says so rather than submitting an empty `keep`', async () => {
+      // `assemble` feeds `keep` to `video/slice`, which refuses an empty span list — so
+      // there is nothing to submit until a span is released.
+      renderEditor(toolInput({ cuts: [{ start: 0, end: 30 }] }))
+      await settled()
+
+      expect(screen.getByTestId('island-nothing-kept')).toHaveTextContent(
+        'Everything in this scene is cut',
+      )
+      expect(screen.getByTestId('island-done')).toBeDisabled()
+    })
+
+    it('comes back the moment a span is released', async () => {
+      const host = renderEditor(toolInput({ cuts: [{ start: 0, end: 30 }] }))
+      await settled()
+
+      // A drag on a cut cell releases that second back into the keep.
+      fireEvent.pointerDown(screen.getByText('beta'))
+      fireEvent.pointerUp(window)
+
+      await waitFor(() => expect(screen.getByTestId('island-done')).toBeEnabled())
+      expect(screen.queryByTestId('island-nothing-kept')).toBeNull()
+      done()
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+    })
+  })
+
   it('shows a refused submit and stays open', async () => {
     const host = createFakeHost()
     host.answer('workflow.submit', () => toolError('{"keep":"must not be empty"}'))
@@ -261,6 +312,19 @@ describe('the cut editor island', () => {
       // Nothing to look at, so nothing to sign — and a signing failure must never
       // be what stops an unattended run.
       expect(host.callsTo('workflow.sign')).toEqual([])
+    })
+
+    it('keeps the whole scene when the refiner cut all of it, rather than hanging', async () => {
+      // Interactively this disables **Done** and waits for a person; unattended there is
+      // nobody to wait for, and an empty `keep` would be refused by `video/slice`.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const host = createFakeHost({ headless: true })
+      renderEditor(toolInput({ cuts: [{ start: 0, end: 30 }] }), host)
+
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+      expect(host.lastSubmit()).toEqual({ cuts: [], keep: [{ start: 0, end: 30 }] })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('cut the whole scene'))
+      warn.mockRestore()
     })
 
     it('submits exactly once', async () => {

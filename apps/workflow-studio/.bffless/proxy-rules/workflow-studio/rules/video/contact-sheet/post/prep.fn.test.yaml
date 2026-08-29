@@ -1,6 +1,6 @@
 handler: ./prep.fn.js
 cases:
-  - name: passes the caller's plan through and derives the sampling interval
+  - name: passes the caller's plan through unchanged
     data:
       request:
         body:
@@ -18,7 +18,6 @@ cases:
         outputPrefix: workflows/run-1/sheets/sheets
         times: [0, 8, 16]
         labels: ["0:00", "0:08", "0:16"]
-        interval: 8
         executor: remote
   - name: refuses labels that do not line up with times
     data:
@@ -38,7 +37,6 @@ cases:
         outputPrefix: ""
         times: []
         labels: []
-        interval: 0
         executor: ""
   - name: refuses a label that is not a string
     data:
@@ -58,7 +56,6 @@ cases:
         outputPrefix: ""
         times: []
         labels: []
-        interval: 0
         executor: ""
   - name: refuses an empty plan
     data:
@@ -78,7 +75,6 @@ cases:
         outputPrefix: ""
         times: []
         labels: []
-        interval: 0
         executor: ""
   - name: refuses a negative time
     data:
@@ -98,7 +94,6 @@ cases:
         outputPrefix: ""
         times: []
         labels: []
-        interval: 0
         executor: ""
   - name: refuses a time that is not a finite number
     data:
@@ -118,7 +113,6 @@ cases:
         outputPrefix: ""
         times: []
         labels: []
-        interval: 0
         executor: ""
   # 201 entries - one past CE's MAX_STILLS_PER_JOB, which is measured on times.length.
   - name: refuses more times than CE will capture in one step
@@ -139,5 +133,4 @@ cases:
         outputPrefix: ""
         times: []
         labels: []
-        interval: 0
         executor: ""

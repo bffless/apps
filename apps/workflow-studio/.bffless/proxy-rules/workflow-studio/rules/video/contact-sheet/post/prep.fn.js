@@ -18,7 +18,7 @@ function handler({ request }) {
   function no(msg) {
     return {
       ok: false, notOk: true, error: msg,
-      input: '', outputPrefix: '', times: [], labels: [], interval: 0, executor: '',
+      input: '', outputPrefix: '', times: [], labels: [], executor: '',
     }
   }
 
@@ -49,10 +49,6 @@ function handler({ request }) {
     labels.push(rawLabels[j])
   }
 
-  // R118: the body carries no `interval` (the workflow's `plan` step keeps its own),
-  // so derive the one the result reports from the caller's own times.
-  var interval = times.length > 1 ? times[1] - times[0] : 0
-
   return {
     ok: true,
     notOk: false,
@@ -61,7 +57,6 @@ function handler({ request }) {
     outputPrefix: outPrefix + '/sheets',
     times: times,
     labels: labels,
-    interval: interval,
     executor: body.executor === 'local' || body.executor === 'remote' ? body.executor : '',
   }
 }

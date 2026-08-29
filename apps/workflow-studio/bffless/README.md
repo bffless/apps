@@ -70,6 +70,7 @@ settings, not rule-set JSON).
   the harness's own bare-minimum **viewer** (`apps/workflow/bffless/README.md` → "Members need a
   project role"), because this implementation's kickoff/upload/video-ops pipelines are writes,
   not just reads.
+
 ### The one-time setup checklist, in order
 
 Everything above, as steps someone can execute unattended. **None of it has been performed** —
@@ -133,9 +134,10 @@ Things that work, but not as well as they should. None blocks the first success.
   retry.
 - **No per-scene dense contact sheets.** Studio plans a second, tighter sheet per scene
   (`planSceneContactSheet`) so the per-scene refine pass sees that scene's frames at high
-  density. The port has one sheet plan for the whole video, so `refine-scene` sees the video's
-  first ≤ 10 sheets — enough to pick cuts, coarser than Studio's. A fix means a second
-  `video/contact-sheet` call inside the `per-scene` matrix job.
+  density. The port has ONE plan across the whole project (the `plan` job's
+  `planGlobalSheetCaptures`, R147), so `refine-scene` sees its source's ≤ 10 sheets sampled
+  at the project's spacing — enough to pick cuts, coarser than Studio's. A fix means a
+  second `video/contact-sheet` call inside the `per-scene` matrix job.
 - **The island infers the sheet's column count.** CE returns a per-sheet `cols` on the
   contact-sheet job, but the cut editor's filmstrip derives its grid from `SHEET_COLS`/`columns`
   instead of reading it back. Correct for every sheet this workflow asks for; wrong the moment a

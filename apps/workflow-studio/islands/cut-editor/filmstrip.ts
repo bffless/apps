@@ -4,10 +4,11 @@
  * can crop the 0:12 frame out of the sheet image with `background-position`.
  *
  * In Studio those sheets are composed in the browser, so their geometry is known by
- * construction. Here they arrive as `sheets` (a list of `FileRef`s from the per-video
- * `video/contact-sheet` step) plus `times` (R118 — one array of capture seconds per
- * sheet, parallel to it). Everything else has to be reconstructed from what CE's tiler
- * actually does, plus the image's own pixel size.
+ * construction. Here they arrive as `sheets` (a list of `FileRef`s — this source's leg of
+ * the `sheets` matrix job) plus `times` (R118 — one array of capture seconds per sheet,
+ * parallel to it). Either may be null or empty when that recording's capture was skipped
+ * (R147), which just means an empty gutter. Everything else has to be reconstructed from
+ * what CE's tiler actually does, plus the image's own pixel size.
  *
  * ## CE's real sheet geometry (R143)
  *

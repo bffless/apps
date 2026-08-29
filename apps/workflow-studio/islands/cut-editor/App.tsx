@@ -13,7 +13,9 @@
  *
  * Headless (`hostContext.bffless.headless`): there is nobody to look at any of it, so
  * the refiner's cuts are submitted at once — before, and independently of, signing.
- * An unattended run must never be stopped by a presign failure.
+ * An unattended run must never be stopped by a presign failure, nor by a refiner that
+ * cut the whole scene: that submits the WHOLE scene instead of an empty `keep`, which
+ * `video/slice` would refuse and which would otherwise hang the run until its timeout.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CutEditor } from 'studio/components/Studio/CutEditor'
@@ -55,7 +57,12 @@ interface TrimInput {
   words: TWord[]
   cuts: Cut[]
   sheets: FileRef[]
-  /** One array of capture seconds per sheet, parallel to `sheets` (R118). */
+  /**
+   * One array of capture seconds per sheet, parallel to `sheets` (R118). Both may be
+   * absent (`null`) or empty: a recording with no spoken audio plans no captures, so
+   * the workflow skips its contact-sheet step and this scene's `sheets`/`times` arrive
+   * null (R147). The editor renders the grid with no filmstrip gutter.
+   */
   times: number[][]
 }
 
@@ -207,8 +214,7 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
 
   const frames = useMemo(() => framesFor(sheetImages), [sheetImages])
 
-  // The clip element the editor drives: while the source-WAV transport plays,
-  // `CutEditor`
+  // The clip element the editor drives: while the source-WAV transport plays, `CutEditor`
   // mutes this, seeks it across every cut skip, and releases it on stop. `offset` maps
   // source seconds onto the clip's own timeline, which starts at the scene.
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -222,6 +228,11 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
     },
     [scene],
   )
+
+  // `keep` is the output `assemble` actually consumes, and `video/slice` refuses an empty
+  // span list — so a scene that has been cut end to end has nothing to submit. Computed
+  // from the LIVE cuts, so the button comes back the moment a span is released.
+  const nothingKept = useMemo(() => keepForClip(cuts, scene).length === 0, [cuts, scene])
 
   const submit = useCallback(
     async (spans: Cut[]) => {
@@ -254,8 +265,20 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
   useEffect(() => {
     if (!headless || autoSubmitted.current) return
     autoSubmitted.current = true
-    void submit(input.cuts)
-  }, [headless, input.cuts, submit])
+    // The refiner may have cut the whole scene. Interactively that just disables **Done**
+    // and waits for a person; an unattended run has nobody to wait for and must not hang,
+    // so it keeps the scene whole instead (`submit([])` ⇒ `cuts: []`,
+    // `keep: [{0, end - start}]`) — an empty `keep` is what `video/slice` would refuse.
+    // An island has no `ctx` to annotate the run with, so the frame's console is the only
+    // channel it has to say why the machine's answer was overruled.
+    const wholeSceneCut = keepForClip(input.cuts, scene).length === 0
+    if (wholeSceneCut) {
+      console.warn(
+        'cut-editor: the refiner cut the whole scene — keeping all of it so the headless run can finish',
+      )
+    }
+    void submit(wholeSceneCut ? [] : input.cuts)
+  }, [headless, input.cuts, scene, submit])
 
   return (
     <div className="min-h-screen bg-surface font-sans text-ink">
@@ -274,7 +297,7 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
             type="button"
             data-testid="island-done"
             className="pill-cta"
-            disabled={sending}
+            disabled={sending || nothingKept}
             onClick={() => void submit(cuts)}
           >
             {sending ? 'Sending…' : 'Done'}
@@ -288,6 +311,14 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
           className="border-b rule bg-surface-dim px-5 py-2 text-[12px] text-ink-mute"
         >
           Couldn’t load this scene’s media — {signError}
+        </p>
+      )}
+      {nothingKept && (
+        <p
+          data-testid="island-nothing-kept"
+          className="border-b rule bg-surface-dim px-5 py-2 text-[12px] text-ink"
+        >
+          Everything in this scene is cut — keep at least one span.
         </p>
       )}
       {submitError && (

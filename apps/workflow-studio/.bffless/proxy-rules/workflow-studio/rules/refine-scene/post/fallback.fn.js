@@ -8,7 +8,7 @@ function handler({ steps }) {
   // and the generateContent call referencing that file comes back 403
   // PERMISSION_DENIED a few seconds later. Everything ELSE in the request still
   // works, so rather than surfacing an error we re-run deaf: same prompt, same
-  // dense contact sheets, same word timings, minus the one input the provider
+  // same contact sheets, same word timings, minus the one input the provider
   // can't take right now. (Studio's note also listed the measured dead space
   // here; this port never has any - Decision 17 / R136.) `parse` passes
   // `heardAudio` back to the client so a deaf refine is visible rather than

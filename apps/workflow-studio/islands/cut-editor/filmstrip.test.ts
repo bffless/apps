@@ -147,6 +147,12 @@ describe('framesFor', () => {
     expect(frames[12].index).toBe(0) // index is within its OWN sheet, not global
   })
 
+  it('has no frames at all when this recording produced no sheets (R147)', () => {
+    // The workflow skips the contact-sheet step for a recording with no spoken audio, so
+    // the island is handed a null/empty `sheets` — the gutter is simply empty.
+    expect(framesFor([])).toEqual([])
+  })
+
   it('picks the frame sampled in the row’s own second, else the nearest', () => {
     const frames = framesFor([full, short])
     expect(frameForRow(frames, 10)?.time).toBe(10)

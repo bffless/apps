@@ -11,9 +11,24 @@ on:
   workflow_dispatch: {}
   push:
     branches: [main]
-    paths: ['apps/workflow-studio/**']
+    # The same input set workflow-studio.yml tests on: the island and the five scripts
+    # import Studio's pure libs, its component and its CSS through the `studio` workspace
+    # dependency, and the scripts type against `@bffless/workflow-script` — so a change on
+    # either side changes what this deploy publishes without touching a file under
+    # apps/workflow-studio/. Keep the two lists in step.
+    paths:
+      - 'apps/workflow-studio/**'
+      - 'packages/workflow-script/**'
+      - 'apps/studio/src/lib/**'
+      - 'apps/studio/src/components/Studio/CutEditor.tsx'
+      - 'apps/studio/src/index.css'
+      - 'apps/studio/package.json'
+      - '.github/workflows/deploy-workflow-studio.yml'
 
 concurrency: { group: deploy-workflow-studio, cancel-in-progress: false }
+
+permissions:
+  contents: read
 
 jobs:
   publish:

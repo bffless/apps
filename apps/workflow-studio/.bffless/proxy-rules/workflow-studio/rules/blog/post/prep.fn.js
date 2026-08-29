@@ -24,21 +24,36 @@ function handler({ request, deployment }) {
     return bad
   }
 
-  // Up to 10 contact sheets are signed for the multimodal call, in source order, from
-  // the per-source lists `pluck` hands over nested (the `scenes` rule signs 10 the same
-  // way; Studio was handed one flat list of /api/uploads/ serve paths).
   var out = { ok: true, notOk: false, error: '' }
-  var flat = []
+  // R147: `sheets` is ONE nested list per SOURCE, in `per-video` order - the workflow's
+  // `sheets` matrix job collects one entry per plan - and an entry may be null or empty:
+  // a recording with no spoken audio plans no times, so its contact-sheet step is
+  // `if:`-skipped and contributes nothing. Up to 10 sheets are signed for the multimodal
+  // call, picked ROUND-ROBIN across the sources (source 0's first sheet, source 1's
+  // first, then each source's second, ...) rather than flattening in order: a flat
+  // `slice(0, 10)` spent the whole budget on a long FIRST recording and the director
+  // never saw a frame of the second.
+  var perSource = []
+  var longest = 0
   var sheetsIn = body.sheets
   if (!sheetsIn || typeof sheetsIn.length !== 'number') sheetsIn = []
   for (var g = 0; g < sheetsIn.length; g++) {
     var list = sheetsIn[g]
     if (typeof list === 'string') list = [list]
-    if (!list || typeof list.length !== 'number') continue
+    if (!list || typeof list.length !== 'number') { perSource.push([]); continue }
+    var one = []
     for (var h = 0; h < list.length; h++) {
       var sheet = safe(list[h])
       if (!sheet) return no(REFUSAL)
-      flat.push(sheet)
+      one.push(sheet)
+    }
+    if (one.length > longest) longest = one.length
+    perSource.push(one)
+  }
+  var flat = []
+  for (var rr = 0; rr < longest && flat.length < 10; rr++) {
+    for (var si = 0; si < perSource.length && flat.length < 10; si++) {
+      if (rr < perSource[si].length) flat.push(perSource[si][rr])
     }
   }
   var prefix = deployment.owner + '/' + deployment.repo + '/uploads/'

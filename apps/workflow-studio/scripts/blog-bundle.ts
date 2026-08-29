@@ -66,8 +66,8 @@ export default async function blogBundle(ctx: ScriptContext): Promise<Record<str
     if (ctx.signal.aborted) throw new Error(`${NAME}: cancelled`)
     const path = byTime[String(time)]
     // No entry: the capture never happened (a fourth recording — the pipeline seeks
-    // three — or the clock mismatch noted above). The token has no image and
-    // `rewriteFrameTokens` removes it below; counted so the creator is told.
+    // three). The token has no image and `rewriteFrameTokens` removes it below;
+    // counted so the creator is told.
     if (typeof path !== 'string' || !path) {
       uncaptured.push(time)
       continue
