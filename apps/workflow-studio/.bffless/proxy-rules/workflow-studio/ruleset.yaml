@@ -1,0 +1,2 @@
+name: workflow-studio
+description: "Workflow-harness implementation of Studio's video pipelines: the async job poll, the ffmpeg video ops (extract-audio, contact-sheet, slice, concat, frames) and the AI stages (transcribe, scenes, refine-scene, describe, blog, thumbnail draft/render) behind studio.workflow.yaml."

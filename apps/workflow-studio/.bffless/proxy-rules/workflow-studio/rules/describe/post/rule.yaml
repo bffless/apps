@@ -1,0 +1,57 @@
+targetUrl: pipeline
+timeout: 120000
+pipeline:
+  name: Export description (sync Claude)
+  description: "POST { script, synopsis } -> SYNC { title, summary }. One Claude completion (ai_handler, no chat/history) that writes the title and description from the final kept script and the director's synopsis. Ported from apps/studio /api/describe: the prompt and system instruction are verbatim; Studio pointed the step at its own `video-description` skill, and the port carries no skills directory - the system prompt's defaults are complete on their own and say so. No paths in or out, so nothing to confine (R129)."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: describe
+      name: describe
+      handler: ai_handler
+      config:
+        mode: completion
+        model: claude-opus-4-6
+        provider: anthropic
+        maxTokens: 2000
+        temperature: 0.3
+        timeout: 110000
+        messageField: "{{steps.prep.prompt}}"
+        responseMode: message
+        systemPrompt: "{{steps.prep.system}}"
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.parse.ok
+        body: "{{{steps.parse.descriptionJson}}}"
+        status: 200
+        contentType: application/json
+    # R120: a SYNC rule has no job row to write an error onto, so an unreadable answer
+    # comes back as an error envelope carrying `code` - the value `parse` computed (R137:
+    # the CE step code once ce#662 lands, else its 'AI_UNREADABLE' fallback), never a
+    # string hard-coded here. Both response branches are gated -
+    # a response_handler does not terminate a CE pipeline, so an ungated second one would
+    # simply overwrite the first.
+    - id: fail
+      name: fail
+      handler: response_handler
+      config:
+        condition: steps.parse.notOk
+        body: |-
+          {
+            "error": "{{steps.parse.error}}",
+            "code": "{{steps.parse.code}}"
+          }
+        status: 502
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Title and description for the finished short, written by Claude from the final kept script and the director's synopsis. Sync: the workflow reads response.title / response.summary directly, with no job to poll."

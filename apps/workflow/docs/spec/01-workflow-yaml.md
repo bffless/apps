@@ -186,5 +186,6 @@ Durations (`poll.every`, `poll.timeout`, `retry.delay`): `500ms`, `3s`, `10m`, `
 ## Worked examples
 
 - [`examples/hello.workflow.yaml`](examples/hello.workflow.yaml) — the M1 test implementation.
-- [`examples/studio.workflow.yaml`](examples/studio.workflow.yaml) — the Studio port, every
-  step kind exercised.
+- [`apps/workflow-studio/.bffless/workflows/studio.workflow.yaml`](../../../workflow-studio/.bffless/workflows/studio.workflow.yaml) —
+  the Studio port, every step kind exercised. Ships with its implementation rather than the
+  spec's examples, so it's checked against a real (if still incomplete) rule set.

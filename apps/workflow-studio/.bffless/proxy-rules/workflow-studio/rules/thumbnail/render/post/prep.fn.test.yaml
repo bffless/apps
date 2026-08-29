@@ -1,0 +1,41 @@
+handler: ./prep.fn.js
+cases:
+  - name: accepts a prompt and normalises the run-prefixed out prefix
+    data:
+      request:
+        body:
+          prompt: "16:9 YouTube thumbnail, vintage technical manual."
+          outPrefix: workflows/run-1/covers-1/
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        prompt: "16:9 YouTube thumbnail, vintage technical manual."
+        outPrefix: workflows/run-1/covers-1
+  - name: refuses an out prefix outside the run prefix
+    data:
+      request:
+        body:
+          prompt: "16:9 YouTube thumbnail."
+          outPrefix: projects/p1/youtube-thumbnail
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Refused - every path must be an uploads-relative path under workflows/
+        prompt: ""
+        outPrefix: ""
+  - name: refuses an empty prompt
+    data:
+      request:
+        body:
+          prompt: "   "
+          outPrefix: workflows/run-1/covers-1
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Refused - prompt must be a non-empty string
+        prompt: ""
+        outPrefix: ""

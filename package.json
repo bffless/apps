@@ -41,7 +41,12 @@
     "workflow:dev": "pnpm --filter workflow dev",
     "workflow:build": "pnpm --filter workflow build",
     "workflow:lint": "pnpm --filter workflow lint",
-    "workflow:test": "pnpm --filter workflow test:run"
+    "workflow:test": "pnpm --filter workflow test:run",
+    "workflow-studio:build": "pnpm --filter workflow-studio build",
+    "workflow-studio:stage": "pnpm --filter workflow-studio stage",
+    "workflow-studio:lint": "pnpm --filter workflow-studio lint",
+    "workflow-studio:test": "pnpm --filter workflow-studio test:run",
+    "workflow-studio:typecheck": "pnpm --filter workflow-studio typecheck"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

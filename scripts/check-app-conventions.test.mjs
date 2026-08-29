@@ -173,6 +173,20 @@ test('rejects bffless-app.json behind package.json and the release-please manife
     symlinkSync(script, link)
 
     const stdout = execFileSync(process.execPath, [link], { encoding: 'utf8' })
-    assert.match(stdout, /All 5 app\(s\) satisfy the per-app pipelines convention\./)
+
+    // What this asserts is that the script RAN (the symlink bug made it a silent no-op),
+    // so the count is incidental — derive it from the run's own per-app lines rather than
+    // hard-coding a number that every new app under apps/ would falsify. The summary counts
+    // every app directory, which is exactly one line each: `✓ <id>` / `✗ <id>` for a checked
+    // app, `- <id> (spec-only …)` for one skipped for having no package.json. The script's
+    // other `✓ …` lines are whole sentences (the repo-wide checks), which `\S+$` excludes.
+    const appLines = stdout
+      .split('\n')
+      .filter((line) => /^[✓✗] \S+$/.test(line) || /^- \S+ \(spec-only/.test(line))
+    assert.ok(appLines.length > 0, `no per-app lines in:\n${stdout}`)
+    assert.match(
+      stdout,
+      new RegExp(`All ${appLines.length} app\\(s\\) satisfy the per-app pipelines convention\\.`),
+    )
   })
 }

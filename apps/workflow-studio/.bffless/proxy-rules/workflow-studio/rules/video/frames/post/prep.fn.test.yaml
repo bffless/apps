@@ -1,0 +1,162 @@
+handler: ./prep.fn.js
+cases:
+  - name: groups captures by distinct source in first-seen order
+    data:
+      request:
+        body:
+          outPrefix: workflows/run-1/blog/
+          executor: local
+          captures:
+            - { source: workflows/run-1/inputs/a.mp4, time: 12, name: demo }
+            - { source: workflows/run-1/inputs/b.mp4, time: 3, name: intro }
+            - { source: workflows/run-1/inputs/a.mp4, time: 30.5, name: outro }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        dropped: 0
+        executor: local
+        has0: true
+        src0: workflows/run-1/inputs/a.mp4
+        times0: [12, 30.5]
+        keys0: ["12", "30.5"]
+        out0: workflows/run-1/blog/frames/0
+        has1: true
+        src1: workflows/run-1/inputs/b.mp4
+        times1: [3]
+        keys1: ["3"]
+        out1: workflows/run-1/blog/frames/1
+        has2: false
+        src2: ""
+        times2: []
+        keys2: []
+        out2: ""
+  - name: a capture key rides through unchanged, even when it differs from the seek time
+    data:
+      request:
+        body:
+          outPrefix: workflows/run-1/blog
+          executor: auto
+          captures:
+            # R140: `time` is LOCAL to `source`, `key` is the GLOBAL token second the
+            # post was written with. The second recording starts at 60s on the global
+            # clock, so its local 3s is global 63s - and both of these captures sit at
+            # the same LOCAL second, which is exactly the collision `key` avoids.
+            - { source: workflows/run-1/a.mp4, time: 3, key: "3", name: frame-01.jpg }
+            - { source: workflows/run-1/b.mp4, time: 3, key: "63", name: frame-02.jpg }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        dropped: 0
+        executor: ""
+        has0: true
+        src0: workflows/run-1/a.mp4
+        times0: [3]
+        keys0: ["3"]
+        out0: workflows/run-1/blog/frames/0
+        has1: true
+        src1: workflows/run-1/b.mp4
+        times1: [3]
+        keys1: ["63"]
+        out1: workflows/run-1/blog/frames/1
+        has2: false
+        src2: ""
+        times2: []
+        keys2: []
+        out2: ""
+  - name: captures from a fourth source are dropped, not served
+    data:
+      request:
+        body:
+          outPrefix: workflows/run-1/blog
+          executor: ""
+          captures:
+            - { source: workflows/run-1/a.mp4, time: 1, name: a }
+            - { source: workflows/run-1/b.mp4, time: 2, name: b }
+            - { source: workflows/run-1/c.mp4, time: 3, name: c }
+            - { source: workflows/run-1/d.mp4, time: 4, name: d }
+            - { source: workflows/run-1/d.mp4, time: 5, name: e }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        dropped: 2
+        executor: ""
+        has0: true
+        src0: workflows/run-1/a.mp4
+        times0: [1]
+        keys0: ["1"]
+        out0: workflows/run-1/blog/frames/0
+        has1: true
+        src1: workflows/run-1/b.mp4
+        times1: [2]
+        keys1: ["2"]
+        out1: workflows/run-1/blog/frames/1
+        has2: true
+        src2: workflows/run-1/c.mp4
+        times2: [3]
+        keys2: ["3"]
+        out2: workflows/run-1/blog/frames/2
+  - name: no captures is a no-op, not a refusal
+    data:
+      request:
+        body:
+          outPrefix: workflows/run-1/blog
+          executor: auto
+          captures: []
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        dropped: 0
+        executor: ""
+        has0: false
+        src0: ""
+        times0: []
+        keys0: []
+        out0: ""
+        has1: false
+        src1: ""
+        times1: []
+        keys1: []
+        out1: ""
+        has2: false
+        src2: ""
+        times2: []
+        keys2: []
+        out2: ""
+  - name: refuses a capture whose source escapes the run prefix
+    data:
+      request:
+        body:
+          outPrefix: workflows/run-1/blog
+          executor: local
+          captures:
+            - { source: workflows/run-1/../secrets/a.mp4, time: 1, name: a }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Refused - every path must be an uploads-relative path under workflows/
+        dropped: 0
+        executor: ""
+        has0: false
+        src0: ""
+        times0: []
+        keys0: []
+        out0: ""
+        has1: false
+        src1: ""
+        times1: []
+        keys1: []
+        out1: ""
+        has2: false
+        src2: ""
+        times2: []
+        keys2: []
+        out2: ""

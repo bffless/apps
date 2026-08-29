@@ -1,0 +1,185 @@
+targetUrl: pipeline
+timeout: 120000
+pipeline:
+  name: Master director (async enqueue + poll)
+  description: "POST { timed, sheets, durations, sources, direction } -> ENQUEUE a job (kind 'scenes') and return { jobId, status: 'pending' }; the slow Gemini call + parse run in postSteps and write the row to done/error. Result { synopsis, scenes } is polled via GET job?id=. Ported from apps/studio /api/scenes: the prompt and system instruction are verbatim, prep builds the combined transcript from the per-source `timed` strings, re-stamping each line's [m:ss] label onto the ONE GLOBAL clock the director reasons on (offsets from `durations`) rather than shifting words as Studio did, and parse additionally maps every scene back to its source in LOCAL seconds (director.ts toScenes)."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.prep.notOk
+        body: |-
+          {
+            "error": "{{steps.prep.error}}",
+            "code": "BAD_PATH"
+          }
+        status: 400
+        contentType: application/json
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        condition: steps.prep.ok
+        fields:
+          kind: "'scenes'"
+          prompt: steps.prep.prompt
+          status: "'pending'"
+          system: steps.prep.system
+          request: request.body
+        schemaId: $schema:workflow_studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.prep.ok
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  # Every postStep is gated on `steps.prep.ok`. A response_handler does NOT terminate a CE
+  # pipeline - of the handlers that can, file-serve / stripe-webhook / form always set
+  # `terminates` and ai_handler ONLY in `stream` mode (CE ai.handler.ts:665; every ai_handler
+  # step in this set uses responseMode: message, so none of them terminate) - so postSteps
+  # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
+  # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
+  # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not
+  # throw) and both branches stay off.
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        condition: steps.prep.ok
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+    - id: sign0
+      name: sign0
+      handler: signed_url
+      config:
+        path: steps.prep.path0
+        condition: steps.prep.path0
+        expiresIn: 3600
+    - id: sign1
+      name: sign1
+      handler: signed_url
+      config:
+        path: steps.prep.path1
+        condition: steps.prep.path1
+        expiresIn: 3600
+    - id: sign2
+      name: sign2
+      handler: signed_url
+      config:
+        path: steps.prep.path2
+        condition: steps.prep.path2
+        expiresIn: 3600
+    - id: sign3
+      name: sign3
+      handler: signed_url
+      config:
+        path: steps.prep.path3
+        condition: steps.prep.path3
+        expiresIn: 3600
+    - id: sign4
+      name: sign4
+      handler: signed_url
+      config:
+        path: steps.prep.path4
+        condition: steps.prep.path4
+        expiresIn: 3600
+    - id: sign5
+      name: sign5
+      handler: signed_url
+      config:
+        path: steps.prep.path5
+        condition: steps.prep.path5
+        expiresIn: 3600
+    - id: sign6
+      name: sign6
+      handler: signed_url
+      config:
+        path: steps.prep.path6
+        condition: steps.prep.path6
+        expiresIn: 3600
+    - id: sign7
+      name: sign7
+      handler: signed_url
+      config:
+        path: steps.prep.path7
+        condition: steps.prep.path7
+        expiresIn: 3600
+    - id: sign8
+      name: sign8
+      handler: signed_url
+      config:
+        path: steps.prep.path8
+        condition: steps.prep.path8
+        expiresIn: 3600
+    - id: sign9
+      name: sign9
+      handler: signed_url
+      config:
+        path: steps.prep.path9
+        condition: steps.prep.path9
+        expiresIn: 3600
+    - id: collect
+      name: collect
+      handler: function_handler
+      code: ./collect.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: director
+      name: director
+      handler: replicate
+      config:
+        condition: steps.prep.ok
+        input:
+          images: steps.collect.images
+          prompt: steps.prep.prompt
+          temperature: 0.6
+          thinking_level: "'medium'"
+          max_output_tokens: 64000
+          system_instruction: steps.prep.system
+        model: google/gemini-3.1-pro
+        timeout: 280000
+    - id: parse
+      name: parse
+      handler: function_handler
+      code: ./parse.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.parse.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.parse.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.parse.error
+          code: steps.parse.code
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.parse.notOk
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Master director. prep builds the globally-clocked transcript, the prompt/system instruction and the storage paths of up to 10 contact sheets, createJob stores the row (with the prompt + system instruction, for disclosure), and respond returns { jobId } immediately. The Gemini 3.1 Pro call and parse run off the response path in postSteps. Refuses (400) any path outside the harness's workflows/ run prefix before a job row is created."

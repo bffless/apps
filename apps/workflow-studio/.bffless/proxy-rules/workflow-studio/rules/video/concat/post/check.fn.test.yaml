@@ -1,0 +1,28 @@
+handler: ./check.fn.js
+cases:
+  - name: strips the storage prefix back to an uploads-relative path
+    data:
+      steps:
+        stitch:
+          storage_path: o/r/uploads/workflows/run-1/stitch/short.mp4
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data: { path: workflows/run-1/stitch/short.mp4 }
+  - name: a missing step output is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server stitch failed
+        code: ""
+        data: null
+  # NOTE: `stepErrors` cases are omitted - the CLI's fixture schema accepts only
+  # user/request/steps/deployment as data roots (see video/slice/post/check.fn.test.yaml).

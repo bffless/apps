@@ -69,6 +69,30 @@ ffmpeg.wasm (story 05+).
   the old `/studio` route prefix was dropped on extraction. `src/main.tsx` wires the store +
   MSW bootstrap.
 
+## Public surface (consumed by workflow-studio)
+
+`package.json` `exports` publishes `./lib/*` (a **wildcard over all of `src/lib/*.ts`** — every
+module, not a curated subset), `./components/Studio/CutEditor`, `./components/Studio/clipPlayer`
+and `./index.css` so `apps/workflow-studio` (a re-authoring of this app's video pipelines as a
+Workflow-harness implementation) can depend on `studio: workspace:*` and import them directly
+instead of forking the source.
+
+**Not everything under `lib/*` is store-free today.** Four modules touch the Redux slice:
+`projectSync.ts` imports `freshWorkingState` from `../store/studioSlice` as a **value** (it
+pulls `@reduxjs/toolkit` into any consumer at runtime, and `studioSlice.ts` imports
+`projectSync` back — a cycle); `projects.ts`, `transcriptText.ts` and `studioRoute.ts` import
+`ProjectWorkingState`/`TranscriptWord` from the slice as **types only** (erased at runtime, but
+still a coupling). `CutEditor.tsx` and `clipPlayer.ts` are clean.
+
+The modules workflow-studio actually consumes are store-free (verified against the tree):
+`director`, `refiner`, `describe`, `blog`, `sources`, `contactSheet`, `filmstrip`, `scenes`,
+`edl`, `slug`, `transcriptGrid`, `playback`, `deadSpace`, `autoTrim`, `audio`, `search`,
+`frames`. Keep that list — and any new module workflow-studio starts consuming — store-free (no
+`react-redux`/`@reduxjs/toolkit`/`../store` import, value or type-only) so it stays usable
+outside this app's Redux tree; `apps/workflow-studio/eslint.config.js` fences the four
+store-touching modules (plus `studio/store/*` and the Redux packages themselves) out of
+`scripts/**`/`islands/**` so this is enforced, not just documented.
+
 ## Non-negotiable patterns
 
 - **Mock-first, swap-don't-rewrite.** Every `/api/*` has an MSW mock in `src/mocks/handlers.ts`

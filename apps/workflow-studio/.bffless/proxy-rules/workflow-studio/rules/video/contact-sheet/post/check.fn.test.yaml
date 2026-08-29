@@ -1,0 +1,42 @@
+handler: ./check.fn.js
+cases:
+  - name: reports the sheets, their cell times and CE's drawn telemetry
+    data:
+      steps:
+        sheets:
+          sheets:
+            - storage_path: o/r/uploads/workflows/run-1/sheets/sheets/sheet-01.jpg
+              times: [0, 8, 16]
+              index: 0
+            - storage_path: o/r/uploads/workflows/run-1/sheets/sheets/sheet-02.jpg
+              times: [24]
+              index: 1
+          count: 4
+          drawn: true
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          paths:
+            - workflows/run-1/sheets/sheets/sheet-01.jpg
+            - workflows/run-1/sheets/sheets/sheet-02.jpg
+          times: [[0, 8, 16], [24]]
+          columns: 3
+          drawn: true
+  - name: no sheets is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Contact-sheet capture failed
+        code: ""
+        data: null
+  # NOTE: no `stepErrors` case — the CLI fixture schema rejects that data root (see
+  # video/extract-audio/post/check.fn.test.yaml).

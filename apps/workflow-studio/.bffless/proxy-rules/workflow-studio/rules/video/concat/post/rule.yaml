@@ -1,0 +1,105 @@
+targetUrl: pipeline
+timeout: 120000
+pipeline:
+  name: Server video concat (ffmpeg, async)
+  description: "POST { clips, outPrefix, executor } -> ENQUEUE a job (kind 'video-concat') and return { jobId, status: 'pending' }; CE's ffmpeg concat op (stream-copy-first stitch) runs in postSteps reading and writing storage directly. Result { path } (uploads-relative) is polled via GET job?id=. Ported from apps/studio /api/video/concat: the clips are run-prefixed relative paths in scene order (Studio sent /api/uploads/ serve URLs), the output is `<outPrefix>/short.mp4`, and the result is a path rather than a URL."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.prep.notOk
+        body: |-
+          {
+            "error": "{{steps.prep.error}}",
+            "code": "BAD_REQUEST"
+          }
+        status: 400
+        contentType: application/json
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        condition: steps.prep.ok
+        fields:
+          kind: "'video-concat'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:workflow_studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.prep.ok
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  # Every postStep is gated on `steps.prep.ok`. A response_handler does NOT terminate a CE
+  # pipeline - of the handlers that can, file-serve / stripe-webhook / form always set
+  # `terminates` and ai_handler ONLY in `stream` mode (CE ai.handler.ts:665; every ai_handler
+  # step in this set uses responseMode: message, so none of them terminate) - so postSteps
+  # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
+  # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
+  # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not
+  # throw) and both branches stay off.
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        condition: steps.prep.ok
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+    - id: stitch
+      name: stitch
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.ok
+        operation: concat
+        # Which CE executor runs this job ('local' | 'remote'; template-evaluated).
+        # Empty string => CE's configured default, which is how the workflow's `auto` works.
+        executor: "{{steps.prep.executor}}"
+        # `inputs` is expression-evaluated (never braced); `output` is a TEMPLATE and must be.
+        inputs: steps.prep.clips
+        output: "{{steps.prep.outPrefix}}/short.mp4"
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.check.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.check.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.check.error
+          code: steps.check.code
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.check.notOk
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Server-side clip stitching (stream-copy-first concat) via CE's ffmpeg_handler - the scene clips, in order, become the short. Refuses (400) an empty clip list or any path outside the harness's workflows/ run prefix before a job row is created."

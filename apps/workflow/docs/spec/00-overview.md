@@ -61,7 +61,7 @@ lists the project's aliases and probes `/w/<alias>/.bffless/workflows/index.json
 | Headless | [07-headless.md](07-headless.md) | `?auto=1&inputs=` contract, `window.__workflow`, `headless: skip\|auto`, the Playwright CLI. |
 | Harness UI | [08-harness-ui.md](08-harness-ui.md) | Screens derived from the prototype: implementations, workflow graph, kickoff form, run page with Input/Output panes, past runs. |
 | State management | [09-state-management.md](09-state-management.md) | Redux Toolkit + RTK Query; the run engine as a pure event-sourced reducer (ADR-0003). |
-| Examples | [`examples/`](examples/) | `hello.workflow.yaml` (M1 test implementation), `studio.workflow.yaml` (the reference port). |
+| Examples | [`examples/`](examples/) | `hello.workflow.yaml` (M1 test implementation). The reference port, `studio.workflow.yaml`, ships with its implementation: [`apps/workflow-studio/.bffless/workflows/studio.workflow.yaml`](../../../workflow-studio/.bffless/workflows/studio.workflow.yaml). |
 
 ## Milestones
 

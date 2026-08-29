@@ -12,6 +12,8 @@ on:
       - 'packages/workflow-lint/**'
       - 'apps/workflow/docs/spec/workflow.schema.json'
       - 'apps/workflow/docs/spec/examples/**'
+      - 'apps/workflow-studio/.bffless/workflows/**'
+      - 'apps/workflow-studio/.bffless/proxy-rules/**'
       - '.github/workflows/workflow-lint.yml'
   workflow_dispatch:
 
@@ -45,18 +47,24 @@ jobs:
       - name: Test
         run: pnpm --filter @bffless/workflow-lint test:run
 
-      # Neither example is checked against a real rule set here anymore.
-      # hello's now lives in bffless/workflow-hello (M3 Task 7) — that repo's
-      # own CI lints hello.workflow.yaml/interactive.workflow.yaml against it
-      # (this repo only mirrors the two YAMLs for drift-checking, see
-      # apps/workflow/src/hello-drift.test.ts); studio's rule set doesn't exist
-      # yet. `--alias` a name nothing under this repo's own
-      # apps/workflow/.bffless/proxy-rules matches, so `rule-missing` degrades
-      # to a notice instead of silently resolving to this repo's own
-      # `workflow` set — with hello's set gone there is exactly one set left
-      # here, so an unscoped search is no longer ambiguous and would otherwise
-      # "find" the wrong one.
+      # hello/interactive aren't checked against a real rule set here: they now
+      # live in bffless/workflow-hello (M3 Task 7) — that repo's own CI lints
+      # them against it (this repo only mirrors the two YAMLs for
+      # drift-checking, see apps/workflow/src/hello-drift.test.ts). `--alias`
+      # a name nothing under this repo's own apps/workflow/.bffless/proxy-rules
+      # matches, so `rule-missing` degrades to a notice instead of silently
+      # resolving to this repo's own `workflow` set — with hello's set gone
+      # there is exactly one set left here, so an unscoped search is no longer
+      # ambiguous and would otherwise "find" the wrong one.
+      #
+      # studio.workflow.yaml is no longer a spec example — it ships with its
+      # implementation (apps/workflow-studio) and is checked against that
+      # app's own (real, on-disk) rule set with --rules/--path-prefix, which is
+      # now complete, so this is a clean lint. The same check runs again inside
+      # the app's own stager (apps/workflow-studio/scripts/stage.mjs) and a
+      # third time inside `bffless/publish-workflow@v1` at deploy time; it is
+      # here so a change to the LINTER cannot silently break the workflow.
       - name: Lint the spec examples with the built CLI
         run: |
           node packages/workflow-lint/dist/cli.js lint --alias hello apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/interactive.workflow.yaml
-          node packages/workflow-lint/dist/cli.js lint --alias workflow-studio apps/workflow/docs/spec/examples/studio.workflow.yaml
+          node packages/workflow-lint/dist/cli.js lint apps/workflow-studio/.bffless/workflows/studio.workflow.yaml --rules apps/workflow-studio/.bffless/proxy-rules/workflow-studio --path-prefix /api/workflow-studio

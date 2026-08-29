@@ -1,0 +1,58 @@
+name: workflow-studio
+
+# CI for the Studio implementation of the Workflow harness (apps/workflow-studio):
+# the workflow YAML, its BFFless rule set, the five `script` modules and the cut-editor
+# island. See apps/workflow/docs/writing-an-implementation.md.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/workflow-studio/**'
+      - 'packages/workflow-lint/**'
+      # The scripts' type contract (the `ctx` a `script` step is handed).
+      - 'packages/workflow-script/**'
+      # The island and the scripts import Studio's pure libs, its component and its CSS
+      # through the `studio` workspace dependency's exports map, so a change on that side
+      # can break this build without touching a file under apps/workflow-studio/. The
+      # island's own styles.css `@import`s studio/index.css, and the build test asserts
+      # that Tailwind really generated the utilities from it — so index.css is an input
+      # to this build as literally as the .tsx is.
+      - 'apps/studio/src/lib/**'
+      - 'apps/studio/src/components/Studio/CutEditor.tsx'
+      - 'apps/studio/src/index.css'
+      - 'apps/studio/package.json'
+      - '.github/workflows/workflow-studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      # `workflow index` (the last thing the stager runs) is this package's `workflow`
+      # bin, and it is built from source in this monorepo — never published-then-installed.
+      - run: pnpm --filter @bffless/workflow-lint build
+
+      - run: pnpm --filter workflow-studio typecheck
+      - run: pnpm --filter workflow-studio lint
+
+      # Stage BEFORE test:run, and keep it that way: `scripts/build.test.ts` and
+      # `islands/cut-editor/build.test.ts` inspect the BUILT artefacts and skip themselves
+      # when `dist/` is absent, so a `test:run` that ran first would report green while
+      # asserting nothing about the bundle CI is about to bless.
+      - run: pnpm --filter workflow-studio stage
+      - run: pnpm --filter workflow-studio test:run
+
+      # The rule set is the implementation's backend: `validate` is the schema/shape check,
+      # `test` runs the .fn.test.yaml fixtures. Both go through the `bffless` devDependency
+      # (never `npx bffless`, which would resolve a different version off the network).
+      - run: pnpm --filter workflow-studio rules:validate
+      - run: pnpm --filter workflow-studio rules:test
