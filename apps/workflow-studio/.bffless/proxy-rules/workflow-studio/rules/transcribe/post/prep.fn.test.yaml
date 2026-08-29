@@ -1,0 +1,30 @@
+handler: ./prep.fn.js
+cases:
+  - name: turns the uploads-relative wav into the storage path the signer wants
+    data:
+      request:
+        body:
+          audio: workflows/run-1/audio/audio.wav
+          diarize: false
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        storagePath: o/r/uploads/workflows/run-1/audio/audio.wav
+        diarize: false
+  - name: refuses an audio path outside the run prefix
+    data:
+      request:
+        body:
+          audio: projects/p1/audio/a.wav
+          diarize: true
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Refused - every path must be an uploads-relative path under workflows/
+        storagePath: ""
+        diarize: false

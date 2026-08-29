@@ -1,0 +1,104 @@
+targetUrl: pipeline
+timeout: 120000
+pipeline:
+  name: Server audio extract (ffmpeg, async)
+  description: "POST { source, outPrefix, executor } -> ENQUEUE a job (kind 'video-extract') and return { jobId, status: 'pending' }; CE's ffmpeg extract_audio op (16 kHz mono WAV, the transcription contract) runs in postSteps reading and writing storage directly. Result { path } (uploads-relative) is polled via GET job?id=. Ported from apps/studio /api/video/extract-audio: paths are run-prefixed and relative, and the result is a path rather than an /api/uploads/ URL."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.prep.notOk
+        body: |-
+          {
+            "error": "{{steps.prep.error}}",
+            "code": "BAD_PATH"
+          }
+        status: 400
+        contentType: application/json
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        condition: steps.prep.ok
+        fields:
+          kind: "'video-extract'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:workflow_studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.prep.ok
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  # Every postStep is gated on `steps.prep.ok`. A response_handler does NOT terminate a CE
+  # pipeline (only file-serve / stripe-webhook / ai / form set `terminates`), so postSteps
+  # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
+  # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
+  # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not
+  # throw) and both branches stay off.
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        condition: steps.prep.ok
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+    - id: extract
+      name: extract
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.ok
+        operation: extract_audio
+        # Which CE executor runs this job ('local' | 'remote'; template-evaluated).
+        # Empty string => CE's configured default, which is how the workflow's `auto` works.
+        executor: "{{steps.prep.executor}}"
+        # input/output are TEMPLATES (evaluateTemplate: only {{...}} is substituted, a bare
+        # expression string passes through literally) - always wrap them in {{}}.
+        input: "{{steps.prep.input}}"
+        output: "{{steps.prep.outPrefix}}/audio.wav"
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.check.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.check.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.check.error
+          code: steps.check.code
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.check.notOk
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Server-side 16 kHz mono WAV extraction from a run-prefixed source video via CE's ffmpeg_handler. Refuses (400) any path outside the harness's workflows/ run prefix before a job row is created."

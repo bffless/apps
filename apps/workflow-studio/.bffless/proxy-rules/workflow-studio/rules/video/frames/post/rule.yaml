@@ -1,0 +1,123 @@
+targetUrl: pipeline
+timeout: 120000
+pipeline:
+  name: Blog frame captures (ffmpeg frames, async)
+  description: "POST { captures: [{ source, time, name }], outPrefix, executor } -> ENQUEUE a job (kind 'frames'); CE's ffmpeg `frames` op captures one clean still per requested time. Result { paths, byTime, dropped } is polled via GET job?id=. One op call per distinct source is not expressible in a static rule, so the rule fans out to THREE conditional steps (R119) - captures from a fourth source are counted into `dropped` and the workflow annotates the run."
+  steps:
+    - id: prep
+      name: prep
+      handler: function_handler
+      code: ./prep.fn.js
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.prep.notOk
+        body: |-
+          {
+            "error": "{{steps.prep.error}}",
+            "code": "BAD_REQUEST"
+          }
+        status: 400
+        contentType: application/json
+    - id: createJob
+      name: createJob
+      handler: data_create
+      config:
+        condition: steps.prep.ok
+        fields:
+          kind: "'frames'"
+          status: "'pending'"
+          request: request.body
+        schemaId: $schema:workflow_studio_jobs
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.prep.ok
+        body: |-
+          {
+            "jobId": "{{steps.createJob.id}}",
+            "status": "pending"
+          }
+        status: 200
+        contentType: application/json
+  # Every postStep is gated on `steps.prep.ok`. A response_handler does NOT terminate a CE
+  # pipeline (only file-serve / stripe-webhook / ai / form set `terminates`), so postSteps
+  # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
+  # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
+  # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not
+  # throw) and both branches stay off.
+  postSteps:
+    - id: setRunning
+      name: setRunning
+      handler: data_update
+      config:
+        condition: steps.prep.ok
+        fields:
+          status: "'running'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+    - id: frames0
+      name: frames0
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.has0
+        operation: frames
+        # input/outputPrefix/executor are TEMPLATES; `times` is a BARE expression.
+        # No `draw` (these stills go into a blog post) and no `tile` (one file each).
+        input: "{{steps.prep.src0}}"
+        outputPrefix: "{{steps.prep.out0}}"
+        times: steps.prep.times0
+        executor: "{{steps.prep.executor}}"
+    - id: frames1
+      name: frames1
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.has1
+        operation: frames
+        input: "{{steps.prep.src1}}"
+        outputPrefix: "{{steps.prep.out1}}"
+        times: steps.prep.times1
+        executor: "{{steps.prep.executor}}"
+    - id: frames2
+      name: frames2
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.has2
+        operation: frames
+        input: "{{steps.prep.src2}}"
+        outputPrefix: "{{steps.prep.out2}}"
+        times: steps.prep.times2
+        executor: "{{steps.prep.executor}}"
+    - id: check
+      name: check
+      handler: function_handler
+      code: ./check.fn.js
+      config:
+        condition: steps.prep.ok
+    - id: finishOk
+      name: finishOk
+      handler: data_update
+      config:
+        fields:
+          result: steps.check.data
+          status: "'done'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.check.ok
+    - id: finishErr
+      name: finishErr
+      handler: data_update
+      config:
+        fields:
+          error: steps.check.error
+          code: steps.check.code
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.check.notOk
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Still frames for the blog post's inline images. Each capture's `name` is informational - CE names the stills itself (frame-NN.jpg under each source's own outputPrefix). No captures is a no-op that succeeds with an empty result, not a refusal."

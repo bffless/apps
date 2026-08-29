@@ -1,0 +1,32 @@
+handler: ./check.fn.js
+cases:
+  - name: strips the storage prefix back to an uploads-relative path
+    data:
+      steps:
+        extract:
+          storage_path: o/r/uploads/workflows/run-1/audio/audio.wav
+          content_type: audio/wav
+          size: 123
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data: { path: workflows/run-1/audio/audio.wav }
+  - name: a missing step output is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server audio extraction failed
+        code: ""
+        data: null
+  # NOTE: cases exercising `stepErrors` (the ce#662 forward-compat read in check.fn.js, which
+  # is what fills `code`) are omitted because the bffless CLI's fixture schema
+  # (node_modules/bffless/dist/format/manifest.js `FnTestCaseDataSchema`, .strict()) accepts
+  # only user/request/steps/deployment as data roots — the same gap apps/studio documents.

@@ -1,0 +1,67 @@
+handler: ./check.fn.js
+cases:
+  - name: merges the per-source captures back into one byTime map
+    data:
+      steps:
+        prep:
+          dropped: 1
+          has0: true
+          keys0: ["12", "30.5"]
+          has1: true
+          keys1: ["3"]
+          has2: false
+          keys2: []
+        frames0:
+          frames:
+            - { time: 12, storage_path: o/r/uploads/workflows/run-1/blog/frames/0/frame-01.jpg }
+            - { time: 30.5, storage_path: o/r/uploads/workflows/run-1/blog/frames/0/frame-02.jpg }
+          count: 2
+          drawn: false
+        frames1:
+          frames:
+            - { time: 3, storage_path: o/r/uploads/workflows/run-1/blog/frames/1/frame-01.jpg }
+          count: 1
+          drawn: false
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          paths:
+            - workflows/run-1/blog/frames/0/frame-01.jpg
+            - workflows/run-1/blog/frames/0/frame-02.jpg
+            - workflows/run-1/blog/frames/1/frame-01.jpg
+          byTime:
+            "12": workflows/run-1/blog/frames/0/frame-01.jpg
+            "30.5": workflows/run-1/blog/frames/0/frame-02.jpg
+            "3": workflows/run-1/blog/frames/1/frame-01.jpg
+          dropped: 1
+  - name: nothing to capture succeeds with an empty result
+    data:
+      steps:
+        prep: { dropped: 0, has0: false, keys0: [], has1: false, keys1: [], has2: false, keys2: [] }
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data: { paths: [], byTime: {}, dropped: 0 }
+  - name: a requested source that produced no stills is a failure
+    data:
+      steps:
+        prep: { dropped: 0, has0: true, keys0: ["12"], has1: false, keys1: [], has2: false, keys2: [] }
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Frame capture failed
+        code: ""
+        data: null
+  # NOTE: no `stepErrors` case — the CLI fixture schema rejects that data root (see
+  # video/extract-audio/post/check.fn.test.yaml).

@@ -1,0 +1,57 @@
+handler: ./parse.fn.js
+cases:
+  - name: tiles the global timeline, assigns each scene to its source and localises it
+    data:
+      steps:
+        prep:
+          sources:
+            - workflows/run-1/v0/a.mp4
+            - workflows/run-1/v1/b.mp4
+          spans:
+            - { start: 0, end: 12 }
+            - { start: 12, end: 20 }
+        director:
+          output: '{"synopsis":"A talk.","scenes":[{"title":"Intro","start":0,"end":12,"brief":"cut the ums","cuts":[{"start":2,"end":4}]},{"title":"Demo","start":12,"end":20,"brief":"keep take 2","cuts":[]}]}'
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          synopsis: A talk.
+          scenes:
+            - number: 1
+              title: Intro
+              brief: cut the ums
+              source: workflows/run-1/v0/a.mp4
+              sourceIndex: 0
+              start: 0
+              end: 12
+              spans: [{ start: 0, end: 12 }]
+              cuts: [{ start: 2, end: 4 }]
+            - number: 2
+              title: Demo
+              brief: keep take 2
+              source: workflows/run-1/v1/b.mp4
+              sourceIndex: 1
+              start: 0
+              end: 8
+              spans: [{ start: 0, end: 8 }]
+              cuts: []
+  - name: no director output at all is a failure
+    data:
+      steps:
+        prep:
+          sources: ["workflows/run-1/v0/a.mp4"]
+          spans: [{ start: 0, end: 12 }]
+        director: {}
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: The AI director did not return a result - it may be temporarily overloaded, or the video may be too long. Please try again.
+        code: ""
+        data: { synopsis: "", scenes: [] }
+  # NOTE: no `stepErrors` case — the CLI fixture schema rejects that data root (see
+  # video/extract-audio/post/check.fn.test.yaml).

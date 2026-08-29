@@ -1,0 +1,33 @@
+handler: ./check.fn.js
+cases:
+  - name: carries words, text, the bucketed transcript and the duration
+    data:
+      steps:
+        flatten:
+          words: [{ text: Hello, start: 0, end: 0.4, speaker: null }]
+          text: Hello
+          timed: "[0:00] Hello"
+          duration: 0.4
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          words: [{ text: Hello, start: 0, end: 0.4, speaker: null }]
+          text: Hello
+          timed: "[0:00] Hello"
+          duration: 0.4
+  - name: a missing flatten output is a failure
+    data:
+      steps: {}
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Transcription failed
+        code: ""
+        data: null
+  # NOTE: no `stepErrors` case — the CLI fixture schema rejects that data root (see
+  # video/extract-audio/post/check.fn.test.yaml).

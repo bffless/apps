@@ -21,3 +21,9 @@ fields:
   - name: system
     type: text
     required: false
+  # R120: the failed step's CE error code (e.g. FFMPEG_BUSY), alongside `error`.
+  # `job/get` returns it so the harness can map it to the step's `error.code` and
+  # the workflow's `retry.if error.code == 'FFMPEG_BUSY'` can fire.
+  - name: code
+    type: string
+    required: false
