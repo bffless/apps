@@ -146,23 +146,31 @@ async function materializeFile(
 
 /**
  * Validate/coerce a script module's returned value against the step's
- * declared outputs (02/03). Every declared output is treated as *required*
- * here (unlike a form/island field): a script's return value is its entire
- * contract (03), so a name the module didn't return is as much a fault as a
- * wrong-typed one.
+ * declared outputs (02/03). Every declared output is *present* here (unlike a
+ * form/island field, which is merely non-`required` by default): a script's
+ * return value is its entire contract (03), so a name the module didn't
+ * return at all is as much a fault as a wrong-typed one. "Present" is
+ * deliberately narrower than `declared.ts`'s `blank`-based `required`, which
+ * is a form-submit rule (an empty text field is unanswered): here the key
+ * must exist on the returned object with a value that isn't `undefined` —
+ * `''`, `null`, `[]`, `0`, and `false` are all answers a module can give. So
+ * this presence check is done by hand below rather than by passing
+ * `required: true` into `validateDeclared`, which stays on form/island
+ * semantics for its other two callers.
  *
  * Two passes, in this order (apps#375): first the whole declared set is
- * checked with every `file` slot read as "present?" only — so a missing or
- * wrong-typed non-file output refuses the return value *before a single byte
- * has moved*; then each `file` output is materialized — a `Blob`/`File` is
- * uploaded, a `string` is registered, both in list order for `list: true` —
- * and the set runs through the same `validateDeclared` walk a form/island
- * submit uses, this time for real. Uploading first and validating after left
- * bytes under the step prefix whenever a later output failed. A validation
- * error, a missing declared output, or a wrong-typed file value all throw
- * `OutputTypeError` (the pipeline adapter's `toStepError` already maps it to
- * `OUTPUT_TYPE`; a script-step runtime does the same), whose `expected` is
- * the declared type token (`number`, `file[]`), never a sentence.
+ * checked for presence, with every `file` slot read as "present?" only — so
+ * a missing or wrong-typed non-file output refuses the return value *before
+ * a single byte has moved*; then each `file` output is materialized — a
+ * `Blob`/`File` is uploaded, a `string` is registered, both in list order for
+ * `list: true` — and the set runs through the same `validateDeclared` type
+ * walk a form/island submit uses, this time for real. Uploading first and
+ * validating after left bytes under the step prefix whenever a later output
+ * failed. A missing declared output, a type mismatch, or a wrong-typed file
+ * value all throw `OutputTypeError` (the pipeline adapter's `toStepError`
+ * already maps it to `OUTPUT_TYPE`; a script-step runtime does the same),
+ * whose `expected` is the declared type token (`number`, `file[]`), never a
+ * sentence.
  */
 export async function coerceScriptOutputs(
   a: ScriptStepArgs,
@@ -171,33 +179,40 @@ export async function coerceScriptOutputs(
 ): Promise<Record<string, unknown>> {
   const decls = outputDecls(a.step)
   const values: Record<string, unknown> = isPlainObject(returned) ? { ...returned } : {}
-  const required: Record<string, Record<string, unknown>> = {}
+  const typeDecls: Record<string, Record<string, unknown>> = {}
   const presence: Record<string, Record<string, unknown>> = {}
 
   for (const [name, declared] of Object.entries(decls)) {
     const decl = typeof declared === 'string' ? {} : obj(declared)
-    // Every declared output is required here — see the doc comment above.
-    required[name] = { ...decl, required: true }
+    typeDecls[name] = decl
     // A `file` slot before materialization holds a Blob, a path or nothing:
-    // `json` accepts the first two, and `required` still refuses the last.
-    presence[name] = decl.type === 'file' ? { ...required[name], type: 'json', list: false } : required[name]
+    // `json` accepts the first two, and the presence check above already
+    // refused the last.
+    presence[name] = decl.type === 'file' ? { ...decl, type: 'json', list: false } : decl
+
+    // The key is the entire contract: a name the module never set, or set to
+    // `undefined`, is refused here regardless of type — before anything else
+    // runs, so a missing `file` output can't reach materialization either.
+    if (!Object.hasOwn(values, name) || values[name] === undefined) {
+      throw new OutputTypeError(name, expectedToken(decl, 'json'), null)
+    }
   }
 
   const refuse = (errors: Record<string, string>): void => {
     const [firstError] = Object.entries(errors)
     if (!firstError) return
     const [name] = firstError
-    throw new OutputTypeError(name, expectedToken(required[name] ?? {}, 'json'), values[name] ?? null)
+    throw new OutputTypeError(name, expectedToken(typeDecls[name] ?? {}, 'json'), values[name] ?? null)
   }
 
   refuse(validateDeclared(presence, values, { defaultType: 'json' }).errors)
 
-  for (const [name, decl] of Object.entries(required)) {
+  for (const [name, decl] of Object.entries(typeDecls)) {
     if (decl.type !== 'file') continue
     values[name] = await materializeFile(name, values[name], decl.list === true, deps)
   }
 
-  const { outputs, errors } = validateDeclared(required, values, { defaultType: 'json' })
+  const { outputs, errors } = validateDeclared(typeDecls, values, { defaultType: 'json' })
   refuse(errors)
   return outputs
 }

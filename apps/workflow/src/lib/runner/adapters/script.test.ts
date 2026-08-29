@@ -42,6 +42,18 @@ const def: Definition = toDefinition({
             zip: { type: 'file', list: true },
           },
         },
+        // A non-file output mix, for the presence-vs-blank tests: a script's
+        // `''`/`0`/`false` are answers, not unanswered fields.
+        {
+          id: 'meta',
+          uses: 'script',
+          with: { src: 'scripts/bundle.js' },
+          outputs: {
+            text: { type: 'string' },
+            count: { type: 'number' },
+            flag: { type: 'boolean' },
+          },
+        },
         // Same step minus the expression `with` key — nothing else to strip but `src`.
         {
           id: 'bare',
@@ -266,6 +278,47 @@ describe('coerceScriptOutputs', () => {
 
     await expect(coerceScriptOutputs(args('zip'), undefined, d)).rejects.toThrow(OutputTypeError)
     expect(d.uploadBlob).not.toHaveBeenCalled()
+  })
+
+  it("accepts '' for a declared `string` output — a script's blank is an answer, not unanswered (live fix)", async () => {
+    const d = deps()
+
+    const outputs = await coerceScriptOutputs(
+      args('meta'),
+      { text: '', count: 1, flag: true },
+      d,
+    )
+
+    expect(outputs.text).toBe('')
+  })
+
+  it('accepts `0`/`false` for declared `number`/`boolean` outputs', async () => {
+    const d = deps()
+
+    const outputs = await coerceScriptOutputs(
+      args('meta'),
+      { text: 'hi', count: 0, flag: false },
+      d,
+    )
+
+    expect(outputs.count).toBe(0)
+    expect(outputs.flag).toBe(false)
+  })
+
+  it('throws OUTPUT_TYPE for a declared output the module never set', async () => {
+    const d = deps()
+
+    await expect(
+      coerceScriptOutputs(args('meta'), { count: 1, flag: true }, d),
+    ).rejects.toMatchObject({ output: 'text', expected: 'string', got: null })
+  })
+
+  it('throws OUTPUT_TYPE for a declared output explicitly returned `undefined`', async () => {
+    const d = deps()
+
+    await expect(
+      coerceScriptOutputs(args('meta'), { text: undefined, count: 1, flag: true }, d),
+    ).rejects.toMatchObject({ output: 'text', expected: 'string', got: null })
   })
 })
 

@@ -143,6 +143,9 @@ export default async function run(ctx: {
 
 - A returned `Blob` for a `file` output is stored by the runner under `step.prefix` (06) and
   becomes a File ref — scripts never do uploads themselves.
+- Every declared output must be present in the return value, but "present" is not "truthy": a
+  missing key or an explicit `undefined` is refused, while `''`, `null`, `0`, `false`, and `[]`
+  are all accepted answers (unlike a `form`/`island` field's `required`).
 - `files.fetch` only accepts the harness's file-serve urls (`/api/uploads/…`) — a script,
   like an island, cannot reach other routes.
 - The Worker has an **opaque origin** (spawned from `data:` URLs inside a sandboxed iframe,
