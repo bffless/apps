@@ -1,9 +1,11 @@
-function handler({ request }) {
+function handler({ request, deployment }) {
   var body = (request && request.body) || {}
 
   // R129 path confinement (copied verbatim into every prep.fn.js - function_handler
   // files cannot import). `outPrefix` becomes the upload's subDir, so an unconfined
-  // one would write the rendered image anywhere under the uploads root.
+  // one would write the rendered image anywhere under the uploads root; `reference`
+  // is read back out of the bucket and handed to the image model, so an unconfined
+  // one would let a caller feed it any object in the project.
   function safe(v) {
     if (typeof v !== 'string') return ''
     var p = v.replace(/^\/+/, '').replace(/\/+$/, '')
@@ -16,7 +18,7 @@ function handler({ request }) {
   var BAD_PROMPT = 'Refused - prompt must be a non-empty string'
 
   function no(msg) {
-    return { ok: false, notOk: true, error: msg, prompt: '', outPrefix: '' }
+    return { ok: false, notOk: true, error: msg, prompt: '', outPrefix: '', images: [] }
   }
 
   var outPrefix = safe(body.outPrefix)
@@ -28,5 +30,24 @@ function handler({ request }) {
   var prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
   if (!prompt) return no(BAD_PROMPT)
 
-  return { ok: true, notOk: false, error: '', prompt: prompt, outPrefix: outPrefix }
+  // The optional reference photo (the review form's `reference` File ref, by `path`).
+  // Absent, null or '' means none - the workflow sends `reference.path` of a null ref,
+  // which is null. A non-empty string that is not confined is refused like any other
+  // path, never silently dropped (Studio's prepImages dropped an unusable
+  // referenceImageUrl on the floor; here the caller learns about it).
+  //
+  // What the model gets is nano-banana's `image_input`: a list of FULL storage paths
+  // (<owner>/<repo>/uploads/<path>, the same prefix `scenes` builds for signed_url),
+  // which the replicate handler reads from the bucket element-wise and re-uploads or
+  // inlines - the bytes never travel through a request body. `[]` is the model's own
+  // default for "no reference", so there is no conditional step.
+  var images = []
+  var reference = body.reference
+  if (typeof reference === 'string' && reference.trim() !== '') {
+    var ref = safe(reference.trim())
+    if (!ref) return no(REFUSAL)
+    images = [deployment.owner + '/' + deployment.repo + '/uploads/' + ref]
+  }
+
+  return { ok: true, notOk: false, error: '', prompt: prompt, outPrefix: outPrefix, images: images }
 }

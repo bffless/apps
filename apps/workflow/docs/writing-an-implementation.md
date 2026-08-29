@@ -105,7 +105,16 @@ dist/
   .bffless/workflows/index.json  # generated: spec, impl, name, version, commit, workflows[], islands[], scripts[]
   islands/*.html              # one self-contained file per island (Vite single-file build)
   scripts/*.js                # copied verbatim — the Worker imports the module text as written
+  .bffless/skills/<name>/SKILL.md  # optional: skills an `ai_handler` step loads (see below)
 ```
+
+An implementation may ship the **skills** its rules' `ai_handler` steps load. CE lists a
+step's skills from a *deployment*, and the rule set runs under the harness alias, so a step
+names its own bundle explicitly — `skills: { mode: selected, alias: <alias>, path:
+<deploy path>/.bffless/skills, enabled: [<name>] }` — where `<deploy path>` is the `path`
+the deploy uploads (`dist` for a standalone repo, `apps/<name>/dist` in this monorepo). A
+publish is then the skills deploy; nothing project-level needs setting.
+`apps/workflow-studio` is the reference (`scripts/stage.mjs`, `rules/thumbnail/draft`).
 
 `index.json` is **generated, never hand-written** — `workflow-hello`'s `scripts/build.mjs`
 does it (`workflow index`, lints every YAML first; a failing lint fails the build). The harness

@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: thumbnail-draft
-  description: "POST { title, description, script, notes } -> SYNC { prompt }: one Claude completion drafts the `google/nano-banana-2` image prompt that the render step draws. Ported from apps/studio /api/thumbnail/draft: the system prompt (in this manifest) and the user message (prep.fn.js) are verbatim. Studio pointed the step at its own `image-prompts` skill; the port carries no skills directory, and the system prompt says in as many words that its defaults are complete without one. The harness attaches no reference photo, so the REFERENCE IMAGE line always reads `none.` - the section is kept verbatim rather than trimmed. No paths in or out, so nothing to confine (R129)."
+  description: "POST { title, description, script, notes } -> SYNC { prompt }: one Claude completion drafts the `google/nano-banana-2` image prompt that the render step draws. Ported from apps/studio /api/thumbnail/draft: the system prompt (in this manifest) and the user message (prep.fn.js) are verbatim. Like Studio, the step loads the `image-prompts` skill (house styles, content-type routing, negatives) through `load_skill`; the system prompt's defaults still stand on their own if the skill cannot be listed. The skill is served from THIS implementation's own bundle: `skills.alias` points CE at the `workflow-studio` alias's deployment (not the harness deployment the rule set runs under) and `skills.path` at the directory `scripts/stage.mjs` copies `.bffless/skills/` to, so the skill ships with every publish and needs no project-level Skills Source. The workflow drafts BEFORE the review form where a reference photo can be attached, so it never sends `hasReference` and the REFERENCE IMAGE line reads `none.` - the section is kept verbatim, and the review form tells the person what to change by hand. No paths in or out, so nothing to confine (R129)."
   steps:
     - id: prep
       name: prep
@@ -14,6 +14,18 @@ pipeline:
       config:
         mode: completion
         model: claude-sonnet-4-6
+        # Studio's block verbatim except for the source: Studio's skills live in its own
+        # serving deployment, this rule set is attached to the HARNESS alias, so the
+        # deployment CE would read from by default is the harness's. `alias` overrides
+        # that per step (CE ai.handler: step alias/path first, then project settings,
+        # then the serving deployment) - resolved inside project bffless/workflow, where
+        # both aliases live.
+        skills:
+          mode: selected
+          alias: workflow-studio
+          path: apps/workflow-studio/dist/.bffless/skills
+          enabled:
+            - image-prompts
         provider: anthropic
         maxTokens: 4096
         temperature: 0.7

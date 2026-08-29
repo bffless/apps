@@ -60,6 +60,12 @@ directly, which the `exports` map blocks.
 - `.bffless/proxy-rules/workflow-studio/` — the authored rule set (backend), isolated in
   project `bffless/workflow` (never in `.bffless/config.json`'s `ruleSets` globs — see
   `apps/workflow/bffless/README.md` → "Rule-set isolation").
+- `.bffless/skills/` — the AI skills the `thumbnail/draft`, `describe` and `blog` rules
+  `load_skill` (`image-prompts`, `video-description`, `bffless-docs`): a verbatim copy of
+  `apps/studio/.bffless/skills/`, pinned by `src/skills-drift.test.ts` — refresh the copy,
+  never edit it. The stager puts them at `dist/.bffless/skills/`, and each rule's
+  `skills:` block names that path on alias `workflow-studio`, so a publish is the skills
+  deploy (no project-level Skills Source needed).
 
 `scripts/` holds the workflow's five `script` steps (`sheet-plan`, `scene-inputs`,
 `final-script`, `frame-times`, `blog-bundle`) plus `scripts/lib/` support code — shared

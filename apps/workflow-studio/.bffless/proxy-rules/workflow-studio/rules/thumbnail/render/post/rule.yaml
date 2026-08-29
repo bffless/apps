@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: thumbnail-render
-  description: "POST { prompt, outPrefix } -> SYNC { path }: google/nano-banana-2 draws the cover, file_upload_handler stores it under the run prefix, and `shape` hands back the uploads-relative path the harness registers as a file output. Ported from apps/studio /api/thumbnail/render: the image is stored under `<outPrefix>` (a run-prefixed uploads-relative subDir) instead of projects/<id>/youtube-thumbnail, the response is a path rather than an /api/uploads/ serve URL, and the optional reference photo is dropped - the workflow sends none, so Studio's prepImages step and the model's `image_input` go with it."
+  description: "POST { prompt, reference?, outPrefix } -> SYNC { path }: google/nano-banana-2 draws the cover, optionally built around the reference photo (`reference`, an uploads-relative path under workflows/ - the File ref the review form uploaded - handed to the model as `image_input`), file_upload_handler stores it under the run prefix, and `shape` hands back the uploads-relative path the harness registers as a file output. Ported from apps/studio /api/thumbnail/render: the image is stored under `<outPrefix>` (a run-prefixed uploads-relative subDir) instead of projects/<id>/youtube-thumbnail, the response is a path rather than an /api/uploads/ serve URL, and the reference arrives as a confined storage path rather than Studio's `referenceImageUrl` serve URL (its prepImages step is folded into `prep`, which also confines it)."
   steps:
     - id: prep
       name: prep
@@ -30,6 +30,12 @@ pipeline:
         input:
           prompt: steps.prep.prompt
           aspect_ratio: "'16:9'"
+          # The reference photo, as a one-element list of full storage paths the replicate
+          # handler reads from the bucket element-wise (CE replicate.handler
+          # resolveFileInputs) - or `[]`, the model's own default, when none was attached.
+          # A step output rather than an inline literal because the expression evaluator
+          # has no array syntax (Studio's prepImages, folded into `prep` here).
+          image_input: steps.prep.images
         model: google/nano-banana-2
         timeout: 110000
     - id: pickUrl
@@ -87,4 +93,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Draws the cover from the (possibly edited) prompt with google/nano-banana-2 and stores it under the run's prefix. Sync: the workflow reads response.path directly. Needs the project Replicate token. Refuses (400) an out prefix outside the harness's workflows/ run prefix, or an empty prompt, before the image call."
+description: "Draws the cover from the reviewed prompt with google/nano-banana-2 - around the optional reference photo when one was attached - and stores it under the run's prefix. Sync: the workflow reads response.path directly. Needs the project Replicate token. Refuses (400) an out prefix or reference outside the harness's workflows/ run prefix, or an empty prompt, before the image call."
