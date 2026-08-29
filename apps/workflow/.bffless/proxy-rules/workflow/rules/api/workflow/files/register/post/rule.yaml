@@ -12,7 +12,7 @@ pipeline:
         schemaId: $schema:workflow_files
         storageKey: request.body.storageKey
         originalName: request.body.originalName
-        maxFileSize: 104857600
+        maxFileSize: 5368709120
     - id: shape
       name: shape
       handler: function_handler
