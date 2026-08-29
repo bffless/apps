@@ -20,7 +20,10 @@ function handler({ steps, deployment, stepErrors }) {
       return { ok: false, notOk: true, error: 'Frame capture failed' + detail, code: code, data: null }
     }
     // CE returns the stills in `times` order, so the caller's own keys zip by index -
-    // which keeps `byTime` keyed by the time as SENT rather than as echoed back.
+    // which keeps `byTime` keyed by what the CALLER asked for (R140: the global token
+    // second, via `captures[].key`) rather than by the local seek time CE echoes back.
+    // The `String(frame.time)` fallback below only fires if CE returned more stills
+    // than were asked for.
     var keys = prep['keys' + i] || []
     for (var f = 0; f < frames.length; f++) {
       var p = rel((frames[f] || {}).storage_path)

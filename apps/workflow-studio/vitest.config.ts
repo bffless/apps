@@ -2,19 +2,22 @@
  * Two run environments in one config, via Vitest 4's `test.projects` (the
  * successor to a separate `vitest.workspace.ts`): `scripts/**` runs headless in a
  * Web Worker with no DOM (Node is the closest environment Vitest ships), `islands/**`
- * is React and needs `jsdom`. Neither directory exists yet (Tasks 22/23 add them), so
- * both projects currently match zero files — `vitest run` passes with 0 tests, which
- * is expected for this scaffold task.
+ * is React and needs `jsdom`. `scripts/` holds the workflow's five `script` modules and
+ * their suites; `islands/` is still empty (Task 23), which is why `passWithNoTests` is
+ * set below.
+ *
+ * The `node` environment is also the RUNTIME fence behind `tsconfig.scripts.json`
+ * carrying `DOM` in its `lib` for types only — a script that really reached for
+ * `document` would fail here rather than at the harness.
  */
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   test: {
-    // Neither `scripts/` nor `islands/` exists yet (Tasks 22/23) — a clean scaffold
-    // checkout has zero matching test files in both projects. `passWithNoTests` is a
-    // root-only option (Vitest's `NonProjectOptions`), so it has to live here rather
-    // than on either project's own `test` block.
+    // `islands/` is empty until Task 23, so that project matches zero test files.
+    // `passWithNoTests` is a root-only option (Vitest's `NonProjectOptions`), so it
+    // has to live here rather than on either project's own `test` block.
     passWithNoTests: true,
     projects: [
       {

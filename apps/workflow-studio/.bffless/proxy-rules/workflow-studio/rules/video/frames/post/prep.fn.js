@@ -64,8 +64,13 @@ function handler({ request }) {
     }
     if (found.times.length >= 200) return no(TOO_MANY)
     found.times.push(t)
-    // `byTime` keys are the ORIGINAL time as sent (R119); CE names the stills itself.
-    found.keys.push(String(t))
+    // The `byTime` key travels with the capture (R140): `frame-times` sends the GLOBAL
+    // token second as `key` while `time` is the LOCAL second CE seeks to, and the two
+    // differ for every recording after the first. A capture with no `key` falls back to
+    // its own time (R119, the single-source shape). Either way CE names the stills
+    // itself, so the caller's key is the only stable handle back to a frame.
+    var key = cap.key
+    found.keys.push(typeof key === 'string' && key ? key : String(t))
   }
 
   return out({

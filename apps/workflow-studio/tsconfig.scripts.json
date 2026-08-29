@@ -5,11 +5,20 @@
      (`vite.scripts.config.ts`) is Node-side tooling and is checked separately under
      `tsconfig.node.json` — `"types": []` here so a `scripts/**` module can't
      accidentally type-check against `process`/`Buffer`/`node:*` it will never have at
-     runtime. */
+     runtime. (`scripts/build.test.ts` needs `node:fs` to read a built bundle; it
+     reaches it through a computed specifier — the same trick
+     apps/workflow/src/hello-scripts.test.ts uses — so this stays `[]`.)
+
+     `DOM` is here for TYPES ONLY, and reluctantly (Task 22 / R128): Studio's pure libs
+     are reached through a chain that ends in `src/lib/frames.ts`, which types
+     `document`/`HTMLCanvasElement` for the browser capture path. The import that pulls
+     it in is `import type` (erased at build time), so no DOM code is ever bundled into
+     a script, and the RUNTIME fence is the test suite: `vitest.config.ts` runs
+     `scripts/**` under `environment: 'node'`, where a top-level DOM reference throws. */
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023", "WebWorker"],
+    "lib": ["ES2023", "WebWorker", "DOM"],
     "module": "esnext",
     "types": [],
     "skipLibCheck": true,

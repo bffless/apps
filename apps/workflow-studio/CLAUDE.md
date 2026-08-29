@@ -53,12 +53,28 @@ directly, which the `exports` map blocks.
   project `bffless/workflow` (never in `.bffless/config.json`'s `ruleSets` globs — see
   `apps/workflow/bffless/README.md` → "Rule-set isolation").
 
-Neither `islands/` nor `scripts/` exists yet (Tasks 22/23); both Vite configs and both
-`vitest.config.ts` projects are wired to run against them once they do.
+`scripts/` holds the workflow's five `script` steps (`sheet-plan`, `scene-inputs`,
+`final-script`, `frame-times`, `blog-bundle`) plus `scripts/lib/` support code — shared
+`ctx.inputs` guards and a test-only fake context, neither of which is a build entry.
+`islands/` is still empty (Task 23); its Vite config and `vitest.config.ts` project are
+wired to run against it once it isn't.
 
 ## Testing
 
 `vitest.config.ts` splits by directory via `test.projects`: `scripts/**` runs under `node`
 (closest to the Worker's no-DOM environment), `islands/**` runs under `jsdom` with the React
-plugin (Task 23's island tests use React Testing Library). Both currently match zero files —
-`test:run` passing with 0 tests is expected until those directories exist.
+plugin (Task 23's island tests use React Testing Library). The `islands` project still matches
+zero files, which is why `passWithNoTests` is set.
+
+`tsconfig.scripts.json` carries `DOM` in its `lib` for TYPES ONLY: Studio's pure libs reach
+`src/lib/frames.ts` (browser frame capture) through an erased `import type`, so no DOM code is
+bundled. The runtime fence is the `node` environment above — a script that actually touched
+`document` would fail its suite.
+
+`scripts/build.test.ts` asserts each built `dist/scripts/<name>.js` is one self-contained ES
+module (no surviving `import`/`require`, a `default` export). It skips when the file isn't
+built, so run the builds first to exercise it:
+
+```sh
+WORKFLOW_SCRIPT=scripts/<name>.ts pnpm exec vite build -c vite.scripts.config.ts
+```
