@@ -71,20 +71,23 @@ directly, which the `exports` map blocks.
 `final-script`, `frame-times`, `blog-bundle`) plus `scripts/lib/` support code — shared
 `ctx.inputs` guards and a test-only fake context, neither of which is a build entry.
 `islands/` holds `cut-editor/` — the `trim` step's editor, which mounts Studio's own
-`CutEditor` — plus `islands/test/` (the fake host every island suite renders against).
+`CutEditor` — and `blog-editor/` — the blog job's `review` step, which renders the post on
+Studio's `MarkdownBody` with its Change-frame picker over the frames the run already
+captured (apps#429) — plus `islands/lib/` (the MCP Apps handshake and the `workflow.sign`
+helpers both share) and `islands/test/` (the fake host every island suite renders against).
 An island is a *bundle file*: the harness fetches it and injects it into an
 `<iframe sandbox="allow-scripts">` as `srcdoc`, so the frame has an opaque origin and can
 fetch nothing. Everything it needs is inlined by `vite-plugin-singlefile`, and media is
 reached by exchanging a `FileRef`'s `path` for a presigned URL over the `workflow.sign`
-host tool (`islands/cut-editor/useSigned.ts`).
+host tool (`islands/lib/useSigned.ts`).
 
 ## Testing
 
 `vitest.config.ts` splits by directory via `test.projects`: `scripts/**` runs under `node`
 (closest to the Worker's no-DOM environment), `islands/**` runs under `jsdom` with the React
 plugin and React Testing Library, with jest-dom's matchers from `islands/test/setup.ts`. The
-one exception is `islands/cut-editor/build.test.ts`, which inspects a built artefact and so
-overrides its own environment back to `node` (`@vitest-environment node` — under jsdom,
+exceptions are the islands' `build.test.ts` files, which inspect a built artefact and so
+override their own environment back to `node` (`@vitest-environment node` — under jsdom,
 `import.meta.url` is a `http://localhost:3000/…` document URL, not a path into `dist/`).
 
 `tsconfig.scripts.json` carries `DOM` in its `lib` for TYPES ONLY: Studio's pure libs reach
@@ -100,9 +103,11 @@ built, so run the builds first to exercise it:
 WORKFLOW_SCRIPT=scripts/<name>.ts pnpm exec vite build -c vite.scripts.config.ts
 ```
 
-`islands/cut-editor/build.test.ts` is the same idea for the island: the built
-`dist/islands/cut-editor.html` must reference nothing external AND must already carry the
-Tailwind utilities `CutEditor` is styled with. Build it the same way, then open it standalone
+`islands/<island>/build.test.ts` is the same idea for an island: the built
+`dist/islands/<island>.html` must reference nothing external AND must already carry the
+Tailwind utilities the Studio components it renders are styled with (and, for `blog-editor`,
+must NOT carry `mermaid` — it renders `MarkdownBody`, not `MarkdownPreview`, for exactly that
+reason). Build it the same way, then open it standalone
 to smoke-check it renders (a built island with no host on the other end shows its "waiting"
 shell — that is what a clean `consoleErrors:0` looks like):
 
@@ -113,8 +118,8 @@ node ~/bffless/localdev-tools/shot.mjs "file://$PWD/dist/islands/cut-editor.html
 
 ## Styling an island
 
-`CutEditor` is Tailwind utilities over Studio's `@theme` tokens, and both halves have to be
-generated INTO the island's own file. `islands/<island>/styles.css` imports
+Studio's components are Tailwind utilities over Studio's `@theme` tokens, and both halves have
+to be generated INTO the island's own file. `islands/<island>/styles.css` imports
 `studio/index.css` (tokens, base layer, `.rule`/`.pill-cta`) and then declares its sources
 explicitly — `@import 'tailwindcss/utilities.css' layer(utilities) source(none)` first, to
 switch off Tailwind's automatic content detection, which resolves a project root well above

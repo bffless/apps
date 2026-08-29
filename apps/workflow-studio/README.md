@@ -6,8 +6,8 @@ A Workflow-harness implementation of Studio's video-cutting pipeline — see
 
 The app is the workflow (`.bffless/workflows/studio.workflow.yaml`), the 13-rule backend it
 calls (`.bffless/proxy-rules/workflow-studio/`, over 2 data schemas), the five `script`
-modules (`scripts/`), the one island (`islands/cut-editor/`), the three AI skills the
-rules load (`.bffless/skills/`, a verbatim copy of Studio's) and the stager that bundles
+modules (`scripts/`), the two islands (`islands/cut-editor/`, `islands/blog-editor/`), the
+three AI skills the rules load (`.bffless/skills/`, a verbatim copy of Studio's) and the stager that bundles
 them (`scripts/stage.mjs`). See `CONTEXT.md` for how those fit together and
 [`bffless/README.md`](bffless/README.md) for the backend / admin-panel setup — including
 the one-time project setup that has to happen before the first run.
@@ -17,11 +17,11 @@ the one-time project setup that has to happen before the first run.
 - `pnpm --filter workflow-studio typecheck` — `tsc -p tsconfig.islands.json && tsc -p tsconfig.scripts.json && tsc -p tsconfig.node.json`
 - `pnpm --filter workflow-studio lint` — ESLint (flat config)
 - `pnpm --filter workflow-studio stage` — the stager (`node scripts/stage.mjs`): type-check,
-  build the island (`vite.islands.config.ts`) and the five scripts (`vite.scripts.config.ts`),
+  build the islands (`vite.islands.config.ts`) and the five scripts (`vite.scripts.config.ts`),
   copy `.bffless/skills/` in, then `workflow index` the bundle into `dist/`. `build` is the
   same command.
 - `pnpm --filter workflow-studio test:run` — single Vitest run (CI mode); `test` for watch.
-  Run **after** `stage`: the two `build.test.ts` suites inspect the built artefacts and skip
+  Run **after** `stage`: the `build.test.ts` suites inspect the built artefacts and skip
   themselves when `dist/` is absent, which is why CI stages first.
 - `pnpm --filter workflow-studio rules:validate` / `rules:test` — validate / run the fixtures
   for the `.bffless/proxy-rules/workflow-studio` rule set
