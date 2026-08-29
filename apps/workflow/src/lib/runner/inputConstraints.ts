@@ -11,6 +11,7 @@
  * lib/runner fence) — plain data in, an error message or `undefined` out.
  */
 import type { InputDef } from '@bffless/workflow-lint/definition'
+import { isFileRefLike } from './fileRef'
 
 /**
  * One `options` entry (02) → the value it stands for, or `undefined` when the
@@ -28,7 +29,7 @@ export function optionValue(entry: unknown): string | undefined {
   if (entry === null || typeof entry !== 'object') return undefined
   const o = entry as Record<string, unknown>
   if (typeof o.value === 'string') return o.value
-  if (typeof o.path === 'string' && typeof o.name === 'string' && typeof o.url === 'string') return o.path
+  if (isFileRefLike(entry)) return entry.path
   return undefined
 }
 

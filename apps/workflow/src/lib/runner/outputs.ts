@@ -12,6 +12,7 @@
 import type { OutputDecl } from '@bffless/workflow-lint/definition'
 import type { FileRef } from './types'
 import { evalDeep, evalValue } from './contexts'
+import { isFileRefLike } from './fileRef'
 
 export class OutputTypeError extends Error {
   output: string
@@ -31,17 +32,21 @@ export class OutputTypeError extends Error {
 
 export type RegisterFile = (path: string) => Promise<FileRef>
 
-/** Exported for reuse by `payload.ts`'s `isFilePayload` — the same File-ref shape check. */
+/**
+ * The **strict** File-ref check — a `type: file` value promises `contentType`
+ * and `size` as well as the three keys that name the file, because everything
+ * downstream (the cards, a job output, an offloaded payload) reads them. Built
+ * on the shared shape guard (`./fileRef`) so "names a file" is one rule, not a
+ * fourth copy of it.
+ *
+ * Exported for reuse by `payload.ts`'s `isFilePayload` — the same shape check.
+ */
 export function isFileRef(v: unknown): v is FileRef {
-  if (v === null || typeof v !== 'object') return false
-  const r = v as Record<string, unknown>
-  return (
-    typeof r.path === 'string' &&
-    typeof r.name === 'string' &&
-    typeof r.contentType === 'string' &&
-    typeof r.size === 'number' &&
-    typeof r.url === 'string'
-  )
+  if (!isFileRefLike(v)) return false
+  // The guard above only promises the three naming keys, so these two are a
+  // real runtime check even though it has already narrowed `v` to `FileRef`.
+  const { contentType, size } = v
+  return typeof contentType === 'string' && typeof size === 'number'
 }
 
 /** One value against one scalar type of the 02 vocabulary. */
