@@ -327,6 +327,10 @@ jobs:
         outputs:
           frames: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
           by_time: { type: json, value: "${{ response.result.byTime }}" }
+          # `by_time` re-keyed by token (`frame:<t>` → path): the `images` map (02) the
+          # markdown outputs below declare, so a finished run's Output tab draws the
+          # tokens as images the way the review island does while it waits (apps#446).
+          srcs: { type: json, value: "${{ response.result.srcs }}" }
           dropped: { type: number, value: "${{ response.result.dropped }}" }
         annotations:
           - { level: warning, if: "${{ response.result.dropped > 0 }}", message: "${{ response.result.dropped }} frame capture(s) skipped — the blog frames pipeline handles up to 3 source recordings." }
@@ -344,14 +348,16 @@ jobs:
           # `bundle` looks the swapped frame up exactly as it would the original.
           by_time: ${{ steps.frames.outputs.by_time }}
         outputs:
-          post: { type: markdown }
+          post: { type: markdown, images: "${{ steps.frames.outputs.srcs }}" }
         headless: { mode: skip, outputs: { post: "${{ steps.write.outputs.post }}" } }
       - id: bundle
         uses: script
         with: { src: scripts/blog-bundle.js, markdown: "${{ steps.review.outputs.post }}", title: "${{ needs.describe.outputs.title }}", frames: "${{ steps.frames.outputs.frames }}", byTime: "${{ steps.frames.outputs.by_time }}" }
         outputs:
           zip: { type: file }
-          post: { type: markdown }
+          # `post` now links `images/frame-NN.jpg`; `srcs` maps those back to the frames.
+          post: { type: markdown, images: "${{ steps.bundle.outputs.srcs }}" }
+          srcs: { type: json }
         summary: "Blog bundle **${{ steps.bundle.outputs.zip.name }}** (${{ steps.bundle.outputs.zip.size }} bytes) — [download](${{ steps.bundle.outputs.zip.url }})"
     outputs:
       post: ${{ steps.bundle.outputs.post }}

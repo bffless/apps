@@ -4,8 +4,11 @@ import { stepOutputNames } from '../model/definition.js'
 import type { ExprSite } from '../model/slots.js'
 import { collectRefs } from './refs.js'
 
-/** Slots where a step may reference itself (01: own summary/annotations only). */
-const SELF_OK = new Set(['summary', 'annotation-if', 'annotation-message'])
+/**
+ * Slots where a step may reference itself (01: own summary/annotations, and a
+ * `markdown` output's `images` map — all three are read after the step is done).
+ */
+const SELF_OK = new Set(['summary', 'annotation-if', 'annotation-message', 'step-output-images'])
 
 export function checkUpstream(def: Definition, sites: ExprSite[]): Finding[] {
   const findings: Finding[] = []
@@ -44,7 +47,7 @@ export function checkUpstream(def: Definition, sites: ExprSite[]): Finding[] {
           findings.push({
             rule: 'upstream-reference',
             severity: 'error',
-            message: `step \`${stepId}\` may not reference itself here — self-reference is only allowed in its own summary/annotations (01)`,
+            message: `step \`${stepId}\` may not reference itself here — self-reference is only allowed in its own summary/annotations, or a markdown output's \`images\` map (01/02)`,
             path: site.pointer,
           })
           continue

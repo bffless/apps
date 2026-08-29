@@ -1,6 +1,6 @@
 /**
  * `blog-bundle` — the `bundle` step of the `blog` job: `with: { markdown, title, frames, byTime }`
- * in, `{ zip, post }` out. It re-homes the post's `frame:<t>` tokens onto the frames
+ * in, `{ zip, post, srcs }` out. It re-homes the post's `frame:<t>` tokens onto the frames
  * `video/frames` captured and packs `post.md` + `images/` into one portable archive
  * (Studio's "download the bundle" button, issue #71).
  */
@@ -10,7 +10,7 @@ import blogBundle from './blog-bundle'
 import { fakeCtx } from './lib/fakeCtx'
 import type { FileRef, ScriptContext } from '@bffless/workflow-script'
 
-type Out = { zip: File; post: string }
+type Out = { zip: File; post: string; srcs: Record<string, string> }
 
 const ref = (path: string): FileRef => ({
   path, name: path.split('/').pop() ?? 'file', contentType: 'image/jpeg', size: 3, url: `/api/uploads/${path}`,
@@ -65,6 +65,8 @@ describe('blog-bundle', () => {
     expect(post).toContain('title: Ship it')
     expect(post).not.toContain('frame:')
     expect(out.post).toBe(post)
+    // The harness `images` map (apps#446): the post's new src → the frame's path.
+    expect(out.srcs).toEqual({ 'images/frame-01.jpg': F1.path, 'images/frame-02.jpg': F2.path })
   })
 
   it('warns and drops a frame whose bytes will not come back, keeping the rest', async () => {
@@ -79,6 +81,7 @@ describe('blog-bundle', () => {
     expect(Object.keys(entries).sort()).toEqual(['images/frame-01.jpg', 'post.md'])
     expect(out.post).toContain('![the diff](images/frame-01.jpg)')
     expect(out.post).not.toContain('the terminal')
+    expect(out.srcs).toEqual({ 'images/frame-01.jpg': F1.path })
     expect(annotations).toEqual([
       { level: 'warning', message: expect.stringContaining('gone.jpg') },
     ])
@@ -93,6 +96,7 @@ describe('blog-bundle', () => {
     expect(out.post).toContain('![the diff](images/frame-01.jpg)')
     expect(out.post).not.toContain('frame:70')
     expect(out.post).not.toContain('the terminal')
+    expect(out.srcs).toEqual({ 'images/frame-01.jpg': F1.path })
     // Silently shipping a post with an image missing is the bad outcome — say so.
     expect(annotations).toEqual([
       { level: 'warning', message: expect.stringContaining('no frame was captured at 70s') },

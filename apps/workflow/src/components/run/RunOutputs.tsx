@@ -9,7 +9,8 @@
  * outputs are derived, never persisted (05), so re-deriving them would mean
  * re-evaluating expressions and calling the result "what the run produced".
  */
-import { RUN_SCOPE, resolveOutputDecl } from '../../lib/outputDecls'
+import { outputImageMap } from '../../lib/imageMap'
+import { RUN_SCOPE, resolveOutput } from '../../lib/outputDecls'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
@@ -51,7 +52,8 @@ export function RunOutputs({
         <MediaSeekProvider>
           <div className="output-group pane-values" data-scope="run">
             {topLevel.map((name) => {
-              const decl = withFileRefValue(resolveOutputDecl(def, RUN_SCOPE, name), recorded[name])
+              const resolved = resolveOutput(def, RUN_SCOPE, name)
+              const decl = withFileRefValue(resolved.decl, recorded[name])
               return (
                 <div className="output" data-output={name} key={name}>
                   <ValueView
@@ -60,6 +62,7 @@ export function RunOutputs({
                     decl={decl}
                     value={recorded[name] ?? null}
                     impl={impl}
+                    images={outputImageMap(def, state, decl, resolved.site)}
                   />
                 </div>
               )

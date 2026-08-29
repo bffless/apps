@@ -274,6 +274,13 @@ const workflowSchema: Record<string, any> = {
           "properties": {
             "value": {
               "$ref": "#/$defs/expression"
+            },
+            "images": {
+              "type": [
+                "string",
+                "object"
+              ],
+              "description": "markdown only: `{ [src]: path | FileRef }` — each image src as written in the markdown → the uploads-relative path the harness serves it from (02). An expression or a literal map."
             }
           }
         }

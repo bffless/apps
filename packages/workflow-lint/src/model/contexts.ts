@@ -12,6 +12,7 @@ export const STEP_SLOTS = new Set<Slot['where']>([
   'poll-body',
   'retry-if',
   'step-output-value',
+  'step-output-images',
   'summary',
   'annotation-if',
   'annotation-message',

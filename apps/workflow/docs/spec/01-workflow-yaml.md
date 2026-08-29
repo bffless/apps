@@ -145,7 +145,7 @@ Contexts:
 |---|---|---|
 | `inputs` | everywhere | kickoff form values (files as `{path,name,contentType,size,url}`) |
 | `needs` | job `if`, steps, job `outputs` | `needs.<job>.outputs.<name>`, `needs.<job>.result` |
-| `steps` | steps after the referenced one (or the step itself in its own `summary`/`annotations`), job `outputs` | `steps.<id>.outputs.<name>`, `steps.<id>.outcome` (`success\|failure\|skipped\|cancelled`, the raw result), `steps.<id>.conclusion` (as `outcome`, but `success` when the failure was tolerated by `continue-on-error`), `steps.<id>.error`, `steps.<id>.response` (pipeline: `{ initial, last }`) |
+| `steps` | steps after the referenced one (or the step itself in its own `summary`/`annotations` and a `markdown` output's `images` map, 02), job `outputs` | `steps.<id>.outputs.<name>`, `steps.<id>.outcome` (`success\|failure\|skipped\|cancelled`, the raw result), `steps.<id>.conclusion` (as `outcome`, but `success` when the failure was tolerated by `continue-on-error`), `steps.<id>.error`, `steps.<id>.response` (pipeline: `{ initial, last }`) |
 | `matrix`, `strategy` | inside a matrix job | `matrix.<var>`, `strategy.job-index`, `strategy.job-total` |
 | `response` | a pipeline step's `poll`, `retry`, `outputs`, `summary`, `annotations` | the **most recent** response of this step: the initial response when `poll.query/body` are evaluated, the latest poll response in `poll.until/fail`, the final one in `outputs` |
 | `error` | a pipeline step's `retry.if`, `annotations`; any later step of the same job | `{ code, message, status }` — inside a step: its own last failure; in later steps: the **last failed step of this job** (prefer `steps.<id>.error` when you mean a specific one) |
@@ -155,7 +155,8 @@ Contexts:
 | `jobs` | top-level `outputs` only | `jobs.<id>.outputs.<name>`, `jobs.<id>.result` |
 
 Upstream rule (linted and enforced at run time): `steps.<id>` may only reference a step that
-appears earlier in the same job — or itself, inside its own `summary`/`annotations`;
+appears earlier in the same job — or itself, inside its own `summary`/`annotations` (and a
+`markdown` output's `images` map, which is read at the same time);
 `needs.<job>` may only reference a job listed in `needs`. Outputs of a job that was skipped
 (`if` false) or failed evaluate to `null`; top-level `outputs` referencing them are `null`.
 

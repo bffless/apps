@@ -28,6 +28,21 @@ export type OutputScope = { kind: 'run' } | { kind: 'job'; job: string }
 
 export const RUN_SCOPE: OutputScope = { kind: 'run' }
 
+/**
+ * Where the *typed* declaration a resolution landed on lives — the evaluation
+ * site its own expressions (a `markdown` output's `images` map, apps#446)
+ * read their contexts from. `null` when nothing typed was found.
+ */
+export type DeclSite =
+  | { kind: 'run' }
+  | { kind: 'job'; job: string }
+  | { kind: 'step'; job: string; step: string; matrix: boolean }
+
+export interface ResolvedOutput {
+  decl: ValueDecl
+  site: DeclSite | null
+}
+
 /** What an undeclared, unresolvable or untyped value falls back to (02). */
 const JSON_DECL: ValueDecl = { type: 'json' }
 
@@ -80,6 +95,10 @@ function typed(decl: unknown): ValueDecl | null {
     // `render: chart`/`render: code` need their own axis/language mapping —
     // same reasoning as `src` above.
     ...(d.mapping !== null && typeof d.mapping === 'object' ? { mapping: d.mapping } : {}),
+    // A `markdown` output's image map travels as declared; the pane that has
+    // the run state evaluates it (`lib/imageMap`). Any other type ignores it —
+    // the linter (`markdown-images`) has already said so.
+    ...(d.type === 'markdown' && d.images !== undefined ? { images: d.images } : {}),
   }
 }
 
@@ -98,15 +117,17 @@ export function stepOutputDecl(step: Step, name: string): ValueDecl {
   return JSON_DECL
 }
 
+const UNRESOLVED: ResolvedOutput = { decl: JSON_DECL, site: null }
+
 /** Follow one bare expression to the declaration it names. */
 function follow(
   def: Definition,
   scope: OutputScope,
   source: unknown,
   seen: Set<string>,
-): ValueDecl {
+): ResolvedOutput {
   const ref = firstRef(source)
-  if (!ref) return JSON_DECL
+  if (!ref) return UNRESOLVED
 
   // `jobs.<job>` (top level) and `needs.<job>` (inside a job) both land on a job.
   if (ref.root === 'jobs' || ref.root === 'needs') {
@@ -116,13 +137,17 @@ function follow(
   if (ref.root === 'steps' && scope.kind === 'job') {
     const job = def.jobs[scope.job]
     const step = job?.steps.find((candidate) => candidate.id === ref.name)
-    if (!job || !step) return JSON_DECL
+    if (!job || !step) return UNRESOLVED
     const decl = stepOutputDecl(step, ref.output)
-    // A matrix job collects one value per item (01): `lines` is a string list.
-    return job.matrix ? { ...decl, list: true } : decl
+    const matrix = Boolean(job.matrix)
+    return {
+      // A matrix job collects one value per item (01): `lines` is a string list.
+      decl: matrix ? { ...decl, list: true } : decl,
+      site: { kind: 'step', job: scope.job, step: step.id, matrix },
+    }
   }
 
-  return JSON_DECL
+  return UNRESOLVED
 }
 
 function declaredAt(def: Definition, scope: OutputScope, name: string): OutputDecl | undefined {
@@ -134,27 +159,36 @@ function resolve(
   scope: OutputScope,
   name: string,
   seen: Set<string>,
-): ValueDecl {
+): ResolvedOutput {
   // A workflow that references itself in a circle still has to render something.
   const id = `${scope.kind === 'run' ? '' : scope.job}.${name}`
-  if (seen.has(id)) return JSON_DECL
+  if (seen.has(id)) return UNRESOLVED
   seen.add(id)
 
   const decl = declaredAt(def, scope, name)
-  if (decl === undefined) return JSON_DECL
+  if (decl === undefined) return UNRESOLVED
   if (typeof decl === 'string') return follow(def, scope, decl, seen)
-  return typed(decl) ?? follow(def, scope, decl.value, seen)
+  const own = typed(decl)
+  if (own) return { decl: own, site: scope }
+  return follow(def, scope, decl.value, seen)
 }
 
 /**
  * The renderer declaration of a run-level or job-level output, resolved through
- * however many bare expressions stand between it and the step that typed it.
- * Never throws, and answers `json` for anything it cannot follow.
+ * however many bare expressions stand between it and the step that typed it —
+ * and *where* that typed declaration sits, for the pane that must evaluate its
+ * `images` map in the right contexts. Never throws, and answers `json` (with no
+ * site) for anything it cannot follow.
  */
+export function resolveOutput(def: Definition, scope: OutputScope, name: string): ResolvedOutput {
+  return resolve(def, scope, name, new Set())
+}
+
+/** `resolveOutput`, declaration only. */
 export function resolveOutputDecl(
   def: Definition,
   scope: OutputScope,
   name: string,
 ): ValueDecl {
-  return resolve(def, scope, name, new Set())
+  return resolveOutput(def, scope, name).decl
 }

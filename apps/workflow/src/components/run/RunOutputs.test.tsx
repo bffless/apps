@@ -18,6 +18,7 @@ import { server } from '../../mocks/server'
 import { FINISHED_RUN } from '../../mocks/fixtures/finishedRun'
 import { RENDERED_RUN } from '../../mocks/fixtures/renderedRun'
 import { replayRun } from '../../lib/runner/replay'
+import { FRAME_URL, FRAMES_DEF, framesRun } from '../../test/framesRun'
 import type { RunState } from '../../lib/runner/types'
 import { RunOutputs } from './RunOutputs'
 
@@ -133,5 +134,16 @@ describe('RunOutputs', () => {
     expect(screen.getByTestId('run-outputs')).toBeInTheDocument()
     expect(document.querySelectorAll('.value-renderer-badge')).toHaveLength(0)
     expect(screen.queryAllByTestId('renderer')).toHaveLength(0)
+  })
+})
+
+/**
+ * apps#446: a run-level markdown output that follows to a step's declaration
+ * reads that step's `images` map off the persisted rows.
+ */
+describe('RunOutputs — a followed markdown output draws through its images map (apps#446)', () => {
+  it('rewrites the zip-relative path to the serve url', () => {
+    const { container } = render(<RunOutputs def={FRAMES_DEF} state={framesRun()} />)
+    expect(container.querySelector('[data-output="post"] .markdown-view img')?.getAttribute('src')).toBe(FRAME_URL)
   })
 })

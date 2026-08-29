@@ -29,6 +29,7 @@ import { replayRun } from '../../lib/runner/replay'
 import type { RunState, StepState } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import { makeStore } from '../../store'
+import { BUNDLE_KEY, FRAME_URL, REVIEW_KEY as FRAMES_REVIEW_KEY, FRAMES_DEF, framesRun } from '../../test/framesRun'
 
 // jsdom has no canvas (`ChartView.test.tsx` explains why); this file only
 // needs to know `render: chart` reaches `ChartView`, not that uPlot can
@@ -236,5 +237,44 @@ describe('StepPane — Output tab hover dispatches the value under the pointer',
     // Switch tabs without ever firing `mouseleave` on the hovered value.
     fireEvent.click(screen.getByRole('tab', { name: 'Input' }))
     expect(store.getState().ui.hoveredValue).toBeNull()
+  })
+})
+
+/**
+ * apps#446: a markdown output's `images` map (02) is evaluated off the run's
+ * persisted rows and rewrites the post's placeholder tokens / zip-relative
+ * paths to the harness's own serve route — so a finished (or replayed) run's
+ * Output tab shows the frames the island showed while the step was waiting.
+ */
+describe('StepPane — Output tab draws a markdown output through its images map (apps#446)', () => {
+  function outputTab(key: string) {
+    const utils = render(
+      <Provider store={makeStore()}>
+        <StepPane def={FRAMES_DEF} state={framesRun()} stepKey={key} live={false} />
+      </Provider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
+    return utils
+  }
+
+  it("rewrites mapped frame: tokens from an earlier step's map; unmapped ones keep today's behaviour", () => {
+    const { container } = outputTab(FRAMES_REVIEW_KEY)
+    const views = container.querySelectorAll('.markdown-view')
+    expect(views).toHaveLength(2)
+    const [post, plain] = Array.from(views)
+
+    const imgs = Array.from(post!.querySelectorAll('img')).map((img) => img.getAttribute('src'))
+    expect(imgs).toEqual([FRAME_URL, 'images/a.jpg'])
+    expect(post!.querySelector('.markdown-caption')?.textContent).toBe('The diff')
+    expect(post!.textContent).toContain('Never captured')
+
+    // The same markdown on an output with no `images` renders exactly as before.
+    expect(Array.from(plain!.querySelectorAll('img')).map((img) => img.getAttribute('src'))).toEqual(['images/a.jpg'])
+    expect(plain!.querySelector('.markdown-figure')).toBeNull()
+  })
+
+  it("rewrites zip-relative paths from the step's own srcs output", () => {
+    const { container } = outputTab(BUNDLE_KEY)
+    expect(container.querySelector('.markdown-view img')?.getAttribute('src')).toBe(FRAME_URL)
   })
 })

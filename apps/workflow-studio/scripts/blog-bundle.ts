@@ -2,7 +2,7 @@
  * `blog-bundle` — `blog` → step `bundle`.
  *
  *   with:    { markdown, title, frames, byTime }
- *   outputs: { zip, post }
+ *   outputs: { zip, post, srcs }
  *
  * The portable deliverable (Studio issue #71): one archive holding `post.md` plus an
  * `images/` folder, so the post renders wherever the creator unzips it. Three of
@@ -30,6 +30,12 @@
  * image whose bytes are not in hand has its ORIGINAL url put back (Studio's
  * `replaceBlogImageUrl`) and is warned about: the post still renders that image
  * wherever it is read, and the zip never advertises a file it does not hold.
+ *
+ * `srcs` maps each bundled image's zip-relative path (`images/frame-NN.jpg`, the src
+ * `post` now uses) back to the frame's uploads-relative path: the harness `images`
+ * map (workflow spec 02, apps#446) the `post` output declares, so a finished run's
+ * Output tab draws the re-homed images from the harness's own serve route. An image
+ * that was left out of the archive is not in it — its src still points where it lives.
  */
 import type { FileRef, ScriptContext } from '@bffless/workflow-script'
 import { parseFrameTokens, planBlogBundle, replaceBlogImageUrl, rewriteFrameTokens } from 'studio/lib/blog'
@@ -132,9 +138,11 @@ export default async function blogBundle(ctx: ScriptContext): Promise<Record<str
   }
 
   const files: Record<string, Uint8Array> = { [plan.markdownPath]: strToU8(post) }
+  const srcs: Record<string, string> = {}
   for (const image of bundled) {
     const bytes = bytesByPath.get(image.url)
     if (bytes) files[image.path] = bytes
+    srcs[image.path] = image.url
   }
 
   const zip = zipSync(files)
@@ -142,5 +150,6 @@ export default async function blogBundle(ctx: ScriptContext): Promise<Record<str
   return {
     zip: new File([zip], plan.archiveName, { type: 'application/zip' }),
     post,
+    srcs,
   }
 }
