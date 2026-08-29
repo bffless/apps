@@ -21,16 +21,78 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync }
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
  * This app's own binaries, never `npx` (R23 / R123): a reproducible build never silently
- * reaches the network for a tool the workspace already pins. `workflow` is
- * `@bffless/workflow-lint`'s bin, `vite` and `tsc` are this app's devDependencies.
+ * reaches the network for a tool the workspace already pins. `vite` and `tsc` are this app's
+ * devDependencies and ship built, so their `node_modules/.bin` shims always exist.
+ *
+ * `workflow` (`@bffless/workflow-lint`) is NOT reached this way — see `workflowCli()`.
  */
 const bin = (name) => join(appDir, 'node_modules', '.bin', name)
+
+/**
+ * The path to `@bffless/workflow-lint`'s CLI, resolved through the module system rather than
+ * through `node_modules/.bin/workflow`.
+ *
+ * That shim does not exist on a fresh install. The package is a workspace sibling whose `bin`
+ * points at `dist/cli.js`, which is BUILT — by `pnpm --filter @bffless/workflow-lint build`,
+ * the step that runs right after `pnpm install` in CI. pnpm skips creating a bin shim whose
+ * target is missing at install time, and never revisits it, so CI had no
+ * `.bin/workflow` at all (`ENOENT spawnSync`) while local checkouts had one only because some
+ * earlier install happened to follow a build. Resolving the package instead is immune to that
+ * ordering.
+ *
+ * The package's `exports` map does not expose `./package.json`, so resolve its main entry and
+ * walk up to the manifest beside it; the manifest's own `bin.workflow` is then the truth about
+ * where the CLI lives — the same value the shim would have pointed at.
+ */
+function workflowCli() {
+  const require = createRequire(import.meta.url)
+
+  let entry
+  try {
+    entry = require.resolve('@bffless/workflow-lint')
+  } catch (cause) {
+    // Its main entry and its CLI are emitted by the same build, so a resolve failure here
+    // means exactly one thing.
+    throw new Error(
+      'stage.mjs: @bffless/workflow-lint is not built — run `pnpm --filter @bffless/workflow-lint build` first.',
+      { cause },
+    )
+  }
+
+  let dir = dirname(entry)
+  let manifestPath = null
+  for (;;) {
+    const candidate = join(dir, 'package.json')
+    if (existsSync(candidate) && JSON.parse(readFileSync(candidate, 'utf8')).name === '@bffless/workflow-lint') {
+      manifestPath = candidate
+      break
+    }
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  if (!manifestPath) throw new Error(`stage.mjs: no @bffless/workflow-lint package.json above ${entry}`)
+
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const relative = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.workflow
+  if (!relative) throw new Error(`stage.mjs: ${manifestPath} declares no \`workflow\` bin`)
+
+  const cli = join(dirname(manifestPath), relative)
+  if (!existsSync(cli)) {
+    throw new Error(
+      `stage.mjs: @bffless/workflow-lint is not built (${cli} is missing) — ` +
+        'run `pnpm --filter @bffless/workflow-lint build` first.',
+    )
+  }
+  return cli
+}
 
 /** The three projects `package.json`'s `typecheck` runs — kept in step with it. */
 const TSCONFIGS = ['tsconfig.islands.json', 'tsconfig.scripts.json', 'tsconfig.node.json']
@@ -171,8 +233,9 @@ try {
   // publish time; running it here is what makes a broken workflow fail in CI instead.
   // ---------------------------------------------------------------------
   execFileSync(
-    bin('workflow'),
+    process.execPath,
     [
+      workflowCli(),
       'index',
       '.bffless/workflows',
       '--out',
