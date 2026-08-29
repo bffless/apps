@@ -27,6 +27,7 @@ import {
   CHOOSE_KEY,
   FORM_AND_ISLAND_DEF,
   FORM_KEY,
+  ISLAND_AUTO_DEF,
   ISLAND_DEF,
   ISLAND_FULLSCREEN_DEF,
   ISLAND_KEY,
@@ -35,11 +36,13 @@ import {
   FORM_AND_TWO_ISLANDS_DEF,
   SAY_KEY,
   flush,
+  islandStore,
   pumpUntil,
   resetIslandHarness,
   startInteractiveRun,
   startIslandRun,
 } from '../../test/islandHarness'
+import { startRun } from '../../store/runnerActions'
 import { IslandStepPane } from './IslandStepPane'
 import { StepPane } from './StepPane'
 
@@ -163,6 +166,84 @@ describe('IslandStepPane', () => {
 
     await waitFor(() => expect(screen.getAllByTestId('step-annotated')).toHaveLength(1))
     expect(screen.getByText('two takes overlap')).toBeInTheDocument()
+  })
+})
+
+describe('IslandStepPane — Accept (07, apps#432)', () => {
+  it('offers Accept on a waiting `headless: auto` island, and tells the island it is driving itself', async () => {
+    const { store, host, writes } = await startIslandRun(ISLAND_AUTO_DEF)
+    renderPane(store)
+
+    await waitFor(() => expect(host.mounts).toHaveLength(1))
+    // Mounted attended: nobody ticked "Don't wait for me".
+    expect(host.mounts[0].headless).toBe(false)
+    host.settle()
+    await waitFor(() =>
+      expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
+    )
+
+    fireEvent.click(screen.getByTestId('island-accept'))
+
+    // One host-context change, to the mounted island — no remount.
+    expect(host.headlessChanges).toEqual([true])
+    expect(host.mounts).toHaveLength(1)
+    await waitFor(() => expect(screen.queryByTestId('island-accept')).toBeNull())
+    expect(screen.getByTestId('island-accepting')).toBeInTheDocument()
+
+    // Per step, per click: the run's own flags and its row are untouched.
+    expect(store.getState().run.state).toMatchObject({ headless: false, unattended: false })
+    expect(writes.filter((w) => w.op === 'patch' && 'unattended' in w.patch)).toEqual([])
+
+    // A second press is not a second notification.
+    fireEvent.click(screen.getByTestId('island-accepting'))
+    expect(host.headlessChanges).toEqual([true])
+  })
+
+  it('accepts an island that is still loading: the flag rides its mount instead', async () => {
+    const { store, host } = await startIslandRun(ISLAND_AUTO_DEF)
+    renderPane(store)
+
+    await waitFor(() => expect(host.mounts).toHaveLength(1))
+    expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('running')
+
+    fireEvent.click(screen.getByTestId('island-accept'))
+    // The fake host records the call; the real one folds a pre-connect flag
+    // into the `ui/initialize` answer (IslandHost.test.ts).
+    expect(host.headlessChanges).toEqual([true])
+
+    host.settle()
+    await waitFor(() =>
+      expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
+    )
+    expect(screen.queryByTestId('island-accept')).toBeNull()
+  })
+
+  it('offers no Accept on an island that declared no `headless: auto`, nor on one already driving itself', async () => {
+    const plain = await startIslandRun()
+    const view = renderPane(plain.store)
+    await waitFor(() => expect(plain.host.mounts).toHaveLength(1))
+    expect(screen.queryByTestId('island-accept')).toBeNull()
+    view.unmount()
+    resetIslandHarness()
+
+    // "Don't wait for me" already told it: nothing to accept.
+    const { store: unattendedStore, advance, host } = islandStore()
+    unattendedStore.dispatch(
+      startRun({
+        impl: 'test',
+        workflow: 'island',
+        def: ISLAND_AUTO_DEF,
+        yaml: ISLAND_YAML,
+        workflowName: 'Island',
+        values: {},
+        unattended: true,
+      }),
+    )
+    await pumpUntil(advance, () => unattendedStore.getState().run.state?.steps[ISLAND_KEY]?.status === 'running')
+    renderPane(unattendedStore)
+    await waitFor(() => expect(host.mounts).toHaveLength(1))
+    expect(host.mounts[0].headless).toBe(true)
+    expect(screen.queryByTestId('island-accept')).toBeNull()
   })
 })
 

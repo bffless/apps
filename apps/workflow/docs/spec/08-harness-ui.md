@@ -62,7 +62,9 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 - Interactive steps in `waiting`: the pane **is** the island or the form. An island always opens
   inline; one that declared `display: fullscreen` offers **Expand**, which overlays the same
   pane over the page with the graph collapsed to a strip (Esc / Exit returns) — the iframe is
-  not remounted either way (04 "Display modes").
+  not remounted either way (04 "Display modes"). An island that declared `headless: auto`
+  also offers **Accept** (`island-accept`): submit its current state without editing it
+  (04 "Accept").
 
 ## Run page sections
 

@@ -49,6 +49,13 @@ export interface FakeHost extends IslandBridge {
    * that name.
    */
   answer(name: string, reply: (call: ToolCall) => ToolResult | Promise<ToolResult>): void
+  /**
+   * The host's `ui/notifications/host-context-changed`: merges `diff` into what
+   * `getHostContext()` returns (one level deep, as the SDK does) and fires the
+   * island's `onhostcontextchanged`, in that order — the harness's Accept sends
+   * `{ bffless: { headless: true } }` this way (apps#432).
+   */
+  setHostContext(diff: Record<string, unknown>): void
 }
 
 export interface FakeHostOptions {
@@ -71,10 +78,16 @@ const signed = (path: string): ToolResult => ({
 export function createFakeHost(options: FakeHostOptions = {}): FakeHost {
   const scripted = new Map<string, (call: ToolCall) => ToolResult | Promise<ToolResult>>()
 
-  const context =
+  let context: unknown =
     options.hostContext ?? (options.headless ? { bffless: { headless: true } } : { bffless: {} })
 
   const host: FakeHost = {
+    onhostcontextchanged: undefined,
+    setHostContext: (diff) => {
+      const base = typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
+      context = { ...base, ...diff }
+      host.onhostcontextchanged?.(diff)
+    },
     calls: [],
     callsTo: (name) => host.calls.filter((c) => c.name === name),
     lastSubmit: () => {

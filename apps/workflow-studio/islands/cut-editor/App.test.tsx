@@ -418,6 +418,56 @@ describe('the cut editor island', () => {
     })
   })
 
+  describe('Accept — the flag arriving after mount (apps#432)', () => {
+    it('submits the cuts as they stand when host-context-changed flips bffless.headless', async () => {
+      const host = renderEditor(toolInput({ cuts: [{ start: 10, end: 12 }] }))
+      await settled()
+      expect(host.lastSubmit()).toBeUndefined()
+
+      // The person painted one more cut before pressing Accept in the harness.
+      fireEvent.pointerDown(screen.getByText('beta'))
+      fireEvent.pointerUp(window)
+
+      host.setHostContext({ bffless: { headless: true } })
+
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+      type Span = { start: number; end: number }
+      const outputs = host.lastSubmit() as { cuts: Span[]; keep: Span[] }
+      expect(outputs.cuts).toHaveLength(2)
+      expect(outputs.cuts[0].start).toBeCloseTo(2)
+      expect(outputs.cuts[1]).toEqual({ start: 10, end: 12 })
+      expect(screen.getByTestId('island-submitted')).toBeInTheDocument()
+    })
+
+    it('submits exactly once, and ignores an unrelated context change', async () => {
+      const host = renderEditor()
+      await settled()
+
+      host.setHostContext({ theme: 'dark' })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(host.callsTo('workflow.submit')).toEqual([])
+
+      host.setHostContext({ bffless: { headless: true } })
+      await waitFor(() => expect(host.callsTo('workflow.submit')).toHaveLength(1))
+      host.setHostContext({ bffless: { headless: true } })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(host.callsTo('workflow.submit')).toHaveLength(1)
+    })
+
+    it('keeps the whole scene if everything is cut when Accept arrives, rather than hanging', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const host = renderEditor(toolInput({ cuts: [{ start: 0, end: 30 }] }))
+      await settled()
+      expect(screen.getByTestId('island-done')).toBeDisabled()
+
+      host.setHostContext({ bffless: { headless: true } })
+
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+      expect(host.lastSubmit()).toEqual({ cuts: [], keep: [{ start: 0, end: 30 }] })
+      warn.mockRestore()
+    })
+  })
+
   describe('when signing fails', () => {
     it('says so and still renders the editor', async () => {
       const host = createFakeHost()

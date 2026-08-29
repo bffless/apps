@@ -13,6 +13,9 @@
  *
  * Headless (`hostContext.bffless.headless`): there is nobody to look at any of it, so
  * the refiner's cuts are submitted at once — before, and independently of, signing.
+ * The same flag can arrive LATER, on `host-context-changed`: that is the harness's
+ * per-step **Accept** (apps#432) on an island that mounted attended, and it takes the
+ * same path — with the cuts as they stand now, since a person may have painted some.
  * An unattended run must never be stopped by a presign failure, nor by a refiner that
  * cut the whole scene: that submits the WHOLE scene instead of an empty `keep`, which
  * `video/slice` would refuse and which would otherwise hang the run until its timeout.
@@ -27,6 +30,7 @@ import { keepForClip, type SceneWindow } from './keep'
 import {
   failureText,
   resultText,
+  subscribeHostContext,
   useSigned,
   type FileRef,
   type IslandBridge,
@@ -218,7 +222,20 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
   const input = useMemo(() => parseArgs(args), [args])
   const { clip, wav, scene, words, sheets, times } = input
 
-  const headless = isHeadless(bridge)
+  // Read at mount, then kept current by `host-context-changed` (Accept flips it
+  // to true on a mounted island). Never goes back to false: an accepted step is
+  // on its way to submitting, and un-accepting is not a thing the host does.
+  const [headless, setHeadless] = useState(() => isHeadless(bridge))
+  useEffect(
+    () =>
+      subscribeHostContext(bridge, (diff) => {
+        // The SDK has merged the diff into `getHostContext()` before dispatching;
+        // the diff itself is the fallback for a bridge that has not.
+        const flag = isRecord(diff.bffless) ? diff.bffless.headless === true : isHeadless(bridge)
+        if (flag) setHeadless(true)
+      }),
+    [bridge],
+  )
 
   // The editable state: the refiner's cuts to start with, then whatever the member
   // paints on the grid. Deliberately seeded once — a re-delivered `tool-input` (a
@@ -340,8 +357,11 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
     [bridge, scene],
   )
 
-  // Headless: submit the refiner's cuts as they came, at once. A claim-once latch —
-  // `ontoolinput` can be re-delivered (a reconnect, a retry) and must never submit twice.
+  // Headless (at mount, or on Accept): submit the cuts AS THEY STAND, at once — at
+  // mount they are the refiner's (`useState(input.cuts)`), after an Accept they
+  // include whatever the person painted meanwhile. A claim-once latch —
+  // `ontoolinput` can be re-delivered (a reconnect, a retry), and `cuts` keeps
+  // changing under a person's hands — so this submits exactly once.
   const autoSubmitted = useRef(false)
   useEffect(() => {
     if (!headless || autoSubmitted.current) return
@@ -352,14 +372,14 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
     // `keep: [{0, end - start}]`) — an empty `keep` is what `video/slice` would refuse.
     // An island has no `ctx` to annotate the run with, so the frame's console is the only
     // channel it has to say why the machine's answer was overruled.
-    const wholeSceneCut = keepForClip(input.cuts, scene).length === 0
+    const wholeSceneCut = keepForClip(cuts, scene).length === 0
     if (wholeSceneCut) {
       console.warn(
         'cut-editor: the refiner cut the whole scene — keeping all of it so the headless run can finish',
       )
     }
-    void submit(wholeSceneCut ? [] : input.cuts)
-  }, [headless, input.cuts, scene, submit])
+    void submit(wholeSceneCut ? [] : cuts)
+  }, [headless, cuts, scene, submit])
 
   return (
     <div className="min-h-screen bg-surface font-sans text-ink">

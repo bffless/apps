@@ -50,6 +50,26 @@ export interface IslandHandle {
   arguments: Record<string, unknown>
   headless: boolean
   /**
+   * The pane may offer **Accept** (07, apps#432): the step declares
+   * `headless: auto` and nobody is driving it already (`headless` is false).
+   * Fixed at launch, like `title`.
+   */
+  acceptable: boolean
+  /**
+   * Accept was pressed. Read as a `useSyncExternalStore` snapshot by the
+   * pane; set once, never cleared — the island is on its way to submitting.
+   */
+  accepted: boolean
+  /**
+   * One step, one click: tell the island it is driving itself, exactly as a
+   * headless run would have on `ui/initialize` — through a
+   * `host-context-changed` carrying `bffless.headless: true` if it is up, or
+   * on the handshake if its mount is still in flight (`IslandHost.setHeadless`
+   * covers both), and on the mount itself if the pane has not called it yet.
+   * Touches nothing on the run: not `unattended`, not `headless`, no row.
+   */
+  accept(): void
+  /**
    * `ui/message` lines. Live only — never persisted (Decision 12). Replaced
    * with a fresh array per line, never pushed to: the pane reads it as a
    * `useSyncExternalStore` snapshot (apps#370).
@@ -271,6 +291,14 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
     impl: a.state.impl,
     arguments: args,
     headless: selfDriving,
+    acceptable: !selfDriving && headlessMode(a.step) === 'auto',
+    accepted: false,
+    accept() {
+      if (!handle.acceptable || handle.accepted) return
+      handle.accepted = true
+      bump()
+      host.setHeadless(true)
+    },
     log: [],
     async mount(iframe) {
       try {
@@ -278,7 +306,9 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
           impl: a.state.impl,
           src: inputs.src,
           arguments: args,
-          headless: selfDriving,
+          // `handle.headless` itself stays what it was: the frame remounts on
+          // a change to that prop, and Accept must never remount the island.
+          headless: selfDriving || handle.accepted,
           signal: a.signal,
         })
       } catch (err) {

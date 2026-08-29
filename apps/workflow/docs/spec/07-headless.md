@@ -135,6 +135,11 @@ exists because nobody is there to notice a hang, and here somebody is (a declare
 `headless` is the driver's — a headless run never sets `unattended`, and a run started from
 the kickoff form never sets `headless`.
 
+The per-step counterpart is the waiting pane's **Accept** (04): unattended is the person's
+run-level choice made once at kickoff; Accept is one step, one click, on an interactive run —
+the island is told `bffless.headless = true` through `host-context-changed` and submits its
+current state, and nothing on the run or its row changes.
+
 The linter reports every interactive step lacking `headless` as a notice ("not headless-safe"),
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say
 so before a run is attempted.

@@ -2636,9 +2636,16 @@ button.pane-crumb:hover {
 }
 
 /* The pane's Expand — offered only by an island that declared
-   `display: fullscreen`; it opens the overlay above without remounting. */
-.island-expand {
+   `display: fullscreen`; it opens the overlay above without remounting — and
+   its Accept, offered only by a `headless: auto` island (07). */
+.island-expand,
+.island-accept {
   padding: 5px 10px;
+  font-size: 12px;
+}
+
+.pane-accepting {
+  color: var(--ink-mute);
   font-size: 12px;
 }
 

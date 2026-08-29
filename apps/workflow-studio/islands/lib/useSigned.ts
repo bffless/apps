@@ -32,6 +32,14 @@ export interface IslandBridge {
     arguments?: Record<string, unknown>
   }): Promise<ToolResult>
   getHostContext(): unknown
+  /**
+   * `ui/notifications/host-context-changed` — the SDK's `App` exposes it as a
+   * get/set accessor pair, which a plain writable property satisfies. The
+   * harness uses it to flip `bffless.headless` on a mounted island (its
+   * "Accept", apps#432); `getHostContext()` already carries the merged value
+   * by the time the handler runs.
+   */
+  onhostcontextchanged: ((params: Record<string, unknown>) => void) | undefined
 }
 
 /** A `type: file` step output, as the harness evaluates it into a step's `with`. */
@@ -130,4 +138,25 @@ export function useSigned(bridge: IslandBridge, paths: string[], enabled = true)
   }, [bridge, key, enabled])
 
   return enabled && answered?.key === key ? answered.signed : EMPTY
+}
+
+/**
+ * Subscribe to the host's `host-context-changed`, chaining any handler already
+ * installed; returns the unsubscribe. A plain function rather than an inline
+ * assignment in the component: the bridge is a prop, and React's immutability
+ * rule (rightly) refuses a prop mutation in the component body — the
+ * assignment is the SDK's own API, and this is where it lives.
+ */
+export function subscribeHostContext(
+  bridge: IslandBridge,
+  handler: (diff: Record<string, unknown>) => void,
+): () => void {
+  const previous = bridge.onhostcontextchanged
+  bridge.onhostcontextchanged = (diff) => {
+    previous?.(diff)
+    handler(diff)
+  }
+  return () => {
+    bridge.onhostcontextchanged = previous
+  }
 }
