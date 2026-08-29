@@ -138,18 +138,31 @@ const TWO_ISLANDS_DEF = toDefinition({
   jobs: { a: { steps: [islandStep('x'), islandStep('y')] } },
 }) as Definition
 
+/** The same two islands, each saying `auto-accept: true` for itself (07, apps#435). */
+const TWO_AUTO_ACCEPT_ISLANDS_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    a: {
+      steps: [
+        { ...islandStep('x'), 'auto-accept': true },
+        { ...islandStep('y'), 'auto-accept': true },
+      ],
+    },
+  },
+}) as Definition
+
 const X_KEY: StepKey = stepKey('a', 0, 'x')
 const Y_KEY: StepKey = stepKey('a', 0, 'y')
 
 type Driving = { headless?: boolean; unattended?: boolean }
 
-async function startTwoIslands(driving: Driving) {
+async function startTwoIslands(driving: Driving, def: Definition = TWO_ISLANDS_DEF) {
   const { store, advance, host } = islandStore()
   store.dispatch(
     startRun({
       impl: 'test',
       workflow: 'island',
-      def: TWO_ISLANDS_DEF,
+      def,
       yaml: ISLAND_YAML,
       workflowName: 'Island',
       values: {},
@@ -171,8 +184,8 @@ describe('RunPage — headless island mounting', () => {
    * (apps#370) declines to act: `y` has already been claimed, so nothing would
    * re-open it. In a headless run that would be a hang.
    */
-  async function driveToSecondIsland(driving: Driving) {
-    const { store, host, runId } = await startTwoIslands(driving)
+  async function driveToSecondIsland(driving: Driving, def?: Definition) {
+    const { store, host, runId } = await startTwoIslands(driving, def)
     const router = createMemoryRouter(createRoutesFromElements(routes), {
       initialEntries: [`/test/island/runs/${runId}`],
     })
@@ -214,6 +227,17 @@ describe('RunPage — headless island mounting', () => {
     expect(screen.getByTestId('island-frame')).toBeInTheDocument()
     // And the island is told it is driving itself.
     expect(host.mounts.at(-1)!.headless).toBe(true)
+  })
+
+  it('re-opens an island whose own step said `auto-accept`, on an otherwise interactive run (07, apps#435)', async () => {
+    // Nobody ticked "Don't wait for me" — the step itself asked to self-drive,
+    // so it is kept mounted like an unattended one; the run's flags stay off.
+    const { store, host } = await driveToSecondIsland({}, TWO_AUTO_ACCEPT_ISLANDS_DEF)
+
+    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(Y_KEY))
+    expect(screen.getByTestId('island-frame')).toBeInTheDocument()
+    expect(host.mounts.at(-1)!.headless).toBe(true)
+    expect(store.getState().run.state).toMatchObject({ headless: false, unattended: false })
   })
 
   it('leaves an interactive run’s selection exactly where the person put it', async () => {

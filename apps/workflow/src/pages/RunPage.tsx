@@ -53,6 +53,7 @@ import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
+import { getIslandHandle } from '../store/islandLaunch'
 import { islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
 import { useRunDelete } from '../store/useRunDelete'
 import { workflowApi, useGetRunQuery, useWhoamiQuery } from '../store/workflowApi'
@@ -479,22 +480,31 @@ export function RunPage() {
   // its `headless: auto` islands: the person asked not to be waited for, so
   // the page keeps them mounted the way a headless run would — the one case
   // where keeping the run moving outranks the pane a person happens to have
-  // open, and the trade they made when they ticked the box.
+  // open, and the trade they made when they ticked the box. And so is a
+  // single island whose step said `auto-accept:` (07, apps#435) on an
+  // otherwise interactive run: its handle already carries the answer
+  // (`headless`, fixed at launch), so the page reads that rather than
+  // re-evaluating the declaration — and an island the person is hand-editing
+  // is never one of these.
+  const runUnattended = Boolean(sliceState?.headless || sliceState?.unattended)
   useEffect(() => {
-    if (!isLive || !def || !state || !(sliceState?.headless || sliceState?.unattended)) return
+    if (!isLive || !def || !state) return
     const selected = selectedStep ? state.steps[selectedStep] : undefined
     if (selected && !TERMINAL_STEP.has(selected.status)) return
     const active = firstStepWhere(
       def,
       state,
-      (step) => step.kind === 'island' && (step.status === 'running' || step.status === 'waiting'),
+      (step) =>
+        step.kind === 'island' &&
+        (step.status === 'running' || step.status === 'waiting') &&
+        (runUnattended || getIslandHandle(state.runId, step.key)?.headless === true),
     )
     if (!active || active === selectedStep) return
     // Replace, never push: an auto-open is the page keeping up with the run,
     // not a place anyone navigated to.
     setStep(active, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `setStep` is stable (see above)
-  }, [isLive, sliceState, def, state, selectedStep])
+  }, [isLive, runUnattended, def, state, selectedStep])
 
   // A live run that just finished returns the page to the run level (08): the
   // results are the reason the person is here, and the step that happened to

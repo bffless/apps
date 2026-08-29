@@ -25,7 +25,7 @@ import { completeFormStep, formInitialValues, formInputs } from '../lib/runner/a
 import { runPipelineStep } from '../lib/runner/adapters/pipeline'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
 import type { StepScope } from '../lib/runner/adapters/declared'
-import { evaluateSkipOutputs, headlessMode } from '../lib/runner/headless'
+import { evaluateSkipOutputs, headlessMode, unattendedStep } from '../lib/runner/headless'
 import { nextActions } from '../lib/runner/next'
 import type { NextAction } from '../lib/runner/next'
 import { isUnavailablePayload, offloadOutputs } from '../lib/runner/payload'
@@ -768,10 +768,28 @@ type HeadlessDecision =
  * run does — `auto` runs, `skip` stands its outputs in — with one difference:
  * a step that declared neither still *waits for the person*, who is, after
  * all, sitting there. Only the driver's `headless` fails fast on it.
+ *
+ * A step's own `auto-accept:` (07, apps#435) is the same thing for *one*
+ * step: when it evaluates truthy on an interactive run, this step reads its
+ * declaration as an unattended run would, and every other step is left to
+ * the person. A bad `auto-accept` expression fails the step (`AUTO_ACCEPT`),
+ * not the run — it is this step's declaration that is wrong.
  */
 function headlessDecision(a: StepScope): HeadlessDecision {
-  if (!a.state.headless && !a.state.unattended) return { act: 'run' }
   if (a.step.uses !== 'form' && a.step.uses !== 'island') return { act: 'run' }
+  if (!a.state.headless) {
+    let unattended: boolean
+    try {
+      unattended = unattendedStep(a)
+    } catch (err) {
+      return {
+        act: 'fail',
+        error: { code: 'AUTO_ACCEPT', message: err instanceof Error ? err.message : String(err) },
+        annotate: false,
+      }
+    }
+    if (!unattended) return { act: 'run' }
+  }
 
   const mode = headlessMode(a.step)
   if (mode === undefined) {
@@ -916,6 +934,14 @@ async function handleNextAction(
       // in principle revisit the same proposal before the step's own
       // `step.queued` has settled into state.
       if (runnerControllers.has(a.key)) return
+      // The same freshest-state re-check as `case 'skip'`: `a` is a snapshot,
+      // and a failure dispatched synchronously from this very case (a
+      // `headlessDecision` that fails, a launch that could not start) re-enters
+      // the listener, which can reach a *sibling* matrix leg first — queue it,
+      // fail it (or fail-fast cancel it) and clear its controller — before this
+      // loop gets to it. `step.queued` is a creation event too, so a key that
+      // already has state must not be queued again (apps#435).
+      if (getRunState()?.steps[a.key]) return
       const step = stepOf(def, a.job, a.stepId)
       if (!step) return
 
@@ -1014,9 +1040,11 @@ async function handleNextAction(
         dispatch(runEvent({ type: 'step.waiting', key: a.key, inputs, at: deps.clock.now() }))
         // `headless: auto`: nobody is going to click Approve, so the harness
         // submits the form's own defaults once it is `waiting` (see below).
-        // Unattended counts too — `headlessDecision` has already let this
-        // form through only because it declared `auto` (or is being driven).
-        if (runState.headless || (runState.unattended && headlessMode(step) === 'auto')) {
+        // Unattended counts too — run-level or this step's own `auto-accept`
+        // — and `headlessDecision` has already let this form through only
+        // because it declared `auto` (or is being driven), so `unattendedStep`
+        // cannot throw here: the same expression was just evaluated.
+        if (runState.headless || (unattendedStep(scope) && headlessMode(step) === 'auto')) {
           autoSubmitForm({ ...scope, deps, dispatch, getRunState })
         }
       } else if (step.uses === 'island') {

@@ -92,6 +92,7 @@ steps:
     annotations:
       - { level: warning, if: "${{ response.result.confidence < 0.9 }}", message: "Low confidence ${{ response.result.confidence }}" }
     headless: { mode: skip, outputs: { … } }   # island/form only (07)
+    auto-accept: ${{ inputs.accept_cuts }}     # island/form only, needs headless: (07 "Per step")
 ```
 
 - Steps run **in order**; a failed step fails the job unless `continue-on-error: true`

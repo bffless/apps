@@ -16,6 +16,7 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
+import { truthy } from '@bffless/workflow-lint/expressions'
 import { buildContexts, evalDeep } from './contexts'
 import { formFieldDefs, validateFormOutputs } from './adapters/form'
 import { obj, outputDecls, validateDeclared } from './adapters/declared'
@@ -53,6 +54,43 @@ export function headlessMode(step: Step): HeadlessMode | undefined {
     if (mode === undefined) return 'auto'
   }
   return undefined
+}
+
+/**
+ * The step's own `auto-accept:` (07, apps#435): an expression the workflow
+ * author put on an `island`/`form` step that, when truthy on an interactive
+ * run, applies that one step's `headless:` declaration exactly as "Don't wait
+ * for me" would — without touching the rest of the run. Evaluated when the
+ * step is reached, against the same contexts its `if:` reads, so a kickoff
+ * input (`${{ inputs.accept_cuts }}`) is the usual thing to put here and a
+ * resumed run reads the answer straight off its persisted `inputs`.
+ *
+ * `false` for a step that declares none. A bare YAML boolean is honoured as
+ * is; a string goes through the expression engine and GitHub truthiness. A
+ * step without `headless:` has nothing for this to apply (the linter rejects
+ * that shape), so it stays a no-op at runtime rather than a second decision.
+ * Throws `EvalError` on a bad expression: the caller records that as the
+ * step's failure, the way a bad `headless.outputs` is.
+ */
+export function autoAccept(a: StepScope): boolean {
+  if (a.step.uses !== 'island' && a.step.uses !== 'form') return false
+  const decl = ((a.step.raw ?? {}) as Record<string, unknown>)['auto-accept']
+  if (decl === undefined || decl === null) return false
+  if (typeof decl !== 'string') return truthy(decl)
+  const contexts = buildContexts(a.def, a.state, { job: a.job, index: a.index, stepId: a.step.id })
+  return truthy(evalDeep(decl, contexts))
+}
+
+/**
+ * Whether this step runs as an unattended step (07): the person said so for
+ * the whole run ("Don't wait for me"), or the step's own `auto-accept:` says
+ * so for just this one. The driver's `headless` is deliberately *not* folded
+ * in — a headless run reads the declarations on its own terms (it fails fast
+ * on an undeclared step; this never does), so the two are kept apart at every
+ * call site. Same `EvalError` contract as `autoAccept`.
+ */
+export function unattendedStep(a: StepScope): boolean {
+  return a.state.unattended || autoAccept(a)
 }
 
 /** The step's declared `timeout-minutes` budget in ms, if it declared one (01). */

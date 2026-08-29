@@ -135,10 +135,29 @@ exists because nobody is there to notice a hang, and here somebody is (a declare
 `headless` is the driver's — a headless run never sets `unattended`, and a run started from
 the kickoff form never sets `headless`.
 
-The per-step counterpart is the waiting pane's **Accept** (04): unattended is the person's
-run-level choice made once at kickoff; Accept is one step, one click, on an interactive run —
-the island is told `bffless.headless = true` through `host-context-changed` and submits its
-current state, and nothing on the run or its row changes.
+### Per step — `auto-accept`
+
+The same choice can be made for **one step** by the workflow author (apps#435): an
+`island`/`form` step may declare `auto-accept: ${{ expr }}` (01). It is evaluated when the
+step is reached, against the same contexts as its `if:`; when truthy on an interactive run the
+harness applies *that step's* `headless:` declaration exactly as an unattended run would —
+`auto` → mounted self-driving (`hostContext.bffless.headless = true`, and the page keeps it in
+the pane by itself), `skip` → its declared outputs — and every other step is left to the person.
+The usual shape hands the question back to the person as an ordinary kickoff input: Studio's
+`trim` declares `auto-accept: ${{ inputs.accept_cuts }}`, offered as **"Auto-accept the cut
+edits"** (default on) directly above "Don't wait for me" — only the cut editor, every scene,
+while the blog review and the cover pick still wait. The answer lives in the run's persisted
+`inputs`, so Resume reads it for free and nothing new goes on the row. Under `run.unattended`
+the key is redundant (unattended already honours every declaration); under `run.headless` it is
+not read at all. `auto-accept` on a step with no `headless:` is a lint error
+(`auto-accept-headless`) — there is nothing to apply — and a bad expression fails the step with
+`AUTO_ACCEPT`.
+
+Unattended is the person's run-level choice made once at kickoff; `auto-accept` is the author's
+per-step choice, usually handed back to the person as an input. Both are decided before the
+island mounts — nothing is told to change its mind mid-flight, and nothing remounts. There is
+no per-step control on the run page: an island's own **Done** is always on screen now that
+islands open inline (04), and a second button that did the same thing was only confusion.
 
 The linter reports every interactive step lacking `headless` as a notice ("not headless-safe"),
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say

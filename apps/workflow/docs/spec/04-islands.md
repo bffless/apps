@@ -50,21 +50,6 @@ never opens an island enlarged.
 - The mode is view state (09): a reload, another step, or the step finishing puts the page back
   inline. No `data-testid` depends on it; the headless driver never relies on fullscreen.
 
-## Accept
-
-A step whose island declares `headless: auto` (07) can be accepted without being edited: its
-pane offers an **Accept** control (`island-accept`) from the moment the island starts loading
-until it submits. Pressing it tells the island it is driving itself — the host sends
-`ui/notifications/host-context-changed` with `bffless: { headless: true }` (or folds the flag
-into `ui/initialize` if the mount is still in flight) — and the island's own self-submit path
-does the rest, with the step's *current* state (an island that has been painted on since it
-mounted submits what is on screen, not what it was given). One step, one click: nothing on the
-run changes — not `unattended`, not `headless`, nothing on the row — and the island is never
-remounted. An island that already mounted self-driving (a headless or unattended run) has no
-Accept to offer. An island therefore has to read `bffless.headless` **both** on
-`ui/initialize` and on `host-context-changed`; `hostContext` is merged by the SDK before the
-handler runs, so `app.getHostContext().bffless` is current in either.
-
 ## Tool naming — pipelines as tools
 
 Inside an island a pipeline is a tool named after its path **relative to the implementation's

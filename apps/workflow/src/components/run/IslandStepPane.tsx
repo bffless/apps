@@ -16,12 +16,10 @@
  * `'unmounted'` and leaves the step exactly as it was: the record is unchanged,
  * and coming back re-mounts from the same handle.
  *
- * **Accept** (07, apps#432): a `headless: auto` island the person would rather
- * not hand-edit can be told to submit its current state — one step, one
- * click, through the handle (`accept()`); the run's own `unattended` /
- * `headless` are untouched. Offered from `running` (the island still
- * loading — the flag then rides its handshake) through `waiting`, and gone
- * once pressed.
+ * The pane has no accept-for-me control of its own (apps#435): an island's
+ * **Done** is always on screen now that islands open inline, and the way to
+ * not hand-edit a step at all is decided at kickoff — "Don't wait for me" for
+ * the run, or the step's own `auto-accept:` (07) — before the island mounts.
  *
  * The pane always opens **inline** (04, apps#432). An island that declared
  * `display: fullscreen` gets an **Expand** control here — the overlay is the
@@ -32,7 +30,7 @@
 import { useMemo } from 'react'
 import { IslandFrame } from '../../islands/IslandFrame'
 import type { IslandHost } from '../../islands/IslandHost'
-import { useIslandAccepted, useIslandHandle, useIslandLog } from '../../islands/useIslandHandle'
+import { useIslandHandle, useIslandLog } from '../../islands/useIslandHandle'
 import type { RunState, StepKey } from '../../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../../store/hooks'
 import { islandDisplayChanged } from '../../store/uiSlice'
@@ -53,7 +51,6 @@ export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPa
   const dispatch = useAppDispatch()
   const handle = useIslandHandle(state.runId, key)
   const log = useIslandLog(state.runId, key)
-  const accepted = useIslandAccepted(state.runId, key)
   const step = state.steps[key]
 
   /**
@@ -72,7 +69,6 @@ export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPa
         ? {
             mount: (iframe) => handle.mount(iframe),
             setDisplayMode: (mode) => handle.host.setDisplayMode(mode),
-            setHeadless: (headless) => handle.host.setHeadless(headless),
             sendToolInput: (args) => handle.host.sendToolInput(args),
             teardown: (reason) => handle.host.teardown(reason),
           }
@@ -98,22 +94,6 @@ export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPa
             <h3 className="graph-panel-title">{handle?.title ?? key}</h3>
             <span className="pane-key">{key}</span>
           </span>
-          {handle?.acceptable && !accepted && (
-            <button
-              type="button"
-              className="button island-accept"
-              data-testid="island-accept"
-              title="Submit this step's current state without editing it"
-              onClick={() => handle.accept()}
-            >
-              Accept
-            </button>
-          )}
-          {accepted && step.status === 'waiting' && (
-            <span className="pane-accepting" data-testid="island-accepting">
-              Accepting…
-            </span>
-          )}
           {/* `display: fullscreen` offers the overlay; `inline` never enlarges (04). */}
           {handle?.display === 'fullscreen' && display === 'inline' && (
             <button

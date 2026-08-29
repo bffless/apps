@@ -146,6 +146,7 @@ linter flags) — asserted in `test/examples.test.ts`.
 | `file-ref-in-body` | warning | a whole File ref (or list) in a pipeline body — pass `ref.path` / `pluck(list, 'path')` | 03 |
 | `render-mapping` | warning | `render: chart` without `mapping.x`/`mapping.y`; `render: code` without `mapping.language` | 02 |
 | `headless-skip-outputs` | error | `headless: skip` giving no value to an output a later expression references | 07 |
+| `auto-accept-headless` | error | `auto-accept` on an island/form step that declares no `headless:` — nothing to apply | 07 |
 | `interactive-headless` | notice | island/form steps with no `headless` (not headless-safe) | 07 |
 | `outputs-omitted` | notice | pipeline steps with no `outputs` map (exposes only `outputs.response`) | 03 |
 | `untyped-job-output` | notice | computed job outputs that will type as `json` — suggest `{ type, value }` | 01 |

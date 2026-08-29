@@ -18,6 +18,10 @@ on:
       # thumbnail/draft as `notes`, the field Studio's ThumbnailStudio fills from its
       # free-text notes box; NOTES outrank every default in that rule's system prompt.
       cover_direction: { type: string, format: textarea, label: Cover direction, description: "What the cover should show, and in what style (optional). Prefills the cover form; only read when a cover is drawn." }
+      # Last on purpose: the kickoff form renders inputs in order, and this one belongs
+      # directly above "Don't wait for me" as its narrower sibling — only the cut editor,
+      # every scene. Read by `trim`'s `auto-accept` (07); irrelevant on an unattended run.
+      accept_cuts: { type: boolean, default: true, label: "Auto-accept the cut edits", description: "Take the refiner's cuts for every scene without opening the editor. Blog review and cover pick still wait for you." }
 
 jobs:
   per-video:
@@ -209,6 +213,10 @@ jobs:
           cuts: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
           keep: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
         headless: auto
+        # "Auto-accept the cut edits" (apps#435): with the kickoff box ticked every scene's
+        # editor self-submits the refiner's cuts, as an unattended run would — and only
+        # this step does; `edit` and `pick` still wait for the person.
+        auto-accept: ${{ inputs.accept_cuts }}
         timeout-minutes: 240
         summary: "Kept ${{ length(steps.trim.outputs.keep) }} spans in *${{ matrix.scene.title }}*."
       - id: assemble

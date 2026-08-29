@@ -20,6 +20,7 @@ export interface Slot {
     | 'annotation-if'
     | 'annotation-message'
     | 'headless-output'
+    | 'auto-accept'
     | 'top-output'
   jobId?: string
   stepIndex?: number
@@ -115,6 +116,10 @@ export function collectSites(def: Definition): ExprSite[] {
     const raw = step.raw
 
     if (typeof raw.if === 'string') addScalar(raw.if, `${basePointer}/if`, slot('step-if', true))
+    // `auto-accept` (07): an ordinary expression slot, not an `if` — the
+    // harness evaluates it whole and applies truthiness, so status functions
+    // and the bare-`if` spelling are not on offer here.
+    walkValue(raw['auto-accept'], `${basePointer}/auto-accept`, slot('auto-accept'))
 
     const w = raw.with
     if (w != null && typeof w === 'object') {
