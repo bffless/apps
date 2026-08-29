@@ -267,8 +267,12 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   `{ path: '', url: '/api/workflow/files/' }`). The serve rule now lives at
   `/api/uploads/workflows/[...path]` — also the `publicPath` `presigned_upload` mints — and
   the ref's `url` is that path. Verified: prepare → PUT → register → GET serves the exact
-  bytes, `Range` → 206. Still open: `?download=1` gets no `Content-Disposition`
-  (`file_serve_handler` has no attachment support — CE follow-up).
+  bytes, `Range` → 206. `?download=1` got no `Content-Disposition` because CE's
+  `file_serve_handler` had no attachment support; the serve rule now carries
+  `download: request.query.download` (apps#362), which turns that on once
+  [bffless/ce#714](https://github.com/bffless/ce/pull/714) merges and j5s.dev redeploys. Until
+  then the key is inert — CE ignores unknown handler config keys — so files still open inline
+  and the live walk below is unchanged.
 - [x] **`project:` input names — DISPROVED for upload-artifact.** `bffless/upload-artifact@v1`
   has no `project:` input (it logs "Unexpected input(s)" and falls back to the calling repo —
   the deploy was refused with "rule set workflow not found for this project", which is the
@@ -347,9 +351,14 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
   Observed aside: `workflow-ci` read `member` (MCP `list_users`, 10:37) before the admin-UI
   project grant and `user` after it (`updatedAt` 10:49:17) — CE promotes on grant (noted in
   ce#701); either way the pipeline's `user.role` matched the record.
-- [x] **M2 Phase 3 — apps#362 `?download=1` — observed 2026-08-26.** `GET …-poster.svg?download=1`
-  → 200 `image/svg+xml` with **no** `Content-Disposition` (none without the query either);
-  bffless/ce#697 still open.
+- [ ] **M2 Phase 3 — apps#362 `?download=1` — fix authored, awaiting a CE deploy.** Observed
+  2026-08-26: `GET …-poster.svg?download=1` → 200 `image/svg+xml` with **no**
+  `Content-Disposition` (none without the query either). The serve rule now sets
+  `download: request.query.download`, and the CE side is
+  [bffless/ce#714](https://github.com/bffless/ce/pull/714) (closes bffless/ce#697) — open, not
+  deployed. Re-walk once it is: expect `Content-Disposition: attachment;
+  filename="<original_name>"` on `?download=1`, nothing on a plain GET, and `Range` → 206
+  unchanged.
 - [ ] **M2 Phase 3 — Annotations column.** Shows real counts for the new (M2) run and an em dash
   `—` for pre-M2 rows that predate `annotationCounts`.
 

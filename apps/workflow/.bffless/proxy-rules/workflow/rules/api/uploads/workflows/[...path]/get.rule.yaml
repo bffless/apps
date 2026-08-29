@@ -2,13 +2,14 @@ targetUrl: pipeline
 order: 22
 pipeline:
   name: Serve workflow files
-  description: "Files trio 3/3: Range-aware serve of the workflows/ prefix (video seeking); Content-Disposition attachment on ?download=1. Lives at /api/uploads/workflows/* because CE's file_serve_handler derives the object from a /api/uploads/<subDir>/ request path only — it is also the publicPath presigned_upload mints, so the File ref url is CE's own."
+  description: "Files trio 3/3: Range-aware serve of the workflows/ prefix (video seeking). The download key asks CE's file_serve_handler to answer ?download=1 with Content-Disposition: attachment (filename = the upload record's original_name, else the key basename); a value of 1 is truthy, while 0, false, no, off and an empty value stay inline. A CE that predates bffless/ce#714 ignores the unknown key and serves inline exactly as it does today, so this is inert until that lands and j5s.dev redeploys (apps#362). Lives at /api/uploads/workflows/* because CE's file_serve_handler derives the object from a /api/uploads/<subDir>/ request path only — it is also the publicPath presigned_upload mints, so the File ref url is CE's own."
   steps:
     - id: serve
       name: serve
       handler: file_serve_handler
       config:
         subDir: workflows
+        download: request.query.download
   validators:
     - type: auth_required
       config: { allowApiKey: true }
