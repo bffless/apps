@@ -1,6 +1,23 @@
+# The table `register_upload` writes an upload record into (the files trio, 06).
+#
+# The names are CE's, not this rule set's. `UploadRecordService.createUploadRecords`
+# sets exactly these seven keys on the record "whatever the target schema happens to
+# declare — the write is not driven by the schema" (ce `upload-schema-contract.ts`,
+# `UPLOAD_RECORD_FIELDS`), so a declaration in this set's own camelCase described
+# something the data never had: `fileName`/`storagePath`/`contentType` were never
+# written, and `storage_path`/`sub_dir`/`url`/`original_name` were written but
+# undeclared. CE logs that gap once per (schema, version) via `warnOnSchemaGap`.
+#
+# It is load-bearing now: the run-delete rule sweeps this table with
+# `storage_path LIKE`, and `sub_dir` is the anchored filter that sweep may move to
+# (apps#381). Correcting the declaration moves no data — every existing row was
+# already written with these names.
 name: workflow_files
 fields:
-  - { name: fileName, type: string, required: false }
-  - { name: storagePath, type: string, required: false }
-  - { name: contentType, type: string, required: false }
+  - { name: filename, type: string, required: false }
+  - { name: storage_path, type: string, required: false }
+  - { name: content_type, type: string, required: false }
   - { name: size, type: number, required: false }
+  - { name: url, type: string, required: false }
+  - { name: sub_dir, type: string, required: false }
+  - { name: original_name, type: string, required: false }

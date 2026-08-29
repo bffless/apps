@@ -8,7 +8,17 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MOCK_ADMIN, MOCK_MEMBER, db, filesUnder, seedFinishedRun, setMockUser, stepsOf } from './db'
+import {
+  MOCK_ADMIN,
+  MOCK_MEMBER,
+  MOCK_UPLOADS_ROOT,
+  db,
+  filesUnder,
+  seedFinishedRun,
+  seedObject,
+  setMockUser,
+  stepsOf,
+} from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { PAYLOAD_BUDGET_BYTES } from '../lib/runner/payload'
 
@@ -131,12 +141,17 @@ const OWNER = FINISHED_RUN.run.startedBy!
 const RUN_PREFIX = `workflows/hello/hello/runs/${RUN_ID}/`
 const INPUT_KEY = 'workflows/hello/hello/inputs/photo.png'
 
-/** Bytes a real run leaves behind: two under its run prefix, one kickoff input outside it (D18). */
+/**
+ * Bytes a real run leaves behind: two under its run prefix, one kickoff input
+ * outside it (D18). `seedObject` writes the `workflow_files` row alongside each,
+ * because the files trio would have — and the delete rule's `records` count is
+ * the sweep over those rows, not over the objects.
+ */
 function seedBytes(): void {
   const file = { bytes: new Uint8Array([1]), contentType: 'application/octet-stream' }
-  db.files.set(`${RUN_PREFIX}slow/0/start/poster.png`, file)
-  db.files.set(`${RUN_PREFIX}outputs/report.json`, file)
-  db.files.set(INPUT_KEY, file)
+  seedObject(`${RUN_PREFIX}slow/0/start/poster.png`, file)
+  seedObject(`${RUN_PREFIX}outputs/report.json`, file)
+  seedObject(INPUT_KEY, file)
 }
 
 describe('run deletion (rows + file-prefix GC)', () => {
@@ -186,6 +201,60 @@ describe('run deletion (rows + file-prefix GC)', () => {
     expect(stepsOf(RUN_ID)).toEqual([])
     expect(filesUnder(RUN_PREFIX)).toEqual([])
     expect(db.files.has(INPUT_KEY)).toBe(true)
+    // The kickoff input's ROW survives too, not just its bytes: the sweep is a
+    // `storage_path LIKE '%<run prefix>%'`, and `inputs/` is outside that prefix.
+    expect(db.fileRecords.has(INPUT_KEY)).toBe(true)
+  })
+
+  // apps#381. `records` is the only reported number whose correctness rides on a CE
+  // implementation detail — a `storage_path` that is the FULL object key, not the
+  // uploads-relative one — and a filter that stops matching deletes nothing rather
+  // than failing. While the mock had no `workflow_files` table it reported `files`
+  // twice, so `records: 0` beside a non-zero `files` was literally unrepresentable
+  // and CI could not have caught it. It is representable now: the two counts come
+  // from two independent sweeps, and this pins that they can disagree.
+  // (`deleteGate.fn.parity.test.ts` covers the pattern itself — that the gate's
+  // leading `%` is what reaches across CE's `<owner>/<repo>/uploads/` head.)
+  it('reports records: 0 beside a non-zero files when the workflow_files sweep matches nothing', async () => {
+    setMockUser({ ...MOCK_MEMBER, id: OWNER })
+    db.fileRecords.clear()
+
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(await res.json()).toEqual({ ok: true, deleted: { files: 2, records: 0 } })
+  })
+
+  it('writes a workflow_files row through the files trio, and the sweep counts it', async () => {
+    setMockUser({ ...MOCK_MEMBER, id: OWNER })
+    const key = `${RUN_PREFIX}slow/0/start/extra.bin`
+    const prepared = await (
+      await json('/api/workflow/files/prepare', {
+        impl: 'hello',
+        workflow: 'hello',
+        scope: `runs/${RUN_ID}/slow/0/start`,
+        filename: 'extra.bin',
+      })
+    ).json()
+    await fetch(prepared.uploadUrl, { method: 'PUT', body: new Uint8Array([7, 7, 7]) })
+    await json('/api/workflow/files/register', {
+      storageKey: prepared.storageKey,
+      originalName: 'extra.bin',
+    })
+
+    // CE's record shape, derived from the key the trio minted (upload-record.service.ts).
+    expect(db.fileRecords.get(key)).toMatchObject({
+      filename: 'extra.bin',
+      storage_path: `${MOCK_UPLOADS_ROOT}${key}`,
+      sub_dir: `${RUN_PREFIX}slow/0/start`,
+      original_name: 'extra.bin',
+      size: 3,
+      url: `/api/uploads/${key}`,
+    })
+
+    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+
+    expect(await res.json()).toEqual({ ok: true, deleted: { files: 3, records: 3 } })
+    expect(db.fileRecords.has(key)).toBe(false)
   })
 
   // Final review, finding 4: `undefined !== undefined` is `false` — an

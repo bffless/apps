@@ -13,6 +13,36 @@ export interface MockFile {
   contentType: string
 }
 
+/**
+ * A `workflow_files` row, in CE's own column names.
+ *
+ * `register_upload` writes exactly these seven keys whatever the target schema
+ * declares (`UploadRecordService.createUploadRecords`, ce
+ * `upload-schema-contract.ts` `UPLOAD_RECORD_FIELDS`) — which is why the mock
+ * spells them snake_case while every other table here uses the camelCase names
+ * this rule set's own schemas declare.
+ */
+export interface MockFileRecord {
+  filename: string
+  storage_path: string
+  content_type: string
+  size: number
+  url: string
+  sub_dir: string
+  original_name: string
+}
+
+/**
+ * The `<owner>/<repo>/uploads/` head CE namespaces every storage key with.
+ *
+ * A record's `storage_path` is the FULL object key, not the uploads-relative
+ * one the harness passes around — which is the entire reason the delete rule's
+ * filter is `storage_path LIKE '%<prefix>%'` with a LEADING wildcard. Modelling
+ * that head here is what makes the mock able to fail on an anchored pattern the
+ * way the real table would.
+ */
+export const MOCK_UPLOADS_ROOT = 'bffless/workflow/uploads/'
+
 /** A `hello` slow-job row; `polls` is what makes the second poll the finished one (R7). */
 export interface MockJob {
   polls: number
@@ -26,6 +56,8 @@ export interface MockDb {
   steps: Map<string, ServerStepRow>
   /** Uploaded objects, keyed by storage key. */
   files: Map<string, MockFile>
+  /** `workflow_files` — the upload records, keyed by the same storage key. */
+  fileRecords: Map<string, MockFileRecord>
   helloJobs: Map<string, MockJob>
   /** Request bodies already answered with one BUSY, so the retry is the one that lands (R7). */
   helloBusy: Set<string>
@@ -36,6 +68,7 @@ export const db: MockDb = {
   runs: new Map(),
   steps: new Map(),
   files: new Map(),
+  fileRecords: new Map(),
   helloJobs: new Map(),
   helloBusy: new Set(),
   seq: 0,
@@ -45,6 +78,7 @@ export function resetDb(): void {
   db.runs.clear()
   db.steps.clear()
   db.files.clear()
+  db.fileRecords.clear()
   db.helloJobs.clear()
   db.helloBusy.clear()
   db.seq = 0
@@ -111,6 +145,65 @@ export function filesUnder(prefix: string): string[] {
 }
 
 /**
+ * Write the `workflow_files` row `register_upload` would write for one object,
+ * deriving the same seven fields CE derives from the storage key: `sub_dir` is
+ * the key's directory, `filename` its last segment, `url` the serve route, and
+ * `storage_path` the full project-namespaced key.
+ */
+export function registerFileRecord(
+  key: string,
+  meta: { contentType?: string; size?: number; originalName?: string } = {},
+): MockFileRecord {
+  const cut = key.lastIndexOf('/')
+  const filename = cut === -1 ? key : key.slice(cut + 1)
+  const record: MockFileRecord = {
+    filename,
+    storage_path: `${MOCK_UPLOADS_ROOT}${key}`,
+    content_type: meta.contentType ?? 'application/octet-stream',
+    size: meta.size ?? 0,
+    url: `/api/uploads/${key}`,
+    sub_dir: cut === -1 ? '' : key.slice(0, cut),
+    original_name: meta.originalName ?? filename,
+  }
+  db.fileRecords.set(key, record)
+  return record
+}
+
+/**
+ * Seed one object AND its upload record — the fixture shorthand for the whole
+ * prepare → PUT → register trio, for tests and mock dev that want the bytes
+ * without driving three requests. The real path still writes the two halves
+ * where it writes them (the PUT stores bytes, `files/register` writes the row).
+ */
+export function seedObject(
+  key: string,
+  file: MockFile,
+  meta: { originalName?: string } = {},
+): void {
+  db.files.set(key, file)
+  registerFileRecord(key, {
+    contentType: file.contentType,
+    size: file.bytes.byteLength,
+    originalName: meta.originalName,
+  })
+}
+
+/**
+ * `data_delete`'s `op: like` over `storage_path`, evaluated the way SQL would:
+ * `%` matches any run of characters, `_` exactly one, everything else is
+ * literal. The rule builds its pattern in `gate.fn.js` (`'%' + prefix + '%'`),
+ * so a mock that matched on `startsWith` instead would happily agree with a
+ * filter that could never span CE's `<owner>/<repo>/uploads/` head.
+ */
+export function fileRecordsMatching(pattern: string): string[] {
+  const rx = new RegExp(
+    `^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.')}$`,
+    's',
+  )
+  return [...db.fileRecords.entries()].filter(([, row]) => rx.test(row.storage_path)).map(([key]) => key)
+}
+
+/**
  * A run's storage prefix (06/D18): `workflows/<impl>/<workflow>/runs/<runId>/`.
  * Kickoff uploads live one level up under `inputs/`, so they are outside it —
  * that is the whole point of the layout, and deletion must never reach them.
@@ -120,20 +213,27 @@ export function runPrefix(run: ServerRunRow): string {
 }
 
 /**
- * Drop one run: every object under its prefix, its step rows, then the run row
- * — the same order the rule's steps run in (files first, so a failure leaves a
- * row pointing at bytes rather than bytes nobody can find). Returns the object
- * count the response reports. Unknown ids delete nothing; the gate, not this,
- * decides whether a caller may ask.
+ * Drop one run: every object under its prefix, the `workflow_files` rows the
+ * `storage_path LIKE` sweep selects, its step rows, then the run row — the same
+ * order the rule's steps run in (files first, so a failure leaves a row pointing
+ * at bytes rather than bytes nobody can find). Returns BOTH counts the response
+ * reports, and they are counted independently on purpose: `records` is the one
+ * whose correctness rides on a CE implementation detail (the full-key shape of
+ * `storage_path`), so a filter that silently stops matching has to be able to
+ * show up here as `records: 0` beside a non-zero `files` (apps#381). Unknown ids
+ * delete nothing; the gate, not this, decides whether a caller may ask.
  */
-export function deleteRun(runId: string): { files: number } {
+export function deleteRun(runId: string): { files: number; records: number } {
   const run = db.runs.get(runId)
-  if (!run) return { files: 0 }
-  const keys = filesUnder(runPrefix(run))
+  if (!run) return { files: 0, records: 0 }
+  const prefix = runPrefix(run)
+  const keys = filesUnder(prefix)
   for (const key of keys) db.files.delete(key)
+  const rows = fileRecordsMatching(`%${prefix}%`)
+  for (const key of rows) db.fileRecords.delete(key)
   for (const step of stepsOf(runId)) db.steps.delete(stepRowKey(runId, step.key))
   db.runs.delete(runId)
-  return { files: keys.length }
+  return { files: keys.length, records: rows.length }
 }
 
 /** Load one recorded run's rows — the shared half of the two seeds below. */

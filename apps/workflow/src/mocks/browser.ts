@@ -1,6 +1,6 @@
 /** The dev worker; started from `main.tsx` when the master switch is on. */
 import { setupWorker } from 'msw/browser'
-import { MOCK_ADMIN, db, seedFinishedRun, seedRenderedRun, seedScriptRun, setMockUser } from './db'
+import { MOCK_ADMIN, seedFinishedRun, seedObject, seedRenderedRun, seedScriptRun, setMockUser } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { RENDERED_RUN_FILES } from './fixtures/renderedRun'
 import { SCRIPT_RUN_FILES } from './fixtures/scriptRun'
@@ -22,7 +22,7 @@ function seedPoster(): void {
   if (!poster?.path) return
   const binary = atob(POSTER_PNG)
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
-  db.files.set(poster.path, { bytes, contentType: 'image/png' })
+  seedObject(poster.path, { bytes, contentType: 'image/png' })
 }
 
 /**
@@ -34,7 +34,7 @@ function seedPoster(): void {
 function seedScriptFiles(): void {
   const encoder = new TextEncoder()
   for (const file of SCRIPT_RUN_FILES) {
-    db.files.set(file.path, { bytes: encoder.encode(file.text), contentType: file.contentType })
+    seedObject(file.path, { bytes: encoder.encode(file.text), contentType: file.contentType })
   }
 }
 
@@ -42,7 +42,7 @@ function seedScriptFiles(): void {
 function seedRenderedFiles(): void {
   const encoder = new TextEncoder()
   for (const file of RENDERED_RUN_FILES) {
-    db.files.set(file.path, { bytes: encoder.encode(file.text), contentType: file.contentType })
+    seedObject(file.path, { bytes: encoder.encode(file.text), contentType: file.contentType })
   }
 }
 
