@@ -53,16 +53,13 @@ import { publishWorkflowGlobal, snapshotOf } from '../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { RunStoreError } from '../lib/runStore'
-import { LeaseTransportError, cancelRun, deleteRun, openRun, takeOver } from '../store/lifecycleActions'
+import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
 import { islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
+import { useRunDelete } from '../store/useRunDelete'
 import { workflowApi, useGetRunQuery, useWhoamiQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
 const POLL_MS = 5_000
-
-/** The roles the delete rule lets past its owner check (05 access) — mirrored, never trusted. */
-const ADMIN_ROLES = ['admin', 'owner']
 
 /** The query parameter that carries the selected step (08): `?step=<job>/<index>/<step>`. */
 const STEP_PARAM = 'step'
@@ -72,20 +69,6 @@ const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cance
 
 /** A step that has finished, whatever it finished as — it holds nothing open. */
 const TERMINAL_STEP: ReadonlySet<string> = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
-
-/**
- * A refusal from the delete rule, in the words of the person who asked. The
- * three statuses mean three different things and only one of them is "try
- * again", so a single "couldn't delete" message would hide the fix.
- */
-function deleteMessage(error: unknown): string {
-  if (error instanceof RunStoreError) {
-    if (error.status === 403) return "Only the run's owner or an admin can delete it."
-    if (error.status === 409) return 'Cancel the run first, then delete it.'
-    if (error.status === 404) return 'This run is already gone.'
-  }
-  return error instanceof Error ? error.message : 'The run could not be deleted.'
-}
 
 /**
  * The definition the run stored, or the one its YAML snapshot parses to.
@@ -289,12 +272,9 @@ export function RunPage() {
       { replace },
     )
 
-  // Who we are, for Delete's owner gate. Advisory only: the rule re-reads
-  // `user.*` server-side, so the worst a wrong answer here can do is offer a
-  // button the server then refuses.
+  // Who we are: the owner half of Delete's gate lives in `useRunDelete`, but
+  // a run *this* tab started carries no `startedBy` of its own (see below).
   const { data: me } = useWhoamiQuery()
-  const [deleting, setDeleting] = useState(false)
-  const [deleteFailed, setDeleteFailed] = useState<string | null>(null)
 
   // Which side a graph edge dot asked the pane to open on (08: "jump straight
   // to one side"). A chip click has no side and leaves the pane on Input. The
@@ -373,6 +353,24 @@ export function RunPage() {
   const state = isLive ? sliceState : replayedState
 
   const annotations = useMemo(() => (state ? collectAnnotations(state) : []), [state])
+
+  // The run on screen, whichever path it came from — and with it the workflow
+  // it belongs to. Both the slice and the row are self-describing (D16), so a
+  // deep link to a run of an implementation the route does not name still knows
+  // where "Past runs" is. Read before the guards below because `useRunDelete`
+  // is a hook and cannot be called after them.
+  const shown = isLive ? sliceState : run
+  const base = `/${impl ?? shown?.impl}/${workflow ?? shown?.workflow}`
+  const shownStatus = state?.status ?? run?.status
+  // A run this tab started has no `startedBy` in the slice (only a *replayed*
+  // one does — `replayRun` carries the row's), and it does not need one: the
+  // session that started it is the session reading this.
+  const del = useRunDelete({
+    runId: shown?.runId,
+    status: shownStatus,
+    startedBy: isLive ? (sliceState?.startedBy ?? me?.id) : run?.startedBy,
+    onDeleted: () => void navigate(`${base}/runs`),
+  })
 
   // The observe half of the page contract (07/D12): `window.__workflow` is
   // what a headless driver polls to follow the run it started. Published from
@@ -565,41 +563,8 @@ export function RunPage() {
     )
   }
 
-  const base = isLive
-    ? `/${impl ?? sliceState!.impl}/${workflow ?? sliceState!.workflow}`
-    : `/${impl ?? run!.impl}/${workflow ?? run!.workflow}`
-
-  const shownRunId = isLive ? sliceState!.runId : run!.runId
-  const shownStatus = state?.status ?? run!.status
-  // A run this tab started has no `startedBy` in the slice (only a *replayed*
-  // one does — `replayRun` carries the row's), and it does not need one: the
-  // session that started it is the session reading this.
-  const startedBy = isLive ? (sliceState!.startedBy ?? me?.id) : run!.startedBy
-
-  // The affordance mirrors the rule's own gate (05 access), so the button is
-  // only ever offered where the answer is likely yes — a refusal is still a
-  // normal outcome, and `deleteFailed` below is where it lands.
-  const canDelete =
-    shownStatus !== 'running' &&
-    me !== undefined &&
-    (startedBy === me.id || ADMIN_ROLES.includes((me.role ?? '').toLowerCase()))
-
-  async function onDelete() {
-    setDeleting(true)
-    setDeleteFailed(null)
-    try {
-      await dispatch(deleteRun({ runId: shownRunId }))
-      // Only on success, and only here: the thunk owns the caches, the page
-      // owns where to go next (there is no run left to be on).
-      void navigate(`${base}/runs`)
-    } catch (error) {
-      // Deliberately not in a `finally`: the success path has navigated away
-      // and this component is gone, so re-enabling the button is the failure
-      // path's business alone.
-      setDeleteFailed(deleteMessage(error))
-      setDeleting(false)
-    }
-  }
+  // Past the guards above, exactly one of the two paths is showing a run.
+  const shownRunId = shown!.runId
 
   // `render: island` needs to know which bundle an island file lives in,
   // and this page is the last place that fact is unambiguous.
@@ -618,19 +583,19 @@ export function RunPage() {
           finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
           headless={isLive ? sliceState!.headless : run!.headless}
           yaml={isLive ? sliceMeta!.yaml : run!.yaml}
-          status={shownStatus}
+          status={shownStatus!}
           annotations={annotations}
           base={base}
           progress={state ? stepProgress(state) : undefined}
           live={isLive}
           onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
-          onDelete={canDelete ? () => void onDelete() : undefined}
-          deleting={deleting}
+          onDelete={del.onDelete}
+          deleting={del.deleting}
         />
 
-        {deleteFailed && (
+        {del.failed && (
           <p className="note banner" role="alert" data-testid="run-delete-failed">
-            {deleteFailed}
+            {del.failed}
           </p>
         )}
 

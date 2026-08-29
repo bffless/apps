@@ -795,6 +795,27 @@ describe('deleteRun', () => {
     list.unsubscribe()
   })
 
+  it('leaves the deleted run\'s own cache entry alone, so the page on it does not flash "No such run"', async () => {
+    asOwner()
+    seedFinishedRun()
+    const store = makeStore()
+    // What the run page holds while it is showing the run it is about to delete.
+    const entry = store.dispatch(workflowApi.endpoints.getRun.initiate(FIXTURE_RUN_ID))
+    expect((await entry).data?.run?.runId).toBe(FIXTURE_RUN_ID)
+
+    await store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))
+    await flush()
+
+    // Invalidating `{ type: 'Run', id }` here would refetch the deleted row —
+    // the read answers `{ run: null }`, which the page renders as "No such
+    // run" for the tick before its navigation lands (apps#382). The page
+    // unmounting is what drops the entry, not this thunk.
+    expect(
+      workflowApi.endpoints.getRun.select(FIXTURE_RUN_ID)(store.getState()).data?.run?.runId,
+    ).toBe(FIXTURE_RUN_ID)
+    entry.unsubscribe()
+  })
+
   it('closes the run this tab was showing, and leaves any other one alone', async () => {
     asOwner()
     seedFinishedRun()

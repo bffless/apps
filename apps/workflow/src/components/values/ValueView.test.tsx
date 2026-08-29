@@ -266,7 +266,7 @@ describe('ValueView', () => {
     const renderer = screen.getByTestId('renderer')
     expect(renderer).toHaveAttribute('data-render', 'island')
     expect(screen.getByTestId('island-frame')).toBeInTheDocument()
-    expect(screen.queryByText('renderer: island (M2)')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^renderer: island/)).not.toBeInTheDocument()
   })
 
   // A live run renders its declared outputs before it has recorded them, so the
@@ -296,15 +296,17 @@ describe('ValueView', () => {
     expect(screen.getByTestId('island-frame')).toBe(frame)
   })
 
-  it('falls back to the M2 badge for render: island when no implementation is known', () => {
+  // The badge says why the island did not draw, not which milestone owes it
+  // one: it read "(M2)" long after the named renderers landed (apps#382).
+  it('says which half is missing when render: island has a src but no implementation', () => {
     render(<ValueView decl={{ type: 'json', render: 'island', src: 'islands/v.html' }} value={{ a: 1 }} />)
-    expect(screen.getByText('renderer: island (M2)')).toBeInTheDocument()
+    expect(screen.getByText('renderer: island (no implementation)')).toBeInTheDocument()
     expect(screen.queryByTestId('island-frame')).not.toBeInTheDocument()
   })
 
-  it('falls back to the M2 badge for render: island with no src', () => {
+  it('says which half is missing when render: island has no src', () => {
     render(<ValueView decl={{ type: 'json', render: 'island' }} value={{ a: 1 }} impl="hello" />)
-    expect(screen.getByText('renderer: island (M2)')).toBeInTheDocument()
+    expect(screen.getByText('renderer: island (no src)')).toBeInTheDocument()
     expect(screen.queryByTestId('island-frame')).not.toBeInTheDocument()
   })
 

@@ -21,9 +21,10 @@ import { LoadError } from '../components/LoadError'
 import { StatusPill } from '../components/StatusPill'
 import { formatDuration } from '../lib/duration'
 import { isFileRef } from '../components/values/fileRef'
+import { ANNOTATION_LEVELS } from '../lib/annotations'
 import { pluralize } from '../lib/plural'
 import type { ServerRunRow } from '../lib/coerce'
-import type { Annotation, RunStatus } from '../lib/runner/types'
+import type { RunStatus } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { runsStatusFilterChanged } from '../store/uiSlice'
 import { useListRunsQuery } from '../store/workflowApi'
@@ -38,9 +39,6 @@ const LABELS: Record<RunStatus | 'all', string> = {
   cancelled: 'Cancelled',
 }
 
-/** Loudest first — the order the run header already counts them in. */
-const LEVELS: Annotation['level'][] = ['error', 'warning', 'notice']
-
 /**
  * All three levels, zeroes included, so the column is scannable down its own
  * width: a row where only the middle badge is non-zero reads as "warnings" at a
@@ -51,7 +49,7 @@ function AnnotationCountsCell({ run }: { run: ServerRunRow }) {
   if (!counts) return <>—</>
   return (
     <span className="run-annotations" data-testid="run-annotations">
-      {LEVELS.map((level) => (
+      {ANNOTATION_LEVELS.map((level) => (
         <span className={`badge badge-${level}`} key={level} title={pluralize(counts[level], level)}>
           {counts[level]}
         </span>
