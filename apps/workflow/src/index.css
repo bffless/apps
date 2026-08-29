@@ -1117,6 +1117,30 @@ button {
   font-size: 16px;
 }
 
+/* A mapped image (02 `images`, apps#446): the image as a block with its alt beneath
+   as a caption. Inline spans — marked wraps an image in a <p>, where a <figure>
+   would not be valid — drawn as blocks. */
+.markdown-view .markdown-figure {
+  display: block;
+  margin: 16px 0;
+}
+
+.markdown-view .markdown-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+}
+
+.markdown-view .markdown-caption {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-mute);
+}
+
 .markdown-view code {
   padding: 1px 4px;
   background-color: var(--surface-dim);

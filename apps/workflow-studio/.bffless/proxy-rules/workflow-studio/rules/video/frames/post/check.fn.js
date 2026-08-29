@@ -8,6 +8,10 @@ function handler({ steps, deployment, stepErrors }) {
 
   var paths = []
   var byTime = {}
+  // `srcs` is `byTime` re-keyed by the token as the post writes it (`frame:<key>`):
+  // the harness `images` map (workflow spec 02, apps#446) a markdown output declares
+  // so the finished run's Output tab draws the tokens as images.
+  var srcs = {}
   for (var i = 0; i < 3; i++) {
     if (prep['has' + i] !== true) continue
     var step = (steps && steps['frames' + i]) || null
@@ -30,6 +34,7 @@ function handler({ steps, deployment, stepErrors }) {
       paths.push(p)
       var key = (f < keys.length) ? keys[f] : String((frames[f] || {}).time)
       byTime[key] = p
+      srcs['frame:' + key] = p
     }
   }
 
@@ -41,6 +46,7 @@ function handler({ steps, deployment, stepErrors }) {
     data: {
       paths: paths,
       byTime: byTime,
+      srcs: srcs,
       dropped: (typeof prep.dropped === 'number' && isFinite(prep.dropped)) ? prep.dropped : 0,
     },
   }

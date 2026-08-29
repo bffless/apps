@@ -22,4 +22,11 @@ export interface ValueDecl {
   src?: string
   /** `render: chart`/`render: code` only: `{ x, y, kind? }` or `{ language }` (02). */
   mapping?: unknown
+  /**
+   * `markdown` only: the `{ [src]: path }` image map **as declared** — an
+   * expression or a literal map (02, apps#446). The pane that owns the run
+   * state evaluates it (`lib/imageMap`) and hands the viewer the resulting
+   * src → serve-url map; the declaration itself is inert until then.
+   */
+  images?: unknown
 }

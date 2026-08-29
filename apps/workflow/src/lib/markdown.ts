@@ -12,7 +12,17 @@
  */
 import { Marked } from 'marked'
 import type { Tokens } from 'marked'
-import { isSafeUrl, normalizeForSchemeCheck } from './url'
+import type { ImageMap } from './imageMap'
+import { isSafeUrl, isServeUrl, normalizeForSchemeCheck } from './url'
+
+/**
+ * The image map of the render in progress (02 `images`, apps#446): the src
+ * exactly as it appears in the markdown → the same-origin serve url to draw
+ * instead. `parse` is synchronous, so a module-level slot set for the
+ * duration of one `renderMarkdown` call is exactly as scoped as an argument
+ * would be, and it spares re-creating the `Marked` instance per call.
+ */
+let activeImages: ImageMap | undefined
 
 function escapeHtml(text: string): string {
   return text
@@ -68,6 +78,23 @@ const instance = new Marked({
      */
     image({ href, title, text }: Tokens.Image) {
       const alt = escapeHtml(text)
+      // A mapped src is drawn from the harness's own file-serve route, with
+      // the alt as a caption. The key is matched literally — the harness
+      // attaches no meaning to its shape. The map is built from a run row any
+      // member can write, so the sink gate is the strict one (`isServeUrl`),
+      // then the same attribute encoding an ordinary src gets. An unmapped src
+      // is untouched.
+      const mapped = activeImages !== undefined && Object.hasOwn(activeImages, href) ? activeImages[href] : undefined
+      if (mapped !== undefined && isServeUrl(mapped)) {
+        const attr = safeHrefAttr(mapped)
+        if (attr !== null) {
+          let img = `<img src="${attr}" alt="${alt}"`
+          if (title) img += ` title="${escapeHtml(title)}"`
+          img += '>'
+          const caption = alt ? `<span class="markdown-caption">${alt}</span>` : ''
+          return `<span class="markdown-figure">${img}${caption}</span>`
+        }
+      }
       if (!isSafeUrl(href)) return alt
       const attr = safeHrefAttr(href)
       if (attr === null) return alt
@@ -79,6 +106,16 @@ const instance = new Marked({
   },
 })
 
-export function renderMarkdown(source: string): string {
-  return instance.parse(source, { async: false })
+export interface RenderOptions {
+  /** `![alt](src)` whose `src` is a key is drawn from the mapped serve url (02 `images`). */
+  images?: ImageMap
+}
+
+export function renderMarkdown(source: string, options: RenderOptions = {}): string {
+  activeImages = options.images
+  try {
+    return instance.parse(source, { async: false })
+  } finally {
+    activeImages = undefined
+  }
 }

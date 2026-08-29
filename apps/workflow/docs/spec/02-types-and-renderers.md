@@ -19,7 +19,7 @@ be overridden per definition with `render:`.
 | `choice` | string (or string[] with `list: true`) | select / radio (`list: true` → checkboxes); options with `preview` render as a tile picker | chip(s) | `options: [a, {value, label, preview?}]` — `options` may be an expression; a list of File refs is shorthand for `{value: path, label: name, preview: ref}` — a tile is picked by its ref's `path`, and the field's **output is the ref itself**, so the file's name, size, content type and url survive downstream |
 | `file` | **File ref** `{ path, name, contentType, size, url }` | upload control (prepare → PUT → register, 06); an `image/*` upload shows a thumbnail beside its name | viewer by `contentType`: `video/*` player, `audio/*` player, `image/*` image, `application/pdf` PDF, else download card; **always** a Download action | `accept`, `maxSize` |
 | `table` | `{ columns: [{key,label?,type?}], rows: object[] }` | editable grid | table | `columns` |
-| `markdown` | string | markdown editor with preview | rendered markdown | — |
+| `markdown` | string | markdown editor with preview | rendered markdown | `images` (outputs only) |
 | `json` | any JSON | schema-driven form (from `schema`) or JSON editor | JSON tree | `schema` (JSON Schema), `render`, `mapping` |
 
 `list: true` on any definition makes the value a **list** of that type (`file` + `list` is
@@ -53,6 +53,28 @@ schema. A pipeline `outputs` value that does not match its declared type fails t
 serve route the harness mints (06). Pipelines may return a bare `path` string where a `file`
 is declared — the runner registers it and fills the rest. Files never travel as bytes inside
 step payloads; scripts return `Blob`s which the runner stores (03).
+
+### Image maps on `markdown`
+
+A `markdown` **output** (step, job or top level) may declare `images`: a map from each
+image `src` *exactly as it appears in the markdown* to the uploads-relative path (or File
+ref, whose `path` is used) the harness should draw it from. It is an expression or a
+literal map, evaluated by the harness once the step is done — at the step's own
+`summary` site, so the step's own outputs are visible and `response` is not — and the
+viewer rewrites every `![alt](src)` whose `src` is a key to the same-origin serve url
+`/api/uploads/<path>`, with the alt as its caption. Any other `src` renders as it would
+without the map. A value that does not name a file under the serve route is dropped, not
+drawn.
+
+```yaml
+outputs:
+  post: { type: markdown, images: "${{ steps.frames.outputs.srcs }}" }   # { "frame:78": "workflows/…/frame-01.jpg" }
+```
+
+The keys are opaque to the harness — a placeholder token a writer step invents, a
+relative path an archive uses — so a workflow's own steps decide what the markdown
+says and what each src maps to, and the Output tab shows the images either way while the
+markdown itself stays what a later step needs. `images` on any other type is a lint error.
 
 ## Renderers
 

@@ -16,6 +16,7 @@ export interface Slot {
     | 'poll-body'
     | 'retry-if'
     | 'step-output-value'
+    | 'step-output-images'
     | 'summary'
     | 'annotation-if'
     | 'annotation-message'
@@ -92,10 +93,18 @@ export function collectSites(def: Definition): ExprSite[] {
     }
   }
 
+  /**
+   * `imagesSlot` is where a `markdown` declaration's `images` map (02) is
+   * read: the harness evaluates it after the step has finished, with the
+   * step's own outputs visible (a step may map the paths it just produced),
+   * so at step level it is its own slot rather than
+   * `step-output-value`, which reads `response` and may not self-reference.
+   */
   function walkOutputMap(
     outputs: Record<string, unknown> | undefined,
     pointer: string,
     slot: Slot,
+    imagesSlot: Slot = slot,
   ): void {
     if (!outputs) return
     for (const [name, decl] of Object.entries(outputs)) {
@@ -106,6 +115,7 @@ export function collectSites(def: Definition): ExprSite[] {
         const d = decl as Record<string, unknown>
         if (d.value !== undefined) walkValue(d.value, `${p}/value`, slot)
         if (d.options !== undefined) walkValue(d.options, `${p}/options`, slot)
+        if (d.images !== undefined) walkValue(d.images, `${p}/images`, imagesSlot)
       }
     }
   }
@@ -151,7 +161,12 @@ export function collectSites(def: Definition): ExprSite[] {
       addScalar(raw.retry.if, `${basePointer}/retry/if`, slot('retry-if', true))
     }
 
-    walkOutputMap(raw.outputs, `${basePointer}/outputs`, slot('step-output-value'))
+    walkOutputMap(
+      raw.outputs,
+      `${basePointer}/outputs`,
+      slot('step-output-value'),
+      slot('step-output-images'),
+    )
 
     if (typeof raw.summary === 'string') {
       addScalar(raw.summary, `${basePointer}/summary`, slot('summary'))

@@ -17,6 +17,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { isUnavailablePayload } from '../../lib/runner/payload'
 import type { UnavailablePayload } from '../../lib/runner/payload'
 import { downloadHref, isSafeUrl } from '../../lib/url'
+import type { ImageMap } from '../../lib/imageMap'
 import { useFileRefs } from './fileRefIndex'
 import type { ValueDecl } from '../../lib/valueDecl'
 import { FileCard } from './FileCard'
@@ -103,7 +104,7 @@ function UnavailablePayload({ payload }: { payload: UnavailablePayload }) {
   )
 }
 
-function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
+function ValueBody({ decl, value, images }: { decl: ValueDecl; value: unknown; images?: ImageMap }) {
   const resolve = useFileRefs()
   if (isUnavailablePayload(value)) return <UnavailablePayload payload={value} />
   if (value === null || value === undefined) return <span className="value-empty">—</span>
@@ -112,12 +113,12 @@ function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
   if (!decl.list && isFileRef(value)) return <FileCard refValue={value} />
 
   if (decl.list) {
-    if (!Array.isArray(value)) return <ValueBody decl={{ ...decl, list: false }} value={value} />
+    if (!Array.isArray(value)) return <ValueBody decl={{ ...decl, list: false }} value={value} images={images} />
     return (
       <div className="value-list">
         {value.map((item, i) => (
           <div className="value-list-item" key={i}>
-            <ValueBody decl={{ ...decl, list: false }} value={item} />
+            <ValueBody decl={{ ...decl, list: false }} value={item} images={images} />
           </div>
         ))}
       </div>
@@ -138,7 +139,7 @@ function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
     case 'table':
       return <TableView decl={decl} value={value} />
     case 'markdown':
-      return <MarkdownView value={String(value)} />
+      return <MarkdownView value={String(value)} images={images} />
     case 'json':
       return <JsonTree value={value} />
     case 'string':
@@ -164,6 +165,7 @@ export function ValueView({
   origin,
   destination,
   impl,
+  images,
   onHover,
 }: {
   decl: ValueDecl
@@ -177,6 +179,12 @@ export function ValueView({
   destination?: string
   /** Overrides `ImplContext`; only `render: island` reads it. */
   impl?: string
+  /**
+   * `markdown` only: the evaluated `images` map (02, apps#446) — src as written →
+   * serve url. The owning pane builds it from `decl.images` and the run state
+   * (`lib/imageMap`); this dispatch only hands it to the markdown viewer.
+   */
+  images?: ImageMap
   /**
    * The value's declaring/consuming graph chips light up while the pointer is
    * over it (08's data-flow highlight, Task 22). Mouse only — keyboard-focus
@@ -194,7 +202,7 @@ export function ValueView({
   const unavailable = isUnavailablePayload(value)
   const island = decl.render === 'island' && typeof decl.src === 'string' && bundle !== null
   const transcript = decl.render === 'transcript'
-  const images = decl.render === 'images'
+  const imagesGrid = decl.render === 'images'
   const chart = decl.render === 'chart'
   const code = decl.render === 'code'
 
@@ -213,7 +221,7 @@ export function ValueView({
     body = <IslandView decl={decl as ValueDecl & { src: string }} value={value} impl={bundle} />
   } else if (transcript && !unavailable) {
     body = <TranscriptView value={value} />
-  } else if (images && !unavailable) {
+  } else if (imagesGrid && !unavailable) {
     body = <ImagesView value={value} />
   } else if (chart && !unavailable) {
     body = <ChartView value={value} mapping={decl.mapping} />
@@ -245,7 +253,7 @@ export function ValueView({
         {showBadge && (
           <p className="value-renderer-badge">{`renderer: ${decl.render} (${why})`}</p>
         )}
-        <ValueBody decl={decl} value={value} />
+        <ValueBody decl={decl} value={value} images={images} />
       </>
     )
   }

@@ -6,6 +6,7 @@ import { checkGraph } from './graph.js'
 import { checkContexts } from './contexts.js'
 import { checkUpstream } from './upstream.js'
 import { checkRender } from './render.js'
+import { checkImages } from './images.js'
 import { checkSrcs } from './srcs.js'
 import { checkToolNames } from './toolnames.js'
 import { checkPaths } from './paths.js'
@@ -22,6 +23,7 @@ export function runChecks(def: Definition, sites: ExprSite[], rules?: RuleSetCon
     ...checkContexts(def, sites),
     ...checkUpstream(def, sites),
     ...checkRender(def),
+    ...checkImages(def),
     ...checkSrcs(def),
     ...checkToolNames(def),
     ...checkPaths(def),

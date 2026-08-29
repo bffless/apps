@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: Blog frame captures (ffmpeg frames, async)
-  description: "POST { captures: [{ source, time, name, key }], outPrefix, executor } -> ENQUEUE a job (kind 'frames'); CE's ffmpeg `frames` op captures one clean still per requested time. Result { paths, byTime, dropped } is polled via GET job?id=. One op call per distinct source is not expressible in a static rule, so the rule fans out to THREE conditional steps (R119) - captures from a fourth source are counted into `dropped` and the workflow annotates the run."
+  description: "POST { captures: [{ source, time, name, key }], outPrefix, executor } -> ENQUEUE a job (kind 'frames'); CE's ffmpeg `frames` op captures one clean still per requested time. Result { paths, byTime, srcs, dropped } is polled via GET job?id=. One op call per distinct source is not expressible in a static rule, so the rule fans out to THREE conditional steps (R119) - captures from a fourth source are counted into `dropped` and the workflow annotates the run."
   steps:
     - id: prep
       name: prep

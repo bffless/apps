@@ -34,6 +34,7 @@ import { useEffect, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { formatDuration } from '../../lib/duration'
+import { stepImageMap } from '../../lib/imageMap'
 import { stepOutputDecl } from '../../lib/outputDecls'
 import { dataFlowEdges, refsIn } from '../../lib/runner/graph'
 import type { ValueRef } from '../../lib/runner/graph'
@@ -154,11 +155,13 @@ function InputTab({ job, step, declared }: { job: string; step: StepState; decla
 
 function OutputValues({
   def,
+  state,
   step,
   declared,
   impl,
 }: {
   def: Definition
+  state: RunState
   step: StepState
   declared?: Step
   /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
@@ -198,6 +201,9 @@ function OutputValues({
               decl={decl}
               value={value}
               impl={impl}
+              // A markdown output's `images` map (02), read off this run's
+              // persisted rows — so a replay draws the same frames (apps#446).
+              images={stepImageMap(def, state, step, decl)}
               destination={destinationOf(def, step, name)}
               // This step's own output is the value's declaring chip (08's
               // data-flow highlight) — the graph lights up wherever else it's read.
@@ -463,7 +469,7 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
         {tab === 'Output' && (
           <>
             <Details step={step} declared={declared} />
-            <OutputValues def={def} step={step} declared={declared} impl={state.impl} />
+            <OutputValues def={def} state={state} step={step} declared={declared} impl={state.impl} />
             <Trail step={step} scriptLog={scriptLog} />
           </>
         )}

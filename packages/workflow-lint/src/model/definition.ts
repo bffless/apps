@@ -22,6 +22,8 @@ export type OutputDecl =
       src?: string
       options?: unknown
       schema?: unknown
+      /** `markdown` only: `{ [src]: path | FileRef }` — an expression or a literal map (02). */
+      images?: unknown
       [k: string]: unknown
     }
 

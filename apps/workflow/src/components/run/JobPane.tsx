@@ -17,7 +17,8 @@
  */
 import { useState } from 'react'
 import { formatDuration } from '../../lib/duration'
-import { resolveOutputDecl } from '../../lib/outputDecls'
+import { outputImageMap } from '../../lib/imageMap'
+import { resolveOutput } from '../../lib/outputDecls'
 import { buildRunContexts } from '../../lib/runner/contexts'
 import { dataFlowEdges } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
@@ -173,7 +174,8 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
               <div className="pane-values">
                 {outputNames.map((name) => {
                   const value = outputs?.[name] ?? null
-                  const d = withFileRefValue(resolveOutputDecl(def, { kind: 'job', job }, name), value)
+                  const resolved = resolveOutput(def, { kind: 'job', job }, name)
+                  const d = withFileRefValue(resolved.decl, value)
                   return (
                     <ValueView
                       key={name}
@@ -182,6 +184,7 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
                       decl={d}
                       value={value}
                       impl={impl}
+                      images={outputImageMap(def, state, d, resolved.site)}
                       destination={destinationOf(def, job, name)}
                     />
                   )
