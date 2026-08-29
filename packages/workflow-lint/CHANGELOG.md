@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/bffless/apps/compare/workflow-lint-v1.1.0...workflow-lint-v1.2.0) (2026-08-29)
+
+
+### Features
+
+* **workflow-lint:** images map on markdown outputs — mapped srcs render from /api/uploads on a finished run ([#446](https://github.com/bffless/apps/issues/446)) ([#447](https://github.com/bffless/apps/issues/447)) ([e673bf2](https://github.com/bffless/apps/commit/e673bf22f0cde600ae30bce327f78b0f4d3ee2d1))
+
 ## [1.1.0](https://github.com/bffless/apps/compare/workflow-lint-v1.0.1...workflow-lint-v1.1.0) (2026-08-29)
 
 
