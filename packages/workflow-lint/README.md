@@ -117,11 +117,12 @@ flag here; see [`--path-prefix`](#--path-prefix).
 
 ## Severity policy
 
-`error` and `warning` fail the lint (exit 1); `notice` is informational. The
-spec's own examples define "clean": `studio.workflow.yaml` lints with zero
-findings, `hello.workflow.yaml` with exactly one notice (its `boom` step
-deliberately omits `outputs`, which 03 says the linter flags) — asserted in
-`test/examples.test.ts`.
+`error` and `warning` fail the lint (exit 1); `notice` is informational. Two
+workflows define "clean" with no rule set given: the Studio port
+(`apps/workflow-studio/.bffless/workflows/studio.workflow.yaml`) lints with
+zero findings, and the spec's own `hello.workflow.yaml` example with exactly
+one notice (its `boom` step deliberately omits `outputs`, which 03 says the
+linter flags) — asserted in `test/examples.test.ts`.
 
 ## Rules
 

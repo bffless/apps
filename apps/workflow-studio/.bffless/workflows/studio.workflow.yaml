@@ -1,0 +1,331 @@
+spec: 1
+name: Long recording to published short
+description: >
+  Turn one or more long screen recordings into a short in your own recorded voice — cut-first,
+  never re-voiced — plus a companion blog post and a cover image. The reference port of Studio.
+
+on:
+  manual:
+    inputs:
+      recordings: { type: file, accept: "video/*", list: true, required: true, maxSize: 5GB, label: Recordings }
+      direction:  { type: string, format: textarea, label: Note to the director }
+      write_blog: { type: boolean, default: true, label: Write a blog post }
+      cover:      { type: boolean, default: true, label: Draw a cover }
+      executor:   { type: choice, options: [auto, local, remote], default: auto, label: Video backend }
+
+jobs:
+  per-video:
+    name: For each video
+    strategy: { matrix: { video: "${{ inputs.recordings }}" }, max-parallel: 2 }
+    steps:
+      - id: audio
+        name: Pull the audio out
+        uses: pipeline
+        with:
+          path: video/extract-audio
+          body: { source: "${{ matrix.video.path }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          wav: { type: file, value: "${{ response.result.path }}" }
+      - id: transcribe
+        name: Write the transcript
+        uses: pipeline
+        with: { path: transcribe, body: { audio: "${{ steps.audio.outputs.wav.path }}", diarize: false } }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 30m }
+        outputs:
+          words: { type: json, value: "${{ response.result.words }}", render: transcript }
+          text:  { type: string, value: "${{ response.result.text }}" }
+          timed: { type: string, value: "${{ response.result.timed }}" }
+          duration: { type: number, value: "${{ response.result.duration }}" }
+        summary: "Transcribed **${{ matrix.video.name }}** — ${{ length(steps.transcribe.outputs.words) }} words."
+        annotations:
+          - { level: warning, if: "${{ length(steps.transcribe.outputs.words) < 50 }}", message: "Very short transcript for ${{ matrix.video.name }} — is the audio silent?" }
+      - id: plan
+        name: Plan the contact sheets
+        uses: script
+        with: { src: scripts/sheet-plan.js, duration: "${{ steps.transcribe.outputs.duration }}" }
+        outputs:
+          times:  { type: json }
+          labels: { type: json }
+          interval: { type: number }
+      - id: sheets
+        name: Grab still frames
+        uses: pipeline
+        with:
+          path: video/contact-sheet
+          body: { source: "${{ matrix.video.path }}", outPrefix: "${{ step.prefix }}", times: "${{ steps.plan.outputs.times }}", labels: "${{ steps.plan.outputs.labels }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          sheets: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
+          times:  { type: json, value: "${{ response.result.times }}" }
+    outputs:
+      source: { type: file, value: "${{ matrix.video }}" }
+      words:  ${{ steps.transcribe.outputs.words }}
+      timed:  ${{ steps.transcribe.outputs.timed }}
+      duration: ${{ steps.transcribe.outputs.duration }}
+      sheets: ${{ steps.sheets.outputs.sheets }}
+      times: ${{ steps.sheets.outputs.times }}
+
+  director:
+    name: Director's take
+    needs: per-video
+    steps:
+      - id: scenes
+        uses: pipeline
+        with:
+          path: scenes
+          body:
+            timed:     ${{ needs.per-video.outputs.timed }}
+            sheets:    ${{ pluck(needs.per-video.outputs.sheets, 'path') }}
+            durations: ${{ needs.per-video.outputs.duration }}
+            sources:   ${{ pluck(needs.per-video.outputs.source, 'path') }}
+            direction: ${{ inputs.direction }}
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
+        outputs:
+          synopsis: { type: markdown, value: "${{ response.result.synopsis }}" }
+          scenes:   { type: table, value: "${{ response.result.scenes }}", columns: [{key: title}, {key: source}, {key: start, type: number}, {key: end, type: number}] }
+        summary: |
+          ### Director's take
+          ${{ steps.scenes.outputs.synopsis }}
+
+          ${{ length(steps.scenes.outputs.scenes.rows) }} scenes proposed.
+    outputs:
+      synopsis: ${{ steps.scenes.outputs.synopsis }}
+      scenes:   { type: json, list: true, value: "${{ steps.scenes.outputs.scenes.rows }}" }
+
+  per-scene:
+    name: For each scene
+    needs: [director, per-video]
+    strategy: { matrix: { scene: "${{ needs.director.outputs.scenes }}" }, max-parallel: 3, fail-fast: false }
+    steps:
+      - id: cut
+        name: Cut the scene
+        uses: pipeline
+        with:
+          path: video/slice
+          body: { source: "${{ matrix.scene.source }}", spans: "${{ matrix.scene.spans }}", wantAudio: true, outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          clip: { type: file, value: "${{ response.result.path }}" }
+          wav:  { type: file, value: "${{ response.result.audioPath }}" }
+          duration: { type: number, value: "${{ response.result.duration }}" }
+      - id: inputs
+        name: Scene inputs
+        uses: script
+        with:
+          src: scripts/scene-inputs.js
+          scene: ${{ matrix.scene }}
+          words: ${{ needs.per-video.outputs.words[matrix.scene.sourceIndex] }}
+          scenes: ${{ needs.director.outputs.scenes }}
+        outputs:
+          word_timings: { type: string }
+          previous_context: { type: string }
+          scene_words: { type: json }
+      - id: refine
+        name: Refine the cuts
+        uses: pipeline
+        with:
+          path: refine-scene
+          body:
+            start: ${{ matrix.scene.start }}
+            end: ${{ matrix.scene.end }}
+            audio: ${{ steps.cut.outputs.wav.path }}
+            sheets: ${{ pluck(needs.per-video.outputs.sheets[matrix.scene.sourceIndex], 'path') }}
+            wordTimings: ${{ steps.inputs.outputs.word_timings }}
+            brief: ${{ matrix.scene.brief }}
+            direction: ${{ inputs.direction }}
+            sceneNumber: ${{ matrix.scene.number }}
+            sceneCount: ${{ length(needs.director.outputs.scenes) }}
+            previousContext: ${{ steps.inputs.outputs.previous_context }}
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
+        outputs:
+          cuts: { type: json, value: "${{ response.result.cuts }}" }
+          heard_audio: { type: boolean, value: "${{ response.result.heardAudio }}" }
+      - id: trim
+        name: Trim to the screen
+        uses: island
+        with:
+          src: islands/cut-editor.html
+          title: "Trim: ${{ matrix.scene.title }}"
+          display: fullscreen
+          clip:  ${{ steps.cut.outputs.clip }}
+          wav:   ${{ steps.cut.outputs.wav }}
+          scene: ${{ matrix.scene }}
+          words: ${{ steps.inputs.outputs.scene_words }}
+          cuts:  ${{ steps.refine.outputs.cuts }}
+          sheets: ${{ needs.per-video.outputs.sheets[matrix.scene.sourceIndex] }}
+          times: ${{ needs.per-video.outputs.times[matrix.scene.sourceIndex] }}
+        outputs:
+          cuts: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
+          keep: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
+        headless: auto
+        timeout-minutes: 240
+        summary: "Kept ${{ length(steps.trim.outputs.keep) }} spans in *${{ matrix.scene.title }}*."
+      - id: assemble
+        name: Assemble
+        uses: pipeline
+        with:
+          path: video/slice
+          body: { source: "${{ steps.cut.outputs.clip.path }}", spans: "${{ steps.trim.outputs.keep }}", wantAudio: false, audioFades: true, outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          clip: { type: file, value: "${{ response.result.path }}" }
+    outputs:
+      clips: ${{ steps.assemble.outputs.clip }}
+      keep:  ${{ steps.trim.outputs.keep }}
+      words: ${{ steps.inputs.outputs.scene_words }}
+
+  stitch:
+    name: Stitch it together
+    needs: [per-scene, director]
+    steps:
+      - id: concat
+        uses: pipeline
+        with:
+          path: video/concat
+          body: { clips: "${{ pluck(needs.per-scene.outputs.clips, 'path') }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 30m }
+        outputs:
+          short: { type: file, value: "${{ response.result.path }}" }
+      - id: script
+        name: The final script
+        uses: script
+        with: { src: scripts/final-script.js, scenes: "${{ needs.director.outputs.scenes }}", keep: "${{ needs.per-scene.outputs.keep }}", words: "${{ needs.per-scene.outputs.words }}" }
+        outputs:
+          script: { type: string }
+          chapters: { type: string }
+        summary: |
+          ### The short
+          ${{ length(needs.per-scene.outputs.clips) }} scenes joined — [download](${{ steps.concat.outputs.short.url }}).
+    outputs:
+      short:  ${{ steps.concat.outputs.short }}
+      script: ${{ steps.script.outputs.script }}
+      chapters: ${{ steps.script.outputs.chapters }}
+
+  describe:
+    name: Title and description
+    needs: [stitch, director]
+    steps:
+      - id: describe
+        uses: pipeline
+        with: { path: describe, body: { script: "${{ needs.stitch.outputs.script }}", synopsis: "${{ needs.director.outputs.synopsis }}" } }
+        outputs:
+          title:   { type: string, value: "${{ response.title }}" }
+          summary: { type: string, format: textarea, value: "${{ response.summary }}" }
+    outputs:
+      title: ${{ steps.describe.outputs.title }}
+      summary: ${{ steps.describe.outputs.summary }}
+
+  blog:
+    name: Blog post
+    needs: [stitch, describe, per-video, director]
+    if: ${{ inputs.write_blog }}
+    steps:
+      - id: write
+        uses: pipeline
+        with:
+          path: blog
+          body:
+            timed: ${{ needs.per-video.outputs.timed }}
+            script: ${{ needs.stitch.outputs.script }}
+            title: ${{ needs.describe.outputs.title }}
+            summary: ${{ needs.describe.outputs.summary }}
+            synopsis: ${{ needs.director.outputs.synopsis }}
+            scenes: ${{ needs.director.outputs.scenes }}
+            sheets: ${{ pluck(needs.per-video.outputs.sheets, 'path') }}
+            direction: ${{ inputs.direction }}
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 15m }
+        outputs:
+          post: { type: markdown, value: "${{ response.result.markdown }}" }
+      - id: edit
+        uses: form
+        with:
+          title: Edit the post
+          fields:
+            post: { type: markdown, default: "${{ steps.write.outputs.post }}", required: true }
+          submit: Looks good
+        headless: { mode: skip, outputs: { post: "${{ steps.write.outputs.post }}" } }
+      - id: times
+        name: Frames to capture
+        uses: script
+        with: { src: scripts/frame-times.js, markdown: "${{ steps.edit.outputs.post }}", sources: "${{ needs.per-video.outputs.source }}", durations: "${{ needs.per-video.outputs.duration }}" }
+        outputs:
+          captures: { type: json }
+      - id: frames
+        uses: pipeline
+        with:
+          path: video/frames
+          body: { captures: "${{ steps.times.outputs.captures }}", outPrefix: "${{ step.prefix }}", executor: "${{ inputs.executor }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 10m }
+        outputs:
+          frames: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
+          by_time: { type: json, value: "${{ response.result.byTime }}" }
+          dropped: { type: number, value: "${{ response.result.dropped }}" }
+        annotations:
+          - { level: warning, if: "${{ response.result.dropped > 0 }}", message: "${{ response.result.dropped }} frame capture(s) skipped — the blog frames pipeline handles up to 3 source recordings." }
+      - id: bundle
+        uses: script
+        with: { src: scripts/blog-bundle.js, markdown: "${{ steps.edit.outputs.post }}", title: "${{ needs.describe.outputs.title }}", frames: "${{ steps.frames.outputs.frames }}", byTime: "${{ steps.frames.outputs.by_time }}" }
+        outputs:
+          zip: { type: file }
+          post: { type: markdown }
+        summary: "Blog bundle **${{ steps.bundle.outputs.zip.name }}** (${{ steps.bundle.outputs.zip.size }} bytes) — [download](${{ steps.bundle.outputs.zip.url }})"
+    outputs:
+      post: ${{ steps.bundle.outputs.post }}
+      zip:  ${{ steps.bundle.outputs.zip }}
+
+  cover:
+    name: Cover
+    needs: [describe, stitch]
+    if: ${{ inputs.cover }}
+    steps:
+      - id: brief
+        uses: pipeline
+        with: { path: thumbnail/draft, body: { title: "${{ needs.describe.outputs.title }}", description: "${{ needs.describe.outputs.summary }}", script: "${{ needs.stitch.outputs.script }}", notes: "${{ inputs.direction }}" } }
+        outputs:
+          prompt: { type: string, format: textarea, value: "${{ response.prompt }}" }
+    outputs:
+      prompt: ${{ steps.brief.outputs.prompt }}
+
+  covers:
+    name: Draw two covers
+    needs: cover
+    if: ${{ inputs.cover }}
+    strategy: { matrix: { take: [1, 2] } }
+    steps:
+      - id: draw
+        uses: pipeline
+        with: { path: thumbnail/render, body: { prompt: "${{ needs.cover.outputs.prompt }}", outPrefix: "${{ step.prefix }}" } }
+        timeout-minutes: 5
+        outputs:
+          image: { type: file, value: "${{ response.path }}" }
+    outputs:
+      images: ${{ steps.draw.outputs.image }}
+
+  pick:
+    name: Pick a cover
+    needs: covers
+    if: ${{ inputs.cover }}
+    steps:
+      - id: pick
+        uses: form
+        with:
+          title: Pick a cover
+          fields:
+            cover: { type: choice, options: "${{ needs.covers.outputs.images }}", required: true }
+          submit: Use this cover
+        headless: { mode: skip, outputs: { cover: "${{ needs.covers.outputs.images[0] }}" } }
+    outputs:
+      cover: { type: file, value: "${{ steps.pick.outputs.cover }}" }
+
+outputs:
+  short: ${{ jobs.stitch.outputs.short }}
+  title: ${{ jobs.describe.outputs.title }}
+  summary: ${{ jobs.describe.outputs.summary }}
+  chapters: ${{ jobs.stitch.outputs.chapters }}
+  blog:  ${{ jobs.blog.outputs.zip }}
+  cover: ${{ jobs.pick.outputs.cover }}

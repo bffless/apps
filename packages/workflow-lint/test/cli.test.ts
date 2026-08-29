@@ -9,6 +9,10 @@ import { runCli } from '../src/cli.js'
 const fixture = (n: string) => fileURLToPath(new URL(`./fixtures/broken/${n}.workflow.yaml`, import.meta.url))
 const example = (n: string) =>
   fileURLToPath(new URL(`../../../apps/workflow/docs/spec/examples/${n}`, import.meta.url))
+// studio.workflow.yaml ships with its implementation (M3 Task 19), not the
+// spec's examples — see the --json test below for what that changes.
+const appWorkflow = (app: string, n: string) =>
+  fileURLToPath(new URL(`../../../apps/${app}/.bffless/workflows/${n}`, import.meta.url))
 /**
  * A self-contained fixture (R35: this package must not depend on another
  * workspace's app) vendored from the pre-extraction
@@ -86,19 +90,22 @@ test('--quiet hides notices but keeps the summary', () => {
 })
 
 test('--json emits the stable shape', () => {
-  // studio has no rule set of its own yet (M3, later phase); --alias a name
-  // nothing in this repo's own .bffless/proxy-rules matches, so the
-  // rule-missing check degrades to a notice instead of resolving to this
-  // repo's own `workflow` set by search-ambiguity accident (post M3 Task 7
-  // there is exactly one set here, so an unscoped search is no longer
-  // ambiguous — it would silently "find" the wrong one).
-  const r = run(['lint', '--json', '--alias', 'workflow-studio', fixture('skip-missing-output'), example('studio.workflow.yaml')])
+  // studio.workflow.yaml now ships with its implementation
+  // (apps/workflow-studio), which has a real (if still incomplete, M3 Tasks
+  // 20-21) rule set of its own — --alias workflow-studio resolves it for
+  // real, so on top of the fixture's 2 errors this run also picks up
+  // whatever rule-missing errors studio's paths still lack a rule for
+  // (falling to 0 as Tasks 20-21 land — assert a floor, not the exact count,
+  // so this test doesn't go red on a change to a different app's rule tree;
+  // examples.test.ts asserts the workflow itself is otherwise clean).
+  const r = run(['lint', '--json', '--alias', 'workflow-studio', fixture('skip-missing-output'), appWorkflow('workflow-studio', 'studio.workflow.yaml')])
   expect(r.code).toBe(1)
   const data = JSON.parse(r.out)
   expect(data.version).toBe(1)
   expect(data.files).toHaveLength(2)
-  expect(data.summary.errors).toBe(2)
+  expect(data.summary.errors).toBeGreaterThanOrEqual(2)
   expect(data.files[0].findings.map((f: { rule: string }) => f.rule)).toContain('headless-skip-outputs')
+  expect(data.files[1].findings.every((f: { rule: string }) => f.rule === 'rule-missing')).toBe(true)
 })
 
 test('missing file exits 2', () => {
@@ -119,15 +126,30 @@ beforeAll(() => {
   execFileSync('pnpm', ['build'], { cwd: fileURLToPath(new URL('..', import.meta.url)) })
 }, 120_000)
 
-test('built dist/cli.js runs and exits 0 on the studio example', () => {
+/**
+ * execFileSync throws on a non-zero exit. studio.workflow.yaml resolves a
+ * real (if still incomplete, M3 Tasks 20-21) rule set under --alias
+ * workflow-studio and so exits 1 with rule-missing errors — this unwraps
+ * stdout either way instead of only the success case.
+ */
+function execBin(args: string[]): string {
+  try {
+    return execFileSync(process.execPath, args, { encoding: 'utf8' })
+  } catch (e) {
+    return (e as { stdout: string }).stdout
+  }
+}
+
+test('built dist/cli.js runs and reports rule-missing on the studio workflow', () => {
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
-  // See the --json test above for why --alias workflow-studio is here.
-  const out = execFileSync(
-    process.execPath,
-    [cli, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
-    { encoding: 'utf8' },
-  )
-  expect(out).toMatch(/0 error\(s\), 0 warning\(s\)/)
+  // See the --json test above for why --alias workflow-studio now genuinely
+  // resolves a rule set. Not asserting an exact error count here: this is a
+  // bin-wiring smoke (does the built CLI run, does it print a summary line at
+  // all), and Tasks 20-21 legitimately shrink studio's rule-missing count to
+  // 0 as they land — a silent no-op still prints nothing, so that failure
+  // mode is still caught by requiring 0 warning(s)/0 notice(s) alongside it.
+  const out = execBin([cli, 'lint', '--quiet', '--alias', 'workflow-studio', appWorkflow('workflow-studio', 'studio.workflow.yaml')])
+  expect(out).toMatch(/error\(s\), 0 warning\(s\), 0 notice\(s\)/)
 })
 
 // A published `bin` is invoked through a symlink (npm) or shim (pnpm) whose
@@ -142,22 +164,15 @@ test('runs when invoked through a bin symlink, same as invoked directly', () => 
   const link = join(dir, 'workflow')
   symlinkSync(cli, link)
 
-  // --alias workflow-studio: see the --json test above for why (studio has
-  // no rule set of its own yet, and an unscoped search now resolves to this
-  // repo's own sole `workflow` set instead of finding none).
-  const viaSymlink = execFileSync(
-    process.execPath,
-    [link, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
-    { encoding: 'utf8' },
-  )
-  expect(viaSymlink).toMatch(/0 error\(s\), 0 warning\(s\)/)
+  // --alias workflow-studio: see the --json test above for why this may exit
+  // 1 with rule-missing errors rather than 0 (not asserted exactly here —
+  // see the built-dist/cli.js smoke above for why).
+  const workflow = appWorkflow('workflow-studio', 'studio.workflow.yaml')
+  const viaSymlink = execBin([link, 'lint', '--quiet', '--alias', 'workflow-studio', workflow])
+  expect(viaSymlink).toMatch(/error\(s\), 0 warning\(s\), 0 notice\(s\)/)
 
-  const viaRealPath = execFileSync(
-    process.execPath,
-    [cli, 'lint', '--quiet', '--alias', 'workflow-studio', example('studio.workflow.yaml')],
-    { encoding: 'utf8' },
-  )
-  expect(viaRealPath).toMatch(/0 error\(s\), 0 warning\(s\)/)
+  const viaRealPath = execBin([cli, 'lint', '--quiet', '--alias', 'workflow-studio', workflow])
+  expect(viaRealPath).toMatch(/error\(s\), 0 warning\(s\), 0 notice\(s\)/)
 })
 
 // ---------------------------------------------------------------------------
