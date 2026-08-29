@@ -3,8 +3,8 @@
  * successor to a separate `vitest.workspace.ts`): `scripts/**` runs headless in a
  * Web Worker with no DOM (Node is the closest environment Vitest ships), `islands/**`
  * is React and needs `jsdom`. `scripts/` holds the workflow's five `script` modules and
- * their suites; `islands/` is still empty (Task 23), which is why `passWithNoTests` is
- * set below.
+ * their suites; `islands/` holds the cut-editor island and its suites (Task 23), which
+ * is why `passWithNoTests` is gone — both projects match test files now.
  *
  * The `node` environment is also the RUNTIME fence behind `tsconfig.scripts.json`
  * carrying `DOM` in its `lib` for types only — a script that really reached for
@@ -15,10 +15,6 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   test: {
-    // `islands/` is empty until Task 23, so that project matches zero test files.
-    // `passWithNoTests` is a root-only option (Vitest's `NonProjectOptions`), so it
-    // has to live here rather than on either project's own `test` block.
-    passWithNoTests: true,
     projects: [
       {
         extends: true,
@@ -35,6 +31,8 @@ export default defineConfig({
           name: 'islands',
           environment: 'jsdom',
           globals: true,
+          // jest-dom's matchers, once per island suite.
+          setupFiles: ['islands/test/setup.ts'],
           include: ['islands/**/*.{test,spec}.{ts,tsx}'],
         },
       },

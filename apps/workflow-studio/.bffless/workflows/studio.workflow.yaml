@@ -62,6 +62,11 @@ jobs:
           times:  { type: json, value: "${{ response.result.times }}" }
     outputs:
       source: { type: file, value: "${{ matrix.video }}" }
+      # The SOURCE's extracted audio, not a scene clip's. The cut editor's transport
+      # seeks it in original-source seconds (Studio's `CutEditor` has no audio offset —
+      # `windowStart` only bounds the grid), so a scene starting at 1:40 seeks to 1:40:
+      # on a clip's own WAV that is past the end and plays silence.
+      wav:    ${{ steps.audio.outputs.wav }}
       words:  ${{ steps.transcribe.outputs.words }}
       timed:  ${{ steps.transcribe.outputs.timed }}
       duration: ${{ steps.transcribe.outputs.duration }}
@@ -152,7 +157,9 @@ jobs:
           title: "Trim: ${{ matrix.scene.title }}"
           display: fullscreen
           clip:  ${{ steps.cut.outputs.clip }}
-          wav:   ${{ steps.cut.outputs.wav }}
+          # The SOURCE's WAV (see `per-video.outputs.wav`) — the editor's transport is
+          # on the source's clock. `refine` and `assemble` still take the CLIP's wav.
+          wav:   ${{ needs.per-video.outputs.wav[matrix.scene.sourceIndex] }}
           scene: ${{ matrix.scene }}
           words: ${{ steps.inputs.outputs.scene_words }}
           cuts:  ${{ steps.refine.outputs.cuts }}

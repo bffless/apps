@@ -40,6 +40,9 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "jsdom": "^29.1.1",
-    "bffless": "^0.3.3"
+    "bffless": "^0.3.3",
+    "@tailwindcss/postcss": "^4.3.0",
+    "tailwindcss": "^4.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1"
   }
 }

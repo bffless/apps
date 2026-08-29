@@ -1,6 +1,7 @@
 import js from '@eslint/js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
+import reactHooks from 'eslint-plugin-react-hooks'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
@@ -12,6 +13,13 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+  },
+  {
+    // The islands are React, and the rules of hooks are not optional in a component
+    // that owns a `workflow.submit` (a stale closure there submits the wrong cuts).
+    // Same plugin + preset `apps/studio` lints its own components with.
+    files: ['islands/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat.recommended],
   },
   {
     // Islands run in a sandboxed opaque-origin iframe and scripts in a Worker on one —
