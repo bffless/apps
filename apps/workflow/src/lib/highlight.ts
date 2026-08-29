@@ -41,3 +41,63 @@ export function highlightCode(
   const { value } = hljs.highlight(source, { language })
   return { html: value, language }
 }
+
+/**
+ * Cut highlighted markup into one string per source line, so `CodeView` can
+ * number the highlighted path the same way it numbers the plain one
+ * (apps#380). Naively splitting on `\n` would tear a token span that covers
+ * several lines — a block comment, a template literal — in half, leaving an
+ * unclosed `<span>` on one line and a stray `</span>` on the next; this closes
+ * every open tag at the line break and re-opens the same stack on the line
+ * after, which is how hljs's own line-numbering plugins do it.
+ *
+ * The scan can be this simple because the input is hljs's own output and
+ * nothing else: hljs escapes `&`, `<` and `>` in the source text it emits, so
+ * every `<` left in the string starts a tag, and every tag is a `<span …>` or
+ * a `</span>`. Never call this with arbitrary HTML.
+ */
+export function splitHighlightedLines(html: string): string[] {
+  const lines: string[] = []
+  const open: string[] = []
+  let current = ''
+  let i = 0
+
+  const endLine = () => {
+    lines.push(current + '</span>'.repeat(open.length))
+    current = open.join('')
+  }
+
+  while (i < html.length) {
+    const lt = html.indexOf('<', i)
+    const nl = html.indexOf('\n', i)
+
+    if (nl !== -1 && (lt === -1 || nl < lt)) {
+      current += html.slice(i, nl)
+      endLine()
+      i = nl + 1
+      continue
+    }
+
+    if (lt === -1) {
+      current += html.slice(i)
+      break
+    }
+
+    current += html.slice(i, lt)
+    const gt = html.indexOf('>', lt)
+    if (gt === -1) {
+      // Unterminated tag: nothing sane left to parse, so keep the rest verbatim.
+      current += html.slice(lt)
+      break
+    }
+
+    const tag = html.slice(lt, gt + 1)
+    current += tag
+    if (tag.startsWith('</')) open.pop()
+    else if (!tag.endsWith('/>')) open.push(tag)
+    i = gt + 1
+  }
+
+  lines.push(current + '</span>'.repeat(open.length))
+  return lines
+}

@@ -23,7 +23,7 @@
  * page, which has the evaluated inputs and outputs to put in it.
  */
 import { useMemo, useState } from 'react'
-import { needsEdges, topoLayers } from '../../lib/runner/graph'
+import { dataFlowEdges, needsEdges, topoLayers } from '../../lib/runner/graph'
 import type { Definition, Job, RunState, Step, StepKey } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import { useAppSelector } from '../../store/hooks'
@@ -59,7 +59,11 @@ export interface GraphViewProps {
 export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphViewProps) {
   const [declared, setDeclared] = useState<{ key: StepKey; step: Step } | null>(null)
   const hoveredValue = useAppSelector((s) => s.ui.hoveredValue)
-  const flow = useMemo(() => flowFor(def, hoveredValue), [def, hoveredValue])
+  // The edge list depends on the definition alone, so it is memoized on the
+  // definition alone: folded into the `flow` memo it was rebuilt on every
+  // hover tick, walking the whole workflow to answer a pointer move (apps#380).
+  const dataEdges = useMemo(() => dataFlowEdges(def), [def])
+  const flow = useMemo(() => flowFor(def, hoveredValue, dataEdges), [def, hoveredValue, dataEdges])
 
   const layers = topoLayers(def)
   const at = new Map<string, { col: number; row: number }>()

@@ -27,24 +27,24 @@ describe('discover', () => {
     expect(impl.name).toBe('Hello')
     expect(impl.preview).toBe(false)
     expect(impl.error).toBeUndefined()
-    expect(impl.workflows).toEqual([
-      {
-        file: 'hello.workflow.yaml',
-        name: 'Hello workflow',
-        description: 'Smoke-tests every non-interactive feature of the harness.',
-        inputs: 4,
-        jobs: 4,
-        headlessSafe: true,
-      },
-      {
-        file: 'interactive.workflow.yaml',
-        name: 'Interactive hello',
-        description: 'Exercises every interactive feature of the harness (M2) — grows per phase.',
-        inputs: 2,
-        jobs: 5,
-        headlessSafe: true,
-      },
+
+    // Against the mock's own index, not a copy of its numbers. `HELLO_INDEX`
+    // derives `inputs`/`jobs` from the real hello YAMLs, which live in
+    // `bffless/workflow-hello` and change on that repo's schedule — pinning
+    // "4 jobs" here made an unrelated upstream edit fail this suite (apps#380).
+    // What discovery owes the caller is the listing, passed through intact.
+    expect(impl.workflows).toEqual(HELLO_INDEX.workflows)
+    expect(impl.workflows.map((w) => w.file)).toEqual([
+      'hello.workflow.yaml',
+      'interactive.workflow.yaml',
     ])
+    for (const workflow of impl.workflows) {
+      expect(typeof workflow.name).toBe('string')
+      expect(typeof workflow.description).toBe('string')
+      expect(typeof workflow.inputs).toBe('number')
+      expect(typeof workflow.jobs).toBe('number')
+      expect(workflow.headlessSafe).toBe(true)
+    }
   })
 
   it('keeps a reachable-but-invalid implementation, with its error (08)', async () => {

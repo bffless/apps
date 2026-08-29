@@ -5,8 +5,10 @@
  * with the data `chartSeries` computed, never the actual rendered pixels.
  */
 import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The one suite that *asserts* on uPlot rather than merely tolerating it, so
+// it keeps its own spying stub instead of `src/test/uplotMock.ts`'s inert one.
 const { uPlotCtor, barsFactory, destroySpy } = vi.hoisted(() => ({
   uPlotCtor: vi.fn(),
   barsFactory: vi.fn(() => 'bars-paths-builder'),
@@ -147,5 +149,47 @@ describe('ChartView', () => {
     )
     expect(destroySpy).toHaveBeenCalledTimes(1)
     expect(uPlotCtor).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * apps#380: uPlot dereferences `getContext('2d')` without checking it, so a
+ * browser with canvas disabled would throw out of the render rather than
+ * degrade. `src/test/setup.ts` installs a stub context for the whole suite —
+ * these two tests take it away again for one render each, which is the only
+ * way to reach the guard from jsdom.
+ */
+describe('ChartView with no 2d canvas', () => {
+  const real = HTMLCanvasElement.prototype.getContext
+
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = real
+  })
+
+  it('falls back to JsonTree, with its own note, instead of constructing uPlot', () => {
+    uPlotCtor.mockClear()
+    HTMLCanvasElement.prototype.getContext = (() =>
+      null) as unknown as HTMLCanvasElement['getContext']
+
+    const { container } = render(
+      <ChartView value={JSON_ARRAY_VALUE} mapping={{ x: 'line', y: 'chars' }} />,
+    )
+
+    expect(screen.getByTestId('renderer')).toHaveAttribute('data-render', 'chart')
+    expect(container.querySelector('.note')?.textContent).toContain('canvas')
+    expect(container.querySelector('details')).toBeTruthy() // JsonTree
+    expect(uPlotCtor).not.toHaveBeenCalled()
+  })
+
+  it('falls back rather than throwing when getContext itself throws', () => {
+    uPlotCtor.mockClear()
+    HTMLCanvasElement.prototype.getContext = (() => {
+      throw new Error('canvas is disabled')
+    }) as unknown as HTMLCanvasElement['getContext']
+
+    expect(() =>
+      render(<ChartView value={JSON_ARRAY_VALUE} mapping={{ x: 'line', y: 'chars' }} />),
+    ).not.toThrow()
+    expect(uPlotCtor).not.toHaveBeenCalled()
   })
 })
