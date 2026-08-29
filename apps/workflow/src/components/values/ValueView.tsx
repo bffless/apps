@@ -13,6 +13,7 @@
  * explicit `impl` prop; with neither, the declaration degrades to the badge.
  */
 import { useState } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { isUnavailablePayload } from '../../lib/runner/payload'
 import type { UnavailablePayload } from '../../lib/runner/payload'
 import { downloadHref, isSafeUrl } from '../../lib/url'
@@ -20,6 +21,7 @@ import { useFileRefs } from './fileRefIndex'
 import type { ValueDecl } from '../../lib/valueDecl'
 import { FileCard } from './FileCard'
 import { isFileRef } from './fileRef'
+import { isBlockText } from './textValue'
 import { useImpl } from './implContext'
 import { JsonTree } from './JsonTree'
 import { MarkdownView } from './MarkdownView'
@@ -39,6 +41,40 @@ const KNOWN_RENDERERS = new Set(['island', 'transcript', 'images', 'chart', 'cod
 const DRAWN_TYPES = new Set(['table', 'markdown', 'file'])
 
 /**
+ * A string value, as a chip or a block by `isBlockText` (`./textValue`). `extra` adds a
+ * modifier class either way (the unavailable-payload note wears one), and
+ * whatever else is passed lands on the element (a `data-testid`).
+ */
+function TextValue({
+  decl,
+  text,
+  extra,
+  children,
+  ...rest
+}: {
+  decl: Pick<ValueDecl, 'format'>
+  text: string
+  extra?: string
+  children?: ReactNode
+} & Omit<HTMLAttributes<HTMLElement>, 'children'>) {
+  const suffix = extra ? ` ${extra}` : ''
+  if (isBlockText(decl, text)) {
+    return (
+      <div className={`value-text${suffix}`} {...rest}>
+        {text}
+        {children}
+      </div>
+    )
+  }
+  return (
+    <span className={`chip${suffix}`} {...rest}>
+      {text}
+      {children}
+    </span>
+  )
+}
+
+/**
  * An output the writer offloaded (`{"$file"}`, Task 12) whose bytes the read
  * path could not fetch back (`lib/payloadFetch`). The declared renderer is no
  * help here — a `markdown` viewer would stringify the sentinel, a `table`
@@ -46,18 +82,24 @@ const DRAWN_TYPES = new Set(['table', 'markdown', 'file'])
  * still offers the bytes, which may well be readable by hand (an expired
  * session, a transient 5xx). The url goes through the same allow-list a
  * `FileRef`'s does: the row's JSON is writable by any authenticated member.
+ * `$error` is whatever the read path recorded — a status code, or a whole
+ * response body — so the note follows the chip/block rule like any string.
  */
 function UnavailablePayload({ payload }: { payload: UnavailablePayload }) {
   const { url } = payload.$file
   return (
-    <span className="chip value-unavailable" data-testid="payload-unavailable">
-      {`payload unavailable — ${payload.$error}`}
+    <TextValue
+      decl={{}}
+      text={`payload unavailable — ${payload.$error}`}
+      extra="value-unavailable"
+      data-testid="payload-unavailable"
+    >
       {typeof url === 'string' && isSafeUrl(url) && (
         <a className="value-unavailable-download" href={downloadHref(url)} download>
           Download
         </a>
       )}
-    </span>
+    </TextValue>
   )
 }
 
@@ -90,7 +132,7 @@ function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
       // path — a file row with Download either way, never a chip.
       const resolved = typeof value === 'string' ? resolve(value) : undefined
       if (resolved) return <FileCard refValue={resolved} />
-      if (typeof value === 'string') return <span className="chip">{value}</span>
+      if (typeof value === 'string') return <TextValue decl={decl} text={value} />
       return <JsonTree value={value} />
     }
     case 'table':
@@ -101,7 +143,10 @@ function ValueBody({ decl, value }: { decl: ValueDecl; value: unknown }) {
       return <JsonTree value={value} />
     case 'string':
     case 'choice':
-      return <span className="chip">{String(value)}</span>
+      // A short scalar is a chip; a paragraph, a script, a prompt is a block
+      // (`isBlockText`). The list branch above lands each item here in turn,
+      // so a list of long strings is a column of blocks, not of ellipses.
+      return <TextValue decl={decl} text={String(value)} />
     case 'number':
       return <span className="chip">{String(value)}</span>
     case 'boolean':

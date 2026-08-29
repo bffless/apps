@@ -70,6 +70,9 @@ function typed(decl: unknown): ValueDecl | null {
     type: d.type,
     ...(d.list === true ? { list: true } : {}),
     ...(typeof d.render === 'string' ? { render: d.render } : {}),
+    // `format: textarea` is the one form hint the *viewer* reads: it draws the
+    // string as a block rather than a chip (02, apps#440).
+    ...(typeof d.format === 'string' ? { format: d.format } : {}),
     ...(d.columns === undefined ? {} : { columns: d.columns }),
     // `render: island` needs the island file to travel with the declaration —
     // the renderer is chosen from `render`, but only `src` says *which* island.

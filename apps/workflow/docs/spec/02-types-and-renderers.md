@@ -29,6 +29,13 @@ automatically, 01). There is no separate `multiple` key.
 Common keys on every definition: `label`, `description`, `list`, `render`; inputs add
 `required`, `default`.
 
+**Chip or block.** The plain-text viewer (`string`, `choice`, a bare path under `file`) draws
+a value as a **chip** — a small pill — unless it is long: `format: textarea` declared, a
+newline in the value, or more than **120 characters**. Any one of those makes it a **block**
+(pre-wrapped, card corners, same mono face). `number` and `boolean` are always chips. The
+rule is applied per item under `list: true`, so a list of prompts is a column of blocks and a
+list of tags a row of chips.
+
 Every definition compiles to one JSON Schema; validation (kickoff form, `form` submit, island
 `workflow.submit`, script return, pipeline `outputs` coercion) is one function over that
 schema. A pipeline `outputs` value that does not match its declared type fails the step with

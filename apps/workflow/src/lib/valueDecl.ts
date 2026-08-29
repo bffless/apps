@@ -12,6 +12,11 @@ export interface ValueDecl {
   type: string
   list?: boolean
   render?: string
+  /**
+   * `string` only: the form control's hint (02) — `textarea` is the one the
+   * viewer reads too, since it says the writer expects paragraphs (apps#440).
+   */
+  format?: string
   columns?: unknown
   /** `render: island` only: the island file, relative to the implementation bundle (04). */
   src?: string
