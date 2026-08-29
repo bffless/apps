@@ -119,6 +119,44 @@ describe('StepPane — live gates the waiting-form delegation', () => {
  * render at all, but this test never hovers, so a fresh store with no live
  * run is fine.
  */
+/**
+ * apps#437: a File ref among a step's evaluated inputs is a file card, and an
+ * `image/*` one draws the image — the same `FileCard` the Output side uses,
+ * off the ref's own same-origin `url` (no presigning: this page sends the
+ * cookie the serve route wants, unlike an island's opaque-origin frame). The
+ * step is read-only here on purpose: the Input tab is the ordinary tabbed
+ * view, not the live form.
+ */
+describe('StepPane — Input tab previews an image File ref (apps#437)', () => {
+  it('draws the image beside its name for an image/* ref in the step inputs', () => {
+    const photo = {
+      path: 'workflows/hello/hello/inputs/1/me.jpg',
+      name: 'me.jpg',
+      contentType: 'image/jpeg',
+      size: 5,
+      url: '/api/uploads/workflows/hello/hello/inputs/1/me.jpg',
+    }
+    const state = readonlyConfirmWaiting()
+    const key = stepKey('slow', 0, 'start')
+    state.steps[key] = stepState('slow', 0, 'start', {
+      status: 'succeeded',
+      inputs: { photo },
+      outputs: { report: '# r', poster: null },
+    })
+
+    const { container } = render(
+      <Provider store={makeStore()}>
+        <StepPane def={hello} state={state} stepKey={key} live={false} />
+      </Provider>,
+    )
+
+    expect(screen.getByRole('tab', { name: 'Input' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('photo')).toBeInTheDocument()
+    expect(container.querySelector('.file-card img')?.getAttribute('src')).toBe(photo.url)
+    expect(screen.getByText('me.jpg')).toBeInTheDocument()
+  })
+})
+
 describe('StepPane — Output tab renders every named renderer', () => {
   it('shows all five renderer wrappers for the rendered-run fixture step', () => {
     server.use(

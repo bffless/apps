@@ -137,6 +137,25 @@ describe('KickoffForm', () => {
     expect(uploading).not.toHaveBeenCalled()
   })
 
+  // apps#437: the kickoff's own `file` inputs get the same thumbnail a form
+  // step's do — the field renderer is shared, but this is the surface the
+  // issue names first, so it is pinned here as well.
+  it('previews an image/* upload beside its name (apps#437)', () => {
+    const ref: FileRef = {
+      path: 'workflows/hello/hello/inputs/1/photo.png',
+      name: 'photo.png',
+      contentType: 'image/png',
+      size: 5,
+      url: '/api/uploads/workflows/hello/hello/inputs/1/photo.png',
+    }
+    const { form } = renderForm({ initial: { greeting: 'Hi', names: ['reader'], shout: false, photo: ref } })
+
+    const preview = within(form).getByTestId('file-preview')
+    expect(preview).toHaveAttribute('src', ref.url)
+    expect(preview).toHaveAttribute('alt', 'photo.png')
+    expect(within(form).getByText('photo.png')).toBeInTheDocument()
+  })
+
   it('renders a tile picker for a choice input whose options carry previews (02)', () => {
     const tiled: Record<string, InputDef> = {
       cover: { type: 'choice', options: [{ value: 'a', label: 'A', preview: '/api/uploads/a.png' }] },

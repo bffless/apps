@@ -280,6 +280,67 @@ describe('FieldControl — file fields', () => {
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(DOC2))
   })
+
+  // apps#437: a person attaching a reference photo should see the photo, not
+  // just its file name — on the kickoff form and on a form step alike, since
+  // both render this control.
+  describe('image preview (apps#437)', () => {
+    const PHOTO: FileRef = {
+      ...A,
+      path: 'workflows/hello/hello/inputs/1/me.jpg',
+      name: 'me.jpg',
+      contentType: 'image/jpeg',
+      url: '/api/uploads/workflows/hello/hello/inputs/1/me.jpg',
+    }
+
+    it('shows a thumbnail beside the name once an image/* upload lands', async () => {
+      render(<Controlled def={{ type: 'file', accept: 'image/*' }} upload={upload(PHOTO)} />)
+      expect(screen.queryByTestId('file-preview')).not.toBeInTheDocument()
+
+      fireEvent.change(screen.getByLabelText('cover'), {
+        target: { files: [new File(['jpg'], 'me.jpg', { type: 'image/jpeg' })] },
+      })
+
+      const preview = await screen.findByTestId('file-preview')
+      expect(preview.tagName).toBe('IMG')
+      expect(preview).toHaveAttribute('src', PHOTO.url)
+      expect(preview).toHaveAttribute('alt', 'me.jpg')
+      expect(screen.getByText('me.jpg')).toBeInTheDocument()
+    })
+
+    it('previews a prefilled image ref (Re-run) without an upload', () => {
+      const up = vi.fn()
+      render(<Controlled def={{ type: 'file', accept: 'image/*' }} initial={PHOTO} upload={up} />)
+
+      expect(screen.getByTestId('file-preview')).toHaveAttribute('src', PHOTO.url)
+      expect(up).not.toHaveBeenCalled()
+    })
+
+    it('shows no thumbnail for a non-image upload', async () => {
+      render(<Controlled def={{ type: 'file' }} upload={upload(DOC)} />)
+
+      fireEvent.change(screen.getByLabelText('cover'), {
+        target: { files: [new File(['a'], 'one.txt', { type: 'text/plain' })] },
+      })
+
+      expect(await screen.findByText('one.txt')).toBeInTheDocument()
+      expect(screen.queryByTestId('file-preview')).not.toBeInTheDocument()
+    })
+
+    it('refuses a cross-origin url as the thumbnail source but still names the file', () => {
+      render(
+        <Controlled
+          def={{ type: 'file', accept: 'image/*' }}
+          initial={{ ...PHOTO, url: 'https://evil.example/me.jpg' }}
+          upload={vi.fn()}
+        />,
+      )
+
+      expect(screen.getByText('me.jpg')).toBeInTheDocument()
+      expect(screen.queryByTestId('file-preview')).not.toBeInTheDocument()
+      expect(document.querySelector('img')).toBeNull()
+    })
+  })
 })
 
 describe('FieldControl — markdown preview', () => {
