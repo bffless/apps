@@ -12,10 +12,12 @@ on:
       write_blog: { type: boolean, default: true, label: Write a blog post }
       cover:      { type: boolean, default: true, label: Draw a cover }
       # The cover's own brief - what it should show and in what style - distinct from the
-      # director's `direction`, which is about the cut. `cover.brief` hands it to
+      # director's `direction`, which is about the cut. A convenience default only: it
+      # prefills the `cover.direction` form's `notes` (the place of record, next to the
+      # reference photo - apps#437), and `cover.brief` hands the form's answer to
       # thumbnail/draft as `notes`, the field Studio's ThumbnailStudio fills from its
       # free-text notes box; NOTES outrank every default in that rule's system prompt.
-      cover_direction: { type: string, format: textarea, label: Cover direction, description: "What the cover should show, and in what style (optional). Only read when a cover is drawn." }
+      cover_direction: { type: string, format: textarea, label: Cover direction, description: "What the cover should show, and in what style (optional). Prefills the cover form; only read when a cover is drawn." }
 
 jobs:
   per-video:
@@ -347,21 +349,52 @@ jobs:
       post: ${{ steps.bundle.outputs.post }}
       zip:  ${{ steps.bundle.outputs.zip }}
 
-  # One render, a person in the loop - Studio's own ThumbnailStudio flow (story 06):
-  # notes -> Draft prompt -> the creator EDITS the prompt (and may attach a reference
-  # photo) -> ONE nano-banana render. The first live run drew two covers blind and made
-  # the person pick (#430); now the person steers the prompt before the paid call and
-  # gets exactly one image. Headless: `review` skips with the drafted prompt and no
-  # reference, so an unattended run still renders once.
+  # One render, a person in the loop - Studio's own ThumbnailStudio flow (story 06), in
+  # Studio's order: the creator's photo and wishes FIRST, then the draft, then the
+  # creator EDITS the prompt, then ONE nano-banana render. The first live run drew two
+  # covers blind and made the person pick (#430). The second drafted the prompt BEFORE
+  # the form where the photo was attached, so the draft never knew about it, kept
+  # "photorealistic humans" in its negatives, and the model was handed the photo and
+  # told to ignore it (#437). Now `direction` takes the photo and the notes before
+  # `brief` runs, so thumbnail/draft's REFERENCE IMAGE section writes the Subject around
+  # the photo. Headless: both forms skip - the kickoff direction, no photo - so an
+  # unattended run still renders once.
   cover:
     name: Cover
     needs: [describe, stitch]
     if: ${{ success() && inputs.cover }}
     steps:
+      - id: direction
+        name: Cover direction
+        uses: form
+        with:
+          title: Cover direction
+          description: >-
+            What should the cover show? Attach a photo to put yourself (or a product) in
+            it - the prompt is drafted around whatever you give here, and you get to edit
+            it before the cover is drawn.
+          fields:
+            reference: { type: file, accept: "image/*", maxSize: 10MB, label: "Reference photo (optional)", description: "Put yourself (or a product) in the cover." }
+            notes: { type: string, format: textarea, label: "What the cover should show", default: "${{ inputs.cover_direction }}", description: "And in what style. Prefilled from the kickoff's Cover direction." }
+          submit: Generate the prompt
+        # `reference: null` is deliberate: the field is optional, a null File ref is what
+        # an unfilled upload submits, and both readers below treat it as "no photo". The
+        # linter wants every referenced output named here (07).
+        headless: { mode: skip, outputs: { reference: null, notes: "${{ inputs.cover_direction }}" } }
       - id: brief
         name: Draft the prompt
         uses: pipeline
-        with: { path: thumbnail/draft, body: { title: "${{ needs.describe.outputs.title }}", description: "${{ needs.describe.outputs.summary }}", script: "${{ needs.stitch.outputs.script }}", notes: "${{ inputs.cover_direction }}" } }
+        with:
+          path: thumbnail/draft
+          body:
+            title: ${{ needs.describe.outputs.title }}
+            description: ${{ needs.describe.outputs.summary }}
+            script: ${{ needs.stitch.outputs.script }}
+            notes: ${{ steps.direction.outputs.notes }}
+            # A boolean, not a path: a value that is exactly one expression keeps its type
+            # (01), so `!= null` over the File ref is the `hasReference: true|false` Studio's
+            # ThumbnailStudio sends, and the rule's prep only honours a real `true`.
+            hasReference: ${{ steps.direction.outputs.reference != null }}
         outputs:
           prompt: { type: string, format: textarea, value: "${{ response.prompt }}" }
       - id: review
@@ -369,32 +402,18 @@ jobs:
         uses: form
         with:
           title: Review the cover prompt
-          # The draft was written before anyone could attach a photo, so it does not
-          # know about one (Studio's "drafted without the reference" hint). The two
-          # sentences below are what its system prompt's REFERENCE IMAGE section would
-          # have done to it - said here so the person can do it by hand.
-          description: >-
-            Edit the drafted prompt, then draw the cover - one render. To put yourself
-            (or a product) in it, attach a reference photo and tell the prompt to use it:
-            name it in the Subject section ("use the attached reference photo of the
-            presenter - same face, same person, cut out from its background", where they
-            sit and which way they face) and take "photorealistic humans" out of the
-            negatives, or the model ignores the photo.
+          description: Edit the drafted prompt if you like, then draw the cover - one render.
           fields:
             prompt: { type: string, format: textarea, label: Prompt, default: "${{ steps.brief.outputs.prompt }}", required: true }
-            reference: { type: file, accept: "image/*", maxSize: 10MB, label: Reference photo (optional) }
           submit: Draw the cover
-        # `reference: null` is deliberate: the field is optional, a null File ref is what
-        # an unfilled upload submits, and thumbnail/render treats an absent reference as
-        # "no image_input". The linter wants every referenced output named here (07).
-        headless: { mode: skip, outputs: { prompt: "${{ steps.brief.outputs.prompt }}", reference: null } }
+        headless: { mode: skip, outputs: { prompt: "${{ steps.brief.outputs.prompt }}" } }
       - id: render
         name: Draw the cover
         uses: pipeline
-        # A File ref's `path` is the uploads-relative key the rule confines (R129) and
-        # hands nano-banana as `image_input`; `.path` of a null ref is null (01), which
-        # the rule reads as "none".
-        with: { path: thumbnail/render, body: { prompt: "${{ steps.review.outputs.prompt }}", reference: "${{ steps.review.outputs.reference.path }}", outPrefix: "${{ step.prefix }}" } }
+        # The step-1 photo. A File ref's `path` is the uploads-relative key the rule
+        # confines (R129) and hands nano-banana as `image_input`; `.path` of a null ref is
+        # null (01), which the rule reads as "none".
+        with: { path: thumbnail/render, body: { prompt: "${{ steps.review.outputs.prompt }}", reference: "${{ steps.direction.outputs.reference.path }}", outPrefix: "${{ step.prefix }}" } }
         timeout-minutes: 5
         outputs:
           cover: { type: file, value: "${{ response.path }}" }

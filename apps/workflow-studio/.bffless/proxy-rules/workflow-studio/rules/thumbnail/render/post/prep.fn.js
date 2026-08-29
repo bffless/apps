@@ -30,7 +30,8 @@ function handler({ request, deployment }) {
   var prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
   if (!prompt) return no(BAD_PROMPT)
 
-  // The optional reference photo (the review form's `reference` File ref, by `path`).
+  // The optional reference photo (the cover-direction form's `reference` File ref, by
+  // `path` - apps#437).
   // Absent, null or '' means none - the workflow sends `reference.path` of a null ref,
   // which is null. A non-empty string that is not confined is refused like any other
   // path, never silently dropped (Studio's prepImages dropped an unusable

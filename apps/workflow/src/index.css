@@ -2440,6 +2440,26 @@ button.pane-crumb:hover {
   font-size: 12px;
 }
 
+.field-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.field-file-item + .field-file-item {
+  margin-top: 6px;
+}
+
+/* An `image/*` upload's thumbnail beside its name (apps#437) — sized like a tile's. */
+.field-file-preview {
+  flex: none;
+  width: 6rem;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 4px;
+  background-color: var(--surface-dim);
+}
+
 /* Tile picker (02): a `choice` whose options carry previews. */
 .tile-picker {
   display: flex;

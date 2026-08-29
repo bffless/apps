@@ -18,10 +18,21 @@
  * shows their mean (a shared `setProgress` across `Promise.all` used to make
  * three files fight over one number), and the bar only clears once the last
  * batch in flight is done.
+ *
+ * An `image/*` ref (an `accept: image/*` field's upload, or a Re-run prefill)
+ * shows a thumbnail beside its name (apps#437) — a person attaching a
+ * reference photo should see it, not just its file name. The gate is the
+ * ref's own `contentType` (what `files/register` echoed from CE), and the
+ * `<img src>` only ever takes `url` through `isSameOriginUrl`, the same rule
+ * a tile's preview obeys: a ref can be run-row JSON, and a cross-origin image
+ * is a beacon that carries the member's session. No presigning here — unlike
+ * an island's opaque-origin frame, this page is same-origin and sends the
+ * cookie the serve route wants.
  */
 import { useEffect, useRef, useState } from 'react'
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import type { FileRef } from '../../lib/runner/types'
+import { isSameOriginUrl } from '../../lib/url'
 import { isFileRef } from '../values/fileRef'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -53,6 +64,12 @@ function matchesAccept(file: File, accept: string): boolean {
 function refsOf(value: unknown, list: boolean): FileRef[] {
   if (list) return Array.isArray(value) ? value.filter(isFileRef) : []
   return isFileRef(value) ? [value] : []
+}
+
+/** The same-origin url of an `image/*` ref — the only thing a thumbnail may be drawn from. */
+function previewUrl(ref: FileRef): string | undefined {
+  const contentType = typeof ref.contentType === 'string' ? ref.contentType : ''
+  return contentType.startsWith('image/') && isSameOriginUrl(ref.url) ? ref.url : undefined
 }
 
 export function FileControl({
@@ -156,9 +173,17 @@ export function FileControl({
       )}
       {refs.length > 0 && (
         <ul className="field-file-list">
-          {refs.map((ref) => (
-            <li key={ref.path}>{ref.name}</li>
-          ))}
+          {refs.map((ref) => {
+            const preview = previewUrl(ref)
+            return (
+              <li key={ref.path} className="field-file-item">
+                {preview !== undefined && (
+                  <img className="field-file-preview" data-testid="file-preview" src={preview} alt={ref.name} />
+                )}
+                <span className="field-file-name">{ref.name}</span>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
