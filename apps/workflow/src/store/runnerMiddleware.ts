@@ -414,6 +414,7 @@ function rowFromSlice(slice: RunSliceState): RunRow {
     inputs: state.inputs,
     status: state.status,
     headless: state.headless,
+    unattended: state.unattended,
     startedAt: state.startedAt,
     finishedAt: state.finishedAt ?? null,
     leaseOwner: getOwnerId(),
@@ -758,16 +759,23 @@ type HeadlessDecision =
  * cannot run headless, which is `HEADLESS_REQUIRED` rather than a run that
  * hangs until its budget runs out.
  *
- * An interactive run never reaches any of this: `headless:` is not read at all
- * when a person is driving, so a workflow behaves identically with and without
- * the declaration.
+ * An ordinary interactive run never reaches any of this: `headless:` is not
+ * read at all when a person is driving, so a workflow behaves identically with
+ * and without the declaration.
+ *
+ * An **unattended** run (07: "Don't wait for me", the kickoff form's own
+ * toggle on an interactive run) reads the declarations exactly as a headless
+ * run does — `auto` runs, `skip` stands its outputs in — with one difference:
+ * a step that declared neither still *waits for the person*, who is, after
+ * all, sitting there. Only the driver's `headless` fails fast on it.
  */
 function headlessDecision(a: StepScope): HeadlessDecision {
-  if (!a.state.headless) return { act: 'run' }
+  if (!a.state.headless && !a.state.unattended) return { act: 'run' }
   if (a.step.uses !== 'form' && a.step.uses !== 'island') return { act: 'run' }
 
   const mode = headlessMode(a.step)
   if (mode === undefined) {
+    if (!a.state.headless) return { act: 'run' }
     return {
       act: 'fail',
       error: {
@@ -1006,7 +1014,9 @@ async function handleNextAction(
         dispatch(runEvent({ type: 'step.waiting', key: a.key, inputs, at: deps.clock.now() }))
         // `headless: auto`: nobody is going to click Approve, so the harness
         // submits the form's own defaults once it is `waiting` (see below).
-        if (runState.headless) {
+        // Unattended counts too — `headlessDecision` has already let this
+        // form through only because it declared `auto` (or is being driven).
+        if (runState.headless || (runState.unattended && headlessMode(step) === 'auto')) {
           autoSubmitForm({ ...scope, deps, dispatch, getRunState })
         }
       } else if (step.uses === 'island') {

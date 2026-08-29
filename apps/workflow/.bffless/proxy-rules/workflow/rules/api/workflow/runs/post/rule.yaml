@@ -20,6 +20,7 @@ pipeline:
           inputs: request.body.inputs
           status: request.body.status
           headless: request.body.headless
+          unattended: request.body.unattended
           startedBy: user.id
           startedAt: request.body.startedAt
           leaseOwner: request.body.leaseOwner

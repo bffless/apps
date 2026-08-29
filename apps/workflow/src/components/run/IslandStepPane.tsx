@@ -15,13 +15,20 @@
  * Unmounting (navigating away, picking another step) tears the bridge down with
  * `'unmounted'` and leaves the step exactly as it was: the record is unchanged,
  * and coming back re-mounts from the same handle.
+ *
+ * The pane always opens **inline** (04, apps#432). An island that declared
+ * `display: fullscreen` gets an **Expand** control here — the overlay is the
+ * page's (`RunPage` fixes the canvas over the viewport and swaps the graph for
+ * a strip), and the `<iframe>` is the same element either way: nothing here
+ * remounts on the mode change, so the island's edit state survives it.
  */
 import { useMemo } from 'react'
 import { IslandFrame } from '../../islands/IslandFrame'
 import type { IslandHost } from '../../islands/IslandHost'
 import { useIslandHandle, useIslandLog } from '../../islands/useIslandHandle'
 import type { RunState, StepKey } from '../../lib/runner/types'
-import { useAppSelector } from '../../store/hooks'
+import { useAppDispatch, useAppSelector } from '../../store/hooks'
+import { islandDisplayChanged } from '../../store/uiSlice'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
 import { PaneCrumbs } from './PaneCrumbs'
@@ -36,6 +43,7 @@ export interface IslandStepPaneProps {
 
 export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPaneProps) {
   const display = useAppSelector((s) => s.ui.islandDisplay)
+  const dispatch = useAppDispatch()
   const handle = useIslandHandle(state.runId, key)
   const log = useIslandLog(state.runId, key)
   const step = state.steps[key]
@@ -81,6 +89,17 @@ export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPa
             <h3 className="graph-panel-title">{handle?.title ?? key}</h3>
             <span className="pane-key">{key}</span>
           </span>
+          {/* `display: fullscreen` offers the overlay; `inline` never enlarges (04). */}
+          {handle?.display === 'fullscreen' && display === 'inline' && (
+            <button
+              type="button"
+              className="button island-expand"
+              data-testid="island-expand"
+              onClick={() => dispatch(islandDisplayChanged('fullscreen'))}
+            >
+              Expand
+            </button>
+          )}
           <StatusPill status={step.status} />
           <span className="pane-kind">island</span>
         </header>

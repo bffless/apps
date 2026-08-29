@@ -36,6 +36,7 @@ function state(items: Record<string, unknown>[]): RunState {
     workflow: 'scenes',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: {},
     steps: {},
     expansions: { 'per-scene': { total: items.length, items } },

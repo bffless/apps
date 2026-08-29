@@ -229,3 +229,33 @@ describe('KickoffForm', () => {
     })
   })
 })
+
+describe('KickoffForm — "Don\'t wait for me" (07)', () => {
+  it('offers no toggle unless the page passes one', () => {
+    const { form } = renderForm()
+    expect(within(form).queryByTestId('kickoff-unattended')).toBeNull()
+  })
+
+  it('renders the toggle the page passes and reports each change, without touching the values', () => {
+    const onChange = vi.fn()
+    const onStart = vi.fn()
+    render(
+      <KickoffForm
+        inputs={inputs}
+        uploading={vi.fn()}
+        onStart={onStart}
+        unattended={{ value: false, onChange }}
+      />,
+    )
+    const form = screen.getByTestId('kickoff-form')
+    const toggle = within(form).getByTestId('kickoff-unattended')
+    expect(toggle).not.toBeChecked()
+
+    fireEvent.click(toggle)
+    expect(onChange).toHaveBeenCalledWith(true)
+
+    fireEvent.click(within(form).getByTestId('kickoff-start'))
+    // A run-level choice, never an input: the values are exactly the declared ones.
+    expect(onStart).toHaveBeenCalledWith({ greeting: 'Hello', names: ['world'], photo: null, shout: false })
+  })
+})

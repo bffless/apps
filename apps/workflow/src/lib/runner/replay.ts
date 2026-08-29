@@ -210,6 +210,7 @@ export function rowsToEvents(run: RunRow, steps: StepRow[], def: Definition): Ru
     workflow: run.workflow,
     inputs: run.inputs,
     headless: run.headless,
+    unattended: run.unattended ?? false,
     startedAt: run.startedAt,
   })
 
@@ -225,6 +226,7 @@ export function rowsToEvents(run: RunRow, steps: StepRow[], def: Definition): Ru
     workflow: run.workflow,
     inputs: run.inputs,
     headless: run.headless,
+    unattended: run.unattended ?? false,
     at: run.startedAt,
   })
 
@@ -286,6 +288,7 @@ export function replayRun(run: RunRow, steps: StepRow[], def: Definition): RunSt
       workflow: run.workflow,
       inputs: run.inputs,
       headless: run.headless,
+    unattended: run.unattended ?? false,
       startedAt: run.startedAt,
     }),
   )

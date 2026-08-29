@@ -10,6 +10,7 @@ fields:
   - { name: inputs, type: json, required: false }
   - { name: status, type: string, required: true }
   - { name: headless, type: boolean, required: false }
+  - { name: unattended, type: boolean, required: false }
   - { name: startedBy, type: string, required: false }
   - { name: startedAt, type: number, required: true }
   - { name: finishedAt, type: number, required: false }

@@ -57,6 +57,8 @@ export interface RunHeaderProps {
   /** `null` while the run is still in flight. */
   finishedAt: number | null
   headless: boolean
+  /** "Don't wait for me" was on (07) — a person's choice, badged apart from the driver's `headless`. */
+  unattended?: boolean
   /** The run's own snapshot, for "View workflow file". */
   yaml: string
   /** The replayed status; the row's own when the run could not be rebuilt. */
@@ -89,6 +91,7 @@ export function RunHeader({
   startedAt,
   finishedAt,
   headless,
+  unattended = false,
   yaml,
   status,
   annotations,
@@ -182,6 +185,11 @@ export function RunHeader({
         </span>
         <span className="run-bar-badges">
           {headless && <span className="badge">headless</span>}
+          {unattended && (
+            <span className="badge" data-testid="run-unattended">
+              unattended
+            </span>
+          )}
           {counts.map(({ level, count }) => (
             <span className="badge" key={level} data-severity={level}>
               {pluralize(count, level)}

@@ -130,6 +130,75 @@ export function parseArgs(args: Record<string, unknown>): TrimInput {
 /** A stable empty list, so `frames` doesn't re-memo on every render before measuring. */
 const NO_SHEETS: SheetImage[] = []
 
+// ---------------------------------------------------------------------------
+// The floating player (apps#432)
+//
+// A 16:9 `<video>` across the top of the island put the transcript grid — the thing
+// being edited — below the fold on any real recording; you could watch OR edit. So the
+// clip floats in a corner over the grid at ≥720 px (Studio's own page keeps its
+// `PreviewPlayer` beside the grid for the same reason) and docks at the top, reduced,
+// below that. The element itself is unchanged: `CutEditor` still drives it through
+// `video: { ref, offset }`, and hiding it is `display: none`, not an unmount, so a row
+// click keeps seeking a player the member has tucked away.
+// ---------------------------------------------------------------------------
+
+/** The viewport width from which the player floats rather than docks. */
+export const FLOAT_MIN_WIDTH = 720
+
+type Corner = 'bottom-right' | 'top-right'
+
+interface PlayerPrefs {
+  corner: Corner
+  hidden: boolean
+}
+
+const PLAYER_PREFS_KEY = 'cut-editor.player'
+const DEFAULT_PLAYER_PREFS: PlayerPrefs = { corner: 'bottom-right', hidden: false }
+
+/**
+ * `localStorage` behind a guard: the island runs on an opaque origin
+ * (`sandbox="allow-scripts"`, no `allow-same-origin`), where merely touching
+ * `window.localStorage` throws a `SecurityError`. Remembered when it can be, and
+ * silently per-render when it can't — the preference is a nicety, never a dependency.
+ */
+function readPlayerPrefs(): PlayerPrefs {
+  try {
+    const raw = window.localStorage.getItem(PLAYER_PREFS_KEY)
+    if (!raw) return DEFAULT_PLAYER_PREFS
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed)) return DEFAULT_PLAYER_PREFS
+    return {
+      corner: parsed.corner === 'top-right' ? 'top-right' : 'bottom-right',
+      hidden: parsed.hidden === true,
+    }
+  } catch {
+    return DEFAULT_PLAYER_PREFS
+  }
+}
+
+function writePlayerPrefs(prefs: PlayerPrefs): void {
+  try {
+    window.localStorage.setItem(PLAYER_PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    // An opaque origin has no storage; the choice lasts for this mount.
+  }
+}
+
+/**
+ * The player's box: docked full-width at the top below `FLOAT_MIN_WIDTH`, a fixed
+ * ~360 px card in a corner from there up. `min-[720px]:` is Tailwind's arbitrary
+ * breakpoint — spelled out in full so the utility scan (`styles.css`'s `@source`)
+ * sees every class it has to generate.
+ */
+function playerClass(corner: Corner, hidden: boolean): string {
+  const floating =
+    'min-[720px]:fixed min-[720px]:right-4 min-[720px]:z-20 min-[720px]:w-[360px] ' +
+    'min-[720px]:overflow-hidden min-[720px]:rounded-lg min-[720px]:border rule ' +
+    'min-[720px]:bg-surface min-[720px]:shadow-lg'
+  const at = corner === 'top-right' ? 'min-[720px]:top-16' : 'min-[720px]:bottom-4'
+  return `${hidden ? 'hidden ' : ''}w-full ${floating} ${at}`
+}
+
 /** True on an unattended run (spec 07): the harness sets it in the host context. */
 function isHeadless(bridge: IslandBridge): boolean {
   const context = bridge.getHostContext()
@@ -220,6 +289,18 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
   const video = useMemo(() => ({ ref: videoRef, offset: scene.start }), [scene.start])
 
+  // Where the player sits, and whether it is shown — remembered per browser when
+  // the origin allows it (see `readPlayerPrefs`).
+  const [player, setPlayer] = useState<PlayerPrefs>(readPlayerPrefs)
+  const updatePlayer = useCallback(
+    (patch: Partial<PlayerPrefs>) => {
+      const next = { ...player, ...patch }
+      writePlayerPrefs(next)
+      setPlayer(next)
+    },
+    [player],
+  )
+
   // A drag on the grid, routed through Studio's own cut algebra (the same two calls
   // the Studio page's `editSceneCut` makes).
   const onEditCut = useCallback(
@@ -293,6 +374,16 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
               Sent to the run.
             </span>
           )}
+          {clipUrl && player.hidden && (
+            <button
+              type="button"
+              data-testid="island-player-show"
+              className="text-[12px] text-ink-mute underline-offset-2 hover:text-ink hover:underline"
+              onClick={() => updatePlayer({ hidden: false })}
+            >
+              Show player
+            </button>
+          )}
           <button
             type="button"
             data-testid="island-done"
@@ -331,28 +422,61 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
       )}
 
       {clipUrl && (
-        <video
-          ref={videoRef}
-          data-testid="island-clip"
-          src={clipUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className="max-h-[45vh] w-full bg-ink"
-        />
+        <div
+          data-testid="island-player"
+          data-corner={player.corner}
+          data-hidden={player.hidden ? 'true' : undefined}
+          className={playerClass(player.corner, player.hidden)}
+        >
+          <div className="flex items-center justify-between gap-2 px-2 py-1 text-[11px] text-ink-mute">
+            <span className="font-mono uppercase tracking-wider text-ink-faint">clip</span>
+            <span className="flex items-center gap-3">
+              <button
+                type="button"
+                data-testid="island-player-corner"
+                className="underline-offset-2 hover:text-ink hover:underline"
+                onClick={() =>
+                  updatePlayer({ corner: player.corner === 'top-right' ? 'bottom-right' : 'top-right' })
+                }
+              >
+                {player.corner === 'top-right' ? 'Move down' : 'Move up'}
+              </button>
+              <button
+                type="button"
+                data-testid="island-player-hide"
+                className="underline-offset-2 hover:text-ink hover:underline"
+                onClick={() => updatePlayer({ hidden: true })}
+              >
+                Hide
+              </button>
+            </span>
+          </div>
+          <video
+            ref={videoRef}
+            data-testid="island-clip"
+            src={clipUrl}
+            controls
+            playsInline
+            preload="metadata"
+            className="max-h-[30vh] w-full bg-ink min-[720px]:aspect-video min-[720px]:max-h-none"
+          />
+        </div>
       )}
 
-      <CutEditor
-        words={words}
-        cuts={cuts}
-        onEditCut={onEditCut}
-        frames={frames}
-        duration={scene.end}
-        windowStart={scene.start}
-        windowEnd={scene.end}
-        originalAudioUrl={wavUrl}
-        video={video}
-      />
+      {/* Room under the grid for the floating card, so the last rows can scroll clear of it. */}
+      <div className={clipUrl && !player.hidden ? 'min-[720px]:pb-64' : undefined}>
+        <CutEditor
+          words={words}
+          cuts={cuts}
+          onEditCut={onEditCut}
+          frames={frames}
+          duration={scene.end}
+          windowStart={scene.start}
+          windowEnd={scene.end}
+          originalAudioUrl={wavUrl}
+          video={video}
+        />
+      </div>
     </div>
   )
 }

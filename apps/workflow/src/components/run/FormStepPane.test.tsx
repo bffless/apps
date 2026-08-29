@@ -173,6 +173,7 @@ function waitingFormState(runId: string): RunState {
     workflow: 'hello',
     status: 'running',
     headless: false,
+    unattended: false,
     inputs: {},
     steps: {
       [ATTACH_KEY]: {

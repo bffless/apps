@@ -87,3 +87,16 @@ describe('RunHeader — Delete', () => {
     expect(screen.getByTestId('run-delete')).toBeInTheDocument()
   })
 })
+
+describe('RunHeader — badges', () => {
+  it('badges an unattended run apart from a headless one (07)', () => {
+    renderHeader({ unattended: true })
+    expect(screen.getByTestId('run-unattended')).toHaveTextContent('unattended')
+    expect(screen.queryByText('headless')).not.toBeInTheDocument()
+  })
+
+  it('shows no unattended badge by default', () => {
+    renderHeader()
+    expect(screen.queryByTestId('run-unattended')).not.toBeInTheDocument()
+  })
+})

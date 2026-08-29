@@ -20,9 +20,23 @@ import { buildContexts, evalDeep } from './contexts'
 import { formFieldDefs, validateFormOutputs } from './adapters/form'
 import { obj, outputDecls, validateDeclared } from './adapters/declared'
 import type { StepScope } from './adapters/declared'
-import type { Step } from './types'
+import type { Definition, Step } from './types'
 
 export type HeadlessMode = 'skip' | 'auto'
+
+/**
+ * Whether "Don't wait for me" (07) has anything to apply to: at least one
+ * `island`/`form` step declares `headless:`. A workflow with no interactive
+ * steps, or whose interactive steps all wait for a person regardless, has no
+ * toggle to offer — an unattended run of it would be an ordinary run.
+ */
+export function offersUnattended(def: Definition): boolean {
+  return Object.values(def.jobs).some((job) =>
+    job.steps.some(
+      (step) => (step.uses === 'island' || step.uses === 'form') && headlessMode(step) !== undefined,
+    ),
+  )
+}
 
 /**
  * `headless: skip|auto` (bare form) or `headless: { mode: skip|auto, ... }`

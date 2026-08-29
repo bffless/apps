@@ -141,7 +141,9 @@ const TWO_ISLANDS_DEF = toDefinition({
 const X_KEY: StepKey = stepKey('a', 0, 'x')
 const Y_KEY: StepKey = stepKey('a', 0, 'y')
 
-async function startTwoIslands(headless: boolean) {
+type Driving = { headless?: boolean; unattended?: boolean }
+
+async function startTwoIslands(driving: Driving) {
   const { store, advance, host } = islandStore()
   store.dispatch(
     startRun({
@@ -151,7 +153,7 @@ async function startTwoIslands(headless: boolean) {
       yaml: ISLAND_YAML,
       workflowName: 'Island',
       values: {},
-      headless,
+      ...driving,
     }),
   )
   await pumpUntil(advance, () => store.getState().run.state?.steps[X_KEY]?.status === 'running')
@@ -169,8 +171,8 @@ describe('RunPage — headless island mounting', () => {
    * (apps#370) declines to act: `y` has already been claimed, so nothing would
    * re-open it. In a headless run that would be a hang.
    */
-  async function driveToSecondIsland(headless: boolean) {
-    const { store, host, runId } = await startTwoIslands(headless)
+  async function driveToSecondIsland(driving: Driving) {
+    const { store, host, runId } = await startTwoIslands(driving)
     const router = createMemoryRouter(createRoutesFromElements(routes), {
       initialEntries: [`/test/island/runs/${runId}`],
     })
@@ -197,14 +199,25 @@ describe('RunPage — headless island mounting', () => {
   }
 
   it('re-opens the active island when the selection lands on a finished step', async () => {
-    const { store } = await driveToSecondIsland(true)
+    const { store } = await driveToSecondIsland({ headless: true })
 
     await waitFor(() => expect(store.getState().ui.selectedStep).toBe(Y_KEY))
     expect(screen.getByTestId('island-frame')).toBeInTheDocument()
   })
 
+  it('re-opens the active island in an unattended run too (07, apps#432)', async () => {
+    // "Don't wait for me": the person asked not to be waited for, so a
+    // `headless: auto` island is kept mounted the way a headless run would.
+    const { store, host } = await driveToSecondIsland({ unattended: true })
+
+    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(Y_KEY))
+    expect(screen.getByTestId('island-frame')).toBeInTheDocument()
+    // And the island is told it is driving itself.
+    expect(host.mounts.at(-1)!.headless).toBe(true)
+  })
+
   it('leaves an interactive run’s selection exactly where the person put it', async () => {
-    const { store } = await driveToSecondIsland(false)
+    const { store } = await driveToSecondIsland({})
 
     // No re-claim: the person asked for `x`, and `y` was already claimed once.
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -212,7 +225,7 @@ describe('RunPage — headless island mounting', () => {
   })
 
   it('opens the first active island with no selection at all, in a headless run', async () => {
-    const { store, runId } = await startTwoIslands(true)
+    const { store, runId } = await startTwoIslands({ headless: true })
     render(
       <Provider store={store}>
         <MemoryRouter initialEntries={[`/test/island/runs/${runId}`]}>

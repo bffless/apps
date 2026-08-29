@@ -127,6 +127,11 @@ describe('toRunRow', () => {
     annotations: [{ level: 'notice', message: 'hi' }],
   }
 
+  it('reads `unattended` (07), and reads an older row without the column as false', () => {
+    expect(toRunRow({ ...flat, unattended: true }).unattended).toBe(true)
+    expect(toRunRow(flat).unattended).toBe(false)
+  })
+
   it('reads a flat record and keeps the server id at _id (R4)', () => {
     const row = toRunRow(flat)
     expect(row._id).toBe('rec_1')

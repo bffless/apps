@@ -64,6 +64,8 @@ describe('initialRunState', () => {
       workflow: 'hello',
       status: 'running',
       headless: true,
+      // Absent from the args above — an older row's `run.started` — so it reads `false` (07).
+      unattended: false,
       inputs: { greeting: 'Hi' },
       steps: {},
       expansions: {},

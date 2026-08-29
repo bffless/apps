@@ -39,6 +39,7 @@ function runState(a: Omit<Partial<RunState>, 'steps'> & { steps?: StepState[] } 
     workflow: 'hello',
     status: 'running',
     headless: true,
+    unattended: false,
     inputs: {},
     expansions: {},
     annotations: [],

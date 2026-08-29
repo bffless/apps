@@ -27,6 +27,7 @@ import { createIslandHost, IslandMountAbandoned } from '../islands/IslandHost'
 import type { IslandDisplayMode, IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { fetchText, openLink, signFile } from '../islands/hostDeps'
 import { annotateEvent, completeIslandStep, islandInputs } from '../lib/runner/adapters/island'
+import { headlessMode } from '../lib/runner/headless'
 import type { HttpJson } from '../lib/runner/adapters/pipeline'
 import type { Definition, RunState, Step, StepKey, StepStatus } from '../lib/runner/types'
 import { runEvent } from './runSlice'
@@ -254,6 +255,14 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
 
   const host = (a.deps.islandHost ?? createIslandHost)(hostDeps)
 
+  // What the island is told through `hostContext.bffless.headless` (07): an
+  // unattended run asks a `headless: auto` island to submit by itself exactly
+  // as a headless run does — the island code is the same either way, and only
+  // ever sees the one flag. (`headlessDecision` has already let the island
+  // through, so a declared `auto` is the only way an unattended run reaches
+  // this; an undeclared island waits for its person and is told nothing.)
+  const selfDriving = a.state.headless || (a.state.unattended && headlessMode(a.step) === 'auto')
+
   const handle: IslandHandle = {
     host,
     title: inputs.title,
@@ -261,7 +270,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
     src: inputs.src,
     impl: a.state.impl,
     arguments: args,
-    headless: a.state.headless,
+    headless: selfDriving,
     log: [],
     async mount(iframe) {
       try {
@@ -269,7 +278,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
           impl: a.state.impl,
           src: inputs.src,
           arguments: args,
-          headless: a.state.headless,
+          headless: selfDriving,
           signal: a.signal,
         })
       } catch (err) {
@@ -305,12 +314,10 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
   handles.set(handleKey(a.state.runId, a.key), handle)
   bump()
 
-  // The declared `display` is *not* seeded from here. Launching is global —
-  // a second island starting in a parallel job would yank the page out from
-  // under the one the user is actually in — and a seed dispatched before the
-  // step is selected is undone by the page's own reset in the same commit. The
-  // page seeds it from `handle.display` when it opens the pane instead
-  // (`RunPage`), which keeps the store the single source of truth without
-  // letting a background launch touch it.
+  // The declared `display` is *not* applied from here, or anywhere at launch:
+  // every island starts inline (04, apps#432), and `handle.display` is what
+  // the pane reads to decide whether to *offer* the fullscreen overlay. The
+  // store stays the single source of truth for the mode, and a background
+  // launch in a parallel job never touches it.
   return { ok: true, handle }
 }

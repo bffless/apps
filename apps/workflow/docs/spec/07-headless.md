@@ -113,6 +113,28 @@ run's job and run outputs match an interactive run's. Narrowing that to "a skip 
 this rule exists to prevent. An `if:`-skipped step carries nothing at all and still skips its
 job.
 
+## Unattended — "Don't wait for me"
+
+An **interactive** run can honour the same declarations without a driver (apps#432): the
+kickoff form offers a run-level toggle, **"Don't wait for me"**, whenever the workflow has an
+`island`/`form` step that declares `headless:`. With it on, `run.unattended = true` goes on
+the row (a separate column — `headless` stays what the driver sets, and the two are never
+conflated), and:
+
+| step declares | headless run | unattended run |
+|---|---|---|
+| `skip` | skipped with its declared outputs | the same |
+| `auto` | mounted; `hostContext.bffless.headless = true`; must self-submit | the same — the island sees the one flag and cannot tell the two apart |
+| *(none)* | `HEADLESS_REQUIRED`, fails fast | **waits for the person**, who is there |
+
+The tab keeps driving as an interactive run does (the same lease, the same page, the same
+`window.__workflow`); the person can watch, and the page keeps a `headless: auto` island in
+the pane by itself as it would headless. The **5-minute default budget is not applied**: it
+exists because nobody is there to notice a hang, and here somebody is (a declared
+`timeout-minutes` still is). `unattended` is a person's choice on an interactive run;
+`headless` is the driver's — a headless run never sets `unattended`, and a run started from
+the kickoff form never sets `headless`.
+
 The linter reports every interactive step lacking `headless` as a notice ("not headless-safe"),
 and `index.json` marks each workflow `headlessSafe: true|false` so the UI and the CLI can say
 so before a run is attempted.

@@ -12,9 +12,11 @@ export interface UiState {
   selectedStep: StepKey | null
   runsStatusFilter: RunStatus | 'all'
   /**
-   * The display mode the mounted island last asked for through
-   * `ui/request-display-mode` (04). It is view state, not run state: a reload
-   * comes back inline, and no island is ever *told* to be fullscreen — it asks.
+   * The mounted island's display mode (04): `inline` on every open, then
+   * whatever the person's Expand / Exit or the island's own
+   * `ui/request-display-mode` moved it to. It is view state, not run state: a
+   * reload comes back inline, and a declared `display: fullscreen` only ever
+   * *offers* the overlay — it never opens in it (apps#432).
    */
   islandDisplay: 'inline' | 'fullscreen'
   /**

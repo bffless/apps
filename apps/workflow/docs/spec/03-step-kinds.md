@@ -76,7 +76,7 @@ the declared map. Full contract in [04-islands.md](04-islands.md).
   with:
     src: islands/cut-editor.html             # relative → /w/<alias>/islands/cut-editor.html
     title: Trim to the screen
-    display: inline                          # inline | fullscreen
+    display: inline                          # inline (default) | fullscreen — see 04 "Display modes"
     clip: ${{ steps.cut.outputs.clip }}      # every other key is delivered as tool-input arguments
     words: ${{ needs.per-video.outputs.words[strategy.job-index] }}
   outputs:

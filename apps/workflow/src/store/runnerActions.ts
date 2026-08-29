@@ -38,6 +38,13 @@ export interface StartRunArgs {
    * resumed run must see the same answer the run started with.
    */
   headless?: boolean
+  /**
+   * "Don't wait for me" (07): the kickoff form's own toggle. Rides on
+   * `run.started` for the same reason `headless` does — `headlessDecision`,
+   * the form auto-submit and the island's `hostContext.bffless.headless` all
+   * read it off `runState`, and a resumed run must see what it started with.
+   */
+  unattended?: boolean
 }
 
 export function startRun(a: StartRunArgs): AppThunk<string> {
@@ -60,6 +67,7 @@ export function startRun(a: StartRunArgs): AppThunk<string> {
         workflow: a.workflow,
         inputs: a.values,
         headless: a.headless ?? false,
+        unattended: a.unattended ?? false,
         at: Date.now(),
       }),
     )

@@ -191,10 +191,10 @@ describe('StepPane — island delegation', () => {
 })
 
 describe('RunPage — island fullscreen', () => {
-  it('opens a declared fullscreen island fullscreen, and comes back on exit', async () => {
-    // Fix round 1, finding 2: nothing here dispatches `islandDisplayChanged` —
-    // the page seeds the mode from the step it opens, so a `display:
-    // fullscreen` declaration actually reaches the screen.
+  it('opens a declared fullscreen island inline, expands to the overlay on request, and exits without remounting', async () => {
+    // apps#432: `display: fullscreen` is the island's preferred *enlarged*
+    // mode, offered as Expand — never its first mount. Nothing here dispatches
+    // `islandDisplayChanged`; every move is the person's, through the pane.
     const { store, runId, host } = await startIslandRun(ISLAND_FULLSCREEN_DEF)
 
     render(
@@ -209,25 +209,52 @@ describe('RunPage — island fullscreen', () => {
     // A loading island is auto-selected the same way a waiting step is — its
     // pane is what mounts it (Decision 11).
     await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    const frame = within(page).getByTestId('island-frame')
     host.settle()
     await waitFor(() =>
       expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
     )
 
+    // Inline first: the graph is there, the overlay is not, and Expand is offered.
+    await flush()
+    expect(document.querySelector('.island-fullscreen')).toBeNull()
+    expect(store.getState().ui.islandDisplay).toBe('inline')
+    expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'inline')
+    expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
+
+    fireEvent.click(within(page).getByTestId('island-expand'))
+
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).not.toBeNull())
     expect(store.getState().ui.islandDisplay).toBe('fullscreen')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'fullscreen')
-    // The graph is gone; the strip is what is left of it.
+    expect(host.displayModes.at(-1)).toBe('fullscreen')
+    // The graph gives way to the strip; Expand is gone while expanded.
     expect(within(page).queryAllByTestId('step')).toHaveLength(0)
+    expect(within(page).getByTestId('island-strip')).toBeInTheDocument()
+    expect(within(page).queryByTestId('island-expand')).toBeNull()
+    // The overlay is the SAME iframe — one mount, one element (edit state survives).
+    expect(host.mounts).toHaveLength(1)
+    expect(within(page).getByTestId('island-frame')).toBe(frame)
 
     fireEvent.click(within(page).getByTestId('island-exit-fullscreen'))
 
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).toBeNull())
     expect(store.getState().ui.islandDisplay).toBe('inline')
     expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
-    // The seed is once per opened step: leaving fullscreen is not fought back.
+    expect(host.mounts).toHaveLength(1)
+    expect(within(page).getByTestId('island-frame')).toBe(frame)
+    expect(host.teardowns).not.toContain('unmounted')
+    // Leaving is not fought back over: nothing re-applies the declaration.
     await flush()
     expect(store.getState().ui.islandDisplay).toBe('inline')
+
+    // Esc is the other way out.
+    fireEvent.click(within(page).getByTestId('island-expand'))
+    await waitFor(() => expect(store.getState().ui.islandDisplay).toBe('fullscreen'))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(store.getState().ui.islandDisplay).toBe('inline'))
+    expect(document.querySelector('.island-fullscreen')).toBeNull()
+    expect(host.mounts).toHaveLength(1)
   })
 
   it('opens an ordinary island inline and resets the mode when the step finishes', async () => {
@@ -248,9 +275,11 @@ describe('RunPage — island fullscreen', () => {
       expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
     )
     expect(store.getState().ui.islandDisplay).toBe('inline')
+    // `inline` never enlarges from the pane's side (04) …
+    expect(within(page).queryByTestId('island-expand')).toBeNull()
 
-    // The island asks for fullscreen, then answers — the mode goes back to
-    // inline because the step it belonged to is no longer open.
+    // … but the island may still ask for fullscreen, then answers — the mode
+    // goes back to inline because the step it belonged to is no longer open.
     host.deps!.onDisplayMode('fullscreen')
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).not.toBeNull())
 

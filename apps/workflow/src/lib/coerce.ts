@@ -321,6 +321,7 @@ export function toRunRow(raw: unknown): ServerRunRow {
     inputs: record(f.inputs),
     status: oneOf(f.status, RUN_STATUSES, 'running'),
     headless: bool(f.headless),
+    unattended: bool(f.unattended),
     ...(optionalStr(f.startedBy) ? { startedBy: str(f.startedBy) } : {}),
     startedAt: num(f.startedAt),
     finishedAt: optionalNum(f.finishedAt),

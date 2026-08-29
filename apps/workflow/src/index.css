@@ -2556,8 +2556,10 @@ button.pane-crumb:hover {
    The frame is a sandboxed, opaque-origin iframe: the harness never styles its
    contents, only its box. Height is driven by the island's own
    `ui/notifications/size-changed` while inline (capped at 80vh by the host);
-   `min-height` is what a silent island gets. The fullscreen strip is the
-   host page's half of `ui/request-display-mode`. */
+   `min-height` is what a silent island gets. Fullscreen is an OVERLAY over
+   the same frame (apps#432): `.island-fullscreen` fixes the run canvas over
+   the viewport and the graph gives way to a strip; the iframe element is
+   never remounted, so the island's state survives entering and leaving. */
 
 .island-step-pane .pane-head,
 .form-step-pane .pane-head {
@@ -2607,9 +2609,37 @@ button.pane-crumb:hover {
 }
 
 .island-strip-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.island-strip-crumb {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.island-strip-key {
   color: var(--ink-mute);
   font-family: var(--font-mono);
   font-size: 11.5px;
+}
+
+.island-strip kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink-mute);
+  font: 500 10.5px var(--font-mono);
+}
+
+/* The pane's Expand — offered only by an island that declared
+   `display: fullscreen`; it opens the overlay above without remounting. */
+.island-expand {
+  padding: 5px 10px;
+  font-size: 12px;
 }
 
 .island-fullscreen .step-pane,

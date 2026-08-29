@@ -38,7 +38,6 @@ import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
 import type { PaneSide } from '../components/graph/GraphView'
-import { useIslandHandle } from '../islands/useIslandHandle'
 import { PausedBanner } from '../components/run/PausedBanner'
 import { RunHeader } from '../components/run/RunHeader'
 import { JobPane } from '../components/run/JobPane'
@@ -475,8 +474,14 @@ export function RunPage() {
   // It only ever acts when nothing is selected or the selection has finished:
   // an island or form that is itself still going keeps the pane, so two
   // islands in flight do not take turns evicting each other.
+  //
+  // An **unattended** run (07: "Don't wait for me") is in the same position for
+  // its `headless: auto` islands: the person asked not to be waited for, so
+  // the page keeps them mounted the way a headless run would — the one case
+  // where keeping the run moving outranks the pane a person happens to have
+  // open, and the trade they made when they ticked the box.
   useEffect(() => {
-    if (!isLive || !def || !state || !sliceState?.headless) return
+    if (!isLive || !def || !state || !(sliceState?.headless || sliceState?.unattended)) return
     const selected = selectedStep ? state.steps[selectedStep] : undefined
     if (selected && !TERMINAL_STEP.has(selected.status)) return
     const active = firstStepWhere(
@@ -517,33 +522,37 @@ export function RunPage() {
     (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')
   const fullscreen = islandDisplay === 'fullscreen' && islandOpen
 
-  // The mode an island *starts* in is its own declared `display` (04), and this
-  // is where that is applied: when the pane opens, not when the step launches.
-  // Launching is global — a second island starting in a parallel job would drag
-  // the page out from under the one the user is in — and a seed dispatched
-  // before the step is selected would be undone by this effect's own reset in
-  // the same commit. Seeding once per opened step also leaves the island's
-  // `ui/request-display-mode` and the strip's exit button free to move the mode
-  // afterwards: neither changes what was seeded, so neither is fought back over.
+  // Every island **starts inline** (04, apps#432): a `display: fullscreen`
+  // declaration is the island's *preferred enlarged mode*, offered as the
+  // pane's Expand control, never its first mount — jumping straight into an
+  // overlay on a chip click read as a new page, and exiting it loses nothing
+  // (the mode is a size, not a capability). So the store is put back to
+  // `inline` whenever the open island changes (a different step, or none):
+  // one dispatch per change, never on unrelated renders, and never fought
+  // back over afterwards — the island's own `ui/request-display-mode` and the
+  // pane's Expand / Exit are free to move it once it is open.
   const openIslandKey = islandOpen ? selectedStep : null
-  const openIslandHandle = useIslandHandle(state?.runId ?? '', openIslandKey ?? '')
-  const seededFor = useRef<string | null>(null)
+  const resetFor = useRef<string | null>(null)
   useEffect(() => {
-    if (openIslandKey === null) {
-      // Nothing to reset until something was seeded — otherwise this would
-      // dispatch `inline` over and over on every unrelated render.
-      if (seededFor.current === null) return
-      seededFor.current = null
+    if (resetFor.current === openIslandKey) return
+    resetFor.current = openIslandKey
+    dispatch(islandDisplayChanged('inline'))
+  }, [openIslandKey, dispatch])
+
+  // Esc leaves the overlay (04). Listened for on the window, because the
+  // pane's own `onKeyDown` cannot hear a key pressed inside the sandboxed
+  // frame — and when it can (focus on the strip), Esc must mean "exit
+  // fullscreen" before it means "up one level".
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
       dispatch(islandDisplayChanged('inline'))
-      return
     }
-    // The handle can land a render after the selection does (Resume registers
-    // handles from a listener effect), and waiting for it is better than
-    // seeding `inline` and never revisiting.
-    if (!openIslandHandle || seededFor.current === openIslandKey) return
-    seededFor.current = openIslandKey
-    dispatch(islandDisplayChanged(openIslandHandle.display))
-  }, [openIslandKey, openIslandHandle, dispatch])
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [fullscreen, dispatch])
 
   if (!isLive && (isLoading || (isFetching && !data && !isError))) {
     return <p className="note">Loading…</p>
@@ -582,6 +591,7 @@ export function RunPage() {
           startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
           finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
           headless={isLive ? sliceState!.headless : run!.headless}
+          unattended={isLive ? sliceState!.unattended : (run!.unattended ?? false)}
           yaml={isLive ? sliceMeta!.yaml : run!.yaml}
           status={shownStatus!}
           annotations={annotations}
@@ -612,14 +622,17 @@ export function RunPage() {
                 // collapses to a strip, and leaving is the page's decision, not
                 // the island's — the store flips, and the new mode flows back
                 // down to the bridge through `IslandFrame`.
-                <div className="island-strip">
-                  <span className="island-strip-title">{selectedStep}</span>
+                <div className="island-strip" data-testid="island-strip">
+                  <span className="island-strip-title">
+                    <span className="island-strip-crumb">Run › {selectedStep!.split('/')[0]}</span>
+                    <span className="island-strip-key">{selectedStep}</span>
+                  </span>
                   <button
                     type="button"
                     data-testid="island-exit-fullscreen"
                     onClick={() => dispatch(islandDisplayChanged('inline'))}
                   >
-                    Exit fullscreen
+                    Exit fullscreen <kbd>Esc</kbd>
                   </button>
                 </div>
               ) : (
