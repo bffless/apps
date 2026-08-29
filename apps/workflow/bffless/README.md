@@ -103,10 +103,41 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   from the admin panel drops the second conditional responder (bffless/ce#502). Its 200 reports both
   sweeps, `{"deleted":{"files":n,"records":n}}`: `records: 0` beside a non-zero `files` means the
   `workflow_files` filter stopped matching (it deletes nothing rather than failing).
+
+  **If it fails part-way, call it again.** Files-first has a cost worth naming: when `recs`,
+  `stepRows` or `row` fails *after* `file_delete` succeeded, the pipeline stops and the run row
+  survives with its bytes already gone. That run is not stuck — every step is idempotent, so
+  re-POSTing the same `{ id }` resumes: the gate still passes (the row is there, still terminal,
+  same owner), `file_delete` answers `{ deleted: 0 }` for a prefix matching nothing rather than
+  erroring, and the three deletes run again. The successful retry therefore reports
+  `files: 0` — expected on a retry, not a regression. A **persistent** `recs` failure (a missing
+  schema, a filter CE rejects) fails every retry at the same step and does leave a run this rule
+  cannot delete; that is an operator fix — correct the schema or filter and retry, or drop the row
+  from the admin panel. There is deliberately no `dryRun` mode: a preview would be a second code
+  path over the same filters, and `records` already reports the sweep after the fact.
+
+  **The `workflow_files` filter is `storage_path LIKE '%<run prefix>%'`, with a leading wildcard on
+  purpose** — CE stores an upload record's `storage_path` as the full object key
+  (`<owner>/<repo>/uploads/` + the run prefix), not the uploads-relative path `file_delete` takes.
+  An anchored `sub_dir LIKE 'workflows/<impl>/<wf>/runs/<id>/%'` would be tighter (immune to a `%`
+  or `_` in an implementation or workflow name), and `sub_dir` is now declared — but the shipped
+  `storage_path` pattern is the one the 2026-08-26 live walk exercised end to end
+  (`records: 3`), and the stored shape of `sub_dir` has never been observed on this instance.
+  Swapping a proven filter for an unobserved one is the exact way to earn a silent `records: 0`,
+  so the switch waits on a live read of one `workflow_files` row's `sub_dir` (apps#381).
 - **`GET /api/workflow/whoami`** (M2 Phase 3): `{ id, email, role }` for the calling session —
   the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
   Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty
-  strings rather than an error, so readers must tolerate them.
+  strings rather than an error, so readers must tolerate them. The body is built by `me.fn.js`
+  and rendered with `{{{steps.me}}}`, not spliced into a JSON string in a template: a `"` or a
+  `\` in an email or a role would otherwise produce a body no client can parse, and escaping is
+  not something a template can do for you.
+- **Global roles are `admin | user | member`** (ce `users.dto.ts`), so the `owner` entry in the
+  delete gate's admin allow-list is **inert** — CE never hands a pipeline that role. It is kept
+  per the M2 plan's wording and pinned by a test, not relied on. The practical consequence:
+  **an API-key caller is resolved as `role: user`**, so an admin's key cannot delete another
+  member's run (403, the owner-mismatch branch — confirmed in the 2026-08-26 walk below).
+  Deleting someone else's run needs an admin's browser session.
 - **`POST /api/workflow/files/sign`** (M3 Task 10): `{ path }` → `{ url, expiresIn: 3600 }`, a
   presigned GET for one object. Nothing manual to do — the rule ships with the set and
   `deploy-workflow.yml` deploys it on merge. It exists for the sandboxed island: an

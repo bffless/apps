@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 16
 pipeline:
   name: Delete workflow run
-  description: "POST { id }: owner (startedBy == user.id) or admin; terminal runs only (409 while running). Deletes the run's storage prefix first (retryable), then the workflow_files records under it, the step rows, the run row. The per-workflow inputs/ area is never touched (D18)."
+  description: "POST { id }: owner (startedBy == user.id) or admin; terminal runs only (409 while running). Deletes the run's storage prefix first (retryable), then the workflow_files records under it, the step rows, the run row. Every step is idempotent, so a call that fails part-way is fixed by calling again with the same id. The per-workflow inputs/ area is never touched (D18)."
   steps:
     - id: run
       name: run
@@ -50,7 +50,24 @@ pipeline:
         headers: { Cache-Control: no-store }
         contentType: application/json
     # Bytes first: a half-done delete that is retried must never leave a row pointing at
-    # objects that are already gone. `prefix` is a TEMPLATE, not a bare expression
+    # objects that are already gone.
+    #
+    # Retry story (apps#381). Files-first has a cost: if `recs`, `stepRows` or `row`
+    # fails after `file_delete` succeeded, the pipeline stops there and the run row
+    # survives with its bytes gone. That run is NOT stuck — every step here is
+    # idempotent, so the fix is to POST the same `{ id }` again: the gate still passes
+    # (the row is still there, still terminal, same owner), `file_delete` answers
+    # `{ deleted: 0 }` for a prefix that matches nothing rather than erroring, and the
+    # three deletes resume. So a *transient* failure costs one retry and the reported
+    # `files` count drops to 0 on the successful attempt — expected, not a regression.
+    # A *persistent* `recs` failure (a missing schema, a filter CE rejects) fails every
+    # retry at the same step and does leave a run that cannot be deleted through this
+    # rule; that is an operator fix — correct the schema/filter and retry, or drop the
+    # row from the admin panel. Deliberately no `dryRun` mode: a preview of what would
+    # be swept is a second code path over the same filters, and the 200's `records`
+    # count already reports the sweep after the fact.
+    #
+    # `prefix` is a TEMPLATE, not a bare expression
     # (file-delete.handler.ts resolveAndGuard -> evaluateTemplate); it is relative to the
     # project's uploads root, blank/`..` are refused, and a prefix matching nothing is
     # `{ deleted: 0 }`, not an error — so the whole step is idempotent.
@@ -72,8 +89,12 @@ pipeline:
         schemaId: $schema:workflow_files
         filters:
           storage_path: { op: like, value: steps.gate.prefixLike }
-    - id: steps
-      name: steps
+    # `stepRows`, not `steps`: a step named `steps` reads as the expression root every
+    # other step's `condition` is written against (`steps.gate.ok`), and `steps.steps.*`
+    # is a sentence nobody should have to parse. Nothing referenced it — the 200 below
+    # reports the `files` and `recs` counts only — so the rename is inert.
+    - id: stepRows
+      name: stepRows
       handler: data_delete
       config:
         condition: steps.gate.ok

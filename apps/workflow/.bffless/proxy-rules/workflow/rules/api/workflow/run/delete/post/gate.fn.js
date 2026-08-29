@@ -54,6 +54,8 @@ function handler({ steps, request, user }) {
     // uploads-relative path that `file_delete` takes. The run id inside the pattern is
     // unique, so the leading wildcard cannot reach another run's rows.
     prefixLike: '%' + prefix + '%',
-    result: { ok: true },
+    // No `result` on this path: only the three refusal responders render
+    // `{{{steps.gate.result}}}`, and each is gated on its own refusal flag, so a
+    // success-path `result` was dead weight that read as if something served it.
   }
 }

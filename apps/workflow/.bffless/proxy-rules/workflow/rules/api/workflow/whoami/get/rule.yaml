@@ -4,11 +4,18 @@ pipeline:
   name: Who am I
   description: "GET -> { id, email, role } for the calling session. The one thing the SPA cannot work out for itself: whether this member owns a run (05 access) and whether they are an admin. `user.*` resolves to null for a caller CE could not tie to a person (an API key with no user), and a null renders as an empty string — so the reader must tolerate empty fields rather than assume three non-empty ones."
   steps:
+    # The body is built in a function_handler and rendered with `{{{…}}}` rather than
+    # hand-assembled in a template: a `"` or a `\` in an email or a role would otherwise
+    # produce a malformed JSON body, and a template cannot escape one for you (apps#381).
     - id: me
       name: me
+      handler: function_handler
+      code: ./me.fn.js
+    - id: respond
+      name: respond
       handler: response_handler
       config:
-        body: '{"id":"{{user.id}}","email":"{{user.email}}","role":"{{user.role}}"}'
+        body: "{{{steps.me}}}"
         status: 200
         headers: { Cache-Control: no-store }
         contentType: application/json

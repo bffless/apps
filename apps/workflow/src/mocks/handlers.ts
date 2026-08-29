@@ -14,7 +14,7 @@ import { http, HttpResponse } from 'msw'
 import { toFileRef, toRunRow, toStepRow } from '../lib/coerce'
 import type { ServerStepRow } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
-import { db, deleteRun, mockUser, nextId, stepRowKey, stepsOf, toRecord } from './db'
+import { db, deleteRun, mockUser, nextId, registerFileRecord, stepRowKey, stepsOf, toRecord } from './db'
 import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
@@ -289,12 +289,14 @@ const runRecord = [
       return refuse(403, 'only the run owner or an admin can delete a run')
     }
 
-    // `records` is the `workflow_files` sweep's count in the real rule. The mock has no
-    // such table, but everything in `db.files` got there through the files trio, which
-    // registers exactly one record per object — so the object count IS the record count
-    // here, and reporting it keeps the two response shapes identical.
-    const { files } = deleteRun(run.runId)
-    return HttpResponse.json({ ok: true, deleted: { files, records: files } }, { headers: NO_STORE })
+    // Both counts, swept independently: `files` by prefix (what `file_delete` does),
+    // `records` by a real `storage_path LIKE '%<prefix>%'` over `db.fileRecords` (what
+    // `data_delete` does). Reporting `files` twice — which is what this did while the
+    // mock had no `workflow_files` table — made a `records: 0` regression unrepresentable,
+    // so CI could not catch the one step whose correctness rides on CE's full-key
+    // `storage_path` shape (apps#381).
+    const { files, records } = deleteRun(run.runId)
+    return HttpResponse.json({ ok: true, deleted: { files, records } }, { headers: NO_STORE })
   }),
 
   // Mirrors `gate.fn.js`: granted when unheld, expired, already ours, or forced.
@@ -344,10 +346,18 @@ const files = [
     return new HttpResponse(null, { status: 200 })
   }),
 
+  // Writes the `workflow_files` row as well as answering the File ref: `register_upload`
+  // is the only thing that creates one, and the run-delete sweep is counted off it.
   http.post('/api/workflow/files/register', async ({ request }) => {
     const fields = await body(request)
     const key = String(fields.storageKey ?? '')
     const stored = db.files.get(key)
+    const originalName = typeof fields.originalName === 'string' ? fields.originalName : undefined
+    registerFileRecord(key, {
+      contentType: stored?.contentType,
+      size: stored?.bytes.byteLength ?? 0,
+      originalName,
+    })
     return HttpResponse.json(
       toFileRef({
         path: key,

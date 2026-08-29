@@ -36,6 +36,25 @@ const SCHEMAS: Record<string, string[]> = {
   workflow: ['workflow_runs', 'workflow_run_steps', 'workflow_files'],
 }
 
+/**
+ * The record shape `register_upload` writes, whatever the target schema declares
+ * (ce `upload-schema-contract.ts` `UPLOAD_RECORD_FIELDS` →
+ * `UploadRecordService.createUploadRecords`). A schema that does not declare these
+ * is describing something its own rows aren't — which is how `workflow_files` came
+ * to declare `fileName`/`storagePath`/`contentType` while CE wrote
+ * `filename`/`storage_path`/… (apps#381). Harmless drift until the run-delete rule
+ * started filtering on `storage_path`; fenced here so it cannot come back.
+ */
+const UPLOAD_RECORD_FIELDS: Record<string, string> = {
+  filename: 'string',
+  storage_path: 'string',
+  content_type: 'string',
+  size: 'number',
+  url: 'string',
+  sub_dir: 'string',
+  original_name: 'string',
+}
+
 describe.each(['workflow'])('%s rule set fence', (name) => {
   const SET = join(ROOT, name)
   const files = ruleFiles(join(SET, 'rules'))
@@ -66,6 +85,33 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     for (const s of SCHEMAS[name]) {
       const doc = parse(readFileSync(join(SET, 'schemas', `${s}.schema.yaml`), 'utf8'))
       expect(doc.name).toBe(s)
+    }
+  })
+
+  it('declares the upload-record contract on every schema a register_upload step writes', () => {
+    const targets = new Set<string>()
+    for (const file of files) {
+      const doc = parse(readFileSync(file, 'utf8'))
+      if (doc.targetUrl !== 'pipeline') continue
+      for (const step of doc.pipeline.steps ?? []) {
+        if (step.handler !== 'register_upload') continue
+        targets.add(String(step.config?.schemaId ?? '').replace(/^\$schema:/, ''))
+      }
+    }
+    expect(targets.size, `${name} must have at least one register_upload step`).toBeGreaterThan(0)
+
+    for (const schema of targets) {
+      const doc = parse(readFileSync(join(SET, 'schemas', `${schema}.schema.yaml`), 'utf8'))
+      const declared: Record<string, string> = Object.fromEntries(
+        (doc.fields ?? []).map((f: { name: string; type: string }) => [f.name, f.type]),
+      )
+      for (const [field, type] of Object.entries(UPLOAD_RECORD_FIELDS)) {
+        // `text` holds a string just as well as `string` does (ce `isCompatible`).
+        const ok = declared[field] === type || (type === 'string' && declared[field] === 'text')
+        expect(ok, `${schema} must declare ${field}: ${type}, not ${declared[field] ?? '(absent)'}`).toBe(
+          true,
+        )
+      }
     }
   })
 })
