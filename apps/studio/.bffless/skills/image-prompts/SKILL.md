@@ -46,6 +46,8 @@ If the user pastes a reference image, **read it first** (the Read tool works on 
 
 **Disambiguation rule when more than one could fit:** does the video teach a concept (tutorial → retro-blueprint), ship a deliverable in one sitting (watch-me-code → modern-dev-tool), or show off a finished give-away app (app showcase → electric-poster)? Watch-me-code shows the *building*; app showcase shows the *built thing* — if the thumbnail's hero is the app's own UI rather than a code editor, it's electric-poster. When in doubt, ask the user which content-type the video is before picking the anchor.
 
+**Creator wishes outrank the routing.** If the brief or NOTES name a house style ("tutorial theme", "watch-me-code look"), use that style — do not re-route to a different one because the notes also ask for something that style avoids by default. A deviation ("tutorial theme but with a dark background", "put the presenter in the centre") is a *variant* of the named style: keep its content-type markers (the `TUTORIAL · S01 EP##` strip, body copy and hand-drawn schematic for tutorial; the `WATCH ME CODE` pill and editor mock for watch-me-code), apply the deviation, and drop the contradicted item from the negatives. A creator who asked for dark tutorial wants a tutorial that is dark, not a watch-me-code thumbnail.
+
 Other valid choices (custom, hand-drawn, isometric, photographic, 3D render) — but always name the anchor explicitly. "Make it pop" is not a style; "Braun product brochure crossed with Linear" is.
 
 If the user shared a reference: extract the anchor from it (background color, typography weight, illustration technique, accent color count, visible textures). Name the anchor explicitly in the prompt — image models latch onto named references better than descriptions.
@@ -85,7 +87,11 @@ Always give hex codes — "navy blue" is interpreted dozens of ways; `#0B0F2C` i
 
 ### 6. Write a negatives list
 
-This is the highest-leverage section. Models love to add: gradient mesh, neon glow, photorealistic people, generic cloud icons, drop shadows, busy backgrounds, every cliché SaaS-landing-page detail. List them out explicitly.
+This is the highest-leverage section. Models love to add: gradient mesh, neon glow, photorealistic people, generic cloud icons, drop shadows, busy backgrounds, every cliché SaaS-landing-page detail. List them out explicitly. Never list something the creator asked for — if NOTES want a dark background, "dark mode" does not go in the negatives, whatever the house style says by default.
+
+## House styles
+
+Each style ends with an **Avoid by default** list. Those are defaults for a brief that says nothing about style — they keep the four styles distinct from one another. They are not vetoes: an explicit creator wish (NOTES, the brief, a named reference) overrides any single item, and that item must then NOT appear in the prompt's negatives list. Everything else in the style still applies.
 
 ## House style: retro-blueprint (tutorial / walkthrough)
 
@@ -99,7 +105,7 @@ For BFFless **tutorial / walkthrough / explainer** videos and editorial content.
 - Accent: single bright red `#E63946` used sparingly (1–2 places max)
 - Bottom row: 3–4 small boxed category labels with hand-drawn icons (handler names, system primitives)
 - Vibe descriptor: "1970s technical manual meets modern editorial"
-- Always avoid: gradient mesh, neon glow, dark mode, photorealism, drop shadows, 3D renders, code editor mocks (those are watch-me-code territory)
+- Avoid by default: gradient mesh, neon glow, dark mode, photorealism, drop shadows, 3D renders, code editor mocks (those are watch-me-code territory)
 
 ## House style: modern-dev-tool (watch-me-code)
 
@@ -111,10 +117,11 @@ For BFFless **watch-me-code / live-build / "1 sitting"** videos. Reference: the 
 - **Proof artifact accent:** the portion of the headline that names the thing being built (a URL like `/install.sh`, a phrase like `WITH BFFLESS`, a stack name) gets a hand-drawn cyan underline `#22D3EE` — a single confident stroke, not a perfect rectangle. This is the live-build mark.
 - **Footer line** beneath the headline: tiny uppercase or mixed-case monospace, bullet-separated tokens like `github · j5s.dev · 1 sitting` or `bffless.app · pipelines · live`. The "1 sitting" / "live" framing is the watch-me-code tell.
 - Illustration: code editor mock with traffic-light dots, monospaced syntax-highlighted JSX / HTML / TS / shell — NOT a generic browser window, NOT a schematic. Slight tilt (~6°), thin neon outline.
+- Code text in the mock: at most three short REAL tokens the viewer could read (a keyword, a handler name, a path) — render the remaining lines as abstract syntax-coloured bars or softly blurred lines. Image models cannot spell code; a mock full of legible near-code ("ccreate_record: afex_record") reads as a typo across the whole thumbnail.
 - Accent: electric cyan `#22D3EE` for the underline, mark, and editor outline. Optional sparing magenta `#D946EF` for a single highlight (one tick mark, one icon). Maximum 2 accent uses on the canvas.
 - Decorative: a few small cyan dots or dashes in the empty corners for negative-space rhythm — sparing, not a particle field.
 - Vibe descriptor: "confident, restrained, live-build energy, every element load-bearing"
-- Always avoid: parchment textures, hand-drawn schematic diagrams (tutorial territory), `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs (tutorial territory), violet poster fields / `FREE APP` pills / app-UI-as-hero (app-showcase territory — watch-me-code shows the code, not the finished product), photorealistic humans, busy backgrounds, radial gradients, neon glow on the headline itself (only the underline + editor outline glow)
+- Avoid by default: parchment textures, hand-drawn schematic diagrams (tutorial territory), `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs (tutorial territory), violet poster fields / `FREE APP` pills / app-UI-as-hero (app-showcase territory — watch-me-code shows the code, not the finished product), photorealistic humans, busy backgrounds, radial gradients, neon glow on the headline itself (only the underline + editor outline glow)
 
 ## House style: electric-poster (app showcase / give-away)
 
@@ -129,7 +136,7 @@ For **BFFless apps** videos — showing off a finished give-away app (Studio, an
 - Accent: single warm amber `#FBBF24`, used at most twice — the pill, plus optionally one tiny mark (a small ✳ spark near a corner, or one highlighted element inside the app UI). Nothing else gets the accent.
 - Decorative: one or two small white ✳ spark/asterisk marks in the empty corners — sparing, hand-drawn feel, not confetti.
 - Vibe descriptor: "product-launch poster, confident give-away energy, a finished thing you can have"
-- Always avoid: dark navy backgrounds + code editor mocks (watch-me-code territory), parchment / hand-drawn schematics / `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs, gradients of any kind, glassmorphism, 3D device renders, phone mockups, tilted windows, big rounded corners (keep radii crisp at ~4px), more than one accent color, photorealistic humans
+- Avoid by default: dark navy backgrounds + code editor mocks (watch-me-code territory), parchment / hand-drawn schematics / `TUTORIAL` or `S01 EP##` tags (tutorial territory), body copy paragraphs, gradients of any kind, glassmorphism, 3D device renders, phone mockups, tilted windows, big rounded corners (keep radii crisp at ~4px), more than one accent color, photorealistic humans
 
 ## House style: editorial-print
 
@@ -140,7 +147,7 @@ For long-form blog heroes, research-style posts.
 - Illustration: minimal — one strong abstract mark, single photograph treated with duotone, or no illustration at all
 - Accent: single ink color (deep navy, burgundy, forest)
 - Vibe descriptor: "magazine cover, restrained, thought-leadership"
-- Always avoid: multiple illustration elements, neon, gradients, anything that screams "tech"
+- Avoid by default: multiple illustration elements, neon, gradients, anything that screams "tech"
 
 ## Working from a reference image
 
