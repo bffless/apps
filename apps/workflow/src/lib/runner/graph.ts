@@ -10,6 +10,7 @@
  *
  * Pure: no React/Redux/MSW/app imports (spec 09, enforced by eslint).
  */
+import { stepOutputNames } from '@bffless/workflow-lint/definition'
 import { collectRefs, scanTemplates } from '@bffless/workflow-lint/expressions'
 import type { Ref } from '@bffless/workflow-lint/expressions'
 import { evalDeep, jobOutcome } from './contexts'
@@ -294,4 +295,32 @@ export function dataFlowEdges(def: Definition): DataFlowEdge[] {
     }
   }
   return edges
+}
+
+/**
+ * Which of `job`'s own steps feed its job-level `outputs.<output>` alias.
+ *
+ * A job's `outputs` are aliases evaluated at the job boundary
+ * (`poster: ${{ steps.start.outputs.poster }}`), so the step that actually
+ * declares the value is the one the alias names — and naming it is the whole
+ * point when a job has more than one step (apps#382: the graph used to light
+ * every step of a multi-step job whenever a job-level output was hovered).
+ *
+ * The old "every step that declares any output" answer is kept as the fallback
+ * for the cases where no single step can be named: a hover carrying no output
+ * name, an alias that reads a `needs.*` output rather than one of this job's
+ * steps, or an expression whose subject is computed (`refsIn` reports nothing
+ * for a dynamic segment).
+ */
+export function jobOutputSteps(def: Definition, job: string, output?: string): string[] {
+  const steps = def.jobs[job]?.steps ?? []
+  const alias = output === undefined ? undefined : def.jobs[job]?.outputs?.[output]
+  if (alias !== undefined) {
+    const declared = new Set(steps.map((step) => step.id))
+    const named = refsIn(alias)
+      .filter((ref) => ref.context === 'steps' && declared.has(ref.name))
+      .map((ref) => ref.name)
+    if (named.length > 0) return [...new Set(named)]
+  }
+  return steps.filter((step) => (stepOutputNames(step)?.length ?? 0) > 0).map((step) => step.id)
 }

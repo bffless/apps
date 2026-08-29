@@ -19,11 +19,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { StatusPill } from '../StatusPill'
+import { ANNOTATION_LEVELS } from '../../lib/annotations'
 import { formatDuration } from '../../lib/duration'
 import { pluralize } from '../../lib/plural'
 import type { Annotation, RunStatus } from '../../lib/runner/types'
 
-const LEVELS: Annotation['level'][] = ['error', 'warning', 'notice']
 const TICK_MS = 1_000
 
 /** Deletion takes the run's files with it (05) — the one header action that asks first. */
@@ -103,7 +103,7 @@ export function RunHeader({
   const now = useNow(inFlight)
   const elapsedMs = inFlight ? (now === null ? null : now - startedAt) : finishedAt - startedAt
 
-  const counts = LEVELS.map((level) => ({
+  const counts = ANNOTATION_LEVELS.map((level) => ({
     level,
     count: annotations.filter((annotation) => annotation.level === level).length,
   })).filter((entry) => entry.count > 0)

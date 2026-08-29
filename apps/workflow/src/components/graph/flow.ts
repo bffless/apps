@@ -4,8 +4,7 @@
  * of `dataFlowEdges` — `GraphView` only wires this to the store's
  * `ui.hoveredValue`.
  */
-import { stepOutputNames } from '@bffless/workflow-lint/definition'
-import { dataFlowEdges } from '../../lib/runner/graph'
+import { dataFlowEdges, jobOutputSteps } from '../../lib/runner/graph'
 import type { DataFlowEdge } from '../../lib/runner/graph'
 import type { Definition } from '../../lib/runner/types'
 
@@ -28,9 +27,10 @@ export interface GraphFlow {
 const NONE: GraphFlow = { sourceSteps: new Set(), targetSteps: new Set(), sourceJobs: new Set() }
 
 /**
- * A hover naming a step is that one chip. A hover naming only a job (a
- * job-level `outputs` alias has no single declaring step) falls back to every
- * step of that job that declares any output, and the job card itself.
+ * A hover naming a step is that one chip. A hover naming only a job is the job
+ * card itself plus the step its `outputs.<name>` alias reads — traced through
+ * `jobOutputSteps`, which falls back to every output-declaring step of the job
+ * only when the alias names none of them (apps#382).
  *
  * `edges` is `def`'s own data-flow edge list, which depends on nothing else —
  * `GraphView` passes the copy it memoizes on `def` alone so a hover tick never
@@ -52,8 +52,8 @@ export function flowFor(
     sourceSteps.add(`${hovered.job}::${hovered.step}`)
   } else {
     sourceJobs.add(hovered.job)
-    for (const step of def.jobs[hovered.job]?.steps ?? []) {
-      if ((stepOutputNames(step)?.length ?? 0) > 0) sourceSteps.add(`${hovered.job}::${step.id}`)
+    for (const step of jobOutputSteps(def, hovered.job, hovered.output)) {
+      sourceSteps.add(`${hovered.job}::${step}`)
     }
   }
 

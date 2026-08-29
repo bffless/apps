@@ -227,8 +227,14 @@ export function retryRun(): AppThunk<Promise<void>> {
  * Navigating away is the **caller's** job: this module has no router, and a
  * thunk that redirected would be deciding what the page after the deletion is.
  * What it does own is the state the deleted run leaves behind — the run slice,
- * if this tab was showing it, and the two RTK Query caches that still hold the
- * row (the list, and the run's own entry).
+ * if this tab was showing it, and the list the row was in.
+ *
+ * Only `Runs`: the run's *own* cache entry is deliberately left alone
+ * (apps#382). Invalidating `{ type: 'Run', id }` refetched the row the caller
+ * is still on — it is only navigating away in the next tick — and that read
+ * comes back `{ run: null }`, so the run page flashed "No such run" on its way
+ * out. The entry needs no eviction: nothing subscribes to it once the page
+ * unmounts, and RTK Query drops an unsubscribed entry by itself.
  */
 export function deleteRun(a: { runId: string }): AppThunk<Promise<void>> {
   return async (dispatch, getState) => {
@@ -237,6 +243,6 @@ export function deleteRun(a: { runId: string }): AppThunk<Promise<void>> {
     // outright, and a run terminal enough to delete has no controllers left to
     // abort (the `status !== 'running'` gate is what makes that true).
     if (getState().run.state?.runId === a.runId) dispatch(runClosed())
-    dispatch(workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: a.runId }]))
+    dispatch(workflowApi.util.invalidateTags(['Runs']))
   }
 }

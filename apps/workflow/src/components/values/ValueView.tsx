@@ -175,22 +175,30 @@ export function ValueView({
   } else if (code && !unavailable) {
     body = <CodeView value={value} mapping={decl.mapping} />
   } else {
-    // `island` keeps its historical "(M2)" badge when it can't dispatch (no
-    // src, or no implementation known). Any other named `render` reaching
-    // this branch got here because its payload is unavailable — the badge
-    // would only repeat what the `payload-unavailable` chip already says, and
-    // for a *known* renderer it would say it wrongly ("(unknown)" on a
-    // renderer this dispatch knows perfectly well) — so a known renderer gets
-    // no badge at all here, and only a genuinely unrecognised `render` value
-    // keeps the "(unknown)" badge.
+    // The badge says why the declared renderer did not draw this value.
+    //
+    // A *known* renderer only lands here when it could not dispatch, and the
+    // one that can is `island`: it needs both a `src` and an implementation to
+    // resolve it against, so the badge names whichever is missing. It used to
+    // say "(M2)" — the milestone the island viewer was then owed — which read
+    // as a status of the harness rather than of this declaration, and has been
+    // wrong since the named renderers landed (apps#382).
+    //
+    // Any other named `render` reaching this branch got here because its
+    // payload is unavailable: the badge would only repeat what the
+    // `payload-unavailable` chip already says, so a known renderer gets none.
+    // A genuinely unrecognised `render` value keeps its "(unknown)".
     const isKnownRenderer = typeof decl.render === 'string' && KNOWN_RENDERERS.has(decl.render)
     const showBadge = Boolean(decl.render) && !(unavailable && isKnownRenderer)
+    const why = !isKnownRenderer
+      ? 'unknown'
+      : typeof decl.src !== 'string'
+        ? 'no src'
+        : 'no implementation'
     body = (
       <>
         {showBadge && (
-          <p className="value-renderer-badge">
-            {`renderer: ${decl.render} (${isKnownRenderer ? 'M2' : 'unknown'})`}
-          </p>
+          <p className="value-renderer-badge">{`renderer: ${decl.render} (${why})`}</p>
         )}
         <ValueBody decl={decl} value={value} />
       </>
