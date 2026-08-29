@@ -21,6 +21,8 @@ on:
       - 'packages/workflow-script/**'
       - 'apps/studio/src/lib/**'
       - 'apps/studio/src/components/Studio/CutEditor.tsx'
+      - 'apps/studio/src/components/Studio/MarkdownBody.tsx'
+      - 'apps/studio/src/components/Studio/BlogFigure.tsx'
       - 'apps/studio/src/index.css'
       - 'apps/studio/package.json'
       - '.github/workflows/deploy-workflow-studio.yml'

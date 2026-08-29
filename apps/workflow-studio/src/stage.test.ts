@@ -1,5 +1,5 @@
 /**
- * The stager, end to end: `scripts/stage.mjs` type-checks, builds the island and the
+ * The stager, end to end: `scripts/stage.mjs` type-checks, builds the islands and the
  * five script modules, and then has `workflow index` write the bundle's
  * `.bffless/workflows/index.json`.
  *
@@ -67,10 +67,11 @@ describe('scripts/stage.mjs', () => {
       expect(index.workflows).toHaveLength(1)
       expect(index.workflows[0].file).toBe('studio.workflow.yaml')
 
-      // The cut editor is the only island, listed at the path `studio.workflow.yaml`'s
-      // `island` step names (`src: islands/cut-editor.html`).
-      expect(index.islands).toEqual(['islands/cut-editor.html'])
+      // Both islands, listed at the paths `studio.workflow.yaml`'s `island` steps name
+      // (`src: islands/cut-editor.html`, `src: islands/blog-editor.html`).
+      expect(index.islands).toEqual(['islands/blog-editor.html', 'islands/cut-editor.html'])
       expect(existsSync(join(out, 'islands/cut-editor.html'))).toBe(true)
+      expect(existsSync(join(out, 'islands/blog-editor.html'))).toBe(true)
 
       // …and all five scripts, at the paths the `script` steps name.
       expect(index.scripts).toEqual(SCRIPT_NAMES.map((name) => `scripts/${name}.js`))

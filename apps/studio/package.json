@@ -6,6 +6,7 @@
   "exports": {
     "./lib/*": "./src/lib/*.ts",
     "./components/Studio/CutEditor": "./src/components/Studio/CutEditor.tsx",
+    "./components/Studio/MarkdownBody": "./src/components/Studio/MarkdownBody.tsx",
     "./components/Studio/clipPlayer": "./src/components/Studio/clipPlayer.ts",
     "./index.css": "./src/index.css"
   },

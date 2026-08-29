@@ -1,11 +1,14 @@
 /**
  * Talking to the host: the bridge types every island component takes, and the one
- * round trip this island needs before it can show anything — `workflow.sign`.
+ * round trip an island needs before it can show any media — `workflow.sign`.
  *
  * An island is injected as `srcdoc` into an `<iframe sandbox="allow-scripts">`, so its
- * origin is opaque: it carries no cookie and a `/api/uploads/...` URL 401s. The clip,
- * the source's WAV and the contact sheets therefore have to be exchanged for presigned
- * URLs over the bridge (`bffless/workflow-hello`'s `line-viewer` is the reference).
+ * origin is opaque: it carries no cookie and a `/api/uploads/...` URL 401s. A clip, a
+ * source's WAV, a contact sheet or a blog frame therefore has to be exchanged for a
+ * presigned URL over the bridge (`bffless/workflow-hello`'s `line-viewer` is the
+ * reference). Shared by every island under `islands/` — `cut-editor` signs its media
+ * up front with `useSigned`; `blog-editor` signs the post's frames the same way and its
+ * sibling candidates on demand with `signPath`.
  */
 import { useEffect, useState } from 'react'
 
@@ -60,6 +63,34 @@ export interface Signed {
 const EMPTY: Signed = { urls: {}, error: null }
 
 /**
+ * Presign ONE path on the host. Every failure mode — a tool `isError`, a rejected
+ * promise, a success with no usable URL — comes back as `error` rather than a throw,
+ * so a caller signing many paths at once can keep whatever else signed.
+ */
+export async function signPath(
+  bridge: IslandBridge,
+  path: string,
+): Promise<{ path: string; url?: string; error?: string }> {
+  try {
+    const result = await bridge.callServerTool({
+      name: 'workflow.sign',
+      arguments: { path },
+    })
+    if (result.isError) {
+      return { path, error: resultText(result) || `workflow.sign failed for ${path}` }
+    }
+    const url = result.structuredContent?.url
+    if (typeof url !== 'string' || url === '') {
+      const detail = resultText(result)
+      return { path, error: detail || `workflow.sign returned no url for ${path}` }
+    }
+    return { path, url }
+  } catch (error: unknown) {
+    return { path, error: failureText(error) }
+  }
+}
+
+/**
  * Presign `paths` on the host, all at once. Every failure mode — a tool `isError`, a
  * rejected promise, a success with no usable URL — becomes a visible `error` rather
  * than a silently blank `<video>`; whatever else signed still renders, because the
@@ -86,27 +117,7 @@ export function useSigned(bridge: IslandBridge, paths: string[], enabled = true)
     // A superseded delivery's response must not clobber the current one.
     let cancelled = false
 
-    void Promise.all(
-      list.map(async (path): Promise<{ path: string; url?: string; error?: string }> => {
-        try {
-          const result = await bridge.callServerTool({
-            name: 'workflow.sign',
-            arguments: { path },
-          })
-          if (result.isError) {
-            return { path, error: resultText(result) || `workflow.sign failed for ${path}` }
-          }
-          const url = result.structuredContent?.url
-          if (typeof url !== 'string' || url === '') {
-            const detail = resultText(result)
-            return { path, error: detail || `workflow.sign returned no url for ${path}` }
-          }
-          return { path, url }
-        } catch (error: unknown) {
-          return { path, error: failureText(error) }
-        }
-      }),
-    ).then((results) => {
+    void Promise.all(list.map((path) => signPath(bridge, path))).then((results) => {
       if (cancelled) return
       const urls: Record<string, string> = {}
       for (const result of results) if (result.url) urls[result.path] = result.url

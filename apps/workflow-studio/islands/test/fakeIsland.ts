@@ -29,7 +29,7 @@
  *   `isError` result rather than a rejection (04), and a rejection, which is what a
  *   transport failure reads as.
  */
-import type { IslandBridge, ToolResult } from '../cut-editor/useSigned'
+import type { IslandBridge, ToolResult } from '../lib/useSigned'
 
 export interface ToolCall {
   name: string

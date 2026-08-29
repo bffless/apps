@@ -30,7 +30,7 @@ import {
   useSigned,
   type FileRef,
   type IslandBridge,
-} from './useSigned'
+} from '../lib/useSigned'
 
 // ---------------------------------------------------------------------------
 // The step's `with`, narrowed
