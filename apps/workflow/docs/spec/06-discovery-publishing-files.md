@@ -161,7 +161,11 @@ standalone UI can ship the same four with its own prefix):
 - `POST /api/workflow/files/register` `{ path }` → verifies the object, returns the
   **File ref** `{ path, name, contentType, size, url }`;
 - `GET /api/uploads/workflows/[...path]` → `file_serve_handler`, `auth_required`, Range-aware
-  (video seeking), `Content-Disposition: attachment` when `?download=1`. (Live-verified at M1:
+  (video seeking). The rule also passes `download: request.query.download`, which asks CE for
+  `Content-Disposition: attachment; filename="<original_name>"` on `?download=1` — **not yet in
+  effect**: that config key needs [bffless/ce#714](https://github.com/bffless/ce/pull/714), which
+  is open at the time of writing, and a CE without it ignores the key and serves inline (apps#362).
+  Bytes and `Range` are unaffected either way. (Live-verified at M1:
   CE's `file_serve_handler` derives the object from a `/api/uploads/<subDir>/` request path
   only, and that is also the `publicPath` `presigned_upload` mints — so the serve route is
   CE's, not a `/api/workflow/files/` one, and a File ref's `url` is `/api/uploads/` + `path`.)
