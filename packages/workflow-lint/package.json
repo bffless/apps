@@ -1,6 +1,6 @@
 {
   "name": "@bffless/workflow-lint",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
   "description": "Parser, schema validation, expression engine and static checks for BFFless Workflow YAML (spec: apps/workflow/docs/spec/)",
