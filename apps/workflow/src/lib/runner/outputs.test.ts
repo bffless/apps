@@ -190,6 +190,10 @@ describe('validateValue — the closed vocabulary (02)', () => {
       }),
     ).toBe(true)
     expect(validateValue('file', undefined, 'bare-path-not-a-ref')).toBe(false)
+    // The strict reading is the shared shape guard (`./fileRef`, which only
+    // promises path/name/url) *plus* contentType/size — a value that merely
+    // names a file is not a `file` output (apps#379).
+    expect(validateValue('file', undefined, { path: 'p', name: 'n', url: '/u' })).toBe(false)
   })
 
   it('wraps validation for list: true', () => {

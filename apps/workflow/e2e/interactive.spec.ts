@@ -79,7 +79,7 @@ test('interactive hello runs an island step end to end against the mock backend'
   const tiles = form.getByTestId('tile-picker').getByTestId('tile')
   await expect(tiles).toHaveCount(1)
   await tiles.first().click()
-  await expect(tiles.first()).toHaveAttribute('aria-checked', 'true')
+  await expect(tiles.first()).toHaveAttribute('aria-pressed', 'true')
 
   // The `markdown` field's preview renders the *evaluated* default — the
   // heading is markdown the field carried, not text the form typed out.

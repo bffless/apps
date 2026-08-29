@@ -25,6 +25,7 @@
  */
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import { evalDeep, buildContexts } from '../contexts'
+import { isFileRefLike } from '../fileRef'
 import type { Definition, RunEvent, RunState, Step, StepKey } from '../types'
 import { obj, succeededEvent, validateDeclared } from './declared'
 
@@ -156,12 +157,6 @@ function withFileRefs(
   return upgraded
 }
 
-function isFileRefLike(value: unknown): value is { path: string; name: string; url: string } {
-  if (typeof value !== 'object' || value === null) return false
-  const v = value as Record<string, unknown>
-  return typeof v.path === 'string' && typeof v.name === 'string' && typeof v.url === 'string'
-}
-
 /**
  * What the form is *shown with* — its `with` evaluated against the run so far
  * (title, description, fields with their `default`/`options` expressions
@@ -227,7 +222,11 @@ export function formFieldDefs(a: {
 }): Record<string, InputDef> {
   const fields = fieldsOf(a.step)
   const names = Object.keys(fields)
-  if (!names.some((name) => typeof obj(fields[name]).options === 'string')) return fields
+  // Shallow-copied even when there is nothing to evaluate: `fieldsOf` reads
+  // straight out of `step.raw`, and handing a caller the definition's own
+  // fields object would let a UI-side edit (or a future normalisation pass)
+  // write through to the parsed workflow every later render reads.
+  if (!names.some((name) => typeof obj(fields[name]).options === 'string')) return { ...fields }
 
   const contexts = buildContexts(a.def, a.state, {
     job: a.job,

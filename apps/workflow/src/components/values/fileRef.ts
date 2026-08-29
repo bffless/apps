@@ -1,10 +1,13 @@
 /**
- * The single UI-side File-ref guard: every component that has to decide
+ * The UI-side name for the File-ref guard: every component that has to decide
  * whether an `unknown` value is a File ref (ValueView's `file` dispatch,
  * StepPane, RunOutputs, RunsPage) imports this one, so they cannot drift
- * apart. The runner has its own copy in `lib/runner/outputs.ts` because
- * `lib/runner/**` is pure and may not import from `components/` (spec 09) —
- * that one stays behind the fence, and this one is the only guard above it.
+ * apart. It is a **re-export**, not a copy: the guard itself lives below the
+ * purity fence (`lib/runner/fileRef`), because `lib/runner/**` may not import
+ * from `components/` (spec 09) and the modules down there need the same rule —
+ * the option-value reading (`inputConstraints`), the `form` adapter's File-ref
+ * round trip, and the strict `type: file` check (`runner/outputs`) that adds
+ * `contentType`/`size` on top of it.
  *
  * A `file`-declared value only needs to actually look like a File ref before
  * FileCard trusts it: the dispatch site (`ValueView`) can't verify an
@@ -15,14 +18,10 @@
  * accepts is a *string*, not a safe one: FileCard runs it through
  * `lib/url`'s `isSafeUrl` before it reaches an attribute.
  */
-import type { FileRef } from '../../lib/runner/types'
+import { isFileRefLike } from '../../lib/runner/fileRef'
 import type { ValueDecl } from '../../lib/valueDecl'
 
-export function isFileRef(value: unknown): value is FileRef {
-  if (typeof value !== 'object' || value === null) return false
-  const v = value as Record<string, unknown>
-  return typeof v.path === 'string' && typeof v.name === 'string' && typeof v.url === 'string'
-}
+export { isFileRefLike as isFileRef } from '../../lib/runner/fileRef'
 
 /**
  * A bare `${{ … }}` output carries no type, so `outputDecls` resolves it to
@@ -37,7 +36,7 @@ export function isFileRef(value: unknown): value is FileRef {
  * apart is exactly how `poster_view` came out as a file card.
  */
 export function withFileRefValue(decl: ValueDecl, value: unknown): ValueDecl {
-  return decl.type === 'json' && !decl.list && decl.render === undefined && isFileRef(value)
+  return decl.type === 'json' && !decl.list && decl.render === undefined && isFileRefLike(value)
     ? { type: 'file' }
     : decl
 }

@@ -399,6 +399,27 @@ describe('formFieldDefs (03: `options` may be an expression)', () => {
     expect(fields.size?.options).toEqual(['s', 'm'])
   })
 
+  // The fast path (no field carries an expression) used to hand back the
+  // definition's *own* `with.fields` object, so a caller that added or
+  // replaced a field wrote through to the parsed workflow every later render
+  // reads (apps#379).
+  it('returns a copy, not the definition\'s own fields object', () => {
+    const literal = toDefinition({
+      name: 'Literal',
+      jobs: {
+        j: { steps: [{ id: 'f', uses: 'form', with: { fields: { size: { type: 'choice', options: ['s'] } } } }] },
+      },
+    }) as Definition
+    const step = stepOf(literal, 'j', 'f')
+    const args = { step, def: literal, state: { ...confirmState(), steps: {} }, job: 'j', index: 0 }
+
+    const fields = formFieldDefs(args)
+    delete fields.size
+    fields.injected = { type: 'string' }
+
+    expect(Object.keys(formFieldDefs(args))).toEqual(['size'])
+  })
+
   it('gives a field no choices at all when the expression is not a list', () => {
     const fields = formFieldDefs({
       step: stepOf(COVERS, 'pick', 'choose'),
