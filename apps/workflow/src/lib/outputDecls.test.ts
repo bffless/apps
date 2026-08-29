@@ -49,6 +49,17 @@ describe('stepOutputDecl', () => {
     expect(stepOutputDecl(step('confirm', 'review'), 'report')).toEqual({ type: 'markdown' })
   })
 
+  // apps#440: the viewer reads `format: textarea` to draw a block, so the
+  // hint has to survive the trip from the YAML to the `ValueDecl`.
+  it('carries a string output\'s `format` through to the renderer', () => {
+    const say = step('greet', 'say')
+    const withFormat = {
+      ...say,
+      raw: { ...say.raw, outputs: { note: { type: 'string', format: 'textarea' } } },
+    } as typeof say
+    expect(stepOutputDecl(withFormat, 'note')).toEqual({ type: 'string', format: 'textarea' })
+  })
+
   it('is json for the bare `response` of a pipeline step with no outputs map', () => {
     expect(stepOutputDecl(step('flaky', 'boom'), 'response')).toEqual({ type: 'json' })
   })

@@ -869,6 +869,29 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* The chip's block form (02, apps#440): a long or multi-line string — a
+   prompt, a script, a transcript line. Same ink and surface as the chip, card
+   corners instead of a pill's, and the newlines kept. */
+.value-text {
+  display: block;
+  max-width: 100%;
+  padding: 12px 14px;
+  color: var(--ink-2);
+  background-color: var(--surface-dim);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A block in a list takes the whole row; the chips around it keep wrapping. */
+.value-list-item:has(> .value-text) {
+  flex-basis: 100%;
+}
+
 .value-origin {
   padding: 2px 8px;
   color: var(--ink-mute);
@@ -882,6 +905,11 @@ button {
   gap: 10px;
   align-items: baseline;
   color: var(--ink-mute);
+}
+
+/* The block form has no flex gap to seat the Download link with. */
+.value-text > .value-unavailable-download {
+  margin-left: 10px;
 }
 
 .value-unavailable-download,

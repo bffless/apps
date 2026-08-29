@@ -133,6 +133,84 @@ describe('ValueView', () => {
     expect(chips[2].textContent).toBe('gamma')
   })
 
+  // apps#440: `.chip` is a pill (`border-radius: 999px`); a 2 KB prompt in a
+  // pill wraps to twenty lines and the radius turns into an ellipse. The
+  // chip/block rule (02): `format: textarea`, a newline, or > 120 characters
+  // makes a string a `.value-text` block; a short scalar stays a chip.
+  describe('chip or block (02)', () => {
+    it('renders a short string as a chip', () => {
+      const { container } = render(<ValueView decl={{ type: 'string' }} value="ten chars." />)
+      expect(container.querySelector('.chip')?.textContent).toBe('ten chars.')
+      expect(container.querySelector('.value-text')).toBeNull()
+    })
+
+    it('renders a format: textarea string as a block, however short', () => {
+      const { container } = render(
+        <ValueView decl={{ type: 'string', format: 'textarea' }} value="short" />,
+      )
+      expect(container.querySelector('.value-text')?.textContent).toBe('short')
+      expect(container.querySelector('.chip')).toBeNull()
+    })
+
+    it('renders a multi-line string as a block, with the newlines kept', () => {
+      const { container } = render(
+        <ValueView decl={{ type: 'string' }} value={'line one\nline two'} />,
+      )
+      expect(container.querySelector('.value-text')?.textContent).toBe('line one\nline two')
+      expect(container.querySelector('.chip')).toBeNull()
+    })
+
+    it('renders a string longer than 120 characters as a block, and one of exactly 120 as a chip', () => {
+      const atLimit = 'x'.repeat(120)
+      const { container: chip } = render(<ValueView decl={{ type: 'string' }} value={atLimit} />)
+      expect(chip.querySelector('.chip')?.textContent).toBe(atLimit)
+
+      const past = 'x'.repeat(121)
+      const { container: block } = render(<ValueView decl={{ type: 'string' }} value={past} />)
+      expect(block.querySelector('.value-text')?.textContent).toBe(past)
+      expect(block.querySelector('.chip')).toBeNull()
+    })
+
+    it('applies the rule per item in a list, so long items are blocks beside short chips', () => {
+      const long = 'a prompt '.repeat(20).trim()
+      const { container } = render(
+        <ValueView decl={{ type: 'string', list: true }} value={['tag', long, 'two\nlines']} />,
+      )
+      const items = container.querySelectorAll('.value-list-item')
+      expect(items).toHaveLength(3)
+      expect(items[0].querySelector('.chip')?.textContent).toBe('tag')
+      expect(items[1].querySelector('.value-text')?.textContent).toBe(long)
+      expect(items[2].querySelector('.value-text')?.textContent).toBe('two\nlines')
+    })
+
+    it('keeps number and boolean values as chips', () => {
+      const { container: numberContainer } = render(<ValueView decl={{ type: 'number' }} value={1e21} />)
+      expect(numberContainer.querySelector('.chip')).toBeTruthy()
+      const { container: boolContainer } = render(<ValueView decl={{ type: 'boolean' }} value={true} />)
+      expect(boolContainer.querySelector('.chip')?.textContent).toBe('true')
+      expect(boolContainer.querySelector('.value-text')).toBeNull()
+    })
+
+    it('renders a long payload-unavailable error as a block that still offers Download', () => {
+      const ref: FileRef = {
+        path: 'p',
+        name: 'report.json',
+        contentType: 'application/json',
+        size: 1,
+        url: '/api/uploads/report.json',
+      }
+      const error = 'upstream said: ' + 'the bucket is unreachable, '.repeat(6)
+      render(<ValueView decl={{ type: 'json' }} value={{ $file: ref, $error: error }} />)
+      const note = screen.getByTestId('payload-unavailable')
+      expect(note.classList.contains('value-text')).toBe(true)
+      expect(note.classList.contains('value-unavailable')).toBe(true)
+      expect(note.classList.contains('chip')).toBe(false)
+      expect(within(note).getByRole('link', { name: 'Download' }).getAttribute('href')).toBe(
+        `${ref.url}?download=1`,
+      )
+    })
+  })
+
   it('shows the number chip as String(value) and the boolean chip as true/false', () => {
     const { container: numberContainer } = render(<ValueView decl={{ type: 'number' }} value={42} />)
     expect(numberContainer.querySelector('.chip')?.textContent).toBe('42')
