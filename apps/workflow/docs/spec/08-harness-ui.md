@@ -62,9 +62,8 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 - Interactive steps in `waiting`: the pane **is** the island or the form. An island always opens
   inline; one that declared `display: fullscreen` offers **Expand**, which overlays the same
   pane over the page with the graph collapsed to a strip (Esc / Exit returns) — the iframe is
-  not remounted either way (04 "Display modes"). An island that declared `headless: auto`
-  also offers **Accept** (`island-accept`): submit its current state without editing it
-  (04 "Accept").
+  not remounted either way (04 "Display modes"). There is no per-step accept control: the
+  island's own Done is on screen, and skipping the hand-edit is decided at kickoff (07).
 
 ## Run page sections
 
@@ -98,7 +97,10 @@ registered. Re-run pre-fills from a previous run's `inputs` (file refs reused, n
 Below the inputs, when the workflow has an interactive step that declares `headless:`, a
 run-level **"Don't wait for me"** toggle (`kickoff-unattended`) starts the run `unattended`
 (07): `auto` islands self-submit, `skip` forms skip, undeclared steps still wait. It is not an
-input — it never lands in the run's `inputs`.
+input — it never lands in the run's `inputs`. A narrower version of the same question is an
+ordinary input the workflow wires to one step's `auto-accept:` (07 "Per step") — Studio's
+"Auto-accept the cut edits" (`accept_cuts`, default on) is declared last so it renders directly
+above the toggle as its sibling; it *does* land in `inputs`, which is how Resume remembers it.
 
 ## Past runs
 

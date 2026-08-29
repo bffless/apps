@@ -40,7 +40,6 @@ function fakeHost(mount?: IslandHost['mount']): FakeHost {
     setDisplayMode(mode) {
       host.modes.push(mode)
     },
-    setHeadless() {},
     async sendToolInput(args) {
       host.inputs.push(args)
     },

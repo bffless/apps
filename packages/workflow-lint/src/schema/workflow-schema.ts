@@ -665,6 +665,10 @@ const workflowSchema: Record<string, any> = {
         },
         "headless": {
           "$ref": "#/$defs/headless"
+        },
+        "auto-accept": {
+          "$ref": "#/$defs/expression",
+          "description": "island/form only: when truthy on an interactive run, this step's headless: declaration is applied as an unattended run would (07-headless.md). Requires headless:."
         }
       }
     },
@@ -749,6 +753,10 @@ const workflowSchema: Record<string, any> = {
         },
         "headless": {
           "$ref": "#/$defs/headless"
+        },
+        "auto-accept": {
+          "$ref": "#/$defs/expression",
+          "description": "island/form only: when truthy on an interactive run, this step's headless: declaration is applied as an unattended run would (07-headless.md). Requires headless:."
         }
       }
     },

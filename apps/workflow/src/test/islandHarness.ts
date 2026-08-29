@@ -61,7 +61,7 @@ export const ISLAND_DEF = toDefinition({
 
 export const ISLAND_KEY: StepKey = stepKey('a', 0, 'pick')
 
-/** The same workflow, but its island declares `headless: auto` (07) — the shape Accept is offered on. */
+/** The same workflow, but its island declares `headless: auto` (07) — the shape an unattended step self-drives. */
 export const ISLAND_AUTO_DEF = toDefinition({
   name: 'Island',
   jobs: {
@@ -212,8 +212,6 @@ export interface FakeIslandHost {
   frames: HTMLIFrameElement[]
   teardowns: string[]
   displayModes: IslandDisplayMode[]
-  /** Every `setHeadless` the page made (Accept, apps#432), in order. */
-  headlessChanges: boolean[]
   /** Resolve the oldest pending mount (the island finished `ui/initialize`). */
   settle(): void
   /** Reject the oldest pending mount (an `ISLAND_LOAD`). */
@@ -242,7 +240,6 @@ export function fakeIslandHost(): FakeIslandHost {
     frames: [],
     teardowns: [],
     displayModes: [],
-    headlessChanges: [],
     pending: () => settlers.length,
     settle() {
       const next = settlers.shift()
@@ -273,9 +270,6 @@ export function fakeIslandHost(): FakeIslandHost {
         },
         setDisplayMode(mode) {
           fake.displayModes.push(mode)
-        },
-        setHeadless(headless) {
-          fake.headlessChanges.push(headless)
         },
         async sendToolInput() {
           // A step's island is never re-sent tool-input (apps#370); the pane's

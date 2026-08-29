@@ -38,6 +38,20 @@ export function checkHeadless(def: Definition, sites: ExprSite[]): Finding[] {
       if (step.uses !== 'island' && step.uses !== 'form') continue
       const pointer = `/jobs/${job.id}/steps/${step.index}`
 
+      // `auto-accept` (07) applies the step's own `headless:` declaration on an
+      // interactive run — with no declaration there is nothing to apply, and
+      // the author almost certainly meant the step to self-drive.
+      if (step.raw['auto-accept'] != null && step.raw.headless == null) {
+        findings.push({
+          rule: 'auto-accept-headless',
+          severity: 'error',
+          message:
+            `\`auto-accept\` on ${step.uses} step \`${step.id}\` has no headless: declaration to apply (07); ` +
+            'declare headless: skip | auto',
+          path: `${pointer}/auto-accept`,
+        })
+      }
+
       if (step.raw.headless == null) {
         findings.push({
           rule: 'interactive-headless',

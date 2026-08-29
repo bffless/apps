@@ -27,7 +27,7 @@ import { createIslandHost, IslandMountAbandoned } from '../islands/IslandHost'
 import type { IslandDisplayMode, IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { fetchText, openLink, signFile } from '../islands/hostDeps'
 import { annotateEvent, completeIslandStep, islandInputs } from '../lib/runner/adapters/island'
-import { headlessMode } from '../lib/runner/headless'
+import { headlessMode, unattendedStep } from '../lib/runner/headless'
 import type { HttpJson } from '../lib/runner/adapters/pipeline'
 import type { Definition, RunState, Step, StepKey, StepStatus } from '../lib/runner/types'
 import { runEvent } from './runSlice'
@@ -48,27 +48,13 @@ export interface IslandHandle {
   impl: string
   /** The tool `arguments` — and the step's persisted `inputs`, verbatim (Decision 11). */
   arguments: Record<string, unknown>
+  /**
+   * What the island is told through `hostContext.bffless.headless` (07): it
+   * is driving itself — a headless run, an unattended one, or this step's own
+   * `auto-accept:` (apps#435). Fixed at launch, like `title`: the island reads
+   * the one flag on `ui/initialize` and cannot tell the three apart.
+   */
   headless: boolean
-  /**
-   * The pane may offer **Accept** (07, apps#432): the step declares
-   * `headless: auto` and nobody is driving it already (`headless` is false).
-   * Fixed at launch, like `title`.
-   */
-  acceptable: boolean
-  /**
-   * Accept was pressed. Read as a `useSyncExternalStore` snapshot by the
-   * pane; set once, never cleared — the island is on its way to submitting.
-   */
-  accepted: boolean
-  /**
-   * One step, one click: tell the island it is driving itself, exactly as a
-   * headless run would have on `ui/initialize` — through a
-   * `host-context-changed` carrying `bffless.headless: true` if it is up, or
-   * on the handshake if its mount is still in flight (`IslandHost.setHeadless`
-   * covers both), and on the mount itself if the pane has not called it yet.
-   * Touches nothing on the run: not `unattended`, not `headless`, no row.
-   */
-  accept(): void
   /**
    * `ui/message` lines. Live only — never persisted (Decision 12). Replaced
    * with a fresh array per line, never pushed to: the pane reads it as a
@@ -276,12 +262,14 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
   const host = (a.deps.islandHost ?? createIslandHost)(hostDeps)
 
   // What the island is told through `hostContext.bffless.headless` (07): an
-  // unattended run asks a `headless: auto` island to submit by itself exactly
-  // as a headless run does — the island code is the same either way, and only
-  // ever sees the one flag. (`headlessDecision` has already let the island
-  // through, so a declared `auto` is the only way an unattended run reaches
-  // this; an undeclared island waits for its person and is told nothing.)
-  const selfDriving = a.state.headless || (a.state.unattended && headlessMode(a.step) === 'auto')
+  // unattended run — or the step's own `auto-accept:` (apps#435), which is
+  // the same thing for this one step — asks a `headless: auto` island to
+  // submit by itself exactly as a headless run does; the island code is the
+  // same either way, and only ever sees the one flag. (`headlessDecision` has
+  // already let the island through, so a declared `auto` is the only way an
+  // unattended step reaches this, and `unattendedStep` cannot throw here; an
+  // undeclared island waits for its person and is told nothing.)
+  const selfDriving = a.state.headless || (unattendedStep(a) && headlessMode(a.step) === 'auto')
 
   const handle: IslandHandle = {
     host,
@@ -291,14 +279,6 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
     impl: a.state.impl,
     arguments: args,
     headless: selfDriving,
-    acceptable: !selfDriving && headlessMode(a.step) === 'auto',
-    accepted: false,
-    accept() {
-      if (!handle.acceptable || handle.accepted) return
-      handle.accepted = true
-      bump()
-      host.setHeadless(true)
-    },
     log: [],
     async mount(iframe) {
       try {
@@ -306,9 +286,7 @@ export function launchIslandStep(a: LaunchIslandArgs): LaunchIslandResult {
           impl: a.state.impl,
           src: inputs.src,
           arguments: args,
-          // `handle.headless` itself stays what it was: the frame remounts on
-          // a change to that prop, and Accept must never remount the island.
-          headless: selfDriving || handle.accepted,
+          headless: selfDriving,
           signal: a.signal,
         })
       } catch (err) {

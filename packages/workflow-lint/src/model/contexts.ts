@@ -16,6 +16,7 @@ export const STEP_SLOTS = new Set<Slot['where']>([
   'annotation-if',
   'annotation-message',
   'headless-output',
+  'auto-accept',
 ])
 
 /** Where the most recent pipeline response is readable (01 contexts table). */
