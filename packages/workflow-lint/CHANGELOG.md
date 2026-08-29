@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/bffless/apps/compare/workflow-lint-v1.0.1...workflow-lint-v1.1.0) (2026-08-29)
+
+
+### Features
+
+* **workflow-studio:** the Studio port ([#424](https://github.com/bffless/apps/issues/424)) ([2eee03a](https://github.com/bffless/apps/commit/2eee03a442b11e5d776bfaa803510941b8555a21))
+* **workflow:** per-step `auto-accept` — Studio's "Auto-accept the cut edits" kickoff option replaces the run-page Accept button ([#439](https://github.com/bffless/apps/issues/439)) ([c8d171d](https://github.com/bffless/apps/commit/c8d171d896829a1d15a78be33d6ce0ab630bbc2d)), closes [#435](https://github.com/bffless/apps/issues/435)
+
 ## [1.0.1](https://github.com/bffless/apps/compare/workflow-lint-v1.0.0...workflow-lint-v1.0.1) (2026-08-27)
 
 

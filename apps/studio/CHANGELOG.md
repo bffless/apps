@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0](https://github.com/bffless/apps/compare/studio-v1.12.1...studio-v1.13.0) (2026-08-29)
+
+
+### Features
+
+* **workflow-studio:** blog review island — inline frames, front matter, and Studio's Change-frame picker ([#433](https://github.com/bffless/apps/issues/433)) ([ef62650](https://github.com/bffless/apps/commit/ef62650456e88caac16c332d247871975fda4d44)), closes [#429](https://github.com/bffless/apps/issues/429)
+* **workflow-studio:** the Studio port ([#424](https://github.com/bffless/apps/issues/424)) ([2eee03a](https://github.com/bffless/apps/commit/2eee03a442b11e5d776bfaa803510941b8555a21))
+
+
+### Bug Fixes
+
+* **studio:** sign the saved-scene download as an attachment instead of streaming through file_serve ([#422](https://github.com/bffless/apps/issues/422)) ([d848884](https://github.com/bffless/apps/commit/d848884470f98347d4e53b1756c87011f54526f7)), closes [#421](https://github.com/bffless/apps/issues/421)
+
 ## [1.12.1](https://github.com/bffless/apps/compare/studio-v1.12.0...studio-v1.12.1) (2026-08-28)
 
 
