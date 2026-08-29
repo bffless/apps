@@ -45,10 +45,18 @@ settings, not rule-set JSON).
   | Anthropic provider token | `describe` (`claude-opus-4-6`), `blog` (`claude-opus-4-6`, the enabled writer), `thumbnail/draft` (`claude-sonnet-4-6`) |
 
   These are project-level, so if `bffless/workflow` already runs other implementations,
-  they're shared with this one — set once. Studio pointed its `describe`, `thumbnail/draft`
-  and `blog` steps at skills under `apps/studio/dist/bffless/skills`; this app ships no skills
-  directory, so those steps run on their self-contained system prompts (each says in as many
-  words that its defaults are complete without a skill).
+  they're shared with this one — set once.
+- **Skills need no setup.** Like Studio, the `describe`, `thumbnail/draft` and `blog` steps
+  load a skill (`video-description`, `image-prompts`, `bffless-docs`); unlike Studio, which
+  relied on the project's Skills Source, each step's `skills:` block names the source itself:
+  `alias: workflow-studio` + `path: apps/workflow-studio/dist/.bffless/skills` — the bundle
+  this repo publishes (`scripts/stage.mjs` copies `.bffless/skills/` in; the deploy's `path`
+  input is the prefix). CE resolves the alias inside project `bffless/workflow`, so the rule
+  set — which runs under the HARNESS alias — still reads this implementation's own
+  deployment. Leave the project's Skills Source / Skills Path alone; a per-step alias wins
+  over them, and setting them would only affect implementations that don't name their own.
+  Each system prompt is still complete without its skill, so a missing skill degrades, never
+  fails.
 - **Server video ops enabled** — Admin → Settings → Features → Server video ops, **CE ≥ 0.4.37**
   with `frames` present in the capabilities probe's `probe.ops` (the contact-sheet stage needs
   it; earlier CE has `slice`/`concat`/`extract-audio` but not `frames`). Without it the

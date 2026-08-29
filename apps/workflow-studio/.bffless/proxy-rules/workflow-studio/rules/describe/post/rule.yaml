@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: Export description (sync Claude)
-  description: "POST { script, synopsis } -> SYNC { title, summary }. One Claude completion (ai_handler, no chat/history) that writes the title and description from the final kept script and the director's synopsis. Ported from apps/studio /api/describe: the prompt and system instruction are verbatim; Studio pointed the step at its own `video-description` skill, and the port carries no skills directory - the system prompt's defaults are complete on their own and say so. No paths in or out, so nothing to confine (R129)."
+  description: "POST { script, synopsis } -> SYNC { title, summary }. One Claude completion (ai_handler, no chat/history) that writes the title and description from the final kept script and the director's synopsis. Ported from apps/studio /api/describe: the prompt and system instruction are verbatim; Like Studio, the step loads the `video-description` skill (creator voice, product spellings, YouTube formatting) through `load_skill`; the system prompt's defaults are complete on their own if it cannot be listed. The skill is served from THIS implementation's own bundle: `skills.alias` points CE at the `workflow-studio` alias's deployment (not the harness deployment the rule set runs under) and `skills.path` at the directory `scripts/stage.mjs` copies `.bffless/skills/` to, so the skill ships with every publish and needs no project-level Skills Source. No paths in or out, so nothing to confine (R129)."
   steps:
     - id: prep
       name: prep
@@ -14,6 +14,13 @@ pipeline:
       config:
         mode: completion
         model: claude-opus-4-6
+        # See thumbnail/draft/post/rule.yaml for why `alias` is set.
+        skills:
+          mode: selected
+          alias: workflow-studio
+          path: apps/workflow-studio/dist/.bffless/skills
+          enabled:
+            - video-description
         provider: anthropic
         maxTokens: 2000
         temperature: 0.3

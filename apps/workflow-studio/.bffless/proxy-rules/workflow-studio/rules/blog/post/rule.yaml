@@ -159,6 +159,13 @@ pipeline:
       config:
         condition: steps.prep.ok
         model: claude-opus-4-6
+        # See thumbnail/draft/post/rule.yaml for why `alias` is set.
+        skills:
+          mode: selected
+          alias: workflow-studio
+          path: apps/workflow-studio/dist/.bffless/skills
+          enabled:
+            - bffless-docs
         timeout: 280000
         provider: anthropic
         maxTokens: 64000
@@ -199,4 +206,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Companion blog post: the globally-clocked narration, the scene outline and up to 10 contact sheets go to Claude, which answers with a complete Markdown document (front-matter + body) carrying `frame:<seconds>` image tokens the workflow later resolves to real stills. Refuses (400) any path outside the harness's workflows/ run prefix before a job row exists. Studio pointed this step at its own `bffless-docs` skill; the port carries no skills directory, and the system prompt is self-contained."
+description: "Companion blog post: the globally-clocked narration, the scene outline and up to 10 contact sheets go to Claude, which answers with a complete Markdown document (front-matter + body) carrying `frame:<seconds>` image tokens the workflow later resolves to real stills. Refuses (400) any path outside the harness's workflows/ run prefix before a job row exists. Like Studio, the Claude writer loads the `bffless-docs` skill (the public docs map, for inline links) through `load_skill`; the system prompt is self-contained without it. The skill is served from THIS implementation's own bundle: `skills.alias` points CE at the `workflow-studio` alias's deployment (not the harness deployment the rule set runs under) and `skills.path` at the directory `scripts/stage.mjs` copies `.bffless/skills/` to, so the skill ships with every publish and needs no project-level Skills Source."

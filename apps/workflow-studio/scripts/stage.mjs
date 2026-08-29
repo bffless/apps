@@ -17,7 +17,7 @@
 // Deliberately plain JS, outside every TS project (as hello's build.mjs is): it is the thing
 // that RUNS `tsc`, so it cannot be an input to it. Its behaviour is covered by
 // `src/stage.test.ts`, which runs it for real.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -224,6 +224,22 @@ try {
       throw new Error(`stage.mjs: ${file} still has an import — it would fail in the Worker`)
     }
   }
+
+  // ---------------------------------------------------------------------
+  // Skills — `.bffless/skills/<name>/SKILL.md`, copied verbatim into the bundle so the
+  // rule set's `ai_handler` steps can `load_skill` them (#430). CE lists a step's skills
+  // from a DEPLOYMENT (`<owner>/<repo>/commits/<sha>/<skills.path>/`), and the rules
+  // name this alias (`skills.alias: workflow-studio`) and this exact bundle path
+  // (`skills.path: apps/workflow-studio/dist/.bffless/skills` — the deploy's `path`
+  // input plus the directory written here), so a publish IS the skills deploy. Nested
+  // `.bffless/` survives CE's zip ingestion (the one dot-directory it keeps at any
+  // depth — `.bffless/workflows/index.json` beside it already relies on that), unlike
+  // apps/studio's `dist/bffless/skills`, which predates that rule. The source directory
+  // is a copy of Studio's; `src/skills-drift.test.ts` fails when the two diverge.
+  // ---------------------------------------------------------------------
+  const skillsSrc = join(appDir, '.bffless', 'skills')
+  if (!existsSync(skillsSrc)) throw new Error(`stage.mjs: no skills directory at ${skillsSrc}`)
+  cpSync(skillsSrc, join(out, '.bffless', 'skills'), { recursive: true })
 
   // ---------------------------------------------------------------------
   // .bffless/workflows/index.json + a landing page — `workflow index` lints every workflow

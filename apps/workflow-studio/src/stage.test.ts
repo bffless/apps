@@ -25,6 +25,12 @@ const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 /** The five `script` entries `studio.workflow.yaml` names, sorted as the index lists them. */
 const SCRIPT_NAMES = ['blog-bundle', 'final-script', 'frame-times', 'scene-inputs', 'sheet-plan']
 
+/**
+ * The skills the rules enable, sorted: `thumbnail/draft` → `image-prompts`, `describe` →
+ * `video-description`, `blog` → `bffless-docs` (each rule's `skills.enabled`).
+ */
+const SKILL_NAMES = ['bffless-docs', 'image-prompts', 'video-description']
+
 /** A real build of six Vite entries plus a project-wide `tsc` — minutes, not milliseconds. */
 const BUILD_TIMEOUT = 600_000
 
@@ -68,6 +74,13 @@ describe('scripts/stage.mjs', () => {
 
       // …and all five scripts, at the paths the `script` steps name.
       expect(index.scripts).toEqual(SCRIPT_NAMES.map((name) => `scripts/${name}.js`))
+
+      // The skills the rule set's `ai_handler` steps name (`skills.path:
+      // apps/workflow-studio/dist/.bffless/skills`, `enabled: [<name>]`) ship inside the
+      // bundle, one `<name>/SKILL.md` each — CE lists a skill by exactly that file.
+      for (const name of SKILL_NAMES) {
+        expect(existsSync(join(out, '.bffless/skills', name, 'SKILL.md'))).toBe(true)
+      }
 
       for (const name of SCRIPT_NAMES) {
         const code = readFileSync(join(out, 'scripts', `${name}.js`), 'utf8')

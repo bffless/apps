@@ -18,11 +18,12 @@ Complete and publishable. The tree is:
 
 | Piece | Where | What it is |
 | --- | --- | --- |
-| The workflow | `.bffless/workflows/studio.workflow.yaml` | 11 jobs, upload → short + blog + cover |
+| The workflow | `.bffless/workflows/studio.workflow.yaml` | 9 jobs, upload → short + blog + cover |
 | The backend | `.bffless/proxy-rules/workflow-studio/` | 13 rules over 2 data schemas |
+| The skills | `.bffless/skills/` | Studio's `image-prompts`, `video-description`, `bffless-docs`, verbatim — loaded by the `thumbnail/draft`, `describe` and `blog` rules from this bundle |
 | The `script` steps | `scripts/*.ts` | 5 modules (`sheet-plan`, `scene-inputs`, `final-script`, `frame-times`, `blog-bundle`) |
 | The one island | `islands/cut-editor/` | the `trim` step, mounting Studio's own `CutEditor` |
-| The bundle | `scripts/stage.mjs` | type-check → island → scripts → `workflow index` |
+| The bundle | `scripts/stage.mjs` | type-check → island → scripts → skills → `workflow index` |
 
 `pnpm build` **is** the stager (`node scripts/stage.mjs`), and
 `.github/workflows/deploy-workflow-studio.yml` runs it and hands `dist/` to
