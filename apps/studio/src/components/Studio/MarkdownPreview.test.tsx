@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
+import { MarkdownBody } from './MarkdownBody'
 import { MarkdownPreview } from './MarkdownPreview'
+import { createMermaidDiagram } from './MermaidDiagramView'
 
 describe('MarkdownPreview inline images (issue #70)', () => {
   it('renders a standalone image line as an <img> with its caption shown visibly', () => {
@@ -83,5 +85,76 @@ describe('MarkdownPreview fenced code + mermaid', () => {
     render(<MarkdownPreview markdown={'```mermaid\nBROKEN --> ???\n```'} />)
     expect(await screen.findByText(/Diagram could not be rendered/)).toBeInTheDocument()
     expect(document.querySelector('pre code')?.textContent).toBe('BROKEN --> ???')
+  })
+})
+
+describe('MarkdownPreview GFM tables (issue #441)', () => {
+  const md = [
+    'Fields:',
+    '',
+    '| Field | Type | Required |',
+    '| --- | :---: | ---: |',
+    '| `id` | string | **yes** |',
+    '| note | a \\| b | no |',
+    '',
+    'After.',
+  ].join('\n')
+
+  it('renders a table with a header row, body rows and inline formatting in the cells', () => {
+    render(<MarkdownPreview markdown={md} />)
+    const table = screen.getByRole('table')
+    expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Field', 'Type', 'Required'])
+    expect(within(table).getAllByRole('row')).toHaveLength(3)
+    expect(within(table).getByText('id').tagName).toBe('CODE')
+    expect(within(table).getByText('yes').tagName).toBe('STRONG')
+    expect(within(table).getByText('a | b')).toBeInTheDocument()
+    // No raw row syntax (leading pipes, the delimiter row) leaks into the prose.
+    expect(screen.queryByText(/\| Field/)).toBeNull()
+    expect(screen.queryByText(/---/)).toBeNull()
+    expect(screen.getByText('After.')).toBeInTheDocument()
+  })
+
+  it('honours the delimiter row’s alignment per column', () => {
+    render(<MarkdownPreview markdown={md} />)
+    const [field, type, required] = screen.getAllByRole('columnheader')
+    expect(field).toHaveClass('text-left')
+    expect(type).toHaveClass('text-center')
+    expect(required).toHaveClass('text-right')
+    const cells = screen.getAllByRole('cell')
+    expect(cells[1]).toHaveClass('text-center')
+    expect(cells[2]).toHaveClass('text-right')
+  })
+
+  it('wraps the table in a horizontally scrolling container so a wide one cannot widen the page', () => {
+    render(<MarkdownPreview markdown={md} />)
+    const wrapper = screen.getByRole('table').parentElement
+    expect(wrapper).toHaveClass('overflow-x-auto')
+    expect(wrapper).toHaveClass('max-w-full')
+  })
+})
+
+describe('MermaidDiagram fallbacks (issue #441)', () => {
+  it('falls back to the diagram source with a distinct note when the library cannot be loaded', async () => {
+    const Diagram = createMermaidDiagram(async () => {
+      throw new TypeError('Failed to fetch dynamically imported module')
+    })
+    render(<MarkdownBody markdown={'```mermaid\nflowchart LR\n  A --> B\n```'} diagram={Diagram} />)
+    expect(await screen.findByText(/Diagram renderer could not be loaded/)).toBeInTheDocument()
+    expect(screen.getByText(/Failed to fetch/)).toBeInTheDocument()
+    expect(document.querySelector('pre code')?.textContent).toBe('flowchart LR\n  A --> B')
+    expect(screen.queryByRole('img')).toBeNull()
+  })
+
+  it('loads and initialises the library once for any number of fences, in strict mode', async () => {
+    const initialize = vi.fn()
+    const renderFn = vi.fn(async (id: string) => ({ svg: `<svg data-testid="svg-${id}"></svg>` }))
+    const load = vi.fn(async () => ({ initialize, render: renderFn }))
+    const Diagram = createMermaidDiagram(load)
+    render(<MarkdownBody markdown={'```mermaid\nA --> B\n```\n\n```mermaid\nC --> D\n```'} diagram={Diagram} />)
+    expect(await screen.findAllByRole('img', { name: 'Diagram' })).toHaveLength(2)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(initialize).toHaveBeenCalledTimes(1)
+    expect(initialize).toHaveBeenCalledWith(expect.objectContaining({ securityLevel: 'strict', startOnLoad: false }))
+    expect(renderFn).toHaveBeenCalledTimes(2)
   })
 })

@@ -7,6 +7,7 @@
     "./lib/*": "./src/lib/*.ts",
     "./components/Studio/CutEditor": "./src/components/Studio/CutEditor.tsx",
     "./components/Studio/MarkdownBody": "./src/components/Studio/MarkdownBody.tsx",
+    "./components/Studio/MermaidDiagramView": "./src/components/Studio/MermaidDiagramView.tsx",
     "./components/Studio/clipPlayer": "./src/components/Studio/clipPlayer.ts",
     "./index.css": "./src/index.css"
   },

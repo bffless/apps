@@ -8,12 +8,24 @@
  * **Looks good** submits the post with its tokens intact (a swapped frame is a retimed
  * token). So the suite is about what gets signed and when, the retime surviving the
  * round trip, and the paths a member never sees: a headless run, a failed
- * `workflow.sign`, a token with no capture.
+ * `workflow.sign`, a token with no capture. Plus the two things a post can carry that
+ * the plain form never showed (apps#441): a GFM table, and a ```mermaid fence — whose
+ * library the island fetches from a CDN at runtime, so `./mermaid` is mocked here.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Review } from './App'
 import { createFakeHost, toolError, type FakeHost } from '../test/fakeIsland'
+
+const mermaid = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(async (_id: string, code: string) => {
+    if (/BROKEN/.test(code)) throw new Error('Parse error on line 1')
+    return { svg: '<svg data-testid="mmd-svg"><text>rendered</text></svg>' }
+  }),
+  load: vi.fn(async () => ({ initialize: mermaid.initialize, render: mermaid.render })),
+}))
+vi.mock('./mermaid', () => ({ loadMermaid: mermaid.load }))
 
 const still = (key: string) => `workflows/run/frames/0/still-${key}.jpg`
 const signed = (key: string) => `https://bucket.example/${still(key)}?sig=1`
@@ -248,6 +260,45 @@ describe('the blog review island', () => {
       renderReview(toolInput(), host)
 
       expect(await screen.findByTestId('island-sign-error')).toHaveTextContent('Not connected')
+    })
+  })
+
+  describe('tables and diagrams (apps#441)', () => {
+    const TABLE = ['| Field | Type |', '| --- | :-: |', '| `id` | string |', '| note | text |'].join('\n')
+
+    it('renders a GFM table in the post as a <table> inside a scrolling wrapper', async () => {
+      const host = renderReview(toolInput({ post: `${POST}\n${TABLE}\n` }))
+      const table = screen.getByRole('table')
+      expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Field', 'Type'])
+      expect(within(table).getAllByRole('row')).toHaveLength(3)
+      expect(table.parentElement).toHaveClass('overflow-x-auto')
+      expect(screen.queryByText(/\| Field/)).toBeNull()
+      // The table survives the round trip as the writer's markdown.
+      done()
+      await waitFor(() => expect(host.lastSubmit()).toBeDefined())
+      expect((host.lastSubmit() as { post: string }).post).toContain('| Field | Type |')
+    })
+
+    it('renders a ```mermaid fence as a diagram, loading mermaid once and only when a fence exists', async () => {
+      mermaid.load.mockClear()
+      renderReview(toolInput({ post: `${POST}\n\x60\x60\x60mermaid\nflowchart LR\n  A --> B\n\x60\x60\x60\n` }))
+      expect(await screen.findByTestId('mmd-svg')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Diagram' })).toBeInTheDocument()
+      expect(mermaid.load).toHaveBeenCalledTimes(1)
+      expect(mermaid.initialize).toHaveBeenCalledWith(expect.objectContaining({ securityLevel: 'strict' }))
+    })
+
+    it('never touches the loader for a post without a fence', async () => {
+      mermaid.load.mockClear()
+      renderReview()
+      await waitFor(() => expect(figure('The diff')).toHaveAttribute('src', signed('40')))
+      expect(mermaid.load).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the fence’s source with a note when the diagram will not render', async () => {
+      renderReview(toolInput({ post: '\x60\x60\x60mermaid\nBROKEN --> ???\n\x60\x60\x60\n' }))
+      expect(await screen.findByText(/Diagram could not be rendered/)).toBeInTheDocument()
+      expect(document.querySelector('pre code')?.textContent).toBe('BROKEN --> ???')
     })
   })
 

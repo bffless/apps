@@ -21,15 +21,27 @@
  * capture at all (a fourth recording — `video/frames` seeks three) is said so and shown
  * as one too, because the bundle will leave it out.
  *
+ * A ```mermaid fence renders as a diagram, as it does in Studio — but the library comes
+ * from a pinned CDN URL at runtime (`./mermaid`), never from the bundle, and only when
+ * a post actually has a fence; if it can't be fetched the fence shows its source with a
+ * note (apps#441). A GFM table renders as a table inside a horizontally scrolling
+ * wrapper, so a wide one never widens the column.
+ *
  * Headless (`hostContext.bffless.headless`): the workflow declares this step
  * `headless: skip`, so an unattended run never mounts it. If it ever were mounted
  * unattended, the writer's post is submitted as it came, without signing anything.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MarkdownBody } from 'studio/components/Studio/MarkdownBody'
+import { createMermaidDiagram } from 'studio/components/Studio/MermaidDiagramView'
 import { rewriteFrameTokens, type BlogImageRef } from 'studio/lib/blog'
 import { failureText, resultText, signPath, type IslandBridge } from '../lib/useSigned'
+import { loadMermaid } from './mermaid'
 import { parseArgs, retimeFrameTokens, siblingTimes, timeKey, tokenTimes } from './post'
+
+/** Studio's ```mermaid renderer over the CDN loader — created once, so the library is
+ *  fetched and initialised once per island however many fences the post has. */
+const Diagram = createMermaidDiagram(loadMermaid)
 
 /**
  * A figure-sized stand-in, as a `data:` URL (the one kind of image an opaque-origin
@@ -298,6 +310,7 @@ export function Review({ args, bridge }: ReviewProps): React.JSX.Element {
               onCaptureSiblings={onCaptureSiblings}
               onPreviewFrame={onPreviewFrame}
               onReframe={onReframe}
+              diagram={Diagram}
             />
           </div>
         ) : (
