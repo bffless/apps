@@ -9,12 +9,22 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
+import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
+import { loadWorkflow } from '../lib/runner/definition'
 import { seedFinishedRun } from '../mocks/db'
 import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
 
 const YAML_URL = '/w/hello/.bffless/workflows/hello.workflow.yaml'
+
+/**
+ * How many jobs the graph owes the screen — read off the definition the mock
+ * actually serves, not written down here. `hello.workflow.yaml` lives in
+ * `bffless/workflow-hello` and gains a job whenever that repo grows one
+ * (apps#380); what this page promises is *every* job, not four of them.
+ */
+const HELLO_JOBS = Object.keys(loadWorkflow(helloYaml, 'hello.workflow.yaml').def!.jobs).length
 
 function renderApp(path = '/hello/hello') {
   return render(
@@ -32,7 +42,7 @@ describe('WorkflowPage', () => {
 
     const page = screen.getByRole('main')
     expect(await within(page).findByText('Hello workflow')).toBeInTheDocument()
-    expect(await within(page).findAllByTestId('job')).toHaveLength(4)
+    expect(await within(page).findAllByTestId('job')).toHaveLength(HELLO_JOBS)
     expect(within(page).getByRole('link', { name: 'Start a run' })).toHaveAttribute(
       'href',
       '/hello/hello/run',

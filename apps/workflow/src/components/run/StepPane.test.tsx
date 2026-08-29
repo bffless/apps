@@ -32,14 +32,8 @@ import { makeStore } from '../../store'
 
 // jsdom has no canvas (`ChartView.test.tsx` explains why); this file only
 // needs to know `render: chart` reaches `ChartView`, not that uPlot can
-// actually draw into a headless DOM.
-vi.mock('uplot', () => {
-  class MockUPlot {
-    static paths = { bars: () => undefined }
-    destroy() {}
-  }
-  return { default: MockUPlot }
-})
+// actually draw into a headless DOM — hence the shared inert stub.
+vi.mock('uplot', async () => (await import('../../test/uplotMock')).inertUPlot())
 
 afterEach(() => {
   resetHelloHarness()

@@ -18,12 +18,19 @@
  * call plus the computed series instead. A mapping/value combination that
  * doesn't resolve to a series falls back to `JsonTree`, the same "still show
  * something, honestly" rule every renderer in this directory follows.
+ *
+ * *No canvas at all* falls back the same way (apps#380). uPlot dereferences
+ * `getContext('2d')` without checking it, so a browser with canvas disabled —
+ * a hardened profile, an extension, a privacy setting — would throw out of a
+ * render rather than degrade. The probe below is the one thing standing
+ * between that and a `JsonTree` of the same data: it is what the test suite's
+ * own canvas stubs (`src/test/setup.ts`) exist to satisfy for real.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import { JsonTree } from '../JsonTree'
-
-type ChartKind = 'bar' | 'line'
+import { chartMapping } from './mapping'
+import type { ChartMapping } from './mapping'
 
 /** The chart's paint — the system's ink and hairlines, never a second palette (DESIGN.md). */
 const INK = 'oklch(0.17 0.015 265)'
@@ -31,17 +38,19 @@ const AXIS = 'oklch(0.5 0.012 265)'
 const GRID = 'oklch(0.94 0.006 265)'
 const AXIS_FONT = "11px 'Roboto Mono', ui-monospace, monospace"
 
-interface ChartMapping {
-  x: string
-  y: string
-  kind: ChartKind
-}
-
-function readMapping(mapping: unknown): ChartMapping | null {
-  if (mapping === null || typeof mapping !== 'object') return null
-  const m = mapping as Record<string, unknown>
-  if (typeof m.x !== 'string' || typeof m.y !== 'string') return null
-  return { x: m.x, y: m.y, kind: m.kind === 'bar' ? 'bar' : 'line' }
+/**
+ * Can this document paint a 2d canvas at all? A detached element, so nothing
+ * reaches the page, and no cached answer: the cost is one element per mounted
+ * chart, and a module-level memo would freeze a `false` taken from a stubbed
+ * environment for the life of the tab.
+ */
+function hasCanvas2d(): boolean {
+  if (typeof document === 'undefined') return false
+  try {
+    return document.createElement('canvas').getContext('2d') !== null
+  } catch {
+    return false
+  }
 }
 
 /** `value.rows` for a table-shaped value, `value` itself for a bare array. */
@@ -54,19 +63,8 @@ function extractRows(value: unknown): unknown[] | null {
   return null
 }
 
-/**
- * The `[labels, ys]` uPlot needs, or `null` when `mapping` doesn't name both
- * axes, `value` isn't row-shaped, or any row is missing a numeric `y`. Pure
- * and exported so the malformed-input cases can be asserted without a canvas.
- */
-// `chartSeries` belongs beside `ChartView`, not split into a same-purpose
-// second file just to satisfy fast refresh (same call as `useMediaSeek`,
-// `MediaSeekContext.tsx`) — it's the pure half of this one renderer, tested
-// directly because jsdom has no canvas to exercise it through the DOM.
-// eslint-disable-next-line react-refresh/only-export-components
-export function chartSeries(value: unknown, mapping: unknown): [string[], number[]] | null {
-  const m = readMapping(mapping)
-  if (!m) return null
+/** The `[labels, ys]` for an already-parsed mapping — the half `ChartView` needs, mapping in hand. */
+function seriesFor(value: unknown, m: ChartMapping): [string[], number[]] | null {
   const rows = extractRows(value)
   if (!rows) return null
 
@@ -83,12 +81,33 @@ export function chartSeries(value: unknown, mapping: unknown): [string[], number
   return [labels, ys]
 }
 
-export function ChartView({ value, mapping }: { value: unknown; mapping: unknown }) {
-  const m = readMapping(mapping)
-  const series = chartSeries(value, mapping)
-  const containerRef = useRef<HTMLDivElement | null>(null)
+/**
+ * The `[labels, ys]` uPlot needs, or `null` when `mapping` doesn't name both
+ * axes, `value` isn't row-shaped, or any row is missing a numeric `y`. Pure
+ * and exported so the malformed-input cases can be asserted without a canvas.
+ */
+// `chartSeries` belongs beside `ChartView`, not split into a same-purpose
+// second file just to satisfy fast refresh (same call as `useMediaSeek`,
+// `MediaSeekContext.tsx`) — it's the pure half of this one renderer, tested
+// directly because jsdom has no canvas to exercise it through the DOM.
+// eslint-disable-next-line react-refresh/only-export-components
+export function chartSeries(value: unknown, mapping: unknown): [string[], number[]] | null {
+  const m = chartMapping(mapping)
+  return m ? seriesFor(value, m) : null
+}
 
-  // `chartSeries`/`readMapping` build a fresh array/object literal on
+export function ChartView({ value, mapping }: { value: unknown; mapping: unknown }) {
+  // Parsed once per render and threaded into `seriesFor`: going through the
+  // exported `chartSeries` here would re-read the same mapping a second time
+  // on every render, poll included (apps#380).
+  const m = chartMapping(mapping)
+  const series = m ? seriesFor(value, m) : null
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  // Probed once per mount, during render, so the fallback is the *first* thing
+  // painted rather than a chart container that an effect then has to retract.
+  const [canvas] = useState(hasCanvas2d)
+
+  // `seriesFor`/`chartMapping` build a fresh array/object literal on
   // *every* render, even when `value`/`mapping` are structurally unchanged —
   // `RunPage` polls every 5s while a run is running, re-rendering with a
   // new-but-equal outputs object each poll. Depending the effect on `series`/
@@ -160,10 +179,14 @@ export function ChartView({ value, mapping }: { value: unknown; mapping: unknown
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `seriesKey`/`kind` are the content-equality stand-ins for `series`/`m` explained above; listing `series`/`m` themselves would defeat the whole point (they're new references every render).
   }, [seriesKey, kind])
 
-  if (!series) {
+  if (!series || !canvas) {
     return (
       <div className="renderer-chart" data-testid="renderer" data-render="chart">
-        <p className="note">chart needs mapping.x/mapping.y naming row keys with numeric y values</p>
+        <p className="note">
+          {series
+            ? 'chart needs a canvas — showing the underlying value'
+            : 'chart needs mapping.x/mapping.y naming row keys with numeric y values'}
+        </p>
         <JsonTree value={value} />
       </div>
     )

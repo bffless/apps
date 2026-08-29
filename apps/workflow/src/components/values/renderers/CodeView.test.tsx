@@ -1,6 +1,8 @@
 /**
  * `CodeView` (Task 16, 02): highlighted output for a registered language,
- * escaped plain text (no `hljs-*` spans, no innerHTML) for anything else.
+ * escaped plain text (no `hljs-*` spans, no innerHTML) for anything else —
+ * and, since apps#380, one numbered `.code-line` per source line on both
+ * paths rather than only on the plain one.
  */
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
@@ -32,6 +34,34 @@ describe('CodeView', () => {
     const el = screen.getByTestId('renderer')
     expect(el).toHaveAttribute('data-language', '')
     expect(screen.getByText('plain')).toBeInTheDocument()
+  })
+
+  it('emits one .code-line per source line on the highlighted path', () => {
+    const source = ['const a = 1', 'const b = 2', 'const c = 3'].join('\n')
+    const { container } = render(<CodeView value={source} mapping={{ language: 'javascript' }} />)
+
+    const lines = container.querySelectorAll('.code-line')
+    expect(lines).toHaveLength(3)
+    expect(lines[0].textContent).toBe('const a = 1')
+    expect(lines[2].textContent).toBe('const c = 3')
+    // Still highlighted, not flattened into plain text by the split.
+    expect(container.querySelector('.code-line .hljs-keyword')).toBeTruthy()
+  })
+
+  it('numbers a line that a token span straddles, keeping the span on both halves', () => {
+    const source = '/* one\n   two */\nconst x = 1'
+    const { container } = render(<CodeView value={source} mapping={{ language: 'javascript' }} />)
+
+    const lines = [...container.querySelectorAll('.code-line')]
+    expect(lines).toHaveLength(3)
+    expect(lines[0].querySelector('.hljs-comment')).toBeTruthy()
+    expect(lines[1].querySelector('.hljs-comment')).toBeTruthy()
+    expect(lines.map((el) => el.textContent)).toEqual(['/* one', '   two */', 'const x = 1'])
+  })
+
+  it('emits one .code-line per source line on the plain path too', () => {
+    const { container } = render(<CodeView value={'a\nb'} mapping={{ language: 'cobol' }} />)
+    expect(container.querySelectorAll('.code-line')).toHaveLength(2)
   })
 
   it('stringifies a non-string value before highlighting', () => {
