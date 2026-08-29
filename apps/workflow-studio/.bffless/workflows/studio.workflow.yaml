@@ -263,7 +263,10 @@ jobs:
   blog:
     name: Blog post
     needs: [stitch, describe, per-video, director, sheets]
-    if: ${{ inputs.write_blog }}
+    # An explicit `if` REPLACES the implicit default `success()` (GitHub job-`if` semantics,
+    # spec 01 "Control flow & failure") — a failed/skipped `need` is terminal but not success,
+    # so this job would still run its turn on a failed `per-video` without the `success() &&`.
+    if: ${{ success() && inputs.write_blog }}
     steps:
       - id: write
         uses: pipeline
@@ -322,7 +325,7 @@ jobs:
   cover:
     name: Cover
     needs: [describe, stitch]
-    if: ${{ inputs.cover }}
+    if: ${{ success() && inputs.cover }}
     steps:
       - id: brief
         uses: pipeline
@@ -335,7 +338,7 @@ jobs:
   covers:
     name: Draw two covers
     needs: cover
-    if: ${{ inputs.cover }}
+    if: ${{ success() && inputs.cover }}
     strategy: { matrix: { take: [1, 2] } }
     steps:
       - id: draw
@@ -350,7 +353,7 @@ jobs:
   pick:
     name: Pick a cover
     needs: covers
-    if: ${{ inputs.cover }}
+    if: ${{ success() && inputs.cover }}
     steps:
       - id: pick
         uses: form
