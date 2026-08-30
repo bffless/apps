@@ -15,7 +15,7 @@ vi.mock('../src/fixture.js', () => ({ ensureClip: vi.fn().mockResolvedValue({ pa
 
 import { runDriver } from '../src/driver.js'
 
-const load = () => parseRecord(JSON.parse(readFileSync(new URL('./fixtures/studio-interactive.json', import.meta.url), 'utf8')))
+const load = () => parseRecord(JSON.parse(readFileSync(new URL('./fixtures/studio-headless.json', import.meta.url), 'utf8')))
 const env = { WORKFLOW_EMAIL: 'e', WORKFLOW_PASSWORD: 'p' }
 const out = () => join(tmpdir(), 'workflow-live-test', `sh-${Math.random().toString(36).slice(2)}`)
 
@@ -34,7 +34,7 @@ describe('studioHeadless spend cap', () => {
   })
 
   it('retries once after a driver-fault (exit 2), then succeeds', async () => {
-    const rec = load(); rec.run!.headless = true
+    const rec = load()   // a real headless run record (run.headless already true)
     vi.mocked(runDriver).mockResolvedValueOnce({ code: 2, stdout: '', stderr: '' }).mockResolvedValueOnce({ code: 0, stdout: '', stderr: '', record: rec })
     const report = new Report('studio-headless', 'h')
     const args = parseWalkArgs(['walk', 'studio-headless', '--out', out()])

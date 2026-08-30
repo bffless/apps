@@ -26,13 +26,23 @@ export function checkStudioCommon(rec: RunRecord, r: Checker): void {
   r.expect('D16.wordsNotOffloaded', transcribes.length > 0 && transcribes.every((s) => !isOffloaded(s.outputs?.words) && s.outputs?.words !== undefined), transcribes.map((s) => ({ key: s.key, offloaded: isOffloaded(s.outputs?.words), hasWords: s.outputs?.words !== undefined })))
 }
 
+/**
+ * Follows the live studio.workflow.yaml as of 2026-08-30 (apps#429/#430):
+ * `blog/0/review` (island, skipped with the written post as the headless
+ * fallback), `cover/0/direction` + `cover/0/review` (forms, both skipped),
+ * `cover/0/render` (pipeline, succeeded) — the old `blog/0/edit` and
+ * `pick/0/pick` steps no longer exist.
+ */
 export function checkStudioHeadless(rec: RunRecord, r: Checker): void {
   checkStudioCommon(rec, r)
   r.expect('run.headlessFlag', rec.run?.headless === true, { headless: rec.run?.headless ?? null })
-  const edit: StepRow | undefined = stepByKey(rec, 'blog/0/edit')
-  r.expect('D11.editSkippedWithPost', edit?.status === 'skipped' && typeof edit.outputs?.post === 'string' && edit.outputs.post.length > 0, { status: edit?.status ?? 'absent', postLength: typeof edit?.outputs?.post === 'string' ? edit.outputs.post.length : null })
-  const pick = stepByKey(rec, 'pick/0/pick')
-  r.expect('D11.pickSkippedWithCover', pick?.status === 'skipped' && isFileRef(pick.outputs?.cover), { status: pick?.status ?? 'absent', cover: pick?.outputs?.cover ?? null })
+  const blogReview: StepRow | undefined = stepByKey(rec, 'blog/0/review')
+  r.expect('D11.blogReviewSkippedWithPost', blogReview?.status === 'skipped' && typeof blogReview.outputs?.post === 'string' && blogReview.outputs.post.length > 0, { status: blogReview?.status ?? 'absent', postLength: typeof blogReview?.outputs?.post === 'string' ? blogReview.outputs.post.length : null })
+  const coverDirection: StepRow | undefined = stepByKey(rec, 'cover/0/direction')
+  const coverReview: StepRow | undefined = stepByKey(rec, 'cover/0/review')
+  r.expect('D11.coverFormsSkipped', coverDirection?.status === 'skipped' && coverReview?.status === 'skipped' && coverDirection.outputs != null && coverReview.outputs != null, { directionStatus: coverDirection?.status ?? 'absent', reviewStatus: coverReview?.status ?? 'absent', directionKeys: coverDirection?.outputs ? Object.keys(coverDirection.outputs) : [], reviewKeys: coverReview?.outputs ? Object.keys(coverReview.outputs) : [] })
+  const coverRender: StepRow | undefined = stepByKey(rec, 'cover/0/render')
+  r.expect('cover.rendered', coverRender?.status === 'succeeded' && isFileRef(coverRender.outputs?.cover), { status: coverRender?.status ?? 'absent', cover: coverRender?.outputs?.cover ?? null })
   const trimsAuto = stepsOfJob(rec, 'per-scene').filter((s) => s.step === 'trim')
   r.expect('D7.trimAutoAccepted', trimsAuto.length > 0 && trimsAuto.every((s) => s.status === 'succeeded'), trimsAuto.map((s) => `${s.key}:${s.status}`))
 }

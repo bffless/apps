@@ -1,0 +1,1979 @@
+{
+  "run": {
+    "id": "be74e2b5-091a-4652-9615-a0ce903d9b20",
+    "alias": "workflow",
+    "version": 2,
+    "impl": "workflow-studio",
+    "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+    "inputs": {
+      "cover": true,
+      "language": "en",
+      "direction": "",
+      "recordings": [
+        {
+          "url": "/api/uploads/workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+          "name": "onboarding-rules.mp4",
+          "path": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+          "size": 3563614,
+          "contentType": "video/mp4"
+        }
+      ],
+      "write_blog": true,
+      "accept_cuts": true,
+      "cover_direction": ""
+    },
+    "status": "succeeded",
+    "outputs": {
+      "blog": {
+        "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/bundle/86f4b0b2-9547-4bf7-93a3-69520ac79324-set-up-onboarding-rules-in-bffless-for-automatic-repo-access.zip",
+        "name": "set-up-onboarding-rules-in-bffless-for-automatic-repo-access.zip",
+        "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/bundle/86f4b0b2-9547-4bf7-93a3-69520ac79324-set-up-onboarding-rules-in-bffless-for-automatic-repo-access.zip",
+        "size": 237902,
+        "contentType": "application/zip"
+      },
+      "cover": {
+        "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/cover/0/render/3966cabd-7542-4cce-880c-5e4be9eda0f7-tmpsg35mla2.jpeg",
+        "name": "tmpsg35mla2.jpeg",
+        "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/cover/0/render/3966cabd-7542-4cce-880c-5e4be9eda0f7-tmpsg35mla2.jpeg",
+        "size": 134121,
+        "contentType": "image/jpeg"
+      },
+      "short": {
+        "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/stitch/0/concat/short.mp4",
+        "name": "short.mp4",
+        "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/stitch/0/concat/short.mp4",
+        "size": 8684118,
+        "contentType": "video/mp4"
+      },
+      "title": "Set up onboarding rules in BFFless for automatic repo access",
+      "summary": "In this video I walk through configuring onboarding rules in BFFless so new users automatically get repository view access when they sign up. I create a rule called \"user view access on create\" in the site settings under authentication, set it to trigger on user sign up, and grant view-level access to a selected repository. I also enable public signups and then test the whole flow by creating a new account and browsing the backend at the admin URL to confirm the viewer permissions work as expected.",
+      "chapters": "0:00 Creating an Onboarding Rule\n1:11 Enabling Public Signups\n1:27 Testing the Signup Flow\n1:58 Verifying User Permissions"
+    },
+    "headless": true,
+    "workflow": "studio",
+    "startedAt": 1788099794350,
+    "startedBy": "25464c18-38d5-47f5-8a25-20dea352d7a2",
+    "finishedAt": 1788100016281,
+    "leaseOwner": null,
+    "leaseUntil": null,
+    "unattended": false,
+    "annotations": [],
+    "workflowName": "Long recording to published short",
+    "workflowVersion": "0.0.0",
+    "annotationCounts": {
+      "error": 0,
+      "notice": 0,
+      "warning": 0
+    },
+    "createdAt": "2026-08-30T14:23:15.179Z",
+    "updatedAt": "2026-08-30T14:26:56.424Z"
+  },
+  "steps": [
+    {
+      "id": "0d0601ef-565e-4092-b011-047fce6c8b9a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/bundle",
+      "kind": "script",
+      "step": "bundle",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "zip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/bundle/86f4b0b2-9547-4bf7-93a3-69520ac79324-set-up-onboarding-rules-in-bffless-for-automatic-repo-access.zip",
+          "name": "set-up-onboarding-rules-in-bffless-for-automatic-repo-access.zip",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/bundle/86f4b0b2-9547-4bf7-93a3-69520ac79324-set-up-onboarding-rules-in-bffless-for-automatic-repo-access.zip",
+          "size": 237902,
+          "contentType": "application/zip"
+        },
+        "post": "---\ntitle: Set up onboarding rules in BFFless for automatic repo access\ndescription: Learn how to configure onboarding rules in BFFless so new users automatically receive repository view access the mo…",
+        "srcs": {
+          "images/frame-01.jpg": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-01.jpg",
+          "images/frame-02.jpg": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-02.jpg",
+          "images/frame-03.jpg": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-03.jpg",
+          "images/frame-04.jpg": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-04.jpg",
+          "images/frame-05.jpg": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-05.jpg",
+          "images/frame-06.jpg": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-06.jpg"
+        }
+      },
+      "startedAt": 1788100013420,
+      "finishedAt": 1788100015889,
+      "createdAt": "2026-08-30T14:26:53.577Z",
+      "updatedAt": "2026-08-30T14:26:56.029Z"
+    },
+    {
+      "id": "ac60d4d5-d3c1-43be-899e-03e38269309a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/review",
+      "kind": "island",
+      "step": "review",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "skipped",
+      "attempt": 1,
+      "outputs": {
+        "post": "---\ntitle: Set up onboarding rules in BFFless for automatic repo access\ndescription: Learn how to configure onboarding rules in BFFless so new users automatically receive repository view access the mo…"
+      },
+      "startedAt": null,
+      "finishedAt": 1788100013151,
+      "createdAt": "2026-08-30T14:26:53.260Z",
+      "updatedAt": "2026-08-30T14:26:53.260Z"
+    },
+    {
+      "id": "4228f215-b937-4b65-8cdb-d3946c54b548",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/frames",
+      "kind": "pipeline",
+      "step": "frames",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "srcs": {
+          "frame:27": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-01.jpg",
+          "frame:66": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-02.jpg",
+          "frame:84": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-03.jpg",
+          "frame:122": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-04.jpg",
+          "frame:170": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-05.jpg",
+          "frame:175": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-06.jpg"
+        },
+        "frames": [
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-01.jpg",
+            "name": "frame-01.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-01.jpg",
+            "size": 57796,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-02.jpg",
+            "name": "frame-02.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-02.jpg",
+            "size": 45698,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-03.jpg",
+            "name": "frame-03.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-03.jpg",
+            "size": 42524,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-04.jpg",
+            "name": "frame-04.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-04.jpg",
+            "size": 34752,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-05.jpg",
+            "name": "frame-05.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-05.jpg",
+            "size": 52974,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-06.jpg",
+            "name": "frame-06.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-06.jpg",
+            "size": 50617,
+            "contentType": "image/jpeg"
+          }
+        ],
+        "by_time": {
+          "27": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-01.jpg",
+          "66": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-02.jpg",
+          "84": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-03.jpg",
+          "122": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-04.jpg",
+          "170": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-05.jpg",
+          "175": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/blog/0/frames/frames/0/frame-06.jpg"
+        },
+        "dropped": 0
+      },
+      "startedAt": 1788100008920,
+      "finishedAt": 1788100012917,
+      "createdAt": "2026-08-30T14:26:49.296Z",
+      "updatedAt": "2026-08-30T14:26:52.999Z"
+    },
+    {
+      "id": "e0941203-4585-4983-b376-1cd3a16a05ba",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/times",
+      "kind": "script",
+      "step": "times",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "captures": [
+          {
+            "key": "27",
+            "name": "frame-01.jpg",
+            "time": 27,
+            "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4"
+          },
+          {
+            "key": "66",
+            "name": "frame-02.jpg",
+            "time": 66,
+            "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4"
+          },
+          {
+            "key": "84",
+            "name": "frame-03.jpg",
+            "time": 84,
+            "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4"
+          },
+          {
+            "key": "122",
+            "name": "frame-04.jpg",
+            "time": 122,
+            "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4"
+          },
+          {
+            "key": "170",
+            "name": "frame-05.jpg",
+            "time": 170,
+            "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4"
+          }
+        ]
+      },
+      "startedAt": 1788100008374,
+      "finishedAt": 1788100008661,
+      "createdAt": "2026-08-30T14:26:48.567Z",
+      "updatedAt": "2026-08-30T14:26:49.131Z"
+    },
+    {
+      "id": "a1371c75-67de-45da-a1a8-7adcf7f7630f",
+      "alias": "workflow",
+      "version": 1,
+      "job": "cover",
+      "key": "cover/0/render",
+      "kind": "pipeline",
+      "step": "render",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cover": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/cover/0/render/3966cabd-7542-4cce-880c-5e4be9eda0f7-tmpsg35mla2.jpeg",
+          "name": "tmpsg35mla2.jpeg",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/cover/0/render/3966cabd-7542-4cce-880c-5e4be9eda0f7-tmpsg35mla2.jpeg",
+          "size": 134121,
+          "contentType": "image/jpeg"
+        }
+      },
+      "startedAt": 1788099987529,
+      "finishedAt": 1788099999157,
+      "createdAt": "2026-08-30T14:26:27.673Z",
+      "updatedAt": "2026-08-30T14:26:39.273Z"
+    },
+    {
+      "id": "8d45456b-2697-49ca-aaf2-e8b2f987af25",
+      "alias": "workflow",
+      "version": 1,
+      "job": "cover",
+      "key": "cover/0/review",
+      "kind": "form",
+      "step": "review",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "skipped",
+      "attempt": 1,
+      "outputs": {
+        "prompt": "16:9 YouTube thumbnail, digital illustration\n\nStyle anchor: retro-blueprint — vintage 1970s technical manual aesthetic, parchment background with faint paper grain, hand-drawn ink schematic, single re…"
+      },
+      "startedAt": null,
+      "finishedAt": 1788099987193,
+      "createdAt": "2026-08-30T14:26:27.298Z",
+      "updatedAt": "2026-08-30T14:26:27.298Z"
+    },
+    {
+      "id": "e5688347-6010-4451-b808-573992e15c49",
+      "alias": "workflow",
+      "version": 1,
+      "job": "cover",
+      "key": "cover/0/brief",
+      "kind": "pipeline",
+      "step": "brief",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "prompt": "16:9 YouTube thumbnail, digital illustration\n\nStyle anchor: retro-blueprint — vintage 1970s technical manual aesthetic, parchment background with faint paper grain, hand-drawn ink schematic, single re…"
+      },
+      "startedAt": 1788099966105,
+      "finishedAt": 1788099986903,
+      "createdAt": "2026-08-30T14:26:07.126Z",
+      "updatedAt": "2026-08-30T14:26:26.997Z"
+    },
+    {
+      "id": "a3b637df-91d5-437d-a33c-f83edd27c0be",
+      "alias": "workflow",
+      "version": 1,
+      "job": "cover",
+      "key": "cover/0/direction",
+      "kind": "form",
+      "step": "direction",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "skipped",
+      "attempt": 1,
+      "outputs": {
+        "notes": "",
+        "reference": null
+      },
+      "startedAt": null,
+      "finishedAt": 1788099965900,
+      "createdAt": "2026-08-30T14:26:06.929Z",
+      "updatedAt": "2026-08-30T14:26:06.929Z"
+    },
+    {
+      "id": "8b1c85b8-da54-42aa-86ec-06b00a68b76a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/write",
+      "kind": "pipeline",
+      "step": "write",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "post": "---\ntitle: Set up onboarding rules in BFFless for automatic repo access\ndescription: Learn how to configure onboarding rules in BFFless so new users automatically receive repository view access the mo…"
+      },
+      "startedAt": null,
+      "finishedAt": 1788100007708,
+      "createdAt": "2026-08-30T14:26:06.384Z",
+      "updatedAt": "2026-08-30T14:26:48.191Z"
+    },
+    {
+      "id": "b71fa77f-2599-4246-bbdd-964a3243e514",
+      "alias": "workflow",
+      "version": 1,
+      "job": "describe",
+      "key": "describe/0/describe",
+      "kind": "pipeline",
+      "step": "describe",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "title": "Set up onboarding rules in BFFless for automatic repo access",
+        "summary": "In this video I walk through configuring onboarding rules in BFFless so new users automatically get repository view access when they sign up. I create a rule called \"user view access on create\" in the…"
+      },
+      "startedAt": 1788099956846,
+      "finishedAt": 1788099965397,
+      "createdAt": "2026-08-30T14:25:57.165Z",
+      "updatedAt": "2026-08-30T14:26:05.482Z"
+    },
+    {
+      "id": "a4f30eff-5a1c-499d-b069-8e089f0dfc5f",
+      "alias": "workflow",
+      "version": 1,
+      "job": "stitch",
+      "key": "stitch/0/script",
+      "kind": "script",
+      "step": "script",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "script": "Onboarding rules allow you to promote user privileges when they create an account or perform other actions, such as run a pipeline. This would allow you to send them a welcome email or something like …",
+        "chapters": "0:00 Creating an Onboarding Rule\n1:11 Enabling Public Signups\n1:27 Testing the Signup Flow\n1:58 Verifying User Permissions"
+      },
+      "startedAt": 1788099956008,
+      "finishedAt": 1788099956214,
+      "createdAt": "2026-08-30T14:25:56.178Z",
+      "updatedAt": "2026-08-30T14:25:56.629Z"
+    },
+    {
+      "id": "82ce60e1-4c8c-469a-a245-3128cedc8d75",
+      "alias": "workflow",
+      "version": 1,
+      "job": "stitch",
+      "key": "stitch/0/concat",
+      "kind": "pipeline",
+      "step": "concat",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "short": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/stitch/0/concat/short.mp4",
+          "name": "short.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/stitch/0/concat/short.mp4",
+          "size": 8684118,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788099952252,
+      "finishedAt": 1788099955852,
+      "createdAt": "2026-08-30T14:25:52.535Z",
+      "updatedAt": "2026-08-30T14:25:55.975Z"
+    },
+    {
+      "id": "8664239f-ef23-4346-af21-1bcd170907f6",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/3/assemble",
+      "kind": "pipeline",
+      "step": "assemble",
+      "error": null,
+      "index": 3,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/3/assemble/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/3/assemble/clip.mp4",
+          "size": 3160882,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788099941489,
+      "finishedAt": 1788099952114,
+      "createdAt": "2026-08-30T14:25:42.798Z",
+      "updatedAt": "2026-08-30T14:25:52.197Z"
+    },
+    {
+      "id": "9222deee-4f32-42c2-b167-365a5d5379a8",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/3/trim",
+      "kind": "island",
+      "step": "trim",
+      "error": null,
+      "index": 3,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 214.11,
+            "start": 213.68
+          }
+        ],
+        "keep": [
+          {
+            "end": 61.68000000000001,
+            "start": 0
+          },
+          {
+            "end": 71.561,
+            "start": 62.110000000000014
+          }
+        ]
+      },
+      "startedAt": 1788099940862,
+      "finishedAt": 1788099941340,
+      "createdAt": "2026-08-30T14:25:41.016Z",
+      "updatedAt": "2026-08-30T14:25:42.670Z"
+    },
+    {
+      "id": "cd3ae677-f935-442b-a5ae-e8e0cdd9ddd4",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/3/refine",
+      "kind": "pipeline",
+      "step": "refine",
+      "error": null,
+      "index": 3,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 214.11,
+            "start": 213.68
+          }
+        ],
+        "heard_audio": true
+      },
+      "startedAt": 1788099925195,
+      "finishedAt": 1788099940761,
+      "createdAt": "2026-08-30T14:25:25.864Z",
+      "updatedAt": "2026-08-30T14:25:40.845Z"
+    },
+    {
+      "id": "403c13b7-f64c-4bfe-826c-fb486fd683dd",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/3/inputs",
+      "kind": "script",
+      "step": "inputs",
+      "error": null,
+      "index": 3,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scene_words": [
+          {
+            "end": 152.863,
+            "text": "And",
+            "start": 152.803
+          },
+          {
+            "end": 153.103,
+            "text": "sure",
+            "start": 152.943
+          },
+          {
+            "end": 153.383,
+            "text": "enough,",
+            "start": 153.143
+          },
+          {
+            "end": 153.523,
+            "text": "I",
+            "start": 153.443
+          },
+          {
+            "end": 153.883,
+            "text": "signed",
+            "start": 153.583
+          }
+        ],
+        "word_timings": "152.80 152.86 And\n152.94 153.10 sure\n153.14 153.38 enough,\n153.44 153.52 I\n153.58 153.88 signed\n153.98 154.10 up.\n154.94 155.16 And\n155.74 156.04 now\n156.40 156.48 if\n156.60 156.68 I\n156.76 157.12 wan…",
+        "previous_context": "I'm going to go switch over and click Sign Up. And now I'm going to create a new user. And I'll just call it J5S Viewer 2. Create my account."
+      },
+      "startedAt": 1788099925082,
+      "finishedAt": 1788099925108,
+      "createdAt": "2026-08-30T14:25:25.467Z",
+      "updatedAt": "2026-08-30T14:25:25.752Z"
+    },
+    {
+      "id": "729f0aca-423e-4965-9a80-c2e851a67908",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/3/cut",
+      "kind": "pipeline",
+      "step": "cut",
+      "error": null,
+      "index": 3,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/3/cut/clip.wav",
+          "name": "clip.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/3/cut/clip.wav",
+          "size": 2290424,
+          "contentType": "audio/wav"
+        },
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/3/cut/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/3/cut/clip.mp4",
+          "size": 3252182,
+          "contentType": "video/mp4"
+        },
+        "duration": 71.561
+      },
+      "startedAt": 1788099918200,
+      "finishedAt": 1788099924924,
+      "createdAt": "2026-08-30T14:25:19.531Z",
+      "updatedAt": "2026-08-30T14:25:25.066Z"
+    },
+    {
+      "id": "7c08260c-ecd0-4da5-8c94-6968553cf8cb",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/assemble",
+      "kind": "pipeline",
+      "step": "assemble",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/1/assemble/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/1/assemble/clip.mp4",
+          "size": 1597244,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788099915012,
+      "finishedAt": 1788099925013,
+      "createdAt": "2026-08-30T14:25:19.137Z",
+      "updatedAt": "2026-08-30T14:25:25.172Z"
+    },
+    {
+      "id": "82506a19-36a3-44c1-9e05-5af70cf37bf7",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/2/assemble",
+      "kind": "pipeline",
+      "step": "assemble",
+      "error": null,
+      "index": 2,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/2/assemble/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/2/assemble/clip.mp4",
+          "size": 1191946,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788099913878,
+      "finishedAt": 1788099924317,
+      "createdAt": "2026-08-30T14:25:18.634Z",
+      "updatedAt": "2026-08-30T14:25:24.432Z"
+    },
+    {
+      "id": "d148d3eb-bc77-493f-8825-a38fd487d9aa",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/trim",
+      "kind": "island",
+      "step": "trim",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 84.5,
+            "start": 76.75
+          },
+          {
+            "end": 91.4,
+            "start": 88.9
+          }
+        ],
+        "keep": [
+          {
+            "end": 1.75,
+            "start": 0
+          },
+          {
+            "end": 13.900000000000006,
+            "start": 9.5
+          },
+          {
+            "end": 27,
+            "start": 16.400000000000006
+          }
+        ]
+      },
+      "startedAt": 1788099913864,
+      "finishedAt": 1788099914922,
+      "createdAt": "2026-08-30T14:25:18.413Z",
+      "updatedAt": "2026-08-30T14:25:19.045Z"
+    },
+    {
+      "id": "7bfc6f8a-c7b0-4752-b430-44d15b52d639",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/assemble",
+      "kind": "pipeline",
+      "step": "assemble",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/0/assemble/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/0/assemble/clip.mp4",
+          "size": 2737195,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788099910584,
+      "finishedAt": 1788099918161,
+      "createdAt": "2026-08-30T14:25:14.975Z",
+      "updatedAt": "2026-08-30T14:25:19.411Z"
+    },
+    {
+      "id": "d72d39fc-baa3-47dc-a883-cfc23869422f",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/2/trim",
+      "kind": "island",
+      "step": "trim",
+      "error": null,
+      "index": 2,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 150.1,
+            "start": 130.5
+          }
+        ],
+        "keep": [
+          {
+            "end": 28.5,
+            "start": 0
+          },
+          {
+            "end": 50,
+            "start": 48.099999999999994
+          }
+        ]
+      },
+      "startedAt": 1788099909517,
+      "finishedAt": 1788099913703,
+      "createdAt": "2026-08-30T14:25:13.105Z",
+      "updatedAt": "2026-08-30T14:25:18.178Z"
+    },
+    {
+      "id": "c5478a0b-929d-404c-bed9-b29356a8d939",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/trim",
+      "kind": "island",
+      "step": "trim",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 36.3,
+            "start": 31.8
+          }
+        ],
+        "keep": [
+          {
+            "end": 31.8,
+            "start": 0
+          },
+          {
+            "end": 75,
+            "start": 36.3
+          }
+        ]
+      },
+      "startedAt": 1788099909510,
+      "finishedAt": 1788099910378,
+      "createdAt": "2026-08-30T14:25:09.917Z",
+      "updatedAt": "2026-08-30T14:25:14.754Z"
+    },
+    {
+      "id": "27730555-e985-4047-add7-46d77054b4d9",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/refine",
+      "kind": "pipeline",
+      "step": "refine",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 84.5,
+            "start": 76.75
+          },
+          {
+            "end": 91.4,
+            "start": 88.9
+          }
+        ],
+        "heard_audio": true
+      },
+      "startedAt": 1788099895272,
+      "finishedAt": 1788099913620,
+      "createdAt": "2026-08-30T14:24:55.692Z",
+      "updatedAt": "2026-08-30T14:25:16.673Z"
+    },
+    {
+      "id": "1015a651-84f4-4f49-93a1-bc0925ba16a9",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/inputs",
+      "kind": "script",
+      "step": "inputs",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scene_words": [
+          {
+            "end": 75.726,
+            "text": "and",
+            "start": 75.526
+          },
+          {
+            "end": 76.166,
+            "text": "create",
+            "start": 75.866
+          },
+          {
+            "end": 76.286,
+            "text": "the",
+            "start": 76.206
+          },
+          {
+            "end": 76.566,
+            "text": "rule.",
+            "start": 76.326
+          },
+          {
+            "end": 79.227,
+            "text": "Additionally,",
+            "start": 78.546
+          }
+        ],
+        "word_timings": "75.53 75.73 and\n75.87 76.17 create\n76.21 76.29 the\n76.33 76.57 rule.\n78.55 79.23 Additionally,\n80.41 80.53 you\n80.57 80.71 can\n80.75 80.93 make\n80.95 81.11 your\n81.15 81.47 site,\n82.11 82.25 you\n82.29…",
+        "previous_context": "going to grant repository access to a select repository, and I'm going to make it view access. By default, they're guest access. And so we're going to make it view"
+      },
+      "startedAt": 1788099895175,
+      "finishedAt": 1788099895196,
+      "createdAt": "2026-08-30T14:24:55.249Z",
+      "updatedAt": "2026-08-30T14:24:55.556Z"
+    },
+    {
+      "id": "1c064c15-9310-4b17-a3ec-05f142237d46",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/2/refine",
+      "kind": "pipeline",
+      "step": "refine",
+      "error": null,
+      "index": 2,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 150.1,
+            "start": 130.5
+          }
+        ],
+        "heard_audio": true
+      },
+      "startedAt": 1788099892564,
+      "finishedAt": 1788099909362,
+      "createdAt": "2026-08-30T14:24:53.608Z",
+      "updatedAt": "2026-08-30T14:25:09.694Z"
+    },
+    {
+      "id": "fe319c25-2415-4e0d-8cda-42ad525aa06c",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/refine",
+      "kind": "pipeline",
+      "step": "refine",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 36.3,
+            "start": 31.8
+          }
+        ],
+        "heard_audio": true
+      },
+      "startedAt": 1788099892560,
+      "finishedAt": 1788099909344,
+      "createdAt": "2026-08-30T14:24:53.419Z",
+      "updatedAt": "2026-08-30T14:25:09.482Z"
+    },
+    {
+      "id": "95f4d39b-2ef6-4fa5-a15a-44ce04cd8446",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/2/inputs",
+      "kind": "script",
+      "step": "inputs",
+      "error": null,
+      "index": 2,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scene_words": [
+          {
+            "end": 102.811,
+            "text": "and",
+            "start": 102.711
+          },
+          {
+            "end": 103.111,
+            "text": "view",
+            "start": 102.891
+          },
+          {
+            "end": 103.271,
+            "text": "it.",
+            "start": 103.191
+          },
+          {
+            "end": 103.951,
+            "text": "Let's",
+            "start": 103.791
+          },
+          {
+            "end": 104.091,
+            "text": "see",
+            "start": 103.991
+          }
+        ],
+        "word_timings": "102.71 102.81 and\n102.89 103.11 view\n103.19 103.27 it.\n103.79 103.95 Let's\n103.99 104.09 see\n104.13 104.23 how\n104.27 104.43 that\n104.49 104.81 works.\n106.39 106.71 So\n106.97 107.15 let's\n107.19 107.3…",
+        "previous_context": "go into authentication and Turn on signups by clicking this button, allow public signups. Now anybody can sign up to my website and anybody can actually go into BFF's backend"
+      },
+      "startedAt": 1788099892300,
+      "finishedAt": 1788099892517,
+      "createdAt": "2026-08-30T14:24:53.044Z",
+      "updatedAt": "2026-08-30T14:24:53.336Z"
+    },
+    {
+      "id": "ae54f314-f027-41aa-860b-17e4c1201d42",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/inputs",
+      "kind": "script",
+      "step": "inputs",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scene_words": [
+          {
+            "end": 0.866,
+            "text": "Onboarding",
+            "start": 0.465
+          },
+          {
+            "end": 1.186,
+            "text": "rules",
+            "start": 0.906
+          },
+          {
+            "end": 1.586,
+            "text": "allow",
+            "start": 1.246
+          },
+          {
+            "end": 1.807,
+            "text": "you",
+            "start": 1.646
+          },
+          {
+            "end": 2.087,
+            "text": "to",
+            "start": 1.887
+          }
+        ],
+        "word_timings": "0.47 0.87 Onboarding\n0.91 1.19 rules\n1.25 1.59 allow\n1.65 1.81 you\n1.89 2.09 to\n2.23 2.67 promote\n2.79 3.05 user\n3.09 3.69 privileges\n3.79 3.93 when\n3.95 4.07 they\n4.11 4.35 create\n4.39 4.45 an\n4.49 4…",
+        "previous_context": ""
+      },
+      "startedAt": 1788099892297,
+      "finishedAt": 1788099892504,
+      "createdAt": "2026-08-30T14:24:52.543Z",
+      "updatedAt": "2026-08-30T14:24:53.229Z"
+    },
+    {
+      "id": "89a48e18-6a11-4308-9042-ee5f566152e4",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/2/cut",
+      "kind": "pipeline",
+      "step": "cut",
+      "error": null,
+      "index": 2,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/2/cut/clip.wav",
+          "name": "clip.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/2/cut/clip.wav",
+          "size": 1600248,
+          "contentType": "audio/wav"
+        },
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/2/cut/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/2/cut/clip.mp4",
+          "size": 1721875,
+          "contentType": "video/mp4"
+        },
+        "duration": 50
+      },
+      "startedAt": 1788099885127,
+      "finishedAt": 1788099892136,
+      "createdAt": "2026-08-30T14:24:45.836Z",
+      "updatedAt": "2026-08-30T14:24:52.450Z"
+    },
+    {
+      "id": "34fb7ac0-a8d5-45bf-b387-8127c8c49110",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/cut",
+      "kind": "pipeline",
+      "step": "cut",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/1/cut/clip.wav",
+          "name": "clip.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/1/cut/clip.wav",
+          "size": 864334,
+          "contentType": "audio/wav"
+        },
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/1/cut/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/1/cut/clip.mp4",
+          "size": 3106137,
+          "contentType": "video/mp4"
+        },
+        "duration": 27
+      },
+      "startedAt": 1788099885120,
+      "finishedAt": 1788099895082,
+      "createdAt": "2026-08-30T14:24:45.671Z",
+      "updatedAt": "2026-08-30T14:24:55.160Z"
+    },
+    {
+      "id": "94881779-540a-4e04-a03e-17712a519066",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/cut",
+      "kind": "pipeline",
+      "step": "cut",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/0/cut/clip.wav",
+          "name": "clip.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/0/cut/clip.wav",
+          "size": 2400334,
+          "contentType": "audio/wav"
+        },
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/0/cut/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-scene/0/cut/clip.mp4",
+          "size": 2852374,
+          "contentType": "video/mp4"
+        },
+        "duration": 75
+      },
+      "startedAt": 1788099885116,
+      "finishedAt": 1788099892065,
+      "createdAt": "2026-08-30T14:24:45.442Z",
+      "updatedAt": "2026-08-30T14:24:52.276Z"
+    },
+    {
+      "id": "95db389f-f02e-4f41-8d40-8d883fec66dc",
+      "alias": "workflow",
+      "version": 1,
+      "job": "director",
+      "key": "director/0/scenes",
+      "kind": "pipeline",
+      "step": "scenes",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scenes": {
+          "rows": [
+            {
+              "end": 75,
+              "cuts": [
+                {
+                  "end": 38,
+                  "start": 32
+                }
+              ],
+              "brief": "Show the navigation to settings and the creation of the onboarding rule. Cut the hesitation when naming the rule to keep the pace brisk.",
+              "spans": [
+                {
+                  "end": 75,
+                  "start": 0
+                }
+              ],
+              "start": 0,
+              "title": "Creating an Onboarding Rule",
+              "number": 1,
+              "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+              "sourceIndex": 0
+            },
+            {
+              "end": 102,
+              "cuts": [
+                {
+                  "end": 85,
+                  "start": 79
+                }
+              ],
+              "brief": "Demonstrate turning on public signups. Remove the speaker's false starts when introducing this requirement so the instruction sounds confident.",
+              "spans": [
+                {
+                  "end": 102,
+                  "start": 75
+                }
+              ],
+              "start": 75,
+              "title": "Enabling Public Signups",
+              "number": 2,
+              "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+              "sourceIndex": 0
+            },
+            {
+              "end": 152,
+              "cuts": [
+                {
+                  "end": 148,
+                  "start": 136
+                }
+              ],
+              "brief": "Follow the process of a new user creating an account. Cut the mistake where the speaker enters an incomplete email address and has to correct it.",
+              "spans": [
+                {
+                  "end": 152,
+                  "start": 102
+                }
+              ],
+              "start": 102,
+              "title": "Testing the Signup Flow",
+              "number": 3,
+              "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+              "sourceIndex": 0
+            },
+            {
+              "end": 223.561,
+              "cuts": [
+                {
+                  "end": 216,
+                  "start": 213
+                }
+              ],
+              "brief": "Show the newly created user accessing the admin panel with the correct view-only permissions. Trim the minor stutter near the end of the conclusion.",
+              "spans": [
+                {
+                  "end": 223.561,
+                  "start": 152
+                }
+              ],
+              "start": 152,
+              "title": "Verifying User Permissions",
+              "number": 4,
+              "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+              "sourceIndex": 0
+            }
+          ],
+          "columns": [
+            {
+              "key": "title"
+            },
+            {
+              "key": "source"
+            },
+            {
+              "key": "start",
+              "type": "number"
+            },
+            {
+              "key": "end",
+              "type": "number"
+            }
+          ]
+        },
+        "synopsis": "Learn how to configure onboarding rules in BFFless to automatically grant new users specific repository permissions upon sign-up."
+      },
+      "startedAt": 1788099849295,
+      "finishedAt": 1788099885010,
+      "createdAt": "2026-08-30T14:24:09.503Z",
+      "updatedAt": "2026-08-30T14:24:45.093Z"
+    },
+    {
+      "id": "8287cee2-14e7-4fe7-beee-f1c239a96fcf",
+      "alias": "workflow",
+      "version": 1,
+      "job": "sheets",
+      "key": "sheets/0/sheets",
+      "kind": "pipeline",
+      "step": "sheets",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cols": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "times": [
+          [
+            0.9315041666666667,
+            2.7945125,
+            4.657520833333334,
+            6.520529166666667,
+            8.383537500000001,
+            10.246545833333334,
+            12.109554166666667,
+            13.9725625,
+            15.835570833333334,
+            17.69857916666667,
+            19.5615875,
+            21.424595833333335
+          ],
+          [
+            23.287604166666668,
+            25.1506125,
+            27.013620833333334,
+            28.876629166666667,
+            30.7396375,
+            32.602645833333334,
+            34.46565416666667,
+            36.3286625,
+            38.19167083333333,
+            40.054679166666666,
+            41.9176875,
+            43.78069583333333
+          ],
+          [
+            45.643704166666666,
+            47.5067125,
+            49.36972083333333,
+            51.232729166666665,
+            53.0957375,
+            54.95874583333333,
+            56.821754166666665,
+            58.6847625,
+            60.54777083333334,
+            62.41077916666667,
+            64.2737875,
+            66.13679583333334
+          ],
+          [
+            67.99980416666666,
+            69.8628125,
+            71.72582083333333,
+            73.58882916666667,
+            75.4518375,
+            77.31484583333334,
+            79.17785416666666,
+            81.0408625,
+            82.90387083333333,
+            84.76687916666667,
+            86.6298875,
+            88.49289583333334
+          ],
+          [
+            90.35590416666668,
+            92.2189125,
+            94.08192083333334,
+            95.94492916666667,
+            97.80793750000001,
+            99.67094583333333,
+            101.53395416666667,
+            103.3969625,
+            105.25997083333334,
+            107.12297916666667,
+            108.98598750000001,
+            110.84899583333333
+          ]
+        ],
+        "sheets": [
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-01.jpg",
+            "name": "sheet-01.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-01.jpg",
+            "size": 606066,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-02.jpg",
+            "name": "sheet-02.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-02.jpg",
+            "size": 644203,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-03.jpg",
+            "name": "sheet-03.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-03.jpg",
+            "size": 625113,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-04.jpg",
+            "name": "sheet-04.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-04.jpg",
+            "size": 624854,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-05.jpg",
+            "name": "sheet-05.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-05.jpg",
+            "size": 622600,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-06.jpg",
+            "name": "sheet-06.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-06.jpg",
+            "size": 539655,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-07.jpg",
+            "name": "sheet-07.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-07.jpg",
+            "size": 567203,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-08.jpg",
+            "name": "sheet-08.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-08.jpg",
+            "size": 620052,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-09.jpg",
+            "name": "sheet-09.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-09.jpg",
+            "size": 762913,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-10.jpg",
+            "name": "sheet-10.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-10.jpg",
+            "size": 634678,
+            "contentType": "image/jpeg"
+          }
+        ]
+      },
+      "response": {
+        "last": {
+          "code": null,
+          "error": null,
+          "result": {
+            "cols": [
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3
+            ],
+            "drawn": true,
+            "paths": [
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-01.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-02.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-03.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-04.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-05.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-06.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-07.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-08.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-09.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/sheets/0/sheets/sheets/sheet-10.jpg"
+            ],
+            "times": [
+              [
+                0.9315041666666667,
+                2.7945125,
+                4.657520833333334,
+                6.520529166666667,
+                8.383537500000001,
+                10.246545833333334,
+                12.109554166666667,
+                13.9725625,
+                15.835570833333334,
+                17.69857916666667,
+                19.5615875,
+                21.424595833333335
+              ],
+              [
+                23.287604166666668,
+                25.1506125,
+                27.013620833333334,
+                28.876629166666667,
+                30.7396375,
+                32.602645833333334,
+                34.46565416666667,
+                36.3286625,
+                38.19167083333333,
+                40.054679166666666,
+                41.9176875,
+                43.78069583333333
+              ],
+              [
+                45.643704166666666,
+                47.5067125,
+                49.36972083333333,
+                51.232729166666665,
+                53.0957375,
+                54.95874583333333,
+                56.821754166666665,
+                58.6847625,
+                60.54777083333334,
+                62.41077916666667,
+                64.2737875,
+                66.13679583333334
+              ],
+              [
+                67.99980416666666,
+                69.8628125,
+                71.72582083333333,
+                73.58882916666667,
+                75.4518375,
+                77.31484583333334,
+                79.17785416666666,
+                81.0408625,
+                82.90387083333333,
+                84.76687916666667,
+                86.6298875,
+                88.49289583333334
+              ],
+              [
+                90.35590416666668,
+                92.2189125,
+                94.08192083333334,
+                95.94492916666667,
+                97.80793750000001,
+                99.67094583333333,
+                101.53395416666667,
+                103.3969625,
+                105.25997083333334,
+                107.12297916666667,
+                108.98598750000001,
+                110.84899583333333
+              ],
+              [
+                112.71200416666667,
+                114.5750125,
+                116.43802083333334,
+                118.30102916666667,
+                120.1640375,
+                122.02704583333333,
+                123.89005416666667,
+                125.7530625,
+                127.61607083333334,
+                129.47907916666668,
+                131.3420875,
+                133.20509583333333
+              ],
+              [
+                135.06810416666667,
+                136.9311125,
+                138.79412083333332,
+                140.65712916666666,
+                142.5201375,
+                144.38314583333334,
+                146.24615416666666,
+                148.1091625,
+                149.97217083333334,
+                151.83517916666668,
+                153.69818750000002,
+                155.56119583333333
+              ],
+              [
+                157.42420416666667,
+                159.2872125,
+                161.15022083333335,
+                163.01322916666666,
+                164.8762375,
+                166.73924583333334,
+                168.60225416666668,
+                170.4652625,
+                172.32827083333333,
+                174.19127916666667,
+                176.05428750000002,
+                177.91729583333333
+              ],
+              [
+                179.78030416666667,
+                181.6433125,
+                183.50632083333335,
+                185.36932916666666,
+                187.2323375,
+                189.09534583333334,
+                190.95835416666668,
+                192.8213625,
+                194.68437083333333,
+                196.54737916666667,
+                198.4103875,
+                200.27339583333332
+              ],
+              [
+                202.13640416666667,
+                203.9994125,
+                205.86242083333335,
+                207.72542916666666,
+                209.5884375,
+                211.45144583333334,
+                213.31445416666668,
+                215.17746250000002,
+                217.04047083333333,
+                218.90347916666667,
+                220.7664875,
+                222.62949583333335
+              ]
+            ]
+          },
+          "status": "done"
+        }
+      },
+      "startedAt": 1788099814396,
+      "finishedAt": 1788099849181,
+      "createdAt": "2026-08-30T14:23:34.613Z",
+      "updatedAt": "2026-08-30T14:24:09.275Z"
+    },
+    {
+      "id": "bb3c38d1-ca9c-406d-8b98-e3661e124c83",
+      "alias": "workflow",
+      "version": 1,
+      "job": "plan",
+      "key": "plan/0/plan",
+      "kind": "script",
+      "step": "plan",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "plans": [
+          {
+            "times": [
+              0.9315041666666667,
+              2.7945125,
+              4.657520833333334,
+              6.520529166666667,
+              8.383537500000001,
+              10.246545833333334,
+              12.109554166666667,
+              13.9725625,
+              15.835570833333334,
+              17.69857916666667,
+              19.5615875,
+              21.424595833333335,
+              23.287604166666668,
+              25.1506125,
+              27.013620833333334,
+              28.876629166666667,
+              30.7396375,
+              32.602645833333334,
+              34.46565416666667,
+              36.3286625,
+              38.19167083333333,
+              40.054679166666666,
+              41.9176875,
+              43.78069583333333,
+              45.643704166666666,
+              47.5067125,
+              49.36972083333333,
+              51.232729166666665,
+              53.0957375,
+              54.95874583333333,
+              56.821754166666665,
+              58.6847625,
+              60.54777083333334,
+              62.41077916666667,
+              64.2737875,
+              66.13679583333334,
+              67.99980416666666,
+              69.8628125,
+              71.72582083333333,
+              73.58882916666667,
+              75.4518375,
+              77.31484583333334,
+              79.17785416666666,
+              81.0408625,
+              82.90387083333333,
+              84.76687916666667,
+              86.6298875,
+              88.49289583333334,
+              90.35590416666668,
+              92.2189125,
+              94.08192083333334,
+              95.94492916666667,
+              97.80793750000001,
+              99.67094583333333,
+              101.53395416666667,
+              103.3969625,
+              105.25997083333334,
+              107.12297916666667,
+              108.98598750000001,
+              110.84899583333333,
+              112.71200416666667,
+              114.5750125,
+              116.43802083333334,
+              118.30102916666667,
+              120.1640375,
+              122.02704583333333,
+              123.89005416666667,
+              125.7530625,
+              127.61607083333334,
+              129.47907916666668,
+              131.3420875,
+              133.20509583333333,
+              135.06810416666667,
+              136.9311125,
+              138.79412083333332,
+              140.65712916666666,
+              142.5201375,
+              144.38314583333334,
+              146.24615416666666,
+              148.1091625,
+              149.97217083333334,
+              151.83517916666668,
+              153.69818750000002,
+              155.56119583333333,
+              157.42420416666667,
+              159.2872125,
+              161.15022083333335,
+              163.01322916666666,
+              164.8762375,
+              166.73924583333334,
+              168.60225416666668,
+              170.4652625,
+              172.32827083333333,
+              174.19127916666667,
+              176.05428750000002,
+              177.91729583333333,
+              179.78030416666667,
+              181.6433125,
+              183.50632083333335,
+              185.36932916666666,
+              187.2323375,
+              189.09534583333334,
+              190.95835416666668,
+              192.8213625,
+              194.68437083333333,
+              196.54737916666667,
+              198.4103875,
+              200.27339583333332,
+              202.13640416666667,
+              203.9994125,
+              205.86242083333335,
+              207.72542916666666,
+              209.5884375,
+              211.45144583333334,
+              213.31445416666668,
+              215.17746250000002,
+              217.04047083333333,
+              218.90347916666667,
+              220.7664875,
+              222.62949583333335
+            ],
+            "labels": [
+              "0:00",
+              "0:02",
+              "0:04",
+              "0:06",
+              "0:08",
+              "0:10",
+              "0:12",
+              "0:13",
+              "0:15",
+              "0:17",
+              "0:19",
+              "0:21",
+              "0:23",
+              "0:25",
+              "0:27",
+              "0:28",
+              "0:30",
+              "0:32",
+              "0:34",
+              "0:36",
+              "0:38",
+              "0:40",
+              "0:41",
+              "0:43",
+              "0:45",
+              "0:47",
+              "0:49",
+              "0:51",
+              "0:53",
+              "0:54",
+              "0:56",
+              "0:58",
+              "1:00",
+              "1:02",
+              "1:04",
+              "1:06",
+              "1:07",
+              "1:09",
+              "1:11",
+              "1:13",
+              "1:15",
+              "1:17",
+              "1:19",
+              "1:21",
+              "1:22",
+              "1:24",
+              "1:26",
+              "1:28",
+              "1:30",
+              "1:32",
+              "1:34",
+              "1:35",
+              "1:37",
+              "1:39",
+              "1:41",
+              "1:43",
+              "1:45",
+              "1:47",
+              "1:48",
+              "1:50",
+              "1:52",
+              "1:54",
+              "1:56",
+              "1:58",
+              "2:00",
+              "2:02",
+              "2:03",
+              "2:05",
+              "2:07",
+              "2:09",
+              "2:11",
+              "2:13",
+              "2:15",
+              "2:16",
+              "2:18",
+              "2:20",
+              "2:22",
+              "2:24",
+              "2:26",
+              "2:28",
+              "2:29",
+              "2:31",
+              "2:33",
+              "2:35",
+              "2:37",
+              "2:39",
+              "2:41",
+              "2:43",
+              "2:44",
+              "2:46",
+              "2:48",
+              "2:50",
+              "2:52",
+              "2:54",
+              "2:56",
+              "2:57",
+              "2:59",
+              "3:01",
+              "3:03",
+              "3:05",
+              "3:07",
+              "3:09",
+              "3:10",
+              "3:12",
+              "3:14",
+              "3:16",
+              "3:18",
+              "3:20",
+              "3:22",
+              "3:23",
+              "3:25",
+              "3:27",
+              "3:29",
+              "3:31",
+              "3:33",
+              "3:35",
+              "3:37",
+              "3:38",
+              "3:40",
+              "3:42"
+            ],
+            "source": "workflows/workflow-studio/studio/inputs/697f8dc9-b03a-4fb2-8ddd-2394fa5b934d-onboarding-rules.mp4",
+            "sourceIndex": 0
+          }
+        ]
+      },
+      "startedAt": 1788099814003,
+      "finishedAt": 1788099814232,
+      "createdAt": "2026-08-30T14:23:34.158Z",
+      "updatedAt": "2026-08-30T14:23:34.381Z"
+    },
+    {
+      "id": "ee2745da-c801-4806-af77-8ea39f89c15a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-video",
+      "key": "per-video/0/transcribe",
+      "kind": "pipeline",
+      "step": "transcribe",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "text": "Onboarding rules allow you to promote user privileges when they create an account or perform other actions, such as run a pipeline. This would allow you to send them a welcome email or something like …",
+        "timed": "[0:00] Onboarding rules allow you to promote user privileges when they create an account or perform other actions, such as run a pipeline.\n[0:08] This would allow you to send them a welcome email or s…",
+        "words": [
+          {
+            "end": 0.866,
+            "text": "Onboarding",
+            "start": 0.465,
+            "speaker": null
+          },
+          {
+            "end": 1.186,
+            "text": "rules",
+            "start": 0.906,
+            "speaker": null
+          },
+          {
+            "end": 1.586,
+            "text": "allow",
+            "start": 1.246,
+            "speaker": null
+          },
+          {
+            "end": 1.807,
+            "text": "you",
+            "start": 1.646,
+            "speaker": null
+          },
+          {
+            "end": 2.087,
+            "text": "to",
+            "start": 1.887,
+            "speaker": null
+          }
+        ],
+        "duration": 223.561,
+        "language": "en"
+      },
+      "startedAt": 1788099803411,
+      "finishedAt": 1788099813818,
+      "createdAt": "2026-08-30T14:23:23.612Z",
+      "updatedAt": "2026-08-30T14:23:33.934Z"
+    },
+    {
+      "id": "25a6697a-4008-4f63-8552-b6b5f8bf3889",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-video",
+      "key": "per-video/0/audio",
+      "kind": "pipeline",
+      "step": "audio",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M19GV5DDXBB3QHFN8BHH7896",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-video/0/audio/audio.wav",
+          "name": "audio.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M19GV5DDXBB3QHFN8BHH7896/per-video/0/audio/audio.wav",
+          "size": 7166030,
+          "contentType": "audio/wav"
+        }
+      },
+      "startedAt": 1788099795249,
+      "finishedAt": 1788099803259,
+      "createdAt": "2026-08-30T14:23:15.810Z",
+      "updatedAt": "2026-08-30T14:23:23.391Z"
+    }
+  ]
+}

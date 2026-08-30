@@ -32,12 +32,18 @@ describe('checkStudioCommon', () => {
 })
 
 describe('checkStudioHeadless', () => {
+  it('passes on the real 2026-08-30 headless run', () => {
+    const r = new Report('studio-headless', 'h'); checkStudioHeadless(load('studio-headless.json'), r)
+    const out = r.finish()
+    expect(out.ok, JSON.stringify(out.checks, null, 1)).toBe(true)
+    expect(Object.keys(out.checks)).toEqual(['run.succeeded', 'R.scenesCarrySourceSpans', 'D2.sheetsDrawn', 'trim.keepRecorded', 'outputs.shortBlogCoverAreFileRefs', 'D16.wordsNotOffloaded', 'run.headlessFlag', 'D11.blogReviewSkippedWithPost', 'D11.coverFormsSkipped', 'cover.rendered', 'D7.trimAutoAccepted'])
+  })
   it('requires the headless flag and the skipped forms', () => {
-    const rec = load('studio-interactive.json')   // an interactive run must FAIL the headless check
+    const rec = load('studio-interactive.json')   // an interactive run (old YAML) must FAIL the headless check
     const r = new Report('studio-headless', 'h'); checkStudioHeadless(rec, r)
     const c = r.finish().checks
     expect(c['run.headlessFlag']?.pass).toBe(false)
-    expect(c['D11.editSkippedWithPost']?.pass).toBe(false)
+    expect(c['D11.blogReviewSkippedWithPost']?.pass).toBe(false)   // absent: `blog/0/review` doesn't exist on the old YAML
   })
   it('D7.trimAutoAccepted fails when there are no trim steps', () => {
     const rec = load('studio-interactive.json')
