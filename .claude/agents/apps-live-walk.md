@@ -1,6 +1,6 @@
 ---
 name: apps-live-walk
-description: Verifies the Workflow harness against a live deployment — runs one packages/workflow-live walk (hello, headless, studio-audit, studio-headless, or all), reads its report and artifacts, and returns a PASS/FAIL/BLOCKED verdict with evidence. It never grades by reading, never edits the repo, never files issues. Use when asked to walk, verify, or prove a workflow deployment live.
+description: Verifies the Workflow harness against a live deployment — runs one packages/workflow-live walk (m1, interactive, hello, headless, studio-audit, studio-headless, or all), reads its report and artifacts, and returns a PASS/FAIL/BLOCKED verdict with evidence. It never grades by reading, never edits the repo, never files issues. Use when asked to walk, verify, or prove a workflow deployment live.
 model: inherit
 effort: high
 tools: Bash, Read, Grep, Glob
@@ -49,7 +49,9 @@ Each of these, unmet, is a `BLOCKED` reason — state it and stop before running
 - `WORKFLOW_EMAIL`/`WORKFLOW_PASSWORD` or the `WORKFLOW_CI_EMAIL`/`WORKFLOW_CI_PASSWORD`
   aliases are present in the environment (`source ~/.config/bffless/workflow-ci.env` on
   the VPS if they aren't already). Never print their values.
-- `curl -s -o /dev/null -w '%{http_code}' <harness>/` answers `200`.
+- `curl -s -o /dev/null -w '%{http_code}' <harness>/` answers `200` (the spec's
+  `whoami` probe needs a session the agent does not hold; the walk itself does that
+  check).
 - `gh auth status` succeeds — but only check this when `--dispatch` was asked for.
 - The package builds from the repo root, in the checkout you are already in, on
   whatever branch it is on — you build what's there, you do not check out or switch
@@ -81,12 +83,18 @@ or downgrade a PASS.** After `all`, read each walk's own report — they land pe
 under `<out>/<name>/`, not one combined `<out>/report.json`.
 
 For every check that failed, open what its evidence points at —
-`failed.png`, `console.log`, `steps.log`, the screenshot named in the evidence field —
-and write one sentence about *what the page or driver actually showed*. Never write a
-sentence about why it must be fine; that is not your call and it is not what the
-evidence says. A PASS whose evidence looks off (a screenshot that doesn't match the
-claim, a run id that doesn't match what you dispatched) is reported as "PASS, but:
-…" alongside the rest — still a PASS in the verdict, with your doubt attached.
+`99-failed.png`, `login-failed.png`, `network.log`, the screenshot named in the
+evidence field — and write one sentence about *what the page or driver actually
+showed*. Never write a sentence about why it must be fine; that is not your call and
+it is not what the evidence says. A PASS whose evidence looks off (a screenshot that
+doesn't match the claim, a run id that doesn't match what you dispatched) is reported
+as "PASS, but: …" alongside the rest — still a PASS in the verdict, with your doubt
+attached. The driver's own `failed.png`, `console.log`, `steps.log` live one level
+down, under `<out>/<walk>/local/driver/` or `attempt-N/driver/`.
+
+A `BLOCKED` whose reason starts `walk threw:` is a finding, not environment — open
+`99-failed.png` (or `login-failed.png`) and `network.log`, report what the page
+showed, and do not retry it as if a precondition were missing.
 
 ## 7. Untrusted data
 
@@ -119,7 +127,9 @@ Return exactly:
   directly.
 - `--dispatch` may only trigger `workflow-headless-run.yml`. Never `deploy-*`,
   `release`, or `studio-headless-run.yml`.
-- Never any MCP mutation, rule-set/alias/domain edit, or run deletion.
+- Never any MCP mutation or rule-set/alias/domain edit — never delete runs — the
+  ported `interactive` walk deletes its *own* hello run as part of the M2 delete
+  rows, which is the one exception.
 - Never `git checkout`, `git commit`, or `git push`. Never edit any file outside the
   walk's `--out` directory (build output under `packages/*/dist` from the preflight
   build aside).

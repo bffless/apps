@@ -1,6 +1,6 @@
 import { unzipSync } from 'fflate'
 import { isFileRef, isOffloaded, stepByKey, stepsOfJob, type RunRecord, type StepRow } from '../record.js'
-import type { Checker, Report } from '../report.js'
+import type { Checker } from '../report.js'
 
 export const STUDIO_AUDIT_RUN = 'run_01M17CG3W0YTA4T0ZVRTD88VE7'
 
@@ -47,7 +47,7 @@ export function checkStudioHeadless(rec: RunRecord, r: Checker): void {
   r.expect('D7.trimAutoAccepted', trimsAuto.length > 0 && trimsAuto.every((s) => s.status === 'succeeded'), trimsAuto.map((s) => `${s.key}:${s.status}`))
 }
 
-export function checkBlogZip(bytes: Uint8Array, r: Report): void {
+export function checkBlogZip(bytes: Uint8Array, r: Checker): void {
   let names: string[]
   try { names = Object.keys(unzipSync(bytes)) } catch (e) { return void r.expect('blog.zipReadable', false, String(e)) }
   const frames = names.filter((n) => /^images\/frame-\d+\.jpg$/.test(n))

@@ -33,4 +33,4 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<numb
 const isMain = (() => {
   try { return realpathSync(process.argv[1] ?? '') === realpathSync(fileURLToPath(import.meta.url)) } catch { return false }
 })()
-if (isMain) main(process.argv.slice(2), process.env).then((code) => { process.exitCode = code })
+if (isMain) main(process.argv.slice(2), process.env).then((code) => { process.exitCode = code }).catch((e) => { console.error(String(e)); process.exitCode = 2 })
