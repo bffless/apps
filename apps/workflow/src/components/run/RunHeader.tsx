@@ -87,6 +87,20 @@ export interface RunHeaderProps {
   base: string
   /** Terminal steps against every step the run currently knows about (08). */
   progress?: { done: number; total: number }
+  /**
+   * Copy diagnostics / Attach to run (apps#526). Unlike the `live`-gated
+   * Cancel, the page passes this on **every** run view — the record view is
+   * where diagnostics get asked for. The page owns the payload and both
+   * writes (`useRunDiagnostics`); the header only renders the buttons and
+   * echoes their state, the Delete posture.
+   */
+  diagnostics?: {
+    onCopy: () => void
+    copied: boolean
+    onAttach: () => void
+    attaching: boolean
+    attached: boolean
+  }
   /** This tab is the one driving the run — the Cancel slot only applies here (Task 19). */
   live?: boolean
   /** Present, and rendered as the Cancel button, only while there is a running live run to cancel. */
@@ -124,6 +138,7 @@ export function RunHeader({
   annotations,
   base,
   progress,
+  diagnostics,
   live = false,
   onCancel,
   onDelete,
@@ -174,6 +189,27 @@ export function RunHeader({
           <Link className="button" to={`${base}/file`} state={{ yaml, runId }}>
             View workflow file
           </Link>
+          {diagnostics && (
+            <>
+              <button
+                type="button"
+                className="button"
+                data-testid="run-copy-diagnostics"
+                onClick={diagnostics.onCopy}
+              >
+                {diagnostics.copied ? 'Copied' : 'Copy diagnostics'}
+              </button>
+              <button
+                type="button"
+                className="button"
+                data-testid="run-attach-diagnostics"
+                disabled={diagnostics.attaching}
+                onClick={diagnostics.onAttach}
+              >
+                {diagnostics.attached ? 'Attached' : 'Attach to run'}
+              </button>
+            </>
+          )}
           {live && (
             <span className="page-actions-live" data-testid="run-actions-live">
               {onCancel && (

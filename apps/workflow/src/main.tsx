@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Provider } from 'react-redux'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { installDiagnostics } from './lib/diagnostics'
 import { MOCKS_ENABLED } from './mocks/config'
 import { store } from './store'
 import './index.css'
@@ -36,6 +37,12 @@ function render() {
     </StrictMode>,
   )
 }
+
+// Before anything can fail: the run page's Copy diagnostics / Attach to run
+// (apps#526) reports whatever this buffer caught, and an error that fires
+// before the capture is installed is exactly the kind that never reaches the
+// run record.
+installDiagnostics()
 
 // `finally`, not `then`: a service worker that refuses to register (an
 // unsupported browser, a hard-reload race, a stale worker file) is a reason to

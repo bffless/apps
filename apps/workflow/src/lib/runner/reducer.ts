@@ -233,8 +233,19 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
       })
     }
 
-    case 'run.annotation':
-      return { ...state, annotations: [...state.annotations, event.annotation] }
+    // Append — except that an annotation carrying a `kind` replaces the run's
+    // previous annotation of that kind instead of stacking (apps#526): a second
+    // "Attach to run" is a fresher copy of the same fact, not a new fact. The
+    // persisted row follows for free, since rows.ts patches the whole
+    // post-event array.
+    case 'run.annotation': {
+      const { annotation } = event
+      const kept =
+        annotation.kind === undefined
+          ? state.annotations
+          : state.annotations.filter((a) => a.kind !== annotation.kind)
+      return { ...state, annotations: [...kept, annotation] }
+    }
 
     case 'run.finished':
       return { ...state, status: event.status, outputs: event.outputs, finishedAt: event.at }

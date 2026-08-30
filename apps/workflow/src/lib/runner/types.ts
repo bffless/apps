@@ -9,7 +9,22 @@ export type StepKey = string // `<job>/<index>/<step>`
 
 export interface FileRef { path: string; name: string; contentType: string; size: number; url: string }
 export interface StepError { code: string; message: string; status?: number }
-export interface Annotation { level: 'notice' | 'warning' | 'error'; title?: string; message: string; stepKey?: StepKey }
+/**
+ * `kind` marks a machine-attached annotation the run holds **at most one** of
+ * (apps#526): a `run.annotation` carrying a `kind` replaces the run's previous
+ * annotation of that kind instead of stacking (reducer.ts). `data` is the
+ * machine half — an opaque payload the UI never renders inline
+ * (`AnnotationList` shows `level`/`title`/`message` and ignores the rest);
+ * today's only kind is the run page's client diagnostics attachment.
+ */
+export interface Annotation {
+  level: 'notice' | 'warning' | 'error'
+  title?: string
+  message: string
+  stepKey?: StepKey
+  kind?: 'diagnostics'
+  data?: unknown
+}
 
 export interface StepState {
   key: StepKey; job: string; index: number; stepId: string; kind: StepKind

@@ -169,6 +169,11 @@ function annotations(value: unknown): Annotation[] {
         message,
         ...(optionalStr(a.title) ? { title: str(a.title) } : {}),
         ...(optionalStr(a.stepKey) ? { stepKey: str(a.stepKey) } : {}),
+        // The machine-attached half (apps#526): `kind` only when it is one this
+        // client knows — replace-by-kind needs a value to match on after a
+        // reload — and `data` straight through, an opaque payload by contract.
+        ...(a.kind === 'diagnostics' ? { kind: 'diagnostics' as const } : {}),
+        ...(a.data === undefined ? {} : { data: a.data }),
       },
     ]
   })
