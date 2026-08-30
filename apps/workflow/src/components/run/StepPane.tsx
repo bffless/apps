@@ -359,9 +359,16 @@ export interface StepPaneProps {
   onRun?: () => void
   /** The run's YAML snapshot, for the head's **YAML** drawer (apps#449); absent when the pane has no run source to show. */
   source?: YamlSource
+  /**
+   * Overrides `ImplContext` — only `render: island` outputs read it
+   * (`ValueView`). Deliberately **not** defaulted from `state.impl`: on the
+   * read-only path that is the run row's own claim, and only the page knows
+   * whether discovery vouches for it (apps#364).
+   */
+  impl?: string
 }
 
-export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack, onRun, source }: StepPaneProps) {
+export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack, onRun, source, impl }: StepPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && onBack) {
@@ -499,7 +506,7 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
         {tab === 'Output' && (
           <>
             <Details step={step} declared={declared} />
-            <OutputValues def={def} state={state} step={step} declared={declared} impl={state.impl} />
+            <OutputValues def={def} state={state} step={step} declared={declared} impl={impl} />
             <Trail step={step} scriptLog={scriptLog} />
           </>
         )}
