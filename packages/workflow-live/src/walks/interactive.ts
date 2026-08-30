@@ -40,7 +40,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     if (!/hello/i.test((await impls.textContent()) ?? '')) {
       throw new Error(`hello not listed: ${(await impls.textContent()) ?? ''}`)
     }
-    await page.getByRole('link', { name: /hello/i }).first().click()
+    await page.getByTestId('implementations').getByRole('link', { name: /^hello$/i }).click()
 
     // --- Decision 8: discovery is scoped (only the harness's own project is probed)
     const aliasCalls = s.log.filter((l) => /\/api\/workflow\/aliases/.test(l))

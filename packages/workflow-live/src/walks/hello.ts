@@ -27,15 +27,17 @@ export const hello: Walk = async ({ args, env, report }) => {
     await impls.waitFor({ timeout: 30_000 })
     const probes = s.log.filter((l) => /\/w\/hello\/\.bffless\/workflows\/index\.json/.test(l))
     report.expect('D5.helloDiscoveredViaForwarder', /hello/i.test((await impls.textContent()) ?? '') && probes.some((l) => l.startsWith('200 ')), probes)
-    await page.getByRole('link', { name: /hello/i }).first().click()
+    await page.getByTestId('implementations').getByRole('link', { name: /^hello$/i }).click()
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
     await page.getByTestId('step').first().waitFor()
     await page.getByRole('link', { name: /start a run/i }).click()
     await page.getByTestId('kickoff-form').waitFor()
     await page.getByTestId('kickoff-start').click()
     await page.getByTestId('run-status').waitFor()
-    const runId = page.url().split('/').pop() ?? ''
+    const runUrl = page.url().replace(/\?.*$/, '')
+    const runId = runUrl.split('/').pop() ?? ''
     report.run(runId)
+    report.expect('D5.implIsHello', runUrl.includes('/hello/interactive/'), runUrl)
     // Step 1b — the island step, submitted
     await waitState(page, 'pick/0/choose', 'waiting', 120_000)
     const island = page.locator('[data-testid="island-display"] [data-testid="island-frame"]').contentFrame()
@@ -51,6 +53,10 @@ export const hello: Walk = async ({ args, env, report }) => {
     await page.waitForFunction(() => document.querySelector('[data-testid="run-status"]')?.getAttribute('data-state') === 'succeeded', null, { timeout: 120_000 })
     report.expect('run.succeeded', (await page.getByTestId('run-status').getAttribute('data-state')) === 'succeeded', runId)
     await s.shot('07-succeeded')
+    // The last click (review/0/confirm) left the page on that step card
+    // (`?step=review/0/confirm`) — `run-outputs` only renders on the run card.
+    await page.goto(runUrl, { waitUntil: 'networkidle' })
+    await page.getByTestId('run-outputs').waitFor({ timeout: 30_000 })
     // Step 1c — Decision 6: the poster viewer draws a presigned URL, credential-less
     const outputs = page.getByTestId('run-outputs')
     const posterViewer = outputs.locator('[data-output="poster_view"] [data-testid="renderer"][data-render="island"] [data-testid="island-frame"]')

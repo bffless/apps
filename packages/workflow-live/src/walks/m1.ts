@@ -16,7 +16,7 @@ export const m1: Walk = async ({ args, env, report }) => {
     const impls = page.getByTestId('implementations')
     await impls.waitFor({ timeout: 30_000 })
     report.expect('discovery.listsHello', /hello/i.test((await impls.textContent()) ?? ''), await impls.textContent())
-    await page.getByRole('link', { name: /hello/i }).first().click()
+    await page.getByTestId('implementations').getByRole('link', { name: /^hello$/i }).click()
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Hello workflow' }).click()
     await page.getByTestId('step').first().waitFor()
     await page.getByRole('link', { name: /start a run/i }).click()
