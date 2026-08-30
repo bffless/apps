@@ -23,6 +23,7 @@ function handler({ request }) {
   function no(msg) {
     return {
       ok: false, notOk: true, error: msg,
+      failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }),
       input: '', outputPrefix: '', times: [], labels: [], executor: '',
     }
   }
@@ -58,6 +59,7 @@ function handler({ request }) {
     ok: true,
     notOk: false,
     error: '',
+    failJson: '',
     input: input,
     outputPrefix: outPrefix + '/sheets',
     times: times,

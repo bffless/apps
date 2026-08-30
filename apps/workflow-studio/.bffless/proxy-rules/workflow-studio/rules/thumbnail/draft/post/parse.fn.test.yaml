@@ -10,6 +10,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         promptJson: '{"prompt":"16:9 YouTube thumbnail. Vintage technical manual."}'
   - name: strips a markdown fence the model wrapped the prompt in
@@ -22,6 +23,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         promptJson: '{"prompt":"16:9 YouTube thumbnail."}'
   - name: unwraps a JSON object the model returned instead of plain text
@@ -34,6 +36,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         promptJson: '{"prompt":"16:9 YouTube thumbnail."}'
   - name: still reads the legacy replicate output shape
@@ -46,6 +49,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         promptJson: '{"prompt":"16:9 thumbnail."}'
   - name: an empty answer is an error envelope (R120), never an empty prompt
@@ -58,6 +62,7 @@ cases:
         ok: false
         notOk: true
         error: The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.
+        failJson: '{"error":"The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.","code":"AI_UNREADABLE"}'
         # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
         # the rule's fail branch emits THIS value, not a hard-coded one.
         code: AI_UNREADABLE
@@ -70,6 +75,7 @@ cases:
         ok: false
         notOk: true
         error: The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.
+        failJson: '{"error":"The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.","code":"AI_UNREADABLE"}'
         # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
         # the rule's fail branch emits THIS value, not a hard-coded one.
         code: AI_UNREADABLE

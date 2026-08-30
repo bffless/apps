@@ -44,20 +44,25 @@ function handler({ steps, stepErrors }) {
   // rather than an empty prompt the renderer would happily draw from. ce#662
   // forward-compat: the failed step's code would ride in `code`.
   if (!text) {
-    // R137: the envelope's `code` IS this value - the rule's fail branch emits
-    // {{steps.parse.code}} rather than a hard-coded string, so a real CE code survives
-    // once ce#662 lands and 'AI_UNREADABLE' is only the fallback when there is none.
+    // R137: the envelope's `code` IS this value - the rule's fail branch renders
+    // `failJson`, which carries it, rather than a hard-coded string, so a real CE code
+    // survives once ce#662 lands and 'AI_UNREADABLE' is only the fallback when there is
+    // none. failJson is the whole 502 body, serialized HERE (apps#525): a stepErrors
+    // message with a `"` or a `\` would break a template-assembled JSON literal, and
+    // a {{…}} template cannot escape it.
     var err = stepErrors && stepErrors.draft;
     var code = (err && typeof err.code === 'string' && err.code) ? err.code : 'AI_UNREADABLE';
+    var msg = 'The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.';
     return {
       ok: false,
       notOk: true,
       code: code,
-      error: 'The AI thumbnail writer did not return a prompt - it may be temporarily overloaded. Please try again.',
+      error: msg,
       promptJson: '',
+      failJson: JSON.stringify({ error: msg, code: code }),
     };
   }
 
   // JSON.stringify guarantees correct escaping regardless of the content.
-  return { ok: true, notOk: false, code: '', error: '', promptJson: JSON.stringify({ prompt: s(text) }) };
+  return { ok: true, notOk: false, code: '', error: '', promptJson: JSON.stringify({ prompt: s(text) }), failJson: '' };
 }

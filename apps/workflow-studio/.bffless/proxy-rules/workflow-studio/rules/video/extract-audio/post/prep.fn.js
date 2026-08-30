@@ -23,13 +23,14 @@ function handler({ request }) {
   var input = safe(body.source)
   var outPrefix = safe(body.outPrefix)
   if (!input || !outPrefix) {
-    return { ok: false, notOk: true, error: REFUSAL, input: '', outPrefix: '', executor: '' }
+    return { ok: false, notOk: true, error: REFUSAL, failJson: JSON.stringify({ error: REFUSAL, code: 'BAD_REQUEST' }), input: '', outPrefix: '', executor: '' }
   }
 
   return {
     ok: true,
     notOk: false,
     error: '',
+    failJson: '',
     input: input,
     outPrefix: outPrefix,
     // CE omits the executor for '' (its selector does `requested?.trim() || default`),

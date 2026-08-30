@@ -5,18 +5,23 @@ function handler({ steps, deployment, stepErrors }) {
     // ce#662 forward-compat, as in video/extract-audio/post/check.fn.js: the code
     // travels as its own field (R120). SYNC rule, so there is no job row - the
     // envelope is what the 502 branch answers with.
-    // R137: the envelope's `code` IS this value - the rule's fail branch emits
-    // {{steps.shape.code}} rather than a hard-coded string, so a real CE code survives
-    // once ce#662 lands and 'RENDER_FAILED' is only the fallback when there is none.
+    // R137: the envelope's `code` IS this value - the rule's fail branch renders
+    // `failJson`, which carries it, rather than a hard-coded string, so a real CE code
+    // survives once ce#662 lands and 'RENDER_FAILED' is only the fallback when there is
+    // none. failJson is the whole 502 body, serialized HERE (apps#525): a stepErrors
+    // message with a `"` or a `\` would break a template-assembled JSON literal, and
+    // a {{…}} template cannot escape it.
     var err = stepErrors && (stepErrors.store || stepErrors.generate)
     var code = (err && typeof err.code === 'string' && err.code) ? err.code : 'RENDER_FAILED'
     var detail = (err && (err.code || err.message)) ? ' (' + [err.code, err.message].filter(Boolean).join(': ') + ')' : ''
+    var message = 'The thumbnail could not be rendered or stored. Please try again.' + detail
     return {
       ok: false,
       notOk: true,
-      error: 'The thumbnail could not be rendered or stored. Please try again.' + detail,
+      error: message,
       code: code,
       pathJson: '',
+      failJson: JSON.stringify({ error: message, code: code }),
     }
   }
   // file_upload_handler writes <owner>/<repo>/uploads/<subDir>/<uuid>-<name>; the
@@ -24,5 +29,5 @@ function handler({ steps, deployment, stepErrors }) {
   // uploads root back off. JSON.stringify keeps the response body escaped.
   var prefix = deployment.owner + '/' + deployment.repo + '/uploads/'
   var key = path.indexOf(prefix) === 0 ? path.slice(prefix.length) : path
-  return { ok: true, notOk: false, error: '', code: '', pathJson: JSON.stringify({ path: key }) }
+  return { ok: true, notOk: false, error: '', code: '', pathJson: JSON.stringify({ path: key }), failJson: '' }
 }

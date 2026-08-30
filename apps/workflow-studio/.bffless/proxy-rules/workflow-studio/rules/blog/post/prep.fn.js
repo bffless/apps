@@ -20,7 +20,7 @@ function handler({ request, deployment }) {
   var REFUSAL = 'Refused - every path must be an uploads-relative path under workflows/'
 
   function no(msg) {
-    var bad = { ok: false, notOk: true, error: msg }
+    var bad = { ok: false, notOk: true, error: msg, failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }) }
     for (var b = 0; b < 10; b++) bad['path' + b] = ''
     bad.transcript = ''
     bad.duration = 0
@@ -29,7 +29,7 @@ function handler({ request, deployment }) {
     return bad
   }
 
-  var out = { ok: true, notOk: false, error: '' }
+  var out = { ok: true, notOk: false, error: '', failJson: '' }
   // R147: `sheets` is ONE nested list per SOURCE, in `per-video` order - the workflow's
   // `sheets` matrix job collects one entry per plan - and an entry may be null or empty:
   // a recording with no spoken audio plans no times, so its contact-sheet step is

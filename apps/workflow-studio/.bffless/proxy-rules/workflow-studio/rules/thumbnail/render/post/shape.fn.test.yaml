@@ -12,6 +12,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         pathJson: '{"path":"workflows/run-1/covers-1/8f0c-cover.png"}'
   - name: a missing store output is an error envelope (R120)
@@ -23,6 +24,7 @@ cases:
         ok: false
         notOk: true
         error: The thumbnail could not be rendered or stored. Please try again.
+        failJson: '{"error":"The thumbnail could not be rendered or stored. Please try again.","code":"RENDER_FAILED"}'
         # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
         # the rule's fail branch emits THIS value, not a hard-coded one.
         code: RENDER_FAILED

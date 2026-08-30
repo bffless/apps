@@ -10,6 +10,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         descriptionJson: '{"title":"Add cookie auth to a static site with BFFless","summary":"In this video I add login to a static site with BFFless proxy rules."}'
   - name: tolerates fences and commentary around the JSON
@@ -22,6 +23,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         descriptionJson: '{"title":"A title","summary":"Two sentences. Really."}'
   - name: still reads the legacy replicate output shape
@@ -34,6 +36,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         code: ""
         descriptionJson: '{"title":"T","summary":"S"}'
   - name: an unreadable answer is an error envelope (R120), never an empty title
@@ -46,6 +49,7 @@ cases:
         ok: false
         notOk: true
         error: The AI description writer did not return a usable title and summary - it may be temporarily overloaded. Please try again.
+        failJson: '{"error":"The AI description writer did not return a usable title and summary - it may be temporarily overloaded. Please try again.","code":"AI_UNREADABLE"}'
         # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
         # the rule's fail branch emits THIS value, not a hard-coded one.
         code: AI_UNREADABLE
@@ -58,6 +62,7 @@ cases:
         ok: false
         notOk: true
         error: The AI description writer did not return a usable title and summary - it may be temporarily overloaded. Please try again.
+        failJson: '{"error":"The AI description writer did not return a usable title and summary - it may be temporarily overloaded. Please try again.","code":"AI_UNREADABLE"}'
         # R137: the static fallback the fn supplies when `stepErrors` gives nothing;
         # the rule's fail branch emits THIS value, not a hard-coded one.
         code: AI_UNREADABLE

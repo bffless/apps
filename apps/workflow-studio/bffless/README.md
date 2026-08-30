@@ -151,13 +151,16 @@ Things that work, but not as well as they should. None blocks the first success.
   and keeps polling until the step's timeout rather than failing fast. The rules avoid throwing
   on the paths that matter; a rule that starts throwing degrades to a slow timeout, not a clear
   error.
-- **Sync failure envelopes are hand-built JSON.** A sync rule has no job row to write an error
-  onto (R120), so each one answers with a second, `notOk`-gated `response_handler` whose `body` is
-  a JSON literal written out in the rule YAML with `{{steps.parse.error}}` interpolated into it —
-  not `JSON.stringify` of an object, the way the success bodies are built. Every message the rules
-  themselves produce is quote-free and single-line, so this is correct today; a message that ever
-  carried a `"` or a newline through from upstream would emit invalid JSON, and the shape has to
-  be edited in each of the rules separately.
+- **Sync failure envelopes are function-built (`failJson`), not hand-built JSON.** A sync rule
+  has no job row to write an error onto (R120), so each one answers with a second, `notOk`-gated
+  `response_handler`. Its `body` used to be a JSON literal written out in the rule YAML with
+  `{{steps.<x>.error}}` interpolated into it — correct only while every message stayed quote-free
+  and single-line; one `"` or newline carried through from upstream would have emitted invalid
+  JSON. Since apps#525 the failing step serializes the whole envelope itself
+  (`failJson: JSON.stringify({ error, code })`, `''` on the ok path) and the rule renders it
+  verbatim with `"{{{steps.<x>.failJson}}}"` — the stringified-field shape the success bodies
+  already use (`pathJson`/`promptJson`) and the fix apps#381 settled for `whoami` — so the
+  escaping is `JSON.stringify`'s own, whatever the message carries.
 
 ## First-success checkpoint
 

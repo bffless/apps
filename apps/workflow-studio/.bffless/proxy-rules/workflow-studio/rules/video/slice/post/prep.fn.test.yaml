@@ -16,6 +16,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         input: workflows/run-1/inputs/a.mp4
         outPrefix: workflows/run-1/cut
         spans:
@@ -41,6 +42,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         input: workflows/run-1/cut/clip.mp4
         outPrefix: workflows/run-1/assemble
         spans:
@@ -63,6 +65,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         input: ""
         outPrefix: ""
         spans: []
@@ -83,6 +86,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - spans must be a non-empty list of { start, end } seconds with end > start
+        failJson: '{"error":"Refused - spans must be a non-empty list of { start, end } seconds with end > start","code":"BAD_REQUEST"}'
         input: ""
         outPrefix: ""
         spans: []
@@ -104,6 +108,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - spans must be a non-empty list of { start, end } seconds with end > start
+        failJson: '{"error":"Refused - spans must be a non-empty list of { start, end } seconds with end > start","code":"BAD_REQUEST"}'
         input: ""
         outPrefix: ""
         spans: []
