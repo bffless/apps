@@ -1,3 +1,11 @@
+/**
+ * Studio audit: Task 25 Step 3 — read the by-hand interactive Studio run
+ * (`STUDIO_AUDIT_RUN`, or `--run <id>` once that run is deleted) back through
+ * the harness API and assert the common Studio contract (checkStudioCommon)
+ * plus `run.interactiveFlag`. No kickoff is made — this walk spends nothing.
+ * It signs in through a real browser session (openSession) to read the run,
+ * so the try/finally closes it and a throw is screenshotted as `99-failed`.
+ */
 import { STUDIO_AUDIT_RUN, checkStudioCommon } from '../checks/studio.js'
 import { credentials } from '../env.js'
 import { parseRecord } from '../record.js'

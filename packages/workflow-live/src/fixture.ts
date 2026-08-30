@@ -1,10 +1,8 @@
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures')
 const CLIP = join(FIXTURES, 'onboarding-rules.mp4')
@@ -17,13 +15,19 @@ export function sha256File(path: string): Promise<string> {
   })
 }
 
-export async function ensureClip(override?: string): Promise<{ path: string; sha256: string }> {
+export interface FixturePaths { clip: string; sha: string }
+
+/**
+ * The committed clip is the only source: there is no download fallback (the
+ * `workflow-live-fixtures` release was never made — see fixtures/README.md).
+ * A missing or tampered clip throws; the walk turns that into `BLOCKED`.
+ * `paths` exists so the throws can be tested against a temp file pair.
+ */
+export async function ensureClip(override?: string, paths: FixturePaths = { clip: CLIP, sha: SHA }): Promise<{ path: string; sha256: string }> {
   if (override) return { path: override, sha256: '' }
-  if (!existsSync(CLIP)) {
-    await promisify(execFile)('gh', ['release', 'download', 'workflow-live-fixtures', '--repo', 'bffless/apps', '-p', 'onboarding-rules.mp4', '-D', FIXTURES])
-  }
-  const pinned = (await readFile(SHA, 'utf8')).trim()
-  const actual = await sha256File(CLIP)
-  if (actual !== pinned) throw new Error(`fixture clip sha256 mismatch: ${actual} ≠ pinned ${pinned} (${CLIP})`)
-  return { path: CLIP, sha256: actual }
+  if (!existsSync(paths.clip)) throw new Error(`fixture clip missing: ${paths.clip} — see fixtures/README.md`)
+  const pinned = (await readFile(paths.sha, 'utf8')).trim()
+  const actual = await sha256File(paths.clip)
+  if (actual !== pinned) throw new Error(`fixture clip sha256 mismatch: ${actual} ≠ pinned ${pinned} (${paths.clip})`)
+  return { path: paths.clip, sha256: actual }
 }

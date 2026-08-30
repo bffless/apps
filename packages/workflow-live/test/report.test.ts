@@ -1,5 +1,8 @@
+import { readFile, rm, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { Report, exitCodeOf, toMarkdown } from '../src/report.js'
+import { Report, exitCodeOf, toMarkdown, writeReport } from '../src/report.js'
 
 describe('Report', () => {
   it('passes when every check passes', () => {
@@ -104,5 +107,21 @@ describe('Report', () => {
     expect(out.checks.toString).toEqual({ pass: true, evidence: 1 })
     expect(out.checks.constructor).toEqual({ pass: false, evidence: 2 })
     expect(() => r.expect('toString', true)).toThrow(/duplicate check name: toString/)
+  })
+
+  it('writeReport writes report.json and report.md into the out dir, creating it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'workflow-live-report-'))
+    try {
+      const out = join(dir, 'nested', 'walk')
+      const r = new Report('hello', 'https://x.test')
+      r.expect('a', true, 1); r.run('run_1')
+      const report = r.finish()
+      const paths = await writeReport(out, report)
+      expect(paths).toEqual({ json: join(out, 'report.json'), md: join(out, 'report.md') })
+      expect(JSON.parse(await readFile(paths.json, 'utf8'))).toEqual(report)
+      expect(await readFile(paths.md, 'utf8')).toBe(toMarkdown(report))
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
