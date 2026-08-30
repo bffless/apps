@@ -3,7 +3,7 @@ import { toDefinition } from '@bffless/workflow-lint/definition'
 import helloYaml from '../../../docs/spec/examples/hello.workflow.yaml?raw'
 import { loadWorkflow } from './definition'
 import type { Definition, FileRef } from './types'
-import { coerceOutputs, OutputTypeError, validateValue, type RegisterFile } from './outputs'
+import { coerceOutputs, OutputTypeError, REGISTER_CONCURRENCY, validateValue, type RegisterFile } from './outputs'
 
 const hello = loadWorkflow(helloYaml, 'hello.workflow.yaml').def as Definition
 
@@ -205,5 +205,56 @@ describe('validateValue — the closed vocabulary (02)', () => {
   it('passes null for any (non-required) slot', () => {
     expect(validateValue('number', undefined, null)).toBe(true)
     expect(validateValue('file', true, null)).toBe(true)
+  })
+})
+
+describe('coerceOutputs — a list of files registers with bounded concurrency', () => {
+  const decls = {
+    frames: { type: 'file', list: true, value: '${{ response.result.paths }}' },
+  } as unknown as Record<string, import('@bffless/workflow-lint/definition').OutputDecl>
+
+  it(`never has more than ${REGISTER_CONCURRENCY} registrations in flight, and keeps declaration order`, async () => {
+    const paths = Array.from({ length: 13 }, (_, i) => `workflows/x/frames/frame-${String(i + 1).padStart(3, '0')}.jpg`)
+    let inFlight = 0
+    let peak = 0
+    const started: string[] = []
+    // Every call parks until released, so the peak measures the *cap*, not the
+    // speed of a fake that resolves before the next one is even started.
+    const release: Array<() => void> = []
+    const registerFile: RegisterFile = async (path) => {
+      started.push(path)
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await new Promise<void>((resolve) => release.push(resolve))
+      inFlight -= 1
+      return { path, name: path.split('/').pop() ?? path, contentType: 'image/jpeg', size: 1, url: `/api/uploads/${path}` }
+    }
+
+    const pending = coerceOutputs(decls, { response: { result: { paths } } }, registerFile)
+    // Let a wave start, check the cap, release one: exactly one more may start.
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+    while (started.length < paths.length) {
+      await tick()
+      expect(inFlight).toBeLessThanOrEqual(REGISTER_CONCURRENCY)
+      release.shift()?.()
+    }
+    await tick()
+    while (release.length > 0) release.shift()?.()
+    const out = await pending
+
+    expect(peak).toBe(REGISTER_CONCURRENCY)
+    expect(started).toEqual(paths)
+    expect((out.frames as FileRef[]).map((f) => f.path)).toEqual(paths)
+  })
+
+  it('fails the whole list on the first registration error, and the error is the registrar\'s own', async () => {
+    const paths = ['workflows/x/a.jpg', 'workflows/x/b.jpg']
+    const registerFile: RegisterFile = async (path) => {
+      if (path.endsWith('b.jpg')) throw new Error('registerFile workflows/x/b.jpg: files/register answered 500')
+      return { path, name: 'a.jpg', contentType: 'image/jpeg', size: 1, url: `/api/uploads/${path}` }
+    }
+    await expect(coerceOutputs(decls, { response: { result: { paths } } }, registerFile)).rejects.toThrow(
+      'registerFile workflows/x/b.jpg: files/register answered 500',
+    )
   })
 })

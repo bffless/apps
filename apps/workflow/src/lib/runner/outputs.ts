@@ -33,6 +33,44 @@ export class OutputTypeError extends Error {
 export type RegisterFile = (path: string) => Promise<FileRef>
 
 /**
+ * How many registrations a `list: true` file output keeps in flight at once.
+ * Each is one `files/register` call; a pipeline can answer with a long list
+ * (Studio's blog `frames` returns ~170 stills), and firing them all together
+ * is what turned two transient 500s into a failed step (apps#490). Four is
+ * enough to keep a long list quick without shaping a burst.
+ */
+export const REGISTER_CONCURRENCY = 4
+
+/**
+ * `items.map(fn)` with at most `limit` calls pending at once. Results keep
+ * `items`' order; the first rejection rejects the whole thing once the calls
+ * already in flight have settled (no new call is started after a failure).
+ */
+async function mapConcurrent<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length)
+  let next = 0
+  // A holder rather than a nullable `let`: the workers assign it inside their
+  // own async closures, which TS's control-flow narrowing cannot see through.
+  const failure: { hit: boolean; err: unknown } = { hit: false, err: undefined }
+  const worker = async () => {
+    while (next < items.length && !failure.hit) {
+      const i = next++
+      try {
+        results[i] = await fn(items[i] as T)
+      } catch (err) {
+        if (!failure.hit) {
+          failure.hit = true
+          failure.err = err
+        }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  if (failure.hit) throw failure.err
+  return results
+}
+
+/**
  * The **strict** File-ref check — a `type: file` value promises `contentType`
  * and `size` as well as the three keys that name the file, because everything
  * downstream (the cards, a job output, an offloaded payload) reads them. Built
@@ -117,7 +155,7 @@ async function materialize(
   if (type !== 'file' || raw === null) return raw
   if (list) {
     if (!Array.isArray(raw)) return raw
-    return Promise.all(raw.map((v) => materializeFile(v, registerFile)))
+    return mapConcurrent(raw, REGISTER_CONCURRENCY, (v) => materializeFile(v, registerFile))
   }
   return materializeFile(raw, registerFile)
 }

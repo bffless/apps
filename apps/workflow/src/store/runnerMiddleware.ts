@@ -23,6 +23,7 @@ import type { RunStore } from '../lib/runStore'
 import { buildRunContexts, evalOutputDecl } from '../lib/runner/contexts'
 import { completeFormStep, formInitialValues, formInputs } from '../lib/runner/adapters/form'
 import { runPipelineStep } from '../lib/runner/adapters/pipeline'
+import { RegisterFileError, withRegisterRetry } from '../lib/runner/registerRetry'
 import type { Clock, HttpJson, StepRuntime } from '../lib/runner/adapters/pipeline'
 import type { StepScope } from '../lib/runner/adapters/declared'
 import { evaluateSkipOutputs, headlessMode, unattendedStep } from '../lib/runner/headless'
@@ -210,7 +211,7 @@ export function createRegisterFile(http: HttpJson): RunnerDeps['registerFile'] {
       method: 'POST',
       body: { impl: state.impl, workflow: state.workflow, scope: `runs/${state.runId}/${key}`, storageKey: path },
     })
-    if (!res.ok) throw new Error(`registerFile: files/register answered ${res.status}`)
+    if (!res.ok) throw new RegisterFileError(path, res.status)
     return toFileRef(res.body)
   }
 }
@@ -703,15 +704,22 @@ function scopedDispatch(
   }
 }
 
-/** Wraps `deps.registerFile` with the 06 "outside the run prefix" warning. */
+/**
+ * Wraps `deps.registerFile` with the retry policy (`registerRetry.ts`: a 5xx or
+ * a dropped connection is asked again, a 4xx is not) and the 06 "outside the
+ * run prefix" warning. `signal` is the step's, so a cancelled step does not sit
+ * out a backoff.
+ */
 function registerFileForStep(
   deps: RunnerDeps,
   state: RunState,
   key: StepKey,
   dispatch: (action: unknown) => unknown,
+  signal?: AbortSignal,
 ): (path: string) => Promise<FileRef> {
+  const register = withRegisterRetry((path) => deps.registerFile(state, key, path), deps.clock.sleep, signal)
   return async (path) => {
-    const file = await deps.registerFile(state, key, path)
+    const file = await register(path)
     if (!path.startsWith(runPrefixOf(state))) {
       dispatch(
         runEvent({
@@ -1030,7 +1038,7 @@ async function handleNextAction(
           http: deps.http,
           clock: deps.clock,
           signal: controller.signal,
-          registerFile: registerFileForStep(deps, runState, a.key, scoped),
+          registerFile: registerFileForStep(deps, runState, a.key, scoped, controller.signal),
         }
         void runPipelineStep({ step, key: a.key, job: a.job, index: a.index, def, state: runState }, rt)
       } else if (step.uses === 'form') {
@@ -1102,7 +1110,7 @@ async function handleNextAction(
           state: runState,
           signal: controller.signal,
           deps: scriptDeps(deps),
-          registerFile: registerFileForStep(deps, runState, a.key, scoped),
+          registerFile: registerFileForStep(deps, runState, a.key, scoped, controller.signal),
           scoped,
           getRunState,
         })
@@ -1466,7 +1474,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             http: deps.http,
             clock: deps.clock,
             signal: controller.signal,
-            registerFile: registerFileForStep(deps, state, step.key, scoped),
+            registerFile: registerFileForStep(deps, state, step.key, scoped, controller.signal),
           }
           // A `polling` row normally resumes poll-only, against the initial
           // response the record kept. Two rows cannot: one whose initial was
@@ -1576,7 +1584,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             state,
             signal: controller.signal,
             deps: scriptDeps(deps),
-            registerFile: registerFileForStep(deps, state, step.key, scoped),
+            registerFile: registerFileForStep(deps, state, step.key, scoped, controller.signal),
             scoped,
             getRunState,
           })
