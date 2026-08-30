@@ -77,9 +77,12 @@ Read the issue without changing it:
   follows from that. If the issue spans two apps, treat that as a smell and say so.
 
 **Read the triage comment first.** If the issue carries `ready-for-agent` and a
-`## Triage` comment from `apps-triage`, its "Resolved from the source" bullets are
-verified answers — inherit them rather than re-deriving; its "Notes for the implementer"
-name the live surfaces and verify chain. Spot-check citations against `origin/main`
+`## Triage` comment from `apps-triage`, the "Facts for the implementer" block (a
+`<details>` section — `gh issue view` returns it in full) is your brief: its "Resolved
+from the source" bullets are verified answers — inherit them rather than re-deriving;
+its "Notes" name the live surfaces and verify chain. The short human half above it
+("Do next", "Questions for you") is for the maintainer; if it still lists a question,
+the issue is not ready regardless of its label. Spot-check citations against `origin/main`
 (it may have moved since), but don't re-litigate a decision the comment records. If
 you still find an open question the comment missed, that is a triage miss: comment,
 swap `ready-for-agent` for `needs-info` / `ready-for-human`, and stop.
