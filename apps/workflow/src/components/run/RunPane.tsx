@@ -20,6 +20,7 @@
 import { useState } from 'react'
 import { AnnotationList } from '../AnnotationList'
 import { StatusPill } from '../StatusPill'
+import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import type { Annotation, Definition, RunState, StepKey } from '../../lib/runner/types'
@@ -95,6 +96,9 @@ export function RunPane({
             </button>
           ))}
         </div>
+
+        {/* Every value on both tabs as the raw JSON its row holds (apps#450). */}
+        <RawToggle />
 
         <StatusPill status={state.status} />
         <span className="pane-kind">workflow</span>

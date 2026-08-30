@@ -21,6 +21,7 @@ import { Provider } from 'react-redux'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StepPane } from './StepPane'
+import { resetShowRaw } from '../values/rawPreference'
 import { hello, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 import { server } from '../../mocks/server'
 import { FINISHED_RUN } from '../../mocks/fixtures/finishedRun'
@@ -309,5 +310,52 @@ describe('StepPane — Output tab draws a markdown output through its images map
   it("rewrites zip-relative paths from the step's own srcs output", () => {
     const { container } = outputTab(BUNDLE_KEY)
     expect(container.querySelector('.markdown-view img')?.getAttribute('src')).toBe(FRAME_URL)
+  })
+})
+
+// apps#450: a pipeline step's recorded `body` — a hundred floats under
+// `times`, a storage path under `outPrefix` — reads as a compact list and a
+// basename chip inside the tree, and the pane's Show raw flips the whole pane
+// back to nodes and leaves.
+describe('StepPane — Input tab draws shaped values, and Show raw flips them (apps#450)', () => {
+  afterEach(() => {
+    resetShowRaw()
+  })
+
+  it('draws body.times as a compact list and body.outPrefix as a path chip; Show raw makes them a tree', () => {
+    const times = Array.from({ length: 120 }, (_, i) => i * 1.6816666)
+    const outPrefix = 'workflows/hello/hello/runs/run_1/slow/0/start'
+    const state = readonlyConfirmWaiting()
+    const key = stepKey('slow', 0, 'start')
+    state.steps[key] = stepState('slow', 0, 'start', {
+      status: 'succeeded',
+      inputs: { body: { source: 'x', outPrefix, times } },
+      outputs: { report: '# r', poster: null },
+    })
+
+    const { container } = render(
+      <Provider store={makeStore()}>
+        <StepPane def={hello} state={state} stepKey={key} live={false} />
+      </Provider>,
+    )
+
+    const list = screen.getByTestId('inline-list')
+    expect(list.textContent).toContain('0, 1.68, 3.36')
+    expect(list.textContent).toContain('(120)')
+    expect(screen.getByRole('button', { name: 'show all 120 items' })).toBeInTheDocument()
+    expect(screen.getByTestId('value-path')).toHaveAttribute('title', outPrefix)
+    expect(screen.getByTestId('value-path').querySelector('.value-path-name')?.textContent).toBe('start')
+    // The value-level flip is there: this `json` value holds shapes.
+    expect(screen.getByTestId('value-raw')).toHaveTextContent('json')
+
+    const toggle = screen.getByTestId('pane-raw')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByTestId('inline-list')).toBeNull()
+    expect(screen.queryByTestId('value-path')).toBeNull()
+    expect(container.querySelectorAll('.json-leaf').length).toBeGreaterThan(120)
+    expect(screen.getByTestId('value-raw')).toHaveTextContent('rendered')
+    expect(window.localStorage.getItem('workflow:show-raw')).toBe('1')
   })
 })

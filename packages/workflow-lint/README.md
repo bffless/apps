@@ -146,6 +146,7 @@ linter flags) — asserted in `test/examples.test.ts`.
 | `file-ref-in-body` | warning | a whole File ref (or list) in a pipeline body — pass `ref.path` / `pluck(list, 'path')` | 03 |
 | `render-mapping` | warning | `render: chart` without `mapping.x`/`mapping.y`; `render: code` without `mapping.language` | 02 |
 | `markdown-images` | error | `images` on a declaration that is not `type: markdown`, or that is neither an expression nor a `{ [src]: path }` map | 02 |
+| `format-type` | error | a `format` on a type whose viewer does not read it — the form-control hints and `path` are `string`'s, `seconds` is `number`'s (and `json`'s), `table` / `list` are `json`'s | 02 |
 | `headless-skip-outputs` | error | `headless: skip` giving no value to an output a later expression references | 07 |
 | `auto-accept-headless` | error | `auto-accept` on an island/form step that declares no `headless:` — nothing to apply | 07 |
 | `interactive-headless` | notice | island/form steps with no `headless` (not headless-safe) | 07 |

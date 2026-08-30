@@ -129,6 +129,7 @@ const workflowSchema: Record<string, any> = {
           "description": "Relative to the implementation (islands/x.html → /w/<alias>/islands/x.html) or absolute /w/…"
         },
         "format": {
+          "description": "string: the form control (text | textarea | url | email | date | datetime | password) or `path` (a storage path: basename + copy); number: `seconds` (m:ss.s); json: `table` (+ optional `columns`), `list` (compact inline list), `seconds` (every number inside is a time)",
           "enum": [
             "text",
             "textarea",
@@ -136,7 +137,11 @@ const workflowSchema: Record<string, any> = {
             "email",
             "date",
             "datetime",
-            "password"
+            "password",
+            "path",
+            "seconds",
+            "table",
+            "list"
           ]
         },
         "pattern": {
@@ -201,27 +206,35 @@ const workflowSchema: Record<string, any> = {
           "description": "file: e.g. 5GB"
         },
         "columns": {
+          "description": "table, or json + format: table — a bare key, or {key, label?, type?}",
           "type": "array",
           "items": {
-            "type": "object",
-            "required": [
-              "key"
-            ],
-            "properties": {
-              "key": {
+            "oneOf": [
+              {
                 "type": "string"
               },
-              "label": {
-                "type": "string"
-              },
-              "type": {
-                "enum": [
-                  "string",
-                  "number",
-                  "boolean"
-                ]
+              {
+                "type": "object",
+                "required": [
+                  "key"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  }
+                }
               }
-            }
+            ]
           }
         },
         "schema": {
