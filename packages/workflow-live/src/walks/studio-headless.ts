@@ -9,7 +9,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { checkBlogZip, checkStudioHeadless } from '../checks/studio.js'
-import { outcomeOf, runDriver, type DriverOutcome } from '../driver.js'
+import { driverCliPath, outcomeOf, runDriver, type DriverOutcome } from '../driver.js'
 import { credentials } from '../env.js'
 import { ensureClip } from '../fixture.js'
 import type { Walk } from './index.js'
@@ -18,6 +18,7 @@ const MAX_KICKOFFS = 2   // one, plus one retry after a driver fault — never a
 
 export const studioHeadless: Walk = async ({ args, env, report }) => {
   if (!credentials(env)) return report.block('WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing')
+  if (!existsSync(driverCliPath())) return report.block(`driver CLI not built: ${driverCliPath()} — run pnpm --filter @bffless/workflow-headless build`)
   let clip
   try { clip = await ensureClip(args.clip) } catch (e) { return report.block(String(e)) }
   report.note(`clip ${clip.path}${clip.sha256 ? ` sha256 ${clip.sha256.slice(0, 12)}` : ''}`)
@@ -37,14 +38,14 @@ export const studioHeadless: Walk = async ({ args, env, report }) => {
   if (!outcome) return report.block('no attempt ran')
   const kind = outcomeOf(outcome.code)
   if (kind === 'driver-fault' || kind === 'timeout') return report.block(`driver ${kind} after ${MAX_KICKOFFS} attempts: ${outcome.stderr.slice(-400)}`)
-  report.expect('driver.exit0', outcome.code === 0, { code: outcome.code, kind })
+  report.expect('driver.exit0', outcome.code === 0, { code: outcome.code, kind, stderrTail: outcome.code !== 0 ? outcome.stderr.slice(-400) : null })
   if (!outcome.record) return void report.expect('driver.wroteRunJson', false, 'no run.json')
   checkStudioHeadless(outcome.record, report)
   const outputs = join(args.out, `attempt-${lastAttempt}`, 'driver', 'outputs')
   const files = existsSync(outputs) ? readdirSync(outputs) : []
-  report.expect('driver.savedShort', files.includes('short.mp4'), files)
-  report.expect('driver.savedCover', files.some((f) => /^cover\.(jpe?g|png|webp)$/.test(f)), files)
+  report.expect('driver.savedShort', files.includes('short.mp4'), { dir: outputs, files })
+  report.expect('driver.savedCover', files.some((f) => /^cover\.(jpe?g|png|webp)$/.test(f)), { dir: outputs, files })
   const zip = files.find((f) => f === 'blog.zip')
   if (zip) checkBlogZip(new Uint8Array(await readFile(join(outputs, zip))), report)
-  else report.expect('driver.savedBlogZip', false, files)
+  else report.expect('driver.savedBlogZip', false, { dir: outputs, files })
 }
