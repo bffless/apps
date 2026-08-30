@@ -32,9 +32,12 @@ describe.each(SCRIPT_NAMES)('dist/scripts/%s.js', (name) => {
   it.skipIf(!fs.existsSync(file))('is one self-contained ES module with a default export', () => {
     const code = fs.readFileSync(file, 'utf8')
     // Nothing left to resolve: no static `import`/`from`, no `import(...)`, no `require(...)`.
-    expect(code).not.toMatch(/(^|[\s;}])import\s*[({'"*]/)
-    expect(code).not.toMatch(/(^|[\s;}])from\s*['"]/)
-    expect(code).not.toMatch(/[^\w.]require\s*\(/)
+    // String/template literals are blanked first — `import` inside a bundled literal is
+    // data, not syntax (same expression as scripts/stage.mjs; src/stage.test.ts fences it).
+    const syntax = code.replace(/'(?:[^'\\\n]|\\[\s\S])*'|"(?:[^"\\\n]|\\[\s\S])*"|`(?:[^`\\]|\\[\s\S])*`/g, '""')
+    expect(syntax).not.toMatch(/(^|[\s;}])import\s*[({'"*]/)
+    expect(syntax).not.toMatch(/(^|[\s;}])from\s*['"]/)
+    expect(syntax).not.toMatch(/[^\w.]require\s*\(/)
     expect(code).toMatch(/export\s*\{[^}]*\bas default\b|export\s+default\b/)
   })
 })

@@ -64,7 +64,7 @@ jobs:
       # the app's own stager (apps/workflow-studio/scripts/stage.mjs) and a
       # third time inside `bffless/publish-workflow@v1` at deploy time; it is
       # here so a change to the LINTER cannot silently break the workflow.
-      - name: Lint the spec examples with the built CLI
+      - name: Lint the spec examples and the Studio workflow with the built CLI
         run: |
           node packages/workflow-lint/dist/cli.js lint --alias hello apps/workflow/docs/spec/examples/hello.workflow.yaml apps/workflow/docs/spec/examples/interactive.workflow.yaml
           node packages/workflow-lint/dist/cli.js lint apps/workflow-studio/.bffless/workflows/studio.workflow.yaml --rules apps/workflow-studio/.bffless/proxy-rules/workflow-studio --path-prefix /api/workflow-studio

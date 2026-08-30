@@ -18,6 +18,7 @@ on:
     # apps/workflow-studio/. Keep the two lists in step.
     paths:
       - 'apps/workflow-studio/**'
+      - 'packages/workflow-lint/**'
       - 'packages/workflow-script/**'
       - 'apps/studio/src/lib/**'
       - 'apps/studio/src/components/Studio/CutEditor.tsx'

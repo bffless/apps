@@ -34,6 +34,16 @@ const SKILL_NAMES = ['bffless-docs', 'image-prompts', 'video-description']
 /** A real build of six Vite entries plus a project-wide `tsc` — minutes, not milliseconds. */
 const BUILD_TIMEOUT = 600_000
 
+/**
+ * Blanks every string/template literal so the no-import assertions match module SYNTAX
+ * only: a bundled literal containing "\nimport {" (an error message, a code template) is
+ * data and must not trip the guard, while a real leftover import still matches — its
+ * specifier just collapses to `""`. The exact expression `scripts/stage.mjs` and
+ * `scripts/build.test.ts` apply; the fence test below keeps the three copies identical.
+ */
+const STRIP_LITERALS = /'(?:[^'\\\n]|\\[\s\S])*'|"(?:[^"\\\n]|\\[\s\S])*"|`(?:[^`\\]|\\[\s\S])*`/g
+const stripLiterals = (code: string): string => code.replace(STRIP_LITERALS, '""')
+
 const outDirs: string[] = []
 
 function tmpOut(): string {
@@ -87,10 +97,12 @@ describe('scripts/stage.mjs', () => {
         const code = readFileSync(join(out, 'scripts', `${name}.js`), 'utf8')
         // A script is fetched as text and run in a Worker spawned from a `data:` URL
         // (spec 03/09): a surviving `import` would resolve against an opaque origin and
-        // fail at run time, and a sibling chunk would never be fetched at all.
-        expect(code).not.toMatch(/(^|[\s;}])import\s*[({'"*]/)
-        expect(code).not.toMatch(/(^|[\s;}])from\s*['"]/)
-        expect(code).not.toMatch(/[^\w.]require\s*\(/)
+        // fail at run time, and a sibling chunk would never be fetched at all. Literals
+        // are blanked first so a bundled string mentioning `import` is not a match.
+        const syntax = stripLiterals(code)
+        expect(syntax).not.toMatch(/(^|[\s;}])import\s*[({'"*]/)
+        expect(syntax).not.toMatch(/(^|[\s;}])from\s*['"]/)
+        expect(syntax).not.toMatch(/[^\w.]require\s*\(/)
       }
     },
     BUILD_TIMEOUT,
@@ -120,5 +132,40 @@ describe('scripts/stage.mjs', () => {
 
   it('rejects a flag with no value', () => {
     expect(() => stage('--out')).toThrow()
+  })
+})
+
+describe('the no-import guard', () => {
+  const IMPORT = /(^|[\s;}])import\s*[({'"*]/
+  const FROM = /(^|[\s;}])from\s*['"]/
+  const REQUIRE = /[^\w.]require\s*\(/
+
+  it('ignores import/from/require inside bundled string literals (#463)', () => {
+    // Each of these is DATA a legitimate bundle can carry — an error message, a code
+    // template — and each matched the raw regexes before literals were blanked first.
+    for (const bundled of [
+      'const tpl = `\nimport { cut } from "./editor"\n`;',
+      'const msg = "did you mean to import {...}?";',
+      'const hint = \'ported from "studio"\';',
+      'const doc = "call require(...) at the top";',
+    ]) {
+      const syntax = stripLiterals(bundled)
+      expect(syntax).not.toMatch(IMPORT)
+      expect(syntax).not.toMatch(FROM)
+      expect(syntax).not.toMatch(REQUIRE)
+    }
+  })
+
+  it('still catches real static imports, dynamic import() and require()', () => {
+    expect(stripLiterals('import { x } from "./x.js";')).toMatch(IMPORT)
+    expect(stripLiterals('const m = await import("./m.js");')).toMatch(IMPORT)
+    expect(stripLiterals('} from "./chunk-abc.js";')).toMatch(FROM)
+    expect(stripLiterals('const m = require("./m.js");')).toMatch(REQUIRE)
+  })
+
+  it('is the exact expression scripts/stage.mjs and scripts/build.test.ts apply', () => {
+    for (const file of ['scripts/stage.mjs', 'scripts/build.test.ts']) {
+      expect(readFileSync(join(appDir, file), 'utf8')).toContain(STRIP_LITERALS.source)
+    }
   })
 })
