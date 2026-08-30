@@ -49,6 +49,46 @@ export function classify(url: string, method: string, status: number, hasApiKey:
   return { kind: 'other' }
 }
 
+/**
+ * Query parameters whose values are credentials: presigned-URL signatures
+ * (GCS / S3) and share-link tokens. A walk's `network.log` and report
+ * evidence travel into issues and PR comments, so these are blanked at the
+ * point of capture — unconditionally, there is no un-redacted mode (#507).
+ */
+const REDACTED_PARAMS = new Set([
+  'X-Goog-Signature',
+  'X-Amz-Signature',
+  'X-Amz-Credential',
+  'X-Goog-Credential',
+  'sig',
+  'signature',
+  'token',
+])
+
+/**
+ * Replace the value of every query parameter in `REDACTED_PARAMS` with `…`,
+ * leaving the pathname, every other parameter and the fragment untouched.
+ * Works on the raw string rather than through `URL` so nothing else is
+ * re-encoded — `?repository=bffless%2Fworkflow` must survive verbatim for
+ * the D8 log checks.
+ */
+export function redactUrl(url: string): string {
+  const q = url.indexOf('?')
+  if (q === -1) return url
+  const hash = url.indexOf('#', q)
+  const query = hash === -1 ? url.slice(q + 1) : url.slice(q + 1, hash)
+  const fragment = hash === -1 ? '' : url.slice(hash)
+  const redacted = query
+    .split('&')
+    .map((pair) => {
+      const eq = pair.indexOf('=')
+      const name = eq === -1 ? pair : pair.slice(0, eq)
+      return REDACTED_PARAMS.has(name) ? `${name}=…` : pair
+    })
+    .join('&')
+  return `${url.slice(0, q)}?${redacted}${fragment}`
+}
+
 export async function openSession(o: SessionOptions): Promise<Session> {
   await mkdir(o.out, { recursive: true }).catch(() => undefined)
   const browser: Browser = await chromium.launch({ args: ['--no-sandbox'], handleSIGINT: false })
@@ -74,8 +114,11 @@ export async function openSession(o: SessionOptions): Promise<Session> {
     const url = r.url()
     const status = r.status()
     const method = r.request().method()
-    s.log.push(`${status} ${method} ${url}`)
-    if (status >= 400) s.failed.push(`${status} ${method} ${url}`)
+    // `log` / `failed` are what `network.log` and the report carry — store
+    // them redacted. `classify` keeps the raw URL (it matches on the path).
+    const line = `${status} ${method} ${redactUrl(url)}`
+    s.log.push(line)
+    if (status >= 400) s.failed.push(line)
     const c = classify(url, method, status, r.request().headers()['x-api-key'] !== undefined)
     if (c.kind === 'register') {
       s.pending.push(r.json().then((b) => s.registered.push(b as FileRef)).catch(() => undefined))

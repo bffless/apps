@@ -53,7 +53,8 @@ export const interactive: Walk = async ({ args, env, report }) => {
     const me = meBody as { id?: string; email?: string; role?: string }
     const meRes = await s.page.request.fetch(s.base + '/api/workflow/whoami')
     const shellWhoami = (await page.getByTestId('whoami').textContent().catch(() => '')) ?? ''
-    report.expect('whoami.session', meStatus === 200 && !!me.id && me.email === creds.email && ['admin', 'user', 'member'].includes(me.role ?? ''), { status: meStatus, me, shell: shellWhoami, cacheControl: meRes.headers()['cache-control'] })
+    // Evidence carries whether the email matched, never the email itself — the report is pasted into issues (#507).
+    report.expect('whoami.session', meStatus === 200 && !!me.id && me.email === creds.email && ['admin', 'user', 'member'].includes(me.role ?? ''), { status: meStatus, id: me.id, role: me.role, emailMatches: me.email === creds.email, shellMatches: shellWhoami.includes(creds.email), cacheControl: meRes.headers()['cache-control'] })
 
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
     await page.getByTestId('step').first().waitFor()

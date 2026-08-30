@@ -9,7 +9,7 @@
  * as a FAIL with evidence "log line absent" until then.
  */
 import { writeFile } from 'node:fs/promises'
-import { openSession } from '../session.js'
+import { openSession, redactUrl } from '../session.js'
 import { credentials } from '../env.js'
 import type { Walk } from './index.js'
 
@@ -78,7 +78,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     const src = (await img.getAttribute('src')) ?? ''
     const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
     const presigned = /^https?:\/\//.test(src) && !src.startsWith(args.harness) && /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(src)
-    report.expect('D6.viewerImgIsPresigned', presigned && natural > 0, { src: src.slice(0, 120), naturalWidth: natural })
+    report.expect('D6.viewerImgIsPresigned', presigned && natural > 0, { src: redactUrl(src), naturalWidth: natural })
     const signErr = await posterFrame.getByTestId('island-sign-error').textContent({ timeout: 10_000 }).catch(() => null)
     report.expect('D6.noSignError', signErr === '' || signErr === null, { islandSignError: signErr })
     // Step 1d — Decision 4: the script ran in a sandboxed Worker (opaque origin)
