@@ -133,6 +133,7 @@ linter flags) — asserted in `test/examples.test.ts`.
 | `expr-parse` | error | invalid `${{ }}` expressions | 01 |
 | `duplicate-step-id` | error | step ids reused within a job | 01 |
 | `needs-unknown` / `needs-cycle` | error | `needs` referencing missing jobs / dependency cycles | 01 |
+| `needs-if-status` | warning | a job with `needs` whose `if` names no status function (nor reads `needs.<job>.result`) — an explicit `if` replaces the default `success()`, so the job runs after a failed dependency; write `success() && …` | 01 |
 | `unknown-context` / `context-position` | error | unknown context roots; known contexts used where unavailable (e.g. `response` outside a pipeline step) | 01 |
 | `unknown-function` | error | calls outside the closed function set | 01 |
 | `status-fn-position` | error | `success()` & co. outside an `if` | 01 |
