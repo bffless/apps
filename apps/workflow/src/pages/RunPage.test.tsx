@@ -18,7 +18,7 @@ import { MOCK_ADMIN, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
-import { fileUrl } from '../lib/coerce'
+import { fileUrl, type ServerRunRow } from '../lib/coerce'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 
@@ -378,6 +378,67 @@ describe('RunPage', () => {
     expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
     expect(within(page).queryByTestId('job')).not.toBeInTheDocument()
     expect(within(page).getByText(/read-only record/i)).toBeInTheDocument()
+  })
+
+  /**
+   * The resume banner (05 leases): a running run this tab is not driving. The
+   * lease decides the branch — held by a live tab offers *Take over*, expired
+   * offers *Resume* — and each branch's copy says where Cancel will be once
+   * the lease is taken: the run header, not the banner (apps#474). Both
+   * strings only exist once the lease check has settled (a microtask), hence
+   * `findBy*`.
+   */
+  describe('the resume banner', () => {
+    /** The fixture run rewound to in-flight, under one lease or none. */
+    function seedRunningRun(runId: string, lease: Pick<ServerRunRow, 'leaseOwner' | 'leaseUntil'>) {
+      db.runs.set(runId, {
+        ...FINISHED_RUN.run,
+        runId,
+        status: 'running',
+        finishedAt: null,
+        ...lease,
+        _id: nextId(),
+      })
+      for (const step of FINISHED_RUN.steps) {
+        db.steps.set(stepRowKey(runId, step.key), { ...step, runId, _id: nextId() })
+      }
+    }
+
+    it('offers Take over on a run another tab holds, and says Cancel comes from the header afterwards', async () => {
+      seedRunningRun('run_held', { leaseOwner: 'tab_other', leaseUntil: Date.now() + 60_000 })
+
+      renderApp('/hello/hello/runs/run_held')
+
+      const page = screen.getByRole('main')
+      expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'running')
+      const takeOver = await within(page).findByTestId('run-take-over')
+      const banner = takeOver.closest('p') as HTMLElement
+      expect(banner).toHaveTextContent(
+        'Another tab is driving this run. Take over to drive it — you can cancel it from the run header afterwards.',
+      )
+      expect(banner).not.toHaveTextContent('nobody is driving it')
+      expect(within(page).queryByTestId('run-resume')).not.toBeInTheDocument()
+      // Cancel is not in the banner: it lives in the header once the lease is ours.
+      expect(within(banner).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+      expect(within(page).queryByTestId('run-cancel')).not.toBeInTheDocument()
+    })
+
+    it('offers Resume on a run nobody holds, with the same pointer to the header', async () => {
+      seedRunningRun('run_free', { leaseOwner: null, leaseUntil: null })
+
+      renderApp('/hello/hello/runs/run_free')
+
+      const page = screen.getByRole('main')
+      expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'running')
+      const resume = await within(page).findByTestId('run-resume')
+      const banner = resume.closest('p') as HTMLElement
+      expect(banner).toHaveTextContent(
+        'This run is still in flight and nobody is driving it. Resume to take over — you can cancel it from the run header afterwards.',
+      )
+      expect(banner).not.toHaveTextContent('Another tab is driving this run')
+      expect(within(page).queryByTestId('run-take-over')).not.toBeInTheDocument()
+      expect(within(banner).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    })
   })
 
   /**
