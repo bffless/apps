@@ -8,7 +8,12 @@
  * structural subset of Playwright's `Page`, used so the driver's own unit
  * suite never launches a browser). Playwright's `Page` satisfies `PageLike`
  * structurally, so no cast is needed at either call site — see task-3-report.md.
+ *
+ * `registered` and `deleteBody` are filled in by response listeners that read
+ * the body asynchronously — they only reflect every response seen so far once
+ * the caller `await`s every promise in `pending` (e.g. `await Promise.all(s.pending)`).
  */
+import { mkdir } from 'node:fs/promises'
 import { loginViaRelay, pageApi, type ApiLike, type FileRef } from '@bffless/workflow-headless'
 import { chromium, type Browser, type Page } from 'playwright'
 
@@ -42,6 +47,7 @@ export function classify(url: string, method: string, status: number, hasApiKey:
 }
 
 export async function openSession(o: SessionOptions): Promise<Session> {
+  await mkdir(o.out, { recursive: true }).catch(() => undefined)
   const browser: Browser = await chromium.launch({ args: ['--no-sandbox'], handleSIGINT: false })
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   const s: Session = {
@@ -76,6 +82,12 @@ export async function openSession(o: SessionOptions): Promise<Session> {
       s.pending.push(r.json().then((b) => { s.deleteBody = b }).catch(() => undefined))
     }
   })
-  await loginViaRelay(page, o.base, o.credentials)
+  try {
+    await loginViaRelay(page, o.base, o.credentials)
+  } catch (e) {
+    await s.shot('login-failed')
+    await browser.close().catch(() => undefined)
+    throw e
+  }
   return s
 }
