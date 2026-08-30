@@ -77,7 +77,8 @@ running, even in another shell.
 
 `report.json` is the verdict, and your stance toward it is: **assumed failure until
 the script proves otherwise; you may say "PASS, but: …"; you may never upgrade a FAIL
-or downgrade a PASS.**
+or downgrade a PASS.** After `all`, read each walk's own report — they land per walk
+under `<out>/<name>/`, not one combined `<out>/report.json`.
 
 For every check that failed, open what its evidence points at —
 `failed.png`, `console.log`, `steps.log`, the screenshot named in the evidence field —
@@ -120,7 +121,8 @@ Return exactly:
   `release`, or `studio-headless-run.yml`.
 - Never any MCP mutation, rule-set/alias/domain edit, or run deletion.
 - Never `git checkout`, `git commit`, or `git push`. Never edit any file outside the
-  walk's `--out` directory.
+  walk's `--out` directory (build output under `packages/*/dist` from the preflight
+  build aside).
 - Never file or comment on a GitHub issue or PR.
 - Never a second harness URL in one invocation.
 - Never print credentials.
