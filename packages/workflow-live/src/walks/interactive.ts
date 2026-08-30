@@ -51,8 +51,9 @@ export const interactive: Walk = async ({ args, env, report }) => {
 
     const { status: meStatus, body: meBody } = await s.api.json('/api/workflow/whoami')
     const me = meBody as { id?: string; email?: string; role?: string }
+    const meRes = await s.page.request.fetch(s.base + '/api/workflow/whoami')
     const shellWhoami = (await page.getByTestId('whoami').textContent().catch(() => '')) ?? ''
-    report.expect('whoami.session', meStatus === 200 && !!me.id && me.email === creds.email && ['admin', 'user', 'member'].includes(me.role ?? ''), { status: meStatus, me, shell: shellWhoami })
+    report.expect('whoami.session', meStatus === 200 && !!me.id && me.email === creds.email && ['admin', 'user', 'member'].includes(me.role ?? ''), { status: meStatus, me, shell: shellWhoami, cacheControl: meRes.headers()['cache-control'] })
 
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
     await page.getByTestId('step').first().waitFor()
@@ -188,9 +189,13 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await s.shot('08-outputs')
 
     // --- apps#362: ?download=1
-    const dlStatus = await s.api.bytes(posterHref).then((r) => r.status)
-    const inlineStatus = await s.api.bytes(posterHref.replace(/\?download=1$/, '')).then((r) => r.status)
-    report.expect('apps362.download', dlStatus === 200, { status: dlStatus, inlineStatus })
+    if (!posterHref) {
+      report.expect('apps362.download', false, 'posterHref empty')
+    } else {
+      const dl = await s.page.request.fetch(s.base + posterHref)
+      const inline = await s.page.request.fetch(s.base + posterHref.replace(/\?download=1$/, ''))
+      report.expect('apps362.download', dl.status() === 200, { status: dl.status(), contentDisposition: dl.headers()['content-disposition'] ?? null, contentType: dl.headers()['content-type'], inlineDisposition: inline.headers()['content-disposition'] ?? null })
+    }
 
     // --- Decision 7: pre-delete state, the API-key 403, then the owner delete
     const posterUrls = posters.map((p) => p.url)
@@ -234,8 +239,11 @@ export const interactive: Walk = async ({ args, env, report }) => {
     report.expect('D7.posters404AfterDelete', Object.values(post).every((st) => st === 404), post)
     report.expect('D7.inputsSurvive', extraAfter === 200, { url: extraRef?.url, status: extraAfter })
     report.expect('D7.runGoneFromList', (await page.getByRole('link', { name: runId }).count()) === 0, runId)
+  } catch (e) {
+    await s.shot('99-failed')
+    throw e
   } finally {
-    await writeFile(`${args.out}/network.log`, s.log.join('\n'), 'utf8')
+    await writeFile(`${args.out}/network.log`, s.log.join('\n'), 'utf8').catch(() => undefined)
     await s.close()
   }
 }

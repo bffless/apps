@@ -34,5 +34,8 @@ export const m1: Walk = async ({ args, env, report }) => {
     report.expect('run.succeededWithOutputs', /report/.test(outputs) && /poster/.test(outputs) && /lines/.test(outputs) && /Hello, world!/.test(outputs), outputs.slice(0, 200))
     report.expect('page.noConsoleErrors', s.consoleErrors.length === 0, s.consoleErrors)
     report.expect('page.noFailedRequests', s.failed.length === 0, s.failed)
+  } catch (e) {
+    await s.shot('99-failed')
+    throw e
   } finally { await s.close() }
 }
