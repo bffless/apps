@@ -47,7 +47,20 @@ export const interactive: Walk = async ({ args, env, report }) => {
     report.expect('D8.aliasesScoped', aliasCalls.length > 0 && aliasCalls.every((l) => /\?repository=bffless%2Fworkflow|\?repository=bffless\/workflow/.test(l)), aliasCalls)
     const probes = s.log.filter((l) => /\/w\/[^/]+\/\.bffless\/workflows\/index\.json/.test(l))
     // The harness's own alias (`workflow`) is probed too — same project, and its SPA fallback answers 200 HTML (no index.json); what must NOT appear is any other project's alias.
-    report.expect('D8.noForeignProbes', probes.length > 0 && probes.every((l) => /\/w\/(hello|workflow)\//.test(l)), probes)
+    // "Own" is what the scoped aliases call itself lists, asked once here — a
+    // hardcoded alias list went stale the day `workflow-studio` joined the
+    // project (2026-08-30 walk), and the next alias would do it again.
+    const { body: aliasesBody } = await s.api.json('/api/workflow/aliases?repository=bffless%2Fworkflow')
+    const aliasesEnvelope = (aliasesBody ?? {}) as { data?: unknown; aliases?: unknown }
+    const rawAliases = aliasesEnvelope.data ?? aliasesEnvelope.aliases
+    const ownAliases = new Set(['workflow'])
+    for (const entry of Array.isArray(rawAliases) ? rawAliases : []) {
+      const e = entry as { name?: unknown; alias?: unknown }
+      const name = typeof e.name === 'string' ? e.name : typeof e.alias === 'string' ? e.alias : ''
+      if (name) ownAliases.add(name)
+    }
+    const probedAlias = (l: string) => /\/w\/([^/]+)\//.exec(l)?.[1] ?? ''
+    report.expect('D8.noForeignProbes', probes.length > 0 && ownAliases.size > 1 && probes.every((l) => ownAliases.has(probedAlias(l))), { probes, ownAliases: [...ownAliases] })
 
     const { status: meStatus, body: meBody } = await s.api.json('/api/workflow/whoami')
     const me = meBody as { id?: string; email?: string; role?: string }
@@ -99,14 +112,25 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await tiles.first().waitFor()
     const tileCount = await tiles.count()
     await tiles.first().click()
-    report.expect('D14.tilePicker', tileCount === 1 && (await tiles.first().getAttribute('aria-checked')) === 'true', { tileCount })
+    // Plain `<button aria-pressed>` tiles (TilePicker.tsx; the e2e spec asserts
+    // the same attribute) — `aria-checked` was the port's stale guess.
+    report.expect('D14.tilePicker', tileCount === 1 && (await tiles.first().getAttribute('aria-pressed')) === 'true', { tileCount })
     await form.getByRole('button', { name: 'Preview' }).click()
     await form.getByTestId('markdown-preview').locator('h2').filter({ hasText: 'Notes' }).waitFor()
     const before = s.registered.length
     await form.locator('input[type="file"]').setInputFiles(EXTRA_PNG)
     await form.locator('.field-file-list').filter({ hasText: 'extra.png' }).waitFor({ timeout: 60_000 })
-    await Promise.all(s.pending)
-    const extraRef: FileRef | undefined = s.registered.slice(before).find((r) => /extra\.png$/.test(r.name || '') || /extra\.png$/.test(r.path || ''))
+    // The file list names the file the moment it is picked (`FileControl`
+    // renders the row beside the progress bar), so the row appearing does not
+    // mean `files/register` has answered — against MSW it has, against a real
+    // bucket the PUT is still in flight. Wait for the ref itself.
+    const findExtra = () => s.registered.slice(before).find((r) => /extra\.png$/.test(r.name || '') || /extra\.png$/.test(r.path || ''))
+    const extraDeadline = Date.now() + 60_000
+    let extraRef: FileRef | undefined
+    while (!(extraRef = findExtra()) && Date.now() < extraDeadline) {
+      await Promise.all([...s.pending])
+      if (!findExtra()) await page.waitForTimeout(250)
+    }
     report.expect('D14.extraUnderInputs', !!extraRef && /^workflows\/hello\/interactive\/inputs\//.test(extraRef.path), extraRef)
     await s.shot('06-form')
     await form.getByRole('button', { name: 'Approve' }).click()
@@ -114,7 +138,14 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await page.waitForFunction(() => document.querySelector('[data-testid="run-status"]')?.getAttribute('data-state') === 'succeeded', null, { timeout: 120_000 })
     await Promise.all(s.pending)
     await s.shot('07-succeeded')
+    // Our click on the confirm chip **pinned** the selection (apps#452), so the
+    // finished run stays on that step's pane — `run-outputs` renders on the run
+    // card only. Climb out the way the e2e spec does: the pane crumb's "Run".
+    const finishedPane = page.getByTestId('step-pane')
+    await finishedPane.waitFor({ timeout: 10_000 })
+    await finishedPane.getByRole('button', { name: 'Run', exact: true }).click()
     const outputs = page.getByTestId('run-outputs')
+    await outputs.waitFor({ timeout: 30_000 })
     const outText = (await outputs.textContent()) ?? ''
     report.expect('run.outputsLine', /Hello, world!/.test(outText), outText.slice(0, 200))
 
@@ -234,9 +265,22 @@ export const interactive: Walk = async ({ args, env, report }) => {
     const { body: goneBody } = await s.api.json(`/api/workflow/run?id=${runId}`)
     const gone = goneBody as { run: unknown }
     report.expect('D7.runNullAfterDelete', gone.run === null, gone)
+    // The serve answers `cache-control: private, max-age=3600`, and the
+    // pre-delete fetches above primed this session's own HTTP cache — so a
+    // plain re-ask keeps answering 200 out of that cache long after the bytes
+    // are gone (seen live 2026-08-30: this session 200 for 3+ min, a fresh
+    // session 404 immediately). Bust the cache with a throwaway parameter (the
+    // serve tolerates extras — `?download=1` is one) and keep a short poll for
+    // genuine bucket-delete lag.
+    const fresh = (u: string) => s.api.bytes(`${u}${u.includes('?') ? '&' : '?'}cb=${Date.now()}`).then((r) => r.status)
     const post: Record<string, number> = {}
-    for (const u of posterUrls) post[u] = await s.api.bytes(u).then((r) => r.status)
-    const extraAfter = extraRef ? await s.api.bytes(extraRef.url).then((r) => r.status) : -1
+    const postDeadline = Date.now() + 15_000
+    do {
+      for (const u of posterUrls) post[u] = await fresh(u)
+      if (Object.values(post).every((st) => st === 404)) break
+      await page.waitForTimeout(1_000)
+    } while (Date.now() < postDeadline)
+    const extraAfter = extraRef ? await fresh(extraRef.url) : -1
     report.expect('D7.posters404AfterDelete', Object.values(post).every((st) => st === 404), post)
     report.expect('D7.inputsSurvive', extraAfter === 200, { url: extraRef?.url, status: extraAfter })
     report.expect('D7.runGoneFromList', (await page.getByRole('link', { name: runId }).count()) === 0, runId)

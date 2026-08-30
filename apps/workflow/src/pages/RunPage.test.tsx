@@ -149,6 +149,53 @@ describe('RunPage', () => {
     expect(names).toEqual(['report', 'poster', 'lines'])
   })
 
+  it('replays a record carrying every machine-attached field to the run card and its outputs', async () => {
+    // The exact read-back shape live run run_01M1A98WXFP83S32RJ7GVHXW1M had on
+    // 2026-08-30, after #532/#535/#536 started writing new columns: the run row
+    // holds `outputs` and an `annotationCounts` rollup while its own
+    // `annotations` are empty (the notices live on step rows), and step rows
+    // carry a `ctx.log` tail, a pipeline `logId`, and a `kind`-marked
+    // annotation with an opaque `data` payload. None of it may make coerce or
+    // replay throw, fold the status, or suppress the run card's outputs.
+    seedFinishedRun()
+    const run = db.runs.get(FIXTURE_RUN_ID)!
+    db.runs.set(FIXTURE_RUN_ID, {
+      ...run,
+      annotations: [],
+      annotationCounts: { error: 0, warning: 1, notice: 2 },
+    })
+    const rowKey = stepRowKey(FIXTURE_RUN_ID, 'slow/0/start')
+    const row = db.steps.get(rowKey)!
+    db.steps.set(rowKey, {
+      ...row,
+      log: ['drawing 1 of 1'],
+      logId: 'log_fixture_01',
+      annotations: [
+        ...(row.annotations ?? []),
+        {
+          level: 'notice',
+          message: 'diagnostics attached',
+          kind: 'diagnostics',
+          data: { consoleErrors: [], steps: [] },
+        },
+      ],
+    })
+
+    renderApp()
+    const page = screen.getByRole('main')
+    await within(page).findByTestId('run-status')
+    expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
+
+    // The page condition the live walk waits on: the run card, with the
+    // recorded outputs under it.
+    const outputs = within(page).getByTestId('run-outputs')
+    const names = [...outputs.querySelectorAll('[data-output]')].map((el) =>
+      el.getAttribute('data-output'),
+    )
+    expect(names).toEqual(['report', 'poster', 'lines'])
+    expect(within(outputs).getAllByText('Hello, world!').length).toBeGreaterThan(0)
+  })
+
   it("shows the kickoff inputs on the run card's Input", async () => {
     const page = await openRun()
     fireEvent.click(within(page).getByRole('tab', { name: 'Input' }))
