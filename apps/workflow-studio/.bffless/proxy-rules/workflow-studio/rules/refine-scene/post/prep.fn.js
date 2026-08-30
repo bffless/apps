@@ -7,9 +7,14 @@ function handler({ request, deployment }) {
   // files cannot import).
   function safe(v) {
     if (typeof v !== 'string') return ''
-    var p = v.replace(/^\/+/, '').replace(/\/+$/, '')
+    // Same steps, same order as the harness's files/sign/post/confine.fn.js (apps#466):
+    // strip leading slashes, an `api/uploads/` prefix and any `?query`, then refuse
+    // `..`, `//` and anything not anchored at `workflows/`. The trailing-slash strip is
+    // this app's own, so an outPrefix comes back normalised.
+    var p = v.replace(/^\/+/, '').replace(/^api\/uploads\//, '').split('?')[0].replace(/\/+$/, '')
     if (!p) return ''
     if (p.indexOf('..') >= 0) return ''
+    if (p.indexOf('//') >= 0) return ''
     if (p.indexOf('workflows/') !== 0) return ''
     return p
   }
