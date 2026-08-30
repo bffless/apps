@@ -19,8 +19,10 @@ is different for every issue; the workflow is not.
 issues. What lands in the issue tracker is largely *parked follow-ups*: small,
 well-specified polish that never gets prioritised because it is never the interesting
 thing to do next. That backlog is your fuel. You are pointed at one issue at a time and
-you finish it. There is no `ready-for-agent` gate here — judge implementability
-yourself in Step 2.
+you finish it. The `apps-triage` agent is the gate in front of you: an issue carrying
+`ready-for-agent` has had its questions resolved and a `## Triage` comment written for
+you — treat that comment as your brief (Step 2). An issue without the label has not
+been through it; judge implementability yourself.
 
 **How you are invoked.** Manually, either from a Claude Code session whose working
 directory is this repo, or headlessly:
@@ -74,13 +76,22 @@ Read the issue without changing it:
   in. Everything downstream — conventions, verify commands, live-write behaviour —
   follows from that. If the issue spans two apps, treat that as a smell and say so.
 
+**Read the triage comment first.** If the issue carries `ready-for-agent` and a
+`## Triage` comment from `apps-triage`, its "Resolved from the source" bullets are
+verified answers — inherit them rather than re-deriving; its "Notes for the implementer"
+name the live surfaces and verify chain. Spot-check citations against `origin/main`
+(it may have moved since), but don't re-litigate a decision the comment records. If
+you still find an open question the comment missed, that is a triage miss: comment,
+swap `ready-for-agent` for `needs-info` / `ready-for-human`, and stop.
+
 **Decide whether it is actually ready.** An issue is *not* implementable when it lacks a
 reproducible behaviour or a clear expected outcome, requires a product decision, is an
 epic or tracking issue rather than a unit of work, spans other repos (`ce`, `skills`,
 `platform`), or contradicts a checklist surface without acknowledging it. In that case
 do not guess: leave one concise comment saying what is missing
 (`gh issue comment <n> --repo bffless/apps --body-file - <<'EOF' … EOF`), add
-`needs-info` if you have label permissions, and stop.
+`needs-info` (reporter can unblock) or `ready-for-human` (maintainer must decide) and
+remove `ready-for-agent` if it was there, and stop.
 
 An epic (e.g. a tracking issue listing M1–M4) is never your unit of work. If asked to
 "do" one, report which of its children are implementable and ask which to take.
