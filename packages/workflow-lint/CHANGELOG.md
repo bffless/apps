@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/bffless/apps/compare/workflow-lint-v1.2.0...workflow-lint-v1.3.0) (2026-08-30)
+
+
+### Features
+
+* **workflow-lint:** friendlier default value rendering — shape inference, `format: table|list|seconds|path`, pane-level Show raw ([#456](https://github.com/bffless/apps/issues/456)) ([0c4f37a](https://github.com/bffless/apps/commit/0c4f37a5e8f4a25fecb41b63dac3a5ff8fa7d4fc))
+
 ## [1.2.0](https://github.com/bffless/apps/compare/workflow-lint-v1.1.0...workflow-lint-v1.2.0) (2026-08-29)
 
 
