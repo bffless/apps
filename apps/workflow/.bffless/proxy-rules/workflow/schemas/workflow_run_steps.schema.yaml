@@ -17,6 +17,10 @@ fields:
   - { name: startedAt, type: number, required: false }
   - { name: finishedAt, type: number, required: false }
   - { name: heartbeatAt, type: number, required: false }
+  # A script step's `ctx.log` tail (apps#527): last 50 lines, <= 64 KB JSON,
+  # written only on the terminal upserts. NULL on non-script rows and on rows
+  # from before the column existed (adopted live via `--adopt-fields`, CE #722).
+  - { name: log, type: json, required: false }
   # `<runId>/<key>` — globally unique by construction, written ONLY by `run/fork`
   # as the `data_upsert_many` dedup column (apps#501). The handler dedups on one
   # column and `key` repeats across runs, so the scoped copy is what makes a

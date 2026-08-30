@@ -203,3 +203,76 @@ describe('eventToWrites — step.skipped', () => {
     expect('outputs' in patch).toBe(false)
   })
 })
+
+describe('eventToWrites — the script `log` tail (apps#527)', () => {
+  const KEY: StepKey = 'make/0/poster'
+
+  /** The post-event state of a script step, with whatever tail it holds. */
+  function scripted(over: Partial<StepState>): RunState {
+    const state = stateWith()
+    return {
+      ...state,
+      status: 'running',
+      steps: {
+        [KEY]: {
+          key: KEY,
+          job: 'make',
+          index: 0,
+          stepId: 'poster',
+          kind: 'script',
+          status: 'succeeded',
+          attempt: 1,
+          annotations: [],
+          ...over,
+        },
+      },
+    }
+  }
+
+  const stepPatch = (event: RunEvent, state: RunState): Partial<StepRow> => {
+    const writes = eventToWrites(event, { state })
+    expect(writes).toHaveLength(1)
+    const write = writes[0]
+    if (write.table !== 'steps') throw new Error('expected a steps upsert')
+    return write.patch
+  }
+
+  it('rides the terminal upserts, off the post-event state', () => {
+    const log = ['frame 1', 'frame 2']
+    expect(
+      stepPatch(
+        { type: 'step.succeeded', key: KEY, outputs: {}, at: 9 },
+        scripted({ outputs: {}, log, finishedAt: 9 }),
+      ).log,
+    ).toEqual(log)
+    expect(
+      stepPatch(
+        { type: 'step.failed', key: KEY, error: { code: 'SCRIPT', message: 'boom' }, at: 9 },
+        scripted({ status: 'failed', error: { code: 'SCRIPT', message: 'boom' }, log, finishedAt: 9 }),
+      ).log,
+    ).toEqual(log)
+    expect(
+      stepPatch(
+        { type: 'step.cancelled', key: KEY, at: 9 },
+        scripted({ status: 'cancelled', log, finishedAt: 9 }),
+      ).log,
+    ).toEqual(log)
+  })
+
+  it('writes no column at all when the step holds no tail', () => {
+    const patch = stepPatch(
+      { type: 'step.succeeded', key: KEY, outputs: {}, at: 9 },
+      scripted({ outputs: {}, finishedAt: 9 }),
+    )
+    expect('log' in patch).toBe(false)
+  })
+
+  it('clears the failed attempt\'s tail on step.retrying, like its annotations', () => {
+    const patch = stepPatch(
+      { type: 'step.retrying', key: KEY, error: { code: 'SCRIPT', message: 'boom' }, at: 9 },
+      // The reducer already dropped `log` for the fresh attempt.
+      scripted({ status: 'queued', attempt: 2, error: { code: 'SCRIPT', message: 'boom' } }),
+    )
+    expect(patch.log).toBeNull()
+  })
+})

@@ -166,6 +166,9 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         // annotations, so replay has nothing to put back (Decision 12).
         annotations: [],
         summary: undefined,
+        // The persisted tail belongs to the attempt that produced it; the
+        // fresh attempt starts with none (apps#527).
+        log: undefined,
       })
     }
 
@@ -183,6 +186,9 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         // it was in flight — otherwise an island's `workflow.annotate` would
         // vanish at the moment its own `workflow.submit` lands.
         annotations: [...step.annotations, ...(event.annotations ?? [])],
+        // The capped `ctx.log` tail a script's terminal event carries
+        // (apps#527) — live from the launcher, on replay from the row.
+        log: event.log ?? step.log,
         finishedAt: event.at,
       })
     }
@@ -196,6 +202,7 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         error: event.error,
         // Appended, never replaced (Decision 12) — see `step.succeeded` above.
         annotations: [...step.annotations, ...(event.annotations ?? [])],
+        log: event.log ?? step.log, // apps#527 — see `step.succeeded`
         finishedAt: event.at,
       })
     }
@@ -206,6 +213,7 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
       return withStep(state, event.key, {
         ...step,
         status: 'cancelled', // terminal
+        log: event.log ?? step.log, // apps#527 — see `step.succeeded`
         finishedAt: event.at,
       })
     }

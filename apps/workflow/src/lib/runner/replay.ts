@@ -159,6 +159,7 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
         response,
         summary: row.summary ?? undefined,
         annotations: row.annotations ?? undefined,
+        log: row.log ?? undefined, // the recorded `ctx.log` tail (apps#527)
         at: finishedAt,
       })
       break
@@ -168,11 +169,12 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
         key,
         error: row.error ?? { code: 'unknown', message: 'step failed' },
         annotations: row.annotations ?? undefined,
+        log: row.log ?? undefined, // apps#527
         at: finishedAt,
       })
       break
     case 'cancelled':
-      events.push({ type: 'step.cancelled', key, at: finishedAt })
+      events.push({ type: 'step.cancelled', key, log: row.log ?? undefined, at: finishedAt })
       break
   }
 

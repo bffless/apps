@@ -1,11 +1,13 @@
 /**
- * The script step's live log card (Task 11).
+ * The script step's log card (Task 11; recorded tail apps#527).
  *
- * The lines are not run state: `ctx.log` is live-only (Decision 12), so they
- * live in a module-level store keyed by run + step and reach the card through
- * `useSyncExternalStore` rather than Redux. What matters here is that the card
- * renders whatever the store holds — the newest lines, capped — and that
- * `StepPane` puts it on a live script step's Output tab.
+ * While the tab drives the run, the lines live in a module-level store keyed
+ * by run + step and reach the card through `useSyncExternalStore` rather than
+ * Redux. When the step ends, the capped tail is persisted on the row and
+ * comes back through step state as `recorded` — the card's fallback whenever
+ * the live store holds nothing. What matters here is that the card renders
+ * the right source, and that `StepPane` puts it on a script step's Output tab
+ * live *and* on a read-back run.
  */
 import { render, screen, act } from '@testing-library/react'
 import { Provider } from 'react-redux'
@@ -120,9 +122,25 @@ describe('ScriptStepCard', () => {
     expect(screen.getByText('mine')).toBeInTheDocument()
     expect(screen.queryByText('not mine')).not.toBeInTheDocument()
   })
+
+  it('falls back to the recorded tail when the tab holds no live lines (apps#527)', () => {
+    render(<ScriptStepCard runId={RUN} stepKey={KEY} recorded={['recorded 1', 'recorded 2']} />)
+
+    const lines = screen.getByTestId('script-log').querySelectorAll('li')
+    expect([...lines].map((li) => li.textContent)).toEqual(['recorded 1', 'recorded 2'])
+  })
+
+  it('prefers the live stream over the recorded tail', () => {
+    appendScriptLog(RUN, KEY, 'live line')
+
+    render(<ScriptStepCard runId={RUN} stepKey={KEY} recorded={['recorded 1']} />)
+
+    expect(screen.getByText('live line')).toBeInTheDocument()
+    expect(screen.queryByText('recorded 1')).not.toBeInTheDocument()
+  })
 })
 
-describe('StepPane — the Output tab carries the log for a live script step', () => {
+describe('StepPane — the Output tab carries the log for a script step', () => {
   it('shows the card while the script runs and after it finished', async () => {
     appendScriptLog(RUN, KEY, 'frame 1')
     const store = makeStore()
@@ -156,17 +174,43 @@ describe('StepPane — the Output tab carries the log for a live script step', (
     expect(screen.getByTestId('script-log')).toBeInTheDocument()
   })
 
-  it('leaves the log out of a read-only replay', async () => {
-    appendScriptLog(RUN, KEY, 'frame 1')
+  it('renders the recorded tail on a read-only replay (apps#527)', async () => {
+    // Another run's replay: this tab's store holds nothing under its runId,
+    // so the card falls back to the `log` the row carried into step state.
     render(
       <Provider store={makeStore()}>
-        <StepPane def={def} state={runState()} stepKey={KEY} live={false} />
+        <StepPane
+          def={def}
+          state={runState({ status: 'succeeded', outputs: { count: 2 }, log: ['recorded frame'] })}
+          stepKey={KEY}
+          live={false}
+        />
       </Provider>,
     )
 
     await act(async () => {
       screen.getByRole('tab', { name: 'Output' }).click()
     })
-    expect(screen.queryByTestId('script-log')).not.toBeInTheDocument()
+    expect(screen.getByTestId('script-log')).toBeInTheDocument()
+    expect(screen.getByText('recorded frame')).toBeInTheDocument()
+  })
+
+  it('says so on a replayed step from before the column existed', async () => {
+    render(
+      <Provider store={makeStore()}>
+        <StepPane
+          def={def}
+          state={runState({ status: 'succeeded', outputs: { count: 2 } })}
+          stepKey={KEY}
+          live={false}
+        />
+      </Provider>,
+    )
+
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Output' }).click()
+    })
+    expect(screen.getByTestId('script-log')).toBeInTheDocument()
+    expect(screen.getByText('No log lines yet')).toBeInTheDocument()
   })
 })

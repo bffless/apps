@@ -137,6 +137,7 @@ pipeline:
           error: steps.item.error
           summary: steps.item.summary
           annotations: steps.item.annotations
+          log: steps.item.log
           startedAt: steps.item.startedAt
           finishedAt: steps.item.finishedAt
           heartbeatAt: steps.item.heartbeatAt

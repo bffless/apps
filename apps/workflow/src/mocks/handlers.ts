@@ -186,10 +186,10 @@ const RUN_PATCHABLE = [
   'status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations', 'annotationCounts',
 ]
 
-/** The 11 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
+/** The 12 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
 const STEP_MUTABLE = [
   'status', 'attempt', 'inputs', 'response', 'outputs', 'error', 'summary',
-  'annotations', 'startedAt', 'finishedAt', 'heartbeatAt',
+  'annotations', 'log', 'startedAt', 'finishedAt', 'heartbeatAt',
 ]
 const STEP_IDENTITY = ['job', 'index', 'step', 'kind']
 
@@ -266,7 +266,7 @@ const runRecord = [
 
   // Read-merge-write on (runId, key) — the lease serialises writers, so a plain
   // query-then-write is race-safe in practice. Mirrors the real rule's column
-  // list: only the 11 mutable step columns are ever patched; `job`/`index`/
+  // list: only the 12 mutable step columns are ever patched; `job`/`index`/
   // `step`/`kind` are identity, set once on the row's first write.
   http.post('/api/workflow/run-step', async ({ request }) => {
     const { runId, key, patch } = await body(request)

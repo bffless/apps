@@ -9,7 +9,7 @@ function handler({ steps, request }) {
     runId: request.body.runId, key: request.body.key,
     job: null, index: 0, step: null, kind: null,
     status: 'queued', attempt: 1, inputs: null, response: null, outputs: null,
-    error: null, summary: null, annotations: null,
+    error: null, summary: null, annotations: null, log: null,
     startedAt: null, finishedAt: null, heartbeatAt: null,
   }
   const fields = { ...base }

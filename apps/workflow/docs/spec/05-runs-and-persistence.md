@@ -41,6 +41,7 @@ goes away.
 | `error` | `{ code, message, status? }` |
 | `summary` | rendered markdown (template already evaluated) |
 | `annotations` | `[{ level, title?, message }]` |
+| `log` | script: the `ctx.log` tail (last 50 lines, ≤ 64 KB JSON, oldest dropped first), written on the terminal upsert only (apps#527); absent on other kinds and on older rows |
 | `started_at`, `finished_at`, `heartbeat_at` | |
 
 Job-level state is **derived** (a job is the fold of its step rows + the definition); it is
@@ -68,9 +69,9 @@ paused with an error banner rather than continuing unrecorded).
 |---|---|
 | `run.started` | insert `workflow_runs` (status `running`, lease set) |
 | `step.queued` / `step.started` / `step.polling` / `step.waiting` | upsert step row status (+ `inputs` on start, `response.initial` (trimmed) on polling) |
-| `step.succeeded` | row: status, `outputs`, `response`, `summary`, `annotations`, `finished_at` |
-| `step.failed` / `step.skipped` / `step.cancelled` | row: status, `error`, `finished_at` (a `headless: skip` also writes the `outputs` it stood in for, 07) |
-| `step.retrying` | row: `attempt++`, status `queued` |
+| `step.succeeded` | row: status, `outputs`, `response`, `summary`, `annotations`, `finished_at` (+ a script's `log` tail, apps#527) |
+| `step.failed` / `step.skipped` / `step.cancelled` | row: status, `error`, `finished_at` (a `headless: skip` also writes the `outputs` it stood in for, 07; a script's `log` tail rides `failed`/`cancelled` too) |
+| `step.retrying` | row: `attempt++`, status `queued` (the failed attempt's `log` is cleared with its annotations) |
 | `run.heartbeat` | `workflow_runs.lease_until`, active rows' `heartbeat_at` (every 15 s) |
 | `run.finished` | `workflow_runs.status`, `outputs`, `finished_at`, lease cleared |
 

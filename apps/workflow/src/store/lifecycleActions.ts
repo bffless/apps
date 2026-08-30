@@ -24,6 +24,7 @@ import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepStatus } from '../lib/runner/types'
 import { createRunStore } from '../lib/runStore'
 import type { RunDeleter, RunForker, RunStore } from '../lib/runStore'
+import { persistableScriptLog } from '../scripts/logStore'
 import type { AppThunk, RootState } from './index'
 import { runnerControllers } from './runnerMiddleware'
 import { getOwnerId } from './runnerActions'
@@ -58,7 +59,16 @@ export function cancelRun(): AppThunk<Promise<void>> {
       if (step.kind === 'pipeline' && (step.status === 'running' || step.status === 'polling')) {
         pipelineInFlight = true
       }
-      dispatch(runEvent({ type: 'step.cancelled', key: step.key, at }))
+      dispatch(
+        runEvent({
+          type: 'step.cancelled',
+          key: step.key,
+          // A cancelled script keeps the tail it had logged (apps#527) — this
+          // tab drove the run, so its logStore holds the live lines.
+          ...(step.kind === 'script' ? { log: persistableScriptLog(state.runId, step.key) } : {}),
+          at,
+        }),
+      )
     }
 
     if (pipelineInFlight) {

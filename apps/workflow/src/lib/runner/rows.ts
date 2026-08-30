@@ -96,6 +96,13 @@ export interface StepRow {
   error?: StepError | null
   summary?: string | null
   annotations?: Annotation[] | null
+  /**
+   * A script step's `ctx.log` tail (apps#527) — last 50 lines, ≤ 64 KB JSON,
+   * written on the terminal upserts only. Absent on non-script rows, on rows
+   * from before the column existed, and on a script that never logged;
+   * `null` after `step.retrying` cleared the previous attempt's lines.
+   */
+  log?: string[] | null
   startedAt?: number | null
   finishedAt?: number | null
   heartbeatAt?: number | null
@@ -249,6 +256,8 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           error: s.error,
           annotations: s.annotations,
           summary: s.summary ?? null,
+          // The reducer dropped the failed attempt's log tail too (apps#527).
+          log: s.log ?? null,
         }),
       ]
     }
@@ -262,6 +271,9 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           response: s.response,
           summary: s.summary ?? null,
           annotations: s.annotations,
+          // A script's capped `ctx.log` tail (apps#527); only written when the
+          // step holds one, so every other kind's row keeps no column at all.
+          ...(s.log === undefined ? {} : { log: s.log }),
           finishedAt: s.finishedAt,
         }),
       ]
@@ -274,6 +286,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           status: 'failed',
           error: s.error,
           annotations: s.annotations,
+          ...(s.log === undefined ? {} : { log: s.log }), // apps#527
           finishedAt: s.finishedAt,
         }),
       ]
@@ -281,7 +294,13 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
 
     case 'step.cancelled': {
       const s = after(state, event.key)
-      return [upsert(runId, event.key, { status: 'cancelled', finishedAt: s.finishedAt })]
+      return [
+        upsert(runId, event.key, {
+          status: 'cancelled',
+          ...(s.log === undefined ? {} : { log: s.log }), // apps#527
+          finishedAt: s.finishedAt,
+        }),
+      ]
     }
 
     // Dynamic progress from a step that has not finished (Decision 12): the
