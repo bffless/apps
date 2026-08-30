@@ -29,9 +29,14 @@ permissions:
   issues: write
   pull-requests: read
 
-# A re-run supersedes an in-flight triage of the same issue.
+# A re-run supersedes an in-flight triage of the same issue. Only a run that will
+# actually triage may do the superseding: `concurrency` is settled before the job's
+# `if`, so an issue filed WITH labels — which fires `opened` and `labeled` together —
+# had its `labeled` run (skipped below, the label is not `needs-triage`) cancel the
+# `opened` run, and the issue was never triaged (#490, #491). A no-op event lands in
+# its own group and cancels nothing.
 concurrency:
-  group: issue-triage-${{ github.event.issue.number || inputs.issue }}
+  group: issue-triage-${{ github.event.issue.number || inputs.issue }}-${{ (github.event_name == 'workflow_dispatch' || github.event.action == 'opened' || github.event.label.name == 'needs-triage') && 'triage' || 'noop' }}
   cancel-in-progress: true
 
 jobs:
