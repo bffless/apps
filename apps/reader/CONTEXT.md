@@ -86,7 +86,7 @@ handler and a scheduled-pipeline (cron) primitive.
   which broke every install but the reference one (#498). The per-host consent gate is unchanged.
 
 - **D16–D28** — **Vector index, search and chat** (2026-08-17 grilling; full text in
-  `docs/superpowers/specs/2026-08-17-reader-vector-index-design.md`). Three-layer index preference with a
+  `apps/reader/docs/superpowers/specs/2026-08-17-reader-vector-index-design.md`). Three-layer index preference with a
   sticky item override (D16) · Replicate `beautyyuyanli/multilingual-e5-large`, pinned version, e5 prefixes (D17)
   · chunked 1:N, cap 6 (D18) · index queue + 2-min drain schedule, not inline in refresh (D19) · `reader_settings`
   per user, default off (D20) · indexed items are prune-exempt (D21) · semantic-only search over indexed items,
