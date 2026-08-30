@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: Transcribe audio (WhisperX, async)
-  description: "POST { audio, diarize } -> ENQUEUE a job (kind 'transcribe') and return { jobId, status: 'pending' }; the WhisperX call (+ optional pyannote diarization) runs in postSteps so it can't hit the edge timeout. Result { words, text, timed, duration } is polled via GET job?id=. Ported from apps/studio /api/transcribe: `audio` is the uploads-relative path the extract step returned (not a URL), and flatten additionally computes the 8-second `[m:ss]` bucketing and the duration the later steps bound on (R126)."
+  description: "POST { audio, diarize, language } -> ENQUEUE a job (kind 'transcribe') and return { jobId, status: 'pending' }; the WhisperX call (+ optional pyannote diarization) runs in postSteps so it can't hit the edge timeout. Result { words, text, timed, duration, language } is polled via GET job?id=. `language` is an ISO 639 code to pin the spoken language or 'auto' (the default when absent) to let WhisperX detect it; a transcript that comes back with text but no word timings - WhisperX detected a language it cannot align - fails the job with code UNALIGNED_TRANSCRIPT rather than handing a 0 s duration downstream. Ported from apps/studio /api/transcribe: `audio` is the uploads-relative path the extract step returned (not a URL), and flatten additionally computes the 8-second `[m:ss]` bucketing and the duration the later steps bound on (R126)."
   steps:
     - id: prep
       name: prep
@@ -86,6 +86,10 @@ pipeline:
           diarization: steps.prep.diarize
           temperature: 0
           align_output: true
+          # An ISO code pins the language; null lets WhisperX detect it (its default, and
+          # the one that mis-heard UK English as Welsh - see prep.fn.js). The model's
+          # `language` is Optional, so a null here IS "detect", not an error.
+          language: steps.prep.language
           huggingface_access_token: secrets.HF_TOKEN
         model: victor-upmeet/whisperx
         timeout: 280000
@@ -141,4 +145,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Transcribe an already-extracted WAV with word-level timestamps. Mints a presigned download URL for the audio and hands it to Replicate WhisperX (align_output:true), then flattens segments to { words, text, timed, duration }. Refuses (400) any audio path outside the harness's workflows/ run prefix before a job row is created."
+description: "Transcribe an already-extracted WAV with word-level timestamps. Mints a presigned download URL for the audio and hands it to Replicate WhisperX (align_output:true, language pinned or auto-detected), then flattens segments to { words, text, timed, duration, language }. Fails (UNALIGNED_TRANSCRIPT) when WhisperX returns text without word timings. Refuses (400) any audio path outside the harness's workflows/ run prefix before a job row is created."
