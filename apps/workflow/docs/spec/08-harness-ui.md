@@ -102,6 +102,10 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
      declared `outputs:` **evaluated** (aliases over step outputs; a matrix job's collect into
      lists), with `goes to …` chips; the trail lists the job's steps, each a way down. Job
      outputs are derived, never persisted (05) — this is the one place they are shown.
+     The card carries the one per-job action, **Re-run from this job** — a fork (05): a new
+     run under the current definition, this job and everything downstream of it run again,
+     every other job copied from this run. Offered only on a terminal run this tab is not
+     driving, and only for a job whose upstream all ended `success`/`skipped`.
    - **Step pane** (a chip): as below.
    Every card's head carries the breadcrumb `Run › <job> › <step>`; each segment above the
    current one is a way up. Esc and the pressed chip/strip climb one level. Step outputs are never listed at the run level.

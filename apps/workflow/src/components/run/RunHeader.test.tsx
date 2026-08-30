@@ -6,8 +6,12 @@
  * (a terminal run, owned by this user or an admin — `RunPage.tsx`), and the
  * header itself never calls it without a confirm. This suite owns the second
  * gate; `RunPage.test.tsx` owns the first.
+ *
+ * The run-sub line's **forked from** entry (05 "Re-run from this job";
+ * apps#491) is the same shape as Delete: the page passes `forkedFrom` off a
+ * replayed row that has one, and the header renders the link — or nothing.
  */
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RunHeader } from './RunHeader'
@@ -57,7 +61,11 @@ describe('RunHeader — Delete', () => {
 
     fireEvent.click(screen.getByTestId('run-delete'))
 
-    expect(confirm).toHaveBeenCalledWith('Delete this run and its files? This cannot be undone.')
+    // The confirm always names forks (apps#491, decision 4): a fork keeps
+    // pointing at its parent's files, and the page does not list forks.
+    expect(confirm).toHaveBeenCalledWith(
+      'Delete this run and its files? A run forked from it keeps pointing at those files. This cannot be undone.',
+    )
     expect(onDelete).not.toHaveBeenCalled()
   })
 
@@ -85,6 +93,26 @@ describe('RunHeader — Delete', () => {
 
     expect(screen.getByTestId('run-cancel')).toBeInTheDocument()
     expect(screen.getByTestId('run-delete')).toBeInTheDocument()
+  })
+})
+
+describe('RunHeader — forked from (apps#491)', () => {
+  it('links a fork to its parent run and names the job it re-ran from', () => {
+    renderHeader({ forkedFrom: { runId: 'run_parent', job: 'slow' } })
+
+    const line = screen.getByTestId('run-forked-from')
+    expect(line).toHaveTextContent('forked from run_parent at slow')
+    expect(within(line).getByRole('link', { name: 'run_parent' })).toHaveAttribute(
+      'href',
+      '/hello/hello/runs/run_parent',
+    )
+  })
+
+  it('renders no such line on a run that was not forked', () => {
+    renderHeader()
+
+    expect(screen.queryByTestId('run-forked-from')).not.toBeInTheDocument()
+    expect(screen.queryByText(/forked from/)).not.toBeInTheDocument()
   })
 })
 

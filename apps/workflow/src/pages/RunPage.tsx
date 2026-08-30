@@ -58,17 +58,19 @@ import { ImplContext } from '../components/values/implContext'
 import { IslandFrame } from '../islands/IslandFrame'
 import { useIslandFrameHost, useIslandHandle } from '../islands/useIslandHandle'
 import { definitionOf } from '../lib/runDefinition'
-import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
+import { loadWorkflow } from '../lib/runner/definition'
+import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
 import { publishWorkflowGlobal, snapshotOf } from '../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
+import { LeaseTransportError, cancelRun, forkRun, openRun, takeOver } from '../store/lifecycleActions'
 import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
 import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
 import { useRunDelete } from '../store/useRunDelete'
-import { workflowApi, useGetRunQuery, useWhoamiQuery } from '../store/workflowApi'
+import { useWorkflowListing } from '../store/useWorkflowListing'
+import { workflowApi, useGetRunQuery, useGetWorkflowYamlQuery, useWhoamiQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
 const POLL_MS = 5_000
@@ -466,6 +468,25 @@ export function RunPage() {
     onDeleted: () => void navigate(`${base}/runs`),
   })
 
+  // Fork — "Re-run from this job" (05; apps#491). A fork runs under the
+  // alias's **current** definition, not the parent's snapshot (decision 2), so
+  // the page loads it exactly as the kickoff page does — discovery, the file,
+  // `loadWorkflow` — and offers the control only once it has. A run whose
+  // implementation has since been unpublished still opens as a record (D16);
+  // it just cannot be forked from here, since there is no current definition
+  // to fork under. The refusal is keyed by run: this page never remounts on a
+  // `:runId` change, and a refusal on one run is not a fact about the next.
+  const { impl: currentImpl, listing } = useWorkflowListing()
+  const { data: currentYaml } = useGetWorkflowYamlQuery(
+    currentImpl && listing ? { impl: currentImpl.alias, file: listing.file } : skipToken,
+  )
+  const current = useMemo(
+    () => (currentYaml !== undefined && listing ? loadWorkflow(currentYaml, listing.file) : null),
+    [currentYaml, listing],
+  )
+  const forking = useRef(false)
+  const [forkFailed, setForkFailed] = useState<{ runId: string; message: string } | null>(null)
+
   // The observe half of the page contract (07/D12): `window.__workflow` is
   // what a headless driver polls to follow the run it started. Published from
   // whichever state this page is rendering — live slice or replayed record,
@@ -692,6 +713,48 @@ export function RunPage() {
     fileHref: `${base}/file`,
   }
 
+  // The fork, offered per job on the job card (decision 5) and only when the
+  // stricter client-side question says yes (`forkTarget`: not running, every
+  // job outside the pick's downstream closure `success`/`skipped`) — never for
+  // the run this tab is driving, and never before the current workflow has
+  // loaded. The rule's own gate answers last: a refusal arrives as a
+  // `RunStoreError` carrying its reason, shown beside Delete's. On success
+  // `forkRun` has already adopted the new run into this tab, so the navigation
+  // lands on the live path, the way a kickoff does.
+  const forkable = (job: string): boolean =>
+    !isLive &&
+    def !== null &&
+    state !== null &&
+    current?.ok === true &&
+    current.def !== null &&
+    currentImpl !== undefined &&
+    forkTarget(def, state, job).ok
+  const fork = async (job: string) => {
+    if (forking.current || !forkable(job) || !current?.def || !currentImpl) return
+    forking.current = true
+    setForkFailed(null)
+    try {
+      const id = await dispatch(
+        forkRun({
+          runId: shownRunId,
+          job,
+          def: current.def,
+          yaml: current.yaml,
+          workflowVersion: currentImpl.version,
+          unattended: run!.unattended ?? false,
+        }),
+      )
+      void navigate(`${base}/runs/${id}`)
+    } catch (error) {
+      setForkFailed({
+        runId: shownRunId,
+        message: error instanceof Error ? error.message : 'The run could not be forked.',
+      })
+    } finally {
+      forking.current = false
+    }
+  }
+
   // `render: island` needs to know which bundle an island file lives in,
   // and this page is the last place that fact is unambiguous.
   return (
@@ -706,6 +769,9 @@ export function RunPage() {
           runId={shownRunId}
           startedBy={isLive ? undefined : run!.startedBy}
           startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
+          forkedFrom={
+            !isLive && run!.forkedFrom && run!.forkJob ? { runId: run!.forkedFrom, job: run!.forkJob } : undefined
+          }
           finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
           headless={isLive ? sliceState!.headless : run!.headless}
           unattended={isLive ? sliceState!.unattended : (run!.unattended ?? false)}
@@ -725,6 +791,11 @@ export function RunPage() {
         {del.failed && (
           <p className="note banner" role="alert" data-testid="run-delete-failed">
             {del.failed}
+          </p>
+        )}
+        {forkFailed?.runId === shownRunId && (
+          <p className="note banner" role="alert" data-testid="run-fork-failed">
+            {forkFailed.message}
           </p>
         )}
 
@@ -790,6 +861,7 @@ export function RunPage() {
                   initialTab={paneSide?.side}
                   onSelect={(key) => select(key)}
                   onBack={toRun}
+                  onFork={forkable(selectedStep!) ? () => void fork(selectedStep!) : undefined}
                   source={yamlSource}
                 />
               ) : (

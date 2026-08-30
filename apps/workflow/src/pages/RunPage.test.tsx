@@ -8,16 +8,18 @@
  * selector names (Task 14), so `greet/1/say` is the sixth row and is reached by
  * changing that selector, not by a sixth chip.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { MOCK_ADMIN, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
+import { runClosed } from '../store/runSlice'
+import { workflowApi } from '../store/workflowApi'
 import { fileUrl, type ServerRunRow } from '../lib/coerce'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
@@ -530,6 +532,163 @@ describe('RunPage', () => {
       expect(await within(page).findByTestId('run-delete-failed')).toHaveTextContent(
         /cancel the run first/i,
       )
+    })
+  })
+
+  /**
+   * Fork — "Re-run from this job" (05; apps#491). The job card offers it only
+   * where the client-side question says yes (`forkTarget`: a terminal run,
+   * every job outside the pick's downstream closure `success`/`skipped`), never
+   * on the run this tab drives, and only once the alias's *current* workflow
+   * has loaded — the fork runs under that definition, not the parent's snapshot.
+   * The fixture's forkability at `slow` is proved in `finishedRun.test.ts`; this
+   * suite proves the page turns that answer into the button, one call to the
+   * fork rule, and a navigation to the new run.
+   */
+  describe('forking a run ("Re-run from this job")', () => {
+    const asOwner = () =>
+      setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+
+    /** Where the router is, read off the DOM: the fork's navigation is the assertion. */
+    function Location() {
+      return <span data-testid="location">{useLocation().pathname}</span>
+    }
+
+    function renderAt(path: string) {
+      const store = makeStore()
+      render(
+        <Provider store={store}>
+          <MemoryRouter initialEntries={[path]}>
+            <App />
+            <Location />
+          </MemoryRouter>
+        </Provider>,
+      )
+      return store
+    }
+
+    /**
+     * The alias's current workflow has arrived: the fork runs under it, so
+     * the button waits for it, and a "no button" assertion made before it is
+     * here would pass for the wrong reason. Read off the query cache the page
+     * itself reads, so this is the very fact the page's gate waits on.
+     */
+    const currentWorkflowLoaded = (store: ReturnType<typeof makeStore>) =>
+      waitFor(() =>
+        expect(
+          workflowApi.endpoints.getWorkflowYaml.select({ impl: 'hello', file: 'hello.workflow.yaml' })(
+            store.getState(),
+          ).data,
+        ).toBeDefined(),
+      )
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('offers the fork on the job card of a forkable job of a finished run', async () => {
+      asOwner()
+      seedFinishedRun()
+      renderAt(`${RUN_PATH}?step=slow`)
+      const page = screen.getByRole('main')
+
+      const pane = await within(page).findByTestId('job-pane')
+      // The current workflow arrives through discovery; the button waits for it.
+      expect(await within(pane).findByTestId('job-fork')).toHaveTextContent('Re-run from this job')
+    })
+
+    it('offers none on a job whose upstream failed, and still offers it on the job to pick instead', async () => {
+      asOwner()
+      seedFinishedRun()
+      // `greet` failed, so `slow` (needs greet) cannot be the pick; `greet` itself still can.
+      const say = db.steps.get(stepRowKey(FIXTURE_RUN_ID, 'greet/0/say'))!
+      db.steps.set(stepRowKey(FIXTURE_RUN_ID, 'greet/0/say'), { ...say, status: 'failed' })
+      renderAt(`${RUN_PATH}?step=greet`)
+      const page = screen.getByRole('main')
+
+      // The button on `greet` is the proof the current workflow has loaded …
+      let pane = await within(page).findByTestId('job-pane')
+      expect(await within(pane).findByTestId('job-fork')).toBeInTheDocument()
+
+      // … so its absence on `slow`, opened from the graph card's strip, is the gate's answer.
+      fireEvent.click(within(page).getByRole('button', { name: 'Job A slow server job' }))
+      pane = within(page).getByTestId('job-pane')
+      expect(within(pane).getByRole('heading', { name: 'A slow server job' })).toBeInTheDocument()
+      expect(within(pane).queryByTestId('job-fork')).not.toBeInTheDocument()
+    })
+
+    it('offers none while the run is still running', async () => {
+      asOwner()
+      seedFinishedRun()
+      db.runs.set(FIXTURE_RUN_ID, { ...db.runs.get(FIXTURE_RUN_ID)!, status: 'running', finishedAt: null })
+      const store = renderAt(`${RUN_PATH}?step=greet`)
+      const page = screen.getByRole('main')
+
+      const pane = await within(page).findByTestId('job-pane')
+      await currentWorkflowLoaded(store)
+      expect(within(pane).queryByTestId('job-fork')).not.toBeInTheDocument()
+    })
+
+    it('forks the run at the job with one call to the rule, and lands on the new run', async () => {
+      asOwner()
+      seedFinishedRun()
+      const forkCalls: string[] = []
+      const onRequestStart = ({ request }: { request: Request }) => {
+        if (request.method === 'POST' && new URL(request.url).pathname === '/api/workflow/run/fork') {
+          forkCalls.push(request.url)
+        }
+      }
+      server.events.on('request:start', onRequestStart)
+      const store = renderAt(`${RUN_PATH}?step=slow`)
+      try {
+        const page = screen.getByRole('main')
+        const pane = await within(page).findByTestId('job-pane')
+
+        fireEvent.click(await within(pane).findByTestId('job-fork'))
+
+        // The rule wrote a second run row, under a new id …
+        await waitFor(() => expect(db.runs.size).toBe(2))
+        const forkId = [...db.runs.keys()].find((id) => id !== FIXTURE_RUN_ID)!
+        expect(forkId).toMatch(/^run_/)
+        expect(db.runs.get(forkId)).toMatchObject({ forkedFrom: FIXTURE_RUN_ID, forkJob: 'slow' })
+        // … the page navigated to it, on the run's own page (no `?step=` carried over) …
+        await waitFor(() =>
+          expect(screen.getByTestId('location')).toHaveTextContent(`/hello/hello/runs/${forkId}`),
+        )
+        // … and this tab is now driving it, so the header reads it live
+        // (scoped to the header: the run card under the graph names the run too).
+        expect(store.getState().run.state?.runId).toBe(forkId)
+        const head = page.querySelector('.run-head') as HTMLElement
+        expect(await within(head).findByText(forkId)).toBeInTheDocument()
+        expect(within(head).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
+        expect(within(page).queryByTestId('run-fork-failed')).not.toBeInTheDocument()
+        expect(forkCalls).toHaveLength(1)
+      } finally {
+        server.events.removeListener('request:start', onRequestStart)
+        store.dispatch(runClosed())
+      }
+    })
+
+    it("stays on the run and shows the rule's own reason when the server refuses", async () => {
+      asOwner()
+      seedFinishedRun()
+      server.use(
+        http.post('/api/workflow/run/fork', () =>
+          HttpResponse.json({ ok: false, error: 'only the run owner or an admin can fork a run' }, { status: 403 }),
+        ),
+      )
+      renderAt(`${RUN_PATH}?step=slow`)
+      const page = screen.getByRole('main')
+      const pane = await within(page).findByTestId('job-pane')
+
+      fireEvent.click(await within(pane).findByTestId('job-fork'))
+
+      const failed = await within(page).findByTestId('run-fork-failed')
+      expect(failed).toHaveTextContent('only the run owner or an admin can fork a run')
+      expect(screen.getByTestId('location')).toHaveTextContent(`/hello/hello/runs/${FIXTURE_RUN_ID}`)
+      expect(db.runs.size).toBe(1)
+      // The card is still there with its button: a refusal is an outcome, not a dead end.
+      expect(within(page).getByTestId('job-fork')).toBeInTheDocument()
     })
   })
 })
