@@ -14,7 +14,7 @@ prototype's "Workflow Graph A" artboard.
 | `/<impl>` | **Workflows** of one implementation — list with description, inputs count, jobs count, headless-safe, last run status |
 | `/<impl>/<workflow>` | **Workflow** — the graph (below) in *definition* mode + "Start a run" + recent runs |
 | `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it. `?from=<runId>` prefills it for Re-run; `?auto=1&inputs=<base64url(JSON)>` is the headless entry (07) — no form at all, a `kickoff-auto` notice while the run starts, or a `kickoff-invalid` list of the values it refused |
-| `/<impl>/<workflow>/runs` | **Past runs** — table: status, started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
+| `/<impl>/<workflow>/runs` | **Past runs** — table: status (a running run parked on a step says "waiting on <step>" beside its pill, linked to that step), started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
 | `/<impl>/<workflow>/runs/<runId>` | **Run** — the graph in *run* mode + step panes + run summary + outputs |
 | `/<impl>/<workflow>/file` | **View workflow file** — YAML with lint results (also linked from a run: the snapshot) |
 
@@ -135,6 +135,17 @@ above the toggle as its sibling; it *does* land in `inputs`, which is how Resume
 
 Table with status, started by, started at, duration, outputs (count + first file name),
 annotations; row click → run; "Re-run" per row; filters: status, started by, date.
+
+Every cell comes from the run row alone — the list endpoint returns no step rows — with one
+join: a **running** run whose steps include one in `waiting` says **"waiting on \<step\>"** in
+its Status cell, under the pill (`run-waiting`). The list endpoint attaches the keys of the
+run's `waiting` step rows to each run record (`waitingOn`, joined at list time, never
+persisted); the step's name is the one the run page gives it (`name`, else its id), resolved
+from the definition snapshot the row already carries. Several steps can wait at once
+(parallel matrix items, independent jobs): the first in scheduling order is named and the
+rest counted, "waiting on review +2". The name links to `?step=<key>` on the run page, which
+arrives pinned there. A finished run never says it — its rows are a record, whatever status
+they were left in.
 
 ## Empty/error states (first-class, not afterthoughts)
 

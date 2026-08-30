@@ -2009,6 +2009,19 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* Past runs' Status cell: where a running run is parked, under its pill (apps#473). */
+.run-waiting {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-mute);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.run-waiting-more {
+  font-variant-numeric: tabular-nums;
+}
+
 .run-canvas {
   display: flex;
   flex-direction: column;

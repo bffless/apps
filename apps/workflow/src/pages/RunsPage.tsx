@@ -8,7 +8,11 @@
  * the *step* rows, so the count comes from the `annotationCounts` rollup the
  * write path persists onto the run row at `run.finished` (Task 20), and a row
  * written before that column existed shows an em dash instead of three zeroes
- * it would be inventing.
+ * it would be inventing. "Waiting on <step>" (apps#473) is the other step-level
+ * fact here, and it comes the other way: the list endpoint joins the keys of a
+ * run's `waiting` step rows onto the run record at list time (`waitingOn`),
+ * and the step's name is resolved from the definition the row already carries
+ * — still one query, still nothing persisted.
  *
  * The status filter is client-side (Decision 6): a workflow's runs are a short
  * list, and filtering in the browser keeps one cached query instead of one per
@@ -23,6 +27,7 @@ import { formatDuration } from '../lib/duration'
 import { isFileRef } from '../components/values/fileRef'
 import { ANNOTATION_LEVELS } from '../lib/annotations'
 import { pluralize } from '../lib/plural'
+import { waitingSteps } from '../lib/waitingOn'
 import type { ServerRunRow } from '../lib/coerce'
 import type { RunStatus } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
@@ -54,6 +59,34 @@ function AnnotationCountsCell({ run }: { run: ServerRunRow }) {
           {counts[level]}
         </span>
       ))}
+    </span>
+  )
+}
+
+/**
+ * "waiting on review +1" — where a running run is parked (apps#473), linked to
+ * that step on the run page (`?step=` arrives pinned, 08). Only a *running* run
+ * waits: a finished run's rows are a record, whatever status they were left in.
+ * Several steps can wait at once (parallel matrix items, independent jobs), so
+ * the first in scheduling order is named and the rest are counted.
+ */
+function WaitingOn({ run, base }: { run: ServerRunRow; base: string }) {
+  if (run.status !== 'running') return null
+  const steps = waitingSteps(run)
+  if (steps.length === 0) return null
+  const [first, ...more] = steps
+  return (
+    <span className="run-waiting" data-testid="run-waiting">
+      waiting on{' '}
+      <Link to={`${base}/runs/${run.runId}?step=${first.key}`} title={first.key}>
+        {first.label}
+      </Link>
+      {more.length > 0 && (
+        <span className="run-waiting-more" title={more.map((step) => step.label).join(', ')}>
+          {' '}
+          +{more.length}
+        </span>
+      )}
     </span>
   )
 }
@@ -152,6 +185,7 @@ export function RunsPage() {
                 </td>
                 <td>
                   <StatusPill status={run.status} />
+                  <WaitingOn run={run} base={base} />
                 </td>
                 <td>{run.startedBy ?? '—'}</td>
                 <td>{new Date(run.startedAt).toLocaleString()}</td>

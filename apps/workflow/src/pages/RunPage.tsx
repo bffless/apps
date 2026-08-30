@@ -44,7 +44,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { toDefinition } from '@bffless/workflow-lint/definition'
 import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
 import { GraphView } from '../components/graph/GraphView'
@@ -58,12 +57,12 @@ import { FileRefProvider } from '../components/values/FileRefProvider'
 import { ImplContext } from '../components/values/implContext'
 import { IslandFrame } from '../islands/IslandFrame'
 import { useIslandFrameHost, useIslandHandle } from '../islands/useIslandHandle'
-import { loadWorkflow } from '../lib/runner/definition'
+import { definitionOf } from '../lib/runDefinition'
 import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
 import { publishWorkflowGlobal, snapshotOf } from '../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
-import type { Annotation, Definition, RunState, StepKey, StepState } from '../lib/runner/types'
+import type { Annotation, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
 import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
@@ -79,24 +78,6 @@ const STEP_PARAM = 'step'
 
 /** A run that is no longer in flight. */
 const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
-
-/**
- * The definition the run stored, or the one its YAML snapshot parses to.
- * `toDefinition` assumes schema-valid data, so a row written by an older or
- * broken writer is caught here rather than by a crash three components down.
- */
-function definitionOf(run: ServerRunRow): Definition | null {
-  const raw = run.definition
-  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
-    try {
-      const def = toDefinition(raw)
-      if (Object.keys(def.jobs).length > 0) return def
-    } catch {
-      // fall through to the YAML snapshot
-    }
-  }
-  return run.yaml ? loadWorkflow(run.yaml, `${run.workflow}.workflow.yaml`).def : null
-}
 
 /** Every annotation of the run, each step's stamped with the step it came from. */
 function collectAnnotations(state: RunState): Annotation[] {

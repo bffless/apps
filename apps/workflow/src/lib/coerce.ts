@@ -9,7 +9,7 @@
  * half-written row must still render as a run record (08 degraded states).
  */
 import type { AnnotationCounts, RunRow, StepRow } from './runner/rows'
-import type { Annotation, FileRef, RunStatus, StepError, StepKind, StepStatus } from './runner/types'
+import type { Annotation, FileRef, RunStatus, StepError, StepKey, StepKind, StepStatus } from './runner/types'
 
 // ---------------------------------------------------------------------------
 // Discovery (06)
@@ -39,6 +39,12 @@ export interface Implementation {
 /** The record id CE gives a Data Table row; the engine's types never carry it (R4). */
 export interface ServerRunRow extends RunRow {
   _id?: string
+  /**
+   * The keys of the run's steps currently in `waiting`, joined onto the row by
+   * the *list* endpoint (`runs/get/shape.fn.js`, apps#473) — never persisted,
+   * and absent on a row from anywhere else (`run/get`, a create response).
+   */
+  waitingOn?: StepKey[]
 }
 
 export interface ServerStepRow extends StepRow {
@@ -330,7 +336,14 @@ export function toRunRow(raw: unknown): ServerRunRow {
     outputs: optionalRecord(f.outputs),
     annotations: annotations(f.annotations),
     ...(counts === undefined ? {} : { annotationCounts: counts }),
+    // Only the list endpoint joins it (apps#473); a row without the column is
+    // not a row waiting on nothing, so the field stays absent rather than `[]`.
+    ...(Array.isArray(maybeJson(f.waitingOn)) ? { waitingOn: stepKeys(f.waitingOn) } : {}),
   }
+}
+
+function stepKeys(value: unknown): StepKey[] {
+  return list(value).filter((key): key is StepKey => typeof key === 'string' && key !== '')
 }
 
 export function toStepRow(raw: unknown): ServerStepRow {

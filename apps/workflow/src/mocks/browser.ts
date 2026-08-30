@@ -1,6 +1,6 @@
 /** The dev worker; started from `main.tsx` when the master switch is on. */
 import { setupWorker } from 'msw/browser'
-import { MOCK_ADMIN, seedFinishedRun, seedObject, seedRenderedRun, seedScriptRun, setMockUser } from './db'
+import { MOCK_ADMIN, seedFinishedRun, seedObject, seedRenderedRun, seedScriptRun, seedWaitingRun, setMockUser } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { RENDERED_RUN_FILES } from './fixtures/renderedRun'
 import { SCRIPT_RUN_FILES } from './fixtures/scriptRun'
@@ -57,16 +57,19 @@ if (new URLSearchParams(globalThis.location?.search ?? '').get('as') === 'admin'
 }
 
 /**
- * Mock dev starts with three completed runs already on the books, so Past
- * runs and the run page are browsable the moment the worker is up: the M1
- * `hello` run, the `interactive` one whose script step left a `{"$file"}`
- * payload behind (the only way to read one back — the db is page memory, so a
- * live run's own rows never survive a reload), and the `rendered` one that
- * exercises all five named renderers (Task 17). Tests seed per case instead
- * (`mocks/server.ts` stays empty), because a fixture that is always there is a
- * fixture no test can prove it needs.
+ * Mock dev starts with three completed runs and one parked one already on the
+ * books, so Past runs and the run page are browsable the moment the worker is
+ * up: the M1 `hello` run, the `interactive` one whose script step left a
+ * `{"$file"}` payload behind (the only way to read one back — the db is page
+ * memory, so a live run's own rows never survive a reload), the `rendered` one
+ * that exercises all five named renderers (Task 17), and a `hello` run still
+ * waiting on its form, which is what Past runs' "waiting on" note reads
+ * (apps#473). Tests seed per case instead (`mocks/server.ts` stays empty),
+ * because a fixture that is always there is a fixture no test can prove it
+ * needs.
  */
 seedFinishedRun()
+seedWaitingRun()
 seedPoster()
 seedScriptRun()
 seedScriptFiles()

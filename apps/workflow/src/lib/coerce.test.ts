@@ -132,6 +132,19 @@ describe('toRunRow', () => {
     expect(toRunRow(flat).unattended).toBe(false)
   })
 
+  // The list endpoint's join (apps#473): present only when the row carries it.
+  it('reads `waitingOn` from a listed row, and leaves it absent on a row without the column', () => {
+    expect(toRunRow({ ...flat, waitingOn: ['confirm/0/review', 'greet/1/say'] }).waitingOn).toEqual([
+      'confirm/0/review',
+      'greet/1/say',
+    ])
+    expect(toRunRow({ ...flat, waitingOn: [] }).waitingOn).toEqual([])
+    expect(toRunRow({ ...flat, waitingOn: '["confirm/0/review"]' }).waitingOn).toEqual(['confirm/0/review'])
+    expect(toRunRow({ ...flat, waitingOn: ['confirm/0/review', 7, ''] }).waitingOn).toEqual(['confirm/0/review'])
+    expect('waitingOn' in toRunRow(flat)).toBe(false)
+    expect('waitingOn' in toRunRow({ ...flat, waitingOn: null })).toBe(false)
+  })
+
   it('reads a flat record and keeps the server id at _id (R4)', () => {
     const row = toRunRow(flat)
     expect(row._id).toBe('rec_1')
