@@ -52,6 +52,13 @@ pipeline:
   # run the paid work anyway. finishOk/finishErr need no gate of their own: with `check`
   # skipped, `steps.check.ok` resolves to null (a missing key returns null, it does not
   # throw) and both branches stay off.
+  # The ONE ungated postStep is `sweep`, the last one. A step that THROWS writes nothing to
+  # `steps` and CE's runPostSteps logs it and carries on to the next step, so with `parse`
+  # thrown `steps.parse.ok` and `.notOk` both resolve to null, neither finish branch fires
+  # and the row would sit `running` until the workflow's poll timeout. `sweep` folds
+  # `steps.prep.ok` in itself (a condition is a simple path, and a refused request has no
+  # job row to write onto) and `finishStuck` writes the row to error with code STEP_THREW,
+  # which the workflow's `poll.fail` ends on at once (apps#467).
   postSteps:
     - id: setRunning
       name: setRunning
@@ -179,6 +186,21 @@ pipeline:
         recordId: steps.createJob.id
         schemaId: $schema:workflow_studio_jobs
         condition: steps.parse.notOk
+    - id: sweep
+      name: sweep
+      handler: function_handler
+      code: ./sweep.fn.js
+    - id: finishStuck
+      name: finishStuck
+      handler: data_update
+      config:
+        fields:
+          error: steps.sweep.message
+          code: "'STEP_THREW'"
+          status: "'error'"
+        recordId: steps.createJob.id
+        schemaId: $schema:workflow_studio_jobs
+        condition: steps.sweep.stuck
   validators:
     - type: auth_required
       config: { allowApiKey: true }
