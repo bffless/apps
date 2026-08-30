@@ -33,7 +33,7 @@ import type { Definition, FileRef, RunState, Step, StepError, StepKey } from '..
 import { uploadBlob } from '../lib/upload'
 import { createScriptHost, fetchBytes } from '../scripts/ScriptHost'
 import type { ScriptHost, ScriptHostDeps, ScriptRun } from '../scripts/ScriptHost'
-import { appendScriptLog } from '../scripts/logStore'
+import { appendScriptLog, persistableScriptLog } from '../scripts/logStore'
 import { runEvent } from './runSlice'
 
 /**
@@ -117,8 +117,13 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     state: a.state,
   }
 
+  // Terminal events carry the capped `ctx.log` tail onto the row (apps#527):
+  // the launcher is the one holding the live lines, so it attaches them here
+  // rather than the write path reaching into the store.
+  const logTail = () => persistableScriptLog(a.state.runId, a.key)
+
   const fail = (error: StepError) => {
-    a.scoped(runEvent({ type: 'step.failed', key: a.key, error, at: now() }))
+    a.scoped(runEvent({ type: 'step.failed', key: a.key, error, log: logTail(), at: now() }))
   }
 
   let evaluated: { src: string; inputs: Record<string, unknown> }
@@ -151,11 +156,11 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
     return state.steps[a.key]?.status === 'running'
   }
 
-  // The live log is not the record (Decision 12): a refused `ctx.annotate`
-  // is appended there every time, but the row would keep no trace at all —
-  // so the *first* refusal per launch also lands as one run-level warning,
-  // stamped with the step (apps#375). One, not one per call: a module that
-  // annotates in a loop must not fill the run's annotations with its mistake.
+  // The live log reaches the record only as the terminal event's capped tail
+  // (apps#527), which a reader may never scroll to — so the *first* refused
+  // `ctx.annotate` per launch also lands as one run-level warning, stamped
+  // with the step (apps#375). One, not one per call: a module that annotates
+  // in a loop must not fill the run's annotations with its mistake.
   let refusalRecorded = false
 
   const hostDeps: ScriptHostDeps = {
@@ -325,6 +330,6 @@ export function launchScriptStep(a: LaunchScriptArgs): void {
       fail(toScriptError(err))
       return
     }
-    a.scoped(runEvent(succeeded))
+    a.scoped(runEvent({ ...succeeded, log: logTail() }))
   })()
 }

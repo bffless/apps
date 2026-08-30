@@ -14,7 +14,7 @@
  * third `Details` tab rides on Output (decided 2026-08-26): the stamps the row
  * actually holds (a row keeps `startedAt`/`finishedAt` and nothing else), the
  * attempt, the pipeline path, the retried error that stays visible on a step
- * that went on to succeed, the summary, the annotations, a live script's log,
+ * that went on to succeed, the summary, the annotations, a script's log,
  * and the raw response behind a disclosure because it can be 256 KB.
  *
  * A `form` step in `waiting` is the one exception to all of the above (08:
@@ -299,7 +299,7 @@ function Trail({
   scriptLog,
 }: {
   step: StepState
-  /** A live script step's log card — `undefined` for every other step (see `StepPane`). */
+  /** A script step's log card, live or recorded (apps#527) — `undefined` for every other step (see `StepPane`). */
   scriptLog?: ReactNode
 }) {
   const raw = step.response?.last ?? step.response?.initial
@@ -429,13 +429,15 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
   const jobName = job ? jobLabel(job) : parts.job
   const item = job?.matrix !== undefined && total !== undefined ? `item ${parts.index + 1} of ${total}` : undefined
 
-  // A script has no pane of its own — its live `ctx.log` rides on Output
-  // instead, whatever the step's status (a finished script's lines stay until
-  // the runner resets). Live only, like the island log: the lines belong to
-  // the run *this* tab is driving, and a read-only replay of another run's
-  // step has none of them.
+  // A script has no pane of its own — its `ctx.log` rides on Output instead,
+  // whatever the step's status. Live, the lines stream from this tab's own
+  // logStore; on a read-back run the card falls back to the tail the terminal
+  // upsert persisted on the row (apps#527), so a finished step shows the same
+  // capped lines wherever it is opened.
   const scriptLog =
-    live && declared?.uses === 'script' ? <ScriptStepCard runId={state.runId} stepKey={stepKey} /> : undefined
+    declared?.uses === 'script' ? (
+      <ScriptStepCard runId={state.runId} stepKey={stepKey} recorded={state.steps[stepKey]?.log} />
+    ) : undefined
 
   return (
     <aside className="step-pane" data-testid="step-pane" aria-label="Step" onKeyDown={onKeyDown}>

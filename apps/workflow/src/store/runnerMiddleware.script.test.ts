@@ -268,7 +268,7 @@ describe('script steps — the happy path', () => {
 })
 
 describe('script steps — ctx.log and ctx.annotate', () => {
-  it('keeps `ctx.log` lines in the live log store, never in the record', async () => {
+  it('persists the capped `ctx.log` tail on the succeeded row (apps#527)', async () => {
     const { store, advance, host, runId } = await startScriptRun()
 
     host.deps!.onLog('frame 1')
@@ -278,10 +278,47 @@ describe('script steps — ctx.log and ctx.annotate', () => {
     host.settle({ poster: new Blob(['<svg/>'], { type: 'image/svg+xml' }), count: 1 })
     await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
 
-    // Live only (Decision 12): nothing about the log reaches the row.
-    expect(JSON.stringify(stepRow(runId))).not.toContain('frame 1')
-    // …and it survives the step finishing, so the card still shows it.
+    // The terminal upsert carried the tail onto the row (apps#527)…
+    expect(stepRow(runId)!.log).toEqual(['frame 1', 'frame 2'])
+    // …into state, so a replayed run holds the same lines…
+    expect(store.getState().run.state!.steps[SCRIPT_KEY].log).toEqual(['frame 1', 'frame 2'])
+    // …and the live store still shows it until the runner resets.
     expect(getScriptLog(runId, SCRIPT_KEY)).toEqual(['frame 1', 'frame 2'])
+  })
+
+  it('a script that never logs writes no `log` column at all', async () => {
+    const { store, advance, host, runId } = await startScriptRun()
+
+    host.settle({ poster: new Blob(['<svg/>'], { type: 'image/svg+xml' }), count: 1 })
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+
+    expect(stepRow(runId)!.status).toBe('succeeded')
+    expect('log' in stepRow(runId)!).toBe(false)
+  })
+
+  it('a failing script keeps its tail on the failed row (apps#527)', async () => {
+    const { store, advance, host, runId } = await startScriptRun()
+
+    host.deps!.onLog('about to blow')
+    host.fail(new Error('boom'))
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+
+    const row = stepRow(runId)!
+    expect(row.status).toBe('failed')
+    expect(row.log).toEqual(['about to blow'])
+  })
+
+  it('cancel writes the tail the script had logged onto the cancelled row (apps#527)', async () => {
+    const { store, host, runId } = await startScriptRun()
+
+    host.deps!.onLog('frame 1')
+    await store.dispatch(cancelRun())
+    await flush()
+
+    const row = stepRow(runId)!
+    expect(row.status).toBe('cancelled')
+    expect(row.log).toEqual(['frame 1'])
+    expect(host.pending()).toBe(0)
   })
 
   it('lands `ctx.annotate` as step.annotated on the row before the step succeeds', async () => {
@@ -648,5 +685,25 @@ describe('script steps — resume (Decision 13)', () => {
     expect(host.runs).toHaveLength(1)
     expect(store.getState().run.state!.steps[SCRIPT_KEY].status).toBe('succeeded')
     expect(store.getState().run.state!.steps[SCRIPT_KEY].outputs!.count).toBe(4)
+  })
+
+  it('replay puts the recorded `log` tail back on a finished step (apps#527)', () => {
+    const def = scriptDef()
+    const runId = 'run_readback_log'
+    const { run, steps } = runningRows(runId)
+    const finished: StepRow[] = [
+      {
+        ...steps[0],
+        status: 'succeeded',
+        outputs: { count: 2 },
+        log: ['frame 1', 'frame 2'],
+        finishedAt: 1_002,
+      },
+    ]
+
+    const state = replayRun({ ...run, status: 'succeeded', finishedAt: 1_003 }, finished, def)
+
+    expect(state.steps[SCRIPT_KEY].status).toBe('succeeded')
+    expect(state.steps[SCRIPT_KEY].log).toEqual(['frame 1', 'frame 2'])
   })
 })

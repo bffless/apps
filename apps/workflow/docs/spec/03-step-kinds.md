@@ -135,7 +135,7 @@ Module contract (`@bffless/workflow-script` types, zero runtime):
 export default async function run(ctx: {
   inputs: Record<string, unknown>;          // `with` minus `src`, evaluated; File refs as-is
   files: { fetch(ref: FileRef): Promise<Response> };   // same-origin GET of ref.url
-  log(msg: string): void;                   // shows in the step card
+  log(msg: string): void;                   // shows in the step card; the capped tail (last 50 lines, ≤ 64 KB) is persisted on the step row when the step ends (05, apps#527)
   annotate(a: { level; message; title? } | { summary: string }): void;
   signal: AbortSignal;                      // cancel / timeout
 }): Promise<Record<string, unknown>>;       // outputs; Blob/File values where a `file` is declared

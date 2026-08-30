@@ -35,6 +35,14 @@ export interface StepState {
   error?: StepError
   summary?: string
   annotations: Annotation[]
+  /**
+   * A script step's recorded `ctx.log` tail (apps#527) — last 50 lines,
+   * ≤ 64 KB JSON, attached to the terminal event by whoever holds the live
+   * lines (`scriptLaunch` / `cancelRun`) and put back by replay. Absent on
+   * every other kind, on rows from before the column existed, and on a step
+   * that never logged.
+   */
+  log?: string[]
   startedAt?: number; finishedAt?: number
 }
 
@@ -83,8 +91,8 @@ export type RunEvent =
       inputs?: Record<string, unknown>
       at: number
     }
-  | { type: 'step.succeeded'; key: StepKey; outputs: Record<string, unknown>; response?: { initial?: unknown; last?: unknown; truncated?: boolean }; summary?: string; annotations?: Annotation[]; at: number }
-  | { type: 'step.failed'; key: StepKey; error: StepError; annotations?: Annotation[]; at: number }
+  | { type: 'step.succeeded'; key: StepKey; outputs: Record<string, unknown>; response?: { initial?: unknown; last?: unknown; truncated?: boolean }; summary?: string; annotations?: Annotation[]; log?: string[]; at: number }
+  | { type: 'step.failed'; key: StepKey; error: StepError; annotations?: Annotation[]; log?: string[]; at: number }
   | {
       type: 'step.skipped'
       key: StepKey
@@ -103,7 +111,8 @@ export type RunEvent =
       at: number
     }
   | { type: 'step.retrying'; key: StepKey; error: StepError; at: number }
-  | { type: 'step.cancelled'; key: StepKey; at: number }
+  /** `log` (apps#527): a cancelled script keeps the tail it had logged, like the other terminal events. */
+  | { type: 'step.cancelled'; key: StepKey; log?: string[]; at: number }
   /**
    * Dynamic annotations/summary from a still-running step (Decision 12):
    * `workflow.annotate` (islands) and `ctx.annotate` (scripts). Not a status

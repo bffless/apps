@@ -38,6 +38,7 @@ pipeline:
           error: steps.merge.fields.error
           summary: steps.merge.fields.summary
           annotations: steps.merge.fields.annotations
+          log: steps.merge.fields.log
           startedAt: steps.merge.fields.startedAt
           finishedAt: steps.merge.fields.finishedAt
           heartbeatAt: steps.merge.fields.heartbeatAt
@@ -57,6 +58,7 @@ pipeline:
           error: steps.merge.fields.error
           summary: steps.merge.fields.summary
           annotations: steps.merge.fields.annotations
+          log: steps.merge.fields.log
           startedAt: steps.merge.fields.startedAt
           finishedAt: steps.merge.fields.finishedAt
           heartbeatAt: steps.merge.fields.heartbeatAt

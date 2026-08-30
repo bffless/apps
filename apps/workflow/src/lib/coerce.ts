@@ -354,6 +354,11 @@ function stepKeys(value: unknown): StepKey[] {
   return list(value).filter((key): key is StepKey => typeof key === 'string' && key !== '')
 }
 
+/** A recorded `ctx.log` tail (apps#527) — strings only, however the `json` column came back. */
+function logLines(value: unknown): string[] {
+  return list(value).filter((line): line is string => typeof line === 'string')
+}
+
 export function toStepRow(raw: unknown): ServerStepRow {
   const f = fieldsOf(raw)
   const id = recordId(raw)
@@ -373,6 +378,9 @@ export function toStepRow(raw: unknown): ServerStepRow {
     error: stepError(f.error),
     summary: optionalStr(f.summary) ?? null,
     annotations: annotations(f.annotations),
+    // The capped `ctx.log` tail (apps#527): absent on rows from before the
+    // column existed and on steps that never logged — never `[]` for those.
+    ...(Array.isArray(maybeJson(f.log)) ? { log: logLines(f.log) } : {}),
     startedAt: optionalNum(f.startedAt),
     finishedAt: optionalNum(f.finishedAt),
     heartbeatAt: optionalNum(f.heartbeatAt),

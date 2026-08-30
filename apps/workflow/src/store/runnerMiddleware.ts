@@ -459,9 +459,12 @@ function resetRunnerState(): void {
   // `tools/call` until its host is closed. Aborting and forgetting would leave
   // an abandoned run's island live in the page.
   void disposeAllIslandHandles('cancelled')
-  // A script's log lines are live-only (Decision 12) and belong to the run
-  // that produced them: the moment a different run becomes the one this tab
-  // drives, nothing from the old one may stay on the page.
+  // A script's live log lines belong to the run that produced them: the
+  // moment a different run becomes the one this tab drives, nothing from the
+  // old one may stay on the page. Finished steps already persisted their
+  // capped tail on the terminal upsert (apps#527); what this drops is only
+  // the live copy — and the lines of a step that never reached a terminal
+  // event, the accepted trade-off of writing once per step, not per line.
   clearAllScriptLogs()
   // The wait clocks of the run being abandoned (Task 9): a fired timer would
   // otherwise fail a step of a run this tab no longer drives.

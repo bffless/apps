@@ -273,6 +273,16 @@ describe('toStepRow', () => {
     expect(toStepRow({ runId: 'run_1', key: 'a/0/b' })).toMatchObject({ status: 'queued', attempt: 1, index: 0 })
   })
 
+  // apps#527: the recorded `ctx.log` tail is a `json` column, so it can come
+  // back parsed or as text; a row without it must stay without it, not gain `[]`.
+  it('carries the `log` tail through, however the json column came back', () => {
+    const base = { runId: 'run_1', key: 'make/0/poster', kind: 'script' }
+    expect(toStepRow({ ...base, log: ['frame 1', 'frame 2'] }).log).toEqual(['frame 1', 'frame 2'])
+    expect(toStepRow({ ...base, log: '["frame 1","frame 2"]' }).log).toEqual(['frame 1', 'frame 2'])
+    expect('log' in toStepRow(base)).toBe(false)
+    expect('log' in toStepRow({ ...base, log: null })).toBe(false)
+  })
+
   // Task 13: hydration is `workflowApi`'s job, so the coercer must hand the
   // pointer through untouched — parsed out of its JSON text, but never
   // dereferenced, reshaped or dropped.
