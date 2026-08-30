@@ -379,15 +379,43 @@ Walked 2026-08-24 against j5s.dev (deploy runs 32754093965 → 32756238525 on
 
 ### M3 — headless
 
-- [ ] **M3 Task 15 — the dispatch runs live.** Dispatch `workflow-headless-run.yml`
-  (Actions → *Workflow headless run*) for `hello/interactive` with `inputs` `{}` against
-  `https://workflow.j5s.dev`: the job goes green, the step summary names the run and reports
-  **succeeded**, and the `workflow-run-output` artifact carries `run.json` (`run.headless: true`),
-  `steps.log` with `pick/0/choose → succeeded` and `review/0/confirm → skipped`, and
-  `outputs/poster.svg`. Record the run URL here. Not yet walked — the workflow is dispatch-only
-  and only exists on `main` once this branch merges.
-- [ ] **M3 Task 15 — the mock-only download caveat does not bite live.** Against the dev mock the
-  storage lives in page memory, so bytes uploaded for a `file` *input* are gone by the time a step
-  asks for them (the ref is still correct; only a download of it 404s). Against a deployment the
-  bytes are in the bucket — confirm on the live dispatch by running a workflow that takes a `file`
-  input.
+Walked 2026-08-30 with `pnpm workflow-live:walk headless --dispatch` (`packages/workflow-live`,
+apps#359 Task 25). Each row names the walk's check ids.
+
+- [x] **M3 Task 15 — the dispatch runs live — PASSED 2026-08-30.** Actions run
+  [33316611080](https://github.com/bffless/apps/actions/runs/33316611080) →
+  `run_01M19GSRMQPBAVMABH66TEAJ2K` **succeeded**, `run.headless: true`, `pick/0/choose → succeeded`
+  (the island's own submit under `hostContext.bffless.headless`), `review/0/confirm → skipped` with
+  `outputs.cover` a File ref, `outputs/poster.svg` in the `workflow-run-output` artifact. The same
+  through the local driver: `run_01M19GP5MADDENBFZSBCG4NZPD`, exit 0 in ~40 s. Negative: an
+  `inputs` of `{ "greeting": 42 }` → exit 3 and no run row. 15/15: `driver.exit0`, `run.succeeded`,
+  `run.headlessFlag`, `D7.islandSelfSubmitted`, `D11.reviewSkippedWithOutputs`, `run.posterIsFileRef`,
+  `driver.savedPoster`, `driver.wrongTypeIsExit3`, `dispatch.jobGreen`, the same five under
+  `dispatch.`, `dispatch.savedPoster`.
+- [x] **M3 Task 15 — the mock-only download caveat does not bite live — PASSED 2026-08-30.** Proven by
+  the Studio headless run `run_01M19GV5DDXBB3QHFN8BHH7896` (see
+  `apps/workflow-studio/bffless/README.md`): the driver uploaded the 3.6 MB fixture clip as the
+  `recordings` **file input** and every downstream step from `per-video/0/audio` on read its bytes from
+  the bucket.
+
+### M3 — Task 25: hello via `bffless/workflow-hello` (2026-08-30)
+
+Walked with `pnpm workflow-live:walk hello` — run `run_01M19H571QZMC4FV40C978CKY7` on
+`workflow.j5s.dev` as `workflow-ci`:
+
+- [x] **Decision 5 — hello is discovered through the generated forwarder.** `200 GET
+  /w/hello/.bffless/workflows/index.json` and the run URL is `/hello/interactive/…`
+  (`D5.helloDiscoveredViaForwarder`, `D5.implIsHello`). Found on the first pass: while
+  bffless/workflow-hello#5 is open the Implementations list shows the `hello-pr-5` preview *above*
+  `hello`, so a walk must pick the implementation by exact alias — the walks now do.
+- [x] **Decision 6 — the viewer draws a presigned image, credential-less.** `poster_view`'s
+  `<img src>` is `https://storage.googleapis.com/j5s-dev/…/poster.svg?X-Goog-…`, decoded 640 px
+  wide; `island-sign-error` (a testid *inside* the island's iframe, not the harness's) is empty
+  (`D6.viewerImgIsPresigned`, `D6.noSignError`).
+- [ ] **Decision 4 — the script ran in a sandboxed Worker.** `D4.scriptSandboxed` reads
+  `origin=null` off the `card/0/draw` script log; that log line ships in bffless/workflow-hello#5
+  (open at walk time — the `hello-pr-5` preview already carries it, the `hello` alias does not).
+  Re-run `walk hello` after #5 merges and deploys.
+- [x] **No console errors after login** (`page.noConsoleErrors`). The two pre-login SuperTokens 401s
+  on `admin.j5s.dev/api/auth/session[/refresh]` are the relay's normal path; the session counts
+  errors only after the relay login (they stay in `network.log`).

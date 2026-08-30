@@ -830,7 +830,8 @@ export const hello: Walk = async ({ args, env, report }) => {
     const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
     const presigned = /^https?:\/\//.test(src) && !src.startsWith(args.harness) && /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(src)
     report.expect('D6.viewerImgIsPresigned', presigned && natural > 0, { src: src.slice(0, 120), naturalWidth: natural })
-    report.expect('D6.noSignError', ((await page.getByTestId('island-sign-error').textContent().catch(() => '')) ?? '') === '', 'island-sign-error empty')
+    // CORRECTED 2026-08-30 (review): `island-sign-error` lives INSIDE the poster island's iframe — query `posterFrame`, not `page`.
+    report.expect('D6.noSignError', ((await posterFrame.getByTestId('island-sign-error').textContent().catch(() => '')) ?? '') === '', 'island-sign-error empty')
     // Step 1d — Decision 4: the script ran in a sandboxed Worker (opaque origin)
     await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
     await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
