@@ -23,6 +23,13 @@ handler and a scheduled-pipeline (cron) primitive.
 - **Refresh** — one run of the ingest pipeline (manual, or fired by a Schedule).
 - **Auto-discovery** — paste a site URL (`someblog.com`) → resolve its feed URL.
 - **OPML** — the standard subscription-list XML; import (bring old feeds in) and export.
+- **Index** — the set of a user's items that are embedded (pgvector, via CE `embed_store`) and therefore searchable and chattable. *In the index* is a "keep and make searchable" flag on an item, a sibling of *Star*: indexed items are prune-exempt.
+- **Index preference** — the three-layer rule deciding whether an item *should* be indexed: **item override** (`indexed: true|false|null`, set only by explicit user action, sticky) → **feed mode** (`indexMode: inherit|always|never`) → **user default** (`indexByDefault`, off by default). Copy-per-user: every control acts on that user's rows only.
+- **Index state** — what has actually happened to an item: `pending` (queued) · `indexing` (claimed by a drain) · `indexed` · `skipped` (deliberately not / removed) · `error` (retried).
+- **Drain** — one run of the index-queue pipeline: claim ≤25 pending items, embed (Replicate e5), store, mark. Fired by a 2-min Schedule and kicked by the client after an explicit "Index this".
+- **Chunk** — one embedded slice of an item's text (title-prefixed, 1–6 per item).
+- **Search** — a semantic query over the user's index, scoped to all / a feed / a folder; results are items.
+- **Chat** — an AI conversation whose retrieval tool searches the user's index; answers cite items.
 
 ## Architecture
 
@@ -78,9 +85,20 @@ handler and a scheduled-pipeline (cron) primitive.
   v1 `TRUSTED_EMBED_ORIGINS = ['https://handoff.j5s.dev']` constant in the 2026-07-08 embed specs,
   which broke every install but the reference one (#498). The per-host consent gate is unchanged.
 
+- **D16–D28** — **Vector index, search and chat** (2026-08-17 grilling; full text in
+  `docs/superpowers/specs/2026-08-17-reader-vector-index-design.md`). Three-layer index preference with a
+  sticky item override (D16) · Replicate `beautyyuyanli/multilingual-e5-large`, pinned version, e5 prefixes (D17)
+  · chunked 1:N, cap 6 (D18) · index queue + 2-min drain schedule, not inline in refresh (D19) · `reader_settings`
+  per user, default off (D20) · indexed items are prune-exempt (D21) · semantic-only search over indexed items,
+  scoped all/feed/folder (D22) · chat = `ai_handler` + `rag-search` plugin, haiku (D23) · CE `embed_delete` for
+  removal, purge inline (D24) · client-kicked drain with claim state (D25) · tokens optional, degrade visibly
+  (D26) · user default is forward-looking; explicit backfill/purge buttons (D27) · pin the model version at all
+  three embed sites (D28). Requires four CE additions: `vector_search` filters, `rag-search` vector-source
+  filters + `embeddingModelVersion`, `embed_store` records mode, `embed_delete`.
+
 ## Deferred to v2+
 
-Social/sharing + public shared-or-starred pages (Q1) · full-text extraction of truncated feeds · cross-item search · per-item tags (distinct from feed folders) · recommendations/explore · conditional GET (etag/lastModified) on refresh · per-feed refresh cadence (vs one shared cadence) · re-syncing edited items (D8: items immutable in v1) · raw cron-expression field in the schedule UI (D9) · SSRF allow/block-list on `http_request` if the app ever goes multi-user/public (D12) · general CE `foreach`/subpipeline loop primitive (only if a second use case demands it).
+Social/sharing + public shared-or-starred pages (Q1) · full-text extraction of truncated feeds · full-text keyword search over un-indexed items (semantic search over the index is D22) · separate retention window for indexed items · per-item tags (distinct from feed folders) · recommendations/explore · conditional GET (etag/lastModified) on refresh · per-feed refresh cadence (vs one shared cadence) · re-syncing edited items (D8: items immutable in v1) · raw cron-expression field in the schedule UI (D9) · SSRF allow/block-list on `http_request` if the app ever goes multi-user/public (D12) · general CE `foreach`/subpipeline loop primitive (only if a second use case demands it).
 
 ## Status
 
