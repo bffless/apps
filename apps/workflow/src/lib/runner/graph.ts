@@ -131,6 +131,29 @@ export function needsEdges(def: Definition): FlowEdge[] {
 }
 
 /**
+ * The transitive closure of `job` over `needs` edges, `job` included — the jobs
+ * a fork at `job` re-runs (05 "Re-run from this job"). Every job outside it is
+ * copied from the parent as-is. Same answer as the fork rule's own closure
+ * (`run/fork/post/gate.fn.js`, mirrored in `mocks/forkGate.ts`) taken over
+ * `declaredNeeds`, so the client never offers a fork the server would refuse.
+ */
+export function downstreamOf(def: Definition, job: string): Set<string> {
+  const downstream = new Set<string>([job])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const id of Object.keys(def.jobs)) {
+      if (downstream.has(id)) continue
+      if (declaredNeeds(def, id).some((need) => downstream.has(need))) {
+        downstream.add(id)
+        grew = true
+      }
+    }
+  }
+  return downstream
+}
+
+/**
  * Fan a job out into matrix items (01). One item per combination, the last
  * variable varying fastest; a job with no `strategy.matrix` is one empty item.
  * A variable that evaluates to nothing contributes no items, so the job ends up
@@ -180,6 +203,43 @@ export function jobResult(def: Definition, state: RunState, job: string): JobRes
   }
   if (!jobComplete(def, state, job, expansion.total)) return 'running'
   return jobOutcome(def, state, job)
+}
+
+export type ForkTarget = { ok: true } | { ok: false; reason: string }
+
+/** How a non-`success`/`skipped` upstream job reads in a refusal. */
+const FORK_BLOCKER: Record<Exclude<JobResult, 'success' | 'skipped'>, string> = {
+  pending: 'never ran',
+  running: 'has not finished',
+  failure: 'failed',
+  cancelled: 'was cancelled',
+}
+
+/**
+ * May the run be forked at `job` — the *offer* policy behind "Re-run from
+ * this job" (05). `ok` only when the run is no longer running, `job` exists,
+ * and every job outside `downstreamOf(def, job)` — the ones the fork copies
+ * rather than re-runs — read `success` or `skipped`. `skipped` is fine because
+ * re-running would change nothing for it: its dependents read `null` in the
+ * parent and would again. A `failure` or `cancelled` upstream also hands its
+ * dependents `outputs: null` (`contexts.ts`), so copying it forward would
+ * re-run the picked job against the very hole the person is trying to fix —
+ * the refusal names that job, since it is the one to pick instead.
+ *
+ * The rule's own gate is looser (it copies any terminal row); this is the
+ * stricter question the UI asks before it offers the control at all.
+ */
+export function forkTarget(def: Definition, state: RunState, job: string): ForkTarget {
+  if (state.status === 'running') return { ok: false, reason: 'the run is still running' }
+  if (!(job in def.jobs)) return { ok: false, reason: `no such job: ${job}` }
+  const downstream = downstreamOf(def, job)
+  for (const id of jobOrder(def)) {
+    if (downstream.has(id)) continue
+    const result = jobResult(def, state, id)
+    if (result === 'success' || result === 'skipped') continue
+    return { ok: false, reason: `${id} ${FORK_BLOCKER[result]} — re-run from ${id} instead` }
+  }
+  return { ok: true }
 }
 
 // ---------------------------------------------------------------------------

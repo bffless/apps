@@ -7,8 +7,10 @@ import type { Definition, RunState, StepState } from './types'
 import { stepKey } from './types'
 import {
   dataFlowEdges,
+  downstreamOf,
   expandMatrix,
   firstStepWhere,
+  forkTarget,
   isTerminal,
   jobOrder,
   jobOutputSteps,
@@ -152,6 +154,109 @@ describe('needsEdges', () => {
   it('drops edges to jobs that do not exist', () => {
     const def = toDefinition({ name: 'Dangling', jobs: { a: { needs: 'ghost', steps: [step('s')] } } })
     expect(needsEdges(def)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// downstreamOf
+// ---------------------------------------------------------------------------
+
+describe('downstreamOf', () => {
+  it('is the transitive closure over needs, the job itself included (hello)', () => {
+    expect(downstreamOf(hello, 'greet')).toEqual(new Set(['greet', 'slow', 'flaky', 'confirm']))
+    expect(downstreamOf(hello, 'slow')).toEqual(new Set(['slow', 'confirm']))
+    expect(downstreamOf(hello, 'flaky')).toEqual(new Set(['flaky', 'confirm']))
+    expect(downstreamOf(hello, 'confirm')).toEqual(new Set(['confirm']))
+  })
+
+  it('reaches a diamond\'s join through either branch, once', () => {
+    expect(downstreamOf(diamond, 'a')).toEqual(new Set(['a', 'b', 'c', 'd']))
+    expect(downstreamOf(diamond, 'b')).toEqual(new Set(['b', 'd']))
+    expect(downstreamOf(diamond, 'd')).toEqual(new Set(['d']))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// forkTarget
+// ---------------------------------------------------------------------------
+
+describe('forkTarget', () => {
+  /** hello, finished as the record fixture is: greet ×2 said, slow done, flaky's boom failed under continue-on-error and after ran, the form answered. */
+  const finished = withSteps(
+    makeState({
+      status: 'succeeded',
+      inputs: { greeting: 'Hello', names: ['world', 'studio'], shout: false },
+      expansions: {
+        greet: { total: 2, items: [{ who: 'world' }, { who: 'studio' }] },
+        slow: { total: 1, items: [{}] },
+        flaky: { total: 1, items: [{}] },
+        confirm: { total: 1, items: [{}] },
+      },
+    }),
+    stepState('greet', 0, 'say', { outputs: { line: 'Hello, world!' } }),
+    stepState('greet', 1, 'say', { outputs: { line: 'Hello, studio!' } }),
+    stepState('slow', 0, 'start', { outputs: { report: '# r', poster: null } }),
+    stepState('flaky', 0, 'boom', { status: 'failed', error: { code: 'TEAPOT', message: 'x' } }),
+    stepState('flaky', 0, 'after', { outputs: { note: 'boom failed with TEAPOT' } }),
+    stepState('confirm', 0, 'review', { kind: 'form', outputs: { approved: true, report: '# r' } }),
+  )
+
+  /** The same workflow with `flaky.boom` no longer tolerating failure — the flag lives in the definition, not the rows. */
+  const strict: Definition = (() => {
+    const raw = structuredClone(hello.raw) as { jobs: { flaky: { steps: Record<string, unknown>[] } } }
+    delete raw.jobs.flaky.steps[0]!['continue-on-error']
+    return toDefinition(raw)
+  })()
+
+  it('offers every job of a finished run whose upstream all succeeded', () => {
+    expect(forkTarget(hello, finished, 'greet')).toEqual({ ok: true })
+    expect(forkTarget(hello, finished, 'slow')).toEqual({ ok: true })
+    expect(forkTarget(hello, finished, 'flaky')).toEqual({ ok: true })
+    expect(forkTarget(hello, finished, 'confirm')).toEqual({ ok: true })
+  })
+
+  it('refuses while the run is still running', () => {
+    expect(forkTarget(hello, { ...finished, status: 'running' }, 'slow')).toEqual({
+      ok: false,
+      reason: 'the run is still running',
+    })
+  })
+
+  it('refuses a job the workflow does not declare', () => {
+    expect(forkTarget(hello, finished, 'nope')).toEqual({ ok: false, reason: 'no such job: nope' })
+  })
+
+  it('refuses a fork below a job that read failure, and names that job as the one to pick', () => {
+    // Under `strict`, the very same rows make `flaky` a failure (contexts.ts reads the flag off the definition).
+    expect(jobResult(strict, finished, 'flaky')).toBe('failure')
+    expect(forkTarget(strict, finished, 'confirm')).toEqual({
+      ok: false,
+      reason: 'flaky failed — re-run from flaky instead',
+    })
+    // …and picking it is allowed: greet, the only job outside its closure, succeeded.
+    expect(forkTarget(strict, finished, 'flaky')).toEqual({ ok: true })
+  })
+
+  it('refuses below a cancelled job on a cancelled run', () => {
+    const cancelled = withSteps(
+      makeState({ status: 'cancelled', expansions: { greet: { total: 1, items: [{ who: 'world' }] } } }),
+      stepState('greet', 0, 'say', { status: 'cancelled' }),
+    )
+    expect(forkTarget(hello, cancelled, 'slow')).toEqual({
+      ok: false,
+      reason: 'greet was cancelled — re-run from greet instead',
+    })
+    expect(forkTarget(hello, cancelled, 'greet')).toEqual({ ok: true })
+  })
+
+  it('accepts a skipped upstream: re-running it would change nothing for its dependents', () => {
+    const skipped = withSteps(
+      finished,
+      stepState('flaky', 0, 'boom', { status: 'skipped' }),
+      stepState('flaky', 0, 'after', { status: 'skipped' }),
+    )
+    expect(jobResult(hello, skipped, 'flaky')).toBe('skipped')
+    expect(forkTarget(hello, skipped, 'confirm')).toEqual({ ok: true })
   })
 })
 

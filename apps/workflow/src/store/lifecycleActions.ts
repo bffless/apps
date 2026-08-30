@@ -18,11 +18,12 @@
  */
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { httpJsonWithReauth } from '../lib/http'
+import { newRunId } from '../lib/runner/ids'
 import { replayRun } from '../lib/runner/replay'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepStatus } from '../lib/runner/types'
 import { createRunStore } from '../lib/runStore'
-import type { RunDeleter, RunStore } from '../lib/runStore'
+import type { RunDeleter, RunForker, RunStore } from '../lib/runStore'
 import type { AppThunk, RootState } from './index'
 import { runnerControllers } from './runnerMiddleware'
 import { getOwnerId } from './runnerActions'
@@ -31,7 +32,7 @@ import type { RunMeta } from './runSlice'
 import { workflowApi } from './workflowApi'
 
 /** The app's real `RunStore` — fresh per module, matching `defaultRunnerDeps()` (store/index.ts). */
-const runStore: RunStore & RunDeleter = createRunStore(httpJsonWithReauth)
+const runStore: RunStore & RunDeleter & RunForker = createRunStore(httpJsonWithReauth)
 
 const NON_TERMINAL_STEP: ReadonlySet<StepStatus> = new Set(['queued', 'running', 'polling', 'waiting'])
 
@@ -210,6 +211,67 @@ export function retryRun(): AppThunk<Promise<void>> {
     } finally {
       read.unsubscribe()
     }
+  }
+}
+
+/**
+ * Fork — "Re-run from this job" (05; apps#491). A fork is a **new run**: the
+ * `run/fork` rule (apps#501) creates its row and copies every step row of the
+ * parent that is *not* downstream of `job` under the new id, in one request.
+ * The new record is then adopted through the very path Resume uses, so the
+ * middleware's `runReplaced` listener relaunches nothing (every copied row is
+ * terminal) and the scheduler starts exactly the jobs whose `needs` are met
+ * and which have no state yet — `job` and its dependents. The copied jobs'
+ * outputs feed those expressions as they did in the parent.
+ *
+ * `owner: getOwnerId()` is load-bearing: the rule takes the lease *for* the
+ * sender, and `adopt(…, takeover = false)` is then granted because the lease
+ * is already ours. Whether `job` is a sensible fork point is the caller's
+ * question (`forkTarget`, graph.ts); the rule's own gate answers with a
+ * `RunStoreError` carrying its status and reason, rethrown as-is.
+ *
+ * Resolves to the new run id; navigating to it is the caller's job, as after
+ * `deleteRun`. Throws `LeaseTransportError` when the freshly written record
+ * cannot be read back. The `Runs` invalidation is the same one `deleteRun`
+ * makes: the row was written by the rule, not by `run.started`, so nothing
+ * else tells the Past-runs list a new run exists.
+ */
+export function forkRun(a: {
+  runId: string
+  job: string
+  def: Definition
+  yaml: string
+  workflowVersion?: string
+  unattended?: boolean
+}): AppThunk<Promise<string>> {
+  return async (dispatch, getState) => {
+    const id = newRunId()
+    await runStore.fork({
+      id,
+      from: a.runId,
+      job: a.job,
+      definition: a.def.raw,
+      yaml: a.yaml,
+      ...(a.workflowVersion === undefined ? {} : { workflowVersion: a.workflowVersion }),
+      owner: getOwnerId(),
+      unattended: a.unattended === true,
+    })
+    const read = dispatch(workflowApi.endpoints.getRun.initiate(id, { forceRefetch: true }))
+    try {
+      const res = await read
+      if (res.error || !res.data?.run) {
+        throw new LeaseTransportError(
+          res.error
+            ? `the forked run could not be read back (${JSON.stringify(res.error)})`
+            : 'the forked run is gone',
+        )
+      }
+      await adopt({ runId: id, run: res.data.run, steps: res.data.steps }, dispatch, getState, false)
+    } finally {
+      read.unsubscribe()
+    }
+    dispatch(workflowApi.util.invalidateTags(['Runs']))
+    return id
   }
 }
 
