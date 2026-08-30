@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "reader",
   "name": "Rivulet",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "summary": "A quiet, multi-user RSS/Atom reader with folders, starring, keyboard-first reading, and background refresh.",
   "category": "reading",
   "docsUrl": "https://github.com/bffless/apps/blob/main/apps/reader/bffless/README.md",
