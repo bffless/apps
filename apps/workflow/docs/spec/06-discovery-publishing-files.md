@@ -192,6 +192,15 @@ only (05). There is no reserved key injected into requests — the workflow pass
 `"${{ step.prefix }}"` where a pipeline needs it. A returned path outside the run prefix is a
 lint-time warning and a run-time annotation, not a failure.
 
+Registering is one `files/register` call per file, so a `list: true` file output is as many
+calls as the pipeline returned paths. The runner keeps at most **4** of them in flight
+(`REGISTER_CONCURRENCY`, `lib/runner/outputs.ts`) and asks again on a transient answer — a 5xx,
+or no answer at all — after 500 ms and then 1.5 s (`lib/runner/registerRetry.ts`); a 4xx is the
+request being wrong and is not retried. A registration that still fails names its file in the
+step error (`registerFile <path>: files/register answered <status>`). The policy exists because a
+~170-still `frames` list fired all at once had two calls answer 500 while every object was
+already in the bucket, and one rejection failed the step (apps#490).
+
 **Never stream bytes through a pipeline** (edge nginx 1 MB body cap). Pipelines that need a
 file's bytes read storage by path (Replicate/ffmpeg handlers already do).
 
