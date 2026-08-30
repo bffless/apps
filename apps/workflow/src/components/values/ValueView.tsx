@@ -29,7 +29,7 @@ import type { ValueDecl } from '../../lib/valueDecl'
 import { FileCard } from './FileCard'
 import { isFileRef } from './fileRef'
 import { isBlockText } from './textValue'
-import { useImpl } from './implContext'
+import { useImpl, useImplWithheld } from './implContext'
 import { JsonTree } from './JsonTree'
 import { MarkdownView } from './MarkdownView'
 import { TableView } from './TableView'
@@ -256,6 +256,7 @@ export function ValueView({
 }) {
   // Unconditional: `impl ?? useImpl()` would short-circuit the hook away.
   const contextImpl = useImpl()
+  const implWithheld = useImplWithheld()
   // "Show me the exact data" (2026-08-26 review): any value that is drawn
   // rather than printed — a chart, a table, a transcript, markdown, a file,
   // an inferred shape — can be flipped to the raw JSON the row actually
@@ -309,10 +310,18 @@ export function ValueView({
       : typeof decl.src !== 'string'
         ? 'no src'
         : 'no implementation'
+    // The trust boundary's note (apps#364): an island whose implementation the
+    // page *refused* — the run row named an alias discovery does not vouch for
+    // — is withheld on purpose, and the badge says so instead of implying the
+    // declaration forgot something.
+    const badge =
+      isKnownRenderer && why === 'no implementation' && implWithheld
+        ? 'island withheld: unknown implementation'
+        : `renderer: ${decl.render} (${why})`
     body = (
       <>
         {showBadge && (
-          <p className="value-renderer-badge">{`renderer: ${decl.render} (${why})`}</p>
+          <p className="value-renderer-badge">{badge}</p>
         )}
         <ValueBody decl={decl} value={value} images={images} />
       </>

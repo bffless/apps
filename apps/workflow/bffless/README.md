@@ -214,13 +214,20 @@ rules-as-code follow-up: bffless/ce#700.
 **Trust boundary.** Which bundle an island loads from is the run's `impl`, and on the
 read-only run page that value comes from the **run row** — a field any project member can
 write when they `POST /api/workflow/runs` (the rule is gated by `auth_required`, nothing
-narrower). That is safe today only because each `/w/<alias>` forwarder is a separate rule
-pointing at exactly one alias (`/w/hello` here), so a planted `impl` resolves to nothing else.
-As soon as a second implementation (or a preview) publishes its own forwarder, `run.impl` must
-be validated against the discovered aliases — or taken from the route rather than the row —
-or a member-planted run row could point another member's viewer at a foreign bundle while the
-host proxies its `tools/call` under the viewer's own session. Tracked in apps#364 (the
-forwarder half of which is resolved by the in-process target above).
+narrower). It picks both the `/w/<impl>/` bundle the viewer's islands load *and* the
+`/api/<impl>/` namespace the host proxies their `tools/call` into, under the **viewer's**
+session — and since publish-workflow v1.2.0 every implementation and every PR preview
+publishes its own forwarder, a planted `impl` would resolve. So the page validates it
+(apps#364): the row's `impl` is only trusted once discovery lists it as a real,
+**non-preview** alias of this project — a PR preview's bundle is never a legitimate target
+for a finished run's islands. While discovery is still answering, or if the alias is
+unknown, a preview, or discovery fails, the islands are withheld: each value renders its
+ordinary non-island viewer plus a one-line `island withheld: unknown implementation` note,
+and nothing mounts. The live run path needs no check — its `impl` comes from the
+`run.started` event the same tab dispatched, not from a fetched row. Taking `impl` from the
+route instead was rejected: a crafted link makes the route param equally attacker-supplied,
+and D16 deliberately lets a deep link open a run of an implementation the route does not
+name.
 
 ### Scripts (M2 Phase 2)
 

@@ -54,7 +54,7 @@ import { JobPane } from '../components/run/JobPane'
 import { RunPane } from '../components/run/RunPane'
 import { StepPane } from '../components/run/StepPane'
 import { FileRefProvider } from '../components/values/FileRefProvider'
-import { ImplContext } from '../components/values/implContext'
+import { ImplContext, ImplWithheldContext } from '../components/values/implContext'
 import { IslandFrame } from '../islands/IslandFrame'
 import { useIslandFrameHost, useIslandHandle } from '../islands/useIslandHandle'
 import { definitionOf } from '../lib/runDefinition'
@@ -70,7 +70,7 @@ import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
 import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
 import { useRunDelete } from '../store/useRunDelete'
 import { useWorkflowListing } from '../store/useWorkflowListing'
-import { workflowApi, useGetRunQuery, useGetWorkflowYamlQuery, useWhoamiQuery } from '../store/workflowApi'
+import { workflowApi, useDiscoverQuery, useGetRunQuery, useGetWorkflowYamlQuery, useWhoamiQuery } from '../store/workflowApi'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
 const POLL_MS = 5_000
@@ -477,6 +477,9 @@ export function RunPage() {
   // to fork under. The refusal is keyed by run: this page never remounts on a
   // `:runId` change, and a refusal on one run is not a fact about the next.
   const { impl: currentImpl, listing } = useWorkflowListing()
+  // The full discovered list, for the trust check below — the same RTK Query
+  // cache entry `useWorkflowListing` already fills, so this adds no fetch.
+  const { data: implementations } = useDiscoverQuery()
   const { data: currentYaml } = useGetWorkflowYamlQuery(
     currentImpl && listing ? { impl: currentImpl.alias, file: listing.file } : skipToken,
   )
@@ -757,12 +760,28 @@ export function RunPage() {
 
   // `render: island` needs to know which bundle an island file lives in,
   // and this page is the last place that fact is unambiguous.
+  //
+  // Trust boundary (apps#364): on the read-only path that fact comes off the
+  // run **row**, which any authenticated member can write — and it picks both
+  // the `/w/<impl>/` bundle a viewer's islands load and the `/api/<impl>/`
+  // namespace the host proxies their tool calls into, under the viewer's own
+  // session. So the row's claim is only honoured once discovery vouches for
+  // it as a real, non-preview alias of this project (a PR preview's bundle is
+  // never a legitimate target for a finished run's islands). Until discovery
+  // answers — or if it refuses, or fails — the islands are withheld: every
+  // value falls back to its ordinary non-island viewer plus a one-line note,
+  // and nothing mounts. The live path needs no check: `sliceState.impl` was
+  // set by the `run.started` event this tab itself dispatched.
+  const rowImplTrusted =
+    !isLive && implementations !== undefined
+      ? implementations.some((candidate) => !candidate.preview && candidate.alias === run!.impl)
+      : false
+  const implForView = isLive ? sliceState!.impl : rowImplTrusted ? run!.impl : null
+  const implWithheld = !isLive && implForView === null
   return (
-    // TODO(apps#364): on the read-only path this trusts the run row's own
-    // `impl`, which a member wrote. Safe only while `/w/` forwards one fixed
-    // alias — see "Trust boundary" under Islands (M2) in `bffless/README.md`
-    // before `targetUrl: alias://` generalises it.
-    <ImplContext.Provider value={isLive ? sliceState!.impl : run!.impl}>
+    // Stacked flat: the second provider only annotates the first's null.
+    <ImplContext.Provider value={implForView}>
+    <ImplWithheldContext.Provider value={implWithheld}>
       <section className="page">
         <RunHeader
           workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
@@ -849,6 +868,7 @@ export function RunPage() {
                   def={def}
                   state={state}
                   stepKey={selectedStep!}
+                  impl={implForView ?? undefined}
                   live={isLive}
                   initialTab={paneSide?.side}
                   onBack={back}
@@ -861,7 +881,7 @@ export function RunPage() {
                   def={def}
                   state={state}
                   job={selectedStep!}
-                  impl={state.impl}
+                  impl={implForView ?? undefined}
                   initialTab={paneSide?.side}
                   onSelect={(key) => select(key)}
                   onBack={toRun}
@@ -875,7 +895,7 @@ export function RunPage() {
                   state={state}
                   workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
                   annotations={annotations}
-                  impl={state.impl}
+                  impl={implForView ?? undefined}
                   onJump={(key) => select(key)}
                 />
               )}
@@ -890,6 +910,7 @@ export function RunPage() {
           </FileRefProvider>
         )}
       </section>
+    </ImplWithheldContext.Provider>
     </ImplContext.Provider>
   )
 }

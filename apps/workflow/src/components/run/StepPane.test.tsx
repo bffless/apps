@@ -205,7 +205,7 @@ describe('StepPane — Output tab renders every named renderer', () => {
 
     render(
       <Provider store={makeStore()}>
-        <StepPane def={def} state={state} stepKey="show/0/render" live={false} />
+        <StepPane def={def} state={state} stepKey="show/0/render" live={false} impl="hello" />
       </Provider>,
     )
 
@@ -216,6 +216,27 @@ describe('StepPane — Output tab renders every named renderer', () => {
       ['chart', 'code', 'images', 'island', 'transcript'].sort(),
     )
     expect(screen.queryAllByText(/^renderer:/)).toHaveLength(0)
+  })
+
+  // The trust boundary (apps#364): the pane never reaches for `state.impl` on
+  // its own — that is the run row's claim, and only the page knows whether
+  // discovery vouches for it. No `impl` prop and no `ImplContext` means the
+  // island degrades to the ordinary badge instead of loading a bundle the
+  // row named.
+  it('does not mount the island from state.impl alone', () => {
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    render(
+      <Provider store={makeStore()}>
+        <StepPane def={def} state={state} stepKey="show/0/render" live={false} />
+      </Provider>,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
+
+    expect(screen.queryByTestId('island-frame')).toBeNull()
+    expect(screen.getByText('renderer: island (no implementation)')).toBeInTheDocument()
   })
 })
 

@@ -17,3 +17,19 @@ export const ImplContext = createContext<string | null>(null)
 export function useImpl(): string | null {
   return useContext(ImplContext)
 }
+
+/**
+ * Why the context above holds `null`: absent because there is no run on
+ * screen, or **withheld** because the run row named an implementation the
+ * page refused to trust (apps#364 — not a discovered alias, a preview alias,
+ * or discovery has not answered yet). The two nulls draw differently: absent
+ * gets the ordinary "renderer: island (no implementation)" badge, withheld
+ * gets a one-line note saying the island was withheld on purpose. Only
+ * `RunPage` sets this; everywhere else the default `false` keeps the old
+ * badge.
+ */
+export const ImplWithheldContext = createContext<boolean>(false)
+
+export function useImplWithheld(): boolean {
+  return useContext(ImplWithheldContext)
+}
