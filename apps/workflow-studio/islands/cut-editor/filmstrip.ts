@@ -6,9 +6,10 @@
  * In Studio those sheets are composed in the browser, so their geometry is known by
  * construction. Here they arrive as `sheets` (a list of `FileRef`s — this source's leg of
  * the `sheets` matrix job) plus `times` (R118 — one array of capture seconds per sheet,
- * parallel to it). Either may be null or empty when that recording's capture was skipped
- * (R147), which just means an empty gutter. Everything else has to be reconstructed from
- * what CE's tiler actually does, plus the image's own pixel size.
+ * parallel to it) and `cols` (CE's reported grid width per sheet, parallel again). Any of
+ * them may be null or empty when that recording's capture was skipped (R147), which just
+ * means an empty gutter. Everything else has to be reconstructed from what CE's tiler
+ * actually does, plus the image's own pixel size.
  *
  * ## CE's real sheet geometry (R143)
  *
@@ -31,7 +32,13 @@
  *
  * `cols` is per-sheet, not the `columns` knob: CE's planner lays a short final sheet
  * out at its own narrower width (`cols = min(chunk.length, columns)` in
- * `ffmpeg.handler.ts`'s `planSheets`), and `buildTileArgs` is handed that value.
+ * `ffmpeg.handler.ts`'s `planSheets`), and `buildTileArgs` is handed that value. CE
+ * reports it back per sheet (`sheets[].cols`, ce#706), and `video/contact-sheet`'s
+ * `check` step carries it through as the result's `cols` array — which is what the
+ * island reads (apps#470). A result from before that field existed has no `cols`, so
+ * the same `min(SHEET_COLS, times.length)` arithmetic stays as the fallback; it agrees
+ * with CE for every sheet this workflow asks for, and only a sheet generated with a
+ * different geometry tells the two apart.
  *
  * `cellWidth`/`cellHeight` are computed here rather than left at 0 for
  * `cellGeometry` to derive: `CutEditor` also reads `sheet.cellWidth`/`cellHeight`
@@ -46,7 +53,10 @@
 import { buildFilmstrip, type FilmFrame } from 'studio/lib/filmstrip'
 import type { ContactSheet } from 'studio/lib/frames'
 
-/** CE's contact-sheet `columns` knob (`video/contact-sheet`'s rule: `tile.columns`). */
+/**
+ * CE's contact-sheet `columns` knob (`video/contact-sheet`'s rule: `tile.columns`) — the
+ * fallback grid width for a sheet whose result carries no `cols`.
+ */
 export const SHEET_COLS = 3
 
 /** ffmpeg's `tile=…:padding=2:margin=2` — equal, so Studio's one-gap model is exact. */
@@ -58,8 +68,20 @@ export interface SheetImage {
   url: string
   /** The capture seconds of this sheet's cells, row-major (R118's `times[i]`). */
   times: number[]
+  /**
+   * CE's reported grid width for this sheet (the result's `cols[i]`). Absent, null or
+   * not a positive integer means "unreported" and the width is inferred from `times`.
+   */
+  cols?: number | null
   width: number
   height: number
+}
+
+/** The grid width to crop with: CE's reported `cols`, else inferred from the cell count. */
+export function sheetCols(sheet: Pick<SheetImage, 'times' | 'cols'>): number {
+  const reported = sheet.cols
+  if (typeof reported === 'number' && Number.isInteger(reported) && reported > 0) return reported
+  return Math.min(SHEET_COLS, Math.max(1, sheet.times.length))
 }
 
 /**
@@ -68,7 +90,7 @@ export interface SheetImage {
  * what we have.
  */
 export function toContactSheet(sheet: SheetImage, index: number, total: number): ContactSheet {
-  const cols = Math.min(SHEET_COLS, Math.max(1, sheet.times.length))
+  const cols = sheetCols(sheet)
   const rows = Math.max(1, Math.ceil(sheet.times.length / cols))
   return {
     dataUrl: '',

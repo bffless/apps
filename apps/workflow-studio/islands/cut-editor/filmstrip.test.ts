@@ -18,7 +18,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { frameForRow, spriteStyle } from 'studio/lib/filmstrip'
-import { framesFor, toContactSheet, type SheetImage } from './filmstrip'
+import { framesFor, sheetCols, toContactSheet, type SheetImage } from './filmstrip'
 
 const CELL_W = 320
 const CELL_H = 180
@@ -43,12 +43,28 @@ const full: SheetImage = {
   height: sheetHeight(4), // 730
 }
 
-/** The short final sheet: 2 cells, laid out 2 WIDE (CE's `planSheets`), not 3. */
+/**
+ * The short final sheet: 2 cells, laid out 2 WIDE (CE's `planSheets`), not 3. No `cols`
+ * — a result from before the field existed (apps#470) — so the width is inferred.
+ */
 const short: SheetImage = {
   url: 'https://bucket.example/sheet-1.jpg',
   times: [60, 65],
   width: sheetWidth(2), // 646
   height: sheetHeight(1), // 184
+}
+
+/**
+ * A sheet CE laid out 2 across for 3 cells — a geometry this workflow never asks for,
+ * so the `min(SHEET_COLS, times.length)` inference gets it WRONG (3). Only the reported
+ * `cols` tells the crop where cell 2 really is: the second row, not the third column.
+ */
+const twoWide: SheetImage = {
+  url: 'https://bucket.example/sheet-2.jpg',
+  times: [70, 75, 80],
+  cols: 2,
+  width: sheetWidth(2), // 646
+  height: sheetHeight(2), // 366
 }
 
 describe('toContactSheet', () => {
@@ -75,10 +91,37 @@ describe('toContactSheet', () => {
       cellHeight: CELL_H,
     })
   })
+
+  it('reads CE’s reported `cols` rather than inferring it from the cell count', () => {
+    // Inference would say 3 across, 1 down — and derive a 210 px cell from a 646 px sheet.
+    const sheet = toContactSheet(twoWide, 2, 3)
+    expect({ cols: sheet.cols, rows: sheet.rows }).toEqual({ cols: 2, rows: 2 })
+    expect({ cellWidth: sheet.cellWidth, cellHeight: sheet.cellHeight }).toEqual({
+      cellWidth: CELL_W,
+      cellHeight: CELL_H,
+    })
+  })
+})
+
+describe('sheetCols', () => {
+  it('prefers a reported positive integer', () => {
+    expect(sheetCols({ times: [0, 5, 10], cols: 2 })).toBe(2)
+    expect(sheetCols({ times: [0], cols: 3 })).toBe(3)
+  })
+
+  it('falls back to the inference when `cols` is unreported or unusable', () => {
+    // Old results carry no `cols`; the rule writes null when CE reported none (R143).
+    expect(sheetCols({ times: [0, 5, 10, 15] })).toBe(3)
+    expect(sheetCols({ times: [0, 5], cols: null })).toBe(2)
+    expect(sheetCols({ times: [0, 5], cols: 0 })).toBe(2)
+    expect(sheetCols({ times: [0, 5, 10], cols: 2.5 })).toBe(3)
+    expect(sheetCols({ times: [0, 5, 10], cols: Number.NaN })).toBe(3)
+    expect(sheetCols({ times: [], cols: undefined })).toBe(1)
+  })
 })
 
 describe('spriteStyle over a reconstructed sheet', () => {
-  const frames = framesFor([full, short])
+  const frames = framesFor([full, short, twoWide])
 
   /** The style `CutEditor`'s gutter renders a frame with (`FILMSTRIP_WIDTH` = 150). */
   const styleAt = (time: number, width: number) => {
@@ -119,6 +162,17 @@ describe('spriteStyle over a reconstructed sheet', () => {
     expect(style.backgroundSize).toBe('646px 184px')
     const { x, y } = cellOrigin(1, 2) // 324, 2 — 2 cols wide, not 3
     expect(style.backgroundPosition).toBe(`-${x}px -${y}px`)
+  })
+
+  it('crops a 2-wide, 3-cell sheet by its reported `cols`, not the inferred 3', () => {
+    const { frame, style } = styleAt(80, CELL_W)
+    expect(frame.url).toBe(twoWide.url)
+    expect(frame.index).toBe(2)
+    expect(style.backgroundSize).toBe('646px 366px')
+    const { x, y } = cellOrigin(2, 2) // 2, 184 — second row, first column
+    expect(style.backgroundPosition).toBe(`-${x}px -${y}px`)
+    // The inference would have put it in the (non-existent) third column of row 0.
+    expect(style.backgroundPosition).not.toBe(`-${cellOrigin(2, 3).x}px -${cellOrigin(2, 3).y}px`)
   })
 
   it('scales the whole layout to the gutter width', () => {

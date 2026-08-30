@@ -36,17 +36,21 @@ const SHEET_TIMES = [0, 5, 10, 15, 20, 25]
 const GUTTER = 150
 const SPRITE_SCALE = GUTTER / 320
 
+/** The pixel size `FakeImage` reports for every sheet — a test may lay one out differently. */
+let fakeSheetSize = { width: SHEET_WIDTH, height: SHEET_HEIGHT }
+
 class FakeImage {
   onload: (() => void) | null = null
   onerror: (() => void) | null = null
-  naturalWidth = SHEET_WIDTH
-  naturalHeight = SHEET_HEIGHT
+  naturalWidth = fakeSheetSize.width
+  naturalHeight = fakeSheetSize.height
   set src(_url: string) {
     queueMicrotask(() => this.onload?.())
   }
 }
 
 beforeEach(() => {
+  fakeSheetSize = { width: SHEET_WIDTH, height: SHEET_HEIGHT }
   vi.stubGlobal('Image', FakeImage)
   Object.defineProperty(HTMLMediaElement.prototype, 'play', {
     configurable: true,
@@ -114,6 +118,13 @@ const done = () => fireEvent.click(screen.getByTestId('island-done'))
 /** The first filmstrip cell rendered as a sprite crop of the signed sheet. */
 const sheetSprite = () =>
   document.querySelector<HTMLElement>('[style*="https://bucket.example/runs/7/sheet-0.jpg"]')
+
+/**
+ * The sprite crop the gutter row starting at `clock` shows. Rows are `CutEditor`'s
+ * transcript lines (2 s apart here), each a zoom button around its cropped cell.
+ */
+const spriteAt = (clock: string) =>
+  screen.getByLabelText(`View frame at ${clock} full-size`).firstElementChild as HTMLElement
 
 describe('the cut editor island', () => {
   it('renders the scene on Studio’s editor, with the signed clip and WAV', async () => {
@@ -257,6 +268,41 @@ describe('the cut editor island', () => {
     renderEditor(toolInput({ times: [] }))
     await settled()
     expect(sheetSprite()).toBeNull()
+  })
+
+  it('crops the sheet by CE’s reported `cols` rather than inferring 3 across (apps#470)', async () => {
+    // The same six captures, but CE laid this sheet out 2 across and 3 down:
+    // 2*320 + 2 + 2*2 = 646 wide, 3*180 + 2*2 + 2*2 = 548 high. Cell 2 (the 10 s
+    // frame, which the 0:10 row shows) then sits at the start of the SECOND row —
+    // (2, 184) — where the old inference would crop (646, 2): the empty third column
+    // of the first row.
+    fakeSheetSize = { width: 646, height: 548 }
+    renderEditor(toolInput({ cols: [2] }))
+    await settled()
+    await waitFor(() => {
+      expect(sheetSprite()).not.toBeNull()
+    })
+
+    const sprite = spriteAt('0:10')
+    expect(sprite.style.backgroundSize).toBe(
+      `${Math.round(646 * SPRITE_SCALE)}px ${Math.round(548 * SPRITE_SCALE)}px`,
+    )
+    expect(sprite.style.backgroundPosition).toBe(
+      `-${Math.round(2 * SPRITE_SCALE)}px -${Math.round(184 * SPRITE_SCALE)}px`,
+    )
+  })
+
+  it('infers the grid when `cols` is absent — a result from before the field existed', async () => {
+    // `toolInput()` passes no `cols`: the 968×366 sheet is read as 3 across, so cell 2
+    // is the third column of the first row — (646, 2).
+    renderEditor()
+    await settled()
+    await waitFor(() => {
+      expect(sheetSprite()).not.toBeNull()
+    })
+    expect(spriteAt('0:10').style.backgroundPosition).toBe(
+      `-${Math.round(646 * SPRITE_SCALE)}px -${Math.round(2 * SPRITE_SCALE)}px`,
+    )
   })
 
   describe('when every span is cut', () => {

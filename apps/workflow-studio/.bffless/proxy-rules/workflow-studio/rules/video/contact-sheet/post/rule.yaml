@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: Director contact sheets (ffmpeg frames + tile, async)
-  description: "POST { source, outPrefix, times, labels, executor } -> ENQUEUE a job (kind 'contact-sheet'); CE's ffmpeg `frames` op captures one still per `times` entry, burns the caller's parallel `labels` into each, and tiles them into contact sheets. Result { paths, times, columns, drawn } is polled via GET job?id=. There is no CE contact-sheet operation: a sheet is `times` + `tile` (R116). Studio drew these in the browser (src/lib/frames.ts); the corner, size and clock text match that."
+  description: "POST { source, outPrefix, times, labels, executor } -> ENQUEUE a job (kind 'contact-sheet'); CE's ffmpeg `frames` op captures one still per `times` entry, burns the caller's parallel `labels` into each, and tiles them into contact sheets. Result { paths, times, cols, drawn } is polled via GET job?id=. There is no CE contact-sheet operation: a sheet is `times` + `tile` (R116). Studio drew these in the browser (src/lib/frames.ts); the corner, size and clock text match that."
   steps:
     - id: prep
       name: prep

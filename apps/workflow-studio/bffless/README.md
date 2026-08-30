@@ -146,10 +146,6 @@ Things that work, but not as well as they should. None blocks the first success.
   `planGlobalSheetCaptures`, R147), so `refine-scene` sees its source's ≤ 10 sheets sampled
   at the project's spacing — enough to pick cuts, coarser than Studio's. A fix means a
   second `video/contact-sheet` call inside the `per-scene` matrix job.
-- **The island infers the sheet's column count.** CE returns a per-sheet `cols` on the
-  contact-sheet job, but the cut editor's filmstrip derives its grid from `SHEET_COLS`/`columns`
-  instead of reading it back. Correct for every sheet this workflow asks for; wrong the moment a
-  sheet is generated with a different geometry.
 - **A throwing `check`/`parse` leaves the job `running`.** A `function_handler` that throws
   produces no status at all (not a failure status), so the workflow's poll sees an unchanged row
   and keeps polling until the step's timeout rather than failing fast. The rules avoid throwing
