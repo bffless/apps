@@ -42,6 +42,18 @@ describe('Report', () => {
     expect(md).toContain('- [x] **D6.signedImg — PASS.** "https://storage.googleapis.com/…"')
     expect(md).toContain('- [ ] **D4.sandboxed — FAIL.** "origin=https://workflow.j5s.dev"')
   })
+  it('a second block() keeps the first reason', () => {
+    const r = new Report('w', 'h')
+    r.block('no credentials')
+    r.block('walk threw: boom')
+    expect(r.finish().blocked).toBe('no credentials')
+  })
+  it('renders notes after a blank line so they do not fold into the last row', () => {
+    const r = new Report('w', 'h')
+    r.expect('a', true, 1)
+    r.note('ADMIN_API_KEY unset')
+    expect(toMarkdown(r.finish())).toBe('- [x] **a — PASS.** 1\n\n> ADMIN_API_KEY unset\n')
+  })
   it('renders a BLOCKED header', () => {
     const r = new Report('hello', 'h'); r.block('harness unreachable')
     expect(toMarkdown(r.finish())).toMatch(/^\*\*BLOCKED — harness unreachable\*\*/)
@@ -83,5 +95,14 @@ describe('Report', () => {
     r.expect('a', true)
     expect(() => r.expect('a', false)).toThrow(/duplicate check name: a/)
     expect(() => r.scoped('p.').expect('a', true)).not.toThrow()
+  })
+  it('records a check named like an Object.prototype member', () => {
+    const r = new Report('w', 'h')
+    expect(r.expect('toString', true, 1)).toBe(true)
+    expect(r.expect('constructor', false, 2)).toBe(false)
+    const out = r.finish()
+    expect(out.checks.toString).toEqual({ pass: true, evidence: 1 })
+    expect(out.checks.constructor).toEqual({ pass: false, evidence: 2 })
+    expect(() => r.expect('toString', true)).toThrow(/duplicate check name: toString/)
   })
 })

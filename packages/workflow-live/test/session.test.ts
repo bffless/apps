@@ -10,6 +10,14 @@ describe('classify', () => {
     expect(classify('https://w/api/workflow/run/delete', 'POST', 200, false)).toEqual({ kind: 'delete' })
     expect(classify('https://w/api/workflow/run/delete', 'POST', 403, true)).toEqual({ kind: 'other' })
   })
+  it('matches on the pathname, so a query string does not hide either shape', () => {
+    expect(classify('https://w/api/workflow/files/register?x=1', 'POST', 200, false)).toEqual({ kind: 'register' })
+    expect(classify('https://w/api/workflow/run/delete?x=1', 'POST', 200, false)).toEqual({ kind: 'delete' })
+  })
+  it('requires POST for both shapes', () => {
+    expect(classify('https://w/api/workflow/files/register', 'GET', 200, false)).toEqual({ kind: 'other' })
+    expect(classify('https://w/api/workflow/run/delete', 'GET', 200, false)).toEqual({ kind: 'other' })
+  })
 })
 
 describe('redactUrl', () => {

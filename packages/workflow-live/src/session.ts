@@ -12,6 +12,8 @@
  * `registered` and `deleteBody` are filled in by response listeners that read
  * the body asynchronously — they only reflect every response seen so far once
  * the caller `await`s every promise in `pending` (e.g. `await Promise.all(s.pending)`).
+ * A body that fails to parse is recorded in `bodyErrors` instead of vanishing,
+ * so a check that finds `registered` short or `deleteBody` null can say why.
  *
  * `consoleErrors`/`failed` start counting after the relay login; pre-auth
  * SuperTokens 401s are expected and live only in `log`.
@@ -31,6 +33,7 @@ export interface Session {
   pending: Promise<unknown>[]
   deleteBody: unknown
   deleteStatus: number | null
+  bodyErrors: string[]
   shot(name: string): Promise<void>
   close(): Promise<void>
 }
@@ -44,8 +47,10 @@ export interface SessionOptions {
 export type Classified = { kind: 'register' } | { kind: 'delete' } | { kind: 'other' }
 
 export function classify(url: string, method: string, status: number, hasApiKey: boolean): Classified {
-  if (/\/api\/workflow\/files\/register$/.test(url) && status === 200) return { kind: 'register' }
-  if (/\/api\/workflow\/run\/delete$/.test(url) && method === 'POST' && !hasApiKey) return { kind: 'delete' }
+  if (method !== 'POST') return { kind: 'other' }
+  const path = pathnameOf(url)
+  if (/\/api\/workflow\/files\/register$/.test(path) && status === 200) return { kind: 'register' }
+  if (/\/api\/workflow\/run\/delete$/.test(path) && !hasApiKey) return { kind: 'delete' }
   return { kind: 'other' }
 }
 
@@ -89,6 +94,11 @@ export function redactUrl(url: string): string {
   return `${url.slice(0, q)}?${redacted}${fragment}`
 }
 
+// Match on the pathname so a `?query` cannot defeat the `$`-anchored patterns.
+const pathnameOf = (url: string): string => {
+  try { return new URL(url).pathname } catch { return url }
+}
+
 export async function openSession(o: SessionOptions): Promise<Session> {
   await mkdir(o.out, { recursive: true }).catch(() => undefined)
   const browser: Browser = await chromium.launch({ args: ['--no-sandbox'], handleSIGINT: false })
@@ -104,6 +114,7 @@ export async function openSession(o: SessionOptions): Promise<Session> {
     pending: [],
     deleteBody: null,
     deleteStatus: null,
+    bodyErrors: [],
     shot: (name) => page.screenshot({ path: `${o.out}/${name}.png`, fullPage: true }).then(() => undefined).catch(() => undefined),
     close: () => browser.close().catch(() => undefined),
   }
@@ -121,11 +132,11 @@ export async function openSession(o: SessionOptions): Promise<Session> {
     if (status >= 400) s.failed.push(line)
     const c = classify(url, method, status, r.request().headers()['x-api-key'] !== undefined)
     if (c.kind === 'register') {
-      s.pending.push(r.json().then((b) => s.registered.push(b as FileRef)).catch(() => undefined))
+      s.pending.push(r.json().then((b) => { s.registered.push(b as FileRef) }).catch((e) => { s.bodyErrors.push(`register ${url}: ${String(e)}`) }))
     }
     if (c.kind === 'delete') {
       s.deleteStatus = status
-      s.pending.push(r.json().then((b) => { s.deleteBody = b }).catch(() => undefined))
+      s.pending.push(r.json().then((b) => { s.deleteBody = b }).catch((e) => { s.bodyErrors.push(`delete ${url}: ${String(e)}`) }))
     }
   })
   try {

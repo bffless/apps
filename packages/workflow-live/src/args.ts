@@ -1,8 +1,10 @@
-import { parseDuration } from '@bffless/workflow-headless'
+import { parseDuration, UsageError } from '@bffless/workflow-headless'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-export class UsageError extends Error {}
+// The same `UsageError` the headless driver throws (it sets `name`), so a stack
+// says `UsageError`, not `Error`; re-exported so importers keep using `./args.js`.
+export { UsageError }
 
 export const USAGE = `workflow-live walk <m1|interactive|hello|headless|studio-audit|studio-headless|all>
   [--harness https://workflow.j5s.dev] [--out DIR] [--dispatch] [--clip PATH] [--run RUN_ID] [--timeout 90m]
@@ -31,17 +33,22 @@ export function parseWalkArgs(argv: string[]): WalkArgs {
     const flag = rest[i]
     const value = () => {
       const v = rest[++i]
-      if (v === undefined || v.startsWith('--')) throw new UsageError(`${flag} needs a value\n\n${USAGE}`)
+      if (v === undefined || v === '' || v.startsWith('--')) throw new UsageError(`${flag} needs a value\n\n${USAGE}`)
       return v
     }
-    if (flag === '--harness') a.harness = value().replace(/\/+$/, '')
+    if (flag === '--harness') {
+      const harness = value().replace(/\/+$/, '')
+      if (!harness) throw new UsageError(`${flag} needs a value\n\n${USAGE}`)
+      a.harness = harness
+    }
     else if (flag === '--out') a.out = value()
     else if (flag === '--dispatch') a.dispatch = true
     else if (flag === '--clip') a.clip = value()
     else if (flag === '--run') a.run = value()
     else if (flag === '--timeout') {
+      const v = value() // a missing value is already a UsageError; only parseDuration's error is wrapped
       try {
-        a.timeoutMs = parseDuration(value())
+        a.timeoutMs = parseDuration(v)
       } catch (e) {
         throw new UsageError(`--timeout: ${e instanceof Error ? e.message : String(e)}\n\n${USAGE}`)
       }

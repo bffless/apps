@@ -29,7 +29,7 @@ export class Report {
   constructor(private readonly walk: string, private readonly harness: string) {}
 
   expect(name: string, cond: unknown, evidence?: unknown): boolean {
-    if (name in this.checks) throw new Error(`duplicate check name: ${name}`)
+    if (Object.hasOwn(this.checks, name)) throw new Error(`duplicate check name: ${name}`)
     const pass = !!cond
     this.checks[name] = { pass, evidence: evidence ?? null }
     if (!pass) console.error(`FAIL ${name}: ${JSON.stringify(evidence)}`)
@@ -38,7 +38,12 @@ export class Report {
   note(text: string): void { this.notes.push(text) }
   run(id: string): void { if (!this.runIds.includes(id)) this.runIds.push(id) }
   kickoff(): void { this.kickoffs += 1 }
-  block(reason: string): void { this.blocked = reason; console.error(`BLOCKED: ${reason}`) }
+  // The first reason wins: a walk that blocks and then throws keeps its own
+  // reason rather than `cli.ts`'s `walk threw: …`.
+  block(reason: string): void {
+    console.error(this.blocked === undefined ? `BLOCKED: ${reason}` : `BLOCKED (kept first reason): ${reason}`)
+    this.blocked ??= reason
+  }
 
   scoped(prefix: string): Checker {
     return { expect: (name, cond, evidence) => this.expect(`${prefix}${name}`, cond, evidence) }
@@ -88,6 +93,7 @@ export function toMarkdown(r: WalkReport): string {
     lines.push(`- [${c.pass ? 'x' : ' '}] **${name} — ${c.pass ? 'PASS' : 'FAIL'}.** ${JSON.stringify(c.evidence)}`)
   }
   if (r.runIds.length) lines.push('', `Runs: ${r.runIds.map((id) => `\`${id}\``).join(', ')}`)
+  if (r.notes.length) lines.push('') // otherwise Markdown folds the notes into the last list item
   for (const n of r.notes) lines.push(`> ${n}`)
   return `${lines.join('\n')}\n`
 }
