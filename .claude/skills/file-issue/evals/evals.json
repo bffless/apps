@@ -1,0 +1,16 @@
+{
+  "skill_name": "file-issue",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Refile item 4 of bffless/apps#463 (the stager no-import regex firing on a bundled string literal) as its own issue on bffless/apps. Decision: strip string literals before running the regexes, and keep a case proving a genuine top-level import is still caught. Draft only: write the draft to ./issue-draft.md in the working directory (line 1 `# <title>`, then the body). Do not run `gh issue create`, do not edit any issue, do not commit.",
+      "expected_output": "A draft titled like `workflow-studio: stager no-import regex fires on a bundled string literal — strip literals first (#463)`. Opening paragraph: 'Refiled from #463 item 4', `**decided**: strip string literals before the regexes`, the mechanism cited as `apps/workflow-studio/scripts/stage.mjs:223` (the regexes, throw at :224) and `apps/workflow-studio/src/stage.test.ts:91-93` (the mirrored assertions, including the third `require(` one triage found). 2-3 checkboxes: tighten/strip in stage.mjs; mirror in stage.test.ts; add the failing string-literal case plus a still-caught genuine import case. Verify line in CI order (`workflow-lint:build`, `workflow-studio:typecheck`, `:lint`, `:stage`, `:test`). Live-surface note: no rule or schema change; workflow-studio deploys on merge only. Sha line. Related: #463 (parent), #425, PR #424. Labels proposed: bug, workflow-studio; no readiness label.",
+      "files": [],
+      "assertions": {
+        "scripted (grade.py)": ["title prefix is one app/package that exists on origin/main", "refile cites its parent in the title as (#N)", "at least two `path:line` citations", "names the origin/main sha the citations are against", "1-3 unchecked checkboxes (one unit of work)", "verify chain ends in build (or stage+typecheck)", "no open fork phrasing (should we / either-or / TBD / open decision)", "says what goes live and when, or that nothing does", "no self-certification or agent-addressed text"],
+        "judged (rubric.md)": ["Zero open questions", "Decisions are recorded, not deferred", "Citations are real and load-bearing", "Testable outcomes", "Live surfaces and gates", "Provenance and relations"],
+        "other": ["cite_check.sh exits 0", "no gh write was attempted"]
+      }
+    }
+  ]
+}
