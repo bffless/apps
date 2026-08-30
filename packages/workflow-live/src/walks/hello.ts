@@ -8,6 +8,7 @@
  * latter needs bffless/workflow-hello#5 merged + deployed, and is recorded
  * as a FAIL with evidence "log line absent" until then.
  */
+import { writeFile } from 'node:fs/promises'
 import { openSession } from '../session.js'
 import { credentials } from '../env.js'
 import type { Walk } from './index.js'
@@ -51,16 +52,29 @@ export const hello: Walk = async ({ args, env, report }) => {
     report.expect('run.succeeded', (await page.getByTestId('run-status').getAttribute('data-state')) === 'succeeded', runId)
     await s.shot('07-succeeded')
     // Step 1c — Decision 6: the poster viewer draws a presigned URL, credential-less
-    const viewers = page.locator('[data-testid="renderer"][data-render="island"] [data-testid="island-frame"]')
-    await viewers.first().waitFor({ timeout: 30_000 })
-    const posterFrame = viewers.nth(1).contentFrame()
-    const img = posterFrame.locator('img').first()
+    const outputs = page.getByTestId('run-outputs')
+    const posterViewer = outputs.locator('[data-output="poster_view"] [data-testid="renderer"][data-render="island"] [data-testid="island-frame"]')
+    await posterViewer.waitFor({ timeout: 30_000 })
+    const posterFrame = posterViewer.contentFrame()
+    const img = posterFrame.getByTestId('viewer-image')
     await img.waitFor({ timeout: 30_000 })
+    await img.evaluate(
+      (el) =>
+        new Promise<void>((res) => {
+          const i = el as HTMLImageElement
+          if (i.complete && i.naturalWidth > 0) return res()
+          i.addEventListener('load', () => res(), { once: true })
+          i.addEventListener('error', () => res(), { once: true })
+        }),
+      undefined,
+      { timeout: 30_000 },
+    )
     const src = (await img.getAttribute('src')) ?? ''
     const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
     const presigned = /^https?:\/\//.test(src) && !src.startsWith(args.harness) && /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(src)
     report.expect('D6.viewerImgIsPresigned', presigned && natural > 0, { src: src.slice(0, 120), naturalWidth: natural })
-    report.expect('D6.noSignError', ((await page.getByTestId('island-sign-error').textContent().catch(() => '')) ?? '') === '', 'island-sign-error empty')
+    const signErr = await posterFrame.getByTestId('island-sign-error').textContent({ timeout: 10_000 }).catch(() => null)
+    report.expect('D6.noSignError', signErr === '' || signErr === null, { islandSignError: signErr })
     // Step 1d — Decision 4: the script ran in a sandboxed Worker (opaque origin)
     await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
     await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
@@ -72,6 +86,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     await s.shot('99-failed')
     throw e
   } finally {
+    await writeFile(`${args.out}/network.log`, s.log.join('\n'), 'utf8').catch(() => undefined)
     await s.close()
   }
 }
