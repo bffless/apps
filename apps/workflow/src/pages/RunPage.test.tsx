@@ -661,6 +661,14 @@ describe('RunPage', () => {
         const head = page.querySelector('.run-head') as HTMLElement
         expect(await within(head).findByText(forkId)).toBeInTheDocument()
         expect(within(head).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
+        // … naming its parent right away, not only once it is reopened as a
+        // replay: the adopt path carries the row's `forkedFrom` on `RunMeta` (apps#513).
+        const forkedFrom = within(head).getByTestId('run-forked-from')
+        expect(forkedFrom).toHaveTextContent(`forked from ${FIXTURE_RUN_ID} at slow`)
+        expect(within(forkedFrom).getByRole('link', { name: FIXTURE_RUN_ID })).toHaveAttribute(
+          'href',
+          `/hello/hello/runs/${FIXTURE_RUN_ID}`,
+        )
         expect(within(page).queryByTestId('run-fork-failed')).not.toBeInTheDocument()
         expect(forkCalls).toHaveLength(1)
       } finally {

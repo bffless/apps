@@ -67,8 +67,9 @@ export interface RunHeaderProps {
   startedAt: number
   /**
    * The run this one was forked from and the job it re-ran from ("Re-run from
-   * this job", 05; apps#491). Off the run row (`forkedFrom` / `forkJob`), so
-   * only a *replayed* run carries it — the same way `startedBy` does.
+   * this job", 05; apps#491). Off the run row (`forkedFrom` / `forkJob`) on a
+   * replay, and off `RunMeta.forkedFrom` on a live run — the tab that forked
+   * it adopts the row it read back, so it carries the parent too (apps#513).
    */
   forkedFrom?: { runId: string; job: string }
   /** `null` while the run is still in flight. */

@@ -81,6 +81,7 @@ function metaFrom(run: RunRow, def: Definition): RunMeta {
     yaml: run.yaml,
     workflowName: run.workflowName,
     ...(run.workflowVersion === undefined ? {} : { workflowVersion: run.workflowVersion }),
+    ...(run.forkedFrom && run.forkJob ? { forkedFrom: { runId: run.forkedFrom, job: run.forkJob } } : {}),
   }
 }
 

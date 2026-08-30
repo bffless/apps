@@ -770,7 +770,11 @@ export function RunPage() {
           startedBy={isLive ? undefined : run!.startedBy}
           startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
           forkedFrom={
-            !isLive && run!.forkedFrom && run!.forkJob ? { runId: run!.forkedFrom, job: run!.forkJob } : undefined
+            isLive
+              ? sliceMeta!.forkedFrom
+              : run!.forkedFrom && run!.forkJob
+                ? { runId: run!.forkedFrom, job: run!.forkJob }
+                : undefined
           }
           finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
           headless={isLive ? sliceState!.headless : run!.headless}

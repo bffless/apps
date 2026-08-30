@@ -353,6 +353,8 @@ describe('forkRun', () => {
         status: 'running',
         leaseOwner: getOwnerId(),
       })
+      // … and the adopted slice carries the parent on its meta, so this tab's header can name it (apps#513).
+      expect(store.getState().run.meta?.forkedFrom).toEqual({ runId: FIXTURE_RUN_ID, job: 'slow' })
 
       await pumpUntil(advance, () => store.getState().run.state?.steps[REVIEW_KEY]?.status === 'waiting', {
         maxSteps: 400,
