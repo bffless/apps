@@ -112,9 +112,12 @@ jobs:
         outputs:
           sheets: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
           times:  { type: json, value: "${{ response.result.times }}" }
+          # CE's per-sheet grid width, parallel to `sheets` (a short final sheet is narrower).
+          cols:   { type: json, value: "${{ response.result.cols }}" }
     outputs:
       sheets: ${{ steps.sheets.outputs.sheets }}
       times: ${{ steps.sheets.outputs.times }}
+      cols: ${{ steps.sheets.outputs.cols }}
 
   director:
     name: Director's take
@@ -209,6 +212,7 @@ jobs:
           cuts:  ${{ steps.refine.outputs.cuts }}
           sheets: ${{ needs.sheets.outputs.sheets[matrix.scene.sourceIndex] }}
           times: ${{ needs.sheets.outputs.times[matrix.scene.sourceIndex] }}
+          cols: ${{ needs.sheets.outputs.cols[matrix.scene.sourceIndex] }}
         outputs:
           cuts: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }
           keep: { type: json, schema: { type: array, items: { type: object, required: [start, end] } } }

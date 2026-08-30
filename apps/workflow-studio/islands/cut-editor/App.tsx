@@ -68,6 +68,13 @@ interface TrimInput {
    * null (R147). The editor renders the grid with no filmstrip gutter.
    */
   times: number[][]
+  /**
+   * CE's reported grid width per sheet, parallel to `sheets` too (apps#470) — a short
+   * final sheet is laid out narrower than `tile.columns`. Like `times` it may be null
+   * (R147) or shorter than `sheets` (a result from before the field existed); a sheet
+   * with no entry has its width inferred from its `times`.
+   */
+  cols: number[]
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -108,6 +115,12 @@ function asTimes(value: unknown): number[][] {
   return value.map((row) => (Array.isArray(row) ? row.map((time) => num(time)) : []))
 }
 
+/** Per-sheet `cols`; a null/non-numeric entry becomes 0, which `sheetCols` treats as unreported. */
+function asCols(value: unknown): number[] {
+  if (!Array.isArray(value)) return []
+  return value.map((cols) => num(cols))
+}
+
 /** The scene row the director produced — `start`/`end` on its source's timeline. */
 function asScene(value: unknown, words: TWord[]): SceneWindow & { title: string } {
   const scene = isRecord(value) ? value : {}
@@ -128,6 +141,7 @@ export function parseArgs(args: Record<string, unknown>): TrimInput {
     cuts: normalizeCuts(asSpans(args.cuts)),
     sheets: Array.isArray(args.sheets) ? args.sheets.map(asRef).filter((r) => r !== null) : [],
     times: asTimes(args.times),
+    cols: asCols(args.cols),
   }
 }
 
@@ -220,7 +234,7 @@ export interface EditorProps {
 
 export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
   const input = useMemo(() => parseArgs(args), [args])
-  const { clip, wav, scene, words, sheets, times } = input
+  const { clip, wav, scene, words, sheets, times, cols } = input
 
   // Read at mount, then kept current by `host-context-changed` (Accept flips it
   // to true on a mounted island). Never goes back to false: an accepted step is
@@ -257,17 +271,18 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
   const clipUrl = clip ? urls[clip.path] : undefined
   const wavUrl = wav ? urls[wav.path] : undefined
 
-  // The sheets that signed, paired with their capture times. A sheet whose `times`
-  // never arrived contributes no frames, so it is dropped rather than measured.
+  // The sheets that signed, paired with their capture times and CE's grid width. A
+  // sheet whose `times` never arrived contributes no frames, so it is dropped rather
+  // than measured; a missing `cols` entry is fine (the width is inferred).
   const signedSheets = useMemo(
     () =>
       sheets
-        .map((sheet, i) => ({ url: urls[sheet.path], times: times[i] ?? [] }))
+        .map((sheet, i) => ({ url: urls[sheet.path], times: times[i] ?? [], cols: cols[i] ?? 0 }))
         .filter(
-          (sheet): sheet is { url: string; times: number[] } =>
+          (sheet): sheet is { url: string; times: number[]; cols: number } =>
             !!sheet.url && sheet.times.length > 0,
         ),
-    [sheets, times, urls],
+    [sheets, times, cols, urls],
   )
 
   // Each sheet's pixel size — the sprite geometry `CutEditor` crops cells with. One
@@ -283,7 +298,7 @@ export function Editor({ args, bridge }: EditorProps): React.JSX.Element {
       signedSheets.map(async (sheet): Promise<SheetImage | null> => {
         try {
           const { width, height } = await measureSheet(sheet.url)
-          return { url: sheet.url, times: sheet.times, width, height }
+          return { url: sheet.url, times: sheet.times, cols: sheet.cols, width, height }
         } catch {
           return null
         }

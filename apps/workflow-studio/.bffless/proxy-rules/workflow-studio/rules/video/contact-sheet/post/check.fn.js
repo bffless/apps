@@ -17,10 +17,15 @@ function handler({ steps, deployment, stepErrors }) {
 
   var paths = []
   var times = []
+  var cols = []
   for (var i = 0; i < sheets.length; i++) {
     var s = sheets[i] || {}
     paths.push(rel(s.storage_path))
     times.push(s.times || [])
+    // CE's per-sheet grid width (ce#706): `min(chunk, tile.columns)`, so a short final
+    // sheet is narrower. Parallel to `paths`/`times`; null when CE didn't report one, and
+    // the island falls back to inferring it from `times`.
+    cols.push(typeof s.cols === 'number' && s.cols > 0 ? s.cols : null)
   }
 
   // `drawn` is CE's telemetry, not the request: false means the sheets came back
@@ -33,7 +38,7 @@ function handler({ steps, deployment, stepErrors }) {
     data: {
       paths: paths,
       times: times,
-      columns: 3,
+      cols: cols,
       drawn: out.drawn === true,
     },
   }
