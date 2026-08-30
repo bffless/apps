@@ -81,6 +81,20 @@ export default async function sheetPlan(ctx: ScriptContext): Promise<Record<stri
     plan.labels.push(clockLabel(capture.globalTime))
   }
 
+  const total = plans.reduce((sum, plan) => sum + plan.times.length, 0)
+
+  // Nothing planned anywhere means no recording has a word of spoken audio. Every `sheets`
+  // leg would be `if:`-skipped, but `director` has no guard of its own and would run on
+  // empty inputs, and the run would finish `succeeded` with nothing in it (apps#469). Fail
+  // here instead — a failed `plan` skips every job downstream — and say why on the step
+  // BEFORE throwing: the harness only accepts an annotation while the step is running.
+  if (total === 0) {
+    const message =
+      'No recording has any spoken audio — there is nothing to plan contact sheets from and the director would run on empty inputs, so the run stops here.'
+    ctx.annotate({ level: 'error', message })
+    throw new Error(`${NAME}: ${message}`)
+  }
+
   for (const plan of plans) {
     // Unreachable while the global budget is 120 frames across every source, but this is
     // the one invariant `video/contact-sheet` would reject rather than truncate.
@@ -100,7 +114,6 @@ export default async function sheetPlan(ctx: ScriptContext): Promise<Record<stri
     }
   }
 
-  const total = plans.reduce((sum, plan) => sum + plan.times.length, 0)
   const combined = durations.reduce((sum, d) => sum + (Number.isFinite(d) && d > 0 ? d : 0), 0)
   ctx.log(
     `${total} frames across ${plans.length} recording(s), one timeline of ${clockLabel(combined)}`,
