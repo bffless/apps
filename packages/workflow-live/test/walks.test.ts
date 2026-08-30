@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ALL_ORDER, WALKS } from '../src/walks/index.js'
 
 // Later tasks (5, 7, 8, 10) each append their walk's name here as it's registered.
-const REGISTERED = ['m1', 'interactive', 'hello']
+const REGISTERED = ['m1', 'interactive', 'hello', 'headless']
 
 describe('WALKS', () => {
   it('registers every walk added so far', () => {
