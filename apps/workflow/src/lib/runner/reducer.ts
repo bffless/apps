@@ -169,6 +169,8 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         // The persisted tail belongs to the attempt that produced it; the
         // fresh attempt starts with none (apps#527).
         log: undefined,
+        // Same for the execution log id (apps#528): the final attempt's wins.
+        logId: undefined,
       })
     }
 
@@ -189,6 +191,9 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         // The capped `ctx.log` tail a script's terminal event carries
         // (apps#527) — live from the launcher, on replay from the row.
         log: event.log ?? step.log,
+        // A pipeline step's execution log id (apps#528) — live from the
+        // adapter, on replay from the row.
+        logId: event.logId ?? step.logId,
         finishedAt: event.at,
       })
     }
@@ -203,6 +208,7 @@ export function runReducer(state: RunState, event: RunEvent): RunState {
         // Appended, never replaced (Decision 12) — see `step.succeeded` above.
         annotations: [...step.annotations, ...(event.annotations ?? [])],
         log: event.log ?? step.log, // apps#527 — see `step.succeeded`
+        logId: event.logId ?? step.logId, // apps#528 — see `step.succeeded`
         finishedAt: event.at,
       })
     }

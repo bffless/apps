@@ -45,7 +45,17 @@ export interface HttpJson {
       headers?: Record<string, string>
       signal?: AbortSignal
     },
-  ): Promise<{ status: number; ok: boolean; body: unknown }>
+  ): Promise<{
+    status: number
+    ok: boolean
+    body: unknown
+    /**
+     * CE's `X-Pipeline-Log-Id` for this call (apps#528) — the execution log the
+     * server wrote, when it wrote one (debug-enabled rules; every execution
+     * failure with debug off). Absent, never `null`, otherwise.
+     */
+    logId?: string
+  }>
 }
 
 export interface Clock {
@@ -160,14 +170,18 @@ export function toStepError(err: unknown): StepError {
 // ---------------------------------------------------------------------------
 
 type Fetched =
-  | { kind: 'ok'; body: unknown }
-  /** `response`: the last response this attempt did see — `retry.if` reads it (01). */
-  | { kind: 'error'; error: StepError; response?: unknown }
+  | { kind: 'ok'; body: unknown; logId?: string }
+  /**
+   * `response`: the last response this attempt did see — `retry.if` reads it (01).
+   * `logId`: the response's own `X-Pipeline-Log-Id` (apps#528), when it carried one.
+   */
+  | { kind: 'error'; error: StepError; response?: unknown; logId?: string }
   | { kind: 'cancelled' }
 
 type AttemptResult =
   | { kind: 'success'; event: Extract<RunEvent, { type: 'step.succeeded' }> }
-  | { kind: 'error'; error: StepError; response?: unknown }
+  /** `logId`: the last log id this attempt saw (apps#528) — rides onto `step.failed`. */
+  | { kind: 'error'; error: StepError; response?: unknown; logId?: string }
   | { kind: 'cancelled' }
 
 interface RequestSpec {
@@ -180,7 +194,7 @@ interface RequestSpec {
 
 async function request(rt: StepRuntime, impl: string, spec: RequestSpec): Promise<Fetched> {
   const url = resolvePath(spec.path, impl)
-  let res: { status: number; ok: boolean; body: unknown }
+  let res: { status: number; ok: boolean; body: unknown; logId?: string }
   try {
     res = await rt.http(url, {
       method: spec.method,
@@ -196,9 +210,10 @@ async function request(rt: StepRuntime, impl: string, spec: RequestSpec): Promis
   }
   if (rt.signal.aborted) return { kind: 'cancelled' }
   if (!res.ok || res.status < 200 || res.status >= 300) {
-    return { kind: 'error', error: httpError(res.status, res.body, url) }
+    // A failing execution is exactly when CE writes a log (apps#528) — keep its id.
+    return { kind: 'error', error: httpError(res.status, res.body, url), logId: res.logId }
   }
-  return { kind: 'ok', body: res.body }
+  return { kind: 'ok', body: res.body, logId: res.logId }
 }
 
 /**
@@ -257,6 +272,13 @@ async function runAttempt(
   // The last response this attempt saw, carried on every failure so `retry.if`
   // can read `response` alongside `error` (01).
   let seen: unknown
+  // The last `X-Pipeline-Log-Id` this attempt saw (apps#528) — last response
+  // wins, but a headerless response (a debug-off success) does not erase an id
+  // an earlier response named.
+  let seenLogId: string | undefined
+  const noteLogId = (id: string | undefined) => {
+    if (id !== undefined) seenLogId = id
+  }
 
   try {
     const initialPath = str(inputs.path)
@@ -292,12 +314,13 @@ async function runAttempt(
         body: inputs.body,
         headers: inputs.headers === undefined ? undefined : (obj(inputs.headers) as Record<string, string>),
       })
+      if (first.kind !== 'cancelled') noteLogId(first.logId)
       if (first.kind !== 'ok') return first
       initial = first.body
     }
     seen = initial
     if (timedOut(deadline, rt.clock.now())) {
-      return { kind: 'error', error: timeoutError(), response: initial }
+      return { kind: 'error', error: timeoutError(), response: initial, logId: seenLogId }
     }
 
     let last: unknown = initial
@@ -308,8 +331,10 @@ async function runAttempt(
       // it there for the first time on a fresh attempt — either way this is
       // the same single emit.
       rt.emit({ type: 'step.polling', key: a.key, initial, at: rt.clock.now() })
-      const polled = await runPoll(a, rt, pollDecl, initialPath, initial, scope, deadline)
-      if (polled.kind !== 'ok') return polled
+      const polled = await runPoll(a, rt, pollDecl, initialPath, initial, scope, deadline, noteLogId)
+      if (polled.kind !== 'ok') {
+        return polled.kind === 'error' ? { ...polled, logId: seenLogId } : polled
+      }
       last = polled.body
       seen = last
     }
@@ -332,13 +357,15 @@ async function runAttempt(
         // The persist layer caps the polling row; the terminal event is where
         // the 256 KB budget applies to the pair (05).
         response: pollDecl ? trimResponse({ initial, last }) : trimResponse({ initial }),
+        // The last log id the attempt saw (apps#528) — absent when no response named one.
+        ...(seenLogId === undefined ? {} : { logId: seenLogId }),
         summary: evalSummary(a.step, resultCtx),
         annotations: evalAnnotations(a.step, resultCtx),
         at: rt.clock.now(),
       },
     }
   } catch (err) {
-    return { kind: 'error', error: toStepError(err), response: seen }
+    return { kind: 'error', error: toStepError(err), response: seen, logId: seenLogId }
   }
 }
 
@@ -359,6 +386,8 @@ async function runPoll(
   initial: unknown,
   scope: (over?: { response?: unknown }) => Record<string, unknown>,
   deadline: number | undefined,
+  /** Reports each tick's `X-Pipeline-Log-Id` to the attempt (apps#528). */
+  noteLogId: (id: string | undefined) => void,
 ): Promise<Fetched> {
   const every = parseDuration(str(poll.every) ?? DEFAULT_EVERY)
   const timeout = str(poll.timeout) ?? DEFAULT_POLL_TIMEOUT
@@ -392,6 +421,7 @@ async function runPoll(
       query: poll.query === undefined ? undefined : obj(evalDeep(poll.query, requestCtx)),
       body: poll.body === undefined ? undefined : evalDeep(poll.body, requestCtx),
     })
+    if (tick.kind !== 'cancelled') noteLogId(tick.logId)
     if (tick.kind !== 'ok') return tick.kind === 'error' ? { ...tick, response: last } : tick
     last = tick.body
 
@@ -455,6 +485,8 @@ export async function runPipelineStep(a: PipelineStepArgs, rt: StepRuntime): Pro
         key: a.key,
         error,
         annotations: failureAnnotations(a, attempt, error),
+        // The failing execution's log id (apps#528), when the response named one.
+        ...(result.logId === undefined ? {} : { logId: result.logId }),
         at: rt.clock.now(),
       })
     }

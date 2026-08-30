@@ -39,6 +39,7 @@ pipeline:
           summary: steps.merge.fields.summary
           annotations: steps.merge.fields.annotations
           log: steps.merge.fields.log
+          logId: steps.merge.fields.logId
           startedAt: steps.merge.fields.startedAt
           finishedAt: steps.merge.fields.finishedAt
           heartbeatAt: steps.merge.fields.heartbeatAt
@@ -59,6 +60,7 @@ pipeline:
           summary: steps.merge.fields.summary
           annotations: steps.merge.fields.annotations
           log: steps.merge.fields.log
+          logId: steps.merge.fields.logId
           startedAt: steps.merge.fields.startedAt
           finishedAt: steps.merge.fields.finishedAt
           heartbeatAt: steps.merge.fields.heartbeatAt

@@ -160,6 +160,7 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
         summary: row.summary ?? undefined,
         annotations: row.annotations ?? undefined,
         log: row.log ?? undefined, // the recorded `ctx.log` tail (apps#527)
+        logId: row.logId ?? undefined, // the recorded execution log id (apps#528)
         at: finishedAt,
       })
       break
@@ -170,6 +171,7 @@ function eventsForRow(row: StepRow, fallbackAt: number): RunEvent[] {
         error: row.error ?? { code: 'unknown', message: 'step failed' },
         annotations: row.annotations ?? undefined,
         log: row.log ?? undefined, // apps#527
+        logId: row.logId ?? undefined, // apps#528
         at: finishedAt,
       })
       break

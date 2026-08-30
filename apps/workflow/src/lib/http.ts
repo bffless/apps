@@ -55,7 +55,12 @@ export const httpJson: HttpJson = async (path, init) => {
     signal: init.signal,
   })
 
-  return { status: res.status, ok: res.ok, body: await readBody(res) }
+  // CE names the execution log it wrote for this call (apps#528): on
+  // debug-enabled rules and on every execution failure with debug off. Absent
+  // — not `null` — when the response carried no header, so callers can spread
+  // the result without a key appearing out of nowhere.
+  const logId = res.headers.get('x-pipeline-log-id')
+  return { status: res.status, ok: res.ok, body: await readBody(res), ...(logId ? { logId } : {}) }
 }
 
 // ---------------------------------------------------------------------------

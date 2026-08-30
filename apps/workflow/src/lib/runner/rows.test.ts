@@ -276,3 +276,69 @@ describe('eventToWrites — the script `log` tail (apps#527)', () => {
     expect(patch.log).toBeNull()
   })
 })
+
+describe('eventToWrites — the pipeline execution log id (apps#528)', () => {
+  const KEY: StepKey = 'greet/0/say'
+
+  /** The post-event state of a pipeline step, with whatever id it holds. */
+  function piped(over: Partial<StepState>): RunState {
+    const state = stateWith()
+    return {
+      ...state,
+      status: 'running',
+      steps: {
+        [KEY]: {
+          key: KEY,
+          job: 'greet',
+          index: 0,
+          stepId: 'say',
+          kind: 'pipeline',
+          status: 'succeeded',
+          attempt: 1,
+          annotations: [],
+          ...over,
+        },
+      },
+    }
+  }
+
+  const stepPatch = (event: RunEvent, state: RunState): Partial<StepRow> => {
+    const writes = eventToWrites(event, { state })
+    expect(writes).toHaveLength(1)
+    const write = writes[0]
+    if (write.table !== 'steps') throw new Error('expected a steps upsert')
+    return write.patch
+  }
+
+  it('rides the two terminal upserts, off the post-event state', () => {
+    expect(
+      stepPatch(
+        { type: 'step.succeeded', key: KEY, outputs: {}, at: 9 },
+        piped({ outputs: {}, logId: 'plog_ok', finishedAt: 9 }),
+      ).logId,
+    ).toBe('plog_ok')
+    expect(
+      stepPatch(
+        { type: 'step.failed', key: KEY, error: { code: 'BOOM', message: 'boom' }, at: 9 },
+        piped({ status: 'failed', error: { code: 'BOOM', message: 'boom' }, logId: 'plog_fail', finishedAt: 9 }),
+      ).logId,
+    ).toBe('plog_fail')
+  })
+
+  it('writes no column at all when the step holds no id', () => {
+    const patch = stepPatch(
+      { type: 'step.succeeded', key: KEY, outputs: {}, at: 9 },
+      piped({ outputs: {}, finishedAt: 9 }),
+    )
+    expect('logId' in patch).toBe(false)
+  })
+
+  it("clears the failed attempt's id on step.retrying, like its log tail", () => {
+    const patch = stepPatch(
+      { type: 'step.retrying', key: KEY, error: { code: 'BOOM', message: 'boom' }, at: 9 },
+      // The reducer already dropped `logId` for the fresh attempt.
+      piped({ status: 'queued', attempt: 2, error: { code: 'BOOM', message: 'boom' } }),
+    )
+    expect(patch.logId).toBeNull()
+  })
+})

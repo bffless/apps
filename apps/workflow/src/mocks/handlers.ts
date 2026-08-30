@@ -186,10 +186,10 @@ const RUN_PATCHABLE = [
   'status', 'finishedAt', 'leaseOwner', 'leaseUntil', 'outputs', 'annotations', 'annotationCounts',
 ]
 
-/** The 12 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
+/** The 13 mutable step columns (05); `job`/`index`/`step`/`kind` are create-only. */
 const STEP_MUTABLE = [
   'status', 'attempt', 'inputs', 'response', 'outputs', 'error', 'summary',
-  'annotations', 'log', 'startedAt', 'finishedAt', 'heartbeatAt',
+  'annotations', 'log', 'logId', 'startedAt', 'finishedAt', 'heartbeatAt',
 ]
 const STEP_IDENTITY = ['job', 'index', 'step', 'kind']
 

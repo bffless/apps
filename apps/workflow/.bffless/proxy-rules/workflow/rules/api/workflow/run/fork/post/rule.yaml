@@ -138,6 +138,7 @@ pipeline:
           summary: steps.item.summary
           annotations: steps.item.annotations
           log: steps.item.log
+          logId: steps.item.logId
           startedAt: steps.item.startedAt
           finishedAt: steps.item.finishedAt
           heartbeatAt: steps.item.heartbeatAt

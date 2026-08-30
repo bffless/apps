@@ -909,3 +909,49 @@ describe('replayRun — a skipped step that carries outputs', () => {
     expect(replayed.steps[key].outputs).toEqual(state.steps[key].outputs)
   })
 })
+
+// ---------------------------------------------------------------------------
+// The execution log id (apps#528): write path + replay in one round trip.
+// ---------------------------------------------------------------------------
+
+describe('replayRun — the execution log id (apps#528)', () => {
+  function seeded() {
+    const store = newStore()
+    let state = startRun(store)
+    state = dispatch(store, state, { type: 'job.expanded', job: 'seed', total: 1, items: [{}] })
+    const key = stepKey('seed', 0, 'make')
+    state = dispatch(store, state, {
+      type: 'step.queued', key, job: 'seed', index: 0, stepId: 'make', kind: 'pipeline', at: now(),
+    })
+    state = dispatch(store, state, { type: 'step.started', key, inputs: { path: 'echo' }, at: now() })
+    return { store, state, key }
+  }
+
+  it('round-trips onto a succeeded row and back onto the replayed step', () => {
+    const { store, state, key } = seeded()
+    dispatch(store, state, {
+      type: 'step.succeeded', key, outputs: { names: ['ada'] }, logId: 'plog_ok', at: now(),
+    })
+
+    expect(store.steps[`${RUN_ID}::${key}`].logId).toBe('plog_ok')
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    expect(replayed.steps[key].logId).toBe('plog_ok')
+  })
+
+  it('round-trips onto a failed row and back, and stays absent when never named', () => {
+    const { store, state, key } = seeded()
+    dispatch(store, state, {
+      type: 'step.failed', key, error: { code: 'BOOM', message: 'boom' }, logId: 'plog_fail', at: now(),
+    })
+
+    expect(store.steps[`${RUN_ID}::${key}`].logId).toBe('plog_fail')
+    const replayed = replayRun(store.runs[RUN_ID], storedSteps(store), def)
+    expect(replayed.steps[key].logId).toBe('plog_fail')
+
+    const bare = seeded()
+    dispatch(bare.store, bare.state, { type: 'step.succeeded', key: bare.key, outputs: {}, at: now() })
+    expect('logId' in bare.store.steps[`${RUN_ID}::${bare.key}`]).toBe(false)
+    const replayedBare = replayRun(bare.store.runs[RUN_ID], storedSteps(bare.store), def)
+    expect(replayedBare.steps[bare.key].logId).toBeUndefined()
+  })
+})
