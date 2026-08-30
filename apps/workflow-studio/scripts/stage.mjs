@@ -6,7 +6,7 @@
 //
 // Modeled on `bffless/workflow-hello`'s `scripts/build.mjs` (ref 195b5a2) — same shape, same
 // reasons — with two differences this app forces:
-//   * hello COPIES its scripts verbatim (they are hand-written `.js`); Studio's five are
+//   * hello COPIES its scripts verbatim (they are hand-written `.js`); Studio's six are
 //     TypeScript that import Studio's pure libs, so each is a Vite library build
 //     (`vite.scripts.config.ts`, one entry per build) and the entries are an explicit list
 //     rather than a directory scan: `scripts/` also holds this file, `scripts/lib/` support
@@ -98,11 +98,11 @@ function workflowCli() {
 const TSCONFIGS = ['tsconfig.islands.json', 'tsconfig.scripts.json', 'tsconfig.node.json']
 
 /**
- * The five `script` step modules `studio.workflow.yaml` names (`src: scripts/<name>.js`),
+ * The six `script` step modules `studio.workflow.yaml` names (`src: scripts/<name>.js`),
  * sorted. An explicit list, not a directory scan: `scripts/` also holds this stager,
  * `scripts/lib/` and the `*.test.ts` suites.
  */
-const SCRIPTS = ['blog-bundle', 'final-script', 'frame-times', 'scene-inputs', 'sheet-plan']
+const SCRIPTS = ['blog-bundle', 'final-script', 'frame-times', 'scene-inputs', 'scene-sheet-plan', 'sheet-plan']
 
 /**
  * One line, shown on the harness's Implementations screen. Duplicated by hand in

@@ -1,18 +1,18 @@
 /**
- * What `vite.scripts.config.ts` must produce for each of the five entries: ONE
+ * What `vite.scripts.config.ts` must produce for each of the six entries: ONE
  * self-contained ES module per script. The harness fetches a script's text and
  * spawns a Worker from a `data:` URL (spec 03/09) — a surviving `import` would
  * resolve against that opaque origin and fail at run time, and a sibling chunk
  * would never be fetched at all.
  *
  * Gated on the built file existing so a fresh checkout (or a `test:run` before any
- * `vite build`) doesn't fail; Task 24's stager builds all five before CI stages the
+ * `vite build`) doesn't fail; Task 24's stager builds all six before CI stages the
  * bundle.
  */
 import { describe, expect, it } from 'vitest'
 
-/** The five entries the workflow YAML's `script` steps name (`src: scripts/<name>.js`). */
-const SCRIPT_NAMES = ['sheet-plan', 'scene-inputs', 'final-script', 'frame-times', 'blog-bundle']
+/** The six entries the workflow YAML's `script` steps name (`src: scripts/<name>.js`). */
+const SCRIPT_NAMES = ['sheet-plan', 'scene-sheet-plan', 'scene-inputs', 'final-script', 'frame-times', 'blog-bundle']
 
 /**
  * `node:fs` through a COMPUTED specifier, so `tsconfig.scripts.json` can keep

@@ -68,8 +68,8 @@ directly, which the `exports` map blocks.
   `skills:` block names that path on alias `workflow-studio`, so a publish is the skills
   deploy (no project-level Skills Source needed).
 
-`scripts/` holds the workflow's five `script` steps (`sheet-plan`, `scene-inputs`,
-`final-script`, `frame-times`, `blog-bundle`) plus `scripts/lib/` support code — shared
+`scripts/` holds the workflow's six `script` steps (`sheet-plan`, `scene-sheet-plan`,
+`scene-inputs`, `final-script`, `frame-times`, `blog-bundle`) plus `scripts/lib/` support code — shared
 `ctx.inputs` guards and a test-only fake context, neither of which is a build entry.
 `islands/` holds `cut-editor/` — the `trim` step's editor, which mounts Studio's own
 `CutEditor` — and `blog-editor/` — the blog job's `review` step, which renders the post on

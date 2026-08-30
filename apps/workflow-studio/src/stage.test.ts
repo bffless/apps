@@ -1,10 +1,10 @@
 /**
  * The stager, end to end: `scripts/stage.mjs` type-checks, builds the islands and the
- * five script modules, and then has `workflow index` write the bundle's
+ * six script modules, and then has `workflow index` write the bundle's
  * `.bffless/workflows/index.json`.
  *
  * This is the one suite that runs a REAL build (a `tsc` pass, one Vite island build and
- * five Vite script builds — tens of seconds), which is why it lives in its own `stage`
+ * six Vite script builds — tens of seconds), which is why it lives in its own `stage`
  * vitest project under `src/` rather than in `scripts/` or `islands/`: those two projects
  * are type-checked as browser/Worker code (`tsconfig.scripts.json`, `tsconfig.islands.json`)
  * and this file is Node tooling (`tsconfig.node.json`, alongside the Vite configs it drives).
@@ -22,8 +22,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-/** The five `script` entries `studio.workflow.yaml` names, sorted as the index lists them. */
-const SCRIPT_NAMES = ['blog-bundle', 'final-script', 'frame-times', 'scene-inputs', 'sheet-plan']
+/** The six `script` entries `studio.workflow.yaml` names, sorted as the index lists them. */
+const SCRIPT_NAMES = ['blog-bundle', 'final-script', 'frame-times', 'scene-inputs', 'scene-sheet-plan', 'sheet-plan']
 
 /**
  * The skills the rules enable, sorted: `thumbnail/draft` → `image-prompts`, `describe` →
@@ -83,7 +83,7 @@ describe('scripts/stage.mjs', () => {
       expect(existsSync(join(out, 'islands/cut-editor.html'))).toBe(true)
       expect(existsSync(join(out, 'islands/blog-editor.html'))).toBe(true)
 
-      // …and all five scripts, at the paths the `script` steps name.
+      // …and all six scripts, at the paths the `script` steps name.
       expect(index.scripts).toEqual(SCRIPT_NAMES.map((name) => `scripts/${name}.js`))
 
       // The skills the rule set's `ai_handler` steps name (`skills.path:

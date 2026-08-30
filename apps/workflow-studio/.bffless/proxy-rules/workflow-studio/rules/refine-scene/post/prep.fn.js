@@ -85,9 +85,9 @@ function handler({ request, deployment }) {
   // already reads correctly either way.)
   sys += "You are given (1) the scene WORD TIMINGS - every spoken word with its exact start and end time in seconds, "
   if (deadSpace) {
-    sys += "(2) the MEASURED DEAD SPACE - spans of true silence measured from the audio waveform itself, not guessed from transcript gaps, (3) contact-sheet images sampled across the recording, each frame with its wall-clock timestamp burned into a corner, (4) this scene's own AUDIO, and (5) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them." + NL + NL
+    sys += "(2) the MEASURED DEAD SPACE - spans of true silence measured from the audio waveform itself, not guessed from transcript gaps, (3) contact-sheet images sampled DENSELY across just this scene, each frame with its wall-clock timestamp burned into a corner, (4) this scene's own AUDIO, and (5) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them." + NL + NL
   } else {
-    sys += "(2) contact-sheet images sampled across the recording, each frame with its wall-clock timestamp burned into a corner, (3) this scene's own AUDIO, and (4) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them." + NL + NL
+    sys += "(2) contact-sheet images sampled DENSELY across just this scene, each frame with its wall-clock timestamp burned into a corner, (3) this scene's own AUDIO, and (4) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them." + NL + NL
   }
   sys += "Decide precisely ONE thing - cuts: the footage spans to DROP within this scene, each {start, end} in seconds (filler, false starts, repeated takes, tangents, long dead air, coughs and interruptions, and whatever the brief calls out)." + NL + NL
   sys += "SNAP CUT EDGES INTO SILENCE, NEVER MID-WORD: every cut boundary must land in a gap between words - inside a measured dead-space span whenever one is available, otherwise between one word's end and the next word's start from the WORD TIMINGS. Never place a boundary inside a word's [start, end], and keep a small breath of space (about 0.15s) clear of the adjacent kept word's edge so onsets and tails are never clipped. Long measured dead space is the prime territory to cut; when cutting it, keep a natural beat of silence (about 0.3-0.5s) rather than butting two words hard together." + NL + NL
@@ -108,7 +108,7 @@ function handler({ request, deployment }) {
   if (deadSpace) {
     prompt += 'MEASURED DEAD SPACE (one line per span of true silence, "start end" in seconds on the shared timeline, measured from the waveform - the prime territory for cut edges):' + NL + NL + deadSpace + NL + NL
   }
-  prompt += "The attached images are contact sheets sampled across the recording." + NL + NL
+  prompt += "The attached images are dense contact sheets for THIS scene." + NL + NL
   prompt += "The attached audio is this scene's own soundtrack (audio 0:00 = " + start + "s on the shared timeline)." + NL + NL
   if (brief) {
     prompt += "THE DIRECTOR'S CUTTING BRIEF FOR THIS SCENE (from the first pass over the whole recording - follow it): " + brief + NL + NL

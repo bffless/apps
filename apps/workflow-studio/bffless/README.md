@@ -140,12 +140,6 @@ Things that work, but not as well as they should. None blocks the first success.
   bffless/ce#662. Until that ships, a transient `FFMPEG_BUSY` on a server video-ops step fails
   the step once; re-run the workflow (or the affected job) rather than expecting an automatic
   retry.
-- **No per-scene dense contact sheets.** Studio plans a second, tighter sheet per scene
-  (`planSceneContactSheet`) so the per-scene refine pass sees that scene's frames at high
-  density. The port has ONE plan across the whole project (the `plan` job's
-  `planGlobalSheetCaptures`, R147), so `refine-scene` sees its source's ≤ 10 sheets sampled
-  at the project's spacing — enough to pick cuts, coarser than Studio's. A fix means a
-  second `video/contact-sheet` call inside the `per-scene` matrix job.
 - **A throwing `check`/`parse` leaves the job `running`.** A `function_handler` that throws
   produces no status at all (not a failure status), so the workflow's poll sees an unchanged row
   and keeps polling until the step's timeout rather than failing fast. The rules avoid throwing
