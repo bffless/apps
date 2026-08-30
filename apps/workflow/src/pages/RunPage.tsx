@@ -195,7 +195,10 @@ function RawRows({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[] }) 
  * over; an expired lease offers Resume outright. Both call into
  * `lifecycleActions.ts`'s adopt-live path — whether they land as `live` or
  * fall back to `readonly` is that thunk's call, not this component's (a
- * takeover race can still lose).
+ * takeover race can still lose). Each branch's copy also says where Cancel
+ * will be once the lease is taken — the run header, which offers it the
+ * moment the adoption lands `live` — rather than duplicating it here
+ * (apps#474).
  *
  * `held` is read off the wall clock, so it is computed in an effect rather
  * than at render time (react-hooks/purity, same posture as `RunHeader`'s
@@ -262,24 +265,30 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
 
   return (
     <p className="note">
-      This run is still in flight — it is held by the tab driving it, and resumable from here.{' '}
       {held === null ? null : held ? (
-        <button
-          type="button"
-          data-testid="run-take-over"
-          disabled={pending}
-          onClick={() => {
-            if (window.confirm('Another tab is driving this run. Take over anyway?')) {
-              void attempt(takeOver)
-            }
-          }}
-        >
-          Take over
-        </button>
+        <>
+          Another tab is driving this run. Take over to drive it — you can cancel it from the run header afterwards.{' '}
+          <button
+            type="button"
+            data-testid="run-take-over"
+            disabled={pending}
+            onClick={() => {
+              if (window.confirm('Another tab is driving this run. Take over anyway?')) {
+                void attempt(takeOver)
+              }
+            }}
+          >
+            Take over
+          </button>
+        </>
       ) : (
-        <button type="button" data-testid="run-resume" disabled={pending} onClick={() => void attempt(openRun)}>
-          Resume
-        </button>
+        <>
+          This run is still in flight and nobody is driving it. Resume to take over — you can cancel it from the run
+          header afterwards.{' '}
+          <button type="button" data-testid="run-resume" disabled={pending} onClick={() => void attempt(openRun)}>
+            Resume
+          </button>
+        </>
       )}
       {failed && (
         <span className="note" data-testid="run-adopt-failed">
