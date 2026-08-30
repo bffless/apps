@@ -290,6 +290,7 @@ jobs:
           body:
             timed: ${{ needs.per-video.outputs.timed }}
             durations: ${{ needs.per-video.outputs.duration }}
+            sources: ${{ pluck(needs.per-video.outputs.source, 'path') }}
             script: ${{ needs.stitch.outputs.script }}
             title: ${{ needs.describe.outputs.title }}
             summary: ${{ needs.describe.outputs.summary }}
