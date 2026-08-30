@@ -77,10 +77,14 @@ pipeline:
       config:
         condition: steps.gate.ok
         prefix: "{{steps.gate.prefix}}"
-    # The upload records CE wrote for those objects. The field is `storage_path`, in
+    # The upload records CE wrote for those objects. The field is `sub_dir`, in
     # snake_case: register_upload writes the record itself (upload-record.service.ts
     # createUploadRecords) with CE's own column names, unlike the run/step rows, which
-    # this rule set writes with the camelCase names its schemas declare.
+    # this rule set writes with the camelCase names its schemas declare. `sub_dir` is
+    # the key's uploads-relative directory — no leading slash, no `<owner>/<repo>/uploads/`
+    # head (live-confirmed 2026-08-30) — so the gate's pattern is ANCHORED
+    # (`workflows/<impl>/<wf>/runs/<id>/%`), tighter than the `storage_path
+    # ILIKE '%<prefix>%'` it replaced (apps#381).
     - id: recs
       name: recs
       handler: data_delete
@@ -88,7 +92,7 @@ pipeline:
         condition: steps.gate.ok
         schemaId: $schema:workflow_files
         filters:
-          storage_path: { op: like, value: steps.gate.prefixLike }
+          sub_dir: { op: like, value: steps.gate.prefixLike }
     # `stepRows`, not `steps`: a step named `steps` reads as the expression root every
     # other step's `condition` is written against (`steps.gate.ok`), and `steps.steps.*`
     # is a sentence nobody should have to parse. Nothing referenced it — the 200 below
@@ -109,9 +113,9 @@ pipeline:
         schemaId: $schema:workflow_runs
         recordId: steps.gate.recordId
     # Both counts are reported, and `records` is the one that matters: the `recs` sweep is
-    # the only step whose correctness rides on a CE implementation detail (the full-key
-    # shape of `storage_path`), and a filter that stops matching deletes 0 rows *without*
-    # failing. A `records` of 0 next to a non-zero `files` is that regression, visible.
+    # the only step whose correctness rides on a CE implementation detail (the
+    # uploads-relative shape of `sub_dir`), and a filter that stops matching deletes 0 rows
+    # *without* failing. A `records` of 0 next to a non-zero `files` is that regression, visible.
     # `{{…}}` renders each number bare (double braces stringify a primitive as-is), and the
     # `}}}}` tail is safe: evaluateTemplate scans the original template once and only tries
     # `{{{` where three braces actually open.

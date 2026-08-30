@@ -145,7 +145,7 @@ describe('run-delete gate.fn.js parity with the mock re-implementation', () => {
     if (status === 200) {
       expect(result.recordId).toBe(ROW.id)
       expect(result.prefix).toBe(RUN_PREFIX)
-      expect(result.prefixLike).toBe(`%${RUN_PREFIX}%`)
+      expect(result.prefixLike).toBe(`${RUN_PREFIX}%`)
       // The dead `result: { ok: true }` the success path used to carry: nothing
       // ever rendered it, and its presence read as if something did (apps#381).
       expect(result.result).toBeUndefined()
@@ -194,25 +194,33 @@ describe('run-delete gate.fn.js parity with the mock re-implementation', () => {
     )
 
     /**
-     * The assertion the 200's `records` count exists for. CE stores an upload
-     * record's `storage_path` as the FULL object key, so the gate's pattern
-     * carries a leading `%` — and this pins that the pattern selects exactly
-     * this run's rows: not the kickoff input one level up (D18), and not
-     * nothing, which is what an anchored pattern would select against a
-     * project-namespaced key.
+     * The assertion the 200's `records` count exists for. The sweep is an
+     * ANCHORED `sub_dir LIKE '<run prefix>%'` (apps#381): `sub_dir` is the
+     * key's uploads-relative directory — no leading slash, no
+     * `<owner>/<repo>/uploads/` head (live-confirmed 2026-08-30) — so the
+     * anchor holds, and this pins that the pattern selects exactly this run's
+     * rows: not the kickoff input one level up (D18), and not nothing, which
+     * is what the same anchored pattern would select if it were ever pointed
+     * back at the project-namespaced `storage_path`.
      */
     it('the pattern gate.fn.js builds selects this run’s workflow_files rows and no others', () => {
       const gate = handler({ steps: { run: [ROW] }, request: { body: { id: RUN_ID } }, user: { id: OWNER } })
 
+      // The two shapes the anchor rides on: `sub_dir` starts at `workflows/`,
+      // `storage_path` does not — it carries CE's uploads head. If the mock (or
+      // CE) ever drifted to a full-key `sub_dir`, the selection below would
+      // come back empty and this test would say so.
+      expect(db.fileRecords.get(INPUT_KEY)?.sub_dir).toBe('workflows/hello/hello/inputs')
       expect(db.fileRecords.get(INPUT_KEY)?.storage_path).toBe(`${MOCK_UPLOADS_ROOT}${INPUT_KEY}`)
       expect(fileRecordsMatching(gate.prefixLike).sort()).toEqual([
         `${RUN_PREFIX}outputs/report.json`,
         `${RUN_PREFIX}slow/0/start/poster.png`,
       ])
-      // And the leading `%` is load-bearing, not decoration: the same pattern
-      // anchored — the obvious "tidy-up" — selects nothing at all, because no
-      // `storage_path` starts at `workflows/`. That is the silent `records: 0`.
-      expect(fileRecordsMatching(`${RUN_PREFIX}%`)).toEqual([])
+      // And the anchor is load-bearing, not decoration: unanchored, a `%` or
+      // `_` in an implementation or workflow name could reach beyond this
+      // run's rows; anchored, the kickoff `inputs/` row one level up stays
+      // untouchable because its `sub_dir` never enters `runs/<id>/` (D18).
+      expect(fileRecordsMatching(gate.prefixLike)).not.toContain(INPUT_KEY)
     })
   })
 })

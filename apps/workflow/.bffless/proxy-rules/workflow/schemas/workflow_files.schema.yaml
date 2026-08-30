@@ -8,10 +8,11 @@
 # written, and `storage_path`/`sub_dir`/`url`/`original_name` were written but
 # undeclared. CE logs that gap once per (schema, version) via `warnOnSchemaGap`.
 #
-# It is load-bearing now: the run-delete rule sweeps this table with
-# `storage_path LIKE`, and `sub_dir` is the anchored filter that sweep may move to
-# (apps#381). Correcting the declaration moves no data — every existing row was
-# already written with these names.
+# It is load-bearing now: the run-delete rule sweeps this table with an anchored
+# `sub_dir LIKE 'workflows/<impl>/<wf>/runs/<id>/%'` (apps#381; `sub_dir` is the
+# key's uploads-relative directory, live-confirmed 2026-08-30). Correcting the
+# declaration moves no data — every existing row was already written with these
+# names.
 name: workflow_files
 fields:
   - { name: filename, type: string, required: false }

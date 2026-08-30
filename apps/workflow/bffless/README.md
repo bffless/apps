@@ -116,15 +116,19 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   from the admin panel. There is deliberately no `dryRun` mode: a preview would be a second code
   path over the same filters, and `records` already reports the sweep after the fact.
 
-  **The `workflow_files` filter is `storage_path LIKE '%<run prefix>%'`, with a leading wildcard on
-  purpose** — CE stores an upload record's `storage_path` as the full object key
-  (`<owner>/<repo>/uploads/` + the run prefix), not the uploads-relative path `file_delete` takes.
-  An anchored `sub_dir LIKE 'workflows/<impl>/<wf>/runs/<id>/%'` would be tighter (immune to a `%`
-  or `_` in an implementation or workflow name), and `sub_dir` is now declared — but the shipped
-  `storage_path` pattern is the one the 2026-08-26 live walk exercised end to end
-  (`records: 3`), and the stored shape of `sub_dir` has never been observed on this instance.
-  Swapping a proven filter for an unobserved one is the exact way to earn a silent `records: 0`,
-  so the switch waits on a live read of one `workflow_files` row's `sub_dir` (apps#381).
+  **The `workflow_files` filter is an anchored `sub_dir LIKE 'workflows/<impl>/<wf>/runs/<id>/%'`**
+  (apps#381) — tighter than the `storage_path ILIKE '%<prefix>%'` it replaced, because a `%` or `_`
+  in an implementation or workflow name can no longer widen the match beyond this run's rows. The
+  anchor holds because CE stores `sub_dir` as the key's uploads-relative directory — no leading
+  slash, no `<owner>/<repo>/uploads/` head — confirmed by a 2026-08-30 live read of the newest
+  rows on this instance (e.g. `workflows/workflow-studio/studio/runs/run_…/blog/0/bundle`), which
+  released the hold the earlier `storage_path` pattern was kept under (the 2026-08-26 walk had
+  proven it end to end, `records: 3`, while `sub_dir`'s stored shape was unobserved). `storage_path`
+  is the FULL object key, so an anchored pattern there would silently match nothing — the
+  `records: 0`-beside-non-zero-`files` signature above. Note the live schema has not yet adopted
+  the authored snake_case fields (needs the hand `bffless rules push --adopt-fields` per the
+  standing sync gap), but filtering on an undeclared column is proven to work here — the
+  `storage_path` filter returned `records: 3` while equally undeclared.
 - **`GET /api/workflow/whoami`** (M2 Phase 3): `{ id, email, role }` for the calling session —
   the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
   Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty

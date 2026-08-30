@@ -201,20 +201,20 @@ describe('run deletion (rows + file-prefix GC)', () => {
     expect(stepsOf(RUN_ID)).toEqual([])
     expect(filesUnder(RUN_PREFIX)).toEqual([])
     expect(db.files.has(INPUT_KEY)).toBe(true)
-    // The kickoff input's ROW survives too, not just its bytes: the sweep is a
-    // `storage_path LIKE '%<run prefix>%'`, and `inputs/` is outside that prefix.
+    // The kickoff input's ROW survives too, not just its bytes: the sweep is an
+    // anchored `sub_dir LIKE '<run prefix>%'`, and `inputs/` is outside that prefix.
     expect(db.fileRecords.has(INPUT_KEY)).toBe(true)
   })
 
   // apps#381. `records` is the only reported number whose correctness rides on a CE
-  // implementation detail — a `storage_path` that is the FULL object key, not the
-  // uploads-relative one — and a filter that stops matching deletes nothing rather
-  // than failing. While the mock had no `workflow_files` table it reported `files`
-  // twice, so `records: 0` beside a non-zero `files` was literally unrepresentable
-  // and CI could not have caught it. It is representable now: the two counts come
-  // from two independent sweeps, and this pins that they can disagree.
-  // (`deleteGate.fn.parity.test.ts` covers the pattern itself — that the gate's
-  // leading `%` is what reaches across CE's `<owner>/<repo>/uploads/` head.)
+  // implementation detail — a `sub_dir` that is the key's uploads-relative directory,
+  // with no `<owner>/<repo>/uploads/` head — and a filter that stops matching deletes
+  // nothing rather than failing. While the mock had no `workflow_files` table it
+  // reported `files` twice, so `records: 0` beside a non-zero `files` was literally
+  // unrepresentable and CI could not have caught it. It is representable now: the two
+  // counts come from two independent sweeps, and this pins that they can disagree.
+  // (`deleteGate.fn.parity.test.ts` covers the pattern itself — that the anchored
+  // pattern holds against `sub_dir`'s uploads-relative shape.)
   it('reports records: 0 beside a non-zero files when the workflow_files sweep matches nothing', async () => {
     setMockUser({ ...MOCK_MEMBER, id: OWNER })
     db.fileRecords.clear()

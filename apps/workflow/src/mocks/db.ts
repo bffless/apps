@@ -37,10 +37,11 @@ export interface MockFileRecord {
  * The `<owner>/<repo>/uploads/` head CE namespaces every storage key with.
  *
  * A record's `storage_path` is the FULL object key, not the uploads-relative
- * one the harness passes around — which is the entire reason the delete rule's
- * filter is `storage_path LIKE '%<prefix>%'` with a LEADING wildcard. Modelling
- * that head here is what makes the mock able to fail on an anchored pattern the
- * way the real table would.
+ * one the harness passes around — while `sub_dir` is the key's uploads-relative
+ * directory with no such head (live-confirmed 2026-08-30), which is why the
+ * delete rule's sweep is an ANCHORED `sub_dir LIKE '<prefix>%'` (apps#381).
+ * Modelling the head here is what lets the mock fail the way the real table
+ * would if that anchored pattern were ever pointed back at `storage_path`.
  */
 export const MOCK_UPLOADS_ROOT = 'bffless/workflow/uploads/'
 
@@ -201,18 +202,20 @@ export function seedObject(
 }
 
 /**
- * `data_delete`'s `op: like` over `storage_path`, evaluated the way SQL would:
+ * `data_delete`'s `op: like` over `sub_dir`, evaluated the way SQL would:
  * `%` matches any run of characters, `_` exactly one, everything else is
- * literal. The rule builds its pattern in `gate.fn.js` (`'%' + prefix + '%'`),
- * so a mock that matched on `startsWith` instead would happily agree with a
- * filter that could never span CE's `<owner>/<repo>/uploads/` head.
+ * literal. The rule builds its pattern in `gate.fn.js` (`prefix + '%'`,
+ * anchored — apps#381), and this evaluates it against the same column the
+ * rule filters on: a mock that tested `storage_path` instead would happily
+ * agree with an anchored pattern that CE's `<owner>/<repo>/uploads/` head
+ * makes match nothing at all.
  */
 export function fileRecordsMatching(pattern: string): string[] {
   const rx = new RegExp(
     `^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.')}$`,
     's',
   )
-  return [...db.fileRecords.entries()].filter(([, row]) => rx.test(row.storage_path)).map(([key]) => key)
+  return [...db.fileRecords.entries()].filter(([, row]) => rx.test(row.sub_dir)).map(([key]) => key)
 }
 
 /**
@@ -226,14 +229,15 @@ export function runPrefix(run: ServerRunRow): string {
 
 /**
  * Drop one run: every object under its prefix, the `workflow_files` rows the
- * `storage_path LIKE` sweep selects, its step rows, then the run row — the same
- * order the rule's steps run in (files first, so a failure leaves a row pointing
- * at bytes rather than bytes nobody can find). Returns BOTH counts the response
- * reports, and they are counted independently on purpose: `records` is the one
- * whose correctness rides on a CE implementation detail (the full-key shape of
- * `storage_path`), so a filter that silently stops matching has to be able to
- * show up here as `records: 0` beside a non-zero `files` (apps#381). Unknown ids
- * delete nothing; the gate, not this, decides whether a caller may ask.
+ * anchored `sub_dir LIKE` sweep selects, its step rows, then the run row — the
+ * same order the rule's steps run in (files first, so a failure leaves a row
+ * pointing at bytes rather than bytes nobody can find). Returns BOTH counts the
+ * response reports, and they are counted independently on purpose: `records` is
+ * the one whose correctness rides on a CE implementation detail (the
+ * uploads-relative shape of `sub_dir`), so a filter that silently stops matching
+ * has to be able to show up here as `records: 0` beside a non-zero `files`
+ * (apps#381). Unknown ids delete nothing; the gate, not this, decides whether a
+ * caller may ask.
  */
 export function deleteRun(runId: string): { files: number; records: number } {
   const run = db.runs.get(runId)
@@ -241,7 +245,7 @@ export function deleteRun(runId: string): { files: number; records: number } {
   const prefix = runPrefix(run)
   const keys = filesUnder(prefix)
   for (const key of keys) db.files.delete(key)
-  const rows = fileRecordsMatching(`%${prefix}%`)
+  const rows = fileRecordsMatching(`${prefix}%`)
   for (const key of rows) db.fileRecords.delete(key)
   for (const step of stepsOf(runId)) db.steps.delete(stepRowKey(runId, step.key))
   db.runs.delete(runId)
