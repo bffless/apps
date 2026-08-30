@@ -314,6 +314,9 @@ describe('forkRun', () => {
     server.events.on('request:start', onRequestStart)
 
     const { store, advance, writes } = trackedHelloStoreWithWrites()
+    // What Past runs holds while the fork is made: the parent alone.
+    const list = store.dispatch(workflowApi.endpoints.listRuns.initiate({ impl: 'hello', workflow: 'hello' }))
+    expect((await list).data).toHaveLength(1)
     try {
       const forkId = await store.dispatch(
         forkRun({ runId: FIXTURE_RUN_ID, job: 'slow', def: hello, yaml: HELLO_YAML, workflowVersion: '0.0.0' }),
@@ -322,6 +325,15 @@ describe('forkRun', () => {
       expect(forkId).not.toBe(FIXTURE_RUN_ID)
       expect(store.getState().run.mode).toBe('live')
       expect(store.getState().run.state?.runId).toBe(forkId)
+
+      // The rule wrote the row, not `run.started`, so the thunk is what tells the list.
+      await flush()
+      expect(
+        workflowApi.endpoints.listRuns
+          .select({ impl: 'hello', workflow: 'hello' })(store.getState())
+          .data?.map((r) => r.runId)
+          .sort(),
+      ).toEqual([FIXTURE_RUN_ID, forkId].sort())
 
       // The rule copied exactly the rows outside `downstreamOf(slow)`, outputs and all,
       // and took the lease for this tab — which is what let `adopt` go live without a take-over.
@@ -364,6 +376,7 @@ describe('forkRun', () => {
       for (const w of writes) expect(w.op === 'patch' ? w.id : w.op === 'upsert' ? w.runId : null).toBe(forkId)
     } finally {
       server.events.removeListener('request:start', onRequestStart)
+      list.unsubscribe()
       store.dispatch(runClosed())
     }
   })

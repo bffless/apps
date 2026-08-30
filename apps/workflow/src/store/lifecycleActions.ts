@@ -232,7 +232,9 @@ export function retryRun(): AppThunk<Promise<void>> {
  *
  * Resolves to the new run id; navigating to it is the caller's job, as after
  * `deleteRun`. Throws `LeaseTransportError` when the freshly written record
- * cannot be read back.
+ * cannot be read back. The `Runs` invalidation is the same one `deleteRun`
+ * makes: the row was written by the rule, not by `run.started`, so nothing
+ * else tells the Past-runs list a new run exists.
  */
 export function forkRun(a: {
   runId: string
@@ -268,6 +270,7 @@ export function forkRun(a: {
     } finally {
       read.unsubscribe()
     }
+    dispatch(workflowApi.util.invalidateTags(['Runs']))
     return id
   }
 }
