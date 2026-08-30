@@ -16,7 +16,7 @@ pipeline:
         body: |-
           {
             "error": "{{steps.prep.error}}",
-            "code": "BAD_PATH"
+            "code": "BAD_REQUEST"
           }
         status: 400
         contentType: application/json
