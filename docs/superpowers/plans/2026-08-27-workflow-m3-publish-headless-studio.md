@@ -135,7 +135,7 @@ apps/workflow-studio/  (new)
   islands/cut-editor/{index.html,main.tsx,App.tsx}                                                        Task 23
   scripts/stage.mjs                islands + scripts builds, then `workflow index`                        Task 24
 .github/workflows/{workflow-studio.yml,deploy-workflow-studio.yml}                                       Task 24
-localdev-tools/workflow-live.mjs   --headless and --studio walks                                          Task 25
+packages/workflow-live (was localdev-tools/workflow-live.mjs) — walk hello|headless|studio-audit|studio-headless   Task 25
 ```
 
 ## Traceability — M3 scope → tasks
@@ -1673,6 +1673,12 @@ Common shape (from Studio's rules, kept): `prep` → `createJob` (`data_create` 
 # Phase 5 — The live walk
 
 ### Task 25: hello (published), headless hello, Studio on a short clip
+
+> **As shipped (2026-08-30):** the walks live in-repo as `packages/workflow-live`
+> (`pnpm workflow-live:walk hello|headless|studio-audit|studio-headless`), driven by the
+> `apps-live-walk` verifier agent — plan `docs/superpowers/plans/2026-08-30-apps-live-walk.md`.
+> Step 3 became an *audit* of the 2026-08-29 by-hand run (one Studio kickoff per invocation), and
+> `localdev-tools/workflow-live.mjs` is a shim. Results: both `bffless/README.md` checklists.
 
 **Files:**
 - Modify: `/home/rico/bffless/localdev-tools/workflow-live.mjs` (outside the repo: `--headless` runs the driver against j5s and asserts `run.json`; `--studio` kicks off the Studio workflow with a fixture clip through the driver, then opens the cut-editor island by hand-walk instructions), `apps/workflow/bffless/README.md` + `apps/workflow-studio/bffless/README.md` (checklist results), epic #359 (tick the M3 boxes), memory note

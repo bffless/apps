@@ -161,7 +161,35 @@ Things that work, but not as well as they should. None blocks the first success.
 
 ## First-success checkpoint
 
-**Stub — Task 25 fills this in.** Everything it needs now exists: the workflow YAML (Task 19), the
-rules (Tasks 20–21), the built scripts (Task 22), the cut-editor island (Task 23) and the
-stager + CI + deploy workflow (Task 24). What is left is the live run itself — a short clip end to
-end on `workflow.j5s.dev` — which is Task 25's, and it is gated on the setup checklist above.
+**Walked 2026-08-30 (apps#359 Task 25)** with `pnpm workflow-live:walk studio-audit` and
+`pnpm workflow-live:walk studio-headless` (`packages/workflow-live`), both on `workflow.j5s.dev` as
+`workflow-ci`. Row names are the walks' check ids.
+
+**Interactive — audited, no kickoff.** The by-hand run of 2026-08-29,
+`run_01M17CG3W0YTA4T0ZVRTD88VE7`, 7/7: `run.succeeded`; `R.scenesCarrySourceSpans` (2 scenes, each
+with `source`/`sourceIndex`/`spans`); `D2.sheetsDrawn` (`sheets/0/sheets` → `drawn: true`, the
+global labels burned in); `trim.keepRecorded` (keeps 3 + 2); `outputs.shortBlogCoverAreFileRefs`
+(`short.mp4` 20.3 MB, the blog zip 369 KB, a cover JPEG); `D16.wordsNotOffloaded` (a 4-minute
+clip's `words` stays inline — a 1-hour source would offload); `run.interactiveFlag`.
+
+**Headless — one kickoff.** The committed fixture clip
+(`packages/workflow-live/fixtures/onboarding-rules.mp4`: 854×480, 224 s, spoken audio, sha-pinned)
+with `{ write_blog: true, cover: true, accept_cuts: true }` and `--timeout 90m`:
+`run_01M19GV5DDXBB3QHFN8BHH7896` **succeeded in 3 m 53 s** (14:23:06 → 14:26:59 UTC), driver exit 0,
+`run.headless: true`. Proven: the six common checks above (4 scenes this time); every `trim` —
+`headless: auto` — accepted the refiner's cuts unattended (`D7.trimAutoAccepted`, its 240-minute
+budget irrelevant); `blog/0/review` (island) skipped with `post`; `cover/0/direction` +
+`cover/0/review` (forms) skipped; `cover/0/render` succeeded with a File ref
+(`D11.blogReviewSkippedWithPost`, `D11.coverFormsSkipped`, `cover.rendered`); the driver saved
+`outputs/short.mp4`, `outputs/cover.jpg` and `outputs/blog.zip` = `post.md` + 6
+`images/frame-*.jpg` (`blog.zipHasFrames`). One drift caught: the walk shipped with the
+pre-apps#429/#430 step names (`blog/0/edit`, `pick/0/pick`) and reported those two rows `absent`;
+the checks were re-pointed the same day and pass on this run's saved record
+(`packages/workflow-live/test/fixtures/studio-headless.json`). No harness defect was disproved.
+
+**Per-run spend** (headless, 4-minute clip): WhisperX ×1, Gemini director ×1 + refiner ×4, Claude
+describe ×1 + blog ×1, cover draft ×1 + one image render. Wall-clock under 4 minutes.
+
+**Not walked by machine:** the interactive Studio run (the cut-editor island stays a by-hand
+affair, audited above). The setup checklist in this README had been performed by hand before
+the 2026-08-29 run.
