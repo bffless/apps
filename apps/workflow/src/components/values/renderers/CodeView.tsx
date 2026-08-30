@@ -17,12 +17,28 @@
  * (apps#380).
  */
 import { highlightCode, splitHighlightedLines } from '../../../lib/highlight'
+import { isMarked } from '../../../lib/yamlRange'
+import type { LineRange } from '../../../lib/yamlRange'
 import { codeLanguage } from './mapping'
 
-export function CodeView({ value, mapping }: { value: unknown; mapping: unknown }) {
+export function CodeView({
+  value,
+  mapping,
+  marks = [],
+}: {
+  value: unknown
+  mapping: unknown
+  /**
+   * Source lines (1-based, inclusive) to mark in the gutter — the run page's
+   * YAML drawer's "this is the block you selected" (apps#449). Each marked
+   * line carries `data-marked="true"`; the styling is `src/index.css`'s.
+   */
+  marks?: readonly LineRange[]
+}) {
   const source = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
   const requested = codeLanguage(mapping)
   const { html } = highlightCode(source, requested)
+  const marked = (i: number) => (isMarked(marks, i + 1) ? 'true' : undefined)
 
   return (
     <pre className="code-view">
@@ -39,14 +55,14 @@ export function CodeView({ value, mapping }: { value: unknown; mapping: unknown 
             // content (mirrors MarkdownView's `dangerouslySetInnerHTML`
             // justification), and `splitHighlightedLines` only ever cuts that
             // output along line breaks.
-            <span className="code-line" key={i} dangerouslySetInnerHTML={{ __html: line }} />
+            <span className="code-line" key={i} data-marked={marked(i)} dangerouslySetInnerHTML={{ __html: line }} />
           ))}
         </code>
       ) : (
         <code data-testid="renderer" data-render="code" data-language={requested ?? ''}>
           <span className="code-view-language">{requested ?? 'plain'}</span>
           {source.split('\n').map((line, i) => (
-            <span className="code-line" key={i}>
+            <span className="code-line" key={i} data-marked={marked(i)}>
               {line}
             </span>
           ))}

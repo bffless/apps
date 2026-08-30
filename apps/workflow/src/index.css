@@ -2850,3 +2850,123 @@ button.pane-crumb:hover {
     margin-left: 0;
   }
 }
+
+/* ==========================================================================
+   Step YAML drawer (08, apps#449) — kept as one block at the end of the file.
+   The pane head's YAML control slides the run's own YAML snapshot over the run
+   page from the right: a scrim, a surface panel the height of the viewport, the
+   selected block marked in the gutter. Hairlines, not shadows, like every other
+   panel; the scrim is the only translucent ink in the system.
+   ========================================================================== */
+
+/* The trigger sits beside the Input | Output segmented control and takes its
+   measure — same height, same weight, one outlined button rather than a pair. */
+.yaml-trigger {
+  padding: 7px 13px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font: 600 12.5px var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color var(--fast) var(--ease-out),
+    background-color var(--fast) var(--ease-out);
+}
+
+.yaml-trigger:hover {
+  background-color: var(--surface-dim);
+  border-color: var(--line-strong);
+}
+
+.yaml-trigger[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+.yaml-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  background-color: oklch(0.17 0.015 265 / 0.32);
+}
+
+.yaml-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 94vw);
+  background-color: var(--surface);
+  border-left: 1px solid var(--line);
+  outline: none;
+  animation: yaml-drawer-in var(--fast) var(--ease-out);
+}
+
+@keyframes yaml-drawer-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yaml-drawer {
+    animation: none;
+  }
+}
+
+.yaml-drawer-head {
+  flex: 0 0 auto;
+}
+
+.yaml-drawer-eyebrow {
+  color: var(--ink-mute);
+  font: 600 11px var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.yaml-drawer-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.yaml-drawer-actions kbd {
+  padding: 0 4px;
+  color: var(--ink-mute);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 11px var(--font-mono);
+}
+
+.yaml-drawer-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 24px;
+  overflow: auto;
+}
+
+.yaml-drawer .code-view {
+  max-width: none;
+}
+
+/* The marked block: a warm wash the width of the line and an ink bar in the
+   gutter — the same tint the running row uses, so it reads as "this one". */
+.code-view .code-line[data-marked='true'] {
+  background-color: var(--surface-tint);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.code-view .code-line[data-marked='true']::before {
+  color: var(--ink);
+}
