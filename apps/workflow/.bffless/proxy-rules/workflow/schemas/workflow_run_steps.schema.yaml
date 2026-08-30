@@ -17,3 +17,8 @@ fields:
   - { name: startedAt, type: number, required: false }
   - { name: finishedAt, type: number, required: false }
   - { name: heartbeatAt, type: number, required: false }
+  # `<runId>/<key>` — globally unique by construction, written ONLY by `run/fork`
+  # as the `data_upsert_many` dedup column (apps#501). The handler dedups on one
+  # column and `key` repeats across runs, so the scoped copy is what makes a
+  # retried fork insert nothing. NULL on every row the step upsert writes.
+  - { name: rowKey, type: string, required: false }

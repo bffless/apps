@@ -19,3 +19,7 @@ fields:
   - { name: outputs, type: json, required: false }
   - { name: annotations, type: json, required: false }
   - { name: annotationCounts, type: json, required: false }
+  # A forked run (apps#501): the parent it adopted rows from, and the job it was
+  # forked at. Absent on every run that was started from kickoff.
+  - { name: forkedFrom, type: string, required: false }
+  - { name: forkJob, type: string, required: false }

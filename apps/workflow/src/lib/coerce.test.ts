@@ -132,6 +132,16 @@ describe('toRunRow', () => {
     expect(toRunRow(flat).unattended).toBe(false)
   })
 
+  // A fork's lineage (apps#501): present only when the row carries it — a
+  // kickoff run has no parent, and `''` would read as one.
+  it('reads `forkedFrom` / `forkJob` from a forked row, and leaves both absent otherwise', () => {
+    const forked = toRunRow({ ...flat, forkedFrom: 'run_0', forkJob: 'slow' })
+    expect(forked.forkedFrom).toBe('run_0')
+    expect(forked.forkJob).toBe('slow')
+    expect('forkedFrom' in toRunRow(flat)).toBe(false)
+    expect('forkJob' in toRunRow({ ...flat, forkJob: '' })).toBe(false)
+  })
+
   // The list endpoint's join (apps#473): present only when the row carries it.
   it('reads `waitingOn` from a listed row, and leaves it absent on a row without the column', () => {
     expect(toRunRow({ ...flat, waitingOn: ['confirm/0/review', 'greet/1/say'] }).waitingOn).toEqual([

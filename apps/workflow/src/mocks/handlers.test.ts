@@ -287,6 +287,74 @@ describe('run deletion (rows + file-prefix GC)', () => {
   })
 })
 
+/**
+ * The rule's one promise beyond its gate (apps#501): two calls with the same
+ * `id` leave one run row and one copy of each adopted row — the run row because
+ * `create` is gated on `existing` finding nothing, the step rows because `copy`
+ * is an insert-only `data_upsert_many` deduped on `<runId>/<key>`. The gate
+ * itself is `forkGate.fn.parity.test.ts`'s.
+ */
+describe('run fork (a new run adopting the parent\'s rows)', () => {
+  const NEW_ID = 'run_01forkhandlers000000000000'
+  const fork = (job: string, id = NEW_ID) =>
+    json('/api/workflow/run/fork', {
+      id,
+      from: RUN_ID,
+      job,
+      definition: FINISHED_RUN.run.definition,
+      yaml: FINISHED_RUN.run.yaml,
+      workflowVersion: FINISHED_RUN.run.workflowVersion,
+      owner: 'tab_fork',
+      unattended: true,
+    })
+
+  beforeEach(() => {
+    seedFinishedRun()
+    setMockUser({ ...MOCK_MEMBER, id: OWNER })
+  })
+
+  it('creates the run row once and copies each adopted row once across two calls', async () => {
+    const first = await fork('slow')
+    expect(first.status).toBe(200)
+    expect(await first.json()).toEqual({ ok: true, runId: NEW_ID, copied: 4 })
+    const runRecord = db.runs.get(NEW_ID)!._id
+
+    const second = await fork('slow')
+    expect(second.status).toBe(200)
+    // `copied` is what THIS call inserted: nothing, because every row was there.
+    expect(await second.json()).toEqual({ ok: true, runId: NEW_ID, copied: 0 })
+
+    expect([...db.runs.values()].filter((r) => r.runId === NEW_ID)).toHaveLength(1)
+    expect(db.runs.get(NEW_ID)!._id).toBe(runRecord)
+    expect(db.runs.get(NEW_ID)).toMatchObject({ forkedFrom: RUN_ID, forkJob: 'slow', unattended: true })
+    expect(stepsOf(NEW_ID).map((r) => r.key).sort()).toEqual([
+      'flaky/0/after',
+      'flaky/0/boom',
+      'greet/0/say',
+      'greet/1/say',
+    ])
+    // And the parent has exactly what it had.
+    expect(stepsOf(RUN_ID)).toHaveLength(FINISHED_RUN.steps.length)
+    expect(db.runs.get(RUN_ID)!.status).toBe('succeeded')
+  })
+
+  it('forked at the root job, adopts nothing and still starts the run', async () => {
+    const res = await fork('greet')
+
+    expect(await res.json()).toEqual({ ok: true, runId: NEW_ID, copied: 0 })
+    expect(db.runs.get(NEW_ID)).toMatchObject({ status: 'running', forkJob: 'greet' })
+    expect(stepsOf(NEW_ID)).toEqual([])
+  })
+
+  it('reads the fork back through the run record, lineage included', async () => {
+    await fork('slow')
+
+    const { run, steps } = await (await fetch(`/api/workflow/run?id=${NEW_ID}`)).json()
+    expect(run).toMatchObject({ runId: NEW_ID, forkedFrom: RUN_ID, forkJob: 'slow', status: 'running' })
+    expect(steps).toHaveLength(4)
+  })
+})
+
 describe('whoami', () => {
   it('answers the session member, uncacheable', async () => {
     const res = await fetch('/api/workflow/whoami')

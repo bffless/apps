@@ -336,6 +336,9 @@ export function toRunRow(raw: unknown): ServerRunRow {
     outputs: optionalRecord(f.outputs),
     annotations: annotations(f.annotations),
     ...(counts === undefined ? {} : { annotationCounts: counts }),
+    // A fork's lineage (apps#501): absent, not `''`, on every kickoff run.
+    ...(optionalStr(f.forkedFrom) ? { forkedFrom: str(f.forkedFrom) } : {}),
+    ...(optionalStr(f.forkJob) ? { forkJob: str(f.forkJob) } : {}),
     // Only the list endpoint joins it (apps#473); a row without the column is
     // not a row waiting on nothing, so the field stays absent rather than `[]`.
     ...(Array.isArray(maybeJson(f.waitingOn)) ? { waitingOn: stepKeys(f.waitingOn) } : {}),

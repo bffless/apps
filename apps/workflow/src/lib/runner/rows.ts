@@ -71,6 +71,13 @@ export interface RunRow {
   annotations?: Annotation[] | null
   /** Derived at `run.finished` (Task 20); absent on rows written before it existed. */
   annotationCounts?: AnnotationCounts | null
+  /**
+   * The parent this run was forked from, and the job it was forked at
+   * (`run/fork`, apps#501). Adopted rows keep pointing at the parent's files,
+   * so a fork is only whole while its parent is. Absent on a kickoff run.
+   */
+  forkedFrom?: string
+  forkJob?: string
 }
 
 /** `workflow_run_steps` — one row per (job, matrix index, step); the key is `<job>/<index>/<step>`. */
