@@ -13,14 +13,14 @@ be overridden per definition with `render:`.
 
 | `type` | value | form control | default viewer | extra keys |
 |---|---|---|---|---|
-| `string` | string | text field (`format: textarea` → multiline; `url`, `email`, `date`, `datetime`, `password`) | plain text (url → link) | `format`, `pattern`, `minLength`, `maxLength` |
-| `number` | number | number field | number | `min`, `max`, `step` |
+| `string` | string | text field (`format: textarea` → multiline; `url`, `email`, `date`, `datetime`, `password`) | plain text (url → link); `format: path` → basename, full path on hover, Copy | `format`, `pattern`, `minLength`, `maxLength` |
+| `number` | number | number field | number; `format: seconds` → `m:ss.s` | `format`, `min`, `max`, `step` |
 | `boolean` | boolean | toggle | ✓ / ✗ | — |
 | `choice` | string (or string[] with `list: true`) | select / radio (`list: true` → checkboxes); options with `preview` render as a tile picker | chip(s) | `options: [a, {value, label, preview?}]` — `options` may be an expression; a list of File refs is shorthand for `{value: path, label: name, preview: ref}` — a tile is picked by its ref's `path`, and the field's **output is the ref itself**, so the file's name, size, content type and url survive downstream |
 | `file` | **File ref** `{ path, name, contentType, size, url }` | upload control (prepare → PUT → register, 06); an `image/*` upload shows a thumbnail beside its name, a `video/*` / `audio/*` upload an inline player (`controls`, `preload="metadata"`, never autoplaying — the local file while uploading, the ref's serve url once registered) with its duration beside name and size; `list: true` collapses each player behind a Play control | viewer by `contentType`: `video/*` player, `audio/*` player (both with duration), `image/*` image, `application/pdf` PDF, else download card; **always** a Download action | `accept`, `maxSize` |
 | `table` | `{ columns: [{key,label?,type?}], rows: object[] }` | editable grid | table | `columns` |
 | `markdown` | string | markdown editor with preview | rendered markdown | `images` (outputs only) |
-| `json` | any JSON | schema-driven form (from `schema`) or JSON editor | JSON tree | `schema` (JSON Schema), `render`, `mapping` |
+| `json` | any JSON | schema-driven form (from `schema`) or JSON editor | by **shape** (below), else JSON tree; `format: table` (+ `columns`), `list`, `seconds` | `schema` (JSON Schema), `render`, `mapping`, `format`, `columns` |
 
 `list: true` on any definition makes the value a **list** of that type (`file` + `list` is
 the multi-upload, `choice` + `list` is multi-select; a matrix job's outputs collect into lists
@@ -35,6 +35,59 @@ newline in the value, or more than **120 characters**. Any one of those makes it
 (pre-wrapped, card corners, same mono face). `number` and `boolean` are always chips. The
 rule is applied per item under `list: true`, so a list of prompts is a column of blocks and a
 list of tags a row of chips.
+
+## Inferred shapes
+
+The JSON tree can show anything, so it stays the fallback for every value — but it is the
+**drill-in**, not the first thing a person sees. A `json` value with no `render` is first
+read for its *shape*, and so is every node inside the tree, so a shaped value nested three
+levels down in a step's `body` still gets its viewer under its key. The harness recognises
+**shapes**, never subjects: nothing here knows what a scene, a cut or a clip is.
+
+| shape | recognised as | shown as |
+|---|---|---|
+| a File ref, or an array of nothing but File refs | the harness's own `{ path, name, url, … }` (06) | file card(s), exactly as `type: file` (+ `list`) renders |
+| an array of **homogeneous flat rows** | every item a plain object with the *same* keys, every value a scalar (null, boolean, number, or a string that would be a chip), at most **8** keys | a table: columns in the first row's key order; numbers right-aligned to a sensible precision (two decimals, trailing zeros dropped); the exact value on hover; 40 rows, then "show all" |
+| an array of numbers, or of chip-length strings | — | a compact inline list `1.68, 5.03, 8.39 … (120)` — chips for strings — 12 items, the count, "show all" |
+| a **storage path** | a string with no whitespace and no scheme, at least 3 `/`-separated segments and 32 characters (06's own paths always are) | the basename, the full path on hover, a Copy |
+
+A value that matches none of these — a ragged array, a mixed list, an object — renders as it
+always did, and so does a declared `type: table`, whose cells print as they are. Inference is strict on purpose (a viewer must never hide part of a value); the
+declared formats below are lenient.
+
+**Times in a table.** A numeric cell whose column *name* says it is a time in seconds — its
+last word is `start`, `end`, `duration`, `offset` or `time` (`startTime`, `clip_end`), or a
+seconds unit after another word (`start_s`, `durationSec`), or `seconds` — is shown as
+`m:ss.s` (`0:08.5`, `2:05.3`, `1:02:05.3`), with the raw number on hover. That is the one
+thing a key name is read for. `list: true` on any type folds past 24 items the same way.
+
+### Declared formats
+
+Where inference cannot know, the declaration can say. All optional; each is read by one
+type's viewer and is a lint error (`format-type`) anywhere else:
+
+| `format` | on | shows |
+|---|---|---|
+| `table` | `json` | a table over an array of objects however ragged — columns from `columns: [start, end]` / `[{key, label?}]` when given, else the union of every row's keys |
+| `list` | `json` | a compact inline list over any array of scalars, mixed kinds included |
+| `seconds` | `number`, `json` | `m:ss.s` — on `json`, every number in the value (a list of times, a table's cells) |
+| `path` | `string` | basename + Copy, whatever the string's length |
+
+```yaml
+outputs:
+  cuts:   { type: json, value: "${{ response.result.cuts }}", format: table, columns: [start, end] }
+  times:  { type: json, value: "${{ response.result.times }}", format: list }
+  source: { type: string, value: "${{ response.result.source }}", format: path }
+  at:     { type: number, value: "${{ response.result.at }}", format: seconds }
+```
+
+### Raw, one click away
+
+Every value that is *drawn* rather than printed — a declared renderer, a table, markdown, a
+file, an inferred shape, a formatted number — carries a `json` flip to the raw JSON its row
+holds, and back. The run, job and step panes also carry a pane-level **Show raw** that makes
+every value on every tab the raw tree at once; it is one switch for the browser, remembered
+in local storage, and a value's own flip still overrides it either way.
 
 Every definition compiles to one JSON Schema; validation (kickoff form, `form` submit, island
 `workflow.submit`, script return, pipeline `outputs` coercion) is one function over that

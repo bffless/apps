@@ -1042,6 +1042,19 @@ button {
   color: var(--ink);
 }
 
+/* Numbers sit right-aligned in tabular figures, whatever column they are in. */
+.value-table th[data-num],
+.value-table td[data-num] {
+  text-align: right;
+}
+
+.value-table td[data-num] {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
 /* JSON tree: mono, hairline-guided nesting. */
 .json-node > summary {
   cursor: pointer;
@@ -1075,6 +1088,105 @@ button {
   font-family: var(--font-mono);
   font-size: 12px;
   font-style: italic;
+}
+
+/* A shaped node inside the tree (02 "Inferred shapes", apps#450): its key in
+   the tree's own mono, then the shape's viewer — a table, a compact list, file
+   cards — in place of a subtree. */
+.json-shaped {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.json-shaped > .json-key {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.json-shaped[data-shape='path'],
+.json-shaped[data-shape='list'] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+/* A compact inline list: `1.68, 5.03, 8.39 … (120)` and its show-all. */
+.value-inline-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.value-inline-items {
+  overflow-wrap: anywhere;
+}
+
+.value-count {
+  color: var(--ink-mute);
+}
+
+/* "show all N rows" / "show fewer": the folded viewers' one control. */
+.value-more {
+  padding: 0;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 0;
+  font: 500 11.5px var(--font-mono);
+  letter-spacing: 0.02em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease-out);
+}
+
+.value-more:hover {
+  color: var(--ink);
+}
+
+.value-table tfoot td {
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+}
+
+/* A storage path: the basename on the chip, the whole path on hover, a Copy. */
+.value-path {
+  gap: 8px;
+  max-width: 100%;
+}
+
+.value-path-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value-copy {
+  flex: none;
+  padding: 0 6px;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 500 10.5px var(--font-mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color var(--fast) var(--ease-out),
+    border-color var(--fast) var(--ease-out);
+}
+
+.value-copy:hover {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 
 /* Markdown: the prototype's rendered-markdown box. */
@@ -2880,6 +2992,32 @@ button.pane-crumb:hover {
 }
 
 .yaml-trigger[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+/* The pane head's Show raw (apps#450): the YAML trigger's twin, pressed = ink. */
+.pane-raw {
+  padding: 7px 13px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font: 600 12.5px var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color var(--fast) var(--ease-out),
+    background-color var(--fast) var(--ease-out),
+    color var(--fast) var(--ease-out);
+}
+
+.pane-raw:hover {
+  background-color: var(--surface-dim);
+  border-color: var(--line-strong);
+}
+
+.pane-raw[aria-pressed='true'] {
+  color: var(--paper);
+  background-color: var(--ink);
   border-color: var(--ink);
 }
 

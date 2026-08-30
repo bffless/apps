@@ -54,7 +54,10 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 - **Output** — each declared output with its renderer (02): table, transcript, markdown, file
   viewers with Download, JSON tree, `render: island` viewer; chips labelled "goes to …". Every
   value that is *drawn* rather than printed carries a `json` flip to the raw value the row holds
-  (and back), so a chart or a table can always be read as its exact data. The
+  (and back), so a chart or a table can always be read as its exact data; a bare `json` value
+  is read for its shape first (02 "Inferred shapes") and the tree is the drill-in. The pane
+  head's **Show raw** (run, job and step panes alike) flips every value on both tabs to the raw
+  tree, remembered per browser. The
   audit trail rides here too (the separate Details tab was folded in on 2026-08-26): started /
   finished / took, attempt, kind, the pipeline path, the error (`code`, message; the raw
   response behind a disclosure), the step's `summary` rendered, its annotations, and a live

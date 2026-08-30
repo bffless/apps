@@ -45,6 +45,7 @@ import { StatusPill } from '../StatusPill'
 import { jobLabel, stepLabel } from '../graph/geometry'
 import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
+import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { isFileRef, withFileRefValue } from '../values/fileRef'
@@ -66,12 +67,22 @@ function parseKey(key: StepKey): { job: string; index: number; stepId: string } 
   return Number.isInteger(parsed) ? { job, index: parsed, stepId: rest.join('/') } : null
 }
 
-/** What renderer a *recorded* value asks for when nothing declared one (02). */
+/**
+ * What renderer a *recorded* value asks for when nothing declared one (02). A
+ * list of one scalar kind is that kind's list (chips, or the compact number
+ * list); a list of File refs is a file list; any other array is `json`, whose
+ * viewer reads the array's *shape* — homogeneous rows as a table, and so on
+ * (02 "Inferred shapes", apps#450) — before falling back to the tree.
+ */
 function inferDecl(value: unknown): ValueDecl {
   if (isFileRef(value)) return { type: 'file' }
   if (Array.isArray(value)) {
-    const first = value.find((item) => item !== null && item !== undefined)
-    return { ...inferDecl(first), list: true }
+    const items = value.filter((item) => item !== null && item !== undefined)
+    if (items.length > 0 && items.every(isFileRef)) return { type: 'file', list: true }
+    if (items.length > 0 && items.every((item) => typeof item === 'string')) return { type: 'string', list: true }
+    if (items.length > 0 && items.every((item) => typeof item === 'number')) return { type: 'number', list: true }
+    if (items.length > 0 && items.every((item) => typeof item === 'boolean')) return { type: 'boolean', list: true }
+    return { type: 'json' }
   }
   if (value !== null && typeof value === 'object') return { type: 'json' }
   if (typeof value === 'number') return { type: 'number' }
@@ -458,6 +469,9 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
             </button>
           ))}
         </div>
+
+        {/* Every value on both tabs as the raw JSON its row holds (apps#450). */}
+        <RawToggle />
 
         {/*
           The step's block in the run's own snapshot, in place (apps#449). A

@@ -197,12 +197,13 @@ test('interactive hello runs an island step end to end against the mock backend'
     /\/poster\.svg\?download=1$/,
   )
   // The step's `big` output lives on the step's pane. Not the value itself — it
-  // is ~400 KB, and the `json` viewer renders only its first 200 entries. The
-  // array's own length is what the viewer's root node reports, and only a
-  // value that is really there has one.
+  // is ~400 KB: its rows are homogeneous, so the `json` viewer draws them as a
+  // table (02 "Inferred shapes") folded to its first 40. The array's own
+  // length is what the fold reports, and only a value that is really there
+  // has one.
   await drawStep.click()
   await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
-  await expect(page.getByTestId('step-pane')).toContainText('[12000]')
+  await expect(page.getByTestId('step-pane')).toContainText('show all 12000 rows')
   await page.getByTestId('step-pane').getByRole('button', { name: 'Run', exact: true }).click()
   await expect(page.getByTestId('run-pane')).toBeVisible()
 

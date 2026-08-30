@@ -25,6 +25,7 @@ import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/r
 import { stepKey } from '../../lib/runner/types'
 import { StatusGlyph, StatusPill } from '../StatusPill'
 import { jobLabel, matrixNote, stepLabel } from '../graph/geometry'
+import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
@@ -142,6 +143,9 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
             </button>
           ))}
         </div>
+
+        {/* Every value on both tabs as the raw JSON its row holds (apps#450). */}
+        <RawToggle />
 
         {/* The job's whole block in the run's own snapshot, in place (apps#449). */}
         {source && <YamlControl source={source} subject={job} target={{ job }} />}
