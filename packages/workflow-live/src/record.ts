@@ -29,5 +29,5 @@ export function isFileRef(v: unknown): v is { path: string; name: string; conten
 }
 
 export function isOffloaded(v: unknown): boolean {
-  return isObj(v) && typeof v.$file === 'string'
+  return isObj(v) && '$file' in v
 }

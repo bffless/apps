@@ -17,10 +17,14 @@ describe('record', () => {
     expect(stepByKey(rec, 'pick/0/choose')?.status).toBe('succeeded')
     expect(stepsOfJob(rec, 'review').map((s) => s.key)).toEqual(['review/0/confirm'])
   })
+  it('sorts a job\'s steps by index, not array order', () => {
+    expect(stepsOfJob(rec, 'greet').map((s) => s.key)).toEqual(['greet/0/say', 'greet/1/say'])
+  })
   it('recognises File refs and offload pointers', () => {
     expect(isFileRef(rec.run?.outputs?.poster)).toBe(true)
     expect(isFileRef({ path: 'x' })).toBe(false)
-    expect(isOffloaded({ $file: 'workflows/a/b.json' })).toBe(true)
+    expect(isOffloaded(stepByKey(rec, 'card/0/draw')!.outputs!.big)).toBe(true)
+    expect(isOffloaded(rec.run?.outputs?.poster)).toBe(false)
     expect(isOffloaded([1, 2])).toBe(false)
   })
 })
