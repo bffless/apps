@@ -104,18 +104,33 @@ function handler({ request, deployment }) {
 
   // One transcript across every source, each section introduced by a boundary marker
   // naming the video and its GLOBAL start (apps/studio/src/lib/director.ts
-  // `combinedTimedTranscript`, as ported by the `scenes` rule). The blog body carries no
-  // source PATHS - only `timed` and `durations` (R135) - so the marker names each video
-  // by its index rather than by file name.
+  // `combinedTimedTranscript`, as ported by the `scenes` rule): the SAME header the
+  // director read - `--- VIDEO n: <file name> (starts m:ss) ---` - so the writer knows the
+  // recordings by name too (apps#468). `sources` is confined like every other path
+  // (R129) even though it is never signed here; a caller that sends none, or fewer than
+  // `timed`, gets the index-only header for the unnamed videos.
   var timedIn = body.timed
   if (!timedIn || typeof timedIn.length !== 'number') timedIn = []
   var durationsIn = body.durations
   if (!durationsIn || typeof durationsIn.length !== 'number') durationsIn = []
+  var sourcesIn = body.sources
+  if (!sourcesIn || typeof sourcesIn.length !== 'number') sourcesIn = []
+  var sources = []
+  for (var s0 = 0; s0 < sourcesIn.length; s0++) {
+    var sp = safe(sourcesIn[s0])
+    if (!sp) return no(REFUSAL)
+    sources.push(sp)
+  }
   var sections = []
   var cursor = 0
   for (var t0 = 0; t0 < timedIn.length; t0++) {
     var rendered = typeof timedIn[t0] === 'string' ? timedIn[t0] : ''
-    var header = '--- VIDEO ' + (t0 + 1) + ' (starts ' + clockLabel(cursor) + ') ---'
+    var name = ''
+    if (t0 < sources.length) {
+      var slash = sources[t0].lastIndexOf('/')
+      name = ': ' + (slash >= 0 ? sources[t0].slice(slash + 1) : sources[t0])
+    }
+    var header = '--- VIDEO ' + (t0 + 1) + name + ' (starts ' + clockLabel(cursor) + ') ---'
     var bodyText = shiftLabels(rendered, cursor)
     sections.push(t0 === 0 ? header + NL + bodyText : NL + header + NL + bodyText)
     var dv = durationsIn[t0]
