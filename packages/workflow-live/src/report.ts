@@ -29,6 +29,7 @@ export class Report {
   constructor(private readonly walk: string, private readonly harness: string) {}
 
   expect(name: string, cond: unknown, evidence?: unknown): boolean {
+    if (name in this.checks) throw new Error(`duplicate check name: ${name}`)
     const pass = !!cond
     this.checks[name] = { pass, evidence: evidence ?? null }
     if (!pass) console.error(`FAIL ${name}: ${JSON.stringify(evidence)}`)

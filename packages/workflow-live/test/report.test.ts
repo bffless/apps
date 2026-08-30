@@ -53,4 +53,10 @@ describe('Report', () => {
     const out = r.finish()
     expect(out.checks['dispatch.a']).toEqual({ pass: true, evidence: 1 })
   })
+  it('throws on a duplicate check name, but scoped names do not collide with the same short name', () => {
+    const r = new Report('w', 'h')
+    r.expect('a', true)
+    expect(() => r.expect('a', false)).toThrow(/duplicate check name: a/)
+    expect(() => r.scoped('p.').expect('a', true)).not.toThrow()
+  })
 })
