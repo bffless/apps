@@ -30,6 +30,8 @@ import type { ValueDecl } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
 import { PaneCrumbs } from './PaneCrumbs'
 import type { Tab } from './StepPane'
+import { YamlControl } from './YamlDrawer'
+import type { YamlSource } from './YamlDrawer'
 
 const TABS: Tab[] = ['Input', 'Output']
 
@@ -71,9 +73,11 @@ export interface JobPaneProps {
   /** Up one level, to the run card. */
   onBack: () => void
   initialTab?: Tab
+  /** The run's YAML snapshot, for the head's **YAML** drawer (apps#449); absent when the pane has no run source to show. */
+  source?: YamlSource
 }
 
-export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 'Output' }: JobPaneProps) {
+export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 'Output', source }: JobPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const decl = def.jobs[job]
 
@@ -138,6 +142,9 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
             </button>
           ))}
         </div>
+
+        {/* The job's whole block in the run's own snapshot, in place (apps#449). */}
+        {source && <YamlControl source={source} subject={job} target={{ job }} />}
 
         <StatusPill status={status} />
         <span className="pane-kind">{decl.matrix ? `matrix · ${total} ${total === 1 ? 'item' : 'items'}` : 'job'}</span>

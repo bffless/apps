@@ -59,6 +59,14 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
   finished / took, attempt, kind, the pipeline path, the error (`code`, message; the raw
   response behind a disclosure), the step's `summary` rendered, its annotations, and a live
   script's log.
+- **YAML** — a third control in the pane head, beside Input | Output, opens the workflow
+  source **in place**: a drawer over the run page (no navigation), scrolled to the selected
+  block with its lines marked in the gutter — `jobs.<job>.steps[<n>]` for a step, the job
+  block for a job card, and for a matrix leg the step plus the job's `strategy`. The source
+  is the run's own `yaml` snapshot (05, D16), not the file the implementation publishes now,
+  and the drawer's head says so ("as run · `<workflowVersion>`"); the current file is a link
+  away. Esc, a click outside or Close returns to exactly the same pane — the selection
+  (`?step=`), the tab and the page's scroll are untouched — and focus goes back to the control.
 - Interactive steps in `waiting`: the pane **is** the island or the form. An island always opens
   inline; one that declared `display: fullscreen` offers **Expand**, which overlays the same
   pane over the page with the graph collapsed to a strip (Esc / Exit returns) — the iframe is

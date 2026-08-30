@@ -52,6 +52,8 @@ import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
 import { PaneCrumbs } from './PaneCrumbs'
 import { ScriptStepCard } from './ScriptStepCard'
+import { YamlControl } from './YamlDrawer'
+import type { YamlSource } from './YamlDrawer'
 
 export type Tab = 'Input' | 'Output'
 const TABS: Tab[] = ['Input', 'Output']
@@ -344,9 +346,11 @@ export interface StepPaneProps {
   onBack?: () => void
   /** Straight to the run card — the crumb's first segment. */
   onRun?: () => void
+  /** The run's YAML snapshot, for the head's **YAML** drawer (apps#449); absent when the pane has no run source to show. */
+  source?: YamlSource
 }
 
-export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack, onRun }: StepPaneProps) {
+export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBack, onRun, source }: StepPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && onBack) {
@@ -454,6 +458,18 @@ export function StepPane({ def, state, stepKey, live, initialTab = 'Input', onBa
             </button>
           ))}
         </div>
+
+        {/*
+          The step's block in the run's own snapshot, in place (apps#449). A
+          matrix leg marks the job's `strategy` too — the fan-out it came from.
+        */}
+        {source && (
+          <YamlControl
+            source={source}
+            subject={stepKey}
+            target={{ job: parts.job, step: declared?.index, strategy: job?.matrix !== undefined }}
+          />
+        )}
 
         <StatusPill status={step.status} />
         <span className="pane-kind">{step.kind}</span>

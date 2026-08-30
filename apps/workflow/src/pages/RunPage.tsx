@@ -585,6 +585,14 @@ export function RunPage() {
   // Past the guards above, exactly one of the two paths is showing a run.
   const shownRunId = shown!.runId
 
+  // The run's own YAML snapshot (D16), for the panes' in-place YAML drawer
+  // (apps#449) — the same text the header's "View workflow file" carries.
+  const yamlSource = {
+    yaml: isLive ? sliceMeta!.yaml : run!.yaml,
+    workflowVersion: isLive ? sliceMeta!.workflowVersion : run!.workflowVersion,
+    fileHref: `${base}/file`,
+  }
+
   // `render: island` needs to know which bundle an island file lives in,
   // and this page is the last place that fact is unambiguous.
   return (
@@ -669,6 +677,7 @@ export function RunPage() {
                   initialTab={paneSide?.side}
                   onBack={back}
                   onRun={toRun}
+                  source={yamlSource}
                 />
               ) : level === 'job' ? (
                 <JobPane
@@ -680,6 +689,7 @@ export function RunPage() {
                   initialTab={paneSide?.side}
                   onSelect={(key) => select(key)}
                   onBack={toRun}
+                  source={yamlSource}
                 />
               ) : (
                 <RunPane
