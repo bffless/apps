@@ -156,6 +156,39 @@ describe('StepPane — Input tab previews an image File ref (apps#437)', () => {
     expect(container.querySelector('.file-card img')?.getAttribute('src')).toBe(photo.url)
     expect(screen.getByText('me.jpg')).toBeInTheDocument()
   })
+
+  // apps#451: the recording just confirmed on the kickoff form is the same
+  // playable, scrubbable card once the run has started.
+  it('draws a playable card for a video/* ref in the step inputs', () => {
+    const take = {
+      path: 'workflows/hello/hello/inputs/1/take-1.mp4',
+      name: 'take-1.mp4',
+      contentType: 'video/mp4',
+      size: 2048,
+      url: '/api/uploads/workflows/hello/hello/inputs/1/take-1.mp4',
+    }
+    const state = readonlyConfirmWaiting()
+    const key = stepKey('slow', 0, 'start')
+    state.steps[key] = stepState('slow', 0, 'start', {
+      status: 'succeeded',
+      inputs: { take },
+      outputs: { report: '# r', poster: null },
+    })
+
+    const { container } = render(
+      <Provider store={makeStore()}>
+        <StepPane def={hello} state={state} stepKey={key} live={false} />
+      </Provider>,
+    )
+
+    const video = container.querySelector('.file-card video')
+    expect(video?.getAttribute('src')).toBe(take.url)
+    expect(video).toHaveAttribute('controls')
+    expect(video).toHaveAttribute('preload', 'metadata')
+    expect(video).not.toHaveAttribute('autoplay')
+    expect(screen.getByText('take-1.mp4')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', `${take.url}?download=1`)
+  })
 })
 
 describe('StepPane — Output tab renders every named renderer', () => {
