@@ -14,7 +14,17 @@ import { http, HttpResponse } from 'msw'
 import { toFileRef, toRunRow, toStepRow } from '../lib/coerce'
 import type { ServerStepRow } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
-import { db, deleteRun, mockUser, nextId, registerFileRecord, stepRowKey, stepsOf, toRecord } from './db'
+import {
+  db,
+  deleteRun,
+  mockUser,
+  MOCK_UPLOADS_ROOT,
+  nextId,
+  registerFileRecord,
+  stepRowKey,
+  stepsOf,
+  toRecord,
+} from './db'
 import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
@@ -348,9 +358,35 @@ const files = [
 
   // Writes the `workflow_files` row as well as answering the File ref: `register_upload`
   // is the only thing that creates one, and the run-delete sweep is counted off it.
+  //
+  // Mirrors `normalize.fn.js` first: `storageKey` may be the full key `prepare`
+  // minted (`<owner>/<repo>/uploads/workflows/…`), the bare uploads-relative path a
+  // pipeline step returned where a `file` output is declared (spec 02), or either
+  // behind a leading `/` or `/api/uploads/`. Every accepted spelling must land on
+  // the SAME uploads-relative `db.files` key — the one the PUT stored under and the
+  // serve route and the delete sweep look up — or a bare-path register writes a row
+  // nobody can find (apps#472). Anything not under `workflows/`, or carrying `..` or
+  // `//`, is the rule's `refuse` step: 400 with the `BAD_PATH` envelope.
   http.post('/api/workflow/files/register', async ({ request }) => {
     const fields = await body(request)
-    const key = String(fields.storageKey ?? '')
+    const raw = (typeof fields.storageKey === 'string' ? fields.storageKey : '')
+      .replace(/^\/+/, '')
+      .replace(/^api\/uploads\//, '')
+    const key = raw.startsWith(MOCK_UPLOADS_ROOT) ? raw.slice(MOCK_UPLOADS_ROOT.length) : raw
+
+    if (!key.startsWith('workflows/') || key.includes('..') || key.includes('//')) {
+      return HttpResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'BAD_PATH',
+            message: 'storageKey must be an uploads-relative path under workflows/ with no traversal',
+          },
+        },
+        { status: 400 },
+      )
+    }
+
     const stored = db.files.get(key)
     const originalName = typeof fields.originalName === 'string' ? fields.originalName : undefined
     registerFileRecord(key, {
