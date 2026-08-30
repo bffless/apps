@@ -57,37 +57,47 @@ export const hello: Walk = async ({ args, env, report }) => {
     // (`?step=review/0/confirm`) — `run-outputs` only renders on the run card.
     await page.goto(runUrl, { waitUntil: 'networkidle' })
     await page.getByTestId('run-outputs').waitFor({ timeout: 30_000 })
-    // Step 1c — Decision 6: the poster viewer draws a presigned URL, credential-less
-    const outputs = page.getByTestId('run-outputs')
-    const posterViewer = outputs.locator('[data-output="poster_view"] [data-testid="renderer"][data-render="island"] [data-testid="island-frame"]')
-    await posterViewer.waitFor({ timeout: 30_000 })
-    const posterFrame = posterViewer.contentFrame()
-    const img = posterFrame.getByTestId('viewer-image')
-    await img.waitFor({ timeout: 30_000 })
-    await img.evaluate(
-      (el) =>
-        new Promise<void>((res) => {
-          const i = el as HTMLImageElement
-          if (i.complete && i.naturalWidth > 0) return res()
-          i.addEventListener('load', () => res(), { once: true })
-          i.addEventListener('error', () => res(), { once: true })
-        }),
-      undefined,
-      { timeout: 30_000 },
-    )
-    const src = (await img.getAttribute('src')) ?? ''
-    const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
-    const presigned = /^https?:\/\//.test(src) && !src.startsWith(args.harness) && /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(src)
-    report.expect('D6.viewerImgIsPresigned', presigned && natural > 0, { src: redactUrl(src), naturalWidth: natural })
-    const signErr = await posterFrame.getByTestId('island-sign-error').textContent({ timeout: 10_000 }).catch(() => null)
-    report.expect('D6.noSignError', signErr === '' || signErr === null, { islandSignError: signErr })
+    // Step 1c — Decision 6: the poster viewer draws a presigned URL, credential-less.
+    // Guarded: a 30 s waitFor timing out here must read as a FAIL on the D6 rows,
+    // not as a throw that the CLI turns into BLOCKED ahead of everything recorded.
+    const d6 = await report.guard(['D6.viewerImgIsPresigned', 'D6.noSignError'], async () => {
+      const outputs = page.getByTestId('run-outputs')
+      const posterViewer = outputs.locator('[data-output="poster_view"] [data-testid="renderer"][data-render="island"] [data-testid="island-frame"]')
+      await posterViewer.waitFor({ timeout: 30_000 })
+      const posterFrame = posterViewer.contentFrame()
+      const img = posterFrame.getByTestId('viewer-image')
+      await img.waitFor({ timeout: 30_000 })
+      await img.evaluate(
+        (el) =>
+          new Promise<void>((res) => {
+            const i = el as HTMLImageElement
+            // `complete` covers both a drawn image (naturalWidth > 0) and one that
+            // already errored (naturalWidth === 0) — neither fires load/error again.
+            if (i.complete) return res()
+            i.addEventListener('load', () => res(), { once: true })
+            i.addEventListener('error', () => res(), { once: true })
+          }),
+        undefined,
+        { timeout: 30_000 },
+      )
+      const src = (await img.getAttribute('src')) ?? ''
+      const natural = await img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
+      const presigned = /^https?:\/\//.test(src) && !src.startsWith(args.harness) && /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(src)
+      report.expect('D6.viewerImgIsPresigned', presigned && natural > 0, { src: redactUrl(src), naturalWidth: natural })
+      const signErr = await posterFrame.getByTestId('island-sign-error').textContent({ timeout: 10_000 }).catch(() => null)
+      report.expect('D6.noSignError', signErr === '' || signErr === null, { islandSignError: signErr })
+    })
     // Step 1d — Decision 4: the script ran in a sandboxed Worker (opaque origin)
-    await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
-    await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
-    const scriptLog = (await page.getByTestId('script-log').textContent().catch(() => '')) ?? ''
-    const originLine = scriptLog.match(/origin=(\S+)/)?.[1]
-    report.expect('D4.scriptSandboxed', originLine === 'null', originLine ? { origin: originLine } : 'log line absent — needs bffless/workflow-hello PR merged + deployed')
+    const d4 = await report.guard(['D4.scriptSandboxed'], async () => {
+      await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
+      await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
+      const scriptLog = (await page.getByTestId('script-log').textContent().catch(() => '')) ?? ''
+      const originLine = scriptLog.match(/origin=(\S+)/)?.[1]
+      report.expect('D4.scriptSandboxed', originLine === 'null', originLine ? { origin: originLine } : 'log line absent — needs bffless/workflow-hello PR merged + deployed')
+    })
     report.expect('page.noConsoleErrors', s.consoleErrors.length === 0, s.consoleErrors)
+    // A guard swallows the throw, so the failure screenshot is ours to take.
+    if (!d6 || !d4) await s.shot('99-failed')
   } catch (e) {
     await s.shot('99-failed')
     throw e

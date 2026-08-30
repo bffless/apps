@@ -44,6 +44,27 @@ export class Report {
     return { expect: (name, cond, evidence) => this.expect(`${prefix}${name}`, cond, evidence) }
   }
 
+  /**
+   * Run a throw-prone block whose checks are `names`. A throw inside `fn`
+   * would otherwise escape to the CLI and read as BLOCKED (`src/cli.ts`),
+   * which outranks any FAIL already recorded — so a red thing under test
+   * reads as "precondition missing". Instead, every name in `names` that
+   * `fn` did not get to record becomes a FAIL carrying the error (capped at
+   * the CLI's 400 chars), and the guard resolves `false`: no rethrow, no
+   * `block`, and the README's check rows stay stable. Resolves `true` when
+   * `fn` returns; names it recorded are kept either way.
+   */
+  async guard(names: string[], fn: () => unknown): Promise<boolean> {
+    try {
+      await fn()
+      return true
+    } catch (e) {
+      const evidence = String(e).slice(0, 400)
+      for (const name of names) if (!(name in this.checks)) this.expect(name, false, evidence)
+      return false
+    }
+  }
+
   finish(): WalkReport {
     const ok = this.blocked === undefined && Object.values(this.checks).every((c) => c.pass)
     return {

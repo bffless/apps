@@ -53,6 +53,31 @@ describe('Report', () => {
     const out = r.finish()
     expect(out.checks['dispatch.a']).toEqual({ pass: true, evidence: 1 })
   })
+  it('guard() turns a throw into a FAIL per listed name left unrecorded, keeps what fn recorded, and resolves false without blocking', async () => {
+    const r = new Report('hello', 'h')
+    const ok = await r.guard(['D6.a', 'D6.b'], async () => {
+      r.expect('D6.a', true, 1)
+      throw new Error('locator.waitFor: Timeout 30000ms exceeded')
+    })
+    expect(ok).toBe(false)
+    const out = r.finish()
+    expect(out.checks['D6.a']).toEqual({ pass: true, evidence: 1 })
+    expect(out.checks['D6.b']).toEqual({ pass: false, evidence: 'Error: locator.waitFor: Timeout 30000ms exceeded' })
+    expect(out.ok).toBe(false)
+    expect(out.blocked).toBeUndefined()
+    expect(exitCodeOf(out)).toBe(1)
+  })
+  it('guard() caps the evidence at 400 chars, like the CLI', async () => {
+    const r = new Report('w', 'h')
+    await r.guard(['a'], () => { throw new Error('x'.repeat(1000)) })
+    expect(String(r.finish().checks.a.evidence)).toHaveLength(400)
+  })
+  it('guard() records only what a non-throwing fn expected and resolves true', async () => {
+    const r = new Report('w', 'h')
+    const ok = await r.guard(['a', 'b'], async () => { r.expect('a', true) })
+    expect(ok).toBe(true)
+    expect(Object.keys(r.finish().checks)).toEqual(['a'])
+  })
   it('throws on a duplicate check name, but scoped names do not collide with the same short name', () => {
     const r = new Report('w', 'h')
     r.expect('a', true)
