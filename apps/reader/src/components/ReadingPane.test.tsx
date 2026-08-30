@@ -1,3 +1,12 @@
+/**
+ * @vitest-environment jsdom
+ * @vitest-environment-options {"url":"https://reader.example.com/"}
+ *
+ * The embed trust gate (`isTrustedEmbedOrigin`) is derived from the reader's own
+ * hostname, and jsdom's default `localhost` has no primary domain to derive
+ * from, so this file runs at `reader.example.com` and the Handoff fixtures live
+ * at `handoff.example.com`.
+ */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ReadingPane } from './ReadingPane'
@@ -9,7 +18,8 @@ import type { Item } from '../lib/items'
  * HTML site) instead of sanitizing+injecting its body. Two gates apply:
  *
  * 1. `isEmbeddable` (detection + origin trust) — an embeddable mime on a
- *    known-Handoff origin. A non-Handoff origin falls back to the sanitized body.
+ *    trusted origin (a subdomain of the reader's own primary domain). Any other
+ *    origin falls back to the sanitized body.
  * 2. The consent gate (Outlook-style) — even a trusted embed is hidden until the
  *    reader allows its host (always) or the item (once). Keyed on the parsed
  *    origin, NEVER the feed-supplied mime — so labelling a site `text/markdown`
@@ -39,7 +49,7 @@ const markdownItem = (o: Partial<Item> = {}) =>
   makeItem({
     title: 'Handoff post',
     enclosureType: 'text/markdown',
-    link: 'https://handoff.j5s.dev/blob/Posts/x.md?token=abc',
+    link: 'https://handoff.example.com/blob/Posts/x.md?token=abc',
     content: '<p>UNIQUE_INLINE_MARKER</p>',
     ...o,
   })
@@ -48,7 +58,7 @@ const siteItem = (o: Partial<Item> = {}) =>
   makeItem({
     title: 'Handoff site',
     enclosureType: 'text/html',
-    link: 'https://handoff.j5s.dev/blob/Sites/Portfolio',
+    link: 'https://handoff.example.com/blob/Sites/Portfolio',
     ...o,
   })
 
@@ -71,7 +81,7 @@ describe('ReadingPane', () => {
     // The gate names the host and offers the two actions.
     expect(screen.getByText('Embedded content isn’t shown')).toBeTruthy()
     expect(screen.getByRole('button', { name: /show content/i })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /always allow handoff\.j5s\.dev/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /always allow handoff\.example\.com/i })).toBeTruthy()
     // Header still renders.
     expect(screen.getByText('Handoff site')).toBeTruthy()
   })
@@ -97,7 +107,7 @@ describe('ReadingPane', () => {
     // Body is NOT injected inline — the iframe replaces it entirely.
     expect(screen.queryByText('UNIQUE_INLINE_MARKER')).toBeNull()
     // The explicit embed seam (source label + escape hatch) is present.
-    expect(screen.getByText('handoff.j5s.dev')).toBeTruthy()
+    expect(screen.getByText('handoff.example.com')).toBeTruthy()
     expect(screen.getByText(/Open original/)).toBeTruthy()
   })
 
@@ -106,7 +116,7 @@ describe('ReadingPane', () => {
     fireEvent.click(screen.getByRole('button', { name: /show content/i }))
     expect(container.querySelector('iframe')).not.toBeNull()
 
-    rerender(<ReadingPane item={siteItem({ guid: 'b', link: 'https://handoff.j5s.dev/blob/Sites/Other' })} />)
+    rerender(<ReadingPane item={siteItem({ guid: 'b', link: 'https://handoff.example.com/blob/Sites/Other' })} />)
     expect(container.querySelector('iframe')).toBeNull()
     expect(screen.getByText('Embedded content isn’t shown')).toBeTruthy()
   })
@@ -120,7 +130,7 @@ describe('ReadingPane', () => {
 
     // A fresh mount (new item, same host) reads the persisted allow-list and
     // auto-loads with no gate.
-    const second = render(<ReadingPane item={siteItem({ guid: 'b', link: 'https://handoff.j5s.dev/blob/Sites/Other' })} />)
+    const second = render(<ReadingPane item={siteItem({ guid: 'b', link: 'https://handoff.example.com/blob/Sites/Other' })} />)
     expect(second.container.querySelector('iframe')).not.toBeNull()
     expect(screen.queryByText('Embedded content isn’t shown')).toBeNull()
   })

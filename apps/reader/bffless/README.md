@@ -185,6 +185,18 @@ configuration**. The app derives the admin host from its own hostname
 Rivulet somewhere that isn't `<app>.<primary-domain>` (or for local dev), set **`VITE_ADMIN_URL`**
 (e.g. `https://admin.example.com`) at build time to point at your admin host explicitly.
 
+The same derivation gates **inline embeds**. Rivulet iframes a Handoff post or site only when the
+item's `link` is an `https` origin on a subdomain of the reader's primary domain
+(`reader.<primary>` → trusts `<any-label>.<primary>`, so `handoff.<primary>` works whatever label
+you installed Handoff under; the apex and plain `http` are never trusted). On the enterprise
+platform, where apps live at `<app>.<workspace>.workspace.<primary>`, the derived primary is
+`<workspace>.workspace.<primary>`, so the rule trusts that workspace's own Handoff and excludes
+sibling workspaces. If Handoff is on a **different domain** (or for local dev, where `localhost`
+has no primary domain and nothing embeds), set **`VITE_TRUSTED_EMBED_ORIGINS`** at build time to a
+comma-separated list of exact origins (e.g. `https://handoff.other.tld,https://docs.custom.tld`);
+when set it **replaces** the same-site rule rather than extending it. Every embed is still behind
+the per-host consent gate in the reading pane.
+
 The `/api/auth/*` rule targets the CE backend's SuperTokens endpoints (`http://localhost:3000/api/auth`
 in the reference deploy) with `forwardCookies: true`, so the path-scoped `sRefreshToken` cookie
 reaches the backend and the rotated `Set-Cookie` headers relay back.

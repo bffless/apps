@@ -60,9 +60,9 @@ export function ReadingPane({
 
   // Embed a trusted Handoff content item (markdown post or HTML site) inline.
   // `isEmbeddable` is the *detection*+trust gate: the enclosure mime is embeddable
-  // AND `link`'s origin is a known-Handoff allowlist entry — that origin boundary
-  // is what makes iframing a feed-supplied URL safe. Treat as embeddable only with
-  // a usable URL.
+  // AND `link`'s origin is trusted (a subdomain of our own primary domain, or the
+  // `VITE_TRUSTED_EMBED_ORIGINS` override) — that origin boundary is what makes
+  // iframing a feed-supplied URL safe. Treat as embeddable only with a usable URL.
   const embed = isEmbeddable(item)
   const src = embed ? embedUrl(item.link) : null
 
