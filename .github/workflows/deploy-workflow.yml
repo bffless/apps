@@ -32,6 +32,9 @@ jobs:
           # everywhere else (dev, mocks, CI) on purpose: workflow-app.yml below
           # tests the unscoped path its mocks/fixtures actually exercise.
           VITE_BFFLESS_PROJECT: bffless/workflow
+          # apps#526: the harness build the diagnostics payload names.
+          # Deliberately unset in workflow-app.yml, so PR CI reads `dev`.
+          VITE_BUILD_SHA: ${{ github.sha }}
       - run: pnpm --filter workflow test:run
       - run: pnpm --filter workflow test:stage
       - name: Sync proxy rules (workflow)

@@ -69,6 +69,7 @@ import { LeaseTransportError, cancelRun, forkRun, openRun, takeOver } from '../s
 import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
 import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
 import { useRunDelete } from '../store/useRunDelete'
+import { useRunDiagnostics } from '../store/useRunDiagnostics'
 import { useWorkflowListing } from '../store/useWorkflowListing'
 import { workflowApi, useGetRunQuery, useGetWorkflowYamlQuery, useWhoamiQuery } from '../store/workflowApi'
 
@@ -468,6 +469,29 @@ export function RunPage() {
     onDeleted: () => void navigate(`${base}/runs`),
   })
 
+  // Copy diagnostics / Attach to run (apps#526): offered on every run view —
+  // a failure that never reached the record exists only on this screen, and
+  // the record view is where diagnostics get asked for. The payload's step
+  // pointers come from the replayed/live state when there is one, and from
+  // the raw rows when the replay itself is what broke — the exact case the
+  // buttons exist for.
+  const stepFacts = useMemo(
+    () =>
+      state
+        ? Object.values(state.steps).map((step) => ({ key: step.key, status: step.status }))
+        : steps.map((row) => ({ key: row.key, status: row.status })),
+    [state, steps],
+  )
+  const stepAnnotations = useMemo(() => steps.flatMap((row) => row.annotations ?? []), [steps])
+  const diag = useRunDiagnostics({
+    runId: shown?.runId,
+    live: isLive,
+    steps: stepFacts,
+    run: isLive ? null : run,
+    stepAnnotations,
+    onAttached: () => void refetch(),
+  })
+
   // Fork — "Re-run from this job" (05; apps#491). A fork runs under the
   // alias's **current** definition, not the parent's snapshot (decision 2), so
   // the page loads it exactly as the kickoff page does — discovery, the file,
@@ -784,6 +808,7 @@ export function RunPage() {
           annotations={annotations}
           base={base}
           progress={state ? stepProgress(state) : undefined}
+          diagnostics={diag.actions}
           live={isLive}
           onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
           onDelete={del.onDelete}
@@ -795,6 +820,11 @@ export function RunPage() {
         {del.failed && (
           <p className="note banner" role="alert" data-testid="run-delete-failed">
             {del.failed}
+          </p>
+        )}
+        {diag.failed && (
+          <p className="note banner" role="alert" data-testid="run-diagnostics-failed">
+            {diag.failed}
           </p>
         )}
         {forkFailed?.runId === shownRunId && (

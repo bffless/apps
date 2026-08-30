@@ -322,6 +322,32 @@ describe('run.annotation', () => {
     })
     expect(next.annotations).toEqual([{ level: 'warning', message: 'heads up' }])
   })
+
+  // apps#526: an annotation carrying a `kind` is a machine-attached fact the
+  // run holds at most one of — a second Attach is a fresher copy, not a new
+  // fact — while kind-less annotations keep stacking as before.
+  it('replaces, never stacks, an annotation of the same kind', () => {
+    let state = baseline()
+    state = runReducer(state, {
+      type: 'run.annotation',
+      annotation: { level: 'warning', message: 'heads up' },
+      at: 1_500,
+    })
+    state = runReducer(state, {
+      type: 'run.annotation',
+      annotation: { kind: 'diagnostics', level: 'notice', message: 'first', data: { n: 1 } },
+      at: 1_600,
+    })
+    state = runReducer(state, {
+      type: 'run.annotation',
+      annotation: { kind: 'diagnostics', level: 'notice', message: 'second', data: { n: 2 } },
+      at: 1_700,
+    })
+    expect(state.annotations).toEqual([
+      { level: 'warning', message: 'heads up' },
+      { kind: 'diagnostics', level: 'notice', message: 'second', data: { n: 2 } },
+    ])
+  })
 })
 
 // ---------------------------------------------------------------------------

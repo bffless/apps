@@ -165,6 +165,23 @@ describe('toRunRow', () => {
     expect(row.annotations).toEqual([{ level: 'notice', message: 'hi' }])
   })
 
+  // apps#526: the machine-attached annotation round-trips — `kind` and its
+  // opaque `data` must survive a reload, or replace-not-stack has nothing to
+  // match on. A kind this client does not know is dropped, not invented.
+  it('keeps a diagnostics annotation’s kind and data, and drops a kind it does not know', () => {
+    const row = toRunRow({
+      ...flat,
+      annotations: [
+        { level: 'notice', message: 'attached', kind: 'diagnostics', data: { buildSha: 'dev', errors: [] } },
+        { level: 'warning', message: 'other', kind: 'mystery', data: undefined },
+      ],
+    })
+    expect(row.annotations).toEqual([
+      { level: 'notice', message: 'attached', kind: 'diagnostics', data: { buildSha: 'dev', errors: [] } },
+      { level: 'warning', message: 'other' },
+    ])
+  })
+
   it('reads the same row nested under .fields', () => {
     const { id, ...fields } = flat
     expect(toRunRow({ id, fields })).toEqual(toRunRow(flat))

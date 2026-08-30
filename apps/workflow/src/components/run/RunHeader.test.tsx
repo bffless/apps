@@ -15,6 +15,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { toRunRow } from '../../lib/coerce'
+import { attachDiagnostics, buildDiagnostics, copyDiagnostics } from '../../lib/diagnostics'
+import { httpJsonWithReauth } from '../../lib/http'
+import { createRunStore } from '../../lib/runStore'
+import { db } from '../../mocks/db'
 import { RunHeader } from './RunHeader'
 import type { RunHeaderProps } from './RunHeader'
 
@@ -127,6 +132,112 @@ describe('RunHeader — badges', () => {
   it('shows no unattended badge by default', () => {
     renderHeader()
     expect(screen.queryByTestId('run-unattended')).not.toBeInTheDocument()
+  })
+})
+
+describe('RunHeader — diagnostics (apps#526)', () => {
+  /** The header's whole contract: buttons and echoed state; the page owns the writes. */
+  const ACTIONS = {
+    onCopy: () => {},
+    copied: false,
+    onAttach: () => {},
+    attaching: false,
+    attached: false,
+  }
+
+  it('offers no diagnostics buttons when the page passes none', () => {
+    renderHeader()
+    expect(screen.queryByTestId('run-copy-diagnostics')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('run-attach-diagnostics')).not.toBeInTheDocument()
+  })
+
+  it('copies the decided payload to the clipboard', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const onCopy = () => {
+        void copyDiagnostics(
+          buildDiagnostics({ runId: 'run_1', steps: [{ key: 'main/0/hello', status: 'failed' }] }),
+        )
+      }
+      renderHeader({ diagnostics: { ...ACTIONS, onCopy } })
+
+      fireEvent.click(screen.getByTestId('run-copy-diagnostics'))
+
+      expect(writeText).toHaveBeenCalledTimes(1)
+      const payload = JSON.parse(writeText.mock.calls[0]?.[0] as string) as Record<string, unknown>
+      expect(payload).toMatchObject({
+        buildSha: 'dev',
+        runId: 'run_1',
+        steps: [{ key: 'main/0/hello', status: 'failed' }],
+      })
+      expect(typeof payload.url).toBe('string')
+      expect(typeof payload.userAgent).toBe('string')
+      expect(Array.isArray(payload.errors)).toBe(true)
+      expect(typeof payload.at).toBe('number')
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    }
+  })
+
+  it('echoes copied / attaching / attached on the buttons', () => {
+    const { unmount } = renderHeader({ diagnostics: { ...ACTIONS, copied: true, attaching: true } })
+    expect(screen.getByTestId('run-copy-diagnostics')).toHaveTextContent('Copied')
+    expect(screen.getByTestId('run-attach-diagnostics')).toBeDisabled()
+    unmount()
+
+    renderHeader({ diagnostics: { ...ACTIONS, attached: true } })
+    expect(screen.getByTestId('run-attach-diagnostics')).toBeEnabled()
+    expect(screen.getByTestId('run-attach-diagnostics')).toHaveTextContent('Attached')
+  })
+
+  // The record path end to end (against the MSW `run/update` handler): two
+  // clicks leave the row holding exactly ONE diagnostics annotation — the
+  // second replaces the first (decided on the issue) — and the rollup rides
+  // along on the same write.
+  it('attaches exactly one diagnostics annotation after two clicks, counts and all', async () => {
+    db.runs.set(
+      'run_diag',
+      toRunRow({
+        runId: 'run_diag',
+        impl: 'hello',
+        workflow: 'hello',
+        workflowName: 'Hello workflow',
+        yaml: '# hello\n',
+        status: 'failed',
+        startedAt: 1_000,
+        finishedAt: 2_000,
+        annotations: [{ level: 'warning', message: 'already there' }],
+      }),
+    )
+    const runStore = createRunStore(httpJsonWithReauth)
+    const writes: Promise<void>[] = []
+    const onAttach = () => {
+      // Fresh row each click, the way the page's refetch keeps it fresh — the
+      // second attach must see (and replace) the first's annotation.
+      const row = db.runs.get('run_diag')!
+      writes.push(
+        attachDiagnostics(runStore, row, [], buildDiagnostics({ runId: 'run_diag', steps: [] })),
+      )
+    }
+    renderHeader({ diagnostics: { ...ACTIONS, onAttach } })
+
+    fireEvent.click(screen.getByTestId('run-attach-diagnostics'))
+    await writes[0]
+    fireEvent.click(screen.getByTestId('run-attach-diagnostics'))
+    await writes[1]
+
+    const row = db.runs.get('run_diag')!
+    const attached = (row.annotations ?? []).filter((a) => a.kind === 'diagnostics')
+    expect(attached).toHaveLength(1)
+    expect(row.annotations).toHaveLength(2) // the warning stayed; the first attach was replaced
+    expect(attached[0]).toMatchObject({
+      level: 'notice',
+      title: 'Diagnostics',
+      message: `Client diagnostics attached from ${window.location.href}`,
+    })
+    expect((attached[0]?.data as { runId?: string }).runId).toBe('run_diag')
+    expect(row.annotationCounts).toEqual({ error: 0, warning: 1, notice: 1 })
   })
 })
 
