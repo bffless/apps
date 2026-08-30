@@ -81,5 +81,9 @@ function handler({ steps }) {
     }
   }
 
-  return { words: words, text: text, timed: timedTranscript(words, 8), duration: duration }
+  // What WhisperX heard (or was told) the recording's language is - the ISO code it
+  // aligned with, or tried to. `check` names it when the alignment did not happen.
+  var language = typeof out.detected_language === 'string' && out.detected_language ? out.detected_language : null
+
+  return { words: words, text: text, timed: timedTranscript(words, 8), duration: duration, language: language }
 }

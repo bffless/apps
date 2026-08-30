@@ -5,6 +5,7 @@ cases:
       steps:
         whisper:
           output:
+            detected_language: en
             segments:
               - text: " Hello world"
                 words:
@@ -24,6 +25,7 @@ cases:
         text: Hello world again later
         timed: "[0:00] Hello world\n[0:08] again later"
         duration: 10.251
+        language: en
   - name: no segments yields empty everything
     data:
       steps:
@@ -34,3 +36,4 @@ cases:
         text: ""
         timed: ""
         duration: 0
+        language: null

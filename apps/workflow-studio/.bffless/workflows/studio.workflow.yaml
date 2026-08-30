@@ -8,6 +8,59 @@ on:
   manual:
     inputs:
       recordings: { type: file, accept: "video/*", list: true, required: true, maxSize: 5GB, label: Recordings }
+      # WhisperX's `language`. Pinned by default: left to detect it from the first 30 s,
+      # the model heard a UK-accented English talk as Welsh (cy, 0.91) and - having no
+      # Welsh alignment model - returned the transcript without one word timing, so the
+      # run died two jobs later as "no spoken audio". `auto` is the model's own
+      # detection for a recording in a language not listed; the list is exactly the
+      # languages WhisperX can align (word timings are what every later step is built on).
+      language:
+        type: choice
+        default: en
+        label: Spoken language
+        description: "The language spoken in the recordings. Pick it rather than auto-detect when you can: a wrong guess loses every word timing, and the run stops."
+        options:
+          - { value: auto, label: "Auto-detect (may guess wrong)" }
+          - { value: en, label: English }
+          - { value: es, label: Spanish }
+          - { value: fr, label: French }
+          - { value: de, label: German }
+          - { value: it, label: Italian }
+          - { value: pt, label: Portuguese }
+          - { value: nl, label: Dutch }
+          - { value: sv, label: Swedish }
+          - { value: da, label: Danish }
+          - { value: no, label: Norwegian }
+          - { value: fi, label: Finnish }
+          - { value: pl, label: Polish }
+          - { value: cs, label: Czech }
+          - { value: sk, label: Slovak }
+          - { value: sl, label: Slovenian }
+          - { value: hr, label: Croatian }
+          - { value: hu, label: Hungarian }
+          - { value: ro, label: Romanian }
+          - { value: el, label: Greek }
+          - { value: tr, label: Turkish }
+          - { value: ru, label: Russian }
+          - { value: uk, label: Ukrainian }
+          - { value: lv, label: Latvian }
+          - { value: ca, label: Catalan }
+          - { value: gl, label: Galician }
+          - { value: eu, label: Basque }
+          - { value: he, label: Hebrew }
+          - { value: ar, label: Arabic }
+          - { value: fa, label: Persian }
+          - { value: ur, label: Urdu }
+          - { value: hi, label: Hindi }
+          - { value: te, label: Telugu }
+          - { value: ml, label: Malayalam }
+          - { value: ka, label: Georgian }
+          - { value: ja, label: Japanese }
+          - { value: ko, label: Korean }
+          - { value: zh, label: Chinese }
+          - { value: vi, label: Vietnamese }
+          - { value: id, label: Indonesian }
+          - { value: tl, label: Tagalog }
       direction:  { type: string, format: textarea, label: Note to the director }
       write_blog: { type: boolean, default: true, label: Write a blog post }
       cover:      { type: boolean, default: true, label: Draw a cover }
@@ -47,14 +100,16 @@ jobs:
       - id: transcribe
         name: Write the transcript
         uses: pipeline
-        with: { path: transcribe, body: { audio: "${{ steps.audio.outputs.wav.path }}", diarize: false } }
+        with: { path: transcribe, body: { audio: "${{ steps.audio.outputs.wav.path }}", diarize: false, language: "${{ inputs.language }}" } }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 5s, timeout: 30m }
         outputs:
           words: { type: json, value: "${{ response.result.words }}", render: transcript }
           text:  { type: string, value: "${{ response.result.text }}" }
           timed: { type: string, value: "${{ response.result.timed }}" }
           duration: { type: number, value: "${{ response.result.duration }}" }
-        summary: "Transcribed **${{ matrix.video.name }}** — ${{ length(steps.transcribe.outputs.words) }} words."
+          # The ISO code WhisperX transcribed in - the pinned one, or what auto-detect chose.
+          language: { type: string, value: "${{ response.result.language }}" }
+        summary: "Transcribed **${{ matrix.video.name }}** (${{ steps.transcribe.outputs.language }}) — ${{ length(steps.transcribe.outputs.words) }} words."
         annotations:
           - { level: warning, if: "${{ length(steps.transcribe.outputs.words) < 50 }}", message: "Very short transcript for ${{ matrix.video.name }} — is the audio silent?" }
     outputs:
