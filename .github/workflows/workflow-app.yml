@@ -7,6 +7,7 @@ on:
         'packages/workflow-lint/**',
         'packages/workflow-script/**',
         'packages/workflow-headless/**',
+        'packages/workflow-live/**',
         '.github/workflows/workflow-app.yml',
       ]
   workflow_dispatch:
@@ -40,6 +41,9 @@ jobs:
       - run: pnpm --filter @bffless/workflow-headless build
       - run: pnpm --filter @bffless/workflow-headless lint
       - run: pnpm --filter @bffless/workflow-headless test:run
+      - run: pnpm --filter @bffless/workflow-live build
+      - run: pnpm --filter @bffless/workflow-live lint
+      - run: pnpm --filter @bffless/workflow-live test:run
       - run: pnpm --filter workflow test:run
       # The stager suite (a real clone + build of workflow-hello) is its own step, not part of test:run.
       - run: pnpm --filter workflow test:stage
