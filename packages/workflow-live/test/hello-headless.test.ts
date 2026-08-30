@@ -25,4 +25,15 @@ describe('checkHeadlessHello', () => {
     const r = new Report('headless', 'h'); checkHeadlessHello(rec, r)
     expect(r.finish().checks['run.headlessFlag']?.pass).toBe(false)
   })
+  it('fails when the island step did not succeed on its own', () => {
+    const rec = load()
+    rec.steps.find((s) => s.key === 'pick/0/choose')!.status = 'failed'
+    const r = new Report('headless', 'h'); checkHeadlessHello(rec, r)
+    expect(r.finish().checks['D7.islandSelfSubmitted']?.pass).toBe(false)
+  })
+  it('fails when the poster output is not a File ref', () => {
+    const rec = load(); rec.run!.outputs!.poster = 'poster.svg'
+    const r = new Report('headless', 'h'); checkHeadlessHello(rec, r)
+    expect(r.finish().checks['run.posterIsFileRef']?.pass).toBe(false)
+  })
 })

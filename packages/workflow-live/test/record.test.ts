@@ -10,8 +10,14 @@ describe('record', () => {
     expect(rec.steps.length).toBeGreaterThan(3)
   })
   it('rejects a non-record', () => {
-    expect(() => parseRecord({ nope: 1 })).toThrow(/run/)
-    expect(() => parseRecord({ run: null, steps: 'x' })).toThrow(/steps/)
+    expect(() => parseRecord({ nope: 1 })).toThrow(/no `run`/)
+    expect(() => parseRecord({ run: null, steps: 'x' })).toThrow(/`steps` is not an array/)
+  })
+  it('rejects a step row without a string key and status', () => {
+    expect(() => parseRecord({ run: null, steps: [{ key: 'a/0/b', status: 'succeeded' }, { key: 'a/1/b' }] })).toThrow(/steps\[1\] has no string `key`\/`status`/)
+    expect(() => parseRecord({ run: null, steps: ['a/0/b'] })).toThrow(/steps\[0\]/)
+    expect(() => parseRecord({ run: null, steps: [{ key: 1, status: 'succeeded' }] })).toThrow(/steps\[0\]/)
+    expect(parseRecord({ run: null, steps: [] }).steps).toEqual([])
   })
   it('finds steps by key and by job', () => {
     expect(stepByKey(rec, 'pick/0/choose')?.status).toBe('succeeded')

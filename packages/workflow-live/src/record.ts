@@ -13,6 +13,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 export function parseRecord(json: unknown): RunRecord {
   if (!isObj(json) || !('run' in json)) throw new Error('not a run record: no `run`')
   if (!Array.isArray(json.steps)) throw new Error('not a run record: `steps` is not an array')
+  const bad = json.steps.findIndex((row) => !(isObj(row) && typeof row.key === 'string' && typeof row.status === 'string'))
+  if (bad !== -1) throw new Error(`not a run record: steps[${bad}] has no string \`key\`/\`status\``)
   return { run: (json.run as RunRow | null) ?? null, steps: json.steps as StepRow[] }
 }
 

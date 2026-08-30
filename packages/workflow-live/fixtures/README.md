@@ -17,6 +17,8 @@ design (apps#483).
 - sha256: `7a1049759b416e6c3c7a09b031d76b060c4f483850937b88f69478e7f9004f22`
 
 At 3.4 MiB the transcoded clip is well under the 15 MB threshold, so it is **committed directly**
-to `fixtures/onboarding-rules.mp4` — no GitHub release asset, no `.gitignore` entry.
-`ensureClip()`'s `gh release download` step is a fallback only, for a checkout where the file is
-somehow missing; it is not the normal path for this clip.
+to `fixtures/onboarding-rules.mp4` — no GitHub release asset, no `.gitignore` entry. The
+committed file is the only source: `ensureClip()` has no download fallback, and a checkout where
+it is missing (or fails the sha256 pin) throws — the `studio-headless` walk reports that as
+`BLOCKED`. If the clip is ever lost, regenerate it with `fetch-clip.mjs` + `transcode.sh` and
+re-pin `onboarding-rules.sha256`.

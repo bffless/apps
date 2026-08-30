@@ -62,6 +62,16 @@ describe('checkBlogZip', () => {
   it('rejects a bundle with no frames', () => {
     const r = new Report('studio-headless', 'h')
     checkBlogZip(zipSync({ 'post.md': strToU8('# t') }), r)
-    expect(r.finish().checks['blog.zipHasFrames']?.pass).toBe(false)
+    const c = r.finish().checks
+    expect(c['blog.zipHasFrames']?.pass).toBe(false)
+    expect(c['blog.zipHasOnePost']?.pass).toBe(true)
+  })
+  it('a bundle with two posts fails zipHasOnePost but still passes zipHasFrames', () => {
+    const r = new Report('studio-headless', 'h')
+    checkBlogZip(zipSync({ 'post.md': strToU8('# t'), 'draft.md': strToU8('# d'), 'images/frame-01.jpg': new Uint8Array([0xff, 0xd8]) }), r)
+    const c = r.finish().checks
+    expect(c['blog.zipHasFrames']?.pass).toBe(true)
+    expect(c['blog.zipHasOnePost']?.pass).toBe(false)
+    expect(c['blog.zipHasOnePost']?.evidence).toEqual({ entries: 3, posts: ['post.md', 'draft.md'] })
   })
 })

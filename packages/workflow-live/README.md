@@ -15,7 +15,7 @@ deployment or it fails, and nothing about the verdict comes from reading code. S
 | `hello` | Task 25 Step 1: `D5.helloDiscoveredViaForwarder`, `run.succeeded`, `D6.viewerImgIsPresigned`, `D6.noSignError`, `D4.scriptSandboxed`, `page.noConsoleErrors` — `D4.scriptSandboxed` is expected red until bffless/workflow-hello#5 merges and deploys (the `hello-pr-5` preview already carries the log line), so `walk hello`/`walk all` exit 1 until then | nothing |
 | `headless` | Task 25 Step 2: `driver.exit0`, `driver.wroteRunJson` (failure-branch only), the five `checkHeadlessHello` checks (`run.succeeded`, `run.headlessFlag`, `D7.islandSelfSubmitted`, `D11.reviewSkippedWithOutputs`, `run.posterIsFileRef`), `driver.savedPoster`, `driver.wrongTypeIsExit3`, and — with `--dispatch` — the same five re-scoped as `dispatch.*` plus `dispatch.jobGreen`, `dispatch.artifactDownloaded`, `dispatch.artifactHasRunJson` (failure-branch only), `dispatch.savedPoster` | nothing (CI minutes with `--dispatch`) |
 | `studio-audit` | Task 25 Step 3, as an *audit* of the by-hand run `run_01M17CG3W0YTA4T0ZVRTD88VE7` (`STUDIO_AUDIT_RUN`, override with `--run <id>` once that run is deleted — the walk then `BLOCK`s with a hint): `run.succeeded`, `R.scenesCarrySourceSpans`, `D2.sheetsDrawn`, `trim.keepRecorded`, `outputs.shortBlogCoverAreFileRefs`, `D16.wordsNotOffloaded`, `run.interactiveFlag` | nothing |
-| `studio-headless` | Task 25 Step 4: the six common Studio checks (`checkStudioCommon`: `run.succeeded`, `R.scenesCarrySourceSpans`, `D2.sheetsDrawn`, `trim.keepRecorded`, `outputs.shortBlogCoverAreFileRefs`, `D16.wordsNotOffloaded`) plus `run.headlessFlag`, `D11.blogReviewSkippedWithPost`, `D11.coverFormsSkipped`, `cover.rendered`, `D7.trimAutoAccepted`, `driver.exit0`, `driver.wroteRunJson` (failure-branch only), `driver.savedShort`, `driver.savedCover`, `driver.savedBlogZip` (failure-branch only) (`blog.zipHasFrames`) — not the `studio-audit` checks (that walk alone adds `run.interactiveFlag`) | **one Studio kickoff**: WhisperX, Gemini director + refiner, Claude describe/blog, nano-banana ×2 |
+| `studio-headless` | Task 25 Step 4: the six common Studio checks (`checkStudioCommon`: `run.succeeded`, `R.scenesCarrySourceSpans`, `D2.sheetsDrawn`, `trim.keepRecorded`, `outputs.shortBlogCoverAreFileRefs`, `D16.wordsNotOffloaded`) plus `run.headlessFlag`, `D11.blogReviewSkippedWithPost`, `D11.coverFormsSkipped`, `cover.rendered`, `D7.trimAutoAccepted`, `driver.exit0`, `driver.wroteRunJson` (failure-branch only), `driver.savedShort`, `driver.savedCover`, `driver.savedBlogZip` (failure-branch only), and on the saved zip `blog.zipHasFrames` + `blog.zipHasOnePost` (`blog.zipReadable`, failure-branch only) — not the `studio-audit` checks (that walk alone adds `run.interactiveFlag`) | **one Studio kickoff**: WhisperX, Gemini director + refiner, Claude describe/blog, nano-banana ×2 |
 
 `all` runs `hello → headless → studio-audit → studio-headless` in that order, writing
 each walk's `report.json`/`report.md` under `<out>/<name>/` rather than directly under
@@ -49,7 +49,7 @@ authenticated.
 ## Exit codes
 
 `0` every check passed · `1` at least one check failed · `2` `BLOCKED` — a precondition
-was missing (credentials, harness unreachable, fixture absent, `gh` unauthenticated) or
+was missing (credentials, harness unreachable, fixture clip missing or sha-mismatched, `gh` unauthenticated) or
 the driver faulted (exit 2/4). A `BLOCKED` walk asserts nothing else.
 
 ## Reports
@@ -67,8 +67,10 @@ and driver artifacts alongside them. Running `all` writes each walk's pair under
 a transcode of the by-hand run's real recording, chosen because a synthetic clip with
 no spoken audio fails by design (apps#483). `ensureClip()` verifies the sha256 before
 every kickoff, but only for the committed clip — a `--clip <path>` override is used
-as-is, unverified — and only falls back to `gh release download
-workflow-live-fixtures` when the committed file is missing from the checkout.
+as-is, unverified. The committed file is the only source: there is no download
+fallback, and a checkout where it is missing or its sha256 does not match the pin
+`BLOCK`s the walk (`fixture clip missing: …` / `fixture clip sha256 mismatch: …`)
+instead of fetching anything.
 
 ## The Studio cap
 
@@ -77,6 +79,22 @@ driver-fault exit (2 or 4)** — never after a run failure (exit 1). Exceeding t
 reports `BLOCKED` rather than retrying again. See `test/studio-headless.test.ts` for
 the enforced cases (no retry on exit 1; one retry on exit 2 that then succeeds; two
 driver faults in a row caps at 2 kickoffs and blocks).
+
+## Deferred by design
+
+Known limits of what the walks prove, recorded here rather than carried as issues
+(from apps#496):
+
+- **`D6.viewerImgIsPresigned` would false-FAIL on a local-FS harness.** The check
+  expects a presigned storage URL; a CE instance on local filesystem storage presigns
+  on its own origin, so the `hello` walk is only meaningful against a bucket-backed
+  deployment such as `workflow.j5s.dev`.
+- **A legitimately frameless blog post FAILs `blog.zipHasFrames` by spec.** The Studio
+  contract says a headless blog ships its frames; a post that genuinely needed none
+  reads as a failure, and the walk does not try to tell the two apart.
+- **`--dispatch` always runs `main`'s `workflow-headless-run.yml`, never the branch's.**
+  The dispatch path proves CI end to end, but for `main`'s workflow and `main`'s
+  driver — a change to either on a branch is only exercised after it merges.
 
 ## Adding a walk
 
