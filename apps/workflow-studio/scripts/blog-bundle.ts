@@ -16,7 +16,8 @@
  * `frame:<t>` token's own clock (R135), because `frame-times` sends the global second
  * along as `captures[].key` and the `video/frames` rule keys the map by it (R140) —
  * so a token is looked up directly here, with no timeline to re-derive. `frames` are
- * the registered File refs for those same paths, which is what `ctx.files.fetch`
+ * the registered File refs for the tokens' own paths (a picker candidate the reviewer
+ * chose is fetched through a ref built from its path instead — `serveRef`); a ref is what `ctx.files.fetch`
  * needs to pull the bytes back same-origin.
  *
  * The "url" baked into the markdown before `planBlogBundle` sees it is deliberately
@@ -53,6 +54,24 @@ function refsByPath(frames: FileRef[]): (path: string) => FileRef | undefined {
   return (path) => exact.get(path) ?? frames.find((f) => f.path.endsWith(`/${path}`) || path.endsWith(`/${f.path}`))
 }
 
+/**
+ * A ref for a frame that was captured but never registered — a Change-frame
+ * candidate the reviewer picked (apps#490: `frames` holds the tokens' own frames
+ * only; candidates are reachable by path alone). `ctx.files.fetch` needs nothing
+ * but a url on the serve route (`/api/uploads/<path>`, the harness's `SERVE_PREFIX`),
+ * which any uploads-relative path yields; `size` is unknown and irrelevant to a
+ * fetch, and every still the rule captures is a JPEG.
+ */
+function serveRef(path: string): FileRef {
+  return {
+    path,
+    name: path.split('/').pop() || 'frame.jpg',
+    contentType: 'image/jpeg',
+    size: 0,
+    url: `/api/uploads/${path}`,
+  }
+}
+
 export default async function blogBundle(ctx: ScriptContext): Promise<Record<string, unknown>> {
   const markdown = requireString(NAME, ctx.inputs, 'markdown')
   const title = requireString(NAME, ctx.inputs, 'title')
@@ -82,22 +101,20 @@ export default async function blogBundle(ctx: ScriptContext): Promise<Record<str
       urlByTime.set(time, path)
       continue
     }
-    const ref = findRef(path)
+    const ref = findRef(path) ?? serveRef(path)
     let bytes: Uint8Array | null = null
-    if (ref) {
-      try {
-        const res = await ctx.files.fetch(ref)
-        if (res.ok) bytes = new Uint8Array(await res.arrayBuffer())
-      } catch {
-        bytes = null
-      }
+    try {
+      const res = await ctx.files.fetch(ref)
+      if (res.ok) bytes = new Uint8Array(await res.arrayBuffer())
+    } catch {
+      bytes = null
     }
     if (!bytes) {
       // One unreadable frame must not cost the creator the whole bundle: drop the
       // image (and its token) and say which one went missing.
       ctx.annotate({
         level: 'warning',
-        message: `Left ${ref?.name ?? path} out of the blog bundle — its bytes could not be read back.`,
+        message: `Left ${ref.name} out of the blog bundle — its bytes could not be read back.`,
       })
       continue
     }

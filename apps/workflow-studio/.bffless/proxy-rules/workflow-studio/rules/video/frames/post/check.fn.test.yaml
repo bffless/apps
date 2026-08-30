@@ -84,6 +84,46 @@ cases:
             "frame:3": workflows/run-1/blog/frames/0/frame-01.jpg
             "frame:63": workflows/run-1/blog/frames/1/frame-01.jpg
           dropped: 0
+  - name: only the step's own frames become `paths`; a sibling stays reachable by path through byTime and srcs (apps#490)
+    data:
+      steps:
+        prep:
+          dropped: 0
+          has0: true
+          keys0: ["40", "35", "45"]
+          own0: [true, false, false]
+          has1: false
+          keys1: []
+          own1: []
+          has2: false
+          keys2: []
+          own2: []
+        frames0:
+          frames:
+            - { time: 40, storage_path: o/r/uploads/workflows/run-1/blog/frames/0/frame-01.jpg }
+            - { time: 35, storage_path: o/r/uploads/workflows/run-1/blog/frames/0/frame-02.jpg }
+            - { time: 45, storage_path: o/r/uploads/workflows/run-1/blog/frames/0/frame-03.jpg }
+          count: 3
+          drawn: false
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        code: ""
+        data:
+          paths:
+            - workflows/run-1/blog/frames/0/frame-01.jpg
+          byTime:
+            "40": workflows/run-1/blog/frames/0/frame-01.jpg
+            "35": workflows/run-1/blog/frames/0/frame-02.jpg
+            "45": workflows/run-1/blog/frames/0/frame-03.jpg
+          srcs:
+            "frame:40": workflows/run-1/blog/frames/0/frame-01.jpg
+            "frame:35": workflows/run-1/blog/frames/0/frame-02.jpg
+            "frame:45": workflows/run-1/blog/frames/0/frame-03.jpg
+          dropped: 0
   - name: nothing to capture succeeds with an empty result
     data:
       steps:

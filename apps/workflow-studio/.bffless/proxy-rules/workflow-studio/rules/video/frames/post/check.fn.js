@@ -29,9 +29,15 @@ function handler({ steps, deployment, stepErrors }) {
     // The `String(frame.time)` fallback below only fires if CE returned more stills
     // than were asked for.
     var keys = prep['keys' + i] || []
+    // `own` is parallel to `keys` (prep.fn.js): false marks a picker candidate the caller
+    // sent as `sibling`. Every still lands in `byTime`/`srcs` (that is how the island
+    // and blog-bundle reach it, by path), but only the caller's OWN frames become
+    // `paths` — the list the workflow declares as `type: file` and so registers one
+    // HTTP call at a time (apps#490). An absent/short `own` means all own (older callers).
+    var own = prep['own' + i] || []
     for (var f = 0; f < frames.length; f++) {
       var p = rel((frames[f] || {}).storage_path)
-      paths.push(p)
+      if (own[f] !== false) paths.push(p)
       var key = (f < keys.length) ? keys[f] : String((frames[f] || {}).time)
       byTime[key] = p
       srcs['frame:' + key] = p

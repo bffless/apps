@@ -385,6 +385,9 @@ jobs:
           body: { captures: "${{ steps.times.outputs.captures }}", outPrefix: "${{ step.prefix }}" }
         poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 10m }
         outputs:
+          # The tokens' OWN frames only (apps#490). Every still — the picker's candidates
+          # too — is in `by_time`/`srcs` by path; declaring all of them here made a
+          # dozen-image post register ~170 files one HTTP call each.
           frames: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
           by_time: { type: json, value: "${{ response.result.byTime }}" }
           # `by_time` re-keyed by token (`frame:<t>` → path): the `images` map (02) the

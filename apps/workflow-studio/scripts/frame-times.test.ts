@@ -99,9 +99,19 @@ describe('frame-times', () => {
       )
       expect(out.captures.slice(0, 1)).toEqual(own(out.captures))
       // Each is routed like a token: 60 s and later belong to B, on B's own clock.
-      expect(candidates.find((c) => c.key === '55')).toEqual({ source: A.path, time: 55, name: 'frame-t55000.jpg', key: '55' })
-      expect(candidates.find((c) => c.key === '65')).toEqual({ source: B.path, time: 5, name: 'frame-t65000.jpg', key: '65' })
+      expect(candidates.find((c) => c.key === '55')).toEqual({ source: A.path, time: 55, name: 'frame-t55000.jpg', key: '55', sibling: true })
+      expect(candidates.find((c) => c.key === '65')).toEqual({ source: B.path, time: 5, name: 'frame-t65000.jpg', key: '65', sibling: true })
       expect(logs).toContainEqual(expect.stringMatching(/12 nearby candidate\(s\) on a 5 s grid/))
+    })
+
+    it('marks every candidate `sibling: true` and leaves the tokens’ own frames unmarked (apps#490)', async () => {
+      // The `video/frames` rule registers only the unmarked ones as the step's File
+      // list; the candidates stay reachable by path through `byTime`.
+      const { ctx } = fakeCtx({ markdown: '![a](frame:40)\n\n![b](frame:50)', sources: [A], durations: [120] })
+      const out = (await frameTimes(ctx)) as Out
+      expect(own(out.captures).every((c) => !('sibling' in c))).toBe(true)
+      expect(nearby(out.captures).length).toBeGreaterThan(0)
+      expect(nearby(out.captures).every((c) => c.sibling === true)).toBe(true)
     })
 
     it('clamps the window to the timeline and never duplicates a token’s own second', async () => {
