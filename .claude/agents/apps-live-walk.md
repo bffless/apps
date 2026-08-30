@@ -47,11 +47,15 @@ Before running anything, read:
 Each of these, unmet, is a `BLOCKED` reason — state it and stop before running the walk:
 
 - `WORKFLOW_EMAIL`/`WORKFLOW_PASSWORD` or the `WORKFLOW_CI_EMAIL`/`WORKFLOW_CI_PASSWORD`
-  aliases are present in the environment (`source ~/.config/bffless/workflow-ci.env` on
-  the VPS if they aren't already). Never print their values.
-- `curl -s -o /dev/null -w '%{http_code}' <harness>/` answers `200` (the spec's
-  `whoami` probe needs a session the agent does not hold; the walk itself does that
-  check).
+  aliases are present in the environment. On the VPS load them with
+  `set -a; source ~/.config/bffless/workflow-ci.env; set +a` — the file assigns
+  without `export`, so a plain `source` leaves the child node process without them
+  (one walk was burned learning this). Never print their values.
+- `curl -s -o /dev/null -w '%{http_code}' <harness>/` answers `200`, **or `302`** —
+  the harness is a private deployment, so an unauthenticated probe redirects to the
+  admin login; `302` (200 with `-L`) means reachable, proceed. Only a timeout,
+  connection error, or 5xx is BLOCKED. (The spec's `whoami` probe needs a session
+  the agent does not hold; the walk itself does that check.)
 - `gh auth status` succeeds — but only check this when `--dispatch` was asked for.
 - The package builds from the repo root, in the checkout you are already in, on
   whatever branch it is on — you build what's there, you do not check out or switch
@@ -109,7 +113,8 @@ Return exactly:
 - `Verdict: PASS|FAIL|BLOCKED`
 - walk name, harness URL, out-dir
 - the `report.md` rows, verbatim
-- run ids (`runIds` from the report)
+- run ids (`runIds` from the report); if the walk threw before its delete rows,
+  say so and name the leftover run id it left on the live instance
 - spend (`spend.studioKickoffs`)
 - the dispatch run URL, if `--dispatch` was used
 - "What the page showed" — one line per FAIL, from Step 3
