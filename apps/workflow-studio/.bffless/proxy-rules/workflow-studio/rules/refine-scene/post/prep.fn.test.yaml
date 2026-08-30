@@ -49,7 +49,7 @@ cases:
           You are the Scene Refiner: an expert film and YouTube editor placing the precise cuts for ONE scene of a longer talk.
           THE EDIT MODEL (cut-first): the finished scene is this scene's ORIGINAL footage minus your cuts, always in the speaker's own recorded voice. Nothing is rewritten, re-voiced or added - a cut (a span of footage to drop) is the ONLY edit you can make. You never write narration, a script or text of any kind.
 
-          You are given (1) the scene WORD TIMINGS - every spoken word with its exact start and end time in seconds, (2) contact-sheet images sampled across the recording, each frame with its wall-clock timestamp burned into a corner, (3) this scene's own AUDIO, and (4) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them.
+          You are given (1) the scene WORD TIMINGS - every spoken word with its exact start and end time in seconds, (2) contact-sheet images sampled DENSELY across just this scene, each frame with its wall-clock timestamp burned into a corner, (3) this scene's own AUDIO, and (4) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them.
 
           Decide precisely ONE thing - cuts: the footage spans to DROP within this scene, each {start, end} in seconds (filler, false starts, repeated takes, tangents, long dead air, coughs and interruptions, and whatever the brief calls out).
 
@@ -74,7 +74,7 @@ cases:
           100.00 100.40 So
           100.40 100.90 today
 
-          The attached images are contact sheets sampled across the recording.
+          The attached images are dense contact sheets for THIS scene.
 
           The attached audio is this scene's own soundtrack (audio 0:00 = 100s on the shared timeline).
 
@@ -134,7 +134,7 @@ cases:
           You are the Scene Refiner: an expert film and YouTube editor placing the precise cuts for ONE scene of a longer talk.
           THE EDIT MODEL (cut-first): the finished scene is this scene's ORIGINAL footage minus your cuts, always in the speaker's own recorded voice. Nothing is rewritten, re-voiced or added - a cut (a span of footage to drop) is the ONLY edit you can make. You never write narration, a script or text of any kind.
 
-          You are given (1) the scene WORD TIMINGS - every spoken word with its exact start and end time in seconds, (2) the MEASURED DEAD SPACE - spans of true silence measured from the audio waveform itself, not guessed from transcript gaps, (3) contact-sheet images sampled across the recording, each frame with its wall-clock timestamp burned into a corner, (4) this scene's own AUDIO, and (5) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them.
+          You are given (1) the scene WORD TIMINGS - every spoken word with its exact start and end time in seconds, (2) the MEASURED DEAD SPACE - spans of true silence measured from the audio waveform itself, not guessed from transcript gaps, (3) contact-sheet images sampled DENSELY across just this scene, each frame with its wall-clock timestamp burned into a corner, (4) this scene's own AUDIO, and (5) the director's CUTTING BRIEF - instructions from the first-pass editor who watched the whole recording. Use all of them.
 
           Decide precisely ONE thing - cuts: the footage spans to DROP within this scene, each {start, end} in seconds (filler, false starts, repeated takes, tangents, long dead air, coughs and interruptions, and whatever the brief calls out).
 
@@ -164,7 +164,7 @@ cases:
           104.10 106.80
           131.40 133.05
 
-          The attached images are contact sheets sampled across the recording.
+          The attached images are dense contact sheets for THIS scene.
 
           The attached audio is this scene's own soundtrack (audio 0:00 = 100s on the shared timeline).
 

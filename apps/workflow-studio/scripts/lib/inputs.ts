@@ -1,5 +1,5 @@
 /**
- * The `ctx.inputs` guards the five `script` modules share.
+ * The `ctx.inputs` guards the six `script` modules share.
  *
  * A `script` step's inputs are the workflow YAML's `with` keys after expression
  * evaluation, so they arrive as `unknown` — a mistyped expression, a pipeline that

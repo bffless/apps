@@ -230,6 +230,37 @@ jobs:
           word_timings: { type: string }
           previous_context: { type: string }
           scene_words: { type: json }
+      # Studio's refiner never worked from the director's sheets: it got a second, DENSE
+      # pass — the whole 120-frame / 10-sheet budget spent on this ONE scene at a 1 s
+      # floor (`planSceneContactSheet`, story 03c), timestamped on the SOURCE's clock.
+      # The global sheets are the director's (R147): project-wide spacing, GLOBAL clock —
+      # the wrong density AND the wrong timeline for a refiner whose every value is
+      # source-local seconds within [start, end] (apps#524). `trim` still shows the
+      # global sheets: its filmstrip is the WHOLE source, not this scene's window.
+      - id: plan
+        name: Plan this scene's contact sheet
+        uses: script
+        with:
+          src: scripts/scene-sheet-plan.js
+          start: ${{ matrix.scene.start }}
+          end: ${{ matrix.scene.end }}
+        outputs:
+          times: { type: json }
+          labels: { type: json }
+      - id: sheets
+        name: Grab this scene's frames
+        uses: pipeline
+        # A zero-length window plans no times, `video/contact-sheet` refuses an empty
+        # plan, and a skipped step's outputs are null — so `refine` gets `[]` below
+        # (its prep tolerates it) and works from audio + word timings alone.
+        if: "${{ length(steps.plan.outputs.times) > 0 }}"
+        with:
+          path: video/contact-sheet
+          body: { source: "${{ matrix.scene.source }}", outPrefix: "${{ step.prefix }}", times: "${{ steps.plan.outputs.times }}", labels: "${{ steps.plan.outputs.labels }}" }
+        poll: { path: job, query: { id: "${{ response.jobId }}" }, until: "${{ response.status == 'done' }}", fail: "${{ response.status == 'error' }}", every: 3s, timeout: 20m }
+        retry: { max: 3, delay: 10s, if: "${{ error.code == 'FFMPEG_BUSY' }}" }
+        outputs:
+          sheets: { type: file, list: true, value: "${{ response.result.paths }}", render: images }
       - id: refine
         name: Refine the cuts
         uses: pipeline
@@ -239,7 +270,7 @@ jobs:
             start: ${{ matrix.scene.start }}
             end: ${{ matrix.scene.end }}
             audio: ${{ steps.cut.outputs.wav.path }}
-            sheets: ${{ pluck(needs.sheets.outputs.sheets[matrix.scene.sourceIndex], 'path') }}
+            sheets: ${{ pluck(steps.sheets.outputs.sheets, 'path') }}
             wordTimings: ${{ steps.inputs.outputs.word_timings }}
             brief: ${{ matrix.scene.brief }}
             direction: ${{ inputs.direction }}

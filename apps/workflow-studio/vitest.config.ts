@@ -3,7 +3,7 @@
  * successor to a separate `vitest.workspace.ts`): `scripts/**` runs headless in a
  * Web Worker with no DOM (Node is the closest environment Vitest ships), `islands/**`
  * is React and needs `jsdom`, and `src/**` is the Node-side build tooling. `scripts/` holds
- * the workflow's five `script` modules and their suites; `islands/` holds the cut-editor
+ * the workflow's six `script` modules and their suites; `islands/` holds the cut-editor
  * island and its suites (Task 23), which is why `passWithNoTests` is gone — every project
  * matches test files now.
  *

@@ -11,7 +11,7 @@ on:
   workflow_dispatch: {}
   push:
     branches: [main]
-    # The same input set workflow-studio.yml tests on: the island and the five scripts
+    # The same input set workflow-studio.yml tests on: the island and the six scripts
     # import Studio's pure libs, its component and its CSS through the `studio` workspace
     # dependency, and the scripts type against `@bffless/workflow-script` — so a change on
     # either side changes what this deploy publishes without touching a file under
@@ -46,7 +46,7 @@ jobs:
       # The stager's last step is this package's `workflow` bin.
       - run: pnpm --filter @bffless/workflow-lint build
 
-      # Type-check, build the island and the five script modules, and write
+      # Type-check, build the island and the six script modules, and write
       # dist/.bffless/workflows/index.json. Same order as workflow-studio.yml, so what is
       # deployed here is what CI tested.
       - run: pnpm --filter workflow-studio stage

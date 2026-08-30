@@ -1,8 +1,8 @@
 /**
  * TEST-ONLY. A `ScriptContext` stand-in for the `scripts/*.test.ts` suites — the
  * same shape `apps/workflow/src/hello-scripts.test.ts` builds by hand, factored
- * out because five suites need it. Never imported by a script module, so it is
- * never bundled into a `dist/scripts/*.js` entry (Task 24 builds only the five
+ * out because six suites need it. Never imported by a script module, so it is
+ * never bundled into a `dist/scripts/*.js` entry (Task 24 builds only the six
  * named entries under `scripts/`; `scripts/lib/` is support code).
  *
  * `annotations` and `logs` are captured so a suite can assert on the warning a
