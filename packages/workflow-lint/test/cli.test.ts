@@ -11,8 +11,18 @@ const example = (n: string) =>
   fileURLToPath(new URL(`../../../apps/workflow/docs/spec/examples/${n}`, import.meta.url))
 // studio.workflow.yaml ships with its implementation (M3 Task 19), not the
 // spec's examples — see the --json test below for what that changes.
+//
+// Reading it here is not a workspace dependency in the R35 sense (see the
+// note on helloRules below): R35 is about package.json — @bffless/workflow-lint
+// declares no `apps/*` package in dependencies or devDependencies, so nothing
+// the *package* ships or resolves comes from an app. The studio workflow is
+// test input read at test time through a relative file URL, exactly as
+// `example()` reads the spec examples and examples.test.ts reads the same
+// file. The hello rule set below was vendored because hello moved out of this
+// repo (M3 Task 7), not because a test may not read a path in it.
 const appWorkflow = (app: string, n: string) =>
   fileURLToPath(new URL(`../../../apps/${app}/.bffless/workflows/${n}`, import.meta.url))
+const studioRules = fileURLToPath(new URL('../../../apps/workflow-studio/.bffless/proxy-rules/workflow-studio', import.meta.url))
 /**
  * A self-contained fixture (R35: this package must not depend on another
  * workspace's app) vendored from the pre-extraction
@@ -91,13 +101,15 @@ test('--quiet hides notices but keeps the summary', () => {
 
 test('--json emits the stable shape', () => {
   // studio.workflow.yaml now ships with its implementation
-  // (apps/workflow-studio), which has a real (if still incomplete, M3 Tasks
-  // 20-21) rule set of its own — --alias workflow-studio resolves it for
-  // real, so on top of the fixture's 2 errors this run also picks up
-  // whatever rule-missing errors studio's paths still lack a rule for
-  // (falling to 0 as Tasks 20-21 land — assert a floor, not the exact count,
-  // so this test doesn't go red on a change to a different app's rule tree;
-  // examples.test.ts asserts the workflow itself is otherwise clean).
+  // (apps/workflow-studio), whose rule set --alias workflow-studio resolves
+  // for real. That set is authored prefix-free and published with
+  // --path-prefix /api/workflow-studio (see workflow-lint.yml); resolved by
+  // alias alone the prefix is read off the set as bare `/api`, so on top of
+  // the fixture's 2 errors this run reports every studio path as
+  // rule-missing. Assert a floor, not the exact count, so this test doesn't
+  // go red on a change to a different app's rule tree; examples.test.ts
+  // asserts the workflow itself is otherwise clean, and the built-bin smokes
+  // below lint it clean with the publisher's flags.
   const r = run(['lint', '--json', '--alias', 'workflow-studio', fixture('skip-missing-output'), appWorkflow('workflow-studio', 'studio.workflow.yaml')])
   expect(r.code).toBe(1)
   const data = JSON.parse(r.out)
@@ -127,29 +139,36 @@ beforeAll(() => {
 }, 120_000)
 
 /**
- * execFileSync throws on a non-zero exit. studio.workflow.yaml resolves a
- * real (if still incomplete, M3 Tasks 20-21) rule set under --alias
- * workflow-studio and so exits 1 with rule-missing errors — this unwraps
- * stdout either way instead of only the success case.
+ * execFileSync throws on a non-zero exit; unwrap it so a test can assert the
+ * exit status as well as the output, instead of only ever seeing the success
+ * case — or, worse, swallowing a failing exit behind a text match.
  */
-function execBin(args: string[]): string {
+function execBin(args: string[]): { stdout: string; status: number } {
   try {
-    return execFileSync(process.execPath, args, { encoding: 'utf8' })
+    return { stdout: execFileSync(process.execPath, args, { encoding: 'utf8' }), status: 0 }
   } catch (e) {
-    return (e as { stdout: string }).stdout
+    const err = e as { stdout: string; status: number | null }
+    return { stdout: err.stdout, status: err.status ?? -1 }
   }
 }
 
-test('built dist/cli.js runs and reports rule-missing on the studio workflow', () => {
+// The publisher's invocation of the studio workflow (workflow-lint.yml, and
+// again inside bffless/publish-workflow@v1 at deploy time): the set is
+// prefix-free on disk, so --path-prefix supplies the prefix and the lint is
+// fully clean — exit 0 with an all-zero summary.
+const studioArgs = (workflow: string) => [
+  'lint', '--quiet', '--rules', studioRules, '--path-prefix', '/api/workflow-studio', workflow,
+]
+
+test('built dist/cli.js runs and lints the studio workflow clean', () => {
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
-  // See the --json test above for why --alias workflow-studio now genuinely
-  // resolves a rule set. Not asserting an exact error count here: this is a
-  // bin-wiring smoke (does the built CLI run, does it print a summary line at
-  // all), and Tasks 20-21 legitimately shrink studio's rule-missing count to
-  // 0 as they land — a silent no-op still prints nothing, so that failure
-  // mode is still caught by requiring 0 warning(s)/0 notice(s) alongside it.
-  const out = execBin([cli, 'lint', '--quiet', '--alias', 'workflow-studio', appWorkflow('workflow-studio', 'studio.workflow.yaml')])
-  expect(out).toMatch(/error\(s\), 0 warning\(s\), 0 notice\(s\)/)
+  // A bin-wiring smoke: does the built CLI run, does it print a summary line
+  // at all. A silent no-op (exit 0, no output) prints nothing, so requiring
+  // the summary line catches that failure mode; asserting the status catches
+  // a lint that runs but fails.
+  const r = execBin([cli, ...studioArgs(appWorkflow('workflow-studio', 'studio.workflow.yaml'))])
+  expect(r.status).toBe(0)
+  expect(r.stdout).toMatch(/0 error\(s\), 0 warning\(s\), 0 notice\(s\)/)
 })
 
 // A published `bin` is invoked through a symlink (npm) or shim (pnpm) whose
@@ -164,15 +183,16 @@ test('runs when invoked through a bin symlink, same as invoked directly', () => 
   const link = join(dir, 'workflow')
   symlinkSync(cli, link)
 
-  // --alias workflow-studio: see the --json test above for why this may exit
-  // 1 with rule-missing errors rather than 0 (not asserted exactly here —
-  // see the built-dist/cli.js smoke above for why).
+  // The point is parity: the symlink invocation must behave exactly like the
+  // realpath one — same status, same summary — not merely "print something".
   const workflow = appWorkflow('workflow-studio', 'studio.workflow.yaml')
-  const viaSymlink = execBin([link, 'lint', '--quiet', '--alias', 'workflow-studio', workflow])
-  expect(viaSymlink).toMatch(/error\(s\), 0 warning\(s\), 0 notice\(s\)/)
+  const viaSymlink = execBin([link, ...studioArgs(workflow)])
+  expect(viaSymlink.status).toBe(0)
+  expect(viaSymlink.stdout).toMatch(/0 error\(s\), 0 warning\(s\), 0 notice\(s\)/)
 
-  const viaRealPath = execBin([cli, 'lint', '--quiet', '--alias', 'workflow-studio', workflow])
-  expect(viaRealPath).toMatch(/error\(s\), 0 warning\(s\), 0 notice\(s\)/)
+  const viaRealPath = execBin([cli, ...studioArgs(workflow)])
+  expect(viaRealPath.status).toBe(viaSymlink.status)
+  expect(viaRealPath.stdout).toBe(viaSymlink.stdout)
 })
 
 // ---------------------------------------------------------------------------

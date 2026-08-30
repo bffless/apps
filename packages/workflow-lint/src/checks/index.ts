@@ -3,6 +3,7 @@ import type { Definition } from '../model/definition.js'
 import type { ExprSite } from '../model/slots.js'
 import { checkIds } from './ids.js'
 import { checkGraph } from './graph.js'
+import { checkNeedsIf } from './needsif.js'
 import { checkContexts } from './contexts.js'
 import { checkUpstream } from './upstream.js'
 import { checkRender } from './render.js'
@@ -21,6 +22,7 @@ export function runChecks(def: Definition, sites: ExprSite[], rules?: RuleSetCon
   return [
     ...checkIds(def),
     ...checkGraph(def),
+    ...checkNeedsIf(def, sites),
     ...checkContexts(def, sites),
     ...checkUpstream(def, sites),
     ...checkRender(def),
