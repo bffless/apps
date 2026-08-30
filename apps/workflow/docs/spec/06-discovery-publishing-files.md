@@ -158,8 +158,12 @@ standalone UI can ship the same four with its own prefix):
 - `POST /api/workflow/files/prepare` `{ impl, workflow, scope: "inputs" | "<runId>/<stepKey>", filename, contentType, size }` →
   presigned PUT into the matching prefix (`presigned_upload`, `maxFileSize` from the input's
   `maxSize`, MIME from `accept`);
-- `POST /api/workflow/files/register` `{ path }` → verifies the object, returns the
-  **File ref** `{ path, name, contentType, size, url }`;
+- `POST /api/workflow/files/register` `{ impl, workflow, scope, storageKey, originalName? }` →
+  verifies the object, returns the **File ref** `{ path, name, contentType, size, url }`.
+  `storageKey` is either the full key `prepare` minted or the bare uploads-relative path
+  (`workflows/…`) a pipeline step returned where a `file` output is declared (02) — the rule
+  prefixes the latter with `<owner>/<repo>/uploads/` before `register_upload` sees it, and
+  refuses anything outside `workflows/` or carrying `..`/`//` with 400 `BAD_PATH`;
 - `GET /api/uploads/workflows/[...path]` → `file_serve_handler`, `auth_required`, Range-aware
   (video seeking). The rule also passes `download: request.query.download`, which asks CE for
   `Content-Disposition: attachment; filename="<original_name>"` on `?download=1` — **not yet in
