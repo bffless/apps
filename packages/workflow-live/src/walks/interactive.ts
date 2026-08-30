@@ -229,8 +229,8 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await Promise.all(s.pending)
     await s.shot('09-after-delete')
     const deleteBody = s.deleteBody as { ok?: boolean; deleted?: { files?: number; records?: number } } | null
-    report.expect('D7.deleteBody', s.deleteStatus === 200 && deleteBody?.ok === true && (deleteBody?.deleted?.files ?? 0) > 0 && (deleteBody?.deleted?.records ?? 0) > 0, { deleteStatus: s.deleteStatus, deleteBody, expectedFiles: runFiles.length })
-    report.expect('D7.deleteRecordsMatchRegistered', deleteBody?.deleted?.records === runFiles.length && deleteBody?.deleted?.files === runFiles.length, { deleted: deleteBody?.deleted, registeredUnderRun: runFiles.map((r) => r.path) })
+    report.expect('D7.deleteBody', s.deleteStatus === 200 && deleteBody?.ok === true && (deleteBody?.deleted?.files ?? 0) > 0 && (deleteBody?.deleted?.records ?? 0) > 0, { deleteStatus: s.deleteStatus, deleteBody, expectedFiles: runFiles.length, bodyErrors: s.bodyErrors })
+    report.expect('D7.deleteRecordsMatchRegistered', deleteBody?.deleted?.records === runFiles.length && deleteBody?.deleted?.files === runFiles.length, { deleted: deleteBody?.deleted, registeredUnderRun: runFiles.map((r) => r.path), bodyErrors: s.bodyErrors })
     const { body: goneBody } = await s.api.json(`/api/workflow/run?id=${runId}`)
     const gone = goneBody as { run: unknown }
     report.expect('D7.runNullAfterDelete', gone.run === null, gone)

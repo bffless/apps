@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseWalkArgs, UsageError } from '../src/args.js'
+import { parseWalkArgs, UsageError, USAGE } from '../src/args.js'
 
 describe('parseWalkArgs', () => {
   it('defaults harness, out and timeout', () => {
@@ -24,5 +24,23 @@ describe('parseWalkArgs', () => {
   })
   it('rejects a flag as a value', () => {
     expect(() => parseWalkArgs(['walk', 'hello', '--clip', '--dispatch'])).toThrow(UsageError)
+  })
+  it('rejects an empty --harness, a bare-slash --harness and an empty --out', () => {
+    expect(() => parseWalkArgs(['walk', 'hello', '--harness', ''])).toThrow(/^--harness needs a value/)
+    expect(() => parseWalkArgs(['walk', 'hello', '--harness', '/'])).toThrow(/^--harness needs a value/)
+    expect(() => parseWalkArgs(['walk', 'hello', '--out', ''])).toThrow(/^--out needs a value/)
+  })
+  it('prints USAGE once when --timeout has no value', () => {
+    let err: unknown
+    try { parseWalkArgs(['walk', 'hello', '--timeout']) } catch (e) { err = e }
+    expect(err).toBeInstanceOf(UsageError)
+    const message = (err as Error).message
+    expect(message).toMatch(/^--timeout needs a value/)
+    expect(message.split(USAGE).length - 1).toBe(1)
+  })
+  it('throws the headless UsageError, which names itself', () => {
+    let err: unknown
+    try { parseWalkArgs(['runs']) } catch (e) { err = e }
+    expect((err as Error).name).toBe('UsageError')
   })
 })
