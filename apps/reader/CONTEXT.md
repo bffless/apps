@@ -69,6 +69,14 @@ handler and a scheduled-pipeline (cron) primitive.
   with a per-user state join table — cheaper at scale, but needs a third schema and a join
   `data_query` can't express in one step. Chosen for give-away-app scale; cheap now, expensive to
   unwind later. Design: `docs/superpowers/specs/2026-08-02-reader-per-user-scoping-design.md`.
+- **D16** — **Embed trust is derived from the reader's own hostname, not a hardcoded origin list.**
+  `isTrustedEmbedOrigin` (`src/lib/embed.ts`) trusts any `https` origin whose host is a subdomain
+  of the reader's primary domain (hostname minus its first label — the same split `adminOrigin()`
+  makes), so `handoff.<primary>` embeds on any install whatever labels the apps use; the apex,
+  `http`, and single-label hosts (`localhost`) are never trusted. `VITE_TRUSTED_EMBED_ORIGINS`
+  (comma-separated exact origins) *replaces* the rule for a cross-domain Handoff. Supersedes the
+  v1 `TRUSTED_EMBED_ORIGINS = ['https://handoff.j5s.dev']` constant in the 2026-07-08 embed specs,
+  which broke every install but the reference one (#498). The per-host consent gate is unchanged.
 
 ## Deferred to v2+
 
