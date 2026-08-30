@@ -51,11 +51,9 @@ pipeline:
       handler: response_handler
       config:
         condition: steps.parse.notOk
-        body: |-
-          {
-            "error": "{{steps.parse.error}}",
-            "code": "{{steps.parse.code}}"
-          }
+        # apps#525: `parse` serializes the whole envelope (`failJson`) - a stepErrors
+        # message with a `"` or a `\` would break a template-assembled literal.
+        body: "{{{steps.parse.failJson}}}"
         status: 502
         contentType: application/json
   validators:

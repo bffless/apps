@@ -13,11 +13,11 @@ pipeline:
       handler: response_handler
       config:
         condition: steps.prep.notOk
-        body: |-
-          {
-            "error": "{{steps.prep.error}}",
-            "code": "BAD_REQUEST"
-          }
+        # apps#525: prep serializes the whole envelope (`failJson`, JSON.stringify) and
+        # the triple-stache renders it verbatim - a {{...}} template cannot escape a `"`
+        # or a `\` in the message, so a hand-built JSON literal here was one quoted
+        # upstream message away from an invalid body.
+        body: "{{{steps.prep.failJson}}}"
         status: 400
         contentType: application/json
     - id: createJob

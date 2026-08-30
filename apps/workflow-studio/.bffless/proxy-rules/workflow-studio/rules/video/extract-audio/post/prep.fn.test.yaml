@@ -12,6 +12,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         input: workflows/run-1/inputs/a.mp4
         outPrefix: workflows/run-1/audio
         executor: local
@@ -27,6 +28,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         input: ""
         outPrefix: ""
         executor: ""

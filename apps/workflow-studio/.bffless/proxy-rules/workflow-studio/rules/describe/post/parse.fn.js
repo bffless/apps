@@ -23,17 +23,22 @@ function handler({ steps, stepErrors }) {
   // An empty title here would otherwise poison the blog and the cover, which both
   // read it. ce#662 forward-compat: the failed step's code would ride in `code`.
   if (!title && !summary) {
-    // R137: the envelope's `code` IS this value - the rule's fail branch emits
-    // {{steps.parse.code}} rather than a hard-coded string, so a real CE code survives
-    // once ce#662 lands and 'AI_UNREADABLE' is only the fallback when there is none.
+    // R137: the envelope's `code` IS this value - the rule's fail branch renders
+    // `failJson`, which carries it, rather than a hard-coded string, so a real CE code
+    // survives once ce#662 lands and 'AI_UNREADABLE' is only the fallback when there is
+    // none. failJson is the whole 502 body, serialized HERE (apps#525): a stepErrors
+    // message with a `"` or a `\` would break a template-assembled JSON literal, and
+    // a {{…}} template cannot escape it.
     var derr = stepErrors && stepErrors.describe
     var dcode = (derr && typeof derr.code === 'string' && derr.code) ? derr.code : 'AI_UNREADABLE'
+    var dmsg = 'The AI description writer did not return a usable title and summary - it may be temporarily overloaded. Please try again.'
     return {
       ok: false,
       notOk: true,
       code: dcode,
-      error: 'The AI description writer did not return a usable title and summary - it may be temporarily overloaded. Please try again.',
+      error: dmsg,
       descriptionJson: '',
+      failJson: JSON.stringify({ error: dmsg, code: dcode }),
     }
   }
   return {
@@ -42,5 +47,6 @@ function handler({ steps, stepErrors }) {
     code: '',
     error: '',
     descriptionJson: JSON.stringify({ title: title, summary: summary }),
+    failJson: '',
   }
 }

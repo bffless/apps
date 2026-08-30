@@ -20,7 +20,7 @@ function handler({ request }) {
   var BAD_CLIPS = 'Refused - clips must be a non-empty list of uploads-relative paths'
 
   function no(msg) {
-    return { ok: false, notOk: true, error: msg, clips: [], outPrefix: '', executor: '' }
+    return { ok: false, notOk: true, error: msg, failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }), clips: [], outPrefix: '', executor: '' }
   }
 
   var outPrefix = safe(body.outPrefix)
@@ -41,6 +41,7 @@ function handler({ request }) {
     ok: true,
     notOk: false,
     error: '',
+    failJson: '',
     clips: clips,
     outPrefix: outPrefix,
     // CE omits the executor for '' (its selector does `requested?.trim() || default`),

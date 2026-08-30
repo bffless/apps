@@ -15,6 +15,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         dropped: 0
         executor: local
         has0: true
@@ -53,6 +54,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         dropped: 0
         executor: ""
         has0: true
@@ -90,6 +92,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         dropped: 2
         executor: ""
         has0: true
@@ -122,6 +125,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         dropped: 0
         executor: ""
         has0: false
@@ -155,6 +159,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         dropped: 0
         executor: ""
         has0: false
@@ -189,6 +194,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         dropped: 0
         executor: ""
         has0: true

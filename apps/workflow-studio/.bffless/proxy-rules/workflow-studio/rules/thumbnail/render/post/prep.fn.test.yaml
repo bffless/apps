@@ -12,6 +12,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         prompt: "16:9 YouTube thumbnail, vintage technical manual."
         outPrefix: workflows/run-1/cover-1
         images: []
@@ -28,6 +29,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         prompt: "16:9 YouTube thumbnail."
         outPrefix: workflows/run-1/cover-1
         images: []
@@ -44,6 +46,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         prompt: "16:9 YouTube thumbnail, use the attached reference photo of the presenter."
         outPrefix: workflows/run-1/cover-1
         images:
@@ -61,6 +64,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         prompt: ""
         outPrefix: ""
         images: []
@@ -77,6 +81,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         prompt: ""
         outPrefix: ""
         images: []
@@ -92,6 +97,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         prompt: ""
         outPrefix: ""
         images: []
@@ -107,6 +113,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - prompt must be a non-empty string
+        failJson: '{"error":"Refused - prompt must be a non-empty string","code":"BAD_REQUEST"}'
         prompt: ""
         outPrefix: ""
         images: []

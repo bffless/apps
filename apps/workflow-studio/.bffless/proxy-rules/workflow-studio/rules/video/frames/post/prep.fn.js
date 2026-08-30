@@ -26,7 +26,7 @@ function handler({ request }) {
   var MAX_SOURCES = 3
 
   function out(base) {
-    var o = { ok: base.ok, notOk: base.notOk, error: base.error, dropped: base.dropped, executor: base.executor }
+    var o = { ok: base.ok, notOk: base.notOk, error: base.error, failJson: base.failJson, dropped: base.dropped, executor: base.executor }
     for (var i = 0; i < MAX_SOURCES; i++) {
       var g = base.groups[i]
       o['has' + i] = !!g
@@ -42,7 +42,7 @@ function handler({ request }) {
     return o
   }
   function no(msg) {
-    return out({ ok: false, notOk: true, error: msg, dropped: 0, executor: '', outPrefix: '', groups: [] })
+    return out({ ok: false, notOk: true, error: msg, failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }), dropped: 0, executor: '', outPrefix: '', groups: [] })
   }
 
   var outPrefix = safe(body.outPrefix)
@@ -87,6 +87,7 @@ function handler({ request }) {
     ok: true,
     notOk: false,
     error: '',
+    failJson: '',
     dropped: dropped,
     executor: body.executor === 'local' || body.executor === 'remote' ? body.executor : '',
     outPrefix: outPrefix,

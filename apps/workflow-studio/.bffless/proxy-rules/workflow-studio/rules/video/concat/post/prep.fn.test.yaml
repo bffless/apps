@@ -14,6 +14,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         clips:
           - workflows/run-1/s1/assemble/clip.mp4
           - workflows/run-1/s2/assemble/clip.mp4
@@ -33,6 +34,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         clips: []
         outPrefix: ""
         executor: ""
@@ -47,6 +49,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - clips must be a non-empty list of uploads-relative paths
+        failJson: '{"error":"Refused - clips must be a non-empty list of uploads-relative paths","code":"BAD_REQUEST"}'
         clips: []
         outPrefix: ""
         executor: ""

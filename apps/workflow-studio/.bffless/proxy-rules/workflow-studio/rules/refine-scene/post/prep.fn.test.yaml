@@ -31,6 +31,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         path0: o/r/uploads/workflows/run-1/v0/sheets/sheet-01.jpg
         path1: o/r/uploads/workflows/run-1/v0/sheets/sheet-02.jpg
         path2: ""
@@ -115,6 +116,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         path0: o/r/uploads/workflows/run-1/v0/sheets/sheet-01.jpg
         path1: o/r/uploads/workflows/run-1/v0/sheets/sheet-02.jpg
         path2: ""
@@ -201,6 +203,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         path0: ""
         path1: ""
         path2: ""
@@ -241,6 +244,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - every path must be an uploads-relative path under workflows/
+        failJson: '{"error":"Refused - every path must be an uploads-relative path under workflows/","code":"BAD_REQUEST"}'
         path0: ""
         path1: ""
         path2: ""

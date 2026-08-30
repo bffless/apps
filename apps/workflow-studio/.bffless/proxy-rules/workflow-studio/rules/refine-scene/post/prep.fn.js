@@ -21,7 +21,7 @@ function handler({ request, deployment }) {
   var REFUSAL = 'Refused - every path must be an uploads-relative path under workflows/'
 
   function no(msg) {
-    var bad = { ok: false, notOk: true, error: msg }
+    var bad = { ok: false, notOk: true, error: msg, failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }) }
     for (var b = 0; b < 10; b++) bad['path' + b] = ''
     bad.audioPath = ''
     bad.start = 0
@@ -42,7 +42,7 @@ function handler({ request, deployment }) {
     if (!sheet) return no(REFUSAL)
     sheets.push(sheet)
   }
-  var out = { ok: true, notOk: false, error: '' }
+  var out = { ok: true, notOk: false, error: '', failJson: '' }
   for (var i = 0; i < 10; i++) {
     out['path' + i] = i < sheets.length ? prefix + sheets[i] : ''
   }

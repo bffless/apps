@@ -14,6 +14,7 @@ cases:
         ok: true
         notOk: false
         error: ""
+        failJson: ""
         input: workflows/run-1/inputs/a.mp4
         outputPrefix: workflows/run-1/sheets/sheets
         times: [0, 8, 16]
@@ -33,6 +34,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - labels must be a list of strings the same length as times
+        failJson: '{"error":"Refused - labels must be a list of strings the same length as times","code":"BAD_REQUEST"}'
         input: ""
         outputPrefix: ""
         times: []
@@ -52,6 +54,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - labels must be a list of strings the same length as times
+        failJson: '{"error":"Refused - labels must be a list of strings the same length as times","code":"BAD_REQUEST"}'
         input: ""
         outputPrefix: ""
         times: []
@@ -71,6 +74,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - times must be a non-empty list of at most 200 non-negative seconds
+        failJson: '{"error":"Refused - times must be a non-empty list of at most 200 non-negative seconds","code":"BAD_REQUEST"}'
         input: ""
         outputPrefix: ""
         times: []
@@ -90,6 +94,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - times must be a non-empty list of at most 200 non-negative seconds
+        failJson: '{"error":"Refused - times must be a non-empty list of at most 200 non-negative seconds","code":"BAD_REQUEST"}'
         input: ""
         outputPrefix: ""
         times: []
@@ -109,6 +114,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - times must be a non-empty list of at most 200 non-negative seconds
+        failJson: '{"error":"Refused - times must be a non-empty list of at most 200 non-negative seconds","code":"BAD_REQUEST"}'
         input: ""
         outputPrefix: ""
         times: []
@@ -129,6 +135,7 @@ cases:
         ok: false
         notOk: true
         error: Refused - times must be a non-empty list of at most 200 non-negative seconds
+        failJson: '{"error":"Refused - times must be a non-empty list of at most 200 non-negative seconds","code":"BAD_REQUEST"}'
         input: ""
         outputPrefix: ""
         times: []

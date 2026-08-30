@@ -23,7 +23,7 @@ function handler({ request, deployment }) {
   var BAD_PROMPT = 'Refused - prompt must be a non-empty string'
 
   function no(msg) {
-    return { ok: false, notOk: true, error: msg, prompt: '', outPrefix: '', images: [] }
+    return { ok: false, notOk: true, error: msg, failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }), prompt: '', outPrefix: '', images: [] }
   }
 
   var outPrefix = safe(body.outPrefix)
@@ -55,5 +55,5 @@ function handler({ request, deployment }) {
     images = [deployment.owner + '/' + deployment.repo + '/uploads/' + ref]
   }
 
-  return { ok: true, notOk: false, error: '', prompt: prompt, outPrefix: outPrefix, images: images }
+  return { ok: true, notOk: false, error: '', failJson: '', prompt: prompt, outPrefix: outPrefix, images: images }
 }
