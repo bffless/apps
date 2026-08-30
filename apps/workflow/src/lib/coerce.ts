@@ -381,6 +381,9 @@ export function toStepRow(raw: unknown): ServerStepRow {
     // The capped `ctx.log` tail (apps#527): absent on rows from before the
     // column existed and on steps that never logged — never `[]` for those.
     ...(Array.isArray(maybeJson(f.log)) ? { log: logLines(f.log) } : {}),
+    // A pipeline step's execution log id (apps#528): absent — never `''` or
+    // `null` — on older rows and on steps whose response named no log.
+    ...(optionalStr(f.logId) ? { logId: str(f.logId) } : {}),
     startedAt: optionalNum(f.startedAt),
     finishedAt: optionalNum(f.finishedAt),
     heartbeatAt: optionalNum(f.heartbeatAt),

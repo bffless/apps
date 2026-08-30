@@ -380,3 +380,64 @@ describe('StepPane — Input tab draws shaped values, and Show raw flips them (a
     expect(window.localStorage.getItem('workflow:show-raw')).toBe('1')
   })
 })
+
+/**
+ * apps#528: a pipeline step that recorded a CE execution log id links it from
+ * the Output tab's Details stats — and only then. The link goes to the admin
+ * host's per-log API surface, derived from `window.location` (adminOrigin).
+ */
+describe('StepPane — Details links the CE execution log (apps#528)', () => {
+  function slowStartState(over: Partial<StepState>): RunState {
+    return {
+      runId: 'run_LOGGED',
+      impl: 'hello',
+      workflow: 'hello',
+      status: 'running',
+      headless: false,
+      unattended: false,
+      inputs: { greeting: 'Hello', names: ['world'], photo: null, shout: false },
+      steps: {
+        [stepKey('slow', 0, 'start')]: stepState('slow', 0, 'start', {
+          status: 'failed',
+          error: { code: 'BOOM', message: 'handler threw' },
+          startedAt: 1_000,
+          finishedAt: 2_000,
+          ...over,
+        }),
+      },
+      expansions: { greet: { total: 1, items: [{ who: 'world' }] } },
+      annotations: [],
+      startedAt: 1_000,
+    }
+  }
+
+  function renderPane(state: RunState) {
+    render(
+      <Provider store={makeStore()}>
+        <StepPane
+          def={hello}
+          state={state}
+          stepKey={stepKey('slow', 0, 'start')}
+          live={false}
+          initialTab="Output"
+        />
+      </Provider>,
+    )
+  }
+
+  it('shows an "Execution log" stat linking the id on the admin host when the step holds one', () => {
+    renderPane(slowStartState({ logId: 'plog_abc' }))
+
+    expect(screen.getByText('Execution log')).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'plog_abc' })
+    const { protocol, host } = window.location
+    expect(link).toHaveAttribute('href', `${protocol}//${host}/api/pipeline-logs/plog_abc`)
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('shows no stat at all when the step recorded no id', () => {
+    renderPane(slowStartState({}))
+
+    expect(screen.queryByText('Execution log')).toBeNull()
+  })
+})

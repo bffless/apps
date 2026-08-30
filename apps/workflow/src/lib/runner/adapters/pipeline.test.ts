@@ -19,7 +19,7 @@ function stepOf(def: Definition, job: string, id: string): Step {
   return step
 }
 
-type Canned = { status: number; body: unknown } | { throws: Error }
+type Canned = { status: number; body: unknown; logId?: string } | { throws: Error }
 
 interface HttpCall {
   path: string
@@ -37,7 +37,14 @@ function fakeHttp(queue: Canned[]): { http: HttpJson; calls: HttpCall[] } {
     const next = pending.shift()
     if (!next) throw new Error(`fakeHttp: unexpected call to ${path}`)
     if ('throws' in next) throw next.throws
-    return { status: next.status, ok: next.status >= 200 && next.status < 300, body: next.body }
+    return {
+      status: next.status,
+      ok: next.status >= 200 && next.status < 300,
+      body: next.body,
+      // Absent, never `null`, when the canned response names no log — the
+      // shape `httpJson` promises (apps#528).
+      ...(next.logId === undefined ? {} : { logId: next.logId }),
+    }
   }
   return { http, calls }
 }
@@ -933,5 +940,78 @@ describe('runPipelineStep — failure mapping', () => {
 
     expect(h.types()).toEqual(['step.cancelled'])
     expect(calls).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The execution log id (apps#528)
+// ---------------------------------------------------------------------------
+
+describe('runPipelineStep — the execution log id (apps#528)', () => {
+  const key = stepKey('greet', 0, 'say')
+
+  function sayState(): RunState {
+    return baseState({
+      expansions: { greet: { total: 1, items: [{ who: 'world' }] } },
+      steps: { [key]: queuedStep('greet', 0, 'say') },
+    })
+  }
+
+  function runSay(h: ReturnType<typeof harness>, state: RunState) {
+    return runPipelineStep(
+      { step: stepOf(hello, 'greet', 'say'), key, job: 'greet', index: 0, def: hello, state },
+      h.rt,
+    )
+  }
+
+  it('lands the response header id on step.succeeded, and on the state', async () => {
+    const { http } = fakeHttp([{ status: 200, body: { text: 'Hello, world!' }, logId: 'plog_ok' }])
+    const state = sayState()
+    const h = harness(state, http)
+
+    await runSay(h, state)
+
+    expect(succeeded(h.events[1]!).logId).toBe('plog_ok')
+    expect(h.state().steps[key]!.logId).toBe('plog_ok')
+  })
+
+  it('lands the failing execution\'s id on step.failed', async () => {
+    const { http } = fakeHttp([
+      { status: 500, body: { code: 'BOOM', message: 'handler threw' }, logId: 'plog_fail' },
+    ])
+    const state = sayState()
+    const h = harness(state, http)
+
+    await runSay(h, state)
+
+    expect(h.types()).toEqual(['step.started', 'step.failed'])
+    expect(failed(h.events[1]!).logId).toBe('plog_fail')
+    expect(h.state().steps[key]!.logId).toBe('plog_fail')
+  })
+
+  it('carries no id at all when no response named one (debug-off success)', async () => {
+    const { http } = fakeHttp([{ status: 200, body: { text: 'Hello, world!' } }])
+    const state = sayState()
+    const h = harness(state, http)
+
+    await runSay(h, state)
+
+    expect('logId' in succeeded(h.events[1]!)).toBe(false)
+    expect(h.state().steps[key]!.logId).toBeUndefined()
+  })
+
+  it('last response wins across a poll, but a headerless tick does not erase it', async () => {
+    const { http } = fakeHttp([
+      { status: 200, body: { jobId: 'j1' }, logId: 'plog_initial' },
+      { status: 200, body: { status: 'pending' }, logId: 'plog_tick' },
+      { status: 200, body: { status: 'done', result: { markdown: '# r', posterPath: 'p.png', ms: 1 } } },
+    ])
+    const state = slowState()
+    const h = harness(state, http)
+
+    await runSlow(h, state)
+
+    // The final (headerless) tick keeps the last id a response did name.
+    expect(succeeded(h.events[2]!).logId).toBe('plog_tick')
   })
 })

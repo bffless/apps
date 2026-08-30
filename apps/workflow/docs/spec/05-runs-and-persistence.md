@@ -42,6 +42,7 @@ goes away.
 | `summary` | rendered markdown (template already evaluated) |
 | `annotations` | `[{ level, title?, message }]` |
 | `log` | script: the `ctx.log` tail (last 50 lines, ≤ 64 KB JSON, oldest dropped first), written on the terminal upsert only (apps#527); absent on other kinds and on older rows |
+| `log_id` | pipeline: the CE execution log id (`X-Pipeline-Log-Id` of the last response the final attempt saw), written on the terminal upserts only (apps#528); absent on other kinds, on older rows, and when no response named a log |
 | `started_at`, `finished_at`, `heartbeat_at` | |
 
 Job-level state is **derived** (a job is the fold of its step rows + the definition); it is

@@ -43,6 +43,14 @@ export interface StepState {
    * that never logged.
    */
   log?: string[]
+  /**
+   * A pipeline step's CE execution log id (apps#528) — the `X-Pipeline-Log-Id`
+   * of the last response the final attempt saw, carried by the terminal event
+   * and put back by replay. Absent on other kinds, on rows from before the
+   * column existed, and whenever the response named no log (debug-off success,
+   * client-fault 4xx).
+   */
+  logId?: string
   startedAt?: number; finishedAt?: number
 }
 
@@ -91,8 +99,8 @@ export type RunEvent =
       inputs?: Record<string, unknown>
       at: number
     }
-  | { type: 'step.succeeded'; key: StepKey; outputs: Record<string, unknown>; response?: { initial?: unknown; last?: unknown; truncated?: boolean }; summary?: string; annotations?: Annotation[]; log?: string[]; at: number }
-  | { type: 'step.failed'; key: StepKey; error: StepError; annotations?: Annotation[]; log?: string[]; at: number }
+  | { type: 'step.succeeded'; key: StepKey; outputs: Record<string, unknown>; response?: { initial?: unknown; last?: unknown; truncated?: boolean }; summary?: string; annotations?: Annotation[]; log?: string[]; logId?: string; at: number }
+  | { type: 'step.failed'; key: StepKey; error: StepError; annotations?: Annotation[]; log?: string[]; logId?: string; at: number }
   | {
       type: 'step.skipped'
       key: StepKey

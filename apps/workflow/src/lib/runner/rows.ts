@@ -103,6 +103,14 @@ export interface StepRow {
    * `null` after `step.retrying` cleared the previous attempt's lines.
    */
   log?: string[] | null
+  /**
+   * A pipeline step's CE execution log id (apps#528) — the `X-Pipeline-Log-Id`
+   * of the last response the final attempt saw, written on the terminal
+   * upserts only. Absent on other kinds, on rows from before the column
+   * existed, and when no response named a log; `null` after `step.retrying`
+   * cleared the previous attempt's id.
+   */
+  logId?: string | null
   startedAt?: number | null
   finishedAt?: number | null
   heartbeatAt?: number | null
@@ -258,6 +266,8 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           summary: s.summary ?? null,
           // The reducer dropped the failed attempt's log tail too (apps#527).
           log: s.log ?? null,
+          // …and the attempt's execution log id (apps#528).
+          logId: s.logId ?? null,
         }),
       ]
     }
@@ -274,6 +284,8 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           // A script's capped `ctx.log` tail (apps#527); only written when the
           // step holds one, so every other kind's row keeps no column at all.
           ...(s.log === undefined ? {} : { log: s.log }),
+          // A pipeline step's execution log id (apps#528) — same rule.
+          ...(s.logId === undefined ? {} : { logId: s.logId }),
           finishedAt: s.finishedAt,
         }),
       ]
@@ -287,6 +299,7 @@ export function eventToWrites(event: RunEvent, ctx: WriteContext): PersistWrite[
           error: s.error,
           annotations: s.annotations,
           ...(s.log === undefined ? {} : { log: s.log }), // apps#527
+          ...(s.logId === undefined ? {} : { logId: s.logId }), // apps#528
           finishedAt: s.finishedAt,
         }),
       ]

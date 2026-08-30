@@ -283,6 +283,16 @@ describe('toStepRow', () => {
     expect('log' in toStepRow({ ...base, log: null })).toBe(false)
   })
 
+  // apps#528: the execution log id is a plain string column; a row without it
+  // (older rows, a response that named no log) must stay without it.
+  it('carries `logId` through, and leaves it absent when the column is empty', () => {
+    const base = { runId: 'run_1', key: 'greet/0/say', kind: 'pipeline' }
+    expect(toStepRow({ ...base, logId: 'plog_1' }).logId).toBe('plog_1')
+    expect('logId' in toStepRow(base)).toBe(false)
+    expect('logId' in toStepRow({ ...base, logId: null })).toBe(false)
+    expect('logId' in toStepRow({ ...base, logId: '' })).toBe(false)
+  })
+
   // Task 13: hydration is `workflowApi`'s job, so the coercer must hand the
   // pointer through untouched — parsed out of its JSON text, but never
   // dereferenced, reshaped or dropped.

@@ -66,6 +66,33 @@ describe('httpJson', () => {
 
     expect(res).toEqual({ status: 418, ok: false, body: { code: 'TEAPOT' } })
   })
+
+  // apps#528: CE names the execution log it wrote in `X-Pipeline-Log-Id` —
+  // on debug-enabled rules, and on every execution failure with debug off.
+  it('captures X-Pipeline-Log-Id as logId, on success and on failure', async () => {
+    server.use(
+      http.get('/api/test/logged', () =>
+        HttpResponse.json({ ok: true }, { headers: { 'x-pipeline-log-id': 'plog_1' } }),
+      ),
+      http.get('/api/test/logged-fail', () =>
+        HttpResponse.json(
+          { code: 'BOOM' },
+          { status: 500, headers: { 'x-pipeline-log-id': 'plog_2' } },
+        ),
+      ),
+    )
+
+    expect((await httpJson('/api/test/logged', { method: 'GET' })).logId).toBe('plog_1')
+    expect((await httpJson('/api/test/logged-fail', { method: 'GET' })).logId).toBe('plog_2')
+  })
+
+  it('leaves logId absent — not null — when the response carries no header', async () => {
+    server.use(http.get('/api/test/unlogged', () => HttpResponse.json({ ok: true })))
+
+    const res = await httpJson('/api/test/unlogged', { method: 'GET' })
+
+    expect('logId' in res).toBe(false)
+  })
 })
 
 describe('httpJsonWithReauth', () => {

@@ -33,6 +33,7 @@
 import { useEffect, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
+import { adminOrigin } from '../../lib/adminOrigin'
 import { formatDuration } from '../../lib/duration'
 import { stepImageMap } from '../../lib/imageMap'
 import { stepOutputDecl } from '../../lib/outputDecls'
@@ -277,6 +278,22 @@ function Details({ step, declared }: { step: StepState; declared?: Step }) {
           <div className="stat">
             <dt>Pipeline</dt>
             <dd>{path}</dd>
+          </div>
+        )}
+        {step.logId !== undefined && (
+          <div className="stat">
+            <dt>Execution log</dt>
+            <dd>
+              {/* CE's per-log surface addressable by the id alone (apps#528) — a
+                  JSON API response, project-membership gated on the admin host. */}
+              <a
+                href={`${adminOrigin()}/api/pipeline-logs/${step.logId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {step.logId}
+              </a>
+            </dd>
           </div>
         )}
       </dl>
