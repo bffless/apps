@@ -9,7 +9,8 @@
  *
  * The run-sub line's **forked from** entry (05 "Re-run from this job";
  * apps#491) is the same shape as Delete: the page passes `forkedFrom` off a
- * replayed row that has one, and the header renders the link — or nothing.
+ * row that has one (replayed, or adopted live into `RunMeta` — apps#513), and
+ * the header renders the link — or nothing.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'

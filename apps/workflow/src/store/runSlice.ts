@@ -18,6 +18,13 @@ export interface RunMeta {
   yaml: string
   workflowName: string
   workflowVersion?: string
+  /**
+   * The run this one was forked from and the job it re-ran from (05 "Re-run
+   * from this job"; apps#513). Off the run row's `forkedFrom` / `forkJob`,
+   * the same way `workflowVersion` is: a fact about the record, not a step of
+   * the run, so it rides here rather than on `RunState`. Absent on a kickoff.
+   */
+  forkedFrom?: { runId: string; job: string }
 }
 
 /** `readonly` = replayed rows; another tab holds the lease (05 Resume). */
