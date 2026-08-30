@@ -119,10 +119,34 @@ describe('sheet-plan', () => {
     expect(note.message).toContain('workflows/r/silent.mp4')
   })
 
-  it('plans nothing at all when no recording has any audio', async () => {
-    const { plans, annotations } = await plan(['workflows/r/a.mp4'], [0])
-    expect(plans).toEqual([{ source: 'workflows/r/a.mp4', sourceIndex: 0, times: [], labels: [] }])
-    expect(annotations).toHaveLength(1)
+  it('fails the run when no recording has any audio, and says why on the step (apps#469)', async () => {
+    // Every `sheets` leg would be `if:`-skipped, but `director` has no guard and would run
+    // on empty inputs, and the run would finish `succeeded` with nothing in it. A rejected
+    // promise is a `script` step's one failure channel, and a failed `plan` skips every
+    // job that `needs` it.
+    const { ctx, annotations } = fakeCtx({ sources: [ref('workflows/r/a.mp4')], durations: [0] })
+    await expect(sheetPlan(ctx)).rejects.toThrow(/^sheet-plan: No recording has any spoken audio/)
+
+    // The annotation lands BEFORE the throw — the harness drops one raised on a step that
+    // is no longer running — and it is the only one: the per-recording "skipped, the
+    // director works from its transcript alone" warning would be untrue here.
+    expect(annotations).toEqual([
+      {
+        level: 'error',
+        message: expect.stringContaining('No recording has any spoken audio') as unknown as string,
+      },
+    ])
+    const [note] = annotations as { message: string }[]
+    expect(note.message).toContain('the run stops here')
+  })
+
+  it('fails the same way when every one of several recordings is silent', async () => {
+    const { ctx, annotations } = fakeCtx({
+      sources: [ref('workflows/r/a.mp4'), ref('workflows/r/b.mp4')],
+      durations: [0, 0],
+    })
+    await expect(sheetPlan(ctx)).rejects.toThrow(/^sheet-plan: No recording has any spoken audio/)
+    expect(annotations).toEqual([expect.objectContaining({ level: 'error' })])
   })
 
   it('treats a missing duration as no audio rather than guessing one', async () => {
