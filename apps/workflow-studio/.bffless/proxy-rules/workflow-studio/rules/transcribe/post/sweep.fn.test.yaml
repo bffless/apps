@@ -1,0 +1,32 @@
+handler: ./sweep.fn.js
+cases:
+  - name: prep ok but no check output means check threw - the job is stuck
+    data:
+      steps:
+        prep: { ok: true, notOk: false }
+        createJob: { id: job-1 }
+    expect:
+      result:
+        stuck: true
+        message: "Job step 'check' threw and wrote no output"
+  - name: a check output, ok or not, was handled by finishOk/finishErr
+    data:
+      steps:
+        prep: { ok: true, notOk: false }
+        createJob: { id: job-1 }
+        check: { ok: false, notOk: true, error: something failed, code: "" }
+    expect:
+      result:
+        stuck: false
+        message: ""
+  - name: a refused request never ran check and has no job row - not stuck
+    data:
+      steps:
+        prep: { ok: false, notOk: true, error: bad path }
+    expect:
+      result:
+        stuck: false
+        message: ""
+  # NOTE: a case feeding `stepErrors` (the ce#662 forward-compat read that fills the
+  # message's detail) is omitted: the bffless CLI's fixture schema accepts only
+  # user/request/steps/deployment as data roots - the same gap check.fn.test.yaml documents.
