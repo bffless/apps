@@ -8,18 +8,16 @@ import type { FileRef } from '../../lib/runner/types'
 import { isServeUrl } from '../../lib/url'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { describe, expect, it } from 'vitest'
+import { forkTarget, jobResult } from '../../lib/runner/graph'
 import { replayRun } from '../../lib/runner/replay'
-import type { StepStatus } from '../../lib/runner/types'
+import type { Definition, StepStatus } from '../../lib/runner/types'
 import { FINISHED_RUN } from './finishedRun'
 
 const TERMINAL: StepStatus[] = ['succeeded', 'failed', 'skipped', 'cancelled']
 
 describe('FINISHED_RUN', () => {
-  const state = replayRun(
-    FINISHED_RUN.run,
-    FINISHED_RUN.steps,
-    toDefinition(FINISHED_RUN.run.definition),
-  )
+  const def = toDefinition(FINISHED_RUN.run.definition) as Definition
+  const state = replayRun(FINISHED_RUN.run, FINISHED_RUN.steps, def)
 
   it('replays into a finished run of six terminal steps (R2)', () => {
     expect(state.status).toBe('succeeded')
@@ -80,5 +78,37 @@ describe('FINISHED_RUN', () => {
       expect(at).toBeGreaterThanOrEqual(FINISHED_RUN.run.startedAt)
       expect(at).toBeLessThanOrEqual(FINISHED_RUN.run.finishedAt as number)
     }
+  })
+
+  // The fork parent the store test (`lifecycleActions.test.ts`) forks at `slow`:
+  // the offer policy over the *replayed* record, so the fixture and `forkTarget`
+  // cannot drift apart without this saying so (apps#502).
+  describe('as a fork parent ("Re-run from this job")', () => {
+    it('can be forked at slow and at confirm: greet succeeded, flaky survived on continue-on-error', () => {
+      expect(jobResult(def, state, 'flaky')).toBe('success')
+      expect(forkTarget(def, state, 'slow')).toEqual({ ok: true })
+      expect(forkTarget(def, state, 'confirm')).toEqual({ ok: true })
+    })
+
+    it('cannot be forked while running, nor at a job it does not have', () => {
+      expect(forkTarget(def, { ...state, status: 'running' }, 'slow')).toEqual({
+        ok: false,
+        reason: 'the run is still running',
+      })
+      expect(forkTarget(def, state, 'nope')).toEqual({ ok: false, reason: 'no such job: nope' })
+    })
+
+    it('cannot be forked at confirm once flaky.boom stops tolerating failure — the flag is read from the definition', () => {
+      const raw = structuredClone(FINISHED_RUN.run.definition) as {
+        jobs: { flaky: { steps: Record<string, unknown>[] } }
+      }
+      delete raw.jobs.flaky.steps[0]!['continue-on-error']
+      const strict = toDefinition(raw) as Definition
+      expect(jobResult(strict, state, 'flaky')).toBe('failure')
+      expect(forkTarget(strict, state, 'confirm')).toEqual({
+        ok: false,
+        reason: 'flaky failed — re-run from flaky instead',
+      })
+    })
   })
 })

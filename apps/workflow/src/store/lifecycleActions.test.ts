@@ -14,7 +14,7 @@ import { stepKey } from '../lib/runner/types'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { RunStore } from '../lib/runStore'
 import { db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
+import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import {
   flush,
@@ -28,10 +28,11 @@ import {
   virtualClock,
 } from '../test/helloHarness'
 import { makeStore } from './index'
-import { LeaseTransportError, cancelRun, deleteRun, openRun, takeOver } from './lifecycleActions'
+import { LeaseTransportError, cancelRun, deleteRun, forkRun, openRun, takeOver } from './lifecycleActions'
 import { getOwnerId, startRun } from './runnerActions'
 import { createRegisterFile } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
+import { forkTarget } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
 import { RunStoreError } from '../lib/runStore'
 import { toDefinition } from '@bffless/workflow-lint/definition'
@@ -279,6 +280,107 @@ describe('openRun — resume', () => {
     } finally {
       server.events.removeListener('request:start', onRequestStart)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// (b′) Fork: "Re-run from this job" — a new run adopted like a resume
+// ---------------------------------------------------------------------------
+
+describe('forkRun', () => {
+  const asOwner = () =>
+    setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+
+  it('forks the finished run at `slow`: upstream rows copied, only slow and confirm run, the parent untouched, no run row created by the runner', async () => {
+    asOwner()
+    seedFinishedRun()
+    const parentRun = structuredClone(db.runs.get(FIXTURE_RUN_ID)!)
+    const parentSteps = structuredClone(
+      FINISHED_RUN.steps.map((s) => db.steps.get(stepRowKey(FIXTURE_RUN_ID, s.key))!),
+    )
+    const parentLines = ['greet/0/say', 'greet/1/say'].map(
+      (key) => (db.steps.get(stepRowKey(FIXTURE_RUN_ID, key))!.outputs as { line: string }).line,
+    )
+    // The offer policy (graph.ts) agrees with what this test is about to do.
+    expect(forkTarget(hello, replayRun(parentRun, parentSteps, hello), 'slow')).toEqual({ ok: true })
+
+    const calls: string[] = []
+    const slowBodies: Promise<Record<string, unknown>>[] = []
+    const onRequestStart = ({ request }: { request: Request }) => {
+      const path = new URL(request.url).pathname
+      calls.push(`${request.method} ${path}`)
+      if (request.method === 'POST' && path === '/api/hello/slow') slowBodies.push(request.clone().json())
+    }
+    server.events.on('request:start', onRequestStart)
+
+    const { store, advance, writes } = trackedHelloStoreWithWrites()
+    try {
+      const forkId = await store.dispatch(
+        forkRun({ runId: FIXTURE_RUN_ID, job: 'slow', def: hello, yaml: HELLO_YAML, workflowVersion: '0.0.0' }),
+      )
+
+      expect(forkId).not.toBe(FIXTURE_RUN_ID)
+      expect(store.getState().run.mode).toBe('live')
+      expect(store.getState().run.state?.runId).toBe(forkId)
+
+      // The rule copied exactly the rows outside `downstreamOf(slow)`, outputs and all,
+      // and took the lease for this tab — which is what let `adopt` go live without a take-over.
+      const copiedKeys = [...db.steps.keys()]
+        .filter((k) => k.startsWith(`${forkId}|`))
+        .map((k) => k.slice(forkId.length + 1))
+        .sort()
+      expect(copiedKeys).toEqual(['flaky/0/after', 'flaky/0/boom', 'greet/0/say', 'greet/1/say'])
+      for (const key of copiedKeys) {
+        expect(db.steps.get(stepRowKey(forkId, key))?.outputs).toEqual(
+          db.steps.get(stepRowKey(FIXTURE_RUN_ID, key))?.outputs,
+        )
+      }
+      expect(db.runs.get(forkId)).toMatchObject({
+        forkedFrom: FIXTURE_RUN_ID,
+        forkJob: 'slow',
+        status: 'running',
+        leaseOwner: getOwnerId(),
+      })
+
+      await pumpUntil(advance, () => store.getState().run.state?.steps[REVIEW_KEY]?.status === 'waiting', {
+        maxSteps: 400,
+      })
+
+      // greet was copied, not re-run: its pipeline is never called.
+      expect(calls.filter((c) => c === 'POST /api/hello/echo')).toEqual([])
+      // slow ran off the copied greet outputs — BUSY once for the new body, then the retry landed.
+      const bodies = await Promise.all(slowBodies)
+      expect(bodies).toHaveLength(2)
+      for (const b of bodies) expect(b.lines).toEqual(parentLines)
+      expect(store.getState().run.state?.steps[SLOW_KEY]?.status).toBe('succeeded')
+
+      // The parent is untouched — its run row and every step row.
+      expect(db.runs.get(FIXTURE_RUN_ID)).toEqual(parentRun)
+      expect(FINISHED_RUN.steps.map((s) => db.steps.get(stepRowKey(FIXTURE_RUN_ID, s.key)))).toEqual(parentSteps)
+
+      // The rule wrote the run row; the runner only ever wrote to the new run.
+      expect(writes.filter((w) => w.op === 'create')).toEqual([])
+      expect(writes.length).toBeGreaterThan(0)
+      for (const w of writes) expect(w.op === 'patch' ? w.id : w.op === 'upsert' ? w.runId : null).toBe(forkId)
+    } finally {
+      server.events.removeListener('request:start', onRequestStart)
+      store.dispatch(runClosed())
+    }
+  })
+
+  it("rethrows the rule's refusal with its status and its own reason as the message", async () => {
+    setMockUser({ id: 'someone_else', email: 'else@example.test', role: 'user' })
+    seedFinishedRun()
+    const store = makeStore()
+
+    await expect(
+      store.dispatch(forkRun({ runId: FIXTURE_RUN_ID, job: 'slow', def: hello, yaml: HELLO_YAML })),
+    ).rejects.toMatchObject({
+      name: 'RunStoreError',
+      status: 403,
+      message: 'only the run owner or an admin can fork a run',
+    })
+    expect([...db.runs.keys()]).toEqual([FIXTURE_RUN_ID])
   })
 })
 
