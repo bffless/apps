@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { strToU8, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
-import { checkStudioCommon, checkStudioHeadless } from '../src/checks/studio.js'
+import { checkBlogZip, checkStudioCommon, checkStudioHeadless } from '../src/checks/studio.js'
 import { parseRecord } from '../src/record.js'
 import { Report } from '../src/report.js'
 
@@ -37,5 +38,24 @@ describe('checkStudioHeadless', () => {
     const c = r.finish().checks
     expect(c['run.headlessFlag']?.pass).toBe(false)
     expect(c['D11.editSkippedWithPost']?.pass).toBe(false)
+  })
+  it('D7.trimAutoAccepted fails when there are no trim steps', () => {
+    const rec = load('studio-interactive.json')
+    rec.steps = rec.steps.filter((s) => s.step !== 'trim')
+    const r = new Report('studio-headless', 'h'); checkStudioHeadless(rec, r)
+    expect(r.finish().checks['D7.trimAutoAccepted']?.pass).toBe(false)
+  })
+})
+
+describe('checkBlogZip', () => {
+  it('accepts post + frames', () => {
+    const r = new Report('studio-headless', 'h')
+    checkBlogZip(zipSync({ 'post.md': strToU8('# t'), 'images/frame-01.jpg': new Uint8Array([0xff, 0xd8]) }), r)
+    expect(r.finish().ok).toBe(true)
+  })
+  it('rejects a bundle with no frames', () => {
+    const r = new Report('studio-headless', 'h')
+    checkBlogZip(zipSync({ 'post.md': strToU8('# t') }), r)
+    expect(r.finish().checks['blog.zipHasFrames']?.pass).toBe(false)
   })
 })
