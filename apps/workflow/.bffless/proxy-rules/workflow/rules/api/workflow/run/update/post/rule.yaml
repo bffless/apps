@@ -9,7 +9,7 @@ pipeline:
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
-        pageSize: 1
+        limit: 1
         filters:
           runId: { op: eq, value: request.body.id }
     - id: merge

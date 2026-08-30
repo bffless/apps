@@ -9,7 +9,7 @@ pipeline:
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
-        pageSize: 1
+        limit: 1
         filters:
           runId: { op: eq, value: request.query.id }
     - id: steps
@@ -17,7 +17,7 @@ pipeline:
       handler: data_query
       config:
         schemaId: $schema:workflow_run_steps
-        pageSize: 1000
+        limit: 1000
         filters:
           runId: { op: eq, value: request.query.id }
     - id: shape

@@ -2,14 +2,14 @@ targetUrl: pipeline
 order: 11
 pipeline:
   name: List workflow runs
-  description: "Latest 50 workflow_runs rows for one (impl, workflow), each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's pageSize). Status filtering and sorting are client-side in M1 (Decision 6)."
+  description: "Latest 50 workflow_runs rows for one (impl, workflow), each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit). Status filtering and sorting are client-side in M1 (Decision 6)."
   steps:
     - id: query
       name: query
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
-        pageSize: 50
+        limit: 50
         filters:
           impl: { op: eq, value: request.query.impl }
           workflow: { op: eq, value: request.query.workflow }
@@ -20,7 +20,7 @@ pipeline:
       handler: data_query
       config:
         schemaId: $schema:workflow_run_steps
-        pageSize: 1000
+        limit: 1000
         filters:
           status: { op: eq, value: waiting }
     - id: shape
