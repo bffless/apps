@@ -24,8 +24,12 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 
 const entry = process.env.WORKFLOW_SCRIPT
-if (!entry) {
-  throw new Error('vite.scripts.config.ts: set WORKFLOW_SCRIPT to an entry file under scripts/')
+// A path (`scripts/<name>.ts`, what the stager passes), unlike WORKFLOW_ISLAND's bare
+// directory name — so the shape check is path-aware where the islands config's is not.
+if (!entry || !/^scripts\/[a-z0-9-]+\.ts$/.test(entry)) {
+  throw new Error(
+    `vite.scripts.config.ts: set WORKFLOW_SCRIPT to an entry file under scripts/ (got ${String(entry)})`,
+  )
 }
 
 const outDir = process.env.WORKFLOW_SCRIPTS_OUT ?? resolve(here, 'dist/scripts')

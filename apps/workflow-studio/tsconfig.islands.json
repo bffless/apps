@@ -4,7 +4,6 @@
      is checked separately under `tsconfig.node.json`, so no `"node"` types leak in here —
      an `islands/**` module should never type-check against `process`/`Buffer`/`node:*`. */
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.islands.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",

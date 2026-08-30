@@ -47,7 +47,7 @@ pipeline:
   # Every postStep is gated on `steps.prep.ok`. A response_handler does NOT terminate a CE
   # pipeline - of the handlers that can, file-serve / stripe-webhook / form always set
   # `terminates` and ai_handler ONLY in `stream` mode (CE ai.handler.ts:665; every ai_handler
-  # step in this set uses responseMode: message, so none of them terminate) - so postSteps
+  # step in this set uses or defaults to responseMode: message, so none terminate) - so postSteps
   # still fire after the `refuse` branch has answered 400 - ungated, a refused request would
   # run the paid work anyway. The signers gate on their own (empty) path, and
   # `refinerNoAudio` on audioFallbackCheck, which is itself gated. finishOk/finishErr need no

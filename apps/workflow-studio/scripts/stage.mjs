@@ -220,7 +220,12 @@ try {
     const file = join(scriptOut, `${script}.js`)
     if (!existsSync(file)) throw new Error(`stage.mjs: ${script} built no ${file}`)
     const code = readFileSync(file, 'utf8')
-    if (/(^|[\s;}])import\s*[({'"*]/.test(code) || /(^|[\s;}])from\s*['"]/.test(code)) {
+    // Blank out string/template literals before matching: a bundled LITERAL containing
+    // "\nimport {" (an error message, a code template) is data, not module syntax, and
+    // must not fail the build — while a real leftover import still matches, its specifier
+    // just collapses to `""`. Mirrored (and fenced byte-for-byte) by src/stage.test.ts.
+    const syntax = code.replace(/'(?:[^'\\\n]|\\[\s\S])*'|"(?:[^"\\\n]|\\[\s\S])*"|`(?:[^`\\]|\\[\s\S])*`/g, '""')
+    if (/(^|[\s;}])import\s*[({'"*]/.test(syntax) || /(^|[\s;}])from\s*['"]/.test(syntax)) {
       throw new Error(`stage.mjs: ${file} still has an import — it would fail in the Worker`)
     }
   }
