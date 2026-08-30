@@ -289,7 +289,7 @@ describe('RunPage — island fullscreen', () => {
   })
 })
 
-describe('RunPage — a loading island claims the pane', () => {
+describe('RunPage — a loading island claims the pane (while following)', () => {
   /** The graph chip for a step key, the way a user would reach it. */
   function chip(page: HTMLElement, key: string): HTMLElement | undefined {
     return within(page)
@@ -297,14 +297,15 @@ describe('RunPage — a loading island claims the pane', () => {
       .find((el) => el.getAttribute('data-key') === key)
   }
 
-  it('opens a starting island over a step the user picked mid-run, and the step reaches waiting', async () => {
+  it('leaves a starting island to its chip once the user has pinned a step, and Follow brings it into the pane', async () => {
     // Fix round 4, finding 1: only the pane mounts an island (Decision 11), so
-    // an island whose pane never opens sits at `running` forever — no timeout,
-    // no affordance. A click on any other step used to cause exactly that.
+    // an island whose pane never opens sits at `running` — no timeout, and no
+    // affordance of its own. It used to claim the pane over the user's pick;
+    // since apps#452 a pick is **pinned**, so the island waits for the person
+    // instead, and its chip or the header's Follow toggle is the way to it.
     //
     // `analyze` is held open so the click lands while the run is genuinely in
-    // flight and the island has not started yet — the exact ordering the bug
-    // needed.
+    // flight and the island has not started yet.
     let releaseAnalyze!: () => void
     const analyzing = new Promise<void>((resolve) => {
       releaseAnalyze = resolve
@@ -332,8 +333,8 @@ describe('RunPage — a loading island claims the pane', () => {
     await waitFor(() => expect(chip(page, SAY_KEY)).toBeDefined())
     fireEvent.click(chip(page, SAY_KEY)!)
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
+    expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
     await flush()
-    // Nothing interactive is loading yet, so the click stands.
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
 
     releaseAnalyze()
@@ -345,27 +346,34 @@ describe('RunPage — a loading island claims the pane', () => {
       )
     })
 
-    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(CHOOSE_KEY))
-    await waitFor(() => expect(host.mounts).toHaveLength(1))
-
-    // apps#370: the claim happens **once**. A second click away while the
-    // island is still loading stands — the page does not re-claim on every
-    // click (each re-mount restarted the 30 s ISLAND_LOAD clock, so a hanging
-    // island plus a clicking user never timed out). The abandoned mount leaves
-    // the step `running`; the chip is the way back.
-    fireEvent.click(chip(page, SAY_KEY)!)
+    // Pinned: the island does not take the pane, and — attended, waiting for
+    // a person — it is not mounted backstage either. It stays `running`.
     await flush()
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
-    expect(host.mounts).toHaveLength(1)
+    expect(host.mounts).toHaveLength(0)
+    expect(within(page).queryByTestId('island-backstage')).toBeNull()
     expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('running')
 
-    fireEvent.click(chip(page, CHOOSE_KEY)!)
-    await waitFor(() => expect(host.mounts).toHaveLength(2))
-
+    // Follow again: the loading island is where the run is, so it opens.
+    fireEvent.click(within(page).getByTestId('run-follow'))
+    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(CHOOSE_KEY))
+    await waitFor(() => expect(host.mounts).toHaveLength(1))
     host.settle()
     await waitFor(() =>
       expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'),
     )
+
+    // A click away pins again; the abandoned pane leaves the step exactly as
+    // it was (apps#370), and the chip is the way back — a re-mount from the
+    // same handle.
+    fireEvent.click(chip(page, SAY_KEY)!)
+    await flush()
+    expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
+    expect(host.mounts).toHaveLength(1)
+    expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting')
+
+    fireEvent.click(chip(page, CHOOSE_KEY)!)
+    await waitFor(() => expect(host.mounts).toHaveLength(2))
   })
 
   it('opens the first loading island in scheduling order, not in state-insertion order', async () => {

@@ -5,9 +5,11 @@
  * headless or not — a driver polls it to follow a run it started, and a run
  * page that stopped publishing would look to it like a run that never
  * progressed. And in a headless run there is nobody to click a chip, so the
- * page keeps an active island in the pane by itself: the pane is the only
- * thing that mounts an island (Decision 11), so an island whose pane never
- * opens is a run that hangs.
+ * page keeps an active island mounted by itself: the pane is the only thing
+ * that mounts an island (Decision 11), so an island that is never mounted is
+ * a run that hangs. While the selection follows the run that is the pane;
+ * once something has pinned it elsewhere (apps#452) it is the **backstage** —
+ * mounted out of sight, the selection untouched.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { toDefinition } from '@bffless/workflow-lint/definition'
@@ -30,6 +32,7 @@ import { makeStore } from '../store'
 import { startRun } from '../store/runnerActions'
 import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
 import { islandStore, pumpUntil, resetIslandHarness } from '../test/islandHarness'
+import type { FakeIslandHost } from '../test/islandHarness'
 import type { Definition, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 
@@ -180,9 +183,9 @@ describe('RunPage — headless island mounting', () => {
 
   /**
    * Drives `x` to `succeeded` so `y` starts, then moves the selection onto the
-   * finished `x` — the one shape where the interactive claim-once rule
-   * (apps#370) declines to act: `y` has already been claimed, so nothing would
-   * re-open it. In a headless run that would be a hang.
+   * finished `x` — a `?step=` navigation, which **pins** the selection there
+   * (apps#452), so nothing may re-open `y` in the pane. In a headless run
+   * that would be a hang — unless `y` is mounted somewhere else.
    */
   async function driveToSecondIsland(driving: Driving, def?: Definition) {
     const { store, host, runId } = await startTwoIslands(driving, def)
@@ -211,41 +214,62 @@ describe('RunPage — headless island mounting', () => {
     return { store, host }
   }
 
-  it('re-opens the active island when the selection lands on a finished step', async () => {
-    const { store } = await driveToSecondIsland({ headless: true })
+  /**
+   * `y` is mounted backstage — a frame in the document, outside the pane —
+   * and driven to completion from there; the selection stays on `x`.
+   */
+  async function expectDrivenBackstage(store: ReturnType<typeof makeStore>, host: FakeIslandHost) {
+    const backstage = await screen.findByTestId('island-backstage')
+    const frame = within(backstage).getByTestId('island-frame')
+    expect(frame).toBeInTheDocument()
+    expect(screen.getByTestId('step-pane')).not.toContainElement(frame)
+    expect(store.getState().ui.selectedStep).toBe(X_KEY)
+    expect(screen.getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
 
-    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(Y_KEY))
-    expect(screen.getByTestId('island-frame')).toBeInTheDocument()
+    await waitFor(() => expect(host.pending()).toBe(1))
+    expect(host.mounts.at(-1)!.headless).toBe(true)
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[Y_KEY].status).toBe('waiting'))
+    expect(host.allDeps[1]!.onSubmit({ choice: 'b' })).toEqual({ ok: true })
+    await waitFor(() => expect(store.getState().run.state!.status).toBe('succeeded'))
+    expect(store.getState().ui.selectedStep).toBe(X_KEY)
+    expect(screen.queryByTestId('island-backstage')).not.toBeInTheDocument()
+  }
+
+  it('keeps the active island mounted backstage when the selection lands on a finished step', async () => {
+    const { store, host } = await driveToSecondIsland({ headless: true })
+
+    await expectDrivenBackstage(store, host)
   })
 
-  it('re-opens the active island in an unattended run too (07, apps#432)', async () => {
+  it('keeps the active island mounted backstage in an unattended run too (07, apps#432)', async () => {
     // "Don't wait for me": the person asked not to be waited for, so a
-    // `headless: auto` island is kept mounted the way a headless run would.
+    // `headless: auto` island is kept mounted the way a headless run would —
+    // told it is driving itself, and out of the pane they pinned.
     const { store, host } = await driveToSecondIsland({ unattended: true })
 
-    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(Y_KEY))
-    expect(screen.getByTestId('island-frame')).toBeInTheDocument()
-    // And the island is told it is driving itself.
-    expect(host.mounts.at(-1)!.headless).toBe(true)
+    await expectDrivenBackstage(store, host)
   })
 
-  it('re-opens an island whose own step said `auto-accept`, on an otherwise interactive run (07, apps#435)', async () => {
+  it('keeps an island whose own step said `auto-accept` mounted backstage, on an otherwise interactive run (07, apps#435)', async () => {
     // Nobody ticked "Don't wait for me" — the step itself asked to self-drive,
     // so it is kept mounted like an unattended one; the run's flags stay off.
     const { store, host } = await driveToSecondIsland({}, TWO_AUTO_ACCEPT_ISLANDS_DEF)
 
-    await waitFor(() => expect(store.getState().ui.selectedStep).toBe(Y_KEY))
-    expect(screen.getByTestId('island-frame')).toBeInTheDocument()
-    expect(host.mounts.at(-1)!.headless).toBe(true)
+    await expectDrivenBackstage(store, host)
     expect(store.getState().run.state).toMatchObject({ headless: false, unattended: false })
   })
 
-  it('leaves an interactive run’s selection exactly where the person put it', async () => {
-    const { store } = await driveToSecondIsland({})
+  it('leaves an interactive run’s selection exactly where the person put it, and its island to its chip', async () => {
+    const { store, host } = await driveToSecondIsland({})
 
-    // No re-claim: the person asked for `x`, and `y` was already claimed once.
+    // Pinned, and `y` waits for a person: no re-claim, and no backstage either —
+    // mounting it hidden would only have it reload under them when they open it.
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(store.getState().ui.selectedStep).toBe(X_KEY)
+    expect(screen.queryByTestId('island-backstage')).not.toBeInTheDocument()
+    expect(host.pending()).toBe(0)
+    expect(store.getState().run.state!.steps[Y_KEY].status).toBe('running')
   })
 
   it('opens the first active island with no selection at all, in a headless run', async () => {

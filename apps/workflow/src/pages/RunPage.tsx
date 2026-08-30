@@ -29,8 +29,19 @@
  * run, a run held by another tab (read-only here; the actions arrive in
  * Phase 3), and a row whose definition snapshot cannot be used at all — which
  * still renders as a record.
+ *
+ * The selection either **follows** the run or is **pinned** (apps#452). It
+ * starts following — a waiting form opens as its pane, a loading island
+ * claims it once (apps#370), a finished run returns to the run card — and
+ * stops the moment the person picks something: a chip, a crumb, Esc, a
+ * `?step=` they typed or stepped Back to. From then on nothing here moves
+ * the selection; the header's "Follow run" toggle is the way back. The one
+ * thing that must keep happening while pinned is the run itself: an island
+ * that drives itself (07 unattended / `auto-accept`) still has to be
+ * *mounted* to do so (Decision 11), so it is mounted **backstage** — in the
+ * document, out of sight — rather than by taking the pane.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toDefinition } from '@bffless/workflow-lint/definition'
@@ -45,6 +56,8 @@ import { RunPane } from '../components/run/RunPane'
 import { StepPane } from '../components/run/StepPane'
 import { FileRefProvider } from '../components/values/FileRefProvider'
 import { ImplContext } from '../components/values/implContext'
+import { IslandFrame } from '../islands/IslandFrame'
+import { useIslandFrameHost, useIslandHandle } from '../islands/useIslandHandle'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
@@ -53,8 +66,8 @@ import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, Definition, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { LeaseTransportError, cancelRun, openRun, takeOver } from '../store/lifecycleActions'
-import { getIslandHandle } from '../store/islandLaunch'
-import { islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
+import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
+import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
 import { useRunDelete } from '../store/useRunDelete'
 import { workflowApi, useGetRunQuery, useWhoamiQuery } from '../store/workflowApi'
 
@@ -66,9 +79,6 @@ const STEP_PARAM = 'step'
 
 /** A run that is no longer in flight. */
 const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
-
-/** A step that has finished, whatever it finished as — it holds nothing open. */
-const TERMINAL_STEP: ReadonlySet<string> = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
 
 /**
  * The definition the run stored, or the one its YAML snapshot parses to.
@@ -104,6 +114,49 @@ function collectAnnotations(state: RunState): Annotation[] {
  */
 function isLoadingIsland(step: StepState): boolean {
   return step.kind === 'island' && step.status === 'running'
+}
+
+/** An island whose bridge is (or is about to be) open: it has a frame to mount. */
+function isActiveIsland(step: StepState): boolean {
+  return step.kind === 'island' && (step.status === 'running' || step.status === 'waiting')
+}
+
+/**
+ * An island mounted out of sight (apps#452): the pane is the only thing that
+ * mounts an island (Decision 11), and while the person has pinned the pane
+ * elsewhere — or is mid-interaction in it — a self-driving island (07:
+ * unattended, or the step's own `auto-accept:`) would otherwise sit at
+ * `running` with nobody to open it. So the page keeps it mounted here, in the
+ * document but visually hidden and `inert`, where it loads, submits by itself
+ * and finishes exactly as it would in the pane. The same handle, the same
+ * frame, the same host adapter as the pane's (`useIslandFrameHost`): moving
+ * the selection onto it later is a re-mount from the handle, as leaving any
+ * island and coming back always was.
+ *
+ * Only an island *told* it is driving itself (`handle.headless`, fixed at
+ * launch) is mounted here — the page picks those (below) and this checks
+ * again off the live handle. One that waits for a person is left to its
+ * chip: mounting it hidden would only have it reload under them when they
+ * open it.
+ */
+function BackstageIsland({ runId, stepKey }: { runId: string; stepKey: StepKey }) {
+  const handle = useIslandHandle(runId, stepKey)
+  const host = useIslandFrameHost(handle)
+  if (!handle || !host || !handle.headless) return null
+  return (
+    <IslandFrame
+      impl={handle.impl}
+      src={handle.src}
+      arguments={handle.arguments}
+      headless={handle.headless}
+      display="inline"
+      title={handle.title}
+      host={host}
+      // The handle records a failed mount as the step's own `ISLAND_LOAD`
+      // failure and resolves, so this never fires (as in `IslandStepPane`).
+      onLoadError={() => {}}
+    />
+  )
 }
 
 /** A row that cannot be replayed is still a row worth reading (08). */
@@ -272,6 +325,44 @@ export function RunPage() {
       { replace },
     )
 
+  // Follow or pinned (apps#452). The store holds the answer *for this run*;
+  // with none yet (a fresh page, or the page just moved to another run — it
+  // never remounts on a `:runId` change) the URL decides: a `?step=` someone
+  // arrived with is a choice, an empty one is not. Read synchronously, so the
+  // very first render — and every effect below that reads `follow` — is
+  // already right; the effect after it only records that default so later
+  // changes have an entry to flip.
+  const followEntry = useAppSelector((s) => s.ui.follow)
+  const follow = runId !== undefined && followEntry?.runId === runId ? followEntry.on : selectedStep === null
+  useEffect(() => {
+    if (runId === undefined) return
+    dispatch(followChanged({ runId, on: follow }))
+    // Once per run: the default is derived above; after this the person's
+    // actions (and the effect below) own the entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, dispatch])
+  /** The person picked something: the selection is theirs now. */
+  const pin = () => {
+    if (runId !== undefined) dispatch(followChanged({ runId, on: false }))
+  }
+
+  // Every selection the *page* makes goes through `write`, which remembers the
+  // key so the effect below can tell it from one the person made — a `?step=`
+  // typed into the address bar, or stepped Back to — which pins, exactly as a
+  // click would. A `null` never pins: Back out to the run level is not a
+  // choice of step, and following resumes from there.
+  const pageWrote = useRef<StepKey | null | undefined>(undefined)
+  const write = (key: StepKey | null, replace: boolean) => {
+    pageWrote.current = key
+    setStep(key, replace)
+  }
+  useEffect(() => {
+    const own = pageWrote.current !== undefined && pageWrote.current === selectedStep
+    pageWrote.current = undefined
+    if (own || selectedStep === null || runId === undefined) return
+    dispatch(followChanged({ runId, on: false }))
+  }, [selectedStep, runId, dispatch])
+
   // Who we are: the owner half of Delete's gate lives in `useRunDelete`, but
   // a run *this* tab started carries no `startedBy` of its own (see below).
   const { data: me } = useWhoamiQuery()
@@ -281,10 +372,16 @@ export function RunPage() {
   // counter makes a second click on the same dot re-open that side even when
   // the selection did not change — the pane is keyed on it below.
   const [side, setSide] = useState<{ key: string; side: PaneSide; n: number } | null>(null)
-  /** Up one level: a step's job, a job's run. */
-  const back = () => setStep(level === 'step' ? selectedStep!.split('/')[0]! : null, false)
-  const toRun = () => setStep(null, false)
-  /** A person's click: a history entry, so Back returns to where they were. */
+  /** Up one level: a step's job, a job's run. A person's move, so it pins. */
+  const back = () => {
+    pin()
+    setStep(level === 'step' ? selectedStep!.split('/')[0]! : null, false)
+  }
+  const toRun = () => {
+    pin()
+    setStep(null, false)
+  }
+  /** A person's click: a history entry, so Back returns to where they were — and pinned from here on. */
   const select = (key: StepKey, requested?: PaneSide) => {
     // The selected chip (or strip), clicked again with no side asked for, is
     // the way up one level — the same toggle a pressed button suggests.
@@ -292,8 +389,15 @@ export function RunPage() {
       back()
       return
     }
+    pin()
     setStep(key, false)
     if (requested) setSide((prev) => ({ key, side: requested, n: (prev?.n ?? 0) + 1 }))
+  }
+  /** The header's toggle. Following again means catching up: from a clean selection, the page's own rules pick the step. */
+  const onFollowChange = (on: boolean) => {
+    if (runId === undefined) return
+    dispatch(followChanged({ runId, on }))
+    if (on && selectedStep !== null) write(null, true)
   }
   const paneSide = side && side.key === selectedStep ? side : null
 
@@ -423,6 +527,12 @@ export function RunPage() {
   // with its chip as the way back; the run header's cancel is the other exit.
   // Any island that has been the selection while loading counts as claimed,
   // whether the page opened it or the user did.
+  //
+  // All of it only while the selection **follows** the run (apps#452): once
+  // the person has pinned a step, neither a waiting form nor a loading island
+  // moves it — the chip is the way to either, and the header's toggle is the
+  // way back to following. (A self-driving island that must mount regardless
+  // goes backstage below, not through here.)
   const claimed = useRef<{ runId: string | null; keys: Set<string> }>({
     runId: null,
     keys: new Set(),
@@ -432,12 +542,13 @@ export function RunPage() {
     if (claimed.current.runId !== state.runId) {
       claimed.current = { runId: state.runId, keys: new Set() }
     }
+    if (!follow) return
     if (!selectedStep) {
       if (openStep) {
         if (isLoadingIsland(state.steps[openStep]!)) claimed.current.keys.add(openStep)
         // The page's own selection replaces the entry rather than pushing one:
         // Back should leave the run, not step through every auto-open.
-        setStep(openStep, true)
+        write(openStep, true)
       }
       return
     }
@@ -457,69 +568,27 @@ export function RunPage() {
     )
     if (!claiming) return
     claimed.current.keys.add(claiming)
-    setStep(claiming, true)
-    // `setStep` closes over `setSearchParams`, which react-router keeps stable;
-    // listing it would only re-run this effect on every render.
+    write(claiming, true)
+    // `write` closes over `setSearchParams`, which react-router keeps stable,
+    // and a ref; listing it would only re-run this effect on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLive, openStep, selectedStep, selectedStepState, selectionIsInteractive, def, state])
-
-  // Nobody clicks in a headless run (07), and the pane is still the only thing
-  // that mounts an island (Decision 11) — so the page has to keep an active
-  // island in the pane by itself, or the run sits at `running` until its wait
-  // budget expires. Deliberately a *second* effect rather than a branch in the
-  // claim-once one above: that rule is about not fighting a person for the
-  // pane, and it spends its claim per island, which is exactly the budget an
-  // unattended run must not depend on. Here there is no person to protect, so
-  // the rule is simpler and can re-open the same island as often as it takes.
-  //
-  // It only ever acts when nothing is selected or the selection has finished:
-  // an island or form that is itself still going keeps the pane, so two
-  // islands in flight do not take turns evicting each other.
-  //
-  // An **unattended** run (07: "Don't wait for me") is in the same position for
-  // its `headless: auto` islands: the person asked not to be waited for, so
-  // the page keeps them mounted the way a headless run would — the one case
-  // where keeping the run moving outranks the pane a person happens to have
-  // open, and the trade they made when they ticked the box. And so is a
-  // single island whose step said `auto-accept:` (07, apps#435) on an
-  // otherwise interactive run: its handle already carries the answer
-  // (`headless`, fixed at launch), so the page reads that rather than
-  // re-evaluating the declaration — and an island the person is hand-editing
-  // is never one of these.
-  const runUnattended = Boolean(sliceState?.headless || sliceState?.unattended)
-  useEffect(() => {
-    if (!isLive || !def || !state) return
-    const selected = selectedStep ? state.steps[selectedStep] : undefined
-    if (selected && !TERMINAL_STEP.has(selected.status)) return
-    const active = firstStepWhere(
-      def,
-      state,
-      (step) =>
-        step.kind === 'island' &&
-        (step.status === 'running' || step.status === 'waiting') &&
-        (runUnattended || getIslandHandle(state.runId, step.key)?.headless === true),
-    )
-    if (!active || active === selectedStep) return
-    // Replace, never push: an auto-open is the page keeping up with the run,
-    // not a place anyone navigated to.
-    setStep(active, true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `setStep` is stable (see above)
-  }, [isLive, runUnattended, def, state, selectedStep])
+  }, [follow, isLive, openStep, selectedStep, selectedStepState, selectionIsInteractive, def, state])
 
   // A live run that just finished returns the page to the run level (08): the
   // results are the reason the person is here, and the step that happened to
   // be open — usually the form they just submitted — is not. Only on the
   // *transition* out of `running`, so a finished run deep-linked with `?step=`
-  // opens on that step as asked.
+  // opens on that step as asked — and only while following (apps#452): a
+  // pinned selection stays pinned, finished run or not.
   const runStatus = state?.status
   const previousStatus = useRef<string | undefined>(undefined)
   useEffect(() => {
     const was = previousStatus.current
     previousStatus.current = runStatus
     if (!isLive || runStatus === undefined) return
-    if (was === 'running' && TERMINAL_RUN.has(runStatus) && selectedStep) setStep(null, true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `setStep` is stable (see above)
-  }, [isLive, runStatus, selectedStep])
+    if (follow && was === 'running' && TERMINAL_RUN.has(runStatus) && selectedStep) write(null, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `write` is stable (see above)
+  }, [follow, isLive, runStatus, selectedStep])
 
   // Fullscreen is a mode of the *mounted island*, so it only holds while the
   // selected step really is one (08). Anything else — the run moved on, the
@@ -542,6 +611,46 @@ export function RunPage() {
   // back over afterwards — the island's own `ui/request-display-mode` and the
   // pane's Expand / Exit are free to move it once it is open.
   const openIslandKey = islandOpen ? selectedStep : null
+
+  // The backstage (apps#452): every island with an open bridge that the pane
+  // is *not* showing and whose handle says it drives itself, mounted by
+  // `BackstageIsland`. Nobody clicks in a headless run (07), and the pane is
+  // the only thing that mounts an island (Decision 11), so without this an
+  // unattended run whose person pinned the pane elsewhere — or is filling in
+  // a form the page rightly refuses to take from them — sits at `running`
+  // until its wait budget expires. The one case where keeping the run moving
+  // outranks the pane a person has open, and the trade they made when they
+  // ticked "Don't wait for me" or the step said `auto-accept:` (apps#435).
+  //
+  // Deliberately not while the selection follows the run *and* is free to
+  // move: there the claim-once effect above is about to put that island in
+  // the pane itself, and mounting it here first would only have it torn down
+  // and re-mounted a commit later.
+  //
+  // The handles live in a module registry, not the store, so the self-driving
+  // filter is read through a subscription (as `useIslandHandle` does): a
+  // handle Resume registers after the page has rendered still gets its frame.
+  // The snapshot is the key list as one string — equal lists read equal, so
+  // the subscription never re-renders for nothing.
+  const backstageCandidates = useMemo(
+    () =>
+      isLive && state && (!follow || selectionIsInteractive)
+        ? Object.values(state.steps)
+            .filter((step) => isActiveIsland(step) && step.key !== openIslandKey)
+            .map((step) => step.key)
+        : [],
+    [isLive, state, follow, selectionIsInteractive, openIslandKey],
+  )
+  const backstageRunId = state?.runId
+  const backstageKeys = useSyncExternalStore(subscribeIslandHandles, () =>
+    backstageRunId === undefined
+      ? ''
+      : backstageCandidates
+          .filter((key) => getIslandHandle(backstageRunId, key)?.headless === true)
+          .join('\n'),
+  )
+  const backstage = backstageKeys === '' ? [] : backstageKeys.split('\n')
+
   const resetFor = useRef<string | null>(null)
   useEffect(() => {
     if (resetFor.current === openIslandKey) return
@@ -619,6 +728,8 @@ export function RunPage() {
           onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
           onDelete={del.onDelete}
           deleting={del.deleting}
+          follow={follow}
+          onFollowChange={shownStatus === 'running' ? onFollowChange : undefined}
         />
 
         {del.failed && (
@@ -701,6 +812,13 @@ export function RunPage() {
                   impl={state.impl}
                   onJump={(key) => select(key)}
                 />
+              )}
+              {backstage.length > 0 && (
+                <div className="island-backstage" data-testid="island-backstage" aria-hidden="true" inert>
+                  {backstage.map((key) => (
+                    <BackstageIsland key={key} runId={state.runId} stepKey={key} />
+                  ))}
+                </div>
               )}
             </div>
           </FileRefProvider>

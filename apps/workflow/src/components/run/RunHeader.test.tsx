@@ -100,3 +100,35 @@ describe('RunHeader — badges', () => {
     expect(screen.queryByTestId('run-unattended')).not.toBeInTheDocument()
   })
 })
+
+describe('RunHeader — Follow run (apps#452)', () => {
+  it('offers no toggle at all when the page passes no handler', () => {
+    renderHeader({ follow: false })
+    expect(screen.queryByTestId('run-follow')).not.toBeInTheDocument()
+  })
+
+  it('reads on while following, and asks the page to pin on click', () => {
+    const onFollowChange = vi.fn()
+    renderHeader({ status: 'running', finishedAt: null, follow: true, onFollowChange })
+
+    const toggle = screen.getByTestId('run-follow')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle).toHaveAttribute('data-state', 'on')
+    expect(toggle).toHaveTextContent('Follow run')
+
+    fireEvent.click(toggle)
+    expect(onFollowChange).toHaveBeenCalledWith(false)
+  })
+
+  it('reads off while pinned, and asks the page to follow on click', () => {
+    const onFollowChange = vi.fn()
+    renderHeader({ status: 'running', finishedAt: null, follow: false, onFollowChange })
+
+    const toggle = screen.getByTestId('run-follow')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('data-state', 'off')
+
+    fireEvent.click(toggle)
+    expect(onFollowChange).toHaveBeenCalledWith(true)
+  })
+})

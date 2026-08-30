@@ -27,10 +27,8 @@
  * a strip), and the `<iframe>` is the same element either way: nothing here
  * remounts on the mode change, so the island's edit state survives it.
  */
-import { useMemo } from 'react'
 import { IslandFrame } from '../../islands/IslandFrame'
-import type { IslandHost } from '../../islands/IslandHost'
-import { useIslandHandle, useIslandLog } from '../../islands/useIslandHandle'
+import { useIslandFrameHost, useIslandHandle, useIslandLog } from '../../islands/useIslandHandle'
 import type { RunState, StepKey } from '../../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../../store/hooks'
 import { islandDisplayChanged } from '../../store/uiSlice'
@@ -53,28 +51,10 @@ export function IslandStepPane({ state, stepKey: key, trail = [] }: IslandStepPa
   const log = useIslandLog(state.runId, key)
   const step = state.steps[key]
 
-  /**
-   * `IslandFrame` re-mounts whenever its `host` identity changes, so this
-   * adapter is memoised on the handle — never built inline in render. It
-   * delegates `mount` to the handle's pre-bound call and ignores the frame's
-   * own mount arguments: the middleware already decided every one of them, and
-   * its `AbortController` (not the frame's) is what `cancelRun` reaches. The
-   * frame's cleanup still stops an in-flight mount, through `teardown`.
-   * `sendToolInput` is delegated for the interface's sake only — the frame
-   * never calls it for a step's island.
-   */
-  const frameHost = useMemo<IslandHost | null>(
-    () =>
-      handle
-        ? {
-            mount: (iframe) => handle.mount(iframe),
-            setDisplayMode: (mode) => handle.host.setDisplayMode(mode),
-            sendToolInput: (args) => handle.host.sendToolInput(args),
-            teardown: (reason) => handle.host.teardown(reason),
-          }
-        : null,
-    [handle],
-  )
+  // The frame's host adapter, memoised on the handle (`useIslandFrameHost`):
+  // the same one the run page's backstage uses, so a step's island is mounted
+  // one way whether it is in the pane or driving itself out of sight.
+  const frameHost = useIslandFrameHost(handle)
 
   if (!step) {
     return (
