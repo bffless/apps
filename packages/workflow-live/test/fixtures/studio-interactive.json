@@ -1,0 +1,1584 @@
+{
+  "run": {
+    "id": "256c3e66-2919-44ff-aac0-29ce1f5edf0e",
+    "alias": "workflow",
+    "version": 1,
+    "impl": "workflow-studio",
+    "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+    "inputs": {
+      "cover": true,
+      "direction": null,
+      "recordings": [
+        {
+          "url": "/api/uploads/workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4",
+          "name": "Onboarding Rules.mp4",
+          "path": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4",
+          "size": 41882447,
+          "contentType": "video/mp4"
+        }
+      ],
+      "write_blog": true
+    },
+    "status": "succeeded",
+    "outputs": {
+      "blog": {
+        "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/bundle/659d6a13-4874-4084-b114-c42c607e0479-how-to-set-up-onboarding-rules-and-public-signups-in-bffless.zip",
+        "name": "how-to-set-up-onboarding-rules-and-public-signups-in-bffless.zip",
+        "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/bundle/659d6a13-4874-4084-b114-c42c607e0479-how-to-set-up-onboarding-rules-and-public-signups-in-bffless.zip",
+        "size": 368970,
+        "contentType": "application/zip"
+      },
+      "cover": {
+        "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/0/draw/f810212e-7d55-4fc0-9295-483c6f6e27b7-tmpr66ec66z.jpeg",
+        "name": "tmpr66ec66z.jpeg",
+        "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/0/draw/f810212e-7d55-4fc0-9295-483c6f6e27b7-tmpr66ec66z.jpeg",
+        "size": 80553,
+        "contentType": "image/jpeg"
+      },
+      "short": {
+        "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/stitch/0/concat/short.mp4",
+        "name": "short.mp4",
+        "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/stitch/0/concat/short.mp4",
+        "size": 20287161,
+        "contentType": "video/mp4"
+      },
+      "title": "How to set up onboarding rules and public signups in BFFless",
+      "summary": "In this video I show how to configure onboarding rules in BFFless so that new users automatically get repository access when they create an account. I walk through the site settings to create a rule that grants view access on user sign up, then enable public signups so anyone can register. I also demonstrate the full flow by creating a test user and confirming they can browse the repository and explore everything BFFless has to offer on the backend.",
+      "chapters": "0:00 Configuring Onboarding Rules\n1:26 Testing the User Flow"
+    },
+    "headless": false,
+    "workflow": "studio",
+    "startedAt": 1788028129154,
+    "startedBy": "8ffcde87-f7d4-43d5-9db8-405fe38ca985",
+    "finishedAt": 1788028579018,
+    "leaseOwner": null,
+    "leaseUntil": null,
+    "annotations": [],
+    "workflowName": "Long recording to published short",
+    "workflowVersion": "0.0.0",
+    "annotationCounts": {
+      "error": 0,
+      "notice": 0,
+      "warning": 0
+    },
+    "createdAt": "2026-08-29T18:28:49.330Z",
+    "updatedAt": "2026-08-29T18:36:19.202Z"
+  },
+  "steps": [
+    {
+      "id": "8673f98a-7531-4303-a749-ccc9b82451a4",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/bundle",
+      "kind": "script",
+      "step": "bundle",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "zip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/bundle/659d6a13-4874-4084-b114-c42c607e0479-how-to-set-up-onboarding-rules-and-public-signups-in-bffless.zip",
+          "name": "how-to-set-up-onboarding-rules-and-public-signups-in-bffless.zip",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/bundle/659d6a13-4874-4084-b114-c42c607e0479-how-to-set-up-onboarding-rules-and-public-signups-in-bffless.zip",
+          "size": 368970,
+          "contentType": "application/zip"
+        },
+        "post": "---\ntitle: How to Set Up Onboarding Rules and Public Signups in BFFless\ndescription: Learn how to configure onboarding rules in BFFless so new users automatically receive repository access when they c…"
+      },
+      "startedAt": 1788028539295,
+      "finishedAt": 1788028543772,
+      "createdAt": "2026-08-29T18:35:39.429Z",
+      "updatedAt": "2026-08-29T18:35:43.940Z"
+    },
+    {
+      "id": "c7ac453d-0947-4818-b582-a955fa2598f2",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/frames",
+      "kind": "pipeline",
+      "step": "frames",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "frames": [
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-01.jpg",
+            "name": "frame-01.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-01.jpg",
+            "size": 76170,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-02.jpg",
+            "name": "frame-02.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-02.jpg",
+            "size": 57306,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-03.jpg",
+            "name": "frame-03.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-03.jpg",
+            "size": 40870,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-04.jpg",
+            "name": "frame-04.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-04.jpg",
+            "size": 70470,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-05.jpg",
+            "name": "frame-05.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-05.jpg",
+            "size": 42158,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-06.jpg",
+            "name": "frame-06.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-06.jpg",
+            "size": 45125,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-07.jpg",
+            "name": "frame-07.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-07.jpg",
+            "size": 53642,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-08.jpg",
+            "name": "frame-08.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-08.jpg",
+            "size": 47697,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-09.jpg",
+            "name": "frame-09.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-09.jpg",
+            "size": 59537,
+            "contentType": "image/jpeg"
+          }
+        ],
+        "by_time": {
+          "27": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-01.jpg",
+          "75": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-02.jpg",
+          "95": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-04.jpg",
+          "119": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-03.jpg",
+          "120": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-05.jpg",
+          "138": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-06.jpg",
+          "153": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-07.jpg",
+          "172": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-08.jpg",
+          "211": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/blog/0/frames/frames/0/frame-09.jpg"
+        },
+        "dropped": 0
+      },
+      "startedAt": 1788028531127,
+      "finishedAt": 1788028539119,
+      "createdAt": "2026-08-29T18:35:31.321Z",
+      "updatedAt": "2026-08-29T18:35:39.283Z"
+    },
+    {
+      "id": "e83c50b5-c699-42ed-a8e1-bebd6e3c8ef7",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/times",
+      "kind": "script",
+      "step": "times",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "captures": [
+          {
+            "key": "27",
+            "name": "frame-01.jpg",
+            "time": 27,
+            "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4"
+          },
+          {
+            "key": "75",
+            "name": "frame-02.jpg",
+            "time": 75,
+            "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4"
+          },
+          {
+            "key": "119",
+            "name": "frame-03.jpg",
+            "time": 119,
+            "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4"
+          },
+          {
+            "key": "95",
+            "name": "frame-04.jpg",
+            "time": 95,
+            "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4"
+          },
+          {
+            "key": "120",
+            "name": "frame-05.jpg",
+            "time": 120,
+            "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4"
+          }
+        ]
+      },
+      "startedAt": 1788028530478,
+      "finishedAt": 1788028530942,
+      "createdAt": "2026-08-29T18:35:30.614Z",
+      "updatedAt": "2026-08-29T18:35:31.116Z"
+    },
+    {
+      "id": "04249630-b57f-4664-b743-969e9aa8ba9a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/edit",
+      "kind": "form",
+      "step": "edit",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "post": "---\ntitle: How to Set Up Onboarding Rules and Public Signups in BFFless\ndescription: Learn how to configure onboarding rules in BFFless so new users automatically receive repository access when they c…"
+      },
+      "startedAt": 1788028419569,
+      "finishedAt": 1788028530242,
+      "createdAt": "2026-08-29T18:33:39.740Z",
+      "updatedAt": "2026-08-29T18:35:30.466Z"
+    },
+    {
+      "id": "9c8df717-7080-4465-ad27-650bff0d4aaf",
+      "alias": "workflow",
+      "version": 1,
+      "job": "pick",
+      "key": "pick/0/pick",
+      "kind": "form",
+      "step": "pick",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cover": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/0/draw/f810212e-7d55-4fc0-9295-483c6f6e27b7-tmpr66ec66z.jpeg",
+          "name": "tmpr66ec66z.jpeg",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/0/draw/f810212e-7d55-4fc0-9295-483c6f6e27b7-tmpr66ec66z.jpeg",
+          "size": 80553,
+          "contentType": "image/jpeg"
+        }
+      },
+      "startedAt": 1788028404875,
+      "finishedAt": 1788028578746,
+      "createdAt": "2026-08-29T18:33:25.085Z",
+      "updatedAt": "2026-08-29T18:36:18.975Z"
+    },
+    {
+      "id": "7dd50776-4ac3-4186-a87f-2049fbea0cd4",
+      "alias": "workflow",
+      "version": 1,
+      "job": "covers",
+      "key": "covers/1/draw",
+      "kind": "pipeline",
+      "step": "draw",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "image": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/1/draw/0ed54d7e-8ff2-4a6e-a1d5-33f86ef85662-tmpqfpgeb9g.jpeg",
+          "name": "tmpqfpgeb9g.jpeg",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/1/draw/0ed54d7e-8ff2-4a6e-a1d5-33f86ef85662-tmpqfpgeb9g.jpeg",
+          "size": 82068,
+          "contentType": "image/jpeg"
+        }
+      },
+      "startedAt": 1788028393359,
+      "finishedAt": 1788028404424,
+      "createdAt": "2026-08-29T18:33:13.858Z",
+      "updatedAt": "2026-08-29T18:33:24.648Z"
+    },
+    {
+      "id": "47179451-880b-4167-a676-eb1dd5ebea84",
+      "alias": "workflow",
+      "version": 1,
+      "job": "covers",
+      "key": "covers/0/draw",
+      "kind": "pipeline",
+      "step": "draw",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "image": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/0/draw/f810212e-7d55-4fc0-9295-483c6f6e27b7-tmpr66ec66z.jpeg",
+          "name": "tmpr66ec66z.jpeg",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/covers/0/draw/f810212e-7d55-4fc0-9295-483c6f6e27b7-tmpr66ec66z.jpeg",
+          "size": 80553,
+          "contentType": "image/jpeg"
+        }
+      },
+      "startedAt": 1788028393348,
+      "finishedAt": 1788028403302,
+      "createdAt": "2026-08-29T18:33:13.603Z",
+      "updatedAt": "2026-08-29T18:33:23.724Z"
+    },
+    {
+      "id": "4ca650d4-5611-48e9-ade3-75e4b516a15a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "cover",
+      "key": "cover/0/brief",
+      "kind": "pipeline",
+      "step": "brief",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "prompt": "16:9 YouTube thumbnail, digital illustration\n\nStyle anchor: modern dev tool — flat dark-navy background with a tilted UI panel mock, one electric accent colour, clean sans-serif type, no photorealism.…"
+      },
+      "startedAt": 1788028378180,
+      "finishedAt": 1788028393149,
+      "createdAt": "2026-08-29T18:32:58.677Z",
+      "updatedAt": "2026-08-29T18:33:13.317Z"
+    },
+    {
+      "id": "c6d6b5d4-8e66-4370-8b8f-4876a39e5198",
+      "alias": "workflow",
+      "version": 1,
+      "job": "blog",
+      "key": "blog/0/write",
+      "kind": "pipeline",
+      "step": "write",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "post": "---\ntitle: How to Set Up Onboarding Rules and Public Signups in BFFless\ndescription: Learn how to configure onboarding rules in BFFless so new users automatically receive repository access when they c…"
+      },
+      "startedAt": 1788028378170,
+      "finishedAt": 1788028419401,
+      "createdAt": "2026-08-29T18:32:58.428Z",
+      "updatedAt": "2026-08-29T18:33:39.566Z"
+    },
+    {
+      "id": "5a495ee9-0eae-4299-b8eb-30da43e88d3c",
+      "alias": "workflow",
+      "version": 1,
+      "job": "describe",
+      "key": "describe/0/describe",
+      "kind": "pipeline",
+      "step": "describe",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "title": "How to set up onboarding rules and public signups in BFFless",
+        "summary": "In this video I show how to configure onboarding rules in BFFless so that new users automatically get repository access when they create an account. I walk through the site settings to create a rule t…"
+      },
+      "startedAt": 1788028373578,
+      "finishedAt": 1788028377882,
+      "createdAt": "2026-08-29T18:32:53.734Z",
+      "updatedAt": "2026-08-29T18:32:58.029Z"
+    },
+    {
+      "id": "19bb5011-b6c6-4475-ba18-fa1e85007a37",
+      "alias": "workflow",
+      "version": 1,
+      "job": "stitch",
+      "key": "stitch/0/script",
+      "kind": "script",
+      "step": "script",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "script": "Onboarding rules allow you to promote user privileges when they create an account or perform other actions such as run a pipeline. This would allow you to send them a welcome email or something like t…",
+        "chapters": "0:00 Configuring Onboarding Rules\n1:26 Testing the User Flow"
+      },
+      "startedAt": 1788028372892,
+      "finishedAt": 1788028373378,
+      "createdAt": "2026-08-29T18:32:53.045Z",
+      "updatedAt": "2026-08-29T18:32:53.599Z"
+    },
+    {
+      "id": "48b1d272-4e1d-406f-b9a5-4e539f8837f4",
+      "alias": "workflow",
+      "version": 1,
+      "job": "stitch",
+      "key": "stitch/0/concat",
+      "kind": "pipeline",
+      "step": "concat",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "short": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/stitch/0/concat/short.mp4",
+          "name": "short.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/stitch/0/concat/short.mp4",
+          "size": 20287161,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788028368975,
+      "finishedAt": 1788028372790,
+      "createdAt": "2026-08-29T18:32:49.257Z",
+      "updatedAt": "2026-08-29T18:32:52.924Z"
+    },
+    {
+      "id": "7baf0aad-f7ae-4576-bc46-4efcbf021539",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/assemble",
+      "kind": "pipeline",
+      "step": "assemble",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/1/assemble/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/1/assemble/clip.mp4",
+          "size": 11306321,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788028346463,
+      "finishedAt": 1788028368702,
+      "createdAt": "2026-08-29T18:32:26.644Z",
+      "updatedAt": "2026-08-29T18:32:48.991Z"
+    },
+    {
+      "id": "dd6df845-f0fe-4516-b78f-29fc631456f6",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/assemble",
+      "kind": "pipeline",
+      "step": "assemble",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/0/assemble/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/0/assemble/clip.mp4",
+          "size": 8981329,
+          "contentType": "video/mp4"
+        }
+      },
+      "startedAt": 1788028310601,
+      "finishedAt": 1788028324140,
+      "createdAt": "2026-08-29T18:31:50.835Z",
+      "updatedAt": "2026-08-29T18:32:04.296Z"
+    },
+    {
+      "id": "4a2cd1a2-1e87-4e44-aeaa-c127c291cbb4",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/trim",
+      "kind": "island",
+      "step": "trim",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 123.1,
+            "start": 112.9
+          },
+          {
+            "end": 150.1,
+            "start": 130.3
+          }
+        ],
+        "keep": [
+          {
+            "end": 12.900000000000006,
+            "start": 0
+          },
+          {
+            "end": 30.30000000000001,
+            "start": 23.099999999999994
+          },
+          {
+            "end": 123.601,
+            "start": 50.099999999999994
+          }
+        ]
+      },
+      "startedAt": 1788028270835,
+      "finishedAt": 1788028346301,
+      "createdAt": "2026-08-29T18:31:10.990Z",
+      "updatedAt": "2026-08-29T18:32:26.499Z"
+    },
+    {
+      "id": "58a53f15-a374-466b-9a7c-f5252994869a",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/trim",
+      "kind": "island",
+      "step": "trim",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 91,
+            "start": 77
+          }
+        ],
+        "keep": [
+          {
+            "end": 77,
+            "start": 0
+          },
+          {
+            "end": 100,
+            "start": 91
+          }
+        ]
+      },
+      "startedAt": 1788028262571,
+      "finishedAt": 1788028310407,
+      "createdAt": "2026-08-29T18:31:02.807Z",
+      "updatedAt": "2026-08-29T18:31:50.643Z"
+    },
+    {
+      "id": "0e316ddc-9375-4f70-8357-a8938b6545b8",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/refine",
+      "kind": "pipeline",
+      "step": "refine",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 119.5,
+            "start": 112.95
+          },
+          {
+            "end": 150.1,
+            "start": 130.3
+          }
+        ],
+        "heard_audio": true
+      },
+      "startedAt": 1788028249781,
+      "finishedAt": 1788028270680,
+      "createdAt": "2026-08-29T18:30:50.352Z",
+      "updatedAt": "2026-08-29T18:31:10.870Z"
+    },
+    {
+      "id": "2ec94f00-8813-4298-aece-8dd241e7a727",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/inputs",
+      "kind": "script",
+      "step": "inputs",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scene_words": [
+          {
+            "end": 100.226,
+            "text": "actually",
+            "start": 99.946
+          },
+          {
+            "end": 100.487,
+            "text": "go",
+            "start": 100.287
+          },
+          {
+            "end": 100.947,
+            "text": "into",
+            "start": 100.587
+          },
+          {
+            "end": 101.588,
+            "text": "BFF's",
+            "start": 100.987
+          },
+          {
+            "end": 102.248,
+            "text": "backend",
+            "start": 101.648
+          }
+        ],
+        "word_timings": "99.95 100.23 actually\n100.29 100.49 go\n100.59 100.95 into\n100.99 101.59 BFF's\n101.65 102.25 backend\n102.71 102.83 and\n102.89 103.13 view\n103.21 103.29 it.\n103.79 103.95 Let's\n103.99 104.09 see\n104.13 …",
+        "previous_context": "to your website. You can go into authentication and Turn on signups by clicking this button, allow public signups. Now anybody can sign up to my website and anybody can"
+      },
+      "startedAt": 1788028249681,
+      "finishedAt": 1788028249737,
+      "createdAt": "2026-08-29T18:30:49.829Z",
+      "updatedAt": "2026-08-29T18:30:50.174Z"
+    },
+    {
+      "id": "96face3e-a8f7-41d3-95dc-94dcea187ed2",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/refine",
+      "kind": "pipeline",
+      "step": "refine",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "cuts": [
+          {
+            "end": 91,
+            "start": 77
+          }
+        ],
+        "heard_audio": true
+      },
+      "startedAt": 1788028246756,
+      "finishedAt": 1788028262470,
+      "createdAt": "2026-08-29T18:30:47.273Z",
+      "updatedAt": "2026-08-29T18:31:02.611Z"
+    },
+    {
+      "id": "0b7db5d6-3772-4720-9f02-e4ad3a9fdbdb",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/inputs",
+      "kind": "script",
+      "step": "inputs",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scene_words": [
+          {
+            "end": 0.868,
+            "text": "Onboarding",
+            "start": 0.468
+          },
+          {
+            "end": 1.189,
+            "text": "rules",
+            "start": 0.909
+          },
+          {
+            "end": 1.589,
+            "text": "allow",
+            "start": 1.249
+          },
+          {
+            "end": 1.809,
+            "text": "you",
+            "start": 1.649
+          },
+          {
+            "end": 2.07,
+            "text": "to",
+            "start": 1.889
+          }
+        ],
+        "word_timings": "0.47 0.87 Onboarding\n0.91 1.19 rules\n1.25 1.59 allow\n1.65 1.81 you\n1.89 2.07 to\n2.23 2.67 promote\n2.79 3.05 user\n3.09 3.69 privileges\n3.77 3.93 when\n3.95 4.07 they\n4.11 4.35 create\n4.39 4.45 an\n4.47 4…",
+        "previous_context": ""
+      },
+      "startedAt": 1788028246332,
+      "finishedAt": 1788028246687,
+      "createdAt": "2026-08-29T18:30:46.568Z",
+      "updatedAt": "2026-08-29T18:30:47.024Z"
+    },
+    {
+      "id": "fbd0a2b7-5bda-4fa4-9b6b-5d5bcfaed168",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/1/cut",
+      "kind": "pipeline",
+      "step": "cut",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/1/cut/clip.wav",
+          "name": "clip.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/1/cut/clip.wav",
+          "size": 3955448,
+          "contentType": "audio/wav"
+        },
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/1/cut/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/1/cut/clip.mp4",
+          "size": 13971509,
+          "contentType": "video/mp4"
+        },
+        "duration": 123.601
+      },
+      "startedAt": 1788028229944,
+      "finishedAt": 1788028249580,
+      "createdAt": "2026-08-29T18:30:30.514Z",
+      "updatedAt": "2026-08-29T18:30:49.722Z"
+    },
+    {
+      "id": "cc061d5c-704c-4c14-86e6-fbe4b594501b",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-scene",
+      "key": "per-scene/0/cut",
+      "kind": "pipeline",
+      "step": "cut",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/0/cut/clip.wav",
+          "name": "clip.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/0/cut/clip.wav",
+          "size": 3200420,
+          "contentType": "audio/wav"
+        },
+        "clip": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/0/cut/clip.mp4",
+          "name": "clip.mp4",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-scene/0/cut/clip.mp4",
+          "size": 16154899,
+          "contentType": "video/mp4"
+        },
+        "duration": 100
+      },
+      "startedAt": 1788028229941,
+      "finishedAt": 1788028246183,
+      "createdAt": "2026-08-29T18:30:30.141Z",
+      "updatedAt": "2026-08-29T18:30:46.360Z"
+    },
+    {
+      "id": "3e3b7e80-6685-4e68-8023-0eabf51a3bf0",
+      "alias": "workflow",
+      "version": 1,
+      "job": "director",
+      "key": "director/0/scenes",
+      "kind": "pipeline",
+      "step": "scenes",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "scenes": {
+          "rows": [
+            {
+              "end": 100,
+              "cuts": [],
+              "brief": "Show the process of creating an onboarding rule to grant view access upon user creation, followed by enabling public signups in the authentication settings. Remove the clunky verbal transition between creating the rule and navigating to the signup settings.",
+              "spans": [
+                {
+                  "end": 100,
+                  "start": 0
+                }
+              ],
+              "start": 0,
+              "title": "Configuring Onboarding Rules",
+              "number": 1,
+              "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4",
+              "sourceIndex": 0
+            },
+            {
+              "end": 223.601,
+              "cuts": [
+                {
+                  "end": 200,
+                  "start": 152
+                },
+                {
+                  "end": 223.601,
+                  "start": 216
+                }
+              ],
+              "brief": "Demonstrate the user experience of signing up and verifying the automatically granted read-only access to the admin dashboard. Remove the tangent about the missing signup button on the UI, and cut the email address typo and subsequent correction during the account creation.",
+              "spans": [
+                {
+                  "end": 223.601,
+                  "start": 100
+                }
+              ],
+              "start": 100,
+              "title": "Testing the User Flow",
+              "number": 2,
+              "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4",
+              "sourceIndex": 0
+            }
+          ],
+          "columns": [
+            {
+              "key": "title"
+            },
+            {
+              "key": "source"
+            },
+            {
+              "key": "start",
+              "type": "number"
+            },
+            {
+              "key": "end",
+              "type": "number"
+            }
+          ]
+        },
+        "synopsis": "Learn how to automatically grant repository access to new users in BFFless by configuring onboarding rules and enabling public signups."
+      },
+      "startedAt": 1788028203608,
+      "finishedAt": 1788028229855,
+      "createdAt": "2026-08-29T18:30:03.959Z",
+      "updatedAt": "2026-08-29T18:30:29.985Z"
+    },
+    {
+      "id": "e00f6e6a-9fd2-4c23-a66f-88970d820dbf",
+      "alias": "workflow",
+      "version": 1,
+      "job": "sheets",
+      "key": "sheets/0/sheets",
+      "kind": "pipeline",
+      "step": "sheets",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "times": [
+          [
+            0.9316708333333333,
+            2.7950125,
+            4.658354166666666,
+            6.521695833333333,
+            8.3850375,
+            10.248379166666666,
+            12.111720833333333,
+            13.9750625,
+            15.838404166666667,
+            17.701745833333334,
+            19.5650875,
+            21.428429166666668
+          ],
+          [
+            23.291770833333334,
+            25.1551125,
+            27.018454166666668,
+            28.881795833333335,
+            30.7451375,
+            32.60847916666667,
+            34.47182083333333,
+            36.3351625,
+            38.198504166666666,
+            40.06184583333334,
+            41.9251875,
+            43.78852916666667
+          ],
+          [
+            45.651870833333334,
+            47.5152125,
+            49.37855416666667,
+            51.24189583333333,
+            53.1052375,
+            54.968579166666665,
+            56.831920833333335,
+            58.6952625,
+            60.55860416666667,
+            62.42194583333333,
+            64.2852875,
+            66.14862916666667
+          ],
+          [
+            68.01197083333334,
+            69.8753125,
+            71.73865416666666,
+            73.60199583333333,
+            75.4653375,
+            77.32867916666666,
+            79.19202083333333,
+            81.0553625,
+            82.91870416666667,
+            84.78204583333333,
+            86.6453875,
+            88.50872916666667
+          ],
+          [
+            90.37207083333334,
+            92.2354125,
+            94.09875416666667,
+            95.96209583333334,
+            97.8254375,
+            99.68877916666666,
+            101.55212083333333,
+            103.4154625,
+            105.27880416666666,
+            107.14214583333333,
+            109.0054875,
+            110.86882916666667
+          ]
+        ],
+        "sheets": [
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-01.jpg",
+            "name": "sheet-01.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-01.jpg",
+            "size": 718549,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-02.jpg",
+            "name": "sheet-02.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-02.jpg",
+            "size": 790650,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-03.jpg",
+            "name": "sheet-03.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-03.jpg",
+            "size": 762232,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-04.jpg",
+            "name": "sheet-04.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-04.jpg",
+            "size": 785147,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-05.jpg",
+            "name": "sheet-05.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-05.jpg",
+            "size": 757935,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-06.jpg",
+            "name": "sheet-06.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-06.jpg",
+            "size": 645860,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-07.jpg",
+            "name": "sheet-07.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-07.jpg",
+            "size": 664164,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-08.jpg",
+            "name": "sheet-08.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-08.jpg",
+            "size": 746272,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-09.jpg",
+            "name": "sheet-09.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-09.jpg",
+            "size": 934870,
+            "contentType": "image/jpeg"
+          },
+          {
+            "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-10.jpg",
+            "name": "sheet-10.jpg",
+            "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-10.jpg",
+            "size": 792533,
+            "contentType": "image/jpeg"
+          }
+        ]
+      },
+      "response": {
+        "last": {
+          "code": null,
+          "error": null,
+          "result": {
+            "drawn": true,
+            "paths": [
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-01.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-02.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-03.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-04.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-05.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-06.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-07.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-08.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-09.jpg",
+              "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/sheets/0/sheets/sheets/sheet-10.jpg"
+            ],
+            "times": [
+              [
+                0.9316708333333333,
+                2.7950125,
+                4.658354166666666,
+                6.521695833333333,
+                8.3850375,
+                10.248379166666666,
+                12.111720833333333,
+                13.9750625,
+                15.838404166666667,
+                17.701745833333334,
+                19.5650875,
+                21.428429166666668
+              ],
+              [
+                23.291770833333334,
+                25.1551125,
+                27.018454166666668,
+                28.881795833333335,
+                30.7451375,
+                32.60847916666667,
+                34.47182083333333,
+                36.3351625,
+                38.198504166666666,
+                40.06184583333334,
+                41.9251875,
+                43.78852916666667
+              ],
+              [
+                45.651870833333334,
+                47.5152125,
+                49.37855416666667,
+                51.24189583333333,
+                53.1052375,
+                54.968579166666665,
+                56.831920833333335,
+                58.6952625,
+                60.55860416666667,
+                62.42194583333333,
+                64.2852875,
+                66.14862916666667
+              ],
+              [
+                68.01197083333334,
+                69.8753125,
+                71.73865416666666,
+                73.60199583333333,
+                75.4653375,
+                77.32867916666666,
+                79.19202083333333,
+                81.0553625,
+                82.91870416666667,
+                84.78204583333333,
+                86.6453875,
+                88.50872916666667
+              ],
+              [
+                90.37207083333334,
+                92.2354125,
+                94.09875416666667,
+                95.96209583333334,
+                97.8254375,
+                99.68877916666666,
+                101.55212083333333,
+                103.4154625,
+                105.27880416666666,
+                107.14214583333333,
+                109.0054875,
+                110.86882916666667
+              ],
+              [
+                112.73217083333333,
+                114.5955125,
+                116.45885416666667,
+                118.32219583333334,
+                120.1855375,
+                122.04887916666667,
+                123.91222083333334,
+                125.7755625,
+                127.63890416666666,
+                129.50224583333335,
+                131.3655875,
+                133.22892916666666
+              ],
+              [
+                135.09227083333334,
+                136.9556125,
+                138.81895416666666,
+                140.68229583333334,
+                142.5456375,
+                144.40897916666665,
+                146.27232083333334,
+                148.1356625,
+                149.99900416666668,
+                151.86234583333334,
+                153.7256875,
+                155.58902916666668
+              ],
+              [
+                157.45237083333333,
+                159.3157125,
+                161.17905416666667,
+                163.04239583333333,
+                164.9057375,
+                166.76907916666667,
+                168.63242083333333,
+                170.4957625,
+                172.35910416666667,
+                174.22244583333332,
+                176.0857875,
+                177.94912916666667
+              ],
+              [
+                179.81247083333332,
+                181.6758125,
+                183.53915416666666,
+                185.40249583333335,
+                187.2658375,
+                189.12917916666666,
+                190.99252083333334,
+                192.8558625,
+                194.71920416666666,
+                196.58254583333334,
+                198.4458875,
+                200.30922916666665
+              ],
+              [
+                202.17257083333334,
+                204.0359125,
+                205.89925416666668,
+                207.76259583333334,
+                209.6259375,
+                211.48927916666668,
+                213.35262083333333,
+                215.2159625,
+                217.07930416666667,
+                218.94264583333333,
+                220.80598750000001,
+                222.66932916666667
+              ]
+            ],
+            "columns": 3
+          },
+          "status": "done"
+        }
+      },
+      "startedAt": 1788028152285,
+      "finishedAt": 1788028203328,
+      "createdAt": "2026-08-29T18:29:12.435Z",
+      "updatedAt": "2026-08-29T18:30:03.625Z"
+    },
+    {
+      "id": "2b14a531-c6c8-4e83-8660-3fa4bab3fe31",
+      "alias": "workflow",
+      "version": 1,
+      "job": "plan",
+      "key": "plan/0/plan",
+      "kind": "script",
+      "step": "plan",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "plans": [
+          {
+            "times": [
+              0.9316708333333333,
+              2.7950125,
+              4.658354166666666,
+              6.521695833333333,
+              8.3850375,
+              10.248379166666666,
+              12.111720833333333,
+              13.9750625,
+              15.838404166666667,
+              17.701745833333334,
+              19.5650875,
+              21.428429166666668,
+              23.291770833333334,
+              25.1551125,
+              27.018454166666668,
+              28.881795833333335,
+              30.7451375,
+              32.60847916666667,
+              34.47182083333333,
+              36.3351625,
+              38.198504166666666,
+              40.06184583333334,
+              41.9251875,
+              43.78852916666667,
+              45.651870833333334,
+              47.5152125,
+              49.37855416666667,
+              51.24189583333333,
+              53.1052375,
+              54.968579166666665,
+              56.831920833333335,
+              58.6952625,
+              60.55860416666667,
+              62.42194583333333,
+              64.2852875,
+              66.14862916666667,
+              68.01197083333334,
+              69.8753125,
+              71.73865416666666,
+              73.60199583333333,
+              75.4653375,
+              77.32867916666666,
+              79.19202083333333,
+              81.0553625,
+              82.91870416666667,
+              84.78204583333333,
+              86.6453875,
+              88.50872916666667,
+              90.37207083333334,
+              92.2354125,
+              94.09875416666667,
+              95.96209583333334,
+              97.8254375,
+              99.68877916666666,
+              101.55212083333333,
+              103.4154625,
+              105.27880416666666,
+              107.14214583333333,
+              109.0054875,
+              110.86882916666667,
+              112.73217083333333,
+              114.5955125,
+              116.45885416666667,
+              118.32219583333334,
+              120.1855375,
+              122.04887916666667,
+              123.91222083333334,
+              125.7755625,
+              127.63890416666666,
+              129.50224583333335,
+              131.3655875,
+              133.22892916666666,
+              135.09227083333334,
+              136.9556125,
+              138.81895416666666,
+              140.68229583333334,
+              142.5456375,
+              144.40897916666665,
+              146.27232083333334,
+              148.1356625,
+              149.99900416666668,
+              151.86234583333334,
+              153.7256875,
+              155.58902916666668,
+              157.45237083333333,
+              159.3157125,
+              161.17905416666667,
+              163.04239583333333,
+              164.9057375,
+              166.76907916666667,
+              168.63242083333333,
+              170.4957625,
+              172.35910416666667,
+              174.22244583333332,
+              176.0857875,
+              177.94912916666667,
+              179.81247083333332,
+              181.6758125,
+              183.53915416666666,
+              185.40249583333335,
+              187.2658375,
+              189.12917916666666,
+              190.99252083333334,
+              192.8558625,
+              194.71920416666666,
+              196.58254583333334,
+              198.4458875,
+              200.30922916666665,
+              202.17257083333334,
+              204.0359125,
+              205.89925416666668,
+              207.76259583333334,
+              209.6259375,
+              211.48927916666668,
+              213.35262083333333,
+              215.2159625,
+              217.07930416666667,
+              218.94264583333333,
+              220.80598750000001,
+              222.66932916666667
+            ],
+            "labels": [
+              "0:00",
+              "0:02",
+              "0:04",
+              "0:06",
+              "0:08",
+              "0:10",
+              "0:12",
+              "0:13",
+              "0:15",
+              "0:17",
+              "0:19",
+              "0:21",
+              "0:23",
+              "0:25",
+              "0:27",
+              "0:28",
+              "0:30",
+              "0:32",
+              "0:34",
+              "0:36",
+              "0:38",
+              "0:40",
+              "0:41",
+              "0:43",
+              "0:45",
+              "0:47",
+              "0:49",
+              "0:51",
+              "0:53",
+              "0:54",
+              "0:56",
+              "0:58",
+              "1:00",
+              "1:02",
+              "1:04",
+              "1:06",
+              "1:08",
+              "1:09",
+              "1:11",
+              "1:13",
+              "1:15",
+              "1:17",
+              "1:19",
+              "1:21",
+              "1:22",
+              "1:24",
+              "1:26",
+              "1:28",
+              "1:30",
+              "1:32",
+              "1:34",
+              "1:35",
+              "1:37",
+              "1:39",
+              "1:41",
+              "1:43",
+              "1:45",
+              "1:47",
+              "1:49",
+              "1:50",
+              "1:52",
+              "1:54",
+              "1:56",
+              "1:58",
+              "2:00",
+              "2:02",
+              "2:03",
+              "2:05",
+              "2:07",
+              "2:09",
+              "2:11",
+              "2:13",
+              "2:15",
+              "2:16",
+              "2:18",
+              "2:20",
+              "2:22",
+              "2:24",
+              "2:26",
+              "2:28",
+              "2:29",
+              "2:31",
+              "2:33",
+              "2:35",
+              "2:37",
+              "2:39",
+              "2:41",
+              "2:43",
+              "2:44",
+              "2:46",
+              "2:48",
+              "2:50",
+              "2:52",
+              "2:54",
+              "2:56",
+              "2:57",
+              "2:59",
+              "3:01",
+              "3:03",
+              "3:05",
+              "3:07",
+              "3:09",
+              "3:10",
+              "3:12",
+              "3:14",
+              "3:16",
+              "3:18",
+              "3:20",
+              "3:22",
+              "3:24",
+              "3:25",
+              "3:27",
+              "3:29",
+              "3:31",
+              "3:33",
+              "3:35",
+              "3:37",
+              "3:38",
+              "3:40",
+              "3:42"
+            ],
+            "source": "workflows/workflow-studio/studio/inputs/c9b46c55-3a51-4abf-a966-e748bd0623e8-Onboarding_Rules.mp4",
+            "sourceIndex": 0
+          }
+        ]
+      },
+      "startedAt": 1788028151944,
+      "finishedAt": 1788028152197,
+      "createdAt": "2026-08-29T18:29:12.081Z",
+      "updatedAt": "2026-08-29T18:29:12.330Z"
+    },
+    {
+      "id": "7a7d756b-443e-4458-ae68-fd10f00c789e",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-video",
+      "key": "per-video/0/transcribe",
+      "kind": "pipeline",
+      "step": "transcribe",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "text": "Onboarding rules allow you to promote user privileges when they create an account or perform other actions such as run a pipeline. This would allow you to send them a welcome email or something like t…",
+        "timed": "[0:00] Onboarding rules allow you to promote user privileges when they create an account or perform other actions such as run a pipeline.\n[0:08] This would allow you to send them a welcome email or so…",
+        "words": [
+          {
+            "end": 0.868,
+            "text": "Onboarding",
+            "start": 0.468,
+            "speaker": null
+          },
+          {
+            "end": 1.189,
+            "text": "rules",
+            "start": 0.909,
+            "speaker": null
+          },
+          {
+            "end": 1.589,
+            "text": "allow",
+            "start": 1.249,
+            "speaker": null
+          },
+          {
+            "end": 1.809,
+            "text": "you",
+            "start": 1.649,
+            "speaker": null
+          },
+          {
+            "end": 2.07,
+            "text": "to",
+            "start": 1.889,
+            "speaker": null
+          }
+        ],
+        "duration": 223.601
+      },
+      "startedAt": 1788028141267,
+      "finishedAt": 1788028151786,
+      "createdAt": "2026-08-29T18:29:01.469Z",
+      "updatedAt": "2026-08-29T18:29:11.977Z"
+    },
+    {
+      "id": "8d21bb7f-cd8b-4275-8d61-dd34db7ffe50",
+      "alias": "workflow",
+      "version": 1,
+      "job": "per-video",
+      "key": "per-video/0/audio",
+      "kind": "pipeline",
+      "step": "audio",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M17CG3W0YTA4T0ZVRTD88VE7",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "wav": {
+          "url": "/api/uploads/workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-video/0/audio/audio.wav",
+          "name": "audio.wav",
+          "path": "workflows/workflow-studio/studio/runs/run_01M17CG3W0YTA4T0ZVRTD88VE7/per-video/0/audio/audio.wav",
+          "size": 7165988,
+          "contentType": "audio/wav"
+        }
+      },
+      "startedAt": 1788028129334,
+      "finishedAt": 1788028141169,
+      "createdAt": "2026-08-29T18:28:50.134Z",
+      "updatedAt": "2026-08-29T18:29:01.314Z"
+    }
+  ]
+}
