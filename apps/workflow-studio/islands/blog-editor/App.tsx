@@ -72,9 +72,9 @@ function isHeadless(bridge: IslandBridge): boolean {
 /**
  * Presigned URLs by path, signed on demand and never re-asked: the tokens' frames are
  * requested as soon as the post is known, a picker's candidates when it opens, and a
- * retimed token's frame is already in hand. (`useSigned` signs a fixed list all at
- * once and answers all-or-nothing; here the list grows as the person browses, and a
- * new candidate must not blank the figures that already loaded.)
+ * retimed token's frame is already in hand. (`useSigned` signs a fixed list known up
+ * front and, since apps#471, answers it per path the same way; here the list grows as
+ * the person browses, so what this cache adds is the never-re-asked `asked` map.)
  */
 function useFrameUrls(bridge: IslandBridge) {
   const asked = useRef(new Map<string, Promise<string>>())
