@@ -27,6 +27,7 @@ import {
   waitingKeysOf,
 } from './db'
 import { analyzeLines } from './analyze'
+import { forkGate } from './forkGate'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
 
@@ -311,6 +312,38 @@ const runRecord = [
     // `storage_path` shape (apps#381).
     const { files, records } = deleteRun(run.runId)
     return HttpResponse.json({ ok: true, deleted: { files, records } }, { headers: NO_STORE })
+  }),
+
+  // Mirrors `run/fork/post/gate.fn.js` (see `forkGate.ts`) and its four refusal
+  // responders, then the rule's two writes: the run row once (`create`, skipped
+  // when a previous call of the same `id` already made it), and the adopted rows
+  // insert-only (`copy`, a `data_upsert_many` deduped on `rowKey` = `<runId>/<key>`
+  // — which is exactly the identity this table is keyed by, so "already present"
+  // is the same test). A retry therefore leaves one run row and one copy of each
+  // adopted row, and reports `copied: 0` (apps#501).
+  http.post('/api/workflow/run/fork', async ({ request }) => {
+    const fields = await body(request)
+    const from = String(fields.from ?? '')
+    const gate = forkGate({
+      parent: db.runs.get(from) ?? null,
+      rows: stepsOf(from),
+      existing: db.runs.get(String(fields.id ?? '')) ?? null,
+      body: fields,
+      user: mockUser(),
+    })
+    if (gate.status !== 200) return refuse(gate.status, gate.error)
+
+    if (gate.createRun) db.runs.set(gate.run.runId, { ...gate.run, _id: nextId() })
+    let copied = 0
+    for (const row of gate.rows) {
+      const id = stepRowKey(row.runId, row.key)
+      if (db.steps.has(id)) continue
+      const { rowKey: _rowKey, ...columns } = row
+      void _rowKey
+      db.steps.set(id, { ...columns, _id: nextId() })
+      copied += 1
+    }
+    return HttpResponse.json({ ok: true, runId: gate.run.runId, copied }, { headers: NO_STORE })
   }),
 
   // Mirrors `gate.fn.js`: granted when unheld, expired, already ours, or forced.

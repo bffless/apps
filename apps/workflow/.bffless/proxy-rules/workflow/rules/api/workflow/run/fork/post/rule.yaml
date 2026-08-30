@@ -1,0 +1,163 @@
+targetUrl: pipeline
+order: 18
+pipeline:
+  name: Fork workflow run
+  description: "POST { id, from, job, definition, yaml, workflowVersion, owner, unattended }: start a NEW run `id` that re-runs `job` and everything downstream of it in parent `from`, adopting the parent's rows for every other job as-is (apps#501, #491). `definition`/`yaml`/`workflowVersion` are the alias's CURRENT file — the fork runs under it, and is refused when an adopted row's job, step or recorded output names are absent from it. Owner or admin; terminal parents only. Adopted rows keep pointing at the parent's files (no copy); the run row records forkedFrom + forkJob. Idempotent on `id`: the run row is created once and the copy is insert-only, so a retry leaves one run row and one copy of each adopted row."
+  steps:
+    # `limit`, not `pageSize`: CE's data-query.handler.ts reads `limit` (default
+    # 100). 1000 is the same cap `run/get` intends for one run's rows; a run
+    # with more step rows than that would be copied short, not refused.
+    - id: parent
+      name: parent
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.from }
+    - id: rows
+      name: rows
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_run_steps
+        limit: 1000
+        filters:
+          runId: { op: eq, value: request.body.from }
+    - id: existing
+      name: existing
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.id }
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+    # Four refusals, not one: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a ConfigurationError),
+    # so each status is its own step gated on its own flag. Exactly one of the five
+    # responders below ever runs, and a skipped step leaves the response to the last one
+    # that did (pipeline-execution.service.ts) — which is why every later step is gated
+    # on `steps.gate.ok` too. Same shape as `run/delete`.
+    - id: refuse-400
+      name: refuse-400
+      handler: response_handler
+      config:
+        condition: steps.gate.badRequest
+        body: "{{{steps.gate.result}}}"
+        status: 400
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.gate.notFound
+        body: "{{{steps.gate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    # One 409 for every conflict the gate names: the parent still running, an
+    # adopted row not yet terminal, the sent definition no longer addressing an
+    # adopted row, or `id` already naming some other run.
+    - id: refuse-409
+      name: refuse-409
+      handler: response_handler
+      config:
+        condition: steps.gate.conflict
+        body: "{{{steps.gate.result}}}"
+        status: 409
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    - id: refuse-403
+      name: refuse-403
+      handler: response_handler
+      config:
+        condition: steps.gate.forbidden
+        body: "{{{steps.gate.result}}}"
+        status: 403
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    # The run row, once: `createRun` is false when `existing` found the row a
+    # previous call of the same `id` made, so a retry never mints a second one.
+    # Every column `runs/post` writes, from the gate's one assembled row.
+    - id: create
+      name: create
+      handler: data_create
+      config:
+        schemaId: $schema:workflow_runs
+        condition: steps.gate.createRun
+        fields:
+          runId: steps.gate.run.runId
+          impl: steps.gate.run.impl
+          workflow: steps.gate.run.workflow
+          workflowName: steps.gate.run.workflowName
+          workflowVersion: steps.gate.run.workflowVersion
+          definition: steps.gate.run.definition
+          yaml: steps.gate.run.yaml
+          inputs: steps.gate.run.inputs
+          status: steps.gate.run.status
+          headless: steps.gate.run.headless
+          unattended: steps.gate.run.unattended
+          startedBy: steps.gate.run.startedBy
+          startedAt: steps.gate.run.startedAt
+          leaseOwner: steps.gate.run.leaseOwner
+          leaseUntil: steps.gate.run.leaseUntil
+          forkedFrom: steps.gate.run.forkedFrom
+          forkJob: steps.gate.run.forkJob
+    # The adopted rows in one write. `data_upsert_many` (ce data-upsert-many.handler.ts)
+    # evaluates `map` once per item of `items` with the item as `steps.item`, and is
+    # INSERT-ONLY without `updateFields` — a row whose `dedupField` value already
+    # exists is skipped, never overwritten. `rowKey` is `<runId>/<key>`, unique by
+    # construction (the handler dedups on a single column, and `key` repeats across
+    # runs — Reader's `scopedGuid` trick, for the same reason), so the second call of
+    # a retried fork inserts 0. Every column, identity-mapped: the gate has already
+    # re-pointed `runId` and nulled anything the parent row lacked.
+    - id: copy
+      name: copy
+      handler: data_upsert_many
+      config:
+        schemaId: $schema:workflow_run_steps
+        condition: steps.gate.ok
+        items: steps.gate.rows
+        map:
+          runId: steps.item.runId
+          key: steps.item.key
+          job: steps.item.job
+          index: steps.item.index
+          step: steps.item.step
+          kind: steps.item.kind
+          status: steps.item.status
+          attempt: steps.item.attempt
+          inputs: steps.item.inputs
+          response: steps.item.response
+          outputs: steps.item.outputs
+          error: steps.item.error
+          summary: steps.item.summary
+          annotations: steps.item.annotations
+          startedAt: steps.item.startedAt
+          finishedAt: steps.item.finishedAt
+          heartbeatAt: steps.item.heartbeatAt
+          rowKey: steps.item.rowKey
+        dedupField: rowKey
+        dedupKey: steps.item.rowKey
+    # A TEMPLATE, not an expression: `{{…}}` renders a primitive bare, so the run id
+    # (a string) carries its own quotes and `inserted` (a number) does not. `copied`
+    # is what THIS call inserted — 0 on a retry whose rows were already there, which
+    # is the idempotency, not a failure. The gate holds `id` to `run_<alnum>`, so it
+    # can never carry a quote into the template.
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.gate.ok
+        body: '{"ok":true,"runId":"{{steps.gate.runId}}","copied":{{steps.copy.inserted}}}'
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "Fork a run at a job: one new run row (forkedFrom, forkJob) plus a server-side copy of every row outside the job's downstream closure — owner or admin, terminal parents only, under the definition the client sends. Idempotent on id."

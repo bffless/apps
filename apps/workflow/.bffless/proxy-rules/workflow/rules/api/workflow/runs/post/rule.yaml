@@ -26,6 +26,9 @@ pipeline:
           leaseOwner: request.body.leaseOwner
           leaseUntil: request.body.leaseUntil
           annotations: request.body.annotations
+          # A forked run's parent and fork job (apps#501); absent on a kickoff run.
+          forkedFrom: request.body.forkedFrom
+          forkJob: request.body.forkJob
     - id: respond
       name: respond
       handler: response_handler

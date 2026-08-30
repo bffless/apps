@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { parse } from 'yaml'
 
 const ROOT = join(__dirname, '..', '.bffless', 'proxy-rules')
-const KNOWN = new Set(['data_query', 'data_create', 'data_update', 'data_delete', 'function_handler',
-  'response_handler', 'presigned_upload', 'register_upload', 'file_serve_handler', 'file_delete',
-  'signed_url'])
+const KNOWN = new Set(['data_query', 'data_create', 'data_update', 'data_delete', 'data_upsert_many',
+  'function_handler', 'response_handler', 'presigned_upload', 'register_upload', 'file_serve_handler',
+  'file_delete', 'signed_url'])
 
 function ruleFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -24,7 +24,7 @@ function ruleFiles(dir: string): string[] {
 const SURFACE: Record<string, string[]> = {
   workflow: [
     '/runs/post/', '/runs/get/', '/run/get/', '/run/update/post/', '/run-step/post/',
-    '/run/lease/post/', '/run/delete/post/', '/whoami/get/',
+    '/run/lease/post/', '/run/delete/post/', '/run/fork/post/', '/whoami/get/',
     '/files/prepare/post/', '/files/register/post/', '/files/sign/post/',
     '/uploads/workflows/[...path]/',
     '/api/auth/',
