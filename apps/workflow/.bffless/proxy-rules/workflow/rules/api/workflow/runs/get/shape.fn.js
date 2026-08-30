@@ -6,7 +6,7 @@
 // attaches, to each run in the page, the keys of the ones that are its own:
 // `waitingOn: ["<job>/<index>/<step>", …]`, always present, `[]` when the run
 // waits on nothing. Step rows carry no impl/workflow to narrow the second
-// query on, and it is capped by its pageSize; the client resolves each key's
+// query on, and it is capped by its limit; the client resolves each key's
 // display name from the run row's own `definition` snapshot.
 function handler({ steps }) {
   // data_query answers a bare array (or one record with returnSingle) — CE's

@@ -72,6 +72,15 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     if (doc.targetUrl !== 'pipeline') return // forwarding rules (auth relay / D2 single-origin) are exempt
     for (const s of [...(doc.pipeline.steps ?? []), ...(doc.pipeline.postSteps ?? [])]) {
       expect(KNOWN.has(s.handler), `${file}: ${s.handler}`).toBe(true)
+      if (s.handler !== 'data_query') continue
+      // CE's data-query.handler.ts reads `limit` (default 100) and has no
+      // `pageSize` option, so a `pageSize: 1000` silently capped run/get at 100
+      // step rows and truncated replay (apps#512). Every query names its cap
+      // by the key CE reads, and the inert one cannot come back.
+      expect(typeof s.config?.limit, `${file}: ${s.id} data_query must set a numeric limit`).toBe('number')
+      expect(s.config, `${file}: ${s.id} data_query must not use pageSize (inert; use limit)`).not.toHaveProperty(
+        'pageSize',
+      )
     }
     const validators: { type: string; config?: { allowApiKey?: unknown } }[] = doc.pipeline.validators ?? []
     const auth = validators.find((v) => v.type === 'auth_required')
