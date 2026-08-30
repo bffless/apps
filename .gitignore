@@ -49,3 +49,5 @@ store/public/assets/
 .tmp-store/
 # Astro's generated content-cache dir (also see repos/deployment-docs/.gitignore)
 store/.astro/
+.claude/skills/*/evals/results/
+.agents/skills/*/evals/results/
