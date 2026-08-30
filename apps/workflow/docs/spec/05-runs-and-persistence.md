@@ -137,5 +137,6 @@ Owner or admin only. No automatic retention in v1 (a `keep: 30d` per workflow is
 ## Not in v1
 
 Attestations (a signed digest of the record — the schema above is sufficient for adding it),
-live multi-viewer presence, run comparison/diff, re-run single job (run again from the kickoff
-form with the same inputs **is** v1: "Re-run" copies `inputs`).
+live multi-viewer presence, run comparison/diff. (Run again from the kickoff form with the same
+inputs **is** v1: "Re-run" copies `inputs`; so is "Re-run from this job", a fork of a finished
+run from one job on — the job card, 08.)

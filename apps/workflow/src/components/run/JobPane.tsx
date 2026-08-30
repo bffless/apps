@@ -14,6 +14,12 @@
  *
  * The trail lists the job's steps (status glyph, label, duration), each a way
  * down to that step's pane.
+ *
+ * The card is also where a finished run is **forked** (05 "Re-run from this
+ * job"; apps#491, decision 5): the page passes `onFork` only for a job it has
+ * decided is a sensible fork point (`forkTarget`, under the alias's current
+ * definition), and this header renders the button — the same way the run
+ * header only renders Delete when the page passes `onDelete`.
  */
 import { useState } from 'react'
 import { formatDuration } from '../../lib/duration'
@@ -73,12 +79,29 @@ export interface JobPaneProps {
   onSelect: (key: StepKey) => void
   /** Up one level, to the run card. */
   onBack: () => void
+  /**
+   * Present, and rendered as "Re-run from this job", only when the page has
+   * decided this job can be forked from (a terminal replayed run, every job
+   * outside `job`'s downstream closure `success`/`skipped`, the current
+   * workflow loaded — `RunPage.tsx`). The fork itself is the page's.
+   */
+  onFork?: () => void
   initialTab?: Tab
   /** The run's YAML snapshot, for the head's **YAML** drawer (apps#449); absent when the pane has no run source to show. */
   source?: YamlSource
 }
 
-export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 'Output', source }: JobPaneProps) {
+export function JobPane({
+  def,
+  state,
+  job,
+  impl,
+  onSelect,
+  onBack,
+  onFork,
+  initialTab = 'Output',
+  source,
+}: JobPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const decl = def.jobs[job]
 
@@ -143,6 +166,13 @@ export function JobPane({ def, state, job, impl, onSelect, onBack, initialTab = 
             </button>
           ))}
         </div>
+
+        {/* A new run from this job on, the jobs before it copied from this one (05; apps#491). */}
+        {onFork && (
+          <button type="button" className="button" data-testid="job-fork" onClick={onFork}>
+            Re-run from this job
+          </button>
+        )}
 
         {/* Every value on both tabs as the raw JSON its row holds (apps#450). */}
         <RawToggle />

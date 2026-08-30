@@ -64,8 +64,9 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   targets.
 - **The pane under the graph** — one level of the taxonomy at a time: **run › job › step**.
   The **run card** (`.run-pane`: `RUN` · workflow name · run id | Input/Output | pill |
-  `WORKFLOW`), the **job card** (`.job-pane`: `RUN · JOB` · job name · id | Input/Output | pill |
-  `JOB` / `MATRIX · N ITEMS`, trail = its steps) and the **step pane** (`.step-pane`: crumb
+  `WORKFLOW`), the **job card** (`.job-pane`: `RUN · JOB` · job name · id | Input/Output |
+  **Re-run from this job** when the run can be forked there | pill | `JOB` / `MATRIX · N ITEMS`,
+  trail = its steps) and the **step pane** (`.step-pane`: crumb
   `Run › <job>` · step · key | Input/Output | pill | kind) share one shape: header row with the
   `.segmented` toggle (selected = ink), a body of values, then a `.pane-trail`. Every card's
   head opens with `.pane-crumbs` — `Run › <job> › <step> · item n of N`, the shell crumb's own

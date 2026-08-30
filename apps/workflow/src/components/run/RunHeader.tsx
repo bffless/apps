@@ -31,8 +31,14 @@ import type { Annotation, RunStatus } from '../../lib/runner/types'
 
 const TICK_MS = 1_000
 
-/** Deletion takes the run's files with it (05) — the one header action that asks first. */
-const DELETE_CONFIRM = 'Delete this run and its files? This cannot be undone.'
+/**
+ * Deletion takes the run's files with it (05) — the one header action that
+ * asks first. A fork keeps pointing at its parent's files rather than copying
+ * them (apps#491, decision 4), so the confirm says so every time: listing a
+ * run's forks is out of scope, and silence would be the one wrong answer.
+ */
+const DELETE_CONFIRM =
+  'Delete this run and its files? A run forked from it keeps pointing at those files. This cannot be undone.'
 
 /**
  * `Date.now()`, refreshed every `intervalMs` while `active` — never read at
@@ -59,6 +65,12 @@ export interface RunHeaderProps {
   /** The session user that started the run (01); absent for an older/unknown row. */
   startedBy?: string
   startedAt: number
+  /**
+   * The run this one was forked from and the job it re-ran from ("Re-run from
+   * this job", 05; apps#491). Off the run row (`forkedFrom` / `forkJob`), so
+   * only a *replayed* run carries it — the same way `startedBy` does.
+   */
+  forkedFrom?: { runId: string; job: string }
   /** `null` while the run is still in flight. */
   finishedAt: number | null
   headless: boolean
@@ -102,6 +114,7 @@ export function RunHeader({
   runId,
   startedBy,
   startedAt,
+  forkedFrom,
   finishedAt,
   headless,
   unattended = false,
@@ -141,6 +154,15 @@ export function RunHeader({
             )}
             <span className="sep">·</span>
             <span>{new Date(startedAt).toLocaleString()}</span>
+            {forkedFrom && (
+              <>
+                <span className="sep">·</span>
+                <span data-testid="run-forked-from">
+                  forked from <Link to={`${base}/runs/${forkedFrom.runId}`}>{forkedFrom.runId}</Link> at{' '}
+                  {forkedFrom.job}
+                </span>
+              </>
+            )}
           </p>
         </div>
 
