@@ -25,6 +25,17 @@ export interface UiState {
    * `outputs` alias — no one step declares it, so the whole job stands in.
    */
   hoveredValue: { job: string; step?: string; output?: string } | null
+  /**
+   * Whether the run page's selection **follows** the run (apps#452): tracks the
+   * step the run is at, as it always did, until the person picks a step — a
+   * chip, a crumb, Esc, a `?step=` they typed or stepped Back to — at which
+   * point it is **pinned** and moves only when they move it. Keyed by the run
+   * it was decided for: step keys repeat across runs of one workflow, and the
+   * page never remounts on a run-to-run navigation, so an entry for another
+   * run is simply not this run's answer (the page then derives one from the
+   * URL). `null` until a page has decided anything.
+   */
+  follow: { runId: string; on: boolean } | null
 }
 
 const initialState: UiState = {
@@ -32,6 +43,7 @@ const initialState: UiState = {
   runsStatusFilter: 'all',
   islandDisplay: 'inline',
   hoveredValue: null,
+  follow: null,
 }
 
 export const uiSlice = createSlice({
@@ -50,8 +62,16 @@ export const uiSlice = createSlice({
     valueHovered(state, action: PayloadAction<UiState['hoveredValue']>) {
       state.hoveredValue = action.payload
     },
+    followChanged(state, action: PayloadAction<{ runId: string; on: boolean }>) {
+      state.follow = action.payload
+    },
   },
 })
 
-export const { stepSelected, runsStatusFilterChanged, islandDisplayChanged, valueHovered } =
-  uiSlice.actions
+export const {
+  stepSelected,
+  runsStatusFilterChanged,
+  islandDisplayChanged,
+  valueHovered,
+  followChanged,
+} = uiSlice.actions

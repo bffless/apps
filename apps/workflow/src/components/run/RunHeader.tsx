@@ -15,6 +15,11 @@
  * The elapsed time on an unfinished run **ticks** (Task 18) — `Date.now()`
  * belongs to an effect, never to render (react-hooks/purity), so `useNow`
  * below is the only place this component ever reads the clock.
+ *
+ * The run bar also carries the **Follow run** toggle (apps#452) while the page
+ * offers one: whether the selection is following the run or pinned where the
+ * person put it. The header only shows and flips it; the page owns what
+ * following means.
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -82,6 +87,14 @@ export interface RunHeaderProps {
   onDelete?: () => void
   /** A delete is in flight; the button stays visible but refuses a second press. */
   deleting?: boolean
+  /**
+   * The selection is following the run (`true`) or pinned by the person
+   * (`false`) — apps#452. Shown only with `onFollowChange`: the page passes
+   * both while the run is in flight, and nothing while it is not (a finished
+   * run has nothing to follow).
+   */
+  follow?: boolean
+  onFollowChange?: (on: boolean) => void
 }
 
 export function RunHeader({
@@ -101,6 +114,8 @@ export function RunHeader({
   onCancel,
   onDelete,
   deleting = false,
+  follow = true,
+  onFollowChange,
 }: RunHeaderProps) {
   const inFlight = finishedAt === null
   const now = useNow(inFlight)
@@ -174,6 +189,24 @@ export function RunHeader({
         <span className="run-bar-status" data-testid="run-status" data-state={status}>
           <StatusPill status={status} />
         </span>
+        {onFollowChange && (
+          <button
+            type="button"
+            className="follow-toggle"
+            data-testid="run-follow"
+            data-state={follow ? 'on' : 'off'}
+            aria-pressed={follow}
+            title={
+              follow
+                ? 'The selection follows the run. Click to keep it where it is.'
+                : 'The selection is pinned where you put it. Click to follow the run again.'
+            }
+            onClick={() => onFollowChange(!follow)}
+          >
+            Follow run
+            <span className="follow-state">{follow ? 'on' : 'off'}</span>
+          </button>
+        )}
         <span className="run-bar-meta">
           {progress && (
             <span>

@@ -72,6 +72,13 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
   pane over the page with the graph collapsed to a strip (Esc / Exit returns) — the iframe is
   not remounted either way (04 "Display modes"). There is no per-step accept control: the
   island's own Done is on screen, and skipping the hand-edit is decided at kickoff (07).
+- An island that drives itself (07: a `headless: auto` island on an unattended run, or a step
+  whose `auto-accept:` is on) still has to be mounted to do so — the pane is the only thing
+  that mounts an island (04, Decision 11) — but must not take the pane from whatever the
+  person is looking at. While the selection is elsewhere it is mounted **backstage**: the same
+  frame, in the document but visually hidden and inert, where it loads, submits and finishes
+  exactly as it would in the pane. Only a self-driving island goes backstage; one that waits
+  for a person is left to its chip, which mounts it on click.
 
 ## Run page sections
 
@@ -95,6 +102,17 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
    - **Step pane** (a chip): as below.
    Every card's head carries the breadcrumb `Run › <job> › <step>`; each segment above the
    current one is a way up. Esc and the pressed chip/strip climb one level. Step outputs are never listed at the run level.
+4. **Follow or pinned.** The selection starts out **following** the run: a waiting form opens
+   as its pane, a loading island claims it (once per island), and a live run that finishes
+   returns to the run card. It is **pinned** the moment a person picks something — a chip, a
+   strip, an edge dot, a crumb, Esc, a `?step=` they arrived with, typed, or stepped Back to —
+   and from then on nothing moves it but them. A fresh load with no `?step=` follows; one with
+   a `?step=` is pinned there. The run bar carries a **Follow run** toggle (`run-follow`,
+   `data-state` `on`/`off`) while the run is in flight: off pins the selection where it is; on
+   clears it and lets the following rules pick the step the run is at. Following writes the
+   URL with `replace` (Back leaves the run, never steps through auto-opens); a person's pick
+   pushes. A finished run leaves a pinned selection alone — nothing moves anyway — and offers
+   no toggle. The mode is per run: navigating to another run starts over from its URL.
 
 ## Kickoff form
 
@@ -125,8 +143,9 @@ annotations; row click → run; "Re-run" per row; filters: status, started by, d
 
 ## Headless-visible contract
 
-`data-testid`s: `run-status`, `step`, `run-outputs`, `kickoff-form`, `kickoff-start`,
-`kickoff-auto`, `kickoff-invalid`, `implementations`, `workflow-list`; `data-state` as in 07.
+`data-testid`s: `run-status`, `run-follow`, `step`, `run-outputs`, `island-backstage`,
+`kickoff-form`, `kickoff-start`, `kickoff-auto`, `kickoff-invalid`, `implementations`,
+`workflow-list`; `data-state` as in 07.
 Every run page also publishes `window.__workflow` (07's page contract). Treated as a contract
 (Studio rule): rename in the driver only with a matching harness change.
 

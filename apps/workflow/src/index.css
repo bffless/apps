@@ -3087,3 +3087,57 @@ button.pane-crumb:hover {
 .file-card .media-preview {
   align-self: flex-start;
 }
+
+/* --------------------------------------------------------------------------
+   Follow mode and the island backstage (apps#452)
+   -------------------------------------------------------------------------- */
+
+/* The run bar's "Follow run" toggle: a pressed pill while the selection tracks
+   the run, a quiet one once the person has pinned a step. Sits right after the
+   status, in the bar's mono voice. */
+.follow-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background-color: var(--surface);
+  color: var(--ink-2);
+  font: 500 12px var(--font-mono);
+  cursor: pointer;
+  transition:
+    background-color 150ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.follow-toggle:hover {
+  color: var(--ink);
+}
+
+.follow-toggle[aria-pressed='true'] {
+  border-color: var(--ink);
+  background-color: var(--ink);
+  color: var(--paper);
+}
+
+.follow-state {
+  opacity: 0.7;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+/* Islands driving themselves while the pane is elsewhere (07 unattended /
+   `auto-accept`, apps#452) mount here, out of sight but in the document: a
+   visually-hidden box rather than `display: none`, so the sandboxed frame
+   still loads and runs exactly as it would in the pane. `inert` keeps it out
+   of the tab order and the accessibility tree. */
+.island-backstage {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
