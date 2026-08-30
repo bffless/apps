@@ -305,11 +305,11 @@ const runRecord = [
     }
 
     // Both counts, swept independently: `files` by prefix (what `file_delete` does),
-    // `records` by a real `storage_path LIKE '%<prefix>%'` over `db.fileRecords` (what
-    // `data_delete` does). Reporting `files` twice — which is what this did while the
-    // mock had no `workflow_files` table — made a `records: 0` regression unrepresentable,
-    // so CI could not catch the one step whose correctness rides on CE's full-key
-    // `storage_path` shape (apps#381).
+    // `records` by a real anchored `sub_dir LIKE '<prefix>%'` over `db.fileRecords`
+    // (what `data_delete` does). Reporting `files` twice — which is what this did while
+    // the mock had no `workflow_files` table — made a `records: 0` regression
+    // unrepresentable, so CI could not catch the one step whose correctness rides on
+    // CE's uploads-relative `sub_dir` shape (apps#381).
     const { files, records } = deleteRun(run.runId)
     return HttpResponse.json({ ok: true, deleted: { files, records } }, { headers: NO_STORE })
   }),

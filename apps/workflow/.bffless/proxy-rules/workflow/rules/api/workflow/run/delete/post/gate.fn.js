@@ -48,12 +48,16 @@ function handler({ steps, request, user }) {
     forbidden: false,
     recordId: row.id,
     prefix,
-    // ILIKE pattern for the workflow_files sweep. Leading `%` on purpose: CE stores an
-    // upload record's `storage_path` as the FULL object key
-    // (`<owner>/<repo>/uploads/` + the prefix above — upload-record.service.ts), not the
-    // uploads-relative path that `file_delete` takes. The run id inside the pattern is
-    // unique, so the leading wildcard cannot reach another run's rows.
-    prefixLike: '%' + prefix + '%',
+    // LIKE pattern for the workflow_files sweep, ANCHORED on purpose: the filter runs
+    // over `sub_dir`, which CE stores as the key's uploads-relative directory — no
+    // leading slash, no `<owner>/<repo>/uploads/` head (upload-record.service.ts;
+    // live-confirmed 2026-08-30, e.g. `workflows/<impl>/<wf>/runs/<id>/<job>/<n>/<step>`).
+    // Anchoring means a `%` or `_` in an implementation or workflow name can only
+    // widen a match INSIDE this run's unique prefix, never reach another run's rows.
+    // Every run object's `sub_dir` carries at least one segment past the prefix
+    // (uploads are scoped `runs/<id>/<stepKey>` or `runs/<id>/outputs` —
+    // runnerMiddleware.ts), so `prefix + '%'` misses nothing at the run root.
+    prefixLike: prefix + '%',
     // No `result` on this path: only the three refusal responders render
     // `{{{steps.gate.result}}}`, and each is gated on its own refusal flag, so a
     // success-path `result` was dead weight that read as if something served it.
