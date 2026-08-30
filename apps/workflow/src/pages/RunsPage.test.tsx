@@ -8,8 +8,9 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
-import { db, nextId, seedFinishedRun } from '../mocks/db'
+import { db, nextId, seedFinishedRun, seedWaitingRun, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
+import { WAITING_RUN_ID, WAITING_STEP_KEY } from '../mocks/fixtures/waitingRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
 
@@ -82,6 +83,75 @@ describe('RunsPage', () => {
 
     const page = screen.getByRole('main')
     expect(await within(page).findByText('No runs yet')).toBeInTheDocument()
+  })
+
+  /**
+   * "Waiting on <step>" (apps#473): a running run parked on a form says so in
+   * its Status cell, and the step's name links to that step on the run page.
+   * The keys come from the list endpoint's join; the name from the row's own
+   * definition — the label the run page gives the step (its id, `review`,
+   * since the hello form declares no `name`).
+   */
+  describe('the waiting-on note', () => {
+    it('names the step a running run is waiting on, linked to it on the run page', async () => {
+      seedWaitingRun()
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: new RegExp(WAITING_RUN_ID) })
+      const cell = within(row).getByText('Running').closest('td') as HTMLElement
+
+      expect(within(cell).getByText('Running')).toHaveAttribute('data-state', 'running')
+      const note = within(cell).getByTestId('run-waiting')
+      expect(note).toHaveTextContent(/^waiting on review$/)
+      expect(within(note).getByRole('link', { name: 'review' })).toHaveAttribute(
+        'href',
+        `/hello/hello/runs/${WAITING_RUN_ID}?step=${WAITING_STEP_KEY}`,
+      )
+    })
+
+    it('names the first waiting step in scheduling order and counts the rest', async () => {
+      seedWaitingRun()
+      // A second parked step, earlier in the schedule than the form: the note
+      // leads with it and counts the form.
+      const key = 'flaky/0/after'
+      const after = db.steps.get(stepRowKey(WAITING_RUN_ID, key))!
+      db.steps.set(stepRowKey(WAITING_RUN_ID, key), { ...after, status: 'waiting', finishedAt: null })
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: new RegExp(WAITING_RUN_ID) })
+      const note = within(row).getByTestId('run-waiting')
+
+      expect(note).toHaveTextContent(/^waiting on after \+1$/)
+      expect(within(note).getByRole('link', { name: 'after' })).toHaveAttribute(
+        'href',
+        `/hello/hello/runs/${WAITING_RUN_ID}?step=${key}`,
+      )
+      expect(note.querySelector('.run-waiting-more')).toHaveAttribute('title', 'review')
+    })
+
+    it('says nothing for a finished run, whatever its rows were left in', async () => {
+      seedFinishedRun()
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: fixtureRow() })
+
+      expect(within(row).queryByTestId('run-waiting')).not.toBeInTheDocument()
+    })
+
+    it('says nothing for a running run that waits on nothing', async () => {
+      seedWaitingRun()
+      db.steps.delete(stepRowKey(WAITING_RUN_ID, WAITING_STEP_KEY))
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: new RegExp(WAITING_RUN_ID) })
+
+      expect(within(row).getByText('Running')).toBeInTheDocument()
+      expect(within(row).queryByTestId('run-waiting')).not.toBeInTheDocument()
+    })
   })
 
   /**

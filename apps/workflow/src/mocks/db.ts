@@ -7,6 +7,7 @@ import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { RENDERED_RUN } from './fixtures/renderedRun'
 import { SCRIPT_RUN } from './fixtures/scriptRun'
+import { WAITING_RUN } from './fixtures/waitingRun'
 
 export interface MockFile {
   bytes: Uint8Array
@@ -139,6 +140,17 @@ export function stepsOf(runId: string): ServerStepRow[] {
   return [...db.steps.values()].filter((row) => row.runId === runId)
 }
 
+/**
+ * The keys of a run's steps in `waiting`, sorted — what the list rule's
+ * `shape.fn.js` joins onto each run record as `waitingOn` (apps#473).
+ */
+export function waitingKeysOf(runId: string): string[] {
+  return stepsOf(runId)
+    .filter((row) => row.status === 'waiting')
+    .map((row) => row.key)
+    .sort()
+}
+
 /** The storage keys under one prefix — what `file_delete`'s `prefix` config sweeps. */
 export function filesUnder(prefix: string): string[] {
   return [...db.files.keys()].filter((key) => key.startsWith(prefix))
@@ -247,6 +259,11 @@ function seedRun(record: { run: ServerRunRow; steps: ServerStepRow[] }): void {
 /** Load the completed hello run (see `fixtures/finishedRun.ts`). */
 export function seedFinishedRun(): void {
   seedRun(FINISHED_RUN)
+}
+
+/** Load the still-running hello run parked on its form (see `fixtures/waitingRun.ts`). */
+export function seedWaitingRun(): void {
+  seedRun(WAITING_RUN)
 }
 
 /**

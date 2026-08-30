@@ -24,6 +24,7 @@ import {
   stepRowKey,
   stepsOf,
   toRecord,
+  waitingKeysOf,
 } from './db'
 import { analyzeLines } from './analyze'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
@@ -224,14 +225,17 @@ const runRecord = [
     return HttpResponse.json(toRecord(stored))
   }),
 
-  // The rule answers with the raw `data_query` result — envelope and all.
+  // The rule answers with the `data_query` result, envelope and all, after its
+  // `shape.fn.js` has joined `waitingOn` onto each record (apps#473) — the keys
+  // of the run's step rows in `waiting`; `runs.shape.fn.parity.test.ts` holds
+  // the mock to the authored function.
   http.get('/api/workflow/runs', ({ request }) => {
     const url = new URL(request.url)
     const impl = url.searchParams.get('impl')
     const workflow = url.searchParams.get('workflow')
     const records = [...db.runs.values()]
       .filter((row) => (impl === null || row.impl === impl) && (workflow === null || row.workflow === workflow))
-      .map(toRecord)
+      .map((row) => ({ ...toRecord(row), waitingOn: waitingKeysOf(row.runId) }))
     return HttpResponse.json({ records }, { headers: { 'Cache-Control': 'no-store' } })
   }),
 

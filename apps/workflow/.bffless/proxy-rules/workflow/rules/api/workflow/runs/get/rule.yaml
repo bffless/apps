@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 11
 pipeline:
   name: List workflow runs
-  description: "Latest 50 workflow_runs rows for one (impl, workflow). Status filtering and sorting are client-side in M1 (Decision 6)."
+  description: "Latest 50 workflow_runs rows for one (impl, workflow), each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's pageSize). Status filtering and sorting are client-side in M1 (Decision 6)."
   steps:
     - id: query
       name: query
@@ -13,15 +13,29 @@ pipeline:
         filters:
           impl: { op: eq, value: request.query.impl }
           workflow: { op: eq, value: request.query.workflow }
+    # Step rows carry no impl/workflow, so this is every waiting step on the
+    # instance; shape.fn.js keeps the ones belonging to runs in the page.
+    - id: waiting
+      name: waiting
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_run_steps
+        pageSize: 1000
+        filters:
+          status: { op: eq, value: waiting }
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
     - id: respond
       name: respond
       handler: response_handler
       config:
-        body: "{{{steps.query}}}"
+        body: "{{{steps.shape}}}"
         status: 200
         headers: { Cache-Control: no-store }
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "List runs of one workflow (members see all runs, D14). no-store: run lists must never be stale."
+description: "List runs of one workflow (members see all runs, D14), each carrying `waitingOn` — the keys of its steps parked in `waiting`. no-store: run lists must never be stale."
