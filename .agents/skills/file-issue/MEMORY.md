@@ -42,3 +42,23 @@ settled and delete it here.
   would test distinct behaviours; add them when there is a real case to freeze.
 - Whether the user wants the parent's `- [x] → #N` tick done by the skill (house
   pattern, #460) or by hand — currently in step 6 behind the same confirmation.
+
+## 2026-08-30 (later) — splitting #496 into #504–#507
+
+- Four refiles from one 25-item parent, all `ready-for-agent` on first triage read with
+  zero questions. Two fresh-grader rounds each; round 1 caught a **false premise inherited
+  from the parent** (#496 said a red dispatch job has no artifact; `workflow-headless-run.yml`
+  uploads with `if: always()`), a decided command that does not work (`gh run list -u @me`
+  returns `[]` on gh 2.95 — resolve the login first), and a "delete the class" clause that
+  broke the package's own re-export. Lesson for step 1: a parent's bullets are claims, not
+  citations — verify the *mechanism* against the tree, not only the paths.
+- `grade.py`'s scope check runs `git ls-tree` from the draft's directory, so a draft in the
+  session scratchpad (outside the repo) falls back to a stale hardcoded package list and
+  fails "prefix exists". Stage drafts under `<repo>/node_modules/.drafts/` (gitignored,
+  inside the work tree) and delete after filing.
+- `cite_check.sh`'s "last path wins" resolver bites in dense paragraphs: a bare `:NN` after a
+  bold `**`path`.**` lead-in resolved to the previous paragraph's file. Write the full
+  `path:NN` on the first cite of every paragraph.
+- The user chose a 4-way split where one child (tests/hygiene) carried ~12 nits across
+  three boxes grouped by surface (checks / tests / docs); triage accepted it, so "N nits =
+  N issues" is a guideline — tight grouping under one `chore(...)` title passes.
