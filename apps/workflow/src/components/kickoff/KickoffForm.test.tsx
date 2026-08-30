@@ -156,6 +156,47 @@ describe('KickoffForm', () => {
     expect(within(form).getByText('photo.png')).toBeInTheDocument()
   })
 
+  // apps#451: the issue's own example — a `Recordings` input (`accept:
+  // video/*, list: true`) — shows one collapsed player per recording, none
+  // playing, each behind its own Play control; the field renderer is shared
+  // with form steps, and this pins the kickoff surface it names first.
+  it('previews each recording of a video/* list behind a Play control (apps#451)', () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+    try {
+      const take = (n: number): FileRef => ({
+        path: `workflows/hello/hello/inputs/1/take-${n}.mp4`,
+        name: `take-${n}.mp4`,
+        contentType: 'video/mp4',
+        size: 1024 * n,
+        url: `/api/uploads/workflows/hello/hello/inputs/1/take-${n}.mp4`,
+      })
+      const { form } = renderForm({
+        inputs: { recordings: { type: 'file', accept: 'video/*', list: true, required: true, label: 'Recordings' } },
+        initial: { recordings: [take(1), take(2)] },
+      })
+
+      const players = within(form).getAllByTestId('file-media')
+      expect(players.map((p) => p.tagName)).toEqual(['VIDEO', 'VIDEO'])
+      expect(players.map((p) => p.getAttribute('src'))).toEqual([take(1).url, take(2).url])
+      for (const p of players) {
+        expect(p).toHaveAttribute('preload', 'metadata')
+        expect(p).not.toHaveAttribute('controls')
+        expect(p).not.toHaveAttribute('autoplay')
+      }
+      expect(within(form).getByText('take-1.mp4')).toBeInTheDocument()
+      expect(within(form).getByText('take-2.mp4')).toBeInTheDocument()
+      expect(within(form).getByTestId('kickoff-start')).not.toBeDisabled()
+
+      fireEvent.click(within(form).getByRole('button', { name: 'Play take-1.mp4' }))
+
+      expect(within(form).getAllByTestId('file-media')[0]).toHaveAttribute('controls')
+      expect(within(form).getAllByTestId('file-media')[1]).not.toHaveAttribute('controls')
+      expect(play).toHaveBeenCalledTimes(1)
+    } finally {
+      play.mockRestore()
+    }
+  })
+
   it('renders a tile picker for a choice input whose options carry previews (02)', () => {
     const tiled: Record<string, InputDef> = {
       cover: { type: 'choice', options: [{ value: 'a', label: 'A', preview: '/api/uploads/a.png' }] },

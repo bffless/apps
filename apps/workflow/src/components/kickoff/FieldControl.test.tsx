@@ -17,7 +17,7 @@
  */
 import { useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import type { FileRef } from '../../lib/runner/types'
 import { FieldControl } from './FieldControl'
@@ -339,6 +339,224 @@ describe('FieldControl — file fields', () => {
       expect(screen.getByText('me.jpg')).toBeInTheDocument()
       expect(screen.queryByTestId('file-preview')).not.toBeInTheDocument()
       expect(document.querySelector('img')).toBeNull()
+    })
+  })
+
+  // apps#451: before a ten-minute run starts, the person wants to confirm the
+  // recording is the right one — play it, scrub it, see how long it is — on
+  // the kickoff form and on a form step alike. jsdom plays nothing, so these
+  // pin the DOM: which element, which `src`, which attributes, and that no
+  // player starts on its own.
+  describe('video and audio preview (apps#451)', () => {
+    const TAKE: FileRef = {
+      ...A,
+      path: 'workflows/hello/hello/inputs/1/take-1.mp4',
+      name: 'take-1.mp4',
+      contentType: 'video/mp4',
+      size: 2048,
+      url: '/api/uploads/workflows/hello/hello/inputs/1/take-1.mp4',
+    }
+    const TAKE2: FileRef = {
+      ...TAKE,
+      path: 'workflows/hello/hello/inputs/1/take-2.mp4',
+      name: 'take-2.mp4',
+      url: '/api/uploads/workflows/hello/hello/inputs/1/take-2.mp4',
+    }
+    const VOICE: FileRef = {
+      ...TAKE,
+      path: 'workflows/hello/hello/inputs/1/memo.m4a',
+      name: 'memo.m4a',
+      contentType: 'audio/mp4',
+      url: '/api/uploads/workflows/hello/hello/inputs/1/memo.m4a',
+    }
+    const PHOTO: FileRef = {
+      ...A,
+      path: 'workflows/hello/hello/inputs/1/me.jpg',
+      name: 'me.jpg',
+      contentType: 'image/jpeg',
+      url: '/api/uploads/workflows/hello/hello/inputs/1/me.jpg',
+    }
+
+    // jsdom has no object URLs and no media playback: stub both, and restore
+    // whatever was there so the other suites see the environment they expect.
+    const createObjectURL = vi.fn<(blob: Blob) => string>()
+    const revokeObjectURL = vi.fn<(url: string) => void>()
+    const play = vi.fn<() => Promise<void>>()
+    const restore: (() => void)[] = []
+    function stub(target: object, name: string, value: unknown) {
+      const original = Object.getOwnPropertyDescriptor(target, name)
+      Object.defineProperty(target, name, { configurable: true, writable: true, value })
+      restore.push(() => {
+        if (original) Object.defineProperty(target, name, original)
+        else delete (target as Record<string, unknown>)[name]
+      })
+    }
+    beforeEach(() => {
+      let n = 0
+      createObjectURL.mockReset().mockImplementation(() => `blob:harness/${++n}`)
+      revokeObjectURL.mockReset()
+      play.mockReset().mockResolvedValue(undefined)
+      stub(URL, 'createObjectURL', createObjectURL)
+      stub(URL, 'revokeObjectURL', revokeObjectURL)
+      stub(HTMLMediaElement.prototype, 'play', play)
+    })
+    afterEach(() => {
+      while (restore.length > 0) restore.pop()!()
+    })
+
+    function loadMetadata(el: Element, duration: number) {
+      Object.defineProperty(el, 'duration', { configurable: true, value: duration })
+      fireEvent(el, new Event('loadedmetadata'))
+    }
+
+    it('plays the chosen video from the local file while it uploads, then from its serve url once registered', async () => {
+      let land: ((ref: FileRef) => void) | undefined
+      const up = vi.fn(() => new Promise<FileRef>((resolve) => (land = resolve)))
+      render(<Controlled def={{ type: 'file', accept: 'video/*' }} upload={up} />)
+      expect(screen.queryByTestId('file-media')).not.toBeInTheDocument()
+
+      const file = new File(['mp4'], 'take-1.mp4', { type: 'video/mp4' })
+      fireEvent.change(screen.getByLabelText('cover'), { target: { files: [file] } })
+
+      const video = await screen.findByTestId('file-media')
+      expect(video.tagName).toBe('VIDEO')
+      expect(video).toHaveAttribute('controls')
+      expect(video).toHaveAttribute('preload', 'metadata')
+      expect(video).not.toHaveAttribute('autoplay')
+      expect(createObjectURL).toHaveBeenCalledWith(file)
+      expect(video).toHaveAttribute('src', 'blob:harness/1')
+      expect(screen.getByText('take-1.mp4')).toBeInTheDocument()
+      // A single field's player is open from the start: nothing to click through.
+      expect(screen.queryByRole('button', { name: /^Play / })).not.toBeInTheDocument()
+      expect(revokeObjectURL).not.toHaveBeenCalled()
+
+      land!(TAKE)
+      await waitFor(() => expect(screen.getByTestId('file-media')).toHaveAttribute('src', TAKE.url))
+      expect(screen.getAllByTestId('file-media')).toHaveLength(1)
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:harness/1')
+      expect(play).not.toHaveBeenCalled()
+    })
+
+    it('shows the duration beside the name and size once the metadata loads', () => {
+      render(<Controlled def={{ type: 'file', accept: 'video/*' }} initial={TAKE} upload={vi.fn()} />)
+
+      const video = screen.getByTestId('file-media')
+      expect(video).toHaveAttribute('src', TAKE.url)
+      expect(screen.getByText('2.0 KB')).toBeInTheDocument()
+      expect(screen.queryByTestId('file-duration')).not.toBeInTheDocument()
+
+      loadMetadata(video, 83.4)
+
+      expect(screen.getByTestId('file-duration')).toHaveTextContent('1:23')
+      expect(createObjectURL).not.toHaveBeenCalled()
+    })
+
+    it('previews an audio/* file with an <audio> player', () => {
+      render(<Controlled def={{ type: 'file', accept: 'audio/*' }} initial={VOICE} upload={vi.fn()} />)
+
+      const audio = screen.getByTestId('file-media')
+      expect(audio.tagName).toBe('AUDIO')
+      expect(audio).toHaveAttribute('controls')
+      expect(audio).toHaveAttribute('preload', 'metadata')
+      expect(audio).toHaveAttribute('src', VOICE.url)
+      expect(screen.getByText('memo.m4a')).toBeInTheDocument()
+    })
+
+    it("collapses a list's players behind one Play control each, and opens only the one clicked", () => {
+      render(<Controlled def={{ type: 'file', accept: 'video/*', list: true }} initial={[TAKE, TAKE2]} upload={vi.fn()} />)
+
+      const players = screen.getAllByTestId('file-media')
+      expect(players).toHaveLength(2)
+      expect(players.map((p) => p.tagName)).toEqual(['VIDEO', 'VIDEO'])
+      expect(players.map((p) => p.getAttribute('src'))).toEqual([TAKE.url, TAKE2.url])
+      for (const p of players) {
+        expect(p).toHaveAttribute('preload', 'metadata')
+        expect(p).not.toHaveAttribute('controls')
+        expect(p).not.toHaveAttribute('autoplay')
+      }
+      expect(screen.getAllByRole('button', { name: /^Play / })).toHaveLength(2)
+      expect(play).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Play take-2.mp4' }))
+
+      const [first, second] = screen.getAllByTestId('file-media')
+      expect(second).toHaveAttribute('controls')
+      expect(first).not.toHaveAttribute('controls')
+      expect(play).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('button', { name: 'Play take-2.mp4' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Play take-1.mp4' })).toBeInTheDocument()
+    })
+
+    it('refuses a cross-origin url as the player source but still names the file', () => {
+      render(
+        <Controlled
+          def={{ type: 'file', accept: 'video/*' }}
+          initial={{ ...TAKE, url: 'https://evil.example/take-1.mp4' }}
+          upload={vi.fn()}
+        />,
+      )
+
+      expect(screen.getByText('take-1.mp4')).toBeInTheDocument()
+      expect(screen.queryByTestId('file-media')).not.toBeInTheDocument()
+      expect(document.querySelector('video, audio')).toBeNull()
+    })
+
+    it('shows no player and no thumbnail for a document', () => {
+      render(<Controlled def={{ type: 'file' }} initial={DOC} upload={vi.fn()} />)
+
+      expect(screen.getByText('one.txt')).toBeInTheDocument()
+      expect(screen.queryByTestId('file-media')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('file-preview')).not.toBeInTheDocument()
+    })
+
+    it('mints no object url for an image or a document upload — the thumbnail waits for the registered url (apps#437)', async () => {
+      const up = vi.fn(async (file: File) => (file.type === 'image/jpeg' ? PHOTO : DOC))
+      render(<Controlled def={{ type: 'file', list: true }} initial={[]} upload={up} />)
+
+      fireEvent.change(screen.getByLabelText('cover'), {
+        target: {
+          files: [new File(['jpg'], 'me.jpg', { type: 'image/jpeg' }), new File(['a'], 'one.txt', { type: 'text/plain' })],
+        },
+      })
+
+      expect(await screen.findByTestId('file-preview')).toHaveAttribute('src', PHOTO.url)
+      expect(screen.getByText('one.txt')).toBeInTheDocument()
+      expect(createObjectURL).not.toHaveBeenCalled()
+      expect(screen.queryByTestId('file-media')).not.toBeInTheDocument()
+    })
+
+    it("revokes a failed upload's object url and drops its row", async () => {
+      const up = vi.fn().mockRejectedValue(new Error('storage said no'))
+      render(<Controlled def={{ type: 'file', accept: 'video/*' }} upload={up} />)
+
+      fireEvent.change(screen.getByLabelText('cover'), {
+        target: { files: [new File(['mp4'], 'take-1.mp4', { type: 'video/mp4' })] },
+      })
+
+      expect(await screen.findByTestId('file-media')).toHaveAttribute('src', 'blob:harness/1')
+      await waitFor(() => expect(screen.queryByTestId('file-media')).not.toBeInTheDocument())
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:harness/1')
+      expect(screen.getByText('storage said no')).toBeInTheDocument()
+    })
+
+    it('revokes every object url still alive when it unmounts mid-upload', async () => {
+      const up = vi.fn(() => new Promise<FileRef>(() => {}))
+      const { unmount } = render(<Controlled def={{ type: 'file', accept: 'video/*', list: true }} initial={[]} upload={up} />)
+
+      fireEvent.change(screen.getByLabelText('cover'), {
+        target: {
+          files: [
+            new File(['a'], 'take-1.mp4', { type: 'video/mp4' }),
+            new File(['b'], 'take-2.mp4', { type: 'video/mp4' }),
+          ],
+        },
+      })
+      expect(await screen.findAllByTestId('file-media')).toHaveLength(2)
+      expect(revokeObjectURL).not.toHaveBeenCalled()
+
+      unmount()
+
+      expect(revokeObjectURL.mock.calls.map(([url]) => url).sort()).toEqual(['blob:harness/1', 'blob:harness/2'])
     })
   })
 })

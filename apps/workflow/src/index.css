@@ -2970,3 +2970,120 @@ button.pane-crumb:hover {
 .code-view .code-line[data-marked='true']::before {
   color: var(--ink);
 }
+
+/* --------------------------------------------------------------------------
+   File media preview (apps#451): the inline video/audio player a file field
+   (kickoff form, form steps) and a file card (Input pane) share —
+   `values/MediaPreview`. One block, so it reads and moves as a unit.
+   -------------------------------------------------------------------------- */
+
+/* The player's frame. Open in a file field: its own line, capped at the
+   kickoff column so a 4K recording is not a 4K player (a card's player keeps
+   its natural size, as its bare media elements did). Collapsed (a list's
+   players): a thumbnail-sized poster tile, the same size as an image
+   upload's. */
+.media-preview {
+  position: relative;
+  flex: none;
+  max-width: 100%;
+}
+
+.media-preview video,
+.media-preview audio {
+  display: block;
+  max-width: 100%;
+  border-radius: 4px;
+  background-color: var(--surface-dim);
+}
+
+.media-preview-video.is-open video {
+  max-height: 24rem;
+}
+
+/* The frame takes the whole line (a `max-width` on the frame itself would be
+   folded into its flex size before the row decides to wrap); the cap sits on
+   the element inside it. */
+.field-file .media-preview.is-open {
+  flex-basis: 100%;
+}
+
+.field-file .media-preview.is-open video,
+.field-file .media-preview.is-open audio {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.media-preview.is-collapsed {
+  width: 6rem;
+}
+
+.media-preview.is-collapsed video {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* Audio has no first frame: the collapsed tile is just the button. */
+.media-preview-audio.is-collapsed {
+  width: auto;
+}
+
+.media-preview-audio.is-collapsed audio {
+  display: none;
+}
+
+.media-preview-audio.is-collapsed .media-preview-play {
+  position: static;
+  transform: none;
+}
+
+/* The Play affordance over the poster tile. */
+.media-preview-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0 0 0 3px;
+  color: var(--surface);
+  background-color: oklch(0.17 0.015 265 / 0.72);
+  border: 1px solid oklch(1 0 0 / 0.5);
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.media-preview-play:hover {
+  background-color: var(--ink);
+}
+
+/* A file row with an open player stacks: the player above, name/size/duration below. */
+.field-file-item-media {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.field-file-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.field-file-size,
+.field-file-duration,
+.file-card-duration {
+  color: var(--ink-mute);
+}
+
+/* The card is a flex column: seat the player like its bare media elements. */
+.file-card .media-preview {
+  align-self: flex-start;
+}

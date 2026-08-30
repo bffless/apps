@@ -17,17 +17,23 @@
  * that passes `isSafeUrl` but fails `isSameOriginUrl` still gets its Download
  * link, just no player.
  *
- * A `video`/`audio` player also registers its element with `MediaSeekContext`
- * (Task 15) so a `transcript` renderer's segment click can seek it — a `ref`
- * callback rather than a `useEffect`, so the element is registered the
- * instant it mounts and unregistered the instant it's removed, with no
- * one-tick gap either way. `useMediaSeek()` is safe with no provider in the
- * tree (a no-op `register`), so every `FileCard` outside a transcript's scope
- * — an Input tab, a bare `ValueView` in a test — is unaffected.
+ * A `video`/`audio` player is the shared `MediaPreview` (apps#451): controls,
+ * `preload="metadata"`, and the duration it reports joins the meta row beside
+ * name and size — a step's Input pane shows the same playable, scrubbable
+ * card the kickoff form did for the recording just uploaded. It also
+ * registers its element with `MediaSeekContext` (Task 15) so a `transcript`
+ * renderer's segment click can seek it — a `ref` callback rather than a
+ * `useEffect`, so the element is registered the instant it mounts and
+ * unregistered the instant it's removed, with no one-tick gap either way.
+ * `useMediaSeek()` is safe with no provider in the tree (a no-op `register`),
+ * so every `FileCard` outside a transcript's scope — an Input tab, a bare
+ * `ValueView` in a test — is unaffected.
  */
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { downloadHref, isSafeUrl, isSameOriginUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
+import { formatDuration, mediaKind } from './media'
+import { MediaPreview } from './MediaPreview'
 import { useMediaSeek } from './MediaSeekContext'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -43,7 +49,17 @@ function humanSize(bytes: unknown): string {
   return `${i === 0 ? n : n.toFixed(1)} ${UNITS[i]}`
 }
 
-function Player({ contentType, url, name }: { contentType?: string; url: string; name: string }) {
+function Player({
+  contentType,
+  url,
+  name,
+  onDuration,
+}: {
+  contentType?: string
+  url: string
+  name: string
+  onDuration: (seconds: number) => void
+}) {
   const { register } = useMediaSeek()
   const unregister = useRef<(() => void) | null>(null)
   const mediaRef = useCallback(
@@ -59,8 +75,8 @@ function Player({ contentType, url, name }: { contentType?: string; url: string;
   )
 
   if (!contentType) return null
-  if (contentType.startsWith('video/')) return <video controls src={url} ref={mediaRef} />
-  if (contentType.startsWith('audio/')) return <audio controls src={url} ref={mediaRef} />
+  const kind = mediaKind(contentType)
+  if (kind) return <MediaPreview kind={kind} src={url} name={name} onDuration={onDuration} mediaRef={mediaRef} />
   if (contentType.startsWith('image/')) return <img src={url} alt={name} />
   if (contentType === 'application/pdf') return <object type={contentType} data={url} />
   return null
@@ -70,13 +86,20 @@ export function FileCard({ refValue }: { refValue: FileRef }) {
   const { name, contentType, size, url } = refValue
   const safe = typeof url === 'string' && isSafeUrl(url)
   const sameOrigin = typeof url === 'string' && isSameOriginUrl(url)
+  const [duration, setDuration] = useState<number | undefined>(undefined)
+  const durationLabel = formatDuration(duration)
   return (
     <div className="file-card">
-      {sameOrigin && <Player contentType={contentType} url={url} name={name} />}
+      {sameOrigin && <Player contentType={contentType} url={url} name={name} onDuration={setDuration} />}
       <div className="file-card-meta">
         <span className="file-card-name">{name}</span>
         <span className="file-card-type">{contentType || 'unknown type'}</span>
         {typeof size === 'number' && size > 0 && <span className="file-card-size">{humanSize(size)}</span>}
+        {durationLabel !== undefined && (
+          <span className="file-card-duration" data-testid="file-duration">
+            {durationLabel}
+          </span>
+        )}
         {safe ? (
           <a className="file-card-download" href={downloadHref(url)} download>
             Download
