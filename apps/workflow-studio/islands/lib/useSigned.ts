@@ -7,8 +7,8 @@
  * source's WAV, a contact sheet or a blog frame therefore has to be exchanged for a
  * presigned URL over the bridge (`bffless/workflow-hello`'s `line-viewer` is the
  * reference). Shared by every island under `islands/` — `cut-editor` signs its media
- * up front with `useSigned`; `blog-editor` signs the post's frames the same way and its
- * sibling candidates on demand with `signPath`.
+ * up front with `useSigned`, each path landing as its own answer returns; `blog-editor`
+ * signs the post's frames and its sibling candidates on demand with `signPath`.
  */
 import { useEffect, useState } from 'react'
 
@@ -99,10 +99,13 @@ export async function signPath(
 }
 
 /**
- * Presign `paths` on the host, all at once. Every failure mode — a tool `isError`, a
- * rejected promise, a success with no usable URL — becomes a visible `error` rather
- * than a silently blank `<video>`; whatever else signed still renders, because the
- * grid (the point of the step) needs no media at all.
+ * Presign `paths` on the host, each on its own. The requests go out together, but every
+ * answer lands in `urls` the moment it returns — the clip plays as soon as IT signs, not
+ * once the last contact sheet has (apps#471). Every failure mode — a tool `isError`, a
+ * rejected promise, a success with no usable URL — becomes a visible `error` for that
+ * path alone rather than a silently blank `<video>`; whatever else signed still
+ * renders, because the grid (the point of the step) needs no media at all. `error` is
+ * the first failure to ARRIVE, as `blog-editor`'s cache also reports it.
  *
  * `enabled` is the headless switch: an unattended run has no eyes, so it must not wait
  * on — or be stopped by — signing.
@@ -125,12 +128,24 @@ export function useSigned(bridge: IslandBridge, paths: string[], enabled = true)
     // A superseded delivery's response must not clobber the current one.
     let cancelled = false
 
-    void Promise.all(list.map((path) => signPath(bridge, path))).then((results) => {
-      if (cancelled) return
-      const urls: Record<string, string> = {}
-      for (const result of results) if (result.url) urls[result.path] = result.url
-      setAnswered({ key, signed: { urls, error: results.find((r) => r.error)?.error ?? null } })
-    })
+    for (const path of list) {
+      void signPath(bridge, path).then((result) => {
+        if (cancelled) return
+        // Merge into the answers stamped with THIS key only: an earlier delivery's
+        // partial state is not this one's, and this delivery's other paths may already
+        // have landed — each answer is one more entry, never a replacement.
+        setAnswered((prev) => {
+          const base = prev?.key === key ? prev.signed : EMPTY
+          return {
+            key,
+            signed: {
+              urls: result.url ? { ...base.urls, [result.path]: result.url } : base.urls,
+              error: base.error ?? result.error ?? null,
+            },
+          }
+        })
+      })
+    }
 
     return () => {
       cancelled = true
