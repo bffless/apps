@@ -12,6 +12,9 @@
  * `registered` and `deleteBody` are filled in by response listeners that read
  * the body asynchronously — they only reflect every response seen so far once
  * the caller `await`s every promise in `pending` (e.g. `await Promise.all(s.pending)`).
+ *
+ * `consoleErrors`/`failed` start counting after the relay login; pre-auth
+ * SuperTokens 401s are expected and live only in `log`.
  */
 import { mkdir } from 'node:fs/promises'
 import { loginViaRelay, pageApi, type ApiLike, type FileRef } from '@bffless/workflow-headless'
@@ -89,5 +92,10 @@ export async function openSession(o: SessionOptions): Promise<Session> {
     await browser.close().catch(() => undefined)
     throw e
   }
+  // Pre-auth SuperTokens session probes on the relay's login page (401s) are
+  // expected noise, not a walk failure — drop them from the verdict arrays.
+  // `log` keeps the full narrative, 401s included.
+  s.consoleErrors.length = 0
+  s.failed.length = 0
   return s
 }
