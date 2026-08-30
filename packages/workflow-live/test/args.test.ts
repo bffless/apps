@@ -19,4 +19,10 @@ describe('parseWalkArgs', () => {
     expect(() => parseWalkArgs(['walk', 'hello', '--nope'])).toThrow(UsageError)
     expect(() => parseWalkArgs(['runs'])).toThrow(UsageError)
   })
+  it('rejects a bad --timeout value', () => {
+    expect(() => parseWalkArgs(['walk', 'hello', '--timeout', '30mm'])).toThrow(UsageError)
+  })
+  it('rejects a flag as a value', () => {
+    expect(() => parseWalkArgs(['walk', 'hello', '--clip', '--dispatch'])).toThrow(UsageError)
+  })
 })

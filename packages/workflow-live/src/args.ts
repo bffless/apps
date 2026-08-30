@@ -31,7 +31,7 @@ export function parseWalkArgs(argv: string[]): WalkArgs {
     const flag = rest[i]
     const value = () => {
       const v = rest[++i]
-      if (v === undefined) throw new UsageError(`${flag} needs a value\n\n${USAGE}`)
+      if (v === undefined || v.startsWith('--')) throw new UsageError(`${flag} needs a value\n\n${USAGE}`)
       return v
     }
     if (flag === '--harness') a.harness = value().replace(/\/+$/, '')
@@ -39,8 +39,13 @@ export function parseWalkArgs(argv: string[]): WalkArgs {
     else if (flag === '--dispatch') a.dispatch = true
     else if (flag === '--clip') a.clip = value()
     else if (flag === '--run') a.run = value()
-    else if (flag === '--timeout') a.timeoutMs = parseDuration(value())
-    else throw new UsageError(`unknown flag ${flag}\n\n${USAGE}`)
+    else if (flag === '--timeout') {
+      try {
+        a.timeoutMs = parseDuration(value())
+      } catch (e) {
+        throw new UsageError(`--timeout: ${e instanceof Error ? e.message : String(e)}\n\n${USAGE}`)
+      }
+    } else throw new UsageError(`unknown flag ${flag}\n\n${USAGE}`)
   }
   if (!a.out) a.out = join(tmpdir(), 'workflow-live', walk, stamp())
   return a
