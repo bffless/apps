@@ -68,10 +68,12 @@ test('interactive hello runs an island step end to end against the mock backend'
   await expect(confirmStep).toHaveAttribute('data-state', 'waiting', { timeout: 60_000 })
   // The pane auto-opens only when nothing else is selected, and the island
   // step still is (RunPage's "never fight a selection back over") — so the
-  // way to the form is the same click a reader would make.
+  // way to the form is the same click a reader would make. A reader's click
+  // **pins** the selection (apps#452): the run bar's Follow toggle reads off.
   await confirmStep.click()
   const form = page.getByTestId('form-step')
   await expect(form).toBeVisible()
+  await expect(page.getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
 
   // `options: ${{ needs.card.outputs.posters }}` is a list of File refs, so
   // `cover` renders as the tile picker (02's shorthand) — one tile, because
@@ -95,6 +97,14 @@ test('interactive hello runs an island step end to end against the mock backend'
   await form.getByRole('button', { name: 'Approve' }).click()
 
   await expect(status).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
+
+  // Pinned, so the finished run stays on the form's pane rather than
+  // returning to the run card (apps#452) — and a finished run offers no
+  // toggle. The crumb's "Run" is the way up.
+  const finishedPane = page.getByTestId('step-pane')
+  await expect(finishedPane).toBeVisible()
+  await expect(page.getByTestId('run-follow')).toHaveCount(0)
+  await finishedPane.getByRole('button', { name: 'Run', exact: true }).click()
 
   const outputs = page.getByTestId('run-outputs')
   await expect(outputs).toContainText('line')
