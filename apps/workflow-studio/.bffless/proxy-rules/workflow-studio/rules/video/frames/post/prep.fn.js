@@ -33,6 +33,10 @@ function handler({ request }) {
       o['src' + i] = g ? g.src : ''
       o['times' + i] = g ? g.times : []
       o['keys' + i] = g ? g.keys : []
+      // Parallel to `keys`: is this still one of the caller's OWN frames (true) or a
+      // picker candidate it marked `sibling` (false)? `check` registers only the own
+      // ones as `paths` (apps#490).
+      o['own' + i] = g ? g.own : []
       o['out' + i] = g ? base.outPrefix + '/frames/' + i : ''
     }
     return o
@@ -64,7 +68,7 @@ function handler({ request }) {
       // A fourth or later distinct source has no step to run on: its captures are
       // counted into `dropped` and the workflow annotates the run.
       if (groups.length >= MAX_SOURCES) { dropped++; continue }
-      found = { src: src, times: [], keys: [] }
+      found = { src: src, times: [], keys: [], own: [] }
       groups.push(found)
     }
     if (found.times.length >= 200) return no(TOO_MANY)
@@ -76,6 +80,7 @@ function handler({ request }) {
     // itself, so the caller's key is the only stable handle back to a frame.
     var key = cap.key
     found.keys.push(typeof key === 'string' && key ? key : String(t))
+    found.own.push(cap.sibling !== true)
   }
 
   return out({

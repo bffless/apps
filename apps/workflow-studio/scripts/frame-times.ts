@@ -53,8 +53,14 @@ import { inputError, requireFileRefs, requireNumbers, requireString } from './li
 
 const NAME = 'frame-times'
 
-/** One capture as the `video/frames` rule takes it (`prep.fn.js`). */
-export type Capture = { source: string; time: number; name: string; key: string }
+/**
+ * One capture as the `video/frames` rule takes it (`prep.fn.js`). `sibling: true` marks
+ * a picker candidate (apps#490): the rule keeps it out of the step's registered File
+ * list (`paths`) — it stays reachable by path through `byTime`/`srcs`, which is all the
+ * review island and `blog-bundle` need — so a post with a dozen images registers a dozen
+ * files, not ~170. A capture without the flag is one of the tokens' own frames.
+ */
+export type Capture = { source: string; time: number; name: string; key: string; sibling?: true }
 
 /**
  * The most stills one `video/frames` job may ask for. The rule caps each SOURCE at 200
@@ -99,7 +105,7 @@ export function planSiblingCaptures(
     for (const t of [...seconds].sort((a, b) => a - b)) {
       const loc = globalToLocal(timeline, t)
       if (!loc) continue
-      captures.push({ source: loc.sourceId, time: loc.localTime, name: blogReframeFileName(t), key: String(t) })
+      captures.push({ source: loc.sourceId, time: loc.localTime, name: blogReframeFileName(t), key: String(t), sibling: true })
     }
     return { step, captures }
   }

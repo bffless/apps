@@ -69,6 +69,34 @@ describe('blog-bundle', () => {
     expect(out.srcs).toEqual({ 'images/frame-01.jpg': F1.path, 'images/frame-02.jpg': F2.path })
   })
 
+  it('fetches a reviewer-picked candidate by its byTime path when it is not among the registered frames (apps#490)', async () => {
+    // "Use this frame" retimes a token onto a picker candidate. Candidates are captured
+    // but never registered (the step's File list is the tokens' own frames only), so the
+    // bundle must reach one through the serve route built from its path.
+    const CAND = 'workflows/run/frames/0/frame-t70000.jpg'
+    const bytes: Record<string, Uint8Array<ArrayBuffer>> = { ...BYTES, [CAND]: new Uint8Array([9, 9]) }
+    const seen: FileRef[] = []
+    const serveByPath: ScriptContext['files']['fetch'] = async (r) => {
+      seen.push(r)
+      const body = bytes[r.path]
+      if (!body) return new Response(null, { status: 404 })
+      return new Response(body, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+    }
+    const { ctx, annotations } = fakeCtx(
+      { markdown, title: 'Picked', frames: [F1], byTime: { '10': F1.path, '70': CAND } },
+      serveByPath,
+    )
+    const out = (await blogBundle(ctx)) as Out
+
+    const entries = unzipSync(new Uint8Array(await out.zip.arrayBuffer()))
+    expect(Object.keys(entries).sort()).toEqual(['images/frame-01.jpg', 'images/frame-02.jpg', 'post.md'])
+    expect(entries['images/frame-02.jpg']).toEqual(bytes[CAND])
+    expect(out.srcs['images/frame-02.jpg']).toBe(CAND)
+    expect(annotations).toEqual([])
+    const picked = seen.find((r) => r.path === CAND)
+    expect(picked?.url).toBe(`/api/uploads/${CAND}`)
+  })
+
   it('warns and drops a frame whose bytes will not come back, keeping the rest', async () => {
     const missing = ref('workflows/run/frames/0/gone.jpg')
     const { ctx, annotations } = fakeCtx(

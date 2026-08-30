@@ -2,7 +2,7 @@ targetUrl: pipeline
 timeout: 120000
 pipeline:
   name: Blog frame captures (ffmpeg frames, async)
-  description: "POST { captures: [{ source, time, name, key }], outPrefix, executor } -> ENQUEUE a job (kind 'frames'); CE's ffmpeg `frames` op captures one clean still per requested time. Result { paths, byTime, srcs, dropped } is polled via GET job?id=. One op call per distinct source is not expressible in a static rule, so the rule fans out to THREE conditional steps (R119) - captures from a fourth source are counted into `dropped` and the workflow annotates the run."
+  description: "POST { captures: [{ source, time, name, key, sibling? }], outPrefix, executor } -> ENQUEUE a job (kind 'frames'); CE's ffmpeg `frames` op captures one clean still per requested time. Result { paths, byTime, srcs, dropped } is polled via GET job?id=. `byTime`/`srcs` hold EVERY still by path; `paths` holds only the captures not marked `sibling: true` - the caller's own frames, which the workflow declares as its `type: file` list and so registers one HTTP call each (apps#490: picker candidates are captured but never registered). One op call per distinct source is not expressible in a static rule, so the rule fans out to THREE conditional steps (R119) - captures from a fourth source are counted into `dropped` and the workflow annotates the run."
   steps:
     - id: prep
       name: prep
@@ -144,4 +144,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true }
-description: "Still frames for the blog post's inline images. Each capture's `name` is informational - CE names the stills itself (frame-NN.jpg under each source's own outputPrefix). No captures is a no-op that succeeds with an empty result, not a refusal."
+description: "Still frames for the blog post's inline images and the Change-frame picker's candidates (`sibling: true`, kept out of `paths`). Each capture's `name` is informational - CE names the stills itself (frame-NN.jpg under each source's own outputPrefix). No captures is a no-op that succeeds with an empty result, not a refusal."
