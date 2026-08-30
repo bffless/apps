@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/bffless/apps/compare/workflow-lint-v1.3.0...workflow-lint-v1.4.0) (2026-08-30)
+
+
+### Features
+
+* **workflow-lint:** warn when a job with needs has an if with no status function ([#478](https://github.com/bffless/apps/issues/478)) ([da22f63](https://github.com/bffless/apps/commit/da22f63ab7848ddc02a372d0b18d2ba236549853)), closes [#462](https://github.com/bffless/apps/issues/462)
+
 ## [1.3.0](https://github.com/bffless/apps/compare/workflow-lint-v1.2.0...workflow-lint-v1.3.0) (2026-08-30)
 
 
