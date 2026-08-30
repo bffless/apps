@@ -1,0 +1,267 @@
+{
+  "run": {
+    "id": "a7932291-8995-4e92-bb12-da513c53aba1",
+    "alias": "workflow",
+    "version": 1,
+    "impl": "hello",
+    "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+    "inputs": {
+      "names": [
+        "world",
+        "studio"
+      ],
+      "greeting": "Hello"
+    },
+    "status": "succeeded",
+    "outputs": {
+      "line": "Hello, world!",
+      "view": {
+        "line": "Hello, world!",
+        "index": 0
+      },
+      "cover": {
+        "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/e87950e7-736b-447d-9764-c1437b8af93b-poster.svg",
+        "name": "poster.svg",
+        "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/e87950e7-736b-447d-9764-c1437b8af93b-poster.svg",
+        "size": 399,
+        "contentType": "image/svg+xml"
+      },
+      "poster": {
+        "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/c658b5a2-f6f5-4c3e-b732-50b1b9ff0fc7-poster.svg",
+        "name": "poster.svg",
+        "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/c658b5a2-f6f5-4c3e-b732-50b1b9ff0fc7-poster.svg",
+        "size": 399,
+        "contentType": "image/svg+xml"
+      },
+      "poster_view": {
+        "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/c658b5a2-f6f5-4c3e-b732-50b1b9ff0fc7-poster.svg",
+        "name": "poster.svg",
+        "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/c658b5a2-f6f5-4c3e-b732-50b1b9ff0fc7-poster.svg",
+        "size": 399,
+        "contentType": "image/svg+xml"
+      }
+    },
+    "headless": true,
+    "workflow": "interactive",
+    "startedAt": 1787937291329,
+    "startedBy": "25464c18-38d5-47f5-8a25-20dea352d7a2",
+    "finishedAt": 1787937295233,
+    "leaseOwner": null,
+    "leaseUntil": null,
+    "annotations": [],
+    "workflowName": "Interactive hello",
+    "workflowVersion": "0.0.0",
+    "annotationCounts": {
+      "error": 0,
+      "notice": 2,
+      "warning": 0
+    },
+    "createdAt": "2026-08-28T17:14:52.143Z",
+    "updatedAt": "2026-08-28T17:14:55.329Z"
+  },
+  "steps": [
+    {
+      "id": "693d24cb-7d1a-4eb9-a08d-3c5dee653dc5",
+      "alias": "workflow",
+      "version": 1,
+      "job": "review",
+      "key": "review/0/confirm",
+      "kind": "form",
+      "step": "confirm",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+      "status": "skipped",
+      "attempt": 1,
+      "outputs": {
+        "cover": {
+          "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/e87950e7-736b-447d-9764-c1437b8af93b-poster.svg",
+          "name": "poster.svg",
+          "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/e87950e7-736b-447d-9764-c1437b8af93b-poster.svg",
+          "size": 399,
+          "contentType": "image/svg+xml"
+        },
+        "extra": null,
+        "notes": ""
+      },
+      "startedAt": null,
+      "finishedAt": 1787937295152,
+      "createdAt": "2026-08-28T17:14:55.217Z",
+      "updatedAt": "2026-08-28T17:14:55.217Z"
+    },
+    {
+      "id": "70362bb3-1476-4eeb-b279-002d009ff39c",
+      "alias": "workflow",
+      "version": 1,
+      "job": "card",
+      "key": "card/0/draw",
+      "kind": "script",
+      "step": "draw",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "big": {
+          "$file": {
+            "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/ed870bd4-2bbc-47ee-b419-ec0112abd9e3-big.json",
+            "name": "big.json",
+            "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/ed870bd4-2bbc-47ee-b419-ec0112abd9e3-big.json",
+            "size": 636891,
+            "contentType": "application/json"
+          }
+        },
+        "poster": {
+          "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/c658b5a2-f6f5-4c3e-b732-50b1b9ff0fc7-poster.svg",
+          "name": "poster.svg",
+          "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/c658b5a2-f6f5-4c3e-b732-50b1b9ff0fc7-poster.svg",
+          "size": 399,
+          "contentType": "image/svg+xml"
+        },
+        "posters": [
+          {
+            "url": "/api/uploads/workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/e87950e7-736b-447d-9764-c1437b8af93b-poster.svg",
+            "name": "poster.svg",
+            "path": "workflows/hello/interactive/runs/run_01M14NVZ200RY5KMC0PV8RBJXR/card/0/draw/e87950e7-736b-447d-9764-c1437b8af93b-poster.svg",
+            "size": 399,
+            "contentType": "image/svg+xml"
+          }
+        ]
+      },
+      "startedAt": 1787937293686,
+      "finishedAt": 1787937294690,
+      "createdAt": "2026-08-28T17:14:54.288Z",
+      "updatedAt": "2026-08-28T17:14:55.118Z"
+    },
+    {
+      "id": "16d90262-a6d8-40bf-9722-c4684a176d57",
+      "alias": "workflow",
+      "version": 1,
+      "job": "pick",
+      "key": "pick/0/choose",
+      "kind": "island",
+      "step": "choose",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "line": "Hello, world!",
+        "index": 0
+      },
+      "startedAt": 1787937293161,
+      "finishedAt": 1787937293597,
+      "createdAt": "2026-08-28T17:14:53.923Z",
+      "updatedAt": "2026-08-28T17:14:54.216Z"
+    },
+    {
+      "id": "a64f10d3-cad2-48fa-9898-97a8bd4c3855",
+      "alias": "workflow",
+      "version": 1,
+      "job": "analyze",
+      "key": "analyze/0/run",
+      "kind": "pipeline",
+      "step": "run",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "words": [
+          {
+            "end": 0.4,
+            "text": "Hello,",
+            "start": 0
+          },
+          {
+            "end": 0.8,
+            "text": "world!",
+            "start": 0.4
+          },
+          {
+            "end": 1.2,
+            "text": "Hello,",
+            "start": 0.8
+          },
+          {
+            "end": 1.6,
+            "text": "studio!",
+            "start": 1.2
+          }
+        ],
+        "counts": {
+          "rows": [
+            {
+              "line": "Hello, world!",
+              "chars": 13
+            },
+            {
+              "line": "Hello, studio!",
+              "chars": 14
+            }
+          ],
+          "columns": [
+            {
+              "key": "line"
+            },
+            {
+              "key": "chars",
+              "type": "number"
+            }
+          ]
+        },
+        "longest": "Hello, studio!",
+        "snippet": "export const lines = [\"Hello, world!\",\"Hello, studio!\"]"
+      },
+      "startedAt": 1787937292987,
+      "finishedAt": 1787937293072,
+      "createdAt": "2026-08-28T17:14:53.590Z",
+      "updatedAt": "2026-08-28T17:14:53.776Z"
+    },
+    {
+      "id": "84560fde-51a9-4e8e-9880-2c78c57517cd",
+      "alias": "workflow",
+      "version": 1,
+      "job": "greet",
+      "key": "greet/1/say",
+      "kind": "pipeline",
+      "step": "say",
+      "error": null,
+      "index": 1,
+      "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "line": "Hello, studio!"
+      },
+      "startedAt": 1787937292176,
+      "finishedAt": 1787937292497,
+      "createdAt": "2026-08-28T17:14:53.074Z",
+      "updatedAt": "2026-08-28T17:14:53.247Z"
+    },
+    {
+      "id": "2a3b70df-22ef-4ab4-8da4-43cb94277706",
+      "alias": "workflow",
+      "version": 1,
+      "job": "greet",
+      "key": "greet/0/say",
+      "kind": "pipeline",
+      "step": "say",
+      "error": null,
+      "index": 0,
+      "runId": "run_01M14NVZ200RY5KMC0PV8RBJXR",
+      "status": "succeeded",
+      "attempt": 1,
+      "outputs": {
+        "line": "Hello, world!"
+      },
+      "startedAt": 1787937292174,
+      "finishedAt": 1787937292524,
+      "createdAt": "2026-08-28T17:14:52.845Z",
+      "updatedAt": "2026-08-28T17:14:53.429Z"
+    }
+  ]
+}
