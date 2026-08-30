@@ -110,12 +110,19 @@ Tailwind utilities the Studio components it renders are styled with (and, for `b
 must NOT carry `mermaid`'s code — its ```mermaid fences load the library at runtime from the
 pinned CDN URL in `islands/blog-editor/mermaid.ts`, so the built HTML carries that URL and
 nothing of the library; apps#441). Build it the same way, then open it standalone
-to smoke-check it renders (a built island with no host on the other end shows its "waiting"
-shell — that is what a clean `consoleErrors:0` looks like):
+to smoke-check it renders. A built island with no host on the other end keeps its "waiting"
+shell, and the handshake race in `islands/lib/mount.tsx` stamps the shell
+`data-handshake-state` once the handshake settles (apps#523): standalone that is
+`"rejected"` almost immediately — a top-level window posts `ui/initialize` to itself and the
+SDK answers its own request with "Method not found" — while a host that attaches the island
+but never answers hits the 5 s timer and reads `"timeout"` / "no workflow host" (both
+branches are proven in `islands/lib/mount.test.tsx`). The `--wait` below asserts the
+handshake actually ran and settled — a bundle that crashed on load stamps nothing, so the
+check fails (and a clean run still reports `consoleErrors:0`):
 
 ```sh
 WORKFLOW_ISLAND=cut-editor pnpm exec vite build -c vite.islands.config.ts
-node ~/bffless/localdev-tools/shot.mjs "file://$PWD/dist/islands/cut-editor.html" --out /tmp/island.png
+node ~/bffless/localdev-tools/shot.mjs "file://$PWD/dist/islands/cut-editor.html" --out /tmp/island.png --wait '[data-handshake-state]'
 ```
 
 ## Styling an island
