@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/bffless/apps/compare/workflow-headless-v1.0.1...workflow-headless-v1.0.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* **workflow:** flush the record seal at pagehide; walks wait for the sealed record before goto ([#552](https://github.com/bffless/apps/issues/552)) ([8b918d9](https://github.com/bffless/apps/commit/8b918d98769a1e35dae2e538164be230f318850b))
+
 ## [1.0.1](https://github.com/bffless/apps/compare/workflow-headless-v1.0.0...workflow-headless-v1.0.1) (2026-08-31)
 
 
