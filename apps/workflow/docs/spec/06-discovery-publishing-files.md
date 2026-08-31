@@ -9,10 +9,15 @@ ADR-0004.
 - Harness: package `apps/workflow`, catalog id `workflow`, display name **Workflow**,
   default alias/subdomain `workflow`, rule set `workflow`, API `/api/workflow/*`.
 - Workflow files: `.bffless/workflows/<name>.yaml` (plural folder, like `.github/workflows/`).
-- Implementation: repo `workflow-<impl>` (e.g. `bffless/workflow-studio`), deploys to alias
-  `<impl>` in the **harness's project**, rule set `<impl>`, API `/api/<impl>/...`, files
-  `/w/<impl>/...`. `<impl>` matches `^[a-z][a-z0-9-]*$` and is unique in the project; the
-  harness reserves `workflow`, `w`, `auth`, `_bffless`.
+- Implementation: a package `workflows/<impl>/` of the
+  [`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations)
+  monorepo (as written in 2026-08-19 this said "repo `workflow-<impl>`"; M4 externalized the
+  implementations into the monorepo on 2026-08-31 — see ADR-0001's amendment record), deploys
+  to alias `<impl>` in the **harness's project**, rule set `<impl>`, API `/api/<impl>/...`,
+  files `/w/<impl>/...`. `<impl>` matches `^[a-z][a-z0-9-]*$` and is unique in the project;
+  the harness reserves `workflow`, `w`, `auth`, `_bffless`. Each package carries the identity
+  file `.bffless/workflow.json` `{ "alias": "<impl>", "harness": "workflow" }` (the #420
+  constraint), which CI holds consistent with its deploy workflow's `alias:` input.
 - **Namespacing is by alias** (D17): a preview deploy to alias `studio-pr-12` gets
   `/api/studio-pr-12/...` and `/w/studio-pr-12/...`. Workflow YAML never hardcodes the
   prefix — paths are relative (01 *Paths*) and `publish-workflow` rewrites the rule path
@@ -225,9 +230,31 @@ file's bytes read storage by path (Replicate/ffmpeg handlers already do).
 `workflow_runs`, `workflow_run_steps`. Two schemas, ~10 rules — authored as rules-as-code in
 `apps/workflow/.bffless/proxy-rules/workflow/`, like Studio.
 
-## Phase 1 → phase 2
+## Phase 1 → phase 2 — shipped (M4, 2026-08-31)
 
-Phase 1 (j5s.dev): the harness is a regular app deployed to alias `workflow` of a j5s project;
-`workflow-studio` deploys into the same project. Phase 2: `bffless-app.json` + catalog
-bundle; `publish-workflow`'s `harness-alias` default stays `workflow`. Nothing in this
-document changes between the phases.
+Phase 1 (j5s.dev): the harness was a regular app deployed to alias `workflow` of a j5s
+project; `workflow-studio` deployed into the same project. Phase 2 shipped in M4:
+
+- `apps/workflow` carries `bffless-app.json` (catalog id `workflow`, `install.alias`
+  `workflow`, `domain: { subdomain: "workflow", isPublic: false, isSpa: true }`,
+  `requires.ceMin: "0.4.37"`), `catalog/description.md` + `catalog/thumbnail.png`, and a
+  release-please component `workflow` — apps#546 (which reverses M1's "no release component"
+  decision, per the epic).
+- A `workflow` release builds `workflow-v<version>.bundle.zip` (frontend `dist/` + compiled
+  rule set `rulesets/workflow.json`) and rewrites `registry.json` on `apps.bffless.dev`. The
+  first cut (workflow-v1.0.0, release PR apps#547) failed the bundle build; apps#548 fixed
+  `build-app-bundle` (build workspace deps + run the stager before the app build) and the
+  re-dispatched Release run 33415963261 published it.
+- The registry entry is live: `workflow` v1.0.0, `ceMin` 0.4.37, `sha256`
+  `f038e42e…98fbf46e` — verified by downloading the bundle and re-hashing.
+- Install proof: a 1-click catalog install on a scratch project answered
+  `GET /api/workflow/project` with that project, with zero configuration — the runtime
+  discovery (#363) payoff. Record: `apps/workflow/bffless/README.md`, *M4 Phase 3 — catalog
+  install proof*.
+
+`publish-workflow`'s `harness-alias` default stays `workflow`. The claim that **nothing in
+this document changes between the phases held**: discovery, the publish steps, file storage
+and access worked as written on the catalog-installed harness; the only phase-2 edits to this
+document are this section's past tense and the *Names* note that implementations now live in
+`bffless/workflow-implementations` (a publishing-topology change, made in the same M4, not a
+phase-2 requirement).

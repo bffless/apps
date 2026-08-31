@@ -17,7 +17,7 @@ import { useDiscoverQuery } from '../store/workflowApi'
 
 /** Where "how do I publish one?" is answered. */
 const PUBLISHING_DOC =
-  'https://github.com/bffless/apps/blob/main/apps/workflow/docs/spec/06-discovery-publishing-files.md'
+  'https://github.com/bffless/apps/blob/main/apps/workflow/docs/writing-an-implementation.md'
 
 function ImplementationCard({ impl }: { impl: Implementation }) {
   return (
