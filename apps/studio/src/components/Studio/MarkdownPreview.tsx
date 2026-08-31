@@ -7,7 +7,7 @@ import { MermaidDiagram } from './MermaidDiagram'
  * edit — so a focused block renderer is enough. The renderer itself is
  * `MarkdownBody`; this is that body with ```mermaid fences wired to
  * `MermaidDiagram`, which is the one piece that pulls in a heavy dependency
- * (lazily) — kept out of `MarkdownBody` so `apps/workflow-studio`'s single-file
+ * (lazily) — kept out of `MarkdownBody` so workflow-studio's single-file (now a frozen copy in `bffless/workflow-implementations`)
  * blog island can render the same post without inlining `mermaid`.
  */
 export function MarkdownPreview(props: Omit<MarkdownBodyProps, 'diagram'>) {

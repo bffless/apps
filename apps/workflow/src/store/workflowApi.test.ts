@@ -30,7 +30,7 @@ describe('discover', () => {
 
     // Against the mock's own index, not a copy of its numbers. `HELLO_INDEX`
     // derives `inputs`/`jobs` from the real hello YAMLs, which live in
-    // `bffless/workflow-hello` and change on that repo's schedule — pinning
+    // `bffless/workflow-implementations` and change on that repo's schedule — pinning
     // "4 jobs" here made an unrelated upstream edit fail this suite (apps#380).
     // What discovery owes the caller is the listing, passed through intact.
     expect(impl.workflows).toEqual(HELLO_INDEX.workflows)

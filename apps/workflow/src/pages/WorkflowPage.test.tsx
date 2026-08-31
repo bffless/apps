@@ -21,7 +21,7 @@ const YAML_URL = '/w/hello/.bffless/workflows/hello.workflow.yaml'
 /**
  * How many jobs the graph owes the screen — read off the definition the mock
  * actually serves, not written down here. `hello.workflow.yaml` lives in
- * `bffless/workflow-hello` and gains a job whenever that repo grows one
+ * `bffless/workflow-implementations` and gains a job whenever that repo grows one
  * (apps#380); what this page promises is *every* job, not four of them.
  */
 const HELLO_JOBS = Object.keys(loadWorkflow(helloYaml, 'hello.workflow.yaml').def!.jobs).length

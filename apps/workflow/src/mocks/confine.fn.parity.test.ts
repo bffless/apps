@@ -7,7 +7,7 @@
  * app or the mock at runtime.
  *
  * Unlike `analyze.fn.js`, this rule lives in this repo (not staged from
- * `bffless/workflow-hello`), so there is no `describe.skipIf` here.
+ * `bffless/workflow-implementations`), so there is no `describe.skipIf` here.
  *
  * The mock does not expose its path predicate as a standalone helper — it's
  * inline in the `http.post` handler body — so this table drives both sides:

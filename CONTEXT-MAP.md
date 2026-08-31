@@ -12,4 +12,4 @@ vocabulary keeps a `CONTEXT.md` (+ `docs/adr/`) in its folder.
 
 ## Relationships
 
-- **Workflow → Studio**: `workflow-studio` (a separate implementation repo, not in this monorepo) ports Studio's pipelines path-in/path-out and its cut editor as an island; Studio itself is unchanged. Shared vocabulary stays in each context — a Studio *scene* is just a matrix item's payload to Workflow.
+- **Workflow → Studio**: `workflow-studio` (a package in `bffless/workflow-implementations`, not in this monorepo) ports Studio's pipelines path-in/path-out and its cut editor as an island, from copies of Studio's libs frozen at the M4 move; Studio itself is unchanged. Shared vocabulary stays in each context — a Studio *scene* is just a matrix item's payload to Workflow.

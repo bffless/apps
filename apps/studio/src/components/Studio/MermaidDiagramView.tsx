@@ -6,7 +6,7 @@ import { useEffect, useId, useState, type ComponentType } from 'react'
  * the source until it lands and keep showing it (with a one-line note) when it
  * can't — lives here, and what `mermaid` IS comes from the `load` the consumer hands
  * `createMermaidDiagram`. Studio's `MermaidDiagram` loads it from the package
- * (`import('mermaid')`); `apps/workflow-studio`'s single-file blog island loads it at
+ * (`import('mermaid')`); workflow-studio's single-file blog island (a frozen copy in `bffless/workflow-implementations`) loads it at
  * runtime from a pinned CDN URL, because a package import — even a lazy one — would
  * be inlined wholesale into the island's HTML. The two differ ONLY in that loader.
  *

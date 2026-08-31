@@ -8,7 +8,7 @@ import { createMermaidDiagram } from './MermaidDiagramView'
  * library lands, source plus a short note when a diagram fails to parse, so the
  * post always renders SOMETHING rather than an empty hole) is
  * `MermaidDiagramView`'s `createMermaidDiagram`; this is that renderer over the
- * package import. `apps/workflow-studio`'s blog island builds the same renderer
+ * package import. workflow-studio's blog island (a frozen copy in `bffless/workflow-implementations`) builds the same renderer
  * over a CDN loader instead, so this module — the one with `import('mermaid')` in
  * it — is deliberately NOT on Studio's public surface.
  */

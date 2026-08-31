@@ -26,8 +26,9 @@ jobs:
       # Both the MSW mock's island route and the Playwright smoke read
       # `hello-dist/islands/*.html`, so the bundle is staged before either runs.
       # Keep this order in step with deploy-workflow.yml (stage → build → test).
-      # `stage` clones `bffless/workflow-hello` at the pin in `hello.ref` and
-      # runs its own `pnpm build` (M3 Task 7) — this step needs network.
+      # `stage` clones `bffless/workflow-implementations` at the pin in
+      # `hello.ref` and runs its hello package's own `pnpm build` (M3 Task 7,
+      # repointed for M4) — this step needs network.
       - run: pnpm --filter workflow stage
       # No VITE_BFFLESS_PROJECT here, deliberately: CI/mocks/tests exercise the
       # unscoped discovery path (every alias the mock project's fixtures ship),
@@ -45,7 +46,7 @@ jobs:
       - run: pnpm --filter @bffless/workflow-live lint
       - run: pnpm --filter @bffless/workflow-live test:run
       - run: pnpm --filter workflow test:run
-      # The stager suite (a real clone + build of workflow-hello) is its own step, not part of test:run.
+      # The stager suite (a real clone + build of workflow-implementations' hello) is its own step, not part of test:run.
       - run: pnpm --filter workflow test:stage
       # One Chromium serves both browsers here: Playwright's own worker and the
       # driver's (`playwright` and `@playwright/test` are pinned to the same

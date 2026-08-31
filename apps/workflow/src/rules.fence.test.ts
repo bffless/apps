@@ -18,7 +18,7 @@ function ruleFiles(dir: string): string[] {
 
 /**
  * Path fragments each set's rule files must include, one per required route.
- * `hello` moved to its own repo (`bffless/workflow-hello`, M3 Task 7) — that
+ * `hello` moved out of this repo (`bffless/workflow-implementations`, M3 Task 7 + M4) — that
  * repo's own tests hold its rule set to its own surface now, not this one.
  */
 const SURFACE: Record<string, string[]> = {

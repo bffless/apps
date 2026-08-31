@@ -1,6 +1,6 @@
 /**
  * `docs/spec/examples/{hello,interactive}.workflow.yaml` are a *copy* of the
- * two YAMLs `bffless/workflow-hello` publishes at `hello.ref` (Decision 5,
+ * two YAMLs `bffless/workflow-implementations` publishes at `hello.ref` (Decision 5,
  * "one source") — everything else in this suite (mocks, `rules.fence.test.ts`,
  * the harness build) reads them straight out of `docs/spec/examples/` rather
  * than depending on a staged bundle. This test is the drift check: it fails
@@ -20,10 +20,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const src = join(appDir, 'hello-src', '.bffless', 'workflows')
+const src = join(appDir, 'hello-src', 'hello', '.bffless', 'workflows')
 const examples = join(appDir, 'docs', 'spec', 'examples')
 
-describe.skipIf(!existsSync(src))('spec examples mirror bffless/workflow-hello at hello.ref', () => {
+describe.skipIf(!existsSync(src))('spec examples mirror bffless/workflow-implementations hello at hello.ref', () => {
   for (const file of ['hello.workflow.yaml', 'interactive.workflow.yaml']) {
     it(file, () => {
       expect(readFileSync(join(examples, file), 'utf8')).toBe(readFileSync(join(src, file), 'utf8'))

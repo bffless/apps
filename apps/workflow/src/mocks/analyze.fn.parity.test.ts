@@ -4,7 +4,7 @@
  * Function` is test-only tooling to execute the authored `.fn.js` source in
  * isolation; it is never used by the app or the mock at runtime.
  *
- * The rule now lives in `bffless/workflow-hello` (M3 Task 7), so this reads it
+ * The rule now lives in `bffless/workflow-implementations` (M3 Task 7, M4 move), so this reads it
  * out of `hello-src/` — populated by `pnpm --filter workflow stage` (a network
  * clone) — and skips cleanly when unstaged, the same way `hello-scripts.test.ts`
  * does.
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { analyzeLines } from './analyze'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const FN_PATH = join(appDir, 'hello-src', '.bffless', 'proxy-rules', 'hello', 'rules', 'analyze', 'post', 'analyze.fn.js')
+const FN_PATH = join(appDir, 'hello-src', 'hello', '.bffless', 'proxy-rules', 'hello', 'rules', 'analyze', 'post', 'analyze.fn.js')
 
 function loadFnHandler(): (ctx: { request: { body?: Record<string, unknown> } }) => unknown {
   const src = readFileSync(FN_PATH, 'utf8')
