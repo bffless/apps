@@ -44,6 +44,14 @@ export interface HttpJson {
       body?: unknown
       headers?: Record<string, string>
       signal?: AbortSignal
+      /**
+       * Ask the browser to finish this request even if the page navigates away
+       * mid-flight (fetch `keepalive`). For the writes whose loss corrupts the
+       * record's story — the `run/update` that seals a finished run
+       * (`runStore.patchRun`). Best-effort: an implementation may drop it when
+       * the body exceeds the browser's in-flight keepalive budget.
+       */
+      keepalive?: boolean
     },
   ): Promise<{
     status: number

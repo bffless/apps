@@ -39,6 +39,15 @@ async function readBody(res: Response): Promise<unknown> {
   }
 }
 
+/**
+ * Chrome caps the *total* in-flight `keepalive` body budget at 64 KB and
+ * rejects a fetch whose body would blow it — so an oversized body silently
+ * degrades to an ordinary request (the pre-keepalive behaviour, still correct
+ * while the page lives) instead of failing the write outright. 60 KB leaves
+ * headroom for other keepalive requests sharing the budget.
+ */
+const KEEPALIVE_BUDGET_BYTES = 60 * 1024
+
 export const httpJson: HttpJson = async (path, init) => {
   const headers: Record<string, string> = { ...init.headers }
   let body: string | undefined
@@ -47,12 +56,23 @@ export const httpJson: HttpJson = async (path, init) => {
     headers['content-type'] = 'application/json'
   }
 
+  // A tab can navigate away the instant the UI settles — same-tab link, reload,
+  // close — and an ordinary fetch dies with the page. A caller that marked its
+  // write `keepalive` (the record-sealing `run/update`: run
+  // run_01M1AH1SE9ZKKK3B29QE0BYFZE was left `running` forever by exactly that
+  // race) gets the flag through to the browser, which finishes the request on
+  // its own.
+  const keepalive =
+    init.keepalive === true &&
+    (body === undefined || new TextEncoder().encode(body).length <= KEEPALIVE_BUDGET_BYTES)
+
   const res = await fetch(`${path}${toQueryString(init.query)}`, {
     method: init.method,
     credentials: 'same-origin',
     headers,
     body,
     signal: init.signal,
+    ...(keepalive ? { keepalive: true } : {}),
   })
 
   // CE names the execution log it wrote for this call (apps#528): on

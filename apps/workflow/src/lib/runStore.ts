@@ -87,8 +87,13 @@ function obj(value: unknown): Record<string, unknown> {
  * becomes the message when present, and the UI can show it as-is; anything
  * else keeps the generic `answered <status>` line. The status survives either way.
  */
-async function post(http: HttpJson, path: string, body: unknown): Promise<unknown> {
-  const res = await http(path, { method: 'POST', body })
+async function post(
+  http: HttpJson,
+  path: string,
+  body: unknown,
+  init?: { keepalive?: boolean },
+): Promise<unknown> {
+  const res = await http(path, { method: 'POST', body, ...(init?.keepalive ? { keepalive: true } : {}) })
   if (!res.ok) {
     const error = obj(res.body).error
     const message =
@@ -105,7 +110,14 @@ export function createRunStore(http: HttpJson): RunStore & RunDeleter & RunForke
     },
 
     async patchRun(id, patch) {
-      await post(http, '/api/workflow/run/update', { id, patch })
+      // The record-sealing write: `run.finished` lands here as
+      // status/outputs/finishedAt/lease-clear (rows.ts), and a tab that
+      // navigates the moment the pill flips kills an ordinary fetch mid-flight
+      // — leaving the record `running` with a live-looking lease while every
+      // step row says done (run_01M1AH1SE9ZKKK3B29QE0BYFZE). `keepalive` hands
+      // the request to the browser to finish after the page is gone; `http`
+      // drops the flag itself when the body exceeds the keepalive budget.
+      await post(http, '/api/workflow/run/update', { id, patch }, { keepalive: true })
     },
 
     async upsertStep(runId, key, patch) {
