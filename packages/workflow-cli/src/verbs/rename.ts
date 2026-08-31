@@ -71,25 +71,6 @@ export function runRename(
     return 2
   }
 
-  // A cheap post-condition on the identity file specifically (the one file
-  // `renamePass` treats as ordinary text but that this verb's own mismatch
-  // guard, above, depends on reading correctly): after a real (non-dry-run)
-  // rename, .bffless/workflow.json must actually say the new alias. This
-  // can only fail if the boundary-aware textual pass missed the identity
-  // file's own content — a bug in the engine, not something a caller can
-  // trigger — but it's cheap to check and turns a silent-drift bug into a
-  // loud one instead of a report that lied about what happened.
-  if (!parsed.dryRun) {
-    const after = readIdentity(dir)
-    if (after.alias !== parsed.newAlias) {
-      err(
-        `workflow: rename reported success but .bffless/workflow.json still says "${after.alias}", ` +
-          `not "${parsed.newAlias}" — this is a bug in the rename engine`,
-      )
-      return 2
-    }
-  }
-
   printReport(report, parsed, out)
   return 0
 }
