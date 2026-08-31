@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/bffless/apps/compare/workflow-headless-v1.0.0...workflow-headless-v1.0.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **workflow-headless:** wait for the run record to seal before closing the browser ([#542](https://github.com/bffless/apps/issues/542)) ([106bde0](https://github.com/bffless/apps/commit/106bde0161a78928c491e477df2c700089beb402))
+
 ## 1.0.0 (2026-08-28)
 
 
