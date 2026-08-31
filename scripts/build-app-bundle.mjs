@@ -102,7 +102,14 @@ function main() {
   const sourceCommit = resolveSourceCommit(repoRoot)
   if (sourceCommit) console.log(`Source commit: ${sourceCommit}`)
 
-  // Step 2: build the frontend.
+  // Step 2: build the frontend. Workspace dependencies are built first — `tsc -b` in an
+  // app that consumes a workspace package's dist (e.g. workflow -> @bffless/workflow-lint)
+  // fails on a fresh checkout otherwise — and an app-declared `stage` script runs before
+  // `build`, mirroring the app's own deploy workflow order (deps -> stage -> build; see
+  // deploy-workflow.yml). Both are no-ops for apps without them (--if-present / no deps
+  // with a build script).
+  run('pnpm', ['--filter', `${appId}^...`, 'run', '--if-present', 'build'])
+  run('pnpm', ['--filter', appId, 'run', '--if-present', 'stage'])
   run('pnpm', ['--filter', appId, 'build'])
 
   const distDir = join(appDir, manifest.install.deployment.path)
