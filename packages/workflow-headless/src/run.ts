@@ -7,7 +7,7 @@
  * `window.__workflow` — never scraped from the DOM.
  */
 import { Buffer } from 'node:buffer'
-import { pageApi, type ApiLike } from './api.js'
+import { pageApi, type ApiLike, type JsonResponse } from './api.js'
 import {
   downloadOutputs,
   writeConsoleLog,
@@ -18,7 +18,13 @@ import {
 import { fetchDefinition } from './discover.js'
 import { DriverError, EXIT } from './errors.js'
 import { loginViaRelay, type Credentials } from './login.js'
-import { waitForStart, waitForTerminal, formatTransition, type Transition } from './observe.js'
+import {
+  TERMINAL,
+  waitForStart,
+  waitForTerminal,
+  formatTransition,
+  type Transition,
+} from './observe.js'
 import type { BrowserLike, PageLike } from './page.js'
 import { nodeUploadDeps, uploadFileInputs, type UploadDeps } from './upload.js'
 
@@ -41,6 +47,8 @@ export interface RunDeps {
   /** Handed a way to click Cancel, once there is a run page to click it on. */
   onReady?: (control: { cancel: () => Promise<void> }) => void
   uploadDeps?: UploadDeps
+  /** Test seam for the driver's own waits; real time by default. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export interface RunReport {
@@ -84,6 +92,51 @@ async function definitionWithRetry(
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** The record's own status, read off a `/api/workflow/run?id=` body. */
+function recordStatus(body: unknown): string {
+  const run = ((body ?? {}) as { run?: { status?: unknown } }).run
+  return typeof run?.status === 'string' ? run.status : ''
+}
+
+/**
+ * The page's terminal pill and the run record are written by two different
+ * actors, and the record's is the one a closed browser kills: the SPA seals
+ * the run with a `keepalive` `POST /api/workflow/run/update` (apps#539), a
+ * promise that survives a tab close but **not** `browser.close()` of the
+ * whole headless process. The live `headless` walk of 2026-08-30 hit exactly
+ * that window — the driver saw "Succeeded", exited 0, and left
+ * `run_01M1BREJZK5V77ZRPXKTG7ZG7C` reporting `running` forever.
+ *
+ * So after the page shows terminal, the browser is held open until the
+ * *record* agrees, bounded: the freshest read is returned either way, and a
+ * bound that expires is a warning, never a new exit code — the page's own
+ * terminal status stays the run's verdict.
+ */
+export async function waitForSealedRecord(
+  api: ApiLike,
+  runId: string,
+  warn: (line: string) => void,
+  o: { timeoutMs?: number; pollMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<JsonResponse> {
+  const timeoutMs = o.timeoutMs ?? 15_000
+  const pollMs = o.pollMs ?? 500
+  const wait = o.sleep ?? sleep
+  const url = `/api/workflow/run?id=${encodeURIComponent(runId)}`
+  // Attempt-counted rather than clock-checked so an instant test `sleep`
+  // still terminates: the bound is the number of polls the timeout buys.
+  const attempts = Math.max(1, Math.ceil(timeoutMs / pollMs))
+
+  let freshest: JsonResponse = { status: 0, body: null }
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    freshest = await api.json(url)
+    if (freshest.status === 200 && TERMINAL.has(recordStatus(freshest.body))) return freshest
+    if (attempt < attempts - 1) await wait(pollMs)
+  }
+  const seen = freshest.status === 200 ? `still reports ${recordStatus(freshest.body) || 'no status'}` : `read ${freshest.status}`
+  warn(`run record ${runId} ${seen} after ${timeoutMs} ms — the sealing update may not have landed`)
+  return freshest
+}
 
 export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunReport> {
   const warn = deps.warn ?? deps.log
@@ -218,9 +271,14 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
     await shot(`02-${terminal.status}`)
     if (terminal.status !== 'succeeded') await shot('failed')
 
+    // Before anything can close the browser: hold it open until the record
+    // itself is sealed, so the page's in-flight sealing update can land.
+    const record = await waitForSealedRecord(api, started.runId, warn, {
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
+    })
+
     let outputs = terminal.outputs
     if (o.out) {
-      const record = await api.json(`/api/workflow/run?id=${encodeURIComponent(started.runId)}`)
       if (record.status === 200) {
         await writeRunRecord(o.out, record.body)
       } else {

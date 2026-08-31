@@ -96,3 +96,87 @@ describe('runWorkflow — a login that never returns', () => {
     expect(page.clicks).toContain('button[type="submit"]')
   })
 })
+
+describe('runWorkflow — a record that seals after the page does', () => {
+  /**
+   * The page's terminal pill and the run record's status are written by two
+   * different actors: the pill by the run page's render, the record by the
+   * SPA's sealing `POST /api/workflow/run/update` — which #539 made
+   * `keepalive`, a promise that survives a tab close but not `browser.close()`
+   * of the whole process. The live `headless` walk of 2026-08-30 proved the
+   * window: the driver saw "Succeeded", exited 0, and left
+   * run_01M1BREJZK5V77ZRPXKTG7ZG7C `running` forever. So after the page shows
+   * terminal, the driver must hold the browser open until the *record* agrees.
+   */
+  const key = '/api/workflow/run?id=run_1'
+  const record = (status: string) => ({
+    status: 200,
+    text: JSON.stringify({ run: { runId: 'run_1', status, outputs: {} }, steps: [] }),
+  })
+  const globals = [
+    { runId: 'run_1', status: 'running' },
+    { runId: 'run_1', status: 'succeeded' },
+  ]
+
+  test('polls the record until it reports a terminal status, and run.json carries it', async () => {
+    const dir = out()
+    const routes = helloRoutes('succeeded')
+    routes[key] = [record('running'), record('running'), record('running'), record('succeeded')]
+    const { browser, page } = fakeBrowser({ globals, routes })
+
+    const report = await runWorkflow(options(5_000, dir), {
+      browser,
+      log: () => {},
+      warn: () => {},
+      sleep: async () => {},
+    })
+
+    expect(report.status).toBe('succeeded')
+    // The record was re-read until it sealed — not snapshotted mid-race.
+    expect(page.fetched.filter((k) => k === key).length).toBeGreaterThanOrEqual(4)
+    const written = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as {
+      run: { status: string }
+    }
+    expect(written.run.status).toBe('succeeded')
+  })
+
+  test('waits for the seal even with no --out — closing early is the race itself', async () => {
+    const routes = helloRoutes('succeeded')
+    routes[key] = [record('running'), record('succeeded')]
+    const { browser, page } = fakeBrowser({ globals, routes })
+
+    const report = await runWorkflow(options(5_000), {
+      browser,
+      log: () => {},
+      warn: () => {},
+      sleep: async () => {},
+    })
+
+    expect(report.status).toBe('succeeded')
+    expect(page.fetched.filter((k) => k === key).length).toBeGreaterThanOrEqual(2)
+  })
+
+  test('a record that never seals: bounded, warned, freshest read written, page status kept', async () => {
+    const dir = out()
+    const routes = helloRoutes('succeeded')
+    routes[key] = record('running')
+    const { browser } = fakeBrowser({ globals, routes })
+
+    const warns: string[] = []
+    const report = await runWorkflow(options(5_000, dir), {
+      browser,
+      log: () => {},
+      warn: (line) => warns.push(line),
+      sleep: async () => {},
+    })
+
+    // The exit vocabulary is untouched: the page saw `succeeded`, so the
+    // report says `succeeded` — the unsealed record is a warning, not a code.
+    expect(report.status).toBe('succeeded')
+    expect(warns.some((line) => line.includes('run_1') && line.includes('running'))).toBe(true)
+    const written = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as {
+      run: { status: string }
+    }
+    expect(written.run.status).toBe('running')
+  })
+})

@@ -21,7 +21,8 @@ export interface Route {
 export interface FakeOptions {
   /** Successive `window.__workflow` reads; the last entry repeats forever. */
   globals: Array<Partial<Snapshot> | undefined>
-  routes?: Record<string, Route>
+  /** An array is successive answers to the same key; the last entry repeats forever. */
+  routes?: Record<string, Route | Route[]>
   /** Run just before the n-th (1-based) global read answers — the test's clock. */
   onGlobalRead?: (n: number) => void
   /** Console lines the page emits on its first navigation. */
@@ -44,7 +45,7 @@ export interface FakePage extends PageLike {
 }
 
 /** Discovery for `hello/demo`, plus the run record `run.json` is written from. */
-export function helloRoutes(status: string, runId = 'run_1'): Record<string, Route> {
+export function helloRoutes(status: string, runId = 'run_1'): Record<string, Route | Route[]> {
   return {
     '/w/hello/.bffless/workflows/index.json': {
       status: 200,
@@ -103,7 +104,11 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
       const parsed = new URL(request.url)
       const key = `${parsed.pathname}${parsed.search}`
       page.fetched.push(key)
-      const route = o.routes?.[key]
+      const answers = o.routes?.[key]
+      const nth = (page.fetched.filter((k) => k === key).length) - 1
+      const route = Array.isArray(answers)
+        ? answers[Math.min(nth, answers.length - 1)]
+        : answers
       return {
         status: route?.status ?? 404,
         text: route?.text ?? '',
