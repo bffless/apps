@@ -1,7 +1,7 @@
 {
   "name": "workflow",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,11 @@
     "test:stage": "vitest run -c vitest.stage.config.ts",
     "test:e2e": "playwright test"
   },
-  "msw": { "workerDirectory": ["public"] },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  },
   "dependencies": {
     "@bffless/workflow-lint": "workspace:*",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
