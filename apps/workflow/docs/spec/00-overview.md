@@ -76,7 +76,17 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
   `render: island`.
 - **M3 — Studio port + headless.** `workflow-studio` (pipelines path-in/path-out, cut-editor
   island, blog-bundle script), `publish-workflow` action/CLI, `headless/` Playwright CLI.
-- **M4 — Catalog packaging** (phase 2). Follow-ups: CE `targetUrl: alias://<name>` (optional
+- **M4 — Catalog packaging** (phase 2) — **done 2026-08-31.** Implementations externalized
+  to the [`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations)
+  monorepo (`workflows/hello`, `workflows/workflow-studio`; `bffless/workflow-hello` archived;
+  Studio's libs frozen into `vendor/studio/` — divergence deliberate from here), deploy-neutral
+  on the live instance (walks green, `rules diff` empty). Runtime project self-discovery
+  (#363): `GET /api/workflow/project` reads CE's `deployment` provenance, `VITE_BFFLESS_PROJECT`
+  demoted to an override. The harness ships as a catalog app: `bffless-app.json` + release
+  component (apps#546, bundle-build fix apps#548), registry entry live on `apps.bffless.dev`
+  (workflow v1.0.0, ceMin 0.4.37, sha-verified), 1-click install proven on a scratch project
+  (spec 06 *Phase 1 → phase 2*; `bffless/README.md` M4 blocks). Follow-ups: CE
+  `targetUrl: alias://<name>` (optional
   since 2026-08-28 — a declarative spelling of the in-process forwarder, not a dependency),
   WebMCP on the harness page, attestations, guest/public runs, reusable workflows,
   deployment-pinned `/w/<alias>@<deployment>/`.

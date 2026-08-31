@@ -53,7 +53,7 @@ describe('ImplementationsPage', () => {
     expect(await screen.findByText('No implementations found')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /publish/i })).toHaveAttribute(
       'href',
-      expect.stringContaining('06-discovery-publishing-files.md'),
+      expect.stringContaining('writing-an-implementation.md'),
     )
   })
 

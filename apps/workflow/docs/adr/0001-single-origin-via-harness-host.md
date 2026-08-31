@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-08-19
-amended: 2026-08-28
+amended: 2026-08-31
 ---
 # The browser talks only to the harness host
 
@@ -71,3 +71,18 @@ publish. `target-url` remains as an explicit override
 (the legacy per-domain mode). ce#698 (`targetUrl: alias://<impl>`) is demoted to a
 nice-to-have: a declarative spelling of the same hop, not a dependency. This resolves the
 forwarder half of apps#364.
+
+## Amendment (2026-08-31, M4) — where implementations live
+
+The decision above is unchanged; what moved is the publishing topology it applies to.
+Implementations were externalized out of `bffless/apps` into the
+[`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations)
+monorepo, one package per implementation under `workflows/<impl>/` (`workflows/hello`,
+`workflows/workflow-studio`), each carrying the identity file `.bffless/workflow.json`
+`{ "alias", "harness" }`. `bffless/workflow-hello` was archived after the move (history
+preserved there). Studio's shared libs were **copied and frozen** into
+`workflows/workflow-studio/vendor/studio/` per M4 Decision 3 — the M3 "import Studio's pure
+libs byte-identical" rule retired at move time; divergence from Studio is deliberate from
+here. Aliases, rule-set names and the `/api/<impl>/…` / `/w/<impl>/…` prefixes did not
+change — the move was deploy-neutral, proven by the live walks and empty `rules diff` runs
+recorded in `apps/workflow/bffless/README.md` (*M4 Phase 1*).

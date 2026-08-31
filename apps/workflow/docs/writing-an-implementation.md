@@ -42,16 +42,32 @@ schemas, five `script` modules built from TypeScript, one React island, a matrix
 video ops behind a job-poll, and `headless:` declarations that keep the whole thing runnable
 without a person. Where hello shows the smallest shape of each piece, workflow-studio shows what
 each one looks like at scale — including the parts this doc only gestures at: its
-[`scripts/stage.mjs`](../../workflow-studio/scripts/stage.mjs) is step 4's build,
-[`.github/workflows/deploy-workflow-studio.yml`](../../../.github/workflows/deploy-workflow-studio.yml)
-its publish, and [`bffless/README.md`](../../workflow-studio/bffless/README.md) the per-project
-setup that is not carried by any rule set.
+[`scripts/stage.mjs`](https://github.com/bffless/workflow-implementations/blob/main/workflows/workflow-studio/scripts/stage.mjs)
+is step 4's build,
+[`.github/workflows/deploy-workflow-studio.yml`](https://github.com/bffless/workflow-implementations/blob/main/.github/workflows/deploy-workflow-studio.yml)
+its publish, and
+[`bffless/README.md`](https://github.com/bffless/workflow-implementations/blob/main/workflows/workflow-studio/bffless/README.md)
+the per-project setup that is not carried by any rule set.
 
 ## 1. Pick an alias
 
 `<alias>` is the implementation's name in the harness's project: `^[a-z][a-z0-9-]*$`,
 unique, not `workflow` / `w` / `auth` / `_bffless`. It names the deploy alias, the rule set,
 the API prefix `/api/<alias>/…` and the files prefix `/w/<alias>/…` (spec 06 *Names*).
+
+An implementation is a package under `workflows/<alias>/` in
+[`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations) —
+add a directory there rather than forking a repo. It declares its identity in
+**`.bffless/workflow.json`**:
+
+```json
+{ "alias": "<alias>", "harness": "workflow" }
+```
+
+`alias` must equal the `alias:` input of the package's deploy workflow (the monorepo's CI
+`check-identity` step holds them together); `harness` names the harness alias the rule set
+is also attached to. Nothing at run time reads this file yet — it is the identity anchor the
+future `workflow init/add/rename` tooling (apps#420, deliberately unbuilt) will operate on.
 
 ## 2. Write the workflow
 
@@ -114,7 +130,8 @@ An implementation may ship the **skills** its rules' `ai_handler` steps load. CE
 step's skills from a *deployment*, and the rule set runs under the harness alias, so a step
 names its own bundle explicitly — `skills: { mode: selected, alias: <alias>, path:
 <deploy path>/.bffless/skills, enabled: [<name>] }` — where `<deploy path>` is the `path`
-the deploy uploads (`dist` for a standalone repo, `apps/<name>/dist` in this monorepo). A
+the deploy uploads (`workflows/<alias>/dist` in the implementations monorepo — see its
+`deploy-*.yml` `path:` inputs; `dist` for a standalone repo). A
 publish is then the skills deploy; nothing project-level needs setting.
 `workflow-implementations/workflows/workflow-studio` is the reference (`scripts/stage.mjs`, `rules/thumbnail/draft`).
 
@@ -140,7 +157,7 @@ the rule set to **both** `<alias>` and the harness alias (`workflow` by default)
     description: '…'
     repository: bffless/workflow
     api-url: ${{ vars.BFFLESS_URL }}
-    api-key: ${{ secrets.BFFLESS_WORKFLOW_API_KEY }}
+    api-key: ${{ secrets.BFFLESS_API_KEY }}   # contributor role on the harness project
 ```
 
 No `target-url`: from `publish-workflow` v1.2.0 the generated `/w/<alias>/…` forwarder targets

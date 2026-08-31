@@ -474,3 +474,36 @@ Option (a) of Decision 6 holds; **no CE issue needed**. `GET /api/workflow/proje
 `{"repository":"<owner>/<repo>"}` (or `{"repository":null}` when provenance is absent) from
 exactly this root. Like every rule in this set it goes live on merge — there is no PR
 preview deploy for the harness.
+
+### M4 Phase 3 — catalog install proof (2026-08-31)
+
+The harness shipped as a catalog app (manifest + release component in apps#546; the first
+release cut, apps#547 → tag `workflow-v1.0.0`, failed its bundle build — Release run
+33415154519 — fixed by apps#548, and the re-dispatched Release run **33415963261** published
+the bundle and rewrote the registry). Recorded here as the Task 10 record, folded into the
+Phase 4 docs PR (pre-approved deviation).
+
+- [x] **Registry entry live and sha-verified.** `https://apps.bffless.dev/registry.json` →
+  `.apps[] | select(.id=="workflow")`: `version: 1.0.0`, `requires.ceMin: 0.4.37`,
+  `releaseTag: workflow-v1.0.0`, `commit: 07c7016` (the #548 merge), https `bundleUrl` on the
+  GitHub release. Downloading `workflow-v1.0.0.bundle.zip` and re-hashing reproduces the
+  entry's `sha256` (`f038e42eba589cf3f48fe604fdcd574030f4746b4fff9b7517bf8c0f98fbf46e`) —
+  re-checked 2026-08-31 while writing this record.
+- [x] **1-click install on a scratch project** — `bffless/test-workflow` on the dev
+  instance (host `workflow-test-w.j5s.dev`), NOT `bffless/workflow` (the catalog installer
+  would fight the CI-deployed alias). The installed shell answered **200**, and
+  `GET /api/workflow/whoami` answered **200** through the installed rule set.
+- [x] **Zero-configuration discovery scoping (the #363 payoff).**
+  `GET /api/workflow/project` on the scratch install answered
+  `{"repository":"bffless/test-workflow"}` — the serving project, from CE's `deployment`
+  provenance (see the Phase 2 probe above), with no `VITE_BFFLESS_PROJECT` bake anywhere in
+  the prebuilt bundle.
+- [x] **API-key `unauthorised` on the aliases relay is not an install defect.** On the
+  scratch install the discovery relay (`GET /api/workflow/aliases`) answered `unauthorised`
+  to an X-API-Key call; the same call against the production harness `workflow.j5s.dev`
+  answers the same — uniform CE behavior (the alias-list API is session-only), control-checked
+  2026-08-31, so browsing discovery needs a member session either way and the install is not
+  at fault.
+
+The scratch install has since been removed (Task 10 step 3); `workflow-test-w.j5s.dev` now
+answers 404.
