@@ -1,0 +1,59 @@
+{
+  "name": "@bffless/workflow",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Authoring CLI for BFFless Workflow implementations — init/rename/add/lint/index/publish (spec apps/workflow/docs/spec/06-discovery-publishing-files.md)",
+  "keywords": [
+    "bffless",
+    "workflow",
+    "cli",
+    "authoring"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bffless/apps.git",
+    "directory": "packages/workflow-cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "workflow": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@bffless/workflow-lint": "^1.4.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.3",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^4.1.7"
+  }
+}

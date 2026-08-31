@@ -72,6 +72,12 @@ jobs:
       # re-derives it from the tagged package.json and fails the publish if the two
       # disagree, so the convention is checked rather than trusted.
       #
+      # packages/workflow-cli is the one deliberate exception: it publishes as
+      # @bffless/workflow (Decision 7, apps#420 — `npx @bffless/workflow` is the whole
+      # point, and both it and workflow-lint ship a `workflow` bin on purpose), not the
+      # by-convention @bffless/workflow-cli. The name map below overrides just that one
+      # component; everything else still falls through to the convention.
+      #
       # The tags come from release-please-action's per-path `<path>--tag_name` outputs
       # (v4 README, "Path outputs"), which is the tag it actually cut — safer than
       # re-assembling `<component>-v<version>` here. They cannot be looked up
@@ -85,6 +91,7 @@ jobs:
           WORKFLOW_LINT_TAG: ${{ steps.release.outputs['packages/workflow-lint--tag_name'] }}
           WORKFLOW_SCRIPT_TAG: ${{ steps.release.outputs['packages/workflow-script--tag_name'] }}
           WORKFLOW_HEADLESS_TAG: ${{ steps.release.outputs['packages/workflow-headless--tag_name'] }}
+          WORKFLOW_CLI_TAG: ${{ steps.release.outputs['packages/workflow-cli--tag_name'] }}
         run: |
           echo "$PATHS_RELEASED" \
             | jq -c '[.[] | select(startswith("apps/")) | sub("^apps/"; "")]' \
@@ -96,13 +103,15 @@ jobs:
                 --arg workflow_lint "$WORKFLOW_LINT_TAG" \
                 --arg workflow_script "$WORKFLOW_SCRIPT_TAG" \
                 --arg workflow_headless "$WORKFLOW_HEADLESS_TAG" \
+                --arg workflow_cli "$WORKFLOW_CLI_TAG" \
                 '[ .[]
                    | select(startswith("packages/"))
                    | sub("^packages/"; "") as $name
-                   | { package: ("@bffless/" + $name),
+                   | { package: ({ "workflow-cli": "@bffless/workflow" }[$name] // ("@bffless/" + $name)),
                        ref: ({ "workflow-lint": $workflow_lint,
                                "workflow-script": $workflow_script,
-                               "workflow-headless": $workflow_headless }[$name] // "") } ]' \
+                               "workflow-headless": $workflow_headless,
+                               "workflow-cli": $workflow_cli }[$name] // "") } ]' \
             > /tmp/packages_released.json
           if jq -e 'any(.[]; .ref == "" or .ref == null)' /tmp/packages_released.json > /dev/null; then
             echo "::error::a released packages/* component has no tag_name mapped in this step's env — add it"

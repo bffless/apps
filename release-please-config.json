@@ -36,6 +36,11 @@
       "component": "workflow-lint",
       "include-component-in-tag": true
     },
+    "packages/workflow-cli": {
+      "release-type": "node",
+      "component": "workflow-cli",
+      "include-component-in-tag": true
+    },
     "packages/workflow-script": {
       "release-type": "node",
       "component": "workflow-script",

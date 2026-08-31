@@ -7,6 +7,10 @@ name: publish-workflow-lint
 #   @bffless/workflow-script    the types-only `script` step contract
 #   @bffless/workflow-headless  the Playwright driver CLI that runs a harness
 #                               workflow unattended
+#   @bffless/workflow           the authoring CLI (init/rename/add/lint/index/publish,
+#                               apps#420) — packages/workflow-cli, published under the
+#                               `@bffless/workflow` name rather than the by-convention
+#                               `@bffless/workflow-cli` (Decision 7)
 #
 # (The file keeps its workflow-lint name because release.yml calls it by path; it
 # has published more than that package since the second one joined.)
@@ -55,6 +59,7 @@ on:
           - '@bffless/workflow-lint'
           - '@bffless/workflow-script'
           - '@bffless/workflow-headless'
+          - '@bffless/workflow'
       ref:
         description: 'the release tag to check out and publish, e.g. workflow-lint-v1.0.0'
         required: true
@@ -112,6 +117,7 @@ jobs:
             @bffless/workflow-lint)     DIR=packages/workflow-lint ;;
             @bffless/workflow-script)   DIR=packages/workflow-script ;;
             @bffless/workflow-headless) DIR=packages/workflow-headless ;;
+            @bffless/workflow)          DIR=packages/workflow-cli ;;  # not the by-convention @bffless/workflow-cli
             *) echo "::error::unknown package $PKG"; exit 1 ;;
           esac
           COMPONENT="${DIR#packages/}"

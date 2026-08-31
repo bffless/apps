@@ -1,0 +1,8 @@
+# Knowingly-bad: missing `name`, spec must be 1, job `a` has no steps.
+# Mirrors packages/workflow-lint/test/fixtures/broken/schema-bad-shape.workflow.yaml —
+# vendored inline rather than referenced across packages (this package must not
+# depend on another package's test fixtures, only its published API).
+spec: 2
+on: { manual: {} }
+jobs:
+  a: {}
