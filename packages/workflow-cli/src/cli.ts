@@ -30,8 +30,8 @@ import {
   buildIndex,
   lintFile,
   resolveRuleSet,
-  type BuildIndexResult,
   type Counts,
+  type IndexFinding,
   type LintResult,
   type RuleSetContext,
 } from '@bffless/workflow-lint'
@@ -307,6 +307,53 @@ function defaultCommit(): string {
   return process.env.GITHUB_SHA?.slice(0, 7) ?? 'unknown'
 }
 
+/** The `buildIndex` result once a failing lint has already returned. */
+type WriteResult = { ok: true; workflowCount: number; indexFile: string } | { ok: false; findings: IndexFinding[] }
+
+/**
+ * Everything that touches disk beyond the up-front directory/rules checks:
+ * reading the workflow YAMLs, running `buildIndex`, and — only on success —
+ * writing the bundle. Split out so `runIndex` can wrap exactly this in a
+ * try/catch, matching workflow-lint's own CLI contract (its `runIndex` wraps
+ * the equivalent `writeIndex(...)` call the same way): a permission error, a
+ * full disk, or a file deleted mid-run must surface as `workflow: <message>`
+ * on stderr with exit 2, never an uncaught exception.
+ */
+function writeIndexBundle(parsed: IndexArgs, rules: RuleSetContext): WriteResult {
+  const files = workflowFiles(parsed.workflowsDir)
+  const built = buildIndex({
+    impl: parsed.impl,
+    name: parsed.name,
+    description: parsed.description,
+    version: parsed.version ?? defaultVersion(parsed.workflowsDir),
+    commit: parsed.commit ?? defaultCommit(),
+    workflows: files.map((file) => ({ file, yaml: readFileSync(join(parsed.workflowsDir, file), 'utf8') })),
+    islands: bundleFiles(parsed.out, 'islands', /\.html$/),
+    scripts: bundleFiles(parsed.out, 'scripts', /\.m?js$/),
+    rules,
+  })
+
+  // Nothing is written for a failing lint: a half-staged bundle whose index
+  // predates the failure is worse than no bundle at all (06).
+  if (!built.ok) return built
+
+  // The only directory this command owns is cleared before it is written, so
+  // a renamed or deleted YAML never lingers in a re-used local out dir. Never
+  // `<out>` itself, which holds the islands and scripts someone else staged.
+  const workflowDir = join(parsed.out, '.bffless', 'workflows')
+  rmSync(workflowDir, { recursive: true, force: true })
+  mkdirSync(workflowDir, { recursive: true })
+  for (const file of files) copyFileSync(join(parsed.workflowsDir, file), join(workflowDir, file))
+
+  const { workflows, islands, scripts, ...head } = built.index
+  const index = { ...head, generatedAt: new Date().toISOString(), workflows, islands, scripts }
+  const indexFile = join(workflowDir, 'index.json')
+  writeFileSync(indexFile, JSON.stringify(index, null, 2))
+  writeFileSync(join(parsed.out, 'index.html'), landingPage(parsed.impl))
+
+  return { ok: true, workflowCount: index.workflows.length, indexFile }
+}
+
 function runIndex(parsed: IndexArgs, out: (line: string) => void, err: (line: string) => void): number {
   if (!existsSync(parsed.workflowsDir)) {
     err(`workflow: no such directory: ${parsed.workflowsDir}`)
@@ -330,45 +377,24 @@ function runIndex(parsed: IndexArgs, out: (line: string) => void, err: (line: st
     return 2
   }
 
-  const files = workflowFiles(parsed.workflowsDir)
-  const built: BuildIndexResult = buildIndex({
-    impl: parsed.impl,
-    name: parsed.name,
-    description: parsed.description,
-    version: parsed.version ?? defaultVersion(parsed.workflowsDir),
-    commit: parsed.commit ?? defaultCommit(),
-    workflows: files.map((file) => ({ file, yaml: readFileSync(join(parsed.workflowsDir, file), 'utf8') })),
-    islands: bundleFiles(parsed.out, 'islands', /\.html$/),
-    scripts: bundleFiles(parsed.out, 'scripts', /\.m?js$/),
-    rules,
-  })
+  let result: WriteResult
+  try {
+    result = writeIndexBundle(parsed, rules)
+  } catch (e) {
+    err(`workflow: ${(e as Error).message}`)
+    return 2
+  }
 
-  // Nothing is written for a failing lint: a half-staged bundle whose index
-  // predates the failure is worse than no bundle at all (06).
-  if (!built.ok) {
-    err(`workflow: ${built.findings.length} finding(s) — a failing lint is never published:`)
-    for (const f of built.findings) {
+  if (!result.ok) {
+    err(`workflow: ${result.findings.length} finding(s) — a failing lint is never published:`)
+    for (const f of result.findings) {
       const pos = f.pos ? `${f.pos.line}:${f.pos.col}` : '-'
       err(`  ${f.file}  ${pos}  ${f.severity}  ${f.rule}  ${f.message}`)
     }
     return 1
   }
 
-  // The only directory this command owns is cleared before it is written, so
-  // a renamed or deleted YAML never lingers in a re-used local out dir. Never
-  // `<out>` itself, which holds the islands and scripts someone else staged.
-  const workflowDir = join(parsed.out, '.bffless', 'workflows')
-  rmSync(workflowDir, { recursive: true, force: true })
-  mkdirSync(workflowDir, { recursive: true })
-  for (const file of files) copyFileSync(join(parsed.workflowsDir, file), join(workflowDir, file))
-
-  const { workflows, islands, scripts, ...head } = built.index
-  const index = { ...head, generatedAt: new Date().toISOString(), workflows, islands, scripts }
-  const indexFile = join(workflowDir, 'index.json')
-  writeFileSync(indexFile, JSON.stringify(index, null, 2))
-  writeFileSync(join(parsed.out, 'index.html'), landingPage(parsed.impl))
-
-  out(`indexed ${index.workflows.length} workflow(s) → ${indexFile}`)
+  out(`indexed ${result.workflowCount} workflow(s) → ${result.indexFile}`)
   return 0
 }
 

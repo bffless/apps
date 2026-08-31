@@ -1,0 +1,14 @@
+# A minimal, schema-valid workflow — used only to get `workflow index` past
+# buildIndex (ok: true) and into the file-write step, so the write-failure
+# test below actually exercises the write path, not the lint-failure path.
+spec: 1
+name: Plain
+description: One echo step.
+on:
+  manual: {}
+jobs:
+  echo:
+    steps:
+      - id: echo
+        uses: pipeline
+        with: { path: echo }

@@ -6,13 +6,16 @@
  * correctness — that's workflow-lint's test suite's job.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, test } from 'vitest'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
 const brokenFixture = fileURLToPath(new URL('./fixtures/broken.workflow.yaml', import.meta.url))
+const indexSrcDir = fileURLToPath(new URL('./fixtures/index-src', import.meta.url))
 
 const pkgVersion = (
   JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as {
@@ -63,5 +66,32 @@ describe('unknown verb', () => {
     const r = run(['nope'])
     expect(r.status).toBe(2)
     expect(r.stderr).toMatch(/unknown (command|verb) `nope`/)
+  })
+})
+
+describe('workflow index', () => {
+  // Regression: runIndex's buildIndex-through-writeFileSync sequence must be
+  // exception-safe like workflow-lint's own CLI (its runIndex wraps the
+  // equivalent writeIndex(...) call in try/catch) — a write failure mid-run
+  // (permission error, full disk, `--out` colliding with an existing file)
+  // has to surface as the documented `workflow: <message>` / exit 2, not an
+  // uncaught exception with a Node stack trace.
+  test('a write failure mid-run exits 2 with the message on stderr, not a stack trace', () => {
+    // `--out` pointing at a plain file (not a directory) makes the bundle
+    // write fail with a real fs error (ENOTDIR) once buildIndex has already
+    // succeeded — indexSrcDir's fixture is schema-valid, so this actually
+    // reaches the write step rather than failing lint first.
+    const tmp = mkdtempSync(join(tmpdir(), 'workflow-cli-index-'))
+    const outIsAFile = join(tmp, 'out')
+    writeFileSync(outIsAFile, 'not a directory')
+
+    const r = run(['index', indexSrcDir, '--out', outIsAFile, '--impl', 'plain', '--name', 'Plain'])
+
+    expect(r.status).toBe(2)
+    expect(r.stdout).toBe('')
+    expect(r.stderr.trim()).toMatch(/^workflow: /)
+    // A raw Node stack trace ("at ... (file:line:col)") means the exception
+    // escaped the try/catch instead of being turned into the documented error.
+    expect(r.stderr).not.toMatch(/\bat .*:\d+:\d+/)
   })
 })
