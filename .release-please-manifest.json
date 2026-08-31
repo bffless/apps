@@ -5,5 +5,5 @@
   "apps/recall": "0.3.1",
   "packages/workflow-lint": "1.4.0",
   "packages/workflow-script": "1.0.0",
-  "packages/workflow-headless": "1.0.0"
+  "packages/workflow-headless": "1.0.1"
 }
