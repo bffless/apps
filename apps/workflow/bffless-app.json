@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "workflow",
+  "name": "Workflow",
+  "version": "0.0.0",
+  "summary": "Run reviewable, resumable AI workflows — interactive or headless — against your own BFFless project.",
+  "category": "automation",
+  "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/workflow",
+  "requires": { "ceMin": "0.4.37" },
+  "install": {
+    "alias": "workflow",
+    "deployment": { "path": "dist", "basePath": "/apps/workflow/dist" },
+    "ruleSets": [{ "file": "rulesets/workflow.json", "attachToAlias": true }],
+    "domain": { "subdomain": "workflow", "isPublic": false, "isSpa": true },
+    "schedules": [],
+    "manualSteps": [
+      { "id": "public-origin-local-fs", "title": "Set PUBLIC_ORIGIN (local storage only)", "body": "On local-FS storage, presigned media URLs are relative and island viewers cannot resolve them. Set PUBLIC_ORIGIN on the backend so signed URLs are absolute.", "appliesWhen": "localStorage" },
+      { "id": "install-implementations", "title": "Publish an implementation", "body": "The harness starts empty. Publish an implementation (e.g. hello) into project {projectPath} with bffless/publish-workflow — see the workflow-implementations repo.", "externalLink": { "label": "workflow-implementations", "url": "https://github.com/bffless/workflow-implementations" }, "appliesWhen": "always" }
+    ]
+  },
+  "eject": { "repo": "bffless/apps", "appPath": "apps/workflow", "deployWorkflow": ".github/workflows/deploy-workflow.yml", "variables": ["BFFLESS_URL"], "secrets": ["BFFLESS_API_KEY"] }
+}
