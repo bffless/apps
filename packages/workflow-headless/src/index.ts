@@ -39,6 +39,7 @@ export {
   encodeInputs,
   runWorkflow,
   startUrl,
+  waitForSealedRecord,
   type RunDeps,
   type RunOptions,
   type RunReport,
