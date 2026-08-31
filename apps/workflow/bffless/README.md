@@ -432,3 +432,41 @@ Walked with `pnpm workflow-live:walk hello` — run `run_01M19H571QZMC4FV40C978C
 - [x] **No console errors after login** (`page.noConsoleErrors`). The two pre-login SuperTokens 401s
   on `admin.j5s.dev/api/auth/session[/refresh]` are the relay's normal path; the session counts
   errors only after the relay login (they stay in `network.log`).
+
+### M4 Phase 1 — the move was deploy-neutral (2026-08-31)
+
+The implementations left this monorepo for
+[`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations)
+(M4 plan Phase 1: `hello` from `bffless/workflow-hello`, now archived; `workflow-studio` from
+`apps/workflow-studio`, removed here in apps#541). Decision 9's proof obligation — the move
+changes the publishing repo only, never an alias, rule-set name, `/api/<impl>/…` or
+`/w/<impl>/…` prefix — held on the live instance:
+
+- [x] **`walk interactive` — 27/27** (`packages/workflow-live`, via `apps-live-walk`).
+- [x] **`walk hello` — 7/7** — hello discovered and run from its new publisher.
+- [x] **`walk studio-audit` — 7/7** — workflow-studio's rule set serving unchanged.
+- [x] **`walk headless --dispatch` — 16/16** (post-#542 — the run record seals before the
+  browser closes, so the sealed-row checks count too).
+- [x] **`bffless rules diff hello --project bffless/workflow` — no drift** after Task 2's
+  cutover deploy from the new repo.
+- [x] **`bffless rules diff workflow-studio --project bffless/workflow` — no drift** after
+  Task 3's cutover deploy from the new repo.
+
+### M4 Phase 2 — the #363 probe: `deployment.*` names the serving project (2026-08-31)
+
+Decision 6's fork ("probed before designed") resolved on the live instance. A **temporary**
+pipeline rule on the live `workflow` alias (created and deleted 2026-08-31; alias restored)
+ran a `function_handler` that echoed its context root. Its exact output, verbatim:
+
+```json
+{"keys":["user","request","steps","deployment","utils"],"deployment":{"owner":"bffless","repo":"workflow","commitSha":"55a8cbaf6c57a1185fb18691c0c2c33e5e3a13cd","alias":"workflow"},"userRole":"user"}
+```
+
+So `deployment.owner`/`deployment.repo` name the **serving BFFless project**
+(`bffless/workflow`) — not the git repository the bundle was built from (`bffless/apps`,
+whose deploy commit is what `commitSha` echoes) — and `deployment.alias` is available too.
+Option (a) of Decision 6 holds; **no CE issue needed**. `GET /api/workflow/project`
+(`order: 25`, `auth_required` + `allowApiKey`, `Cache-Control: no-store`) answers
+`{"repository":"<owner>/<repo>"}` (or `{"repository":null}` when provenance is absent) from
+exactly this root. Like every rule in this set it goes live on merge — there is no PR
+preview deploy for the harness.

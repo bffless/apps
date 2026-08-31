@@ -1,0 +1,24 @@
+targetUrl: pipeline
+order: 25
+pipeline:
+  name: Serving project
+  description: "GET -> { repository: \"<owner>/<repo>\" | null } — the BFFless project this harness deployment is served from, read off the function_handler `deployment` provenance root (apps#363, probed live 2026-08-31: owner/repo name the serving project, not the git repo the bundle was built from). This is how a catalog-installed harness scopes discovery to its own project with no VITE_BFFLESS_PROJECT bake; null means provenance was absent and the caller should stay unscoped."
+  steps:
+    # Pre-serialized in a function_handler and rendered with `{{{…}}}` rather than
+    # hand-assembled in a template — whoami's quote-safe shape (apps#381).
+    - id: project
+      name: project
+      handler: function_handler
+      code: ./project.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.project.repositoryJson}}}"
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "The serving project for runtime discovery scope. no-store: per-deployment provenance, and the SPA caches its one read for the session anyway."

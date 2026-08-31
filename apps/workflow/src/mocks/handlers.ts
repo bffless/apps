@@ -141,6 +141,14 @@ const discovery = [
     return HttpResponse.json(aliases)
   }),
 
+  // The serving project (apps#363): what the `project` rule reads off CE's
+  // `deployment` provenance root. The mock project is `bffless/workflow` — the
+  // same repository every mock alias above carries, so a runtime-scoped probe
+  // and an unscoped one see the same list here too.
+  http.get('/api/workflow/project', () =>
+    HttpResponse.json({ repository: 'bffless/workflow' }, { headers: NO_STORE }),
+  ),
+
   // Only `hello` publishes workflows; every other alias 404s, which is exactly
   // how the harness tells an implementation from an ordinary deploy (ADR-0004).
   http.get('/w/:alias/.bffless/workflows/index.json', ({ params }) =>
