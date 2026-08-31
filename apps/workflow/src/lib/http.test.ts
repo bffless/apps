@@ -189,3 +189,78 @@ describe('runStore.deleteRun', () => {
     await expect(createRunStore(httpJson).deleteRun('run_1')).rejects.toMatchObject({ status: 409 })
   })
 })
+
+// ---------------------------------------------------------------------------
+// `keepalive` (run_01M1AH1SE9ZKKK3B29QE0BYFZE post-mortem): a same-tab
+// navigation right after the "Succeeded" pill killed the in-flight
+// `run/update` that seals the record, leaving it `running` with a live-looking
+// lease forever. The sealing write asks for `keepalive` so the browser
+// finishes it after the page is gone. MSW cannot see the flag, so these spy on
+// `fetch` itself.
+// ---------------------------------------------------------------------------
+
+describe('httpJson keepalive', () => {
+  function spyFetch(): { init: () => RequestInit | undefined; restore: () => void } {
+    const original = globalThis.fetch
+    let seen: RequestInit | undefined
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen = init
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+    return { init: () => seen, restore: () => (globalThis.fetch = original) }
+  }
+
+  it('threads keepalive to fetch when asked and the body fits the budget', async () => {
+    const spy = spyFetch()
+    try {
+      await httpJson('/api/test/seal', { method: 'POST', body: { id: 'run_1' }, keepalive: true })
+      expect(spy.init()?.keepalive).toBe(true)
+    } finally {
+      spy.restore()
+    }
+  })
+
+  it('degrades to an ordinary fetch when the body exceeds the keepalive budget', async () => {
+    const spy = spyFetch()
+    try {
+      // Chrome rejects a keepalive fetch whose body blows the 64 KB in-flight
+      // budget — degrading must not fail the write, so the flag is dropped.
+      const big = 'x'.repeat(70 * 1024)
+      await httpJson('/api/test/seal', { method: 'POST', body: { big }, keepalive: true })
+      expect(spy.init()?.keepalive).toBeUndefined()
+    } finally {
+      spy.restore()
+    }
+  })
+
+  it('sends no keepalive unless asked', async () => {
+    const spy = spyFetch()
+    try {
+      await httpJson('/api/test/seal', { method: 'POST', body: { id: 'run_1' } })
+      expect(spy.init()?.keepalive).toBeUndefined()
+    } finally {
+      spy.restore()
+    }
+  })
+})
+
+// The record-sealing write: `patchRun` is what turns a run row terminal
+// (`run.finished` → status/outputs/finishedAt/lease-clear, rows.ts). It must
+// ask for `keepalive`, or a tab that navigates the moment the pill flips
+// leaves the record lying `running` with every step terminal.
+describe('runStore.patchRun', () => {
+  it('asks for keepalive on run/update, so navigation cannot kill the sealing write', async () => {
+    let seen: { path: string; keepalive?: boolean } | null = null
+    const fake: typeof httpJson = async (path, init) => {
+      seen = { path, keepalive: (init as { keepalive?: boolean }).keepalive }
+      return { status: 200, ok: true, body: { ok: true } }
+    }
+
+    await createRunStore(fake).patchRun('run_1', { status: 'succeeded' })
+
+    expect(seen).toEqual({ path: '/api/workflow/run/update', keepalive: true })
+  })
+})
