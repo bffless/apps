@@ -1,14 +1,14 @@
 /**
  * `scripts/stage-hello.mjs` is what actually runs in CI (`deploy-workflow.yml`,
- * `workflow-app.yml`): clone `bffless/workflow-hello` at `hello.ref`, run its
- * own `pnpm build`, and copy the result into `hello-dist/`. This suite runs
+ * `workflow-app.yml`): clone `bffless/workflow-implementations` at `hello.ref`,
+ * run its hello package's own `pnpm build`, and copy the result into `hello-dist/`. This suite runs
  * the real script against a temp dir — no re-implementing its logic here —
  * and holds the result to the shape the MSW mock's `HELLO_INDEX` asserts, so
  * the two can never quietly drift apart (parity test below).
  *
  * `hello` moved to its own repo for M3 Task 7 (Decision 5, "one source"): this
  * suite therefore asserts *shape*, not the exact counts a implementation
- * detail of workflow-hello's own YAMLs would pin (apps#380) — those are that
+ * detail of hello's own YAMLs would pin (apps#380) — those are that
  * repo's own tests to keep honest, not this monorepo's.
  *
  * This is its own script (`pnpm --filter workflow test:stage`,

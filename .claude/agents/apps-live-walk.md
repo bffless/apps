@@ -33,7 +33,8 @@ Before running anything, read:
 - `packages/workflow-live/README.md` — the walk table, the checks each walk asserts,
   the env it needs, the exit codes, the report shape, the Studio kickoff cap.
 - `apps/workflow/bffless/README.md` → "Live verification checklist" (the M3 rows) and
-  `apps/workflow-studio/bffless/README.md` → "First-success checkpoint" — what each
+  `workflow-studio/bffless/README.md` in `bffless/workflow-implementations` →
+  "First-success checkpoint" — what each
   row you're about to reproduce actually means, in the maintainers' own words.
 - `apps/workflow/docs/spec/07-headless.md` — the driver's exit codes and the shape of
   `run.json`, so a `driver.exit0` or `driver.wroteRunJson` failure means something to

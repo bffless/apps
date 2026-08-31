@@ -123,8 +123,8 @@ Rules, each with its reason:
   Triage checks "concrete enough to write a test for"; naming the test file answers
   "where" as well.
 - **Verify line from `app_facts.sh`, ending in build** (checklist §4: Vitest does not
-  typecheck; `workflow-studio` needs `stage` + `typecheck`, `workflow` spec edits need
-  `workflow-lint`, anything under `.bffless/` needs `apps:check`).
+  typecheck; `workflow` spec edits need `workflow-lint`, anything under `.bffless/`
+  needs `apps:check`).
 - **Say what goes live and when** whenever the fix touches `.bffless/proxy-rules/**`, a
   `$schema`, or `packages/*` — which rule set, and PR-open vs merge (from
   `app_facts.sh`; checklist §1). If none, one clause: "no rule or schema change".
@@ -136,7 +136,8 @@ Rules, each with its reason:
 
 **Labels at creation:** `--label "<category>,<app>"` — one of `bug` / `enhancement` /
 `documentation`, plus the app label if `gh label list` has it (`studio`, `handoff`,
-`reader`, `recall`, `workflow`, `workflow-studio`; packages have none). **Never a
+`reader`, `recall`, `workflow`; `workflow-studio` remains only on historical issues —
+the app moved to `bffless/workflow-implementations`; packages have none). **Never a
 readiness label** — `ready-for-agent` is the promise triage makes after checking, not
 a claim the reporter gets to make. No `needs-triage` either: opening the issue fires
 the triage run by itself.

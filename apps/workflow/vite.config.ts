@@ -18,7 +18,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // The stager suite clones + builds bffless/workflow-hello over the network
+    // The stager suite clones + builds bffless/workflow-implementations' hello over the network
     // (minutes); it has its own config and script (`test:stage`,
     // vitest.stage.config.ts) so `test:run` stays fast and never reaches the
     // network itself. It is not the *full* suite on a fresh checkout, though:

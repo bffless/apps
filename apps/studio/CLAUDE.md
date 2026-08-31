@@ -69,13 +69,17 @@ ffmpeg.wasm (story 05+).
   the old `/studio` route prefix was dropped on extraction. `src/main.tsx` wires the store +
   MSW bootstrap.
 
-## Public surface (consumed by workflow-studio)
+## Public surface (the retired workflow-studio seam)
 
 `package.json` `exports` publishes `./lib/*` (a **wildcard over all of `src/lib/*.ts`** — every
 module, not a curated subset), `./components/Studio/CutEditor`, `./components/Studio/clipPlayer`,
-`./components/Studio/MarkdownBody`, `./components/Studio/MermaidDiagramView` and `./index.css` so `apps/workflow-studio` (a re-authoring of this app's video pipelines as a
-Workflow-harness implementation) can depend on `studio: workspace:*` and import them directly
-instead of forking the source.
+`./components/Studio/MarkdownBody`, `./components/Studio/MermaidDiagramView` and `./index.css`.
+Through M3 this let workflow-studio, then in this monorepo (a re-authoring of this app's video pipelines as a
+Workflow-harness implementation) depend on `studio: workspace:*` and import them directly
+instead of forking the source. **The seam retired at the M4 move** (plan Decision 3):
+workflow-studio now lives in `bffless/workflow-implementations` on copies of these modules
+frozen at the move commit — Studio drift no longer flows into it, and no in-repo consumer
+imports through this map today.
 
 **Not everything under `lib/*` is store-free today.** Four modules touch the Redux slice:
 `projectSync.ts` imports `freshWorkingState` from `../store/studioSlice` as a **value** (it
@@ -92,14 +96,14 @@ over `import('mermaid')` (and stays OFF the export map for that reason), and the
 a pinned CDN URL fetched at runtime (`islands/blog-editor/mermaid.ts`, apps#441). Keep
 `MermaidDiagramView.tsx` free of any `mermaid` import, value or type.
 
-The modules workflow-studio actually consumes are store-free (verified against the tree):
-`director`, `refiner`, `describe`, `blog`, `sources`, `contactSheet`, `filmstrip`, `scenes`,
-`edl`, `slug`, `transcriptGrid`, `playback`, `deadSpace`, `autoTrim`, `audio`, `search`,
-`frames`. Keep that list — and any new module workflow-studio starts consuming — store-free (no
-`react-redux`/`@reduxjs/toolkit`/`../store` import, value or type-only) so it stays usable
-outside this app's Redux tree; `apps/workflow-studio/eslint.config.js` fences the four
-store-touching modules (plus `studio/store/*` and the Redux packages themselves) out of
-`scripts/**`/`islands/**` so this is enforced, not just documented.
+The modules workflow-studio froze copies of are store-free (verified against the tree at the
+move): `director`, `refiner`, `describe`, `blog`, `sources`, `contactSheet`, `filmstrip`,
+`scenes`, `edl`, `slug`, `transcriptGrid`, `playback`, `deadSpace`, `autoTrim`, `audio`,
+`search`, `frames`. Keeping them store-free (no `react-redux`/`@reduxjs/toolkit`/`../store`
+import, value or type-only) is still good hygiene — it keeps them usable outside this app's
+Redux tree — but since the M4 freeze nothing outside this repo breaks if one slips; the fence
+that enforced it now lives with the frozen copies in `bffless/workflow-implementations`
+(`workflow-studio/eslint.config.js`).
 
 ## Non-negotiable patterns
 

@@ -1,6 +1,6 @@
 /**
  * The stager suite on its own. `hello-stage.test.ts` runs the real
- * `scripts/stage-hello.mjs` — a network clone of `bffless/workflow-hello` at
+ * `scripts/stage-hello.mjs` — a network clone of `bffless/workflow-implementations` at
  * `hello.ref`, its `pnpm install` and its own Vite build — so it is minutes,
  * not milliseconds, and is kept out of `test:run` (see `vite.config.ts`).
  * `hello-drift.test.ts` rides along here for the same reason: it needs the

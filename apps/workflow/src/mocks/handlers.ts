@@ -80,8 +80,8 @@ const ISLAND_HTML: Record<string, string> = Object.fromEntries(
 )
 
 /**
- * The scripts, read straight out of `hello-src/scripts/` — the **source**
- * `stage-hello.mjs` clones from `bffless/workflow-hello` and copies verbatim
+ * The scripts, read straight out of `hello-src/hello/scripts/` — the **source**
+ * `stage-hello.mjs` clones from `bffless/workflow-implementations` and copies verbatim
  * into the bundle (a Worker fetches it as a module, so there is no build step
  * to mirror). Populated once `pnpm --filter workflow stage` has cloned the
  * implementation — like the island glob above, empty (and this route 404s)
@@ -89,7 +89,7 @@ const ISLAND_HTML: Record<string, string> = Object.fromEntries(
  */
 const SCRIPT_SOURCE: Record<string, string> = Object.fromEntries(
   Object.entries(
-    import.meta.glob('../../hello-src/scripts/*.js', {
+    import.meta.glob('../../hello-src/hello/scripts/*.js', {
       query: '?raw',
       import: 'default',
       eager: true,

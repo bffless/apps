@@ -8,7 +8,7 @@
  * the app or the mock at runtime.
  *
  * Like `confine.fn.js`, this rule lives in this repo (not staged from
- * `bffless/workflow-hello`), so there is no `describe.skipIf` here.
+ * `bffless/workflow-implementations`), so there is no `describe.skipIf` here.
  *
  * What is being pinned (apps#472, spec 02): a pipeline may return a bare
  * uploads-relative path where a `file` output is declared, and `register`

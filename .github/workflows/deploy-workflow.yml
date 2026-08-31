@@ -19,8 +19,8 @@ jobs:
       # artefact CI tested: the MSW mock inlines `hello-dist/islands/*.html`
       # through an `import.meta.glob` at build time (mocks-only chunk, loaded
       # under `?mocks=on`), which is empty unless the bundle is staged first.
-      # `hello` itself is published by its own repo's `deploy.yml`
-      # (`bffless/workflow-hello`, via `bffless/publish-workflow@v1`) — this
+      # `hello` itself is published by its own repo's `deploy-hello.yml`
+      # (`bffless/workflow-implementations`, via `bffless/publish-workflow@v1`) — this
       # step only clones it at the pinned `hello.ref` and builds it so the
       # harness's own mocks/tests have `hello-dist/` to read (M3 Task 7).
       - name: Stage the hello implementation bundle

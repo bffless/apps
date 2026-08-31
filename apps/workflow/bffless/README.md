@@ -1,11 +1,12 @@
 # Workflow harness backend — BFFless proxy rule sets
 
 One authored set: `workflow` (run records, lease, files quartet — spec 05/06). Through M2 this
-directory also carried `hello` (the workflow-hello test implementation: echo, slow+poll,
-fail, analyze). As of M3 Task 7 (Decision 5, "one source") `hello` lives in its own repo,
-[`bffless/workflow-hello`](https://github.com/bffless/workflow-hello): its rule set, workflow
-YAMLs, islands and scripts are authored and published from there, via
-`bffless/publish-workflow@v1` in that repo's own `deploy.yml` (see
+directory also carried `hello` (the hello test implementation: echo, slow+poll,
+fail, analyze). As of M3 Task 7 (Decision 5, "one source") `hello` lives outside this monorepo
+— first in `bffless/workflow-hello`, now (M4) as the `hello/` package of
+[`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations): its
+rule set, workflow YAMLs, islands and scripts are authored and published from there, via
+`bffless/publish-workflow@v1` in that repo's own `deploy-hello.yml` (see
 `docs/writing-an-implementation.md`). This monorepo pins the commit it stages for local
 dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
 
@@ -31,11 +32,12 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   or `POST /api/projects/<owner>/<name>/permissions/users` `{ userEmail, role: "viewer" }`). The
   scoped build's empty state says so.
 - **Aliases + domains**: alias `workflow` (the harness SPA) on `workflow.<domain>`, alias
-  `hello` (the test implementation bundle, published by `bffless/workflow-hello`'s own
-  `deploy.yml`) on `hello.<domain>`. Rule set `workflow` is attached to alias `workflow` by
-  this repo's deploy; rule set `hello` is attached to BOTH the `hello` alias and the
-  `workflow` (harness) alias by `bffless/publish-workflow@v1` running in workflow-hello's own
-  CI (ADR-0001 single origin) — nothing in this repo's deploy touches it. The harness domain is
+  `hello` (the test implementation bundle, published by `bffless/workflow-implementations`'s
+  own `deploy-hello.yml`) on `hello.<domain>`. Rule set `workflow` is attached to alias
+  `workflow` by this repo's deploy; rule set `hello` is attached to BOTH the `hello` alias and
+  the `workflow` (harness) alias by `bffless/publish-workflow@v1` running in
+  workflow-implementations' own CI (ADR-0001 single origin) — nothing in this repo's deploy
+  touches it. The harness domain is
   the manual half: `workflow.<domain>` → alias `workflow`, path `/apps/workflow/dist`, **SPA
   fallback on**, `unauthorizedBehavior: redirect_login` + `requiredRole: authenticated` (a
   signed-out member lands on the login page instead of a 404). An implementation domain is
@@ -77,7 +79,7 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   (COOP/COEP only becomes relevant if a script needs threads — `SharedArrayBuffer`,
   ffmpeg core-mt — which nothing in hello does.)
 - The `/w/hello/[...path]` forwarding rule is no longer authored here: `bffless/publish-workflow@v1`
-  generates it as part of workflow-hello's own `deploy.yml`. Since v1.2.0 its `targetUrl` is the
+  generates it as part of workflow-implementations' own `deploy-hello.yml`. Since v1.2.0 its `targetUrl` is the
   CE backend's own serve route for the alias, in-process —
   `http://localhost:3000/public/bffless/workflow/alias/hello/dist`, `forwardCookies: true` (the
   member's session is what makes the private alias answer 200 instead of 404). "In-process" is
@@ -405,7 +407,7 @@ apps#359 Task 25). Each row names the walk's check ids.
   `dispatch.`, `dispatch.savedPoster`.
 - [x] **M3 Task 15 — the mock-only download caveat does not bite live — PASSED 2026-08-30.** Proven by
   the Studio headless run `run_01M19GV5DDXBB3QHFN8BHH7896` (see
-  `apps/workflow-studio/bffless/README.md`): the driver uploaded the 3.6 MB fixture clip as the
+  `workflow-studio/bffless/README.md`, now in `bffless/workflow-implementations`): the driver uploaded the 3.6 MB fixture clip as the
   `recordings` **file input** and every downstream step from `per-video/0/audio` on read its bytes from
   the bucket.
 

@@ -5,7 +5,7 @@
  * only proves the files get *copied*.
  *
  * `hello-src/` only exists once `pnpm --filter workflow stage` has cloned
- * `bffless/workflow-hello` (a network call) — `describe.skipIf` skips this
+ * `bffless/workflow-implementations` (a network call) — `describe.skipIf` skips this
  * suite cleanly rather than crashing a fresh checkout's `test:run`, and the
  * import is dynamic (a variable specifier) precisely so `tsc` never needs the
  * file to exist either.
@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PAYLOAD_BUDGET_BYTES, byteSize } from './lib/runner/payload'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const posterCardPath = join(appDir, 'hello-src', 'scripts', 'poster-card.js')
+const posterCardPath = join(appDir, 'hello-src', 'hello', 'scripts', 'poster-card.js')
 
 function ctx(inputs: Record<string, unknown>) {
   return {
@@ -29,7 +29,7 @@ function ctx(inputs: Record<string, unknown>) {
   }
 }
 
-describe.skipIf(!existsSync(posterCardPath))('hello-src/scripts/poster-card.js', () => {
+describe.skipIf(!existsSync(posterCardPath))('hello-src/hello/scripts/poster-card.js', () => {
   let posterCard: (ctx: unknown) => Promise<{ big: unknown[]; poster: unknown; posters: unknown[] }>
 
   beforeAll(async () => {
