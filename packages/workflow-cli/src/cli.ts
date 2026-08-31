@@ -3,8 +3,10 @@
  * `@bffless/workflow` — the authoring CLI (apps#420). A thin router: `lint`
  * and `index` delegate to `@bffless/workflow-lint`'s published API
  * (`lintFile`, `resolveRuleSet`, `buildIndex`) so the parser/schema/resolver
- * logic has exactly one implementation. The other four verbs (`init`,
- * `rename`, `add`, `publish`) land in later tasks of the same plan
+ * logic has exactly one implementation, and `rename` delegates to its own
+ * verb module (./verbs/rename.ts) built on the boundary-aware rename engine
+ * (./rewrite.ts). The remaining three verbs (`init`, `add`, `publish`) land
+ * in later tasks of the same plan
  * (docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md).
  *
  * workflow-lint's own CLI (`packages/workflow-lint/src/cli.ts`) is the
@@ -36,16 +38,17 @@ import {
   type RuleSetContext,
 } from '@bffless/workflow-lint'
 import { readVersion } from './version.js'
+import { parseRename, runRename } from './verbs/rename.js'
 
 const VERBS = ['init', 'rename', 'add', 'lint', 'index', 'publish'] as const
 type Verb = (typeof VERBS)[number]
-const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['init', 'rename', 'add', 'publish'])
+const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['init', 'add', 'publish'])
 
 const USAGE = `Usage: workflow <verb> [options]
 
 Verbs:
   init      create a new implementation from a template repo    (not yet implemented)
-  rename    rename an implementation's alias in place            (not yet implemented)
+  rename    rename an implementation's alias in place, in the current directory
   add       scaffold a new workflow + rule stubs                 (not yet implemented)
   lint      lint workflow YAML — delegates to @bffless/workflow-lint
   index     build an implementation's index.json bundle — delegates to @bffless/workflow-lint
@@ -57,6 +60,13 @@ lint and index accept the same flags as workflow-lint's own \`workflow\` CLI:
 
   lint <file...> [--json] [--quiet] [--rules <dir>] [--alias <alias>] [--path-prefix <p>]
   index <workflows-dir> --out <dir> --impl <alias> --name <display> [options]
+
+rename operates on the current directory's .bffless/workflow.json:
+
+  rename <old> <new> [--dry-run]
+
+Options (rename):
+  --dry-run        print the rewrite diff report; write nothing
 
 Options (lint):
   --json           machine-readable output (one stable shape for wrappers)
@@ -425,6 +435,15 @@ export function runCli(argv: string[], out: (line: string) => void, err: (line: 
       return 2
     }
     return runLint(parsed, out, err)
+  }
+
+  if (verb === 'rename') {
+    const parsed = parseRename(rest)
+    if ('error' in parsed) {
+      err(`workflow: ${parsed.error}\n\n${USAGE}`)
+      return 2
+    }
+    return runRename(process.cwd(), parsed, out, err)
   }
 
   // verb === 'index' (the only remaining implemented verb).
