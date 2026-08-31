@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { analyzeLines } from './analyze'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const FN_PATH = join(appDir, 'hello-src', 'hello', '.bffless', 'proxy-rules', 'hello', 'rules', 'analyze', 'post', 'analyze.fn.js')
+const FN_PATH = join(appDir, 'hello-src', 'workflows', 'hello', '.bffless', 'proxy-rules', 'hello', 'rules', 'analyze', 'post', 'analyze.fn.js')
 
 function loadFnHandler(): (ctx: { request: { body?: Record<string, unknown> } }) => unknown {
   const src = readFileSync(FN_PATH, 'utf8')

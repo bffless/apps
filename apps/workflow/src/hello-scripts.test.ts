@@ -1,6 +1,6 @@
 /**
  * The hello bundle's `script` modules, run as modules (no Worker, no stager):
- * what `hello-src/scripts/*.js` promise the workflows that call them. Cheap
+ * what `hello-src/workflows/hello/scripts/*.js` promise the workflows that call them. Cheap
  * enough to live in `test:run` — the stager suite (`hello-stage.test.ts`)
  * only proves the files get *copied*.
  *
@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PAYLOAD_BUDGET_BYTES, byteSize } from './lib/runner/payload'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const posterCardPath = join(appDir, 'hello-src', 'hello', 'scripts', 'poster-card.js')
+const posterCardPath = join(appDir, 'hello-src', 'workflows', 'hello', 'scripts', 'poster-card.js')
 
 function ctx(inputs: Record<string, unknown>) {
   return {
@@ -29,7 +29,7 @@ function ctx(inputs: Record<string, unknown>) {
   }
 }
 
-describe.skipIf(!existsSync(posterCardPath))('hello-src/hello/scripts/poster-card.js', () => {
+describe.skipIf(!existsSync(posterCardPath))('hello-src/workflows/hello/scripts/poster-card.js', () => {
   let posterCard: (ctx: unknown) => Promise<{ big: unknown[]; poster: unknown; posters: unknown[] }>
 
   beforeAll(async () => {

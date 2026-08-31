@@ -30,12 +30,12 @@ the linter's `rule-missing` check holds every relative `with.path` / `poll.path`
 directory that serves it whenever it can see the rule set — which `publish-workflow` always
 gives it, and a failing lint fails the publish.
 
-[`hello/`](https://github.com/bffless/workflow-implementations/tree/main/hello) in
+[`hello/`](https://github.com/bffless/workflow-implementations/tree/main/workflows/hello) in
 [`bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations) (alias `hello`)
 is the reference implementation: a package in the implementations monorepo, not part of this
 repo — copy it, or read it alongside this doc for the layout every step below refers to.
 
-For a full-size one, [`workflow-studio/`](https://github.com/bffless/workflow-implementations/tree/main/workflow-studio)
+For a full-size one, [`workflow-studio/`](https://github.com/bffless/workflow-implementations/tree/main/workflows/workflow-studio)
 (alias `workflow-studio`) in the same monorepo
 is the worked example: the Studio port. Nine jobs over thirteen rules and two
 schemas, five `script` modules built from TypeScript, one React island, a matrix job, async
@@ -116,7 +116,7 @@ names its own bundle explicitly — `skills: { mode: selected, alias: <alias>, p
 <deploy path>/.bffless/skills, enabled: [<name>] }` — where `<deploy path>` is the `path`
 the deploy uploads (`dist` for a standalone repo, `apps/<name>/dist` in this monorepo). A
 publish is then the skills deploy; nothing project-level needs setting.
-`workflow-implementations/workflow-studio` is the reference (`scripts/stage.mjs`, `rules/thumbnail/draft`).
+`workflow-implementations/workflows/workflow-studio` is the reference (`scripts/stage.mjs`, `rules/thumbnail/draft`).
 
 `index.json` is **generated, never hand-written** — hello's `scripts/build.mjs`
 does it (`workflow index`, lints every YAML first; a failing lint fails the build). The harness

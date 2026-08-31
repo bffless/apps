@@ -22,7 +22,7 @@ Milestones M0–M4 are in the overview; each gets its own implementation plan an
 ## Development
 
 `pnpm --filter workflow stage` clones `bffless/workflow-implementations` at the commit pinned
-in `hello.ref` and builds its `hello/` package into `hello-dist/` + `hello-src/` — run it once before
+in `hello.ref` and builds its `workflows/hello` package into `hello-dist/` + `hello-src/` — run it once before
 `pnpm --filter workflow test:run` (or `dev`/`build`) for the **full** suite: a handful of
 mock-backed tests skip cleanly without it (see `vite.config.ts`), so `test:run` alone on a
 fresh checkout is still green, just not complete. `pnpm --filter workflow test:stage` (its

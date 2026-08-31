@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const src = join(appDir, 'hello-src', 'hello', '.bffless', 'workflows')
+const src = join(appDir, 'hello-src', 'workflows', 'hello', '.bffless', 'workflows')
 const examples = join(appDir, 'docs', 'spec', 'examples')
 
 describe.skipIf(!existsSync(src))('spec examples mirror bffless/workflow-implementations hello at hello.ref', () => {
