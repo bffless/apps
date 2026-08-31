@@ -24,7 +24,7 @@ import { PAYLOAD_BUDGET_BYTES } from '../lib/runner/payload'
 
 /** `hello-src/` only exists once `pnpm --filter workflow stage` has cloned bffless/workflow-implementations (a network call) — skip this block cleanly on an unstaged checkout instead of failing on a 404/undefined module. */
 const posterCardStaged = existsSync(
-  join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'hello-src', 'hello', 'scripts', 'poster-card.js'),
+  join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'hello-src', 'workflows', 'hello', 'scripts', 'poster-card.js'),
 )
 
 const json = (path: string, body: unknown) =>
@@ -470,7 +470,7 @@ describe.skipIf(!posterCardStaged)('the script module route', () => {
     // Loaded through `import.meta.glob`, the way `handlers.ts` reads the same
     // directory: the script is plain JS with no declaration file, so a static
     // import specifier would not type-check.
-    const modules = import.meta.glob('../../hello-src/hello/scripts/poster-card.js') as Record<
+    const modules = import.meta.glob('../../hello-src/workflows/hello/scripts/poster-card.js') as Record<
       string,
       () => Promise<{ default: (ctx: unknown) => Promise<{ big: unknown[] }> }>
     >

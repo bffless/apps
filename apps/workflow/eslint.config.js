@@ -6,8 +6,11 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // Build/coverage output and the MSW-generated worker are not ours to lint.
-  globalIgnores(['dist', 'coverage', 'public/mockServiceWorker.js']),
+  // Build/coverage output, the MSW-generated worker, and the staged clone of
+  // `bffless/workflow-implementations` (`hello-src/` — that repo lints its own
+  // sources, and its `workflows/workflow-studio` tsconfig would confuse the
+  // typed parser here) are not ours to lint.
+  globalIgnores(['dist', 'coverage', 'public/mockServiceWorker.js', 'hello-src', 'hello-dist']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

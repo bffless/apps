@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stage the `hello` implementation: clone `bffless/workflow-implementations`
-// at the commit pinned by `hello.ref`, build its `hello/` package (its own
+// at the commit pinned by `hello.ref`, build its `workflows/hello` package (its own
 // `pnpm build`), and land the result — `.bffless/workflows/{*.yaml,index.json}`,
 // `islands/*.html`, `scripts/*.js`, `index.html` — in `hello-dist/`. `hello`
 // moved out of this monorepo (M3 Task 7, Decision 5 "one source", first to
@@ -15,7 +15,7 @@ const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ref = readFileSync(join(appDir, 'hello.ref'), 'utf8').trim()
 const src = join(appDir, 'hello-src')
 // The clone is the whole implementations monorepo; hello is one package in it.
-const pkg = join(src, 'hello')
+const pkg = join(src, 'workflows', 'hello')
 
 const outIdx = process.argv.indexOf('--out')
 if (outIdx > -1 && process.argv[outIdx + 1] === undefined) {
@@ -62,7 +62,7 @@ if (headOf(src) !== ref) {
   execFileSync('git', ['-C', src, 'checkout', '--quiet', ref], { stdio: 'inherit' })
 }
 
-// `--ignore-workspace`: `hello-src/hello` sits inside two pnpm workspaces at
+// `--ignore-workspace`: `hello-src/workflows/hello` sits inside two pnpm workspaces at
 // once — workflow-implementations' own root and, because the clone lands
 // inside this repo, this monorepo's too. A plain `pnpm install` would walk up,
 // find one of those `pnpm-workspace.yaml`s, and install hello as a member of

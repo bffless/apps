@@ -131,7 +131,7 @@ describe('stage-hello.mjs', () => {
       'the mock sees no staged islands — run `pnpm --filter workflow stage` before `test:stage`',
     ).toBeGreaterThan(0)
     expect([...HELLO_INDEX.islands].sort()).toEqual([...index.islands].sort())
-    // The mock serves the scripts from `hello-src/scripts/` (the source the
+    // The mock serves the scripts from `hello-src/workflows/hello/scripts/` (the source the
     // stager copies), so this compares the two listings the same way.
     expect([...HELLO_INDEX.scripts].sort()).toEqual([...index.scripts].sort())
   })

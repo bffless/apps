@@ -22,6 +22,6 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  /* Dynamically imports a staged bundle file (`hello-src/hello/scripts/*.js`) that only exists after `pnpm stage` has cloned + built `bffless/workflow-implementations`'s hello over the network — excluded so a fresh checkout's `tsc -b` never needs that clone to succeed. */
+  /* Dynamically imports a staged bundle file (`hello-src/workflows/hello/scripts/*.js`) that only exists after `pnpm stage` has cloned + built `bffless/workflow-implementations`'s hello over the network — excluded so a fresh checkout's `tsc -b` never needs that clone to succeed. */
   "exclude": ["src/hello-scripts.test.ts"]
 }
