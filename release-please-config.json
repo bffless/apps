@@ -25,6 +25,12 @@
       "include-component-in-tag": true,
       "extra-files": [{ "type": "json", "path": "bffless-app.json", "jsonpath": "$.version" }]
     },
+    "apps/workflow": {
+      "release-type": "node",
+      "component": "workflow",
+      "include-component-in-tag": true,
+      "extra-files": [{ "type": "json", "path": "bffless-app.json", "jsonpath": "$.version" }]
+    },
     "packages/workflow-lint": {
       "release-type": "node",
       "component": "workflow-lint",
