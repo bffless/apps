@@ -15,13 +15,17 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
 - **Project**: the harness expects its own BFFless project (phase 1: `bffless/workflow` on
   j5s.dev) — discovery lists *this project's* aliases, so co-tenanting with unrelated apps
   only adds harmless 404 probes.
-- **Discovery scope** (apps#363): `deploy-workflow.yml` builds the harness with `VITE_BFFLESS_PROJECT:
-  bffless/workflow`, baked in at build time — the discovery relay preserves the query string
-  (Decision 4), so only that project's aliases are probed and an unrelated co-tenanted app never
-  shows up as a foreign 404 probe. Unset (local dev, `?mocks=on`, CI's `workflow-app.yml`) is
-  unscoped by design: the relay then answers every alias the calling session can see. Runtime
-  self-discovery for a catalog install — reading the installed-into project instead of baking one
-  in at build time — is M4, the other half of apps#363.
+- **Discovery scope** (apps#363): **runtime-first since M4** — the SPA asks its own serving
+  rule set (`GET /api/workflow/project`, `order: 25`), which reads CE's `deployment`
+  provenance root; the answer is fetched once and cached for the session, and the discovery
+  relay preserves the query string (Decision 4), so only that project's aliases are probed
+  and an unrelated co-tenanted app never shows up as a foreign 404 probe. This is what makes
+  a prebuilt catalog bundle instance-agnostic: no build-time bake needed.
+  `VITE_BFFLESS_PROJECT` is now an *override*: `deploy-workflow.yml` still bakes
+  `bffless/workflow` in to save the one request and pin CI deploys explicitly; unset (local
+  dev, `?mocks=on`, CI's `workflow-app.yml`) the runtime answer scopes, and when *that* is
+  absent too (`{"repository":null}` — no provenance) discovery stays unscoped: the relay then
+  answers every alias the calling session can see (role-scoped server-side since ce#702).
 - **Members need a project role** (found on the M2 live walk, 2026-08-26): CE answers a scoped
   alias list (`?repository=owner/name`) with `{ data: [] }` — not an error — for any non-admin
   who has **no role on that project** (`deployments.service.ts` `listAliases` →
