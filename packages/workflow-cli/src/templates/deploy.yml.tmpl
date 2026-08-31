@@ -1,0 +1,48 @@
+name: Deploy __ALIAS__
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '__PATH_GLOB__'
+      - '.github/workflows/deploy-__ALIAS__.yml'
+  workflow_dispatch: {}
+
+concurrency: { group: deploy-__ALIAS__, cancel-in-progress: false }
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: __BUILD_LINE__
+      - uses: bffless/publish-workflow@v1
+        with:
+          alias: __ALIAS__
+          name: __NAME__
+          description: '__DESCRIPTION__'
+          repository: __REPOSITORY__
+          harness-alias: __HARNESS_ALIAS__
+          path: __DIST_PATH__
+          workflows: __WORKFLOWS_PATH__
+          rules: __RULES_PATH__
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+      # A green build doesn't prove the right bundle was published — assert it (needs @bffless/workflow-lint >= 1.0.1).
+      - name: Assert the published bundle's impl matches the alias
+        env:
+          EXPECTED_IMPL: __ALIAS__
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const idx = JSON.parse(fs.readFileSync('__INDEX_JSON_PATH__', 'utf8'));
+            const expected = process.env.EXPECTED_IMPL;
+            if (idx.impl !== expected) {
+              console.error('::error::published bundle impl ' + JSON.stringify(idx.impl) + ' != alias ' + JSON.stringify(expected));
+              process.exit(1);
+            }
+          "

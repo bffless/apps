@@ -1,0 +1,66 @@
+name: Preview __ALIAS__
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - '__PATH_GLOB__'
+      - '.github/workflows/preview-__ALIAS__.yml'
+
+concurrency:
+  # Flow-style `{ group: preview-${{ ... }} }` is genuinely ambiguous YAML (a
+  # `{{` inside a flow mapping) — block style, mirroring workflow-implementations.
+  group: preview-__ALIAS__-${{ github.event.number }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # The bundle must say which implementation it is (needs @bffless/workflow-lint >= 1.0.1).
+      - run: "__BUILD_LINE__ --impl __ALIAS__-pr-${{ github.event.number }} --name '__NAME__ (PR #${{ github.event.number }})'"
+      - uses: bffless/publish-workflow@v1
+        with:
+          alias: __ALIAS__-pr-${{ github.event.number }}
+          name: "__NAME__ (PR #${{ github.event.number }})"
+          description: '__DESCRIPTION__'
+          repository: __REPOSITORY__
+          harness-alias: __HARNESS_ALIAS__
+          path: __DIST_PATH__
+          workflows: __WORKFLOWS_PATH__
+          rules: __RULES_PATH__
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}
+      - name: Assert the published bundle's impl matches the alias
+        env:
+          EXPECTED_IMPL: __ALIAS__-pr-${{ github.event.number }}
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const idx = JSON.parse(fs.readFileSync('__INDEX_JSON_PATH__', 'utf8'));
+            const expected = process.env.EXPECTED_IMPL;
+            if (idx.impl !== expected) {
+              console.error('::error::published bundle impl ' + JSON.stringify(idx.impl) + ' != alias ' + JSON.stringify(expected));
+              process.exit(1);
+            }
+          "
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bffless/publish-workflow@v1
+        with:
+          mode: teardown
+          alias: __ALIAS__-pr-${{ github.event.number }}
+          repository: __REPOSITORY__
+          harness-alias: __HARNESS_ALIAS__
+          api-url: ${{ vars.BFFLESS_URL }}
+          api-key: ${{ secrets.BFFLESS_API_KEY }}

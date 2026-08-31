@@ -38,16 +38,17 @@ import {
   type RuleSetContext,
 } from '@bffless/workflow-lint'
 import { readVersion } from './version.js'
+import { parseInit, runInit } from './verbs/init.js'
 import { parseRename, runRename } from './verbs/rename.js'
 
 const VERBS = ['init', 'rename', 'add', 'lint', 'index', 'publish'] as const
 type Verb = (typeof VERBS)[number]
-const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['init', 'add', 'publish'])
+const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['add', 'publish'])
 
 const USAGE = `Usage: workflow <verb> [options]
 
 Verbs:
-  init      create a new implementation from a template repo    (not yet implemented)
+  init      create a new implementation from any --from repo (or a local path)
   rename    rename an implementation's alias in place, in the current directory
   add       scaffold a new workflow + rule stubs                 (not yet implemented)
   lint      lint workflow YAML — delegates to @bffless/workflow-lint
@@ -64,6 +65,19 @@ lint and index accept the same flags as workflow-lint's own \`workflow\` CLI:
 rename operates on the current directory's .bffless/workflow.json:
 
   rename <old> <new> [--dry-run]
+
+init clones (or reads a local copy of) a source repo and copies its package here:
+
+  init <alias> --from <owner>/<repo>|<path> [--path <dir>] [--ref <ref>] [options]
+
+Options (init):
+  --from <owner>/<repo>|<path>  source repo or local path (default: bffless/workflow-implementations)
+  --path <dir>             the package's location within the source repo (searched if omitted)
+  --ref <ref>               branch, tag, or commit SHA to clone (default: the default branch)
+  --dest <dir>              where to copy the package (default: ./<alias>; "." for a repo-root implementation)
+  --project <owner/name>    the BFFless project this deploys to (required to generate .github/workflows)
+  --harness-alias <alias>   which harness alias it deploys under (default: workflow)
+  --dry-run                 print the copy/rename/generate plan; write nothing
 
 Options (rename):
   --dry-run        print the rewrite diff report; write nothing
@@ -444,6 +458,15 @@ export function runCli(argv: string[], out: (line: string) => void, err: (line: 
       return 2
     }
     return runRename(process.cwd(), parsed, out, err)
+  }
+
+  if (verb === 'init') {
+    const parsed = parseInit(rest)
+    if ('error' in parsed) {
+      err(`workflow: ${parsed.error}\n\n${USAGE}`)
+      return 2
+    }
+    return runInit(process.cwd(), parsed, out, err)
   }
 
   // verb === 'index' (the only remaining implemented verb).
