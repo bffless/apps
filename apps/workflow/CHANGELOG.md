@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/bffless/apps/compare/workflow-v1.0.0...workflow-v1.1.0) (2026-08-31)
+
+
+### Features
+
+* **workflow:** welcoming implementations empty state with a personalized publish path ([#550](https://github.com/bffless/apps/issues/550)) ([7b2a5b6](https://github.com/bffless/apps/commit/7b2a5b6f4b3234f6b71087c974517db0136cdbb5))
+
+
+### Bug Fixes
+
+* **workflow:** flush the record seal at pagehide; walks wait for the sealed record before goto ([#552](https://github.com/bffless/apps/issues/552)) ([8b918d9](https://github.com/bffless/apps/commit/8b918d98769a1e35dae2e538164be230f318850b))
+
 ## 1.0.0 (2026-08-31)
 
 
