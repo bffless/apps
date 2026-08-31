@@ -47,6 +47,19 @@ describe('discover', () => {
     }
   })
 
+  it('scopes the alias list to the runtime-discovered project (apps#363)', async () => {
+    // The serving rule set answers a project none of the mock aliases carry, so
+    // the (query-filtering) mock aliases handler answers nothing — proof the
+    // discover query awaited the runtime answer and sent `?repository=`.
+    server.use(
+      http.get('/api/workflow/project', () => HttpResponse.json({ repository: 'someone/else' })),
+    )
+
+    const res = await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    expect(res.data).toEqual([])
+  })
+
   it('keeps a reachable-but-invalid implementation, with its error (08)', async () => {
     server.use(
       http.get('/api/workflow/aliases', () =>
@@ -175,10 +188,28 @@ describe('discover — scoped to a project (apps#363)', () => {
     expect(new URL(seenUrl).searchParams.get('repository')).toBe('bffless/workflow')
   })
 
-  it('carries no ?repository= when VITE_BFFLESS_PROJECT is unset', async () => {
+  it('carries the runtime-discovered ?repository= when VITE_BFFLESS_PROJECT is unset', async () => {
     vi.stubEnv('VITE_BFFLESS_PROJECT', undefined)
     let seenUrl = ''
     server.use(
+      http.get('/api/workflow/aliases', ({ request }) => {
+        seenUrl = request.url
+        return HttpResponse.json([{ name: 'hello', isAutoPreview: false }])
+      }),
+    )
+
+    await store().dispatch(workflowApi.endpoints.discover.initiate())
+
+    // The mock serving rule set answers `bffless/workflow` — runtime-first
+    // discovery scopes to it with no build-time bake.
+    expect(new URL(seenUrl).searchParams.get('repository')).toBe('bffless/workflow')
+  })
+
+  it('carries no ?repository= when the env is unset and provenance is absent', async () => {
+    vi.stubEnv('VITE_BFFLESS_PROJECT', undefined)
+    let seenUrl = ''
+    server.use(
+      http.get('/api/workflow/project', () => HttpResponse.json({ repository: null })),
       http.get('/api/workflow/aliases', ({ request }) => {
         seenUrl = request.url
         return HttpResponse.json([{ name: 'hello', isAutoPreview: false }])

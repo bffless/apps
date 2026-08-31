@@ -27,10 +27,12 @@ jobs:
         run: pnpm --filter workflow stage
       - run: pnpm --filter workflow build
         env:
-          # apps#363: scopes discovery to this harness's own project — without
-          # it the relay lists every alias the calling session can see. Unset
-          # everywhere else (dev, mocks, CI) on purpose: workflow-app.yml below
-          # tests the unscoped path its mocks/fixtures actually exercise.
+          # apps#363: override — runtime discovery works without it since #363
+          # (the SPA asks GET /api/workflow/project, which reads the serving
+          # deployment's provenance); kept to save that one request and to pin
+          # CI deploys explicitly. Unset everywhere else (dev, mocks, CI) on
+          # purpose: workflow-app.yml below tests the runtime path its
+          # mocks/fixtures actually exercise.
           VITE_BFFLESS_PROJECT: bffless/workflow
           # apps#526: the harness build the diagnostics payload names.
           # Deliberately unset in workflow-app.yml, so PR CI reads `dev`.

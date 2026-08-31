@@ -1,0 +1,13 @@
+handler: ./project.fn.js
+cases:
+  - name: names the serving project from deployment provenance
+    data:
+      deployment: { owner: "o", repo: "r" }
+    expect:
+      result:
+        repositoryJson: '{"repository":"o/r"}'
+  - name: answers null when the handler context carries no deployment
+    data: {}
+    expect:
+      result:
+        repositoryJson: '{"repository":null}'
