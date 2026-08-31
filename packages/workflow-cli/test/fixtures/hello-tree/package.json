@@ -1,0 +1,9 @@
+{
+  "name": "workflow-hello",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "rules:validate": "npx --yes bffless@0.3.3 rules validate .bffless/proxy-rules/hello"
+  }
+}
