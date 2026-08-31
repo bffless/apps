@@ -362,6 +362,90 @@ describe('runInit', () => {
   })
 })
 
+/**
+ * The destination preflight (`findDestinationConflicts`, src/verbs/init.ts)
+ * — added after review flagged that a populated `--dest .` (the Task 8
+ * dogfood shape: copying into the real, non-empty `bffless.app` repo) was
+ * silently overwritten with no collision check, and that the real-copy
+ * filesystem calls had no try/catch, unlike every other fallible step.
+ */
+describe('destination conflict guard', () => {
+  test('a populated --dest . that collides with a package file exits 2, naming the conflict, and leaves it untouched', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    writeFileSync(join(cwd, 'package.json'), '{"name":"host-repo-package-json"}\n')
+
+    const errors: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site' },
+      () => {},
+      (l) => errors.push(l),
+    )
+    expect(status).toBe(2)
+    expect(errors.join('\n')).toContain('package.json')
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe('{"name":"host-repo-package-json"}\n')
+    // Nothing else from the package landed either — the whole copy was refused up front.
+    expect(existsSync(join(cwd, '.bffless'))).toBe(false)
+  })
+
+  test('--dry-run also surfaces a destination conflict (exit 2, nothing written)', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    writeFileSync(join(cwd, 'package.json'), '{"name":"host-repo-package-json"}\n')
+
+    const errors: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site', dryRun: true },
+      () => {},
+      (l) => errors.push(l),
+    )
+    expect(status).toBe(2)
+    expect(errors.join('\n')).toMatch(/\(dry run\)/)
+    expect(errors.join('\n')).toContain('package.json')
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe('{"name":"host-repo-package-json"}\n')
+  })
+
+  test('a plain file sitting where --dest should be a directory exits 2 cleanly (no thrown ENOTDIR)', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    writeFileSync(join(cwd, 'impl'), 'not a directory\n')
+
+    const errors: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: 'impl', project: 'acme/site' },
+      () => {},
+      (l) => errors.push(l),
+    )
+    expect(status).toBe(2)
+    expect(errors.join('\n')).toMatch(/not a directory/)
+    expect(readFileSync(join(cwd, 'impl'), 'utf8')).toBe('not a directory\n')
+  })
+
+  test('the Task 8 shape — nested --path, --dest . — still succeeds when the destination only has UNRELATED existing files', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    writeFileSync(join(cwd, 'README-host.md'), 'the host repo\'s own readme\n')
+    writeFileSync(join(cwd, 'notes.txt'), 'unrelated host notes\n')
+
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site' },
+      () => {},
+      () => {},
+    )
+    expect(status).toBe(0)
+    // Unrelated host files are untouched.
+    expect(readFileSync(join(cwd, 'README-host.md'), 'utf8')).toBe('the host repo\'s own readme\n')
+    expect(readFileSync(join(cwd, 'notes.txt'), 'utf8')).toBe('unrelated host notes\n')
+    // The package landed at the repo root, renamed.
+    expect(readIdentity(cwd)).toEqual({ alias: 'studio', harness: 'workflow' })
+    expect(existsSync(join(cwd, '.bffless/proxy-rules/studio'))).toBe(true)
+  })
+})
+
 describe('workflow init (CLI wiring)', () => {
   test('exits 0, is no longer in the unimplemented-verb list', () => {
     const src = monorepoSource()

@@ -35,6 +35,16 @@
  * bffless.app's own `build.yml` documents) becomes required. Generated
  * files are written only if absent — `init` never clobbers a host repo's
  * own hand-edited workflow.
+ *
+ * Before any of that writes anything, a destination preflight
+ * (`findDestinationConflicts`) checks every path the copy would actually
+ * land against what's already at `--dest` — real run or `--dry-run` alike —
+ * and refuses (exit 2, naming the colliding paths) rather than silently
+ * overwriting. This matters most for `--dest .`: the destination is very
+ * often an existing, populated host repo (Task 8's dogfood copy into
+ * `bffless.app` is exactly this shape), so only paths the package would
+ * actually write are conflicts — everything else already at the
+ * destination is the host repo's own business and is left alone.
  */
 import { execFileSync } from 'node:child_process'
 import {
@@ -229,6 +239,27 @@ function listCopyableFiles(root: string): string[] {
   return out.sort()
 }
 
+/**
+ * Conflicts between what `init` is about to copy and what's already sitting
+ * at `destDir` — checked before any write, real run or dry run alike, so a
+ * populated `--dest .` (the Task 8 dogfood shape: copying into the real,
+ * non-empty `bffless.app` repo) is caught cleanly instead of silently
+ * overwritten. A path only counts as a conflict when the copy would
+ * actually land a file there — i.e. it appears in `packageFiles` — so an
+ * *unrelated* existing file at the destination (anything the package
+ * doesn't ship) is never flagged; that's the entire point of `--dest .`
+ * landing a package inside an existing host repo. `destDir` itself existing
+ * as a plain file (not a directory) is its own, single conflict: `mkdirSync`
+ * would throw `ENOTDIR` on it, so it's caught here instead, before that
+ * throw ever happens.
+ */
+function findDestinationConflicts(destDir: string, packageFiles: string[]): string[] {
+  if (existsSync(destDir) && !statSync(destDir).isDirectory()) {
+    return [`${destDir} (exists and is not a directory)`]
+  }
+  return packageFiles.filter((f) => existsSync(join(destDir, f)))
+}
+
 const TEMPLATES_DIR = fileURLToPath(new URL('../templates/', import.meta.url))
 const DEPLOY_TMPL = readFileSync(join(TEMPLATES_DIR, 'deploy.yml.tmpl'), 'utf8')
 const PREVIEW_TMPL = readFileSync(join(TEMPLATES_DIR, 'preview.yml.tmpl'), 'utf8')
@@ -377,6 +408,20 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
     const packageFiles = listCopyableFiles(packageDir)
     const sourceDescr = packagePath === '.' ? parsed.from : `${parsed.from}/${packagePath}`
 
+    // A preflight, not a write: catches a populated destination — most
+    // pointedly a populated `--dest .` — before anything is touched. Real
+    // run and dry run alike, so `--dry-run` previews the failure exactly as
+    // the real run would hit it (see module doc / findDestinationConflicts).
+    const conflicts = findDestinationConflicts(destDir, packageFiles)
+    if (conflicts.length > 0) {
+      const tag = parsed.dryRun ? '(dry run) ' : ''
+      err(
+        `workflow: ${tag}${destRel}/ already has ${conflicts.length} path(s) init would overwrite — refusing to clobber the destination:`,
+      )
+      for (const c of conflicts) err(`  ${c}`)
+      return 2
+    }
+
     if (parsed.dryRun) {
       const tag = '(dry run) '
       out(`${tag}copy ${sourceDescr} -> ${destRel}/ (${packageFiles.length} file(s))`)
@@ -400,8 +445,13 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
       return 0
     }
 
-    mkdirSync(destDir, { recursive: true })
-    cpSync(packageDir, destDir, { recursive: true, filter: (p) => basename(p) !== '.git' })
+    try {
+      mkdirSync(destDir, { recursive: true })
+      cpSync(packageDir, destDir, { recursive: true, filter: (p) => basename(p) !== '.git' })
+    } catch (e) {
+      err(`workflow: ${(e as Error).message}`)
+      return 2
+    }
 
     let report: RenameReport
     try {
@@ -410,12 +460,23 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
       err(`workflow: ${(e as Error).message}`)
       return 2
     }
-    writeIdentity(destDir, { alias: parsed.alias, harness: parsed.harnessAlias })
 
-    for (const g of generatedFiles) {
-      if (existsSync(g.file)) continue
-      mkdirSync(dirname(g.file), { recursive: true })
-      writeFileSync(g.file, g.content)
+    try {
+      writeIdentity(destDir, { alias: parsed.alias, harness: parsed.harnessAlias })
+    } catch (e) {
+      err(`workflow: ${(e as Error).message}`)
+      return 2
+    }
+
+    try {
+      for (const g of generatedFiles) {
+        if (existsSync(g.file)) continue
+        mkdirSync(dirname(g.file), { recursive: true })
+        writeFileSync(g.file, g.content)
+      }
+    } catch (e) {
+      err(`workflow: ${(e as Error).message}`)
+      return 2
     }
 
     out(`copy ${sourceDescr} -> ${destRel}/ (${packageFiles.length} file(s))`)
