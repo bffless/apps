@@ -45,16 +45,84 @@ describe('ImplementationsPage', () => {
     expect(await within(list).findByText('Succeeded')).toHaveAttribute('data-state', 'succeeded')
   })
 
-  it('explains how to publish one when there are none', async () => {
+  it('welcomes a fresh install with the runtime project in the publish path', async () => {
     server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
 
     renderApp()
 
-    expect(await screen.findByText('No implementations found')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /publish/i })).toHaveAttribute(
-      'href',
-      expect.stringContaining('writing-an-implementation.md'),
+    const empty = await screen.findByTestId('implementations-empty')
+    expect(within(empty).getByText('Welcome to Workflow')).toBeInTheDocument()
+    // The runtime project (the mocked /api/workflow/project answer) personalizes
+    // the publish line and prefills the snippet's `repository:` input.
+    expect(await within(empty).findByTestId('publish-target')).toHaveTextContent(
+      'bffless/workflow',
     )
+    expect(within(empty).getByTestId('publish-snippet')).toHaveTextContent(
+      'repository: bffless/workflow',
+    )
+    expect(within(empty).getByTestId('publish-snippet')).toHaveTextContent(
+      'uses: bffless/publish-workflow@v1',
+    )
+  })
+
+  it('keeps the publish path generic when no project resolves', async () => {
+    server.use(
+      http.get('/api/workflow/aliases', () => HttpResponse.json([])),
+      http.get('/api/workflow/project', () => HttpResponse.json({ repository: null })),
+    )
+
+    renderApp()
+
+    const empty = await screen.findByTestId('implementations-empty')
+    // The fallback line names no project…
+    expect(await within(empty).findByTestId('publish-target')).toHaveTextContent(
+      /this harness[’']s project/,
+    )
+    // …the snippet carries a placeholder instead of a wrong guess…
+    expect(within(empty).getByTestId('publish-snippet')).toHaveTextContent(
+      'repository: <owner>/<repo>',
+    )
+    // …and there is no scoped-discovery role hint, because discovery was unscoped.
+    expect(within(empty).queryByTestId('scope-hint')).not.toBeInTheDocument()
+  })
+
+  it('links the hello reference, the writing guide and the implementations repo', async () => {
+    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
+
+    renderApp()
+
+    const empty = await screen.findByTestId('implementations-empty')
+    expect(await within(empty).findByRole('link', { name: 'hello' })).toHaveAttribute(
+      'href',
+      'https://github.com/bffless/workflow-implementations/tree/main/workflows/hello',
+    )
+    expect(
+      within(empty).getByRole('link', { name: 'Writing an implementation' }),
+    ).toHaveAttribute(
+      'href',
+      'https://github.com/bffless/apps/blob/main/apps/workflow/docs/writing-an-implementation.md',
+    )
+    expect(
+      within(empty).getByRole('link', { name: 'bffless/workflow-implementations' }),
+    ).toHaveAttribute('href', 'https://github.com/bffless/workflow-implementations')
+  })
+
+  it('offers a copy of the publish snippet', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
+
+    try {
+      renderApp()
+
+      const empty = await screen.findByTestId('implementations-empty')
+      await within(empty).findByTestId('publish-target')
+      fireEvent.click(within(empty).getByRole('button', { name: 'Copy workflow' }))
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('repository: bffless/workflow'))
+      expect(await within(empty).findByText('copied')).toBeInTheDocument()
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    }
   })
 
   it('names the project and the missing-role cause when a scoped build finds nothing', async () => {
@@ -68,15 +136,6 @@ describe('ImplementationsPage', () => {
     expect(hint).toHaveTextContent(/no role on that project/)
   })
 
-  it('offers no project hint when the build is unscoped', async () => {
-    vi.stubEnv('VITE_BFFLESS_PROJECT', undefined)
-    server.use(http.get('/api/workflow/aliases', () => HttpResponse.json([])))
-
-    renderApp()
-
-    expect(await screen.findByText('No implementations found')).toBeInTheDocument()
-    expect(screen.queryByTestId('scope-hint')).not.toBeInTheDocument()
-  })
 
   it('says discovery failed rather than "you published nothing"', async () => {
     server.use(http.get('/api/workflow/aliases', () => HttpResponse.json({ error: 'boom' }, { status: 500 })))
@@ -86,7 +145,7 @@ describe('ImplementationsPage', () => {
     const page = screen.getByRole('main')
     expect(await within(page).findByText("Couldn't reach the server")).toBeInTheDocument()
     expect(within(page).getByText(/answered 500/)).toBeInTheDocument()
-    expect(within(page).queryByText('No implementations found')).not.toBeInTheDocument()
+    expect(within(page).queryByTestId('implementations-empty')).not.toBeInTheDocument()
   })
 
   it('opens an implementation on its workflows', async () => {

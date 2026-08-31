@@ -778,6 +778,139 @@ button {
 }
 
 /* --------------------------------------------------------------------------
+   First-run welcome (08): the fresh-install publish path on Implementations.
+   Same quiet grammar as the rest — surface panel, hairline rows, mono for
+   anything a person would copy, the one numbered sequence that really is one.
+   -------------------------------------------------------------------------- */
+
+.welcome {
+  max-width: 760px;
+  padding: 22px 26px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.55;
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+}
+
+.welcome p {
+  margin: 0;
+  max-width: 64ch;
+}
+
+.welcome code {
+  padding: 1px 5px;
+  background-color: var(--surface-dim);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.welcome a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.publish-steps {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: publish-step;
+}
+
+.publish-steps > li {
+  position: relative;
+  counter-increment: publish-step;
+  padding: 16px 0 16px 38px;
+  border-top: 1px solid var(--hairline);
+}
+
+.publish-steps > li::before {
+  content: counter(publish-step);
+  position: absolute;
+  top: 17px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-mute);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font: 500 11.5px var(--font-mono);
+}
+
+.publish-step-title {
+  margin: 0 0 3px;
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+/* The copyable publish workflow: a mono head strip naming the file, then YAML. */
+.snippet {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+}
+
+.snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* The file name yields to the copy pill on narrow screens, never the reverse. */
+.snippet-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 10px 6px 12px;
+  color: var(--ink-mute);
+  background-color: var(--surface-dim);
+  border-bottom: 1px solid var(--hairline);
+  font: 500 11px var(--font-mono);
+}
+
+.snippet pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  color: var(--ink-2);
+  background-color: var(--paper);
+  font: 400 12px/1.6 var(--font-mono);
+}
+
+.snippet pre code {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.welcome-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+
+.welcome .note {
+  margin-top: 12px;
+  max-width: 64ch;
+}
+
+/* --------------------------------------------------------------------------
    Value renderers (02): ValueView + FileCard/TableView/JsonTree/MarkdownView
    -------------------------------------------------------------------------- */
 
