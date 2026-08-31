@@ -12,7 +12,7 @@
 import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { request as pwRequest } from 'playwright'
-import type { FileRef } from '@bffless/workflow-headless'
+import { waitForSealedRecord, type FileRef } from '@bffless/workflow-headless'
 import { openSession } from '../session.js'
 import { credentials, adminKey } from '../env.js'
 import type { Walk } from './index.js'
@@ -210,6 +210,14 @@ export const interactive: Walk = async ({ args, env, report }) => {
     renderers.imagesImg = await pane.locator('[data-testid="renderer"][data-render="images"] img').count()
     report.expect('renderers', Object.values(renderers).every((v) => v === true || (typeof v === 'number' && v > 0)), renderers)
 
+    // The record seals through a `keepalive` PATCH (apps#539) that a same-tab
+    // goto can outrun (hello's walk of 2026-08-31 stranded
+    // run_01M1CPTN6P47DXQDEABE8K9H8Y `running` forever that way) — and the
+    // reloaded page below reads its outputs from the *record*, not this tab's
+    // live slice. Hold the driving page until the record agrees, as #542's
+    // driver does; an expired bound is a note, and the checks after the goto
+    // then fail with honest evidence instead of racing.
+    await waitForSealedRecord(s.api, runId, (line) => report.note(line))
     await page.goto(runUrl, { waitUntil: 'networkidle' })
     await outputs.waitFor({ timeout: 30_000 })
     // `cover` is the whole File ref, not a bare path: a `choice` over File refs is

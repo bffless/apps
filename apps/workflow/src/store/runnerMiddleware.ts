@@ -235,6 +235,47 @@ async function executeWrite(store: RunStore, write: PersistWrite): Promise<void>
   return store.upsertStep(write.runId, write.key, write.patch)
 }
 
+// ---------------------------------------------------------------------------
+// The pending seal — the record-sealing `run.finished` patch, re-issuable at
+// `pagehide` (run_01M1CPTN6P47DXQDEABE8K9H8Y, 2026-08-31).
+// ---------------------------------------------------------------------------
+
+/**
+ * `runStore.patchRun`'s `keepalive` (apps#539) only protects a seal whose
+ * `fetch` has actually been *called*: the patch travels at the tail of the
+ * run's write-ahead queue, behind the final step upserts and the outputs
+ * offload, and a tab that navigates the moment the status pill flips can tear
+ * the JS down while the seal is still queued — or kill the round trip before
+ * `persistWrite`'s one retry gets a look in. Either way the record is
+ * stranded `running` under a live-looking lease: no tab drives it any more,
+ * and every later viewer polls a row that will never change.
+ *
+ * So the seal is also held here from the instant `run.finished` is dispatched
+ * (registered synchronously in the listener effect, before its queued write
+ * starts) until that write durably lands, and `flushPendingSeals` — wired to
+ * `pagehide` in `createRunnerMiddleware` — re-issues it straight through
+ * `RunStore.patchRun` (which is what carries `keepalive`), skipping the
+ * queue. The flush is idempotent with the queued write: both send the same
+ * whole-field patch, so whichever lands second changes nothing. Entries
+ * survive a flush on purpose — a bfcache restore hands the page back with the
+ * queue still authoritative.
+ */
+const pendingSeals = new Map<string, () => void>()
+
+/** Hold (or refresh, once the offload has stubbed oversized outputs) `runId`'s seal patch. */
+function holdPendingSeal(runId: string, store: RunStore, writes: PersistWrite[]): void {
+  const seal = writes.find((w): w is Extract<PersistWrite, { op: 'patch' }> => w.op === 'patch')
+  if (!seal) return
+  pendingSeals.set(runId, () => {
+    void store.patchRun(seal.id, seal.patch).catch(() => {})
+  })
+}
+
+/** Fire every still-unlanded seal, best effort — the `pagehide` handler. */
+export function flushPendingSeals(): void {
+  for (const flush of pendingSeals.values()) flush()
+}
+
 /** Retry once; never rejects — the caller reads `.ok`. */
 async function persistWrite(store: RunStore, write: PersistWrite): Promise<{ ok: true } | { ok: false; error: unknown }> {
   try {
@@ -393,6 +434,13 @@ async function writeEvent(
   }
 
   const writes = eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice), outputsOverride })
+  // The seal the effect held at dispatch time carried the *raw* outputs; now
+  // that the offload has stubbed the oversized ones, the held copy is
+  // refreshed to the exact patch about to be written — `has` guards against
+  // resurrecting an entry a reset/adoption already dropped.
+  if (event.type === 'run.finished' && pendingSeals.has(runId)) {
+    holdPendingSeal(runId, runStore, writes)
+  }
   for (const write of writes) {
     const result = await persistWrite(runStore, write)
     if (!result.ok) return { ok: false, error: result.error }
@@ -471,6 +519,7 @@ function resetRunnerState(): void {
   disarmAllWaitClocks()
   writeQueues.clear()
   finishing.clear()
+  pendingSeals.clear()
   currentRunId = null
   currentGeneration += 1
 }
@@ -1243,6 +1292,10 @@ function finishRunCleanup(runId: string, dispatch: (action: unknown) => unknown)
   disarmAllWaitClocks()
   writeQueues.delete(runId)
   finishing.delete(runId)
+  // The seal either landed (`outcome.ok`) or this tab's part in the run is
+  // over anyway (`stale`: an adoption elsewhere owns the record now) — a
+  // later `pagehide` must not re-send it.
+  pendingSeals.delete(runId)
   dispatch(workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: runId }]))
 }
 
@@ -1251,6 +1304,12 @@ function finishRunCleanup(runId: string, dispatch: (action: unknown) => unknown)
 // ---------------------------------------------------------------------------
 
 export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<HasRunSlice> {
+  // The last-chance seal send (see `pendingSeals`). `pagehide` fires on every
+  // document teardown — same-tab navigation, reload, close — and is the last
+  // moment a `keepalive` fetch can still be *started*. One shared handler
+  // reference, so a second store (tests build many) never double-registers.
+  if (typeof window !== 'undefined') window.addEventListener('pagehide', flushPendingSeals)
+
   const listener = createListenerMiddleware<HasRunSlice>()
 
   listener.startListening({
@@ -1262,6 +1321,19 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // An event before `run.started` folds to nothing in the slice (runSlice's
       // own rule); nothing to persist or schedule either.
       if (!runState) return
+
+      // The seal is held for `pagehide` from this very dispatch — before the
+      // queued write below ever starts — so a navigation that outruns the
+      // write queue (or the seal's own round trip) still gets one last
+      // `keepalive` send. Raw outputs for now; `writeEvent` refreshes the
+      // held copy once the offload has stubbed the oversized ones.
+      if (event.type === 'run.finished') {
+        holdPendingSeal(
+          runState.runId,
+          deps.runStore,
+          eventToWrites(event, { state: runState, runRow: () => rowFromSlice(slice) }),
+        )
+      }
 
       // `enqueue()` is called synchronously here, before any `await` in this
       // effect — its promise chain only orders calls made in that window

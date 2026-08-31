@@ -488,6 +488,36 @@ describe('RunPage', () => {
       expect(within(page).queryByTestId('run-take-over')).not.toBeInTheDocument()
       expect(within(banner).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
     })
+
+    /**
+     * The observer's convergence path (2026-08-31,
+     * run_01M1CPTN6P47DXQDEABE8K9H8Y): a page that loaded a run mid-seal —
+     * the row still `running` under another tab's live lease — keeps polling
+     * (RunPage's 5 s `pollingInterval`), and the moment a poll reads the
+     * sealed row the banner goes, the pill flips and the outputs render.
+     * The app was never the stuck half of that walk (the seal itself was);
+     * this pins the half that must keep working.
+     */
+    it('converges to the sealed record once a poll reads it — banner gone, outputs shown', async () => {
+      seedRunningRun('run_sealing', { leaseOwner: 'tab_other', leaseUntil: Date.now() + 60_000 })
+
+      renderApp('/hello/hello/runs/run_sealing')
+
+      const page = screen.getByRole('main')
+      expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'running')
+      await within(page).findByTestId('run-take-over')
+
+      // The seal lands server-side between two polls.
+      db.runs.set('run_sealing', { ...FINISHED_RUN.run, runId: 'run_sealing', _id: nextId() })
+
+      // The next 5 s poll reads the sealed row (real timers — one poll tick).
+      await waitFor(
+        () => expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded'),
+        { timeout: 8_000 },
+      )
+      expect(within(page).queryByTestId('run-take-over')).not.toBeInTheDocument()
+      expect(within(page).getByTestId('run-outputs')).toBeInTheDocument()
+    }, 15_000)
   })
 
   /**

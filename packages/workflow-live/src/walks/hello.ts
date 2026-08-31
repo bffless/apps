@@ -9,6 +9,7 @@
  * as a FAIL with evidence "log line absent" until then.
  */
 import { writeFile } from 'node:fs/promises'
+import { waitForSealedRecord } from '@bffless/workflow-headless'
 import { openSession, redactUrl } from '../session.js'
 import { credentials } from '../env.js'
 import type { Walk } from './index.js'
@@ -53,6 +54,15 @@ export const hello: Walk = async ({ args, env, report }) => {
     await page.waitForFunction(() => document.querySelector('[data-testid="run-status"]')?.getAttribute('data-state') === 'succeeded', null, { timeout: 120_000 })
     report.expect('run.succeeded', (await page.getByTestId('run-status').getAttribute('data-state')) === 'succeeded', runId)
     await s.shot('07-succeeded')
+    // The record seals through a `keepalive` PATCH the SPA fires as the pill
+    // flips (apps#539), and a same-tab goto can outrun it — the walk of
+    // 2026-08-31 navigated first and left run_01M1CPTN6P47DXQDEABE8K9H8Y
+    // `running` forever, so the reloaded page mounted as an observer of a row
+    // that never changed and every D6 wait timed out. Hold this page (and the
+    // seal's own retry window) until the *record* agrees, the way #542's
+    // driver does; an expired bound is a note, and D6 then fails with honest
+    // evidence instead of racing.
+    await waitForSealedRecord(s.api, runId, (line) => report.note(line))
     // The last click (review/0/confirm) left the page on that step card
     // (`?step=review/0/confirm`) — `run-outputs` only renders on the run card.
     await page.goto(runUrl, { waitUntil: 'networkidle' })
