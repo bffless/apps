@@ -3,12 +3,15 @@
  * `@bffless/workflow` — the authoring CLI (apps#420). A thin router: `lint`
  * and `index` delegate to `@bffless/workflow-lint`'s published API
  * (`lintFile`, `resolveRuleSet`, `buildIndex`) so the parser/schema/resolver
- * logic has exactly one implementation, and `rename`/`init`/`add` each
- * delegate to their own verb module (./verbs/{rename,init,add}.ts) —
- * `rename` and `init` built on the boundary-aware rename engine
+ * logic has exactly one implementation, and `rename`/`init`/`add`/`publish`
+ * each delegate to their own verb module (./verbs/{rename,init,add,publish}.ts)
+ * — `rename` and `init` built on the boundary-aware rename engine
  * (./rewrite.ts), `add` scaffolding new workflow + rule-stub files that line
- * up with it. `publish` is the one verb still landing in a later task of the
- * same plan (docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md).
+ * up with it, `publish` driving the same four moves the `publish-workflow`
+ * action makes (index -> prepare/forwarder -> rules sync -> upload+attach,
+ * Decision 8: docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md:24)
+ * — its first move reuses `writeIndexBundle` (./index-bundle.ts), the same
+ * bundle-writing machinery `index` below uses.
  *
  * workflow-lint's own CLI (`packages/workflow-lint/src/cli.ts`) is the
  * contract this mirrors — same flags, same exit codes (0 clean, 1
@@ -17,35 +20,18 @@
  * `lintFile`/`resolveRuleSet`/`buildIndex` are exported), so that layer is
  * re-implemented here against the public API rather than imported.
  */
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  buildIndex,
-  lintFile,
-  resolveRuleSet,
-  type Counts,
-  type IndexFinding,
-  type LintResult,
-  type RuleSetContext,
-} from '@bffless/workflow-lint'
+import { lintFile, resolveRuleSet, type Counts, type LintResult, type RuleSetContext } from '@bffless/workflow-lint'
+import { writeIndexBundle, type WriteResult } from './index-bundle.js'
 import { readVersion } from './version.js'
 import { parseAdd, runAdd } from './verbs/add.js'
 import { parseInit, runInit } from './verbs/init.js'
+import { parsePublish, runPublish } from './verbs/publish.js'
 import { parseRename, runRename } from './verbs/rename.js'
 
 const VERBS = ['init', 'rename', 'add', 'lint', 'index', 'publish'] as const
-type Verb = (typeof VERBS)[number]
-const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['publish'])
 
 const USAGE = `Usage: workflow <verb> [options]
 
@@ -55,7 +41,7 @@ Verbs:
   add       scaffold a new workflow + rule stubs, in the current directory
   lint      lint workflow YAML — delegates to @bffless/workflow-lint
   index     build an implementation's index.json bundle — delegates to @bffless/workflow-lint
-  publish   index -> rules push -> upload -> attach               (not yet implemented)
+  publish   index -> rules push -> upload -> attach
 
   --version  print the installed @bffless/workflow version
 
@@ -67,6 +53,25 @@ lint and index accept the same flags as workflow-lint's own \`workflow\` CLI:
 rename operates on the current directory's .bffless/workflow.json:
 
   rename <old> <new> [--dry-run]
+
+publish drives index -> prepare/forwarder -> rules push -> upload -> attach,
+operating on the current directory's .bffless/workflow.json by default:
+
+  publish [--api-url <url>] [--project <owner/name>] [--alias <alias>]
+          [--harness-alias <alias>] [--path <dir>] [--workflows <dir>]
+          [--rules <dir>] [--dry-run]
+
+Options (publish):
+  --api-url <url>         base URL of the BFFless instance (default: BFFLESS_API_URL)
+  --project <owner/name>  the BFFless project the alias + rule set live on (required)
+  --alias <alias>         the implementation alias (default: the identity file's alias)
+  --harness-alias <alias> the harness alias carrying the union of implementation rule sets (default: workflow)
+  --path <dir>            built bundle directory, also index's --out (default: dist)
+  --workflows <dir>       directory of authored workflow YAML (default: .bffless/workflows)
+  --rules <dir>           the implementation rule-set directory (default: .bffless/proxy-rules/<alias>)
+  --dry-run               print the four resolved moves; write nothing, call no network
+
+The API key comes from BFFLESS_API_KEY only — never a flag.
 
 add operates on the current directory's .bffless/workflow.json (its alias
 picks the rule-set directory rule stubs land in):
@@ -282,111 +287,6 @@ function runLint(parsed: LintArgs, out: (line: string) => void, err: (line: stri
   return total.errors + total.warnings > 0 ? 1 : 0
 }
 
-/** Top-level `*.workflow.yaml`/`*.yaml`/`*.yml` files, in listing order — the order `index.json` lists them in. */
-function workflowFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isFile() && /\.ya?ml$/.test(e.name))
-    .map((e) => e.name)
-    .sort()
-}
-
-/** `<out>/<sub>/*` matching `re`, listed as bundle-relative paths. */
-function bundleFiles(out: string, sub: string, re: RegExp): string[] {
-  const dir = join(out, sub)
-  if (!existsSync(dir)) return []
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isFile() && re.test(e.name))
-    .map((e) => `${sub}/${e.name}`)
-    .sort()
-}
-
-/** Same shape as workflow-lint's `index/write.ts` `landingPage` — the bundle-only alias's fallback page. */
-function landingPage(impl: string): string {
-  const pattern = impl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>workflow-${impl}</title></head>
-<body style="font:15px/1.6 system-ui,sans-serif;margin:3rem auto;max-width:34rem;padding:0 1rem">
-<p>workflow-${impl} — a bundle-only alias; open <a id="harness" href="/.bffless/workflows/index.json">the harness</a>.</p>
-<script>
-  var host = location.hostname.replace(/^${pattern}\\./, 'workflow.')
-  if (host !== location.hostname) document.getElementById('harness').href = location.protocol + '//' + host
-</script>
-</body></html>
-`
-}
-
-/** `--version` default: the nearest `package.json` at or above the workflows directory. */
-function defaultVersion(workflowsDir: string): string {
-  let dir = resolve(workflowsDir)
-  for (;;) {
-    const candidate = join(dir, 'package.json')
-    if (existsSync(candidate)) {
-      try {
-        const version: unknown = JSON.parse(readFileSync(candidate, 'utf8')).version
-        if (typeof version === 'string') return version
-      } catch {
-        // An unreadable package.json is not this command's business to report.
-      }
-      return '0.0.0'
-    }
-    const parent = dirname(dir)
-    if (parent === dir) return '0.0.0'
-    dir = parent
-  }
-}
-
-/** `--commit` default: CI's `GITHUB_SHA`. No `git` fallback — this runs over `npx` in someone else's repo. */
-function defaultCommit(): string {
-  return process.env.GITHUB_SHA?.slice(0, 7) ?? 'unknown'
-}
-
-/** The `buildIndex` result once a failing lint has already returned. */
-type WriteResult = { ok: true; workflowCount: number; indexFile: string } | { ok: false; findings: IndexFinding[] }
-
-/**
- * Everything that touches disk beyond the up-front directory/rules checks:
- * reading the workflow YAMLs, running `buildIndex`, and — only on success —
- * writing the bundle. Split out so `runIndex` can wrap exactly this in a
- * try/catch, matching workflow-lint's own CLI contract (its `runIndex` wraps
- * the equivalent `writeIndex(...)` call the same way): a permission error, a
- * full disk, or a file deleted mid-run must surface as `workflow: <message>`
- * on stderr with exit 2, never an uncaught exception.
- */
-function writeIndexBundle(parsed: IndexArgs, rules: RuleSetContext): WriteResult {
-  const files = workflowFiles(parsed.workflowsDir)
-  const built = buildIndex({
-    impl: parsed.impl,
-    name: parsed.name,
-    description: parsed.description,
-    version: parsed.version ?? defaultVersion(parsed.workflowsDir),
-    commit: parsed.commit ?? defaultCommit(),
-    workflows: files.map((file) => ({ file, yaml: readFileSync(join(parsed.workflowsDir, file), 'utf8') })),
-    islands: bundleFiles(parsed.out, 'islands', /\.html$/),
-    scripts: bundleFiles(parsed.out, 'scripts', /\.m?js$/),
-    rules,
-  })
-
-  // Nothing is written for a failing lint: a half-staged bundle whose index
-  // predates the failure is worse than no bundle at all (06).
-  if (!built.ok) return built
-
-  // The only directory this command owns is cleared before it is written, so
-  // a renamed or deleted YAML never lingers in a re-used local out dir. Never
-  // `<out>` itself, which holds the islands and scripts someone else staged.
-  const workflowDir = join(parsed.out, '.bffless', 'workflows')
-  rmSync(workflowDir, { recursive: true, force: true })
-  mkdirSync(workflowDir, { recursive: true })
-  for (const file of files) copyFileSync(join(parsed.workflowsDir, file), join(workflowDir, file))
-
-  const { workflows, islands, scripts, ...head } = built.index
-  const index = { ...head, generatedAt: new Date().toISOString(), workflows, islands, scripts }
-  const indexFile = join(workflowDir, 'index.json')
-  writeFileSync(indexFile, JSON.stringify(index, null, 2))
-  writeFileSync(join(parsed.out, 'index.html'), landingPage(parsed.impl))
-
-  return { ok: true, workflowCount: index.workflows.length, indexFile }
-}
-
 function runIndex(parsed: IndexArgs, out: (line: string) => void, err: (line: string) => void): number {
   if (!existsSync(parsed.workflowsDir)) {
     err(`workflow: no such directory: ${parsed.workflowsDir}`)
@@ -431,7 +331,7 @@ function runIndex(parsed: IndexArgs, out: (line: string) => void, err: (line: st
   return 0
 }
 
-export function runCli(argv: string[], out: (line: string) => void, err: (line: string) => void): number {
+export async function runCli(argv: string[], out: (line: string) => void, err: (line: string) => void): Promise<number> {
   if (argv[0] === '--version') {
     out(readVersion())
     return 0
@@ -444,10 +344,6 @@ export function runCli(argv: string[], out: (line: string) => void, err: (line: 
   }
   if (!(VERBS as readonly string[]).includes(verb)) {
     err(`workflow: unknown verb \`${verb}\`\n\n${USAGE}`)
-    return 2
-  }
-  if (UNIMPLEMENTED.has(verb as Verb)) {
-    err(`workflow: ${verb} not implemented`)
     return 2
   }
 
@@ -496,7 +392,16 @@ export function runCli(argv: string[], out: (line: string) => void, err: (line: 
       return runAdd(process.cwd(), parsed, out, err)
     }
 
-    // verb === 'index' (the only remaining implemented verb).
+    if (verb === 'publish') {
+      const parsed = parsePublish(rest)
+      if ('error' in parsed) {
+        err(`workflow: ${parsed.error}\n\n${USAGE}`)
+        return 2
+      }
+      return await runPublish(process.cwd(), parsed, out, err)
+    }
+
+    // verb === 'index' (every other verb dispatched above).
     const parsed = parseIndex(rest)
     if ('error' in parsed) {
       err(`workflow: ${parsed.error}\n\n${USAGE}`)
@@ -525,9 +430,11 @@ function realOrSelf(path: string): string {
 // paths on both sides keeps this guard true for every `bin` invocation
 // (mirrors workflow-lint's cli.ts realpath guard).
 if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
-  process.exitCode = runCli(
+  runCli(
     process.argv.slice(2),
     (l) => console.log(l),
     (l) => console.error(l),
-  )
+  ).then((code) => {
+    process.exitCode = code
+  })
 }

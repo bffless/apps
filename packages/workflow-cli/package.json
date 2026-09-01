@@ -44,7 +44,10 @@
     "cli": "node dist/cli.js"
   },
   "dependencies": {
-    "@bffless/workflow-lint": "^1.4.0"
+    "@bffless/artifact-client": "^1.1.1",
+    "@bffless/workflow-lint": "^1.4.0",
+    "jszip": "^3.10.1",
+    "yaml": "^2.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -14,11 +14,9 @@ apps#420).
 
 ## Status
 
-`init`, `rename`, `add`, `lint` and `index` are implemented (Phase 1+2 of
-the [authoring CLI
+Every verb — `init`, `rename`, `add`, `lint`, `index` and `publish` — is
+implemented (Phases 1–3 of the [authoring CLI
 plan](../../docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md)).
-`publish` is the one verb still pending — it exits 2 with "not implemented"
-until its own task lands.
 
 ## Install
 
@@ -38,7 +36,9 @@ workflow rename <old> <new> [--dry-run]
 workflow add    <name> [--step <path>]…
 workflow lint   <file...> [--json] [--quiet] [--rules <dir>] [--alias <alias>] [--path-prefix <p>]
 workflow index  <workflows-dir> --out <dir> --impl <alias> --name <display> [options]
-workflow publish   # not yet implemented — next phase
+workflow publish [--api-url <url>] [--project <owner/name>] [--alias <alias>]
+                 [--harness-alias <alias>] [--path <dir>] [--workflows <dir>]
+                 [--rules <dir>] [--dry-run]
 ```
 
 Exit codes: **0** clean/success · **1** lint errors/warnings · **2**
@@ -142,6 +142,50 @@ workflow index <workflows-dir> --out <dir> --impl <alias> --name <display> [opti
 Same flags and the same exit-code contract as `@bffless/workflow-lint`'s own
 `workflow` CLI — see [its README](../workflow-lint/README.md#cli) for the
 full flag reference.
+
+### `publish` — index, prepare, sync, deploy, attach
+
+```
+workflow publish [--api-url <url>] [--project <owner/name>] [--alias <alias>]
+                 [--harness-alias <alias>] [--path <dir>] [--workflows <dir>]
+                 [--rules <dir>] [--dry-run]
+```
+
+Run from inside an already-`init`ed implementation directory. Drives the
+same four moves `bffless/publish-workflow`'s GitHub Action makes, in
+process, against a live BFFless instance:
+
+1. **index** — `buildIndex` (the same machinery `workflow index` uses)
+   builds `<path>/.bffless/workflows/index.json` from `--workflows`,
+   checked against `--rules`.
+2. **prepare** — an alias-named copy of the rule set is staged under a
+   disposable temp dir, plus a generated `/w/<alias>/*` forwarder rule
+   (`forwardCookies: true`, `order: 5`) pointing at the alias served
+   in-process by the CE backend — never written into the source tree.
+3. **rules push** — spawns `npx --yes bffless@0.3.3 rules push` against the
+   staged copy, syncing it under `/api/<alias>/` on `--project`.
+4. **upload + attach** — zips `--path` and deploys it to the `--alias`
+   (`base-path: /`, its own rule set attached by name), then unions the
+   synced rule set's id into `--harness-alias`'s own `proxyRuleSetIds` —
+   idempotent, so publishing the same implementation twice is a no-op.
+
+The API key comes from `BFFLESS_API_KEY` **only** — never a flag (it would
+otherwise land in the process list). A missing key exits 2 before any
+network call. `--dry-run` prints every move with fully resolved values
+(URLs, alias, rule-set names, paths) and performs none of them.
+
+Options:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--api-url <url>` | `BFFLESS_API_URL` | Base URL of the BFFless instance |
+| `--project <owner/name>` | — | The BFFless project the alias + rule set live on (required) |
+| `--alias <alias>` | the identity file's alias | The implementation alias |
+| `--harness-alias <alias>` | `workflow` | The harness alias carrying the union of implementation rule sets |
+| `--path <dir>` | `dist` | Built bundle directory, also `index`'s `--out` |
+| `--workflows <dir>` | `.bffless/workflows` | Directory of authored workflow YAML |
+| `--rules <dir>` | `.bffless/proxy-rules/<alias>` | The implementation rule-set directory |
+| `--dry-run` | off | Print the four resolved moves; write nothing, call no network |
 
 ## Both packages ship a `workflow` bin
 
