@@ -197,6 +197,16 @@ serve *that island* as `workflow.submitStep`'s UI — the Phase-2 demonstrator.
    accepts a session (`user.id` flows into pipelines: `startedBy`, delete gate); mint/revoke
    API + admin UI. Fixes the landmine generally — the headless driver gets a real
    credential independent of MCP.
+
+   **Scopes are a second gate on top of identity** (ratified 2026-09-01): effective
+   permission = member's permissions ∩ token's granted scopes — a token never elevates, a
+   narrow consent genuinely narrows. Enforcement is app-agnostic in `auth_required`: rules
+   declare `requiredScopes` in rules-as-code; sessions pass every scope check (a person is
+   not a delegation); tokens must carry the scope. The catalog owns the tool→scope map
+   (`read`: list/describe/status/await/runs/outputs · `run`: start/submitStep/cancel/resume
+   · `files`: sign) so consent and `tools/list` agree; `workflow.http` has no scope of its
+   own — path-fenced, it inherits the reached rule's `requiredScopes`, so a read-only token
+   can't drive a run through the run view.
 3. **OAuth 2.1 (CE)** — DCR + PKCE + RFC 9728/8707; the access token *is* an app token;
    SuperTokens OAuth2-provider recipe vs built-in decided by an in-story spike. The app
    ships `/.well-known/oauth-protected-resource` **as a rule** pointing at CE's
@@ -227,7 +237,7 @@ are filed when Phase 3 starts.
 | 5 | Spike: stateless MCP over a `function_handler` rule (`POST /api/workflow/mcp`) — initialize / tools-list / tools-call for reads; findings comment on the epic (can a function execute sibling rules? if not, narrow and fold execution into story 8) | apps |
 | 6 | Islands as `ui://` in Claude: `resources/read` of island HTML, one demo tool with `_meta.ui.resourceUri` + generated CSP, server-side `workflow.submit`/`sign`; manual claude.ai verification, screenshots on the PR — **ADR-0002's "why", proven** | apps |
 | **Phase 3 — CE: auth + generic handler** · *gate: claude.ai completes DCR+PKCE against the app and calls `workflow.status` as the member* |||
-| 7 | (CE) App tokens: scoped user-bound bearers, `auth_required` resolution, mint/revoke + admin UI; apps follow-up: driver may use an app token instead of relay login | ce |
+| 7 | (CE) App tokens: scoped user-bound bearers, `auth_required` resolution **incl. per-rule `requiredScopes` enforcement** (sessions unscoped; effective = member ∩ token), mint/revoke + admin UI; apps follow-ups: `requiredScopes` on the workflow rules, driver may use an app token instead of relay login | ce |
 | 8 | (CE) Generic `mcp_handler` pipeline handler; workflow's `/api/workflow/mcp` rule swaps from function_handler guts to it | ce |
 | 9 | (CE) OAuth 2.1: DCR, PKCE, RFC 9728/8707, access token = app token; SuperTokens-provider-vs-built-in spike inside the story; app ships its `.well-known` rule | ce |
 | **Phase 4 — the run view** · *gate: a full `hello` run started, driven and island-completed entirely inside claude.ai; workflow-live walk green* |||

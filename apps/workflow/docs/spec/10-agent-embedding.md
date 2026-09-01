@@ -51,6 +51,13 @@ slash-tolerant, exactly as island tool names are (04). Every result is an MCP
 does not, so there it is required). Read-only tools carry `annotations.readOnlyHint` so a
 consenting browser can grant them more cheaply.
 
+**Every tool maps to exactly one scope** (D23), and the catalog owns the map so the OAuth
+consent screen and `tools/list` tell the same story: `list` / `describe` / `status` /
+`await` / `runs` / `outputs` → `workflow:read`; `start` / `submitStep` / `cancel` /
+`resume` → `workflow:run`; `sign` → `workflow:files`. On the WebMCP page scopes do not
+apply — the session is the credential; over the MCP endpoint a token missing the tool's
+scope is refused before the tool runs.
+
 **The run snapshot** is the `window.__workflow` shape (07) extended with `waitingOn`: for
 each `waiting` step, its key, kind (`form` | `island`), the declared inputs/outputs, and for
 islands the resolved `src`. It tells an agent not just *that* the run is waiting but *what
@@ -207,6 +214,20 @@ member's behalf with. The ladder (D23):
    `Authorization: Bearer <app-token>` wherever it accepts a session and resolves it to the
    member, so `user.id` flows into pipelines unchanged (`startedBy`, the delete gate). This
    fixes the landmine generally — the driver gets a real credential too, independent of MCP.
+
+   **Scopes are a second, independent gate** — identity says *who* is acting, the scope
+   says *what this credential was delegated*. Effective permission is the intersection:
+   what the member may do ∩ what the token was granted. A token never elevates (a
+   `viewer`'s token with every scope still can't delete), and a narrow grant genuinely
+   narrows (approve only `workflow:read` at consent and Claude can watch runs but never
+   start one). Enforcement lives in `auth_required` itself, app-agnostically: a rule
+   declares `requiredScopes: [workflow:run]` in its rules-as-code config; a session cookie
+   passes every scope check (a person acting as themselves is not a delegation); a token
+   must carry the scope or the call is refused with the missing scope named. The scope
+   *vocabulary* is the app's, declared in its own rules — CE only compares strings. The
+   app-only `workflow.http` tool deliberately has no scope of its own: it is path-fenced,
+   so it inherits the `requiredScopes` of whichever rule it reaches — a read-only token
+   cannot drive a run through the run view's back door.
 3. **OAuth 2.1 (CE)** — dynamic client registration, PKCE, RFC 9728 protected-resource
    metadata, RFC 8707 resource indicators; the access token *is* an app token. The app
    ships its `/.well-known/oauth-protected-resource` document **as a rule** pointing at
@@ -227,7 +248,7 @@ session cookie is already on the page.
 | D20 | Generic `workflow.*` tools + `describe` in v1; per-workflow generated tools are a later MCP-endpoint option |
 | D21 | WebMCP on the page only: polyfill always, executors drive the store and navigate, no pipeline tools on the page, islands never register page tools |
 | D22 | The MCP endpoint is a rule in the app's rule set (`POST /api/workflow/mcp`), stateless Streamable HTTP; prototype `function_handler`, GA a generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` |
-| D23 | Auth ladder: authless dev prototype → CE user-bound scoped app tokens (Bearer = member) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule |
+| D23 | Auth ladder: authless dev prototype → CE user-bound scoped app tokens (Bearer = member) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule; per-rule `requiredScopes` enforced by `auth_required` (sessions unscoped, tokens intersect with the member's own permissions), tool→scope map owned by the catalog |
 | D24 | In agent hosts the run view drives: the pure runner + island host bundled as `ui://bffless/workflow/run.html` over an app-only `workflow.http` seam; its layout is a vertical job/step accordion (no graph); same lease, same rows; a server-side driver stays deferred |
 
 ## Later
