@@ -16,7 +16,7 @@
  *     `--path`, and the one case where workflow generation is skipped.
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,7 +62,7 @@ function freshCwd(): string {
   return tempDir('workflow-cli-init-cwd-')
 }
 
-const baseArgs = { harnessAlias: 'workflow', dryRun: false } as const
+const baseArgs = { harnessAlias: 'workflow', dryRun: false, skipExisting: false } as const
 
 function run(args: string[], cwd: string): { stdout: string; stderr: string; status: number } {
   try {
@@ -88,6 +88,7 @@ describe('parseInit', () => {
       project: undefined,
       harnessAlias: 'workflow',
       dryRun: false,
+      skipExisting: false,
     })
   })
 
@@ -108,6 +109,7 @@ describe('parseInit', () => {
         '--harness-alias',
         'harness',
         '--dry-run',
+        '--skip-existing',
       ]),
     ).toEqual({
       alias: 'studio',
@@ -118,6 +120,7 @@ describe('parseInit', () => {
       project: 'acme/site',
       harnessAlias: 'harness',
       dryRun: true,
+      skipExisting: true,
     })
   })
 
@@ -384,6 +387,8 @@ describe('destination conflict guard', () => {
     )
     expect(status).toBe(2)
     expect(errors.join('\n')).toContain('package.json')
+    // I5: the refusal message now also points at the escape hatch.
+    expect(errors.join('\n')).toContain('--skip-existing')
     expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe('{"name":"host-repo-package-json"}\n')
     // Nothing else from the package landed either — the whole copy was refused up front.
     expect(existsSync(join(cwd, '.bffless'))).toBe(false)
@@ -462,5 +467,217 @@ describe('workflow init (CLI wiring)', () => {
     const r = run(['init', 'studio', '--from', src, '--path', 'workflows/hello', '--dest', 'impl'], cwd)
     expect(r.status).toBe(2)
     expect(r.stderr).toContain('--project')
+  })
+
+  // I4 (whole-branch review): unguarded IO must map to the CLI's documented
+  // exit-code contract (2, `workflow: <message>` on stderr), never an
+  // uncaught exception with a raw Node stack trace and Node's default exit
+  // code (1 — coincidentally the lint-errors code, which would be actively
+  // misleading here). An unreadable subdirectory inside the source package
+  // makes the staging `cpSync` (src/verbs/init.ts) throw EACCES with no
+  // init-local try/catch around it — exactly the class cli.ts's new
+  // top-level dispatch guard exists to catch.
+  test('an unreadable file under the source package fails clean through the CLI, not with a stack trace', () => {
+    // Root ignores file-mode read permission, so this EACCES never fires —
+    // skip rather than false-fail under a root-run CI container.
+    if (typeof process.getuid === 'function' && process.getuid() === 0) return
+
+    const src = monorepoSource()
+    const secretDir = join(src, 'workflows', 'hello', 'secret')
+    mkdirSync(secretDir)
+    writeFileSync(join(secretDir, 'file.txt'), 'shh')
+    chmodSync(secretDir, 0o000)
+    const cwd = freshCwd()
+
+    try {
+      const r = run(['init', 'studio', '--from', src, '--path', 'workflows/hello', '--dest', 'impl', '--project', 'acme/site'], cwd)
+      expect(r.status).toBe(2)
+      expect(r.stdout).toBe('')
+      expect(r.stderr.trim()).toMatch(/^workflow: /)
+      // A raw Node stack trace means the exception escaped the top-level
+      // catch instead of being turned into the documented error.
+      expect(r.stderr).not.toMatch(/\bat .*:\d+:\d+/)
+      expect(existsSync(join(cwd, 'impl'))).toBe(false)
+    } finally {
+      chmodSync(secretDir, 0o755)
+    }
+  })
+})
+
+/**
+ * C1 (whole-branch review — critical): `init --dest .` must never run the
+ * textual rename pass over the whole destination repo. Before the fix,
+ * `runInit` copied the package straight into `destDir` and then called
+ * `renamePass(destDir, …)` — for `--dest .`, `destDir` IS the host repo, and
+ * the rename pass walks every file under whatever directory it's pointed
+ * at, rewriting the old alias wherever it appears as an ordinary word. A
+ * host file that was never part of the copy (and has nothing to do with
+ * this implementation) would get silently corrupted if it happened to
+ * contain the old alias. The fix stages the copy in a disposable temp dir,
+ * runs the rename pass there, and only ever writes the already-renamed
+ * staged result into `destDir` — so the pass structurally cannot see a file
+ * it didn't copy.
+ */
+describe('C1: the rename pass never touches host files it did not copy', () => {
+  test('a host repo file that was never copied, but contains the old alias as an ordinary word, is byte-identical after init --dest .', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostFileContent = 'This host repo file says hello a lot: hello, hello again — nothing to do with the package.\n'
+    writeFileSync(join(cwd, 'host-notes.txt'), hostFileContent)
+
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site' },
+      () => {},
+      () => {},
+    )
+    expect(status).toBe(0)
+
+    // Untouched, byte for byte — the whole point of the regression.
+    expect(readFileSync(join(cwd, 'host-notes.txt'), 'utf8')).toBe(hostFileContent)
+
+    // The package's own files were still renamed as usual.
+    expect(readIdentity(cwd)).toEqual({ alias: 'studio', harness: 'workflow' })
+    expect(existsSync(join(cwd, '.bffless/proxy-rules/studio'))).toBe(true)
+  })
+
+  test('same regression, --dry-run: the host file is never even staged for a rewrite', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostFileContent = 'hello, hello, hello — host repo prose, not the package.\n'
+    writeFileSync(join(cwd, 'host-notes.txt'), hostFileContent)
+
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site', dryRun: true },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+    expect(readFileSync(join(cwd, 'host-notes.txt'), 'utf8')).toBe(hostFileContent)
+    // The report never names the host file — only the package's own paths.
+    expect(lines.join('\n')).not.toContain('host-notes.txt')
+  })
+})
+
+/**
+ * I5 (whole-branch review, controller ruling): `--skip-existing`. Default
+ * behavior (refuse, exit 2) is unchanged and already covered by the
+ * "destination conflict guard" describe block above — this covers the flag
+ * itself: colliding paths are left as the host has them (not copied),
+ * everything else still lands renamed, and the report says what was
+ * skipped.
+ */
+describe('--skip-existing', () => {
+  test('the Task 8 dogfood shape — nested --path, --dest . into a host repo with BOTH unrelated and colliding files — succeeds, keeping the host\'s colliding files and copying the rest renamed', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostPkg = '{"name":"host-repo-package-json"}\n'
+    const hostReadme = "# Host repo\nThis is the host repo's own README, not the package's.\n"
+    const hostNotes = 'unrelated host notes, nothing to do with the package\n'
+    writeFileSync(join(cwd, 'package.json'), hostPkg)
+    writeFileSync(join(cwd, 'README.md'), hostReadme)
+    writeFileSync(join(cwd, 'notes.txt'), hostNotes)
+
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site', skipExisting: true },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+
+    // Host's colliding files: untouched.
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe(hostPkg)
+    expect(readFileSync(join(cwd, 'README.md'), 'utf8')).toBe(hostReadme)
+    // Unrelated host file: untouched (C1's guarantee, still holding here too).
+    expect(readFileSync(join(cwd, 'notes.txt'), 'utf8')).toBe(hostNotes)
+
+    // The package's non-colliding files still landed, renamed.
+    expect(readIdentity(cwd)).toEqual({ alias: 'studio', harness: 'workflow' })
+    expect(existsSync(join(cwd, '.bffless/proxy-rules/studio'))).toBe(true)
+    const build = readFileSync(join(cwd, 'scripts/build.mjs'), 'utf8')
+    expect(build).toContain("flagValue('--impl', 'studio')")
+
+    // Reported under the skipped section.
+    const out = lines.join('\n')
+    expect(out).toContain('skipped (already exists) — merge by hand:')
+    expect(out).toContain('  package.json')
+    expect(out).toContain('  README.md')
+  })
+
+  test('--dry-run --skip-existing shows the same skip list and writes nothing', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    writeFileSync(join(cwd, 'package.json'), '{"name":"host-repo-package-json"}\n')
+
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      {
+        ...baseArgs,
+        alias: 'studio',
+        from: src,
+        path: 'workflows/hello',
+        dest: '.',
+        project: 'acme/site',
+        skipExisting: true,
+        dryRun: true,
+      },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+    expect(existsSync(join(cwd, '.bffless'))).toBe(false)
+    expect(existsSync(join(cwd, '.github'))).toBe(false)
+
+    const out = lines.join('\n')
+    expect(out).toContain('(dry run) skipped (already exists) — merge by hand:')
+    expect(out).toContain('(dry run)   package.json')
+    // Unchanged: the host file itself was never touched.
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe('{"name":"host-repo-package-json"}\n')
+  })
+})
+
+/**
+ * I6 (whole-branch review): generated deploy/preview workflows assume the
+ * destination is already a member of the host repo's pnpm workspace
+ * (`computeGeneratedPaths`'s `buildLine` reads `pnpm --filter ./<dest> run
+ * build` whenever `dest !== '.'`). `printManualSteps` gains a step telling
+ * the caller to add `<dest>` to `pnpm-workspace.yaml` and re-run `pnpm
+ * install` — advisory only, never gating the exit code.
+ */
+describe('manual steps: pnpm workspace (I6)', () => {
+  test('a subdirectory --dest prints a step to add it to pnpm-workspace.yaml and reinstall', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: 'impl', project: 'acme/site' },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+    const out = lines.join('\n')
+    expect(out).toContain('pnpm-workspace.yaml')
+    expect(out).toContain('impl')
+    expect(out).toMatch(/pnpm install/)
+  })
+
+  test('--dest . prints no pnpm-workspace step — the generated build line needs no --filter', () => {
+    const src = sourceAt('implementations/alpha')
+    const cwd = freshCwd()
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'implementations/alpha', dest: '.', project: 'acme/site' },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+    expect(lines.join('\n')).not.toContain('pnpm-workspace.yaml')
   })
 })

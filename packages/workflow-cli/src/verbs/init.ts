@@ -14,10 +14,19 @@
  * contract: `--path` names where the package lives, or — if omitted — the
  * conventional default (`workflows/hello`, matching the plan's own default
  * invocation) is tried first, then the whole tree is searched for
- * candidates. Once found, the package directory is copied into `--dest`
- * (default `./<alias>`; `--dest .` for a repo-root implementation, e.g.
- * bffless.app's dogfood copy) and put through the boundary-aware rename
- * engine (../rewrite.ts) from the source's own alias to the requested one.
+ * candidates. Once found, the package directory is staged into a disposable
+ * temp dir, put through the boundary-aware rename engine (../rewrite.ts)
+ * there — from the source's own alias to the requested one — and only that
+ * already-renamed staged copy is written into `--dest` (default `./<alias>`;
+ * `--dest .` for a repo-root implementation, e.g. bffless.app's dogfood
+ * copy). Staging first, rather than copying straight into `--dest` and
+ * renaming in place, is deliberate (C1, apps#420 whole-branch review): for
+ * `--dest .` the destination is very often the host repo itself, and the
+ * rename engine's textual pass walks every file it's pointed at — running it
+ * on `destDir` directly would rewrite host files the copy never touched
+ * (anything that happens to contain the old alias as an ordinary word) right
+ * alongside the package's own. Scoping the pass to the staged copy makes
+ * that impossible: it only ever sees the files this `init` actually copies.
  *
  * On top of that, `init` generates the *host* repo's deploy/preview
  * workflows (templates in ../templates/, ported from
@@ -37,14 +46,18 @@
  * own hand-edited workflow.
  *
  * Before any of that writes anything, a destination preflight
- * (`findDestinationConflicts`) checks every path the copy would actually
- * land against what's already at `--dest` — real run or `--dry-run` alike —
- * and refuses (exit 2, naming the colliding paths) rather than silently
- * overwriting. This matters most for `--dest .`: the destination is very
- * often an existing, populated host repo (Task 8's dogfood copy into
- * `bffless.app` is exactly this shape), so only paths the package would
- * actually write are conflicts — everything else already at the
- * destination is the host repo's own business and is left alone.
+ * (`findDestinationConflicts`) checks every path the staged, post-rename
+ * copy would actually land against what's already at `--dest` — real run or
+ * `--dry-run` alike — and refuses (exit 2, naming the colliding paths and
+ * suggesting `--skip-existing`) rather than silently overwriting. This
+ * matters most for `--dest .`: the destination is very often an existing,
+ * populated host repo (Task 8's dogfood copy into `bffless.app` is exactly
+ * this shape), so only paths the package would actually write are
+ * conflicts — everything else already at the destination is the host
+ * repo's own business and is left alone. `--skip-existing` (I5) turns that
+ * refusal into a merge: colliding paths are left exactly as the host has
+ * them (not copied at all, reported under a "skipped" section), and every
+ * non-colliding package file still lands, renamed, same as always.
  */
 import { execFileSync } from 'node:child_process'
 import {
@@ -59,7 +72,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readIdentity, writeIdentity, type Identity } from '../identity.js'
 import { ALIAS_RE, RESERVED_ALIASES, renamePass, type RenameReport } from '../rewrite.js'
@@ -75,6 +88,7 @@ export interface InitArgs {
   project?: string
   harnessAlias: string
   dryRun: boolean
+  skipExisting: boolean
 }
 
 const DEFAULT_FROM = 'bffless/workflow-implementations'
@@ -83,9 +97,10 @@ const DEFAULT_PATH = 'workflows/hello'
 /** Flags that take a value — everything else starting with `--` is unknown. */
 const VALUE_FLAGS = new Set(['--from', '--path', '--ref', '--dest', '--project', '--harness-alias'])
 
-/** `--dry-run` and the two positional/required-value flags aside, everything else is a plain value flag. */
+/** `--dry-run`/`--skip-existing` and the two positional/required-value flags aside, everything else is a plain value flag. */
 export function parseInit(rest: string[]): InitArgs | { error: string } {
   let dryRun = false
+  let skipExisting = false
   const positional: string[] = []
   const values: Record<string, string> = {}
 
@@ -93,6 +108,8 @@ export function parseInit(rest: string[]): InitArgs | { error: string } {
     const a = rest[i] ?? ''
     if (a === '--dry-run') {
       dryRun = true
+    } else if (a === '--skip-existing') {
+      skipExisting = true
     } else if (VALUE_FLAGS.has(a)) {
       const value = rest[++i]
       if (value === undefined || value.startsWith('--')) return { error: `${a} needs a value` }
@@ -116,6 +133,7 @@ export function parseInit(rest: string[]): InitArgs | { error: string } {
     project: values['--project'],
     harnessAlias: values['--harness-alias'] ?? 'workflow',
     dryRun,
+    skipExisting,
   }
 }
 
@@ -245,19 +263,18 @@ function listCopyableFiles(root: string): string[] {
  * populated `--dest .` (the Task 8 dogfood shape: copying into the real,
  * non-empty `bffless.app` repo) is caught cleanly instead of silently
  * overwritten. A path only counts as a conflict when the copy would
- * actually land a file there — i.e. it appears in `packageFiles` — so an
- * *unrelated* existing file at the destination (anything the package
+ * actually land a file there — i.e. it appears in `stagedFiles`, the
+ * *post-rename* file list computed off the staged copy (see `runInit`) —
+ * so an *unrelated* existing file at the destination (anything the package
  * doesn't ship) is never flagged; that's the entire point of `--dest .`
- * landing a package inside an existing host repo. `destDir` itself existing
- * as a plain file (not a directory) is its own, single conflict: `mkdirSync`
- * would throw `ENOTDIR` on it, so it's caught here instead, before that
- * throw ever happens.
+ * landing a package inside an existing host repo. Using the post-rename
+ * list (rather than the raw source listing) matters whenever the rule-set
+ * directory gets renamed: the file actually lands at
+ * `.bffless/proxy-rules/<newAlias>/…`, not the old-alias path, so that's
+ * what has to be checked against the destination.
  */
-function findDestinationConflicts(destDir: string, packageFiles: string[]): string[] {
-  if (existsSync(destDir) && !statSync(destDir).isDirectory()) {
-    return [`${destDir} (exists and is not a directory)`]
-  }
-  return packageFiles.filter((f) => existsSync(join(destDir, f)))
+function findDestinationConflicts(destDir: string, stagedFiles: string[]): string[] {
+  return stagedFiles.filter((f) => existsSync(join(destDir, f)))
 }
 
 const TEMPLATES_DIR = fileURLToPath(new URL('../templates/', import.meta.url))
@@ -335,8 +352,28 @@ function printGenerated(out: Print, tag: string, files: GeneratedFile[], skipped
   }
 }
 
-/** The issue's "print the manual steps" sketch (Decision 10), made concrete. Advisory only — never gates the exit code. */
-function printManualSteps(out: Print, project: string | undefined, harnessAlias: string): void {
+/**
+ * `--skip-existing`'s report section (I5): every path that already existed
+ * at the destination and was therefore left untouched — the host's own
+ * version wins, and merging the package's version in (if wanted at all) is
+ * left to the caller.
+ */
+function printSkipped(out: Print, tag: string, skipped: string[]): void {
+  if (skipped.length === 0) return
+  out(`${tag}skipped (already exists) — merge by hand:`)
+  for (const s of skipped) out(`${tag}  ${s}`)
+}
+
+/**
+ * The issue's "print the manual steps" sketch (Decision 10), made concrete.
+ * Advisory only — never gates the exit code. Step 5 (I6) only applies when
+ * the generated workflows land the package under a subdirectory of the
+ * destination repo (`destRel !== '.'`): `computeGeneratedPaths`'s
+ * `buildLine` then reads `pnpm --filter ./<destRel> run build`, which only
+ * works once `<destRel>` is a member of the host repo's pnpm workspace —
+ * something `init` has no business assuming is already true.
+ */
+function printManualSteps(out: Print, project: string | undefined, harnessAlias: string, destRel: string): void {
   out('')
   out('Next steps:')
   out('  1. Create or choose the GitHub repository this implementation will live in, and push this commit there.')
@@ -346,6 +383,13 @@ function printManualSteps(out: Print, project: string | undefined, harnessAlias:
       `the target of harness alias "${harnessAlias}".`,
   )
   out('  4. If that BFFless instance does not already have a Workflow harness installed, install it from the catalog (Admin -> Apps) before the first deploy.')
+  if (destRel !== '.') {
+    out(
+      `  5. Add "${destRel}" to this repo's pnpm-workspace.yaml packages list (create the file if it doesn't have one yet), ` +
+        `then run \`pnpm install\` to update the lockfile — the generated workflow builds with \`pnpm --filter ./${destRel} run build\`, ` +
+        'which only resolves once the workspace covers it.',
+    )
+  }
 }
 
 /**
@@ -404,88 +448,102 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
 
     const generatedFiles =
       wouldGenerate && parsed.project ? buildGeneratedFiles(cwd, parsed.alias, destRel, parsed.project, parsed.harnessAlias) : []
-    const skippedFiles = generatedFiles.filter((g) => existsSync(g.file)).map((g) => g.relFile)
-    const packageFiles = listCopyableFiles(packageDir)
+    const skippedGenerated = generatedFiles.filter((g) => existsSync(g.file)).map((g) => g.relFile)
     const sourceDescr = packagePath === '.' ? parsed.from : `${parsed.from}/${packagePath}`
 
-    // A preflight, not a write: catches a populated destination — most
-    // pointedly a populated `--dest .` — before anything is touched. Real
-    // run and dry run alike, so `--dry-run` previews the failure exactly as
-    // the real run would hit it (see module doc / findDestinationConflicts).
-    const conflicts = findDestinationConflicts(destDir, packageFiles)
-    if (conflicts.length > 0) {
-      const tag = parsed.dryRun ? '(dry run) ' : ''
-      err(
-        `workflow: ${tag}${destRel}/ already has ${conflicts.length} path(s) init would overwrite — refusing to clobber the destination:`,
-      )
-      for (const c of conflicts) err(`  ${c}`)
+    // `destDir` occupied by a plain file is its own, unconditional failure —
+    // not a --skip-existing-able collision with a specific package path, but
+    // a structural mismatch `mkdirSync` would otherwise throw `ENOTDIR` on.
+    if (existsSync(destDir) && !statSync(destDir).isDirectory()) {
+      err(`workflow: ${destRel}/ exists and is not a directory`)
       return 2
     }
 
-    if (parsed.dryRun) {
-      const tag = '(dry run) '
-      out(`${tag}copy ${sourceDescr} -> ${destRel}/ (${packageFiles.length} file(s))`)
-      for (const f of packageFiles) out(`${tag}  ${f}`)
+    // C1: the rename pass must never run over `destDir` itself — for
+    // `--dest .` that IS the host repo, and rewriting every file in it that
+    // happens to contain the old alias (e.g. a common word like "hello")
+    // would silently corrupt files the copy never touched. So the package is
+    // always staged into a disposable temp dir first, renamed there (that
+    // also gives real-run and dry-run one shared code path for computing the
+    // rename report — previously duplicated), and only the staged, already
+    // post-rename result ever gets copied into `destDir`.
+    const stage = mkdtempSync(join(tmpdir(), 'workflow-init-stage-'))
+    try {
+      cpSync(packageDir, stage, { recursive: true, filter: (p) => basename(p) !== '.git' })
+      const report = renamePass(stage, identity.alias, parsed.alias, { dryRun: false })
+      writeIdentity(stage, { alias: parsed.alias, harness: parsed.harnessAlias })
+      const stagedFiles = listCopyableFiles(stage)
 
-      // The report has to reflect the actual post-copy file contents (the
-      // rename engine reads files off disk), but nothing may be written to
-      // `destDir` — so stage a disposable copy purely to compute it.
-      const stage = mkdtempSync(join(tmpdir(), 'workflow-init-stage-'))
-      try {
-        cpSync(packageDir, stage, { recursive: true, filter: (p) => basename(p) !== '.git' })
-        const report = renamePass(stage, identity.alias, parsed.alias, { dryRun: true })
+      // A preflight, not a write: catches a populated destination — most
+      // pointedly a populated `--dest .` — before anything is touched. Real
+      // run and dry run alike, so `--dry-run` previews the failure exactly as
+      // the real run would hit it. Checked against the post-rename staged
+      // file list, not the raw source listing (see findDestinationConflicts).
+      const conflicts = findDestinationConflicts(destDir, stagedFiles)
+      if (conflicts.length > 0 && !parsed.skipExisting) {
+        const tag = parsed.dryRun ? '(dry run) ' : ''
+        err(
+          `workflow: ${tag}${destRel}/ already has ${conflicts.length} path(s) init would overwrite — ` +
+            'refusing to clobber the destination (pass --skip-existing to keep the host\'s versions and proceed):',
+        )
+        for (const c of conflicts) err(`  ${c}`)
+        return 2
+      }
+
+      // I5: with --skip-existing, colliding paths are left exactly as the
+      // host has them — not copied at all — rather than refusing outright.
+      const skippedExisting = parsed.skipExisting ? conflicts : []
+      const skipSet = new Set(skippedExisting)
+      const copiedFiles = stagedFiles.filter((f) => !skipSet.has(f))
+
+      if (parsed.dryRun) {
+        const tag = '(dry run) '
+        out(`${tag}copy ${sourceDescr} -> ${destRel}/ (${copiedFiles.length} file(s))`)
+        for (const f of copiedFiles) out(`${tag}  ${f}`)
         printRenameReport(out, tag, report, identity.alias, parsed.alias)
-      } finally {
-        rmSync(stage, { recursive: true, force: true })
+        printSkipped(out, tag, skippedExisting)
+        printGenerated(out, tag, generatedFiles, skippedGenerated)
+        printManualSteps(out, parsed.project, parsed.harnessAlias, destRel)
+        out(`${tag}would init ${parsed.alias} in ${destRel}/`)
+        return 0
       }
 
-      printGenerated(out, tag, generatedFiles, skippedFiles)
-      printManualSteps(out, parsed.project, parsed.harnessAlias)
-      out(`${tag}would init ${parsed.alias} in ${destRel}/`)
+      try {
+        mkdirSync(destDir, { recursive: true })
+        cpSync(stage, destDir, {
+          recursive: true,
+          filter: (src) => {
+            const rel = toPosix(relative(stage, src))
+            return rel === '' || !skipSet.has(rel)
+          },
+        })
+      } catch (e) {
+        err(`workflow: ${(e as Error).message}`)
+        return 2
+      }
+
+      try {
+        for (const g of generatedFiles) {
+          if (existsSync(g.file)) continue
+          mkdirSync(dirname(g.file), { recursive: true })
+          writeFileSync(g.file, g.content)
+        }
+      } catch (e) {
+        err(`workflow: ${(e as Error).message}`)
+        return 2
+      }
+
+      out(`copy ${sourceDescr} -> ${destRel}/ (${copiedFiles.length} file(s))`)
+      for (const f of copiedFiles) out(`  ${f}`)
+      printRenameReport(out, '', report, identity.alias, parsed.alias)
+      printSkipped(out, '', skippedExisting)
+      printGenerated(out, '', generatedFiles, skippedGenerated)
+      printManualSteps(out, parsed.project, parsed.harnessAlias, destRel)
+      out(`✔ initialized ${parsed.alias} in ${destRel}/`)
       return 0
+    } finally {
+      rmSync(stage, { recursive: true, force: true })
     }
-
-    try {
-      mkdirSync(destDir, { recursive: true })
-      cpSync(packageDir, destDir, { recursive: true, filter: (p) => basename(p) !== '.git' })
-    } catch (e) {
-      err(`workflow: ${(e as Error).message}`)
-      return 2
-    }
-
-    let report: RenameReport
-    try {
-      report = renamePass(destDir, identity.alias, parsed.alias, { dryRun: false })
-    } catch (e) {
-      err(`workflow: ${(e as Error).message}`)
-      return 2
-    }
-
-    try {
-      writeIdentity(destDir, { alias: parsed.alias, harness: parsed.harnessAlias })
-    } catch (e) {
-      err(`workflow: ${(e as Error).message}`)
-      return 2
-    }
-
-    try {
-      for (const g of generatedFiles) {
-        if (existsSync(g.file)) continue
-        mkdirSync(dirname(g.file), { recursive: true })
-        writeFileSync(g.file, g.content)
-      }
-    } catch (e) {
-      err(`workflow: ${(e as Error).message}`)
-      return 2
-    }
-
-    out(`copy ${sourceDescr} -> ${destRel}/ (${packageFiles.length} file(s))`)
-    for (const f of packageFiles) out(`  ${f}`)
-    printRenameReport(out, '', report, identity.alias, parsed.alias)
-    printGenerated(out, '', generatedFiles, skippedFiles)
-    printManualSteps(out, parsed.project, parsed.harnessAlias)
-    out(`✔ initialized ${parsed.alias} in ${destRel}/`)
-    return 0
   } finally {
     source.cleanup()
   }

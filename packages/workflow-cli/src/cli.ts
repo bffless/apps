@@ -85,6 +85,8 @@ Options (init):
   --project <owner/name>    the BFFless project this deploys to (required to generate .github/workflows)
   --harness-alias <alias>   which harness alias it deploys under (default: workflow)
   --dry-run                 print the copy/rename/generate plan; write nothing
+  --skip-existing           on a path collision with the destination, keep the host's version and
+                            proceed instead of refusing (colliding paths are reported, not copied)
 
 Options (rename):
   --dry-run        print the rewrite diff report; write nothing
@@ -449,49 +451,62 @@ export function runCli(argv: string[], out: (line: string) => void, err: (line: 
     return 2
   }
 
-  if (verb === 'lint') {
-    const parsed = parseLint(rest)
+  // I4 (whole-branch review, apps#420): every verb below does its own fs
+  // I/O, and some of that I/O (directory walks in particular) isn't
+  // individually try/catch-guarded — an EACCES scandir, say, would
+  // otherwise escape as an uncaught exception with a Node stack trace and
+  // Node's default exit code (1, the lint-errors code, not this CLI's
+  // usage/IO code). One catch-all here maps *any* unexpected throw from
+  // dispatch to the documented `workflow: <message>` on stderr, exit 2 —
+  // the same contract every verb's own guarded fallible steps already honor.
+  try {
+    if (verb === 'lint') {
+      const parsed = parseLint(rest)
+      if ('error' in parsed) {
+        err(`workflow: ${parsed.error}\n\n${USAGE}`)
+        return 2
+      }
+      return runLint(parsed, out, err)
+    }
+
+    if (verb === 'rename') {
+      const parsed = parseRename(rest)
+      if ('error' in parsed) {
+        err(`workflow: ${parsed.error}\n\n${USAGE}`)
+        return 2
+      }
+      return runRename(process.cwd(), parsed, out, err)
+    }
+
+    if (verb === 'init') {
+      const parsed = parseInit(rest)
+      if ('error' in parsed) {
+        err(`workflow: ${parsed.error}\n\n${USAGE}`)
+        return 2
+      }
+      return runInit(process.cwd(), parsed, out, err)
+    }
+
+    if (verb === 'add') {
+      const parsed = parseAdd(rest)
+      if ('error' in parsed) {
+        err(`workflow: ${parsed.error}\n\n${USAGE}`)
+        return 2
+      }
+      return runAdd(process.cwd(), parsed, out, err)
+    }
+
+    // verb === 'index' (the only remaining implemented verb).
+    const parsed = parseIndex(rest)
     if ('error' in parsed) {
       err(`workflow: ${parsed.error}\n\n${USAGE}`)
       return 2
     }
-    return runLint(parsed, out, err)
-  }
-
-  if (verb === 'rename') {
-    const parsed = parseRename(rest)
-    if ('error' in parsed) {
-      err(`workflow: ${parsed.error}\n\n${USAGE}`)
-      return 2
-    }
-    return runRename(process.cwd(), parsed, out, err)
-  }
-
-  if (verb === 'init') {
-    const parsed = parseInit(rest)
-    if ('error' in parsed) {
-      err(`workflow: ${parsed.error}\n\n${USAGE}`)
-      return 2
-    }
-    return runInit(process.cwd(), parsed, out, err)
-  }
-
-  if (verb === 'add') {
-    const parsed = parseAdd(rest)
-    if ('error' in parsed) {
-      err(`workflow: ${parsed.error}\n\n${USAGE}`)
-      return 2
-    }
-    return runAdd(process.cwd(), parsed, out, err)
-  }
-
-  // verb === 'index' (the only remaining implemented verb).
-  const parsed = parseIndex(rest)
-  if ('error' in parsed) {
-    err(`workflow: ${parsed.error}\n\n${USAGE}`)
+    return runIndex(parsed, out, err)
+  } catch (e) {
+    err(`workflow: ${(e as Error).message}`)
     return 2
   }
-  return runIndex(parsed, out, err)
 }
 
 /** realpathSync, tolerant of a path that doesn't resolve (falls back to itself). */

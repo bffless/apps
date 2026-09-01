@@ -538,9 +538,6 @@ importers:
       '@bffless/workflow-lint':
         specifier: ^1.4.0
         version: 1.4.0
-      yaml:
-        specifier: ^2.8.0
-        version: 2.9.0
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
