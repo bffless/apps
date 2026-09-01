@@ -309,6 +309,35 @@ test('lint accepts --path-prefix, resolving a prefix-free set the way the publis
   expect(r.out).not.toMatch(/no rule serves/)
 })
 
+test('a --path-prefix the publisher would never apply fails the lint, naming /api/<alias>', () => {
+  // #560: the value used to cancel out of the rule-missing comparison, so
+  // `/nonsense` linted as clean as `/api/plain`. Now it is its own error.
+  const r = run([
+    'lint',
+    '--rules', plainImpl('.bffless/proxy-rules/plain'),
+    '--path-prefix', '/nonsense',
+    plainImpl('.bffless/workflows/plain.workflow.yaml'),
+  ])
+  expect(r.code).toBe(1)
+  expect(r.out).toMatch(/path-prefix-mismatch/)
+  expect(r.out).toMatch(/\/api\/plain/)
+})
+
+test('a mismatched --path-prefix fails the index, and nothing is written', () => {
+  const out = outDir()
+  expect(indexRun(out).code).toBe(0) // sanity: the matching prefix still publishes
+  const out2 = outDir()
+  const bad = run([
+    'index', plainImpl('.bffless/workflows'),
+    '--out', out2, '--impl', 'plain', '--name', 'Plain',
+    '--rules', plainImpl('.bffless/proxy-rules/plain'),
+    '--path-prefix', '/api',
+  ])
+  expect(bad.code).toBe(1)
+  expect(bad.err).toMatch(/path-prefix-mismatch/)
+  expect(existsSync(join(out2, '.bffless/workflows/index.json'))).toBe(false)
+})
+
 test('--path-prefix needs a value', () => {
   expect(run(['lint', '--path-prefix']).err).toMatch(/--path-prefix needs a value/)
 })

@@ -37,6 +37,11 @@ test('a pathPrefix set means the URL prefix is the flag and the layout is bare',
   expect(findRule(index, '/api/hello/echo', 'POST')?.source).toBe('rules/echo/post/rule.yaml')
 })
 
+test('the index records the given --path-prefix, so checks can validate the flag itself', () => {
+  expect(scanRuleSet(bareDir, { alias: 'hello', pathPrefix: '/api/hello' }).pathPrefix).toBe('/api/hello')
+  expect(scanRuleSet(helloDir).pathPrefix).toBeUndefined()
+})
+
 test('without a pathPrefix the layout is the prefix — the hand-authored shape is unchanged', () => {
   expect(scanRuleSet(helloDir).layout).toBe('/api/hello')
   expect(scanRuleSet(plainDir).layout).toBe('/api')

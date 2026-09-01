@@ -114,7 +114,7 @@ export function scanRuleSet(dir: string, opts: ScanOptions = {}): RuleSetIndex {
   // which is exactly what `expectedRuleFile` has to name (06).
   const prefix = opts.pathPrefix ?? (existsSync(join(setDir, 'rules', 'api', alias)) ? `/api/${alias}` : '/api')
   const layout = opts.pathPrefix === undefined ? prefix : ''
-  return { found: true, alias, dir: setDir, prefix, layout, rules }
+  return { found: true, alias, dir: setDir, prefix, layout, pathPrefix: opts.pathPrefix, rules }
 }
 
 export interface ResolveOptions {
