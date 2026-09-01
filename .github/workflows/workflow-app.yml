@@ -8,6 +8,7 @@ on:
         'packages/workflow-script/**',
         'packages/workflow-headless/**',
         'packages/workflow-live/**',
+        'packages/workflow-cli/**',
         '.github/workflows/workflow-app.yml',
       ]
   workflow_dispatch:
@@ -22,6 +23,14 @@ jobs:
         with: { node-version: '20', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-lint build
+      # The authoring CLI (@bffless/workflow, packages/workflow-cli — apps#420
+      # whole-branch review, I3). Same build/lint/test:run pattern as the
+      # workflow-headless/workflow-live blocks below; it only depends on
+      # workflow-lint (already built above), so it needs no staged hello
+      # bundle and no Playwright browser.
+      - run: pnpm --filter @bffless/workflow build
+      - run: pnpm --filter @bffless/workflow lint
+      - run: pnpm --filter @bffless/workflow test:run
       - run: pnpm --filter workflow lint
       # Both the MSW mock's island route and the Playwright smoke read
       # `hello-dist/islands/*.html`, so the bundle is staged before either runs.
