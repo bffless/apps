@@ -1,19 +1,29 @@
 /**
  * `workflow publish` (src/verbs/publish.ts, apps#420, plan Decision 8:
  * docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md:24). Tests
- * stay entirely OFFLINE per the task brief: only `--dry-run` (performs none
- * of the four moves — no fs writes, no spawn, no network) and the
- * missing-key fast-fail (exits 2 strictly before move 1, provable by
- * pointing `--api-url` at an unroutable address and asserting the call
- * still resolves fast) are exercised against a live-shaped `runPublish`
- * call. The actual index/prepare/push/upload/attach sequence is proved live
- * separately (Task 6 Step 5, on j5s) — not from this suite.
+ * stay entirely OFFLINE per the task brief: `--dry-run` (performs none of
+ * the four moves — no fs writes, no spawn, no network), the missing-key
+ * fast-fail (exits 2 strictly before move 1, provable by pointing
+ * `--api-url` at an unroutable address and asserting the call still
+ * resolves fast), and move 3's failure path (a real `rules push` spawn is
+ * simulated via an injected `spawnRulesPush`, never `npx`/the network) are
+ * exercised against a live-shaped `runPublish` call. Moves 1-2 (index,
+ * prepare) run for real in the move-3 test — pure filesystem, already
+ * proven independently in test/prepare.test.ts and workflow-lint's own
+ * suite — since move 3 only runs once they've both succeeded. Move 4's
+ * network calls (attach/resolveRuleSetId/uploadBundle) have their own
+ * dedicated offline coverage in test/publish-api.test.ts. The full live
+ * index->prepare->push->upload->attach sequence against a real BFFless
+ * instance is proved separately (Task 6 Step 5, on j5s) — not from this
+ * suite.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, test } from 'vitest'
-import { parsePublish, runPublish } from '../src/verbs/publish.js'
+import { parsePublish, runPublish, type SpawnRulesPush } from '../src/verbs/publish.js'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
@@ -32,6 +42,35 @@ function run(args: string[], cwd: string, env: NodeJS.ProcessEnv): { stdout: str
 beforeAll(() => {
   execFileSync('pnpm', ['build'], { cwd: packageRoot })
 }, 120_000)
+
+/**
+ * A fresh temp copy of the hello-tree fixture, made lintable — same helper
+ * as test/rename.test.ts's own `makeLintable` (duplicated locally since it
+ * isn't exported): appends a minimal real `on`/`jobs` block referencing the
+ * fixture's actual `echo` rule, so `buildIndex` (move 1) actually succeeds
+ * instead of failing lint on the fixture's otherwise-bare workflow file —
+ * needed here so a test can reach move 3 (rules push) at all.
+ */
+function freshLintableCopy(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'workflow-cli-publish-'))
+  cpSync(fixtureDir, dir, { recursive: true })
+  const file = join(dir, '.bffless/workflows/hello.workflow.yaml')
+  const content = readFileSync(file, 'utf8')
+  writeFileSync(
+    file,
+    `${content}
+on:
+  manual: {}
+jobs:
+  echo:
+    steps:
+      - id: echo
+        uses: pipeline
+        with: { path: echo }
+`,
+  )
+  return dir
+}
 
 describe('parsePublish', () => {
   test('applies every default when only the required flags are given', () => {
@@ -278,6 +317,59 @@ describe('runPublish --dry-run', () => {
     ).then((code) => {
       expect(code).toBe(2)
       expect(errors.join('\n')).toContain('--api-url')
+    })
+  })
+})
+
+describe('runPublish — move 3 (rules push) failure', () => {
+  test('a failing rules-push spawn exits 2 with the failure detail, without reaching move 4', () => {
+    const dir = freshLintableCopy()
+    const errors: string[] = []
+    const outLines: string[] = []
+
+    // Simulates the exact live-proven failure (apps#420 j5s smoke): the
+    // server rejects a schema ref. execFileSync's real thrown error shape is
+    // an Error with .stderr/.stdout Buffers attached; this mirrors that
+    // without ever spawning `npx` or touching the network.
+    const failingSpawn: SpawnRulesPush = () => {
+      const error = new Error('Command failed: npx --yes bffless@0.3.3 rules push') as Error & {
+        stderr?: Buffer
+        stdout?: Buffer
+      }
+      error.stderr = Buffer.from(
+        'rules push failed: .../rules/job/get/rule.yaml: schema ref "$schema:hello_jobs" has no manifest (schemas/hello_jobs.schema.yaml)',
+      )
+      throw error
+    }
+
+    return runPublish(
+      dir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        dryRun: false,
+      },
+      (l) => outLines.push(l),
+      (l) => errors.push(l),
+      { BFFLESS_API_KEY: 'fake-key-for-this-test' },
+      failingSpawn,
+    ).then((code) => {
+      expect(code).toBe(2)
+      const message = errors.join('\n')
+      expect(message).toMatch(/^workflow: rules push failed: /)
+      expect(message).toContain('schema ref "$schema:hello_jobs" has no manifest')
+
+      // Moves 1-2 did run (real filesystem work) and reported success before
+      // move 3 failed; move 4 (upload/attach) never printed anything.
+      expect(outLines.some((l) => l.startsWith('1. indexed'))).toBe(true)
+      expect(outLines.some((l) => l.startsWith('2. prepared'))).toBe(true)
+      expect(outLines.some((l) => l.startsWith('3.'))).toBe(false)
+      expect(outLines.some((l) => l.startsWith('4.'))).toBe(false)
     })
   })
 })

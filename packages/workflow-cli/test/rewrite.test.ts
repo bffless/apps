@@ -7,7 +7,11 @@
  * identity inventory Decision 6 enumerates, plus planted decoys: `othello`
  * and `shellhello` (adjacent to `[a-z0-9]` on one side — must never be
  * rewritten) and `hello-pr-1` / `hello_jobs` (hyphen/underscore-bounded —
- * must be rewritten).
+ * must be rewritten). `hello_jobs` is also the schema file's own basename
+ * (`schemas/hello_jobs.schema.yaml`) — a structural move as of the fix for
+ * apps#420's live-proven bug (schema filenames ARE identity), not just a
+ * textual one; a `othello_`-prefixed decoy for that specific move is planted
+ * on the fly by its own test rather than checked into the shared tree.
  */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -68,7 +72,9 @@ describe('ALIAS_RE / RESERVED_ALIASES', () => {
 describe('renamePass(dir, "hello", "studio")', () => {
   test('renames the rule-set directory', () => {
     const report = renamePass(dir, 'hello', 'studio', { dryRun: false })
-    expect(report.renames).toEqual([['.bffless/proxy-rules/hello', '.bffless/proxy-rules/studio']])
+    // The exact full renames list (dir + the schema-filename move) is this
+    // describe block's own dedicated test below; here just the directory move.
+    expect(report.renames).toContainEqual(['.bffless/proxy-rules/hello', '.bffless/proxy-rules/studio'])
     expect(existsSync(join(dir, '.bffless/proxy-rules/studio'))).toBe(true)
     expect(existsSync(join(dir, '.bffless/proxy-rules/hello'))).toBe(false)
   })
@@ -87,17 +93,51 @@ describe('renamePass(dir, "hello", "studio")', () => {
     expect(content).not.toContain('hello test implementation')
   })
 
-  test('rewrites the _-joined schema name and its $schema: ref (hello_jobs -> studio_jobs)', () => {
-    renamePass(dir, 'hello', 'studio', { dryRun: false })
-    const schema = readFileSync(join(dir, '.bffless/proxy-rules/studio/schemas/hello_jobs.schema.yaml'), 'utf8')
+  test('rewrites the _-joined schema name/ref AND renames the schema FILE itself (hello_jobs.schema.yaml -> studio_jobs.schema.yaml)', () => {
+    // Schema filenames ARE identity (live-proven bug, apps#420 j5s smoke of
+    // `workflow publish`): the `bffless` CLI resolves a `$schema:<name>` ref
+    // to `schemas/<name>.schema.yaml` BY FILENAME, so a stale basename
+    // breaks `rules push` even though the ref and the file's own `name:`
+    // field were already rewritten by the textual pass.
+    const report = renamePass(dir, 'hello', 'studio', { dryRun: false })
+
+    expect(
+      existsSync(join(dir, '.bffless/proxy-rules/studio/schemas/hello_jobs.schema.yaml')),
+    ).toBe(false)
+    const schema = readFileSync(join(dir, '.bffless/proxy-rules/studio/schemas/studio_jobs.schema.yaml'), 'utf8')
     expect(schema).toMatch(/^name: studio_jobs$/m)
-    // The schema file's own name on disk is not identity (only its `name:`
-    // field is) — Decision 6 only lists directory + workflow.json as
-    // structural moves.
-    expect(existsSync(join(dir, '.bffless/proxy-rules/studio/schemas/hello_jobs.schema.yaml'))).toBe(true)
 
     const rule = readFileSync(join(dir, '.bffless/proxy-rules/studio/rules/job/get/rule.yaml'), 'utf8')
     expect(rule).toContain('schemaId: $schema:studio_jobs')
+
+    // Reported as a structural move, alongside the rule-set directory.
+    expect(report.renames).toEqual([
+      ['.bffless/proxy-rules/hello', '.bffless/proxy-rules/studio'],
+      [
+        '.bffless/proxy-rules/studio/schemas/hello_jobs.schema.yaml',
+        '.bffless/proxy-rules/studio/schemas/studio_jobs.schema.yaml',
+      ],
+    ])
+  })
+
+  test('a schema-filename decoy that merely starts with the OLD alias as a substring, not a `<oldAlias>_` prefix, is left alone', () => {
+    // othello_extra.schema.yaml's basename starts with "othello_", not
+    // "hello_" — the same boundary discipline the textual pass already
+    // applies to content, now proven for the new basename-rename move too.
+    // Planted on the fly (not checked into the shared fixture) so this test
+    // doesn't ripple into every other suite that copies the same tree.
+    const decoyDir = join(dir, '.bffless/proxy-rules/hello/schemas')
+    const decoyFile = join(decoyDir, 'othello_extra.schema.yaml')
+    const decoyContent = 'name: othello_extra\nfields: []\n'
+    writeFileSync(decoyFile, decoyContent)
+
+    const report = renamePass(dir, 'hello', 'studio', { dryRun: false })
+
+    expect(existsSync(join(dir, '.bffless/proxy-rules/studio/schemas/othello_extra.schema.yaml'))).toBe(true)
+    expect(readFileSync(join(dir, '.bffless/proxy-rules/studio/schemas/othello_extra.schema.yaml'), 'utf8')).toBe(
+      decoyContent,
+    )
+    expect(report.renames.some(([from]) => from.includes('othello_extra'))).toBe(false)
   })
 
   test('rewrites package.json name and the rules:validate path', () => {
@@ -164,7 +204,7 @@ describe('renamePass(dir, "hello", "studio")', () => {
 
     expect(byFile['.bffless/workflow.json']).toBe(1)
     expect(byFile['.bffless/proxy-rules/studio/ruleset.yaml']).toBeGreaterThanOrEqual(2)
-    expect(byFile['.bffless/proxy-rules/studio/schemas/hello_jobs.schema.yaml']).toBe(1)
+    expect(byFile['.bffless/proxy-rules/studio/schemas/studio_jobs.schema.yaml']).toBe(1)
     expect(byFile['.bffless/proxy-rules/studio/rules/job/get/rule.yaml']).toBeGreaterThanOrEqual(1)
     expect(byFile['package.json']).toBe(2)
     expect(byFile['README.md']).toBeGreaterThanOrEqual(2)
@@ -182,10 +222,18 @@ describe('renamePass(dir, "hello", "studio")', () => {
     const dry = renamePass(dryDir, 'hello', 'studio', { dryRun: true })
 
     expect(dry).toEqual(real)
+    // Parity extends to the new schema-filename structural move specifically:
+    // both reports name the same schema-file rename, dry run just never performs it.
+    expect(dry.renames).toContainEqual([
+      '.bffless/proxy-rules/studio/schemas/hello_jobs.schema.yaml',
+      '.bffless/proxy-rules/studio/schemas/studio_jobs.schema.yaml',
+    ])
 
     // Zero writes: the original tree, byte for byte.
     expect(existsSync(join(dryDir, '.bffless/proxy-rules/hello'))).toBe(true)
     expect(existsSync(join(dryDir, '.bffless/proxy-rules/studio'))).toBe(false)
+    expect(existsSync(join(dryDir, '.bffless/proxy-rules/hello/schemas/hello_jobs.schema.yaml'))).toBe(true)
+    expect(existsSync(join(dryDir, '.bffless/proxy-rules/hello/schemas/studio_jobs.schema.yaml'))).toBe(false)
     expect(readIdentity(dryDir)).toEqual({ alias: 'hello', harness: 'workflow' })
     expect(readFileSync(join(dryDir, 'README.md'), 'utf8')).toBe(readFileSync(join(fixtureDir, 'README.md'), 'utf8'))
   })

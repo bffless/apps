@@ -44,6 +44,19 @@ import { prepareRules } from '../prepare.js'
 
 type Print = (line: string) => void
 
+/**
+ * The shape of move 3's spawn call, injectable so a test can simulate a
+ * failing `rules push` (the exact live-proven case: a schema ref the server
+ * rejects) without ever touching `npx`/the network — mirrors move 4's
+ * `fetchImpl` injection (src/verbs/publish.ts's own `FetchImpl`) and
+ * `runPublish`'s existing `env` parameter.
+ */
+export type SpawnRulesPush = (
+  command: string,
+  args: string[],
+  options: { stdio: 'pipe'; env: NodeJS.ProcessEnv },
+) => Buffer | string
+
 export interface PublishArgs {
   apiUrl?: string
   project?: string
@@ -319,6 +332,7 @@ export async function runPublish(
   out: Print,
   err: Print,
   env: NodeJS.ProcessEnv = process.env,
+  spawnRulesPush: SpawnRulesPush = execFileSync,
 ): Promise<number> {
   let alias = parsed.alias
   if (!alias) {
@@ -414,7 +428,7 @@ export async function runPublish(
     // Move 3: rules push — spawn the published bffless CLI. The API key
     // never appears on the command line; it's inherited via `env`.
     try {
-      execFileSync(
+      spawnRulesPush(
         'npx',
         ['--yes', BFFLESS_CLI_PIN, 'rules', 'push', preparedDir, '--path-prefix', pathPrefix, '--project', project, '--api-url', apiUrl, '--prune'],
         { stdio: 'pipe', env: { ...env, BFFLESS_API_KEY: apiKey } },
