@@ -18,7 +18,7 @@
  * suite.
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -186,9 +186,13 @@ describe('runPublish --dry-run', () => {
       expect(body).toContain('npx --yes bffless@0.3.3 rules push')
       expect(body).toContain('--project acme/site')
 
-      // Move 4: the upload endpoint + proxy-rule-set wiring, and the harness attach.
+      // Move 4: the upload endpoint + proxy-rule-set wiring, the resolved
+      // commitSha (the fixture lives inside this repo's own git checkout,
+      // so it's a real `git rev-parse HEAD`, not the placeholder — see the
+      // dedicated tests below for both cases), and the harness attach.
       expect(body).toContain('/api/deployments/zip')
       expect(body).toContain('proxyRuleSetNames=[hello]')
+      expect(body).toMatch(/commitSha=[a-f0-9]{40}\b/)
       expect(body).toContain('harness alias "workflow"')
 
       expect(body).toMatch(/dry run.*nothing was written.*no network/)
@@ -197,6 +201,63 @@ describe('runPublish --dry-run', () => {
       // own dist/ (nonexistent) and .bffless/workflows/index.json stay absent.
       expect(existsSync(`${fixtureDir}/dist`)).toBe(false)
       expect(readdirSync(`${fixtureDir}/.bffless/workflows`)).toEqual(['hello.workflow.yaml'])
+    })
+  })
+
+  test('shows the real resolved commitSha (git rev-parse HEAD) when cwd is inside a git repo', () => {
+    // The fixture tree lives inside this very repo's git checkout, so the
+    // expected value is computed the same way runPublish resolves it —
+    // not re-derived, just independently invoked.
+    const expectedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fixtureDir, encoding: 'utf8' }).trim()
+    const lines: string[] = []
+    return runPublish(
+      fixtureDir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        dryRun: true,
+      },
+      (l) => lines.push(l),
+      () => {},
+      {},
+    ).then((code) => {
+      expect(code).toBe(0)
+      expect(lines.join('\n')).toContain(`commitSha=${expectedSha}`)
+    })
+  })
+
+  test('shows the format-valid all-zero placeholder when cwd is outside any git repo', () => {
+    // A bare temp dir — never `git init`ed — with just the identity file
+    // dry-run needs to resolve the alias default; no workflows/rules dir
+    // required (dry-run never checks they exist).
+    const dir = mkdtempSync(join(tmpdir(), 'workflow-cli-publish-nogit-'))
+    mkdirSync(join(dir, '.bffless'), { recursive: true })
+    writeFileSync(join(dir, '.bffless', 'workflow.json'), '{ "alias": "hello", "harness": "workflow" }\n')
+
+    const lines: string[] = []
+    return runPublish(
+      dir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: undefined,
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        dryRun: true,
+      },
+      (l) => lines.push(l),
+      () => {},
+      {},
+    ).then((code) => {
+      expect(code).toBe(0)
+      expect(lines.join('\n')).toContain(`commitSha=${'0'.repeat(40)}`)
     })
   })
 

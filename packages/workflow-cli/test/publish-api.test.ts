@@ -18,12 +18,14 @@
  * `attach()`, but `resolveRuleSetId` here only ever resolves exactly one id,
  * so `attachToHarness`'s `ruleSetId` is a single string, not a list.
  */
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import {
   attachToHarness,
+  resolveCommitSha,
   resolveRuleSetId,
   splitProject,
   unionIds,
@@ -43,6 +45,58 @@ describe('splitProject', () => {
     for (const bad of ['justname', 'a/b/c', '/name', 'owner/']) {
       expect(() => splitProject(bad)).toThrow(/owner\/name/)
     }
+  })
+})
+
+/** A fresh, disposable, never-`git init`ed temp dir — outside any git repo. */
+function nonGitTempDir(): string {
+  return mkdtempSync(join(tmpdir(), 'workflow-cli-sha-'))
+}
+
+/** A temp dir, `git init`ed with one commit — a real, resolvable `git rev-parse HEAD`. No global gitconfig touched (inline `-c` identity). */
+function gitTempDirWithCommit(): string {
+  const dir = nonGitTempDir()
+  execFileSync('git', ['init', '--quiet'], { cwd: dir, stdio: 'pipe' })
+  writeFileSync(join(dir, 'file.txt'), 'hello\n')
+  execFileSync('git', ['add', '.'], { cwd: dir, stdio: 'pipe' })
+  execFileSync(
+    'git',
+    ['-c', 'user.email=test@example.test', '-c', 'user.name=Test', 'commit', '--quiet', '-m', 'initial'],
+    { cwd: dir, stdio: 'pipe' },
+  )
+  return dir
+}
+
+describe('resolveCommitSha', () => {
+  // apps#420 j5s live smoke, round 2: `workflow publish` ran in a fresh
+  // `init` output before any git init/commit — a normal authoring state —
+  // and CE's `CreateDeploymentZipDto.commitSha` validator
+  // (@Matches(/^[a-f0-9]{7,40}$/i) — read directly from
+  // apps/backend/src/deployments/deployments.dto.ts in bffless/ce, not
+  // assumed) rejected whatever was sent. Both branches below are checked
+  // against that exact regex, not a re-derived approximation of it.
+  const CE_COMMIT_SHA_RE = /^[a-f0-9]{7,40}$/i
+
+  test('resolves `git rev-parse HEAD` when cwd is inside a git repo with at least one commit', () => {
+    const dir = gitTempDirWithCommit()
+    const expected = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim()
+
+    const sha = resolveCommitSha(dir)
+    expect(sha).toBe(expected)
+    expect(sha).toMatch(/^[a-f0-9]{40}$/)
+    expect(sha).toMatch(CE_COMMIT_SHA_RE)
+  })
+
+  test('falls back to the format-valid all-zero placeholder outside a git repo', () => {
+    const sha = resolveCommitSha(nonGitTempDir())
+    expect(sha).toBe('0'.repeat(40))
+    expect(sha).toMatch(CE_COMMIT_SHA_RE)
+  })
+
+  test('falls back to the placeholder inside a git repo with zero commits (a fresh `git init`, nothing committed yet)', () => {
+    const dir = nonGitTempDir()
+    execFileSync('git', ['init', '--quiet'], { cwd: dir, stdio: 'pipe' })
+    expect(resolveCommitSha(dir)).toBe('0'.repeat(40))
   })
 })
 

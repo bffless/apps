@@ -18,7 +18,13 @@
  *                  `UploadResponse`), then a ported `attach.mjs`: union the
  *                  newly-synced rule set's id into the harness alias's own
  *                  `proxyRuleSetIds` (idempotent — publishing the same
- *                  implementation twice is a no-op)
+ *                  implementation twice is a no-op). The upload's
+ *                  `commitSha` (`resolveCommitSha`) is `git rev-parse HEAD`
+ *                  in the implementation dir when one exists, else a
+ *                  format-valid all-zero placeholder — CE's
+ *                  `CreateDeploymentZipDto` rejects anything else (a
+ *                  freshly-`init`ed dir with no git history yet is a
+ *                  normal authoring state, apps#420 j5s live smoke round 2)
  *
  * Credentials: `--api-url` (or `BFFLESS_API_URL`) plus `BFFLESS_API_KEY` from
  * the environment ONLY — never a flag (an API key on the command line lands
@@ -28,8 +34,12 @@
  * beyond a single file read), strictly before move 1.
  *
  * `--dry-run` prints all four moves with every value fully resolved (no
- * placeholders) and performs none of them: no filesystem writes outside a
- * throwaway temp dir it never creates, no spawn, no network.
+ * placeholders — including the resolved commitSha) and performs none of
+ * them: no filesystem writes outside a throwaway temp dir it never creates,
+ * no publishing command spawned, no network call (a read-only `git
+ * rev-parse HEAD`, if a git repo is present, is the one local subprocess
+ * dry-run may still run, purely to preview which commitSha case a real run
+ * would hit).
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
@@ -122,6 +132,39 @@ function cleanRelPath(p: string): string {
  */
 function resolveTargetUrl(project: string, alias: string, path: string): string {
   return `${DEFAULT_BACKEND_URL}/public/${project}/alias/${alias}/${cleanRelPath(path)}`
+}
+
+/**
+ * CE's `CreateDeploymentZipDto.commitSha` validator, verbatim
+ * (`apps/backend/src/deployments/deployments.dto.ts` in `bffless/ce`, read
+ * directly rather than assumed): `@Matches(/^[a-f0-9]{7,40}$/i)`. All zeros
+ * at the full 40-char length satisfies it and reads unambiguously as "no
+ * real commit" rather than a real, if coincidental, hex string.
+ */
+const PLACEHOLDER_COMMIT_SHA = '0'.repeat(40)
+
+/**
+ * The commit SHA move 4's upload sends (apps#420 j5s live smoke, round 2:
+ * `HTTP 400 "Invalid commit SHA format"` — the publish ran in a fresh
+ * `init` output with no git history yet, a completely normal authoring
+ * state upload-artifact's own GitHub-Actions-only context never has to
+ * handle). Resolution: `git rev-parse HEAD` in `cwd` when it's inside a git
+ * repo with at least one commit; the placeholder above otherwise. Any git
+ * failure — not a repo, zero commits (`rev-parse HEAD` fails the same way:
+ * "ambiguous argument 'HEAD'"), git not installed — is silently absent, not
+ * fatal, and falls through to the placeholder; the regex re-check on the
+ * spawned output is defensive (a real `rev-parse HEAD` on a repo with
+ * commits always prints a bare 40-char lowercase hex SHA).
+ */
+export function resolveCommitSha(cwd: string): string {
+  try {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, stdio: 'pipe', encoding: 'utf8' }).trim()
+    if (/^[a-f0-9]{7,40}$/i.test(sha)) return sha
+  } catch {
+    // Not a git repo, no commits yet, or git isn't installed — the
+    // placeholder below covers all three uniformly.
+  }
+  return PLACEHOLDER_COMMIT_SHA
 }
 
 /** Splits `owner/name`; throws otherwise. Ported from publish-workflow's lib.mjs `splitRepository`. */
@@ -362,6 +405,10 @@ export async function runPublish(
   const pathPrefix = `/api/${alias}`
 
   if (parsed.dryRun) {
+    // Read-only: previews which of the two commitSha cases a real run would
+    // hit (a human-visible short prefix, or the placeholder) without
+    // writing anything or calling out over the network.
+    const commitSha = resolveCommitSha(cwd)
     out(`workflow publish (dry run) — alias=${alias} harness-alias=${parsed.harnessAlias} project=${project} api-url=${apiUrl}`)
     out(`  1. index      ${workflowsDir} --out ${outPath} --impl ${alias} --rules ${rulesDir} --path-prefix ${pathPrefix}`)
     out(`  2. prepare    ${rulesDir} -> <tmp>/${alias} (rename ruleset.yaml name: to "${alias}"; forwarder /w/${alias}/* -> ${targetUrl})`)
@@ -369,10 +416,10 @@ export async function runPublish(
       `  3. rules push npx --yes ${BFFLESS_CLI_PIN} rules push <prepared-dir> --path-prefix ${pathPrefix} --project ${project} --api-url ${apiUrl} --prune`,
     )
     out(
-      `  4. upload     ${outPath} -> POST ${new URL('/api/deployments/zip', apiUrl).toString()} (alias=${alias}, base-path=/, proxyRuleSetNames=[${alias}]); ` +
-        `then attach the synced rule set to harness alias "${parsed.harnessAlias}" on ${project}`,
+      `  4. upload     ${outPath} -> POST ${new URL('/api/deployments/zip', apiUrl).toString()} (alias=${alias}, base-path=/, ` +
+        `commitSha=${commitSha}, proxyRuleSetNames=[${alias}]); then attach the synced rule set to harness alias "${parsed.harnessAlias}" on ${project}`,
     )
-    out('(dry run) — nothing was written, no process was spawned, no network call was made')
+    out('(dry run) — nothing was written, no publishing command was spawned, no network call was made')
     return 0
   }
 
@@ -443,6 +490,7 @@ export async function runPublish(
 
     // Move 4: upload the bundle, then attach the synced rule set to the
     // harness alias's own union.
+    const commitSha = resolveCommitSha(cwd)
     let ruleSetId: string
     let upload: UploadResponse
     try {
@@ -454,14 +502,16 @@ export async function runPublish(
         alias,
         outPath,
         path: parsed.path,
-        commitSha: env.GITHUB_SHA ?? 'unknown',
+        commitSha,
         branch: env.GITHUB_REF_NAME ?? 'unknown',
       })
     } catch (e) {
       err(`workflow: ${(e as Error).message}`)
       return 2
     }
-    out(`4. uploaded deployment ${upload.deploymentId} (${upload.fileCount} file(s), ${upload.totalSize} bytes)`)
+    out(
+      `4. uploaded deployment ${upload.deploymentId} (${upload.fileCount} file(s), ${upload.totalSize} bytes, commit ${commitSha.slice(0, 7)})`,
+    )
 
     try {
       const attached = await attachToHarness({ apiUrl, apiKey, project, harnessAlias: parsed.harnessAlias, ruleSetId })
