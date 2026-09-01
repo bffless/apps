@@ -82,6 +82,8 @@ describe('parsePublish', () => {
       path: 'dist',
       workflows: '.bffless/workflows',
       rules: undefined,
+      name: undefined,
+      description: undefined,
       dryRun: false,
     })
   })
@@ -103,6 +105,10 @@ describe('parsePublish', () => {
         'flows',
         '--rules',
         'rules-dir',
+        '--name',
+        'Studio',
+        '--description',
+        'A studio implementation.',
         '--dry-run',
       ]),
     ).toEqual({
@@ -113,8 +119,15 @@ describe('parsePublish', () => {
       path: 'build',
       workflows: 'flows',
       rules: 'rules-dir',
+      name: 'Studio',
+      description: 'A studio implementation.',
       dryRun: true,
     })
+  })
+
+  test('--name and --description need a value', () => {
+    expect(parsePublish(['--name'])).toEqual({ error: '--name needs a value' })
+    expect(parsePublish(['--description'])).toEqual({ error: '--description needs a value' })
   })
 
   test('--dry-run is recognized in any position', () => {
@@ -258,6 +271,61 @@ describe('runPublish --dry-run', () => {
     ).then((code) => {
       expect(code).toBe(0)
       expect(lines.join('\n')).toContain(`commitSha=${'0'.repeat(40)}`)
+    })
+  })
+
+  test('shows the resolved --name (defaults to the alias) and omits --description when absent', () => {
+    const lines: string[] = []
+    return runPublish(
+      fixtureDir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        dryRun: true,
+      },
+      (l) => lines.push(l),
+      () => {},
+      {},
+    ).then((code) => {
+      expect(code).toBe(0)
+      const body = lines.join('\n')
+      // Regression pin: omitting --name/--description keeps today's exact
+      // default — the resolved name is still the alias, and no --description
+      // fragment appears at all (there's no meaningful default to show).
+      expect(body).toContain('--name "hello"')
+      expect(body).not.toContain('--description')
+    })
+  })
+
+  test('shows an explicit --name/--description', () => {
+    const lines: string[] = []
+    return runPublish(
+      fixtureDir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        name: 'Hello Display Name',
+        description: 'A friendly description.',
+        dryRun: true,
+      },
+      (l) => lines.push(l),
+      () => {},
+      {},
+    ).then((code) => {
+      expect(code).toBe(0)
+      const body = lines.join('\n')
+      expect(body).toContain('--name "Hello Display Name"')
+      expect(body).toContain('--description "A friendly description."')
     })
   })
 
@@ -431,6 +499,76 @@ describe('runPublish — move 3 (rules push) failure', () => {
       expect(outLines.some((l) => l.startsWith('2. prepared'))).toBe(true)
       expect(outLines.some((l) => l.startsWith('3.'))).toBe(false)
       expect(outLines.some((l) => l.startsWith('4.'))).toBe(false)
+    })
+  })
+})
+
+describe('runPublish — move 1 (index) --name/--description', () => {
+  // A stub that always fails move 3 — moves 1-2 (real filesystem work) have
+  // already run and written the bundle by the time it's reached, which is
+  // all these tests need to inspect.
+  const stopAfterMove2: SpawnRulesPush = () => {
+    throw new Error('stub: stops the run right after move 1/2')
+  }
+
+  function readIndexJson(dir: string): { name: string; description: string } {
+    return JSON.parse(readFileSync(join(dir, 'dist/.bffless/workflows/index.json'), 'utf8')) as {
+      name: string
+      description: string
+    }
+  }
+
+  test('an explicit --name/--description flow into the written index.json', () => {
+    const dir = freshLintableCopy()
+    return runPublish(
+      dir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        name: 'Hello Display Name',
+        description: 'A friendly description.',
+        dryRun: false,
+      },
+      () => {},
+      () => {},
+      { BFFLESS_API_KEY: 'fake-key-for-this-test' },
+      stopAfterMove2,
+    ).then((code) => {
+      expect(code).toBe(2) // move 3 stubbed to fail — irrelevant to what move 1 already wrote
+      const index = readIndexJson(dir)
+      expect(index.name).toBe('Hello Display Name')
+      expect(index.description).toBe('A friendly description.')
+    })
+  })
+
+  test('omitted --name/--description default name to the alias and leave description empty (regression pin — today\'s exact defaults)', () => {
+    const dir = freshLintableCopy()
+    return runPublish(
+      dir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        dryRun: false,
+      },
+      () => {},
+      () => {},
+      { BFFLESS_API_KEY: 'fake-key-for-this-test' },
+      stopAfterMove2,
+    ).then((code) => {
+      expect(code).toBe(2)
+      const index = readIndexJson(dir)
+      expect(index.name).toBe('hello')
+      expect(index.description).toBe('')
     })
   })
 })

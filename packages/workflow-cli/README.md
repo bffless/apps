@@ -38,7 +38,7 @@ workflow lint   <file...> [--json] [--quiet] [--rules <dir>] [--alias <alias>] [
 workflow index  <workflows-dir> --out <dir> --impl <alias> --name <display> [options]
 workflow publish [--api-url <url>] [--project <owner/name>] [--alias <alias>]
                  [--harness-alias <alias>] [--path <dir>] [--workflows <dir>]
-                 [--rules <dir>] [--dry-run]
+                 [--rules <dir>] [--name <display name>] [--description <text>] [--dry-run]
 ```
 
 Exit codes: **0** clean/success · **1** lint errors/warnings · **2**
@@ -153,7 +153,7 @@ full flag reference.
 ```
 workflow publish [--api-url <url>] [--project <owner/name>] [--alias <alias>]
                  [--harness-alias <alias>] [--path <dir>] [--workflows <dir>]
-                 [--rules <dir>] [--dry-run]
+                 [--rules <dir>] [--name <display name>] [--description <text>] [--dry-run]
 ```
 
 Run from inside an already-`init`ed implementation directory. Drives the
@@ -190,6 +190,8 @@ Options:
 | `--path <dir>` | `dist` | Built bundle directory, also `index`'s `--out` |
 | `--workflows <dir>` | `.bffless/workflows` | Directory of authored workflow YAML |
 | `--rules <dir>` | `.bffless/proxy-rules/<alias>` | The implementation rule-set directory |
+| `--name <display name>` | the alias | Display name shown on the Implementations screen (move 1's `index.json`) |
+| `--description <text>` | none | One line about the bundle, shown on the Implementations screen (move 1's `index.json`) |
 | `--dry-run` | off | Print the four resolved moves; write nothing, call no network |
 
 ## Both packages ship a `workflow` bin
