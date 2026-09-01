@@ -3,11 +3,12 @@
  * `@bffless/workflow` — the authoring CLI (apps#420). A thin router: `lint`
  * and `index` delegate to `@bffless/workflow-lint`'s published API
  * (`lintFile`, `resolveRuleSet`, `buildIndex`) so the parser/schema/resolver
- * logic has exactly one implementation, and `rename` delegates to its own
- * verb module (./verbs/rename.ts) built on the boundary-aware rename engine
- * (./rewrite.ts). The remaining three verbs (`init`, `add`, `publish`) land
- * in later tasks of the same plan
- * (docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md).
+ * logic has exactly one implementation, and `rename`/`init`/`add` each
+ * delegate to their own verb module (./verbs/{rename,init,add}.ts) —
+ * `rename` and `init` built on the boundary-aware rename engine
+ * (./rewrite.ts), `add` scaffolding new workflow + rule-stub files that line
+ * up with it. `publish` is the one verb still landing in a later task of the
+ * same plan (docs/superpowers/plans/2026-08-31-workflow-cli-authoring.md).
  *
  * workflow-lint's own CLI (`packages/workflow-lint/src/cli.ts`) is the
  * contract this mirrors — same flags, same exit codes (0 clean, 1
@@ -38,19 +39,20 @@ import {
   type RuleSetContext,
 } from '@bffless/workflow-lint'
 import { readVersion } from './version.js'
+import { parseAdd, runAdd } from './verbs/add.js'
 import { parseInit, runInit } from './verbs/init.js'
 import { parseRename, runRename } from './verbs/rename.js'
 
 const VERBS = ['init', 'rename', 'add', 'lint', 'index', 'publish'] as const
 type Verb = (typeof VERBS)[number]
-const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['add', 'publish'])
+const UNIMPLEMENTED: ReadonlySet<Verb> = new Set(['publish'])
 
 const USAGE = `Usage: workflow <verb> [options]
 
 Verbs:
   init      create a new implementation from any --from repo (or a local path)
   rename    rename an implementation's alias in place, in the current directory
-  add       scaffold a new workflow + rule stubs                 (not yet implemented)
+  add       scaffold a new workflow + rule stubs, in the current directory
   lint      lint workflow YAML — delegates to @bffless/workflow-lint
   index     build an implementation's index.json bundle — delegates to @bffless/workflow-lint
   publish   index -> rules push -> upload -> attach               (not yet implemented)
@@ -65,6 +67,11 @@ lint and index accept the same flags as workflow-lint's own \`workflow\` CLI:
 rename operates on the current directory's .bffless/workflow.json:
 
   rename <old> <new> [--dry-run]
+
+add operates on the current directory's .bffless/workflow.json (its alias
+picks the rule-set directory rule stubs land in):
+
+  add <name> [--step <path>]…   (default step: a single step whose path is <name>)
 
 init clones (or reads a local copy of) a source repo and copies its package here:
 
@@ -467,6 +474,15 @@ export function runCli(argv: string[], out: (line: string) => void, err: (line: 
       return 2
     }
     return runInit(process.cwd(), parsed, out, err)
+  }
+
+  if (verb === 'add') {
+    const parsed = parseAdd(rest)
+    if ('error' in parsed) {
+      err(`workflow: ${parsed.error}\n\n${USAGE}`)
+      return 2
+    }
+    return runAdd(process.cwd(), parsed, out, err)
   }
 
   // verb === 'index' (the only remaining implemented verb).
