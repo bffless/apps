@@ -141,6 +141,11 @@ Why `hostContext` and not `_meta`: the View's zod schema for `ui/notifications/t
 
 - Double-iframe sandbox proxy + per-island CSP (`_meta.ui.csp`) when third-party islands exist.
 - Serving islands as real `ui://` resources from a BFFless MCP server, with implementation
-  pipelines exposed as MCP tools — the reason this contract was chosen.
-- WebMCP (`navigator.modelContext`) on the **harness page** (not islands): declare *start run /
-  submit form / pick output* as page tools for browser agents.
+  pipelines exposed as MCP tools — the reason this contract was chosen. **→ spec'd as M5:
+  [10-agent-embedding.md](10-agent-embedding.md)** (the endpoint is a rule in the harness
+  rule set, D22; islands serve as `ui://bffless/<impl>/islands/<name>.html` unchanged).
+- WebMCP on the **harness page** (not islands): declare *start run / submit form / pick
+  output* as page tools for browser agents. **→ spec'd as M5:
+  [10-agent-embedding.md](10-agent-embedding.md)** (the tool catalog, D19–D21; note the
+  entry point is now `document.modelContext` — `navigator.modelContext` is a deprecated
+  alias).
