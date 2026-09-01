@@ -27,7 +27,7 @@ The five ⚑ items **were confirmed by the user on 2026-08-31** (recorded inline
 
 ## Deferred out of M4, explicitly
 
-- `workflow init / add / rename` CLI, template repo, `bffless:workflow` skill → #420 (unstarted by design).
+- `workflow init / add / rename` CLI, template repo, `bffless:workflow` skill → #420 — **shipped 2026-09-01** as `@bffless/workflow` (`packages/workflow-cli`, apps#556/#558) + the `bffless:workflow` skill (bffless/skills#60); the template-repo idea was retired by portable `--from` (any readable repo via the identity file).
 - CE `targetUrl: alias://<name>` → ce#698 (nice-to-have; the in-process forwarder covers it).
 - WebMCP, attestations, guest/public runs, reusable workflows, deployment-pinned `/w/<alias>@<deployment>/` → 00-overview M4 follow-up list, unscoped.
 - Publishing Studio's libs as an npm package — rejected 2026-08-31 in favor of copy/freeze (Decision 3); revisit only if the frozen copies rot badly enough to hurt.

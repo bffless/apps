@@ -90,6 +90,13 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
   since 2026-08-28 — a declarative spelling of the in-process forwarder, not a dependency),
   WebMCP on the harness page, attestations, guest/public runs, reusable workflows,
   deployment-pinned `/w/<alias>@<deployment>/`.
+- **Authoring CLI** — **done 2026-09-01** (#420). `@bffless/workflow` (`packages/workflow-cli`):
+  `init` (portable `--from` any repo via the identity file) / `rename` (boundary-aware
+  identity pass, schema filenames included) / `add` (`rule-missing` green from first lint) /
+  `lint`+`index` (workflow-lint delegation) / `publish` (index → rules push → upload →
+  attach, live-proven on j5s and the bffless.dev harness install). The `bffless:workflow`
+  skill ships from `bffless/skills`. Field notes and follow-ups (#559, #560, #561,
+  publish-workflow#4) on #420's closing comment.
 
 ## Decisions at a glance
 
