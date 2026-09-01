@@ -134,7 +134,7 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
 | D21 | WebMCP on the page only: polyfill always, executors drive the store, no pipeline tools on the page | 10 |
 | D22 | The MCP endpoint is a rule in the app's rule set (stateless Streamable HTTP); prototype `function_handler` → generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` | 10, ADR-0005 |
 | D23 | Auth ladder: authless dev prototype → CE user-bound scoped app tokens → OAuth 2.1 (access token = app token); `.well-known` ships as a rule | 10 |
-| D24 | In agent hosts the run view drives (pure runner + island host as `ui://bffless/workflow/run.html` over app-only `workflow.http`); same lease, same rows; server-side driver deferred | 10, ADR-0005 |
+| D24 | In agent hosts the run view drives (pure runner + island host as `ui://bffless/workflow/run.html` over app-only `workflow.http`); vertical job/step accordion, no graph; same lease, same rows; server-side driver deferred | 10, ADR-0005 |
 
 ## What this is not
 

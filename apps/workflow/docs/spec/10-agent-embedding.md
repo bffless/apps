@@ -161,8 +161,20 @@ middleware executes pipeline steps, holds the lease, writes transitions (D8, D11
 an agent host there is no harness page, so the run view restores one (D24):
 
 - `ui://bffless/workflow/run.html` is a second Vite entry — a self-contained build of the
-  run page: the pure runner (`lib/runner/`), the store and its middleware, the island host,
-  the run panes; no router, no shell.
+  run engine and panes: the pure runner (`lib/runner/`), the store and its middleware, the
+  island host; no router, no shell — **and no graph**.
+- **The run view is vertical**: a job/step accordion in dependency order, shaped like a
+  GitHub run detail, not the harness's horizontal DAG. A chat column is narrow, sized by
+  the host, and negotiated by *height* (`ui/notifications/size-changed`); it scrolls
+  vertically, and a horizontally-scrolling diagram inside it is the worst embed there is.
+  Mid-run the questions are progress questions — where is it, what is it waiting on, what
+  did it produce — so topology reads as order and `needs` badges, not geometry. The run
+  rows are the data either way (05, 09); the accordion is a simpler derivation of them
+  than the graph's layout. Sections expand to the same pane components the harness page
+  uses; the section the run is **waiting** on auto-expands (the rule that keeps a headless
+  island on screen, 07), and a collapsed section's header still carries its state — a
+  blocked run is never hidden by a fold. Islands inside a section keep the inline-height
+  cap and the Expand → fullscreen path (04). The graph stays a harness-page surface.
 - Its every HTTP call goes through **one** app-only tool, `workflow.http { path, method,
   body }` — the `HttpJson` seam the middleware already injects, implemented over
   `callServerTool`. The endpoint executes it server-side as the member, fenced to the
@@ -216,7 +228,7 @@ session cookie is already on the page.
 | D21 | WebMCP on the page only: polyfill always, executors drive the store and navigate, no pipeline tools on the page, islands never register page tools |
 | D22 | The MCP endpoint is a rule in the app's rule set (`POST /api/workflow/mcp`), stateless Streamable HTTP; prototype `function_handler`, GA a generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` |
 | D23 | Auth ladder: authless dev prototype → CE user-bound scoped app tokens (Bearer = member) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule |
-| D24 | In agent hosts the run view drives: the pure runner + island host bundled as `ui://bffless/workflow/run.html` over an app-only `workflow.http` seam; same lease, same rows; a server-side driver stays deferred |
+| D24 | In agent hosts the run view drives: the pure runner + island host bundled as `ui://bffless/workflow/run.html` over an app-only `workflow.http` seam; its layout is a vertical job/step accordion (no graph); same lease, same rows; a server-side driver stays deferred |
 
 ## Later
 
@@ -228,6 +240,8 @@ session cookie is already on the page.
   until it earns its own ADR).
 - The web-host double-iframe sandbox proxy + per-island CSP, still gated on third-party
   islands (04).
+- The harness's own run page going vertical below a width breakpoint — the run view's
+  accordion feeding back into the app; mobile is the customer.
 - `ui/update-model-context` — the host capability accepted-and-ignored since v1 (04) —
   wired through so an island can push context to the *embedding* model in an agent host,
   and to a WebMCP consumer on the page.

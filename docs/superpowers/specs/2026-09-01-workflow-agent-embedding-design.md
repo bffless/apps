@@ -168,8 +168,15 @@ native API is absent. Contract test = a headless walk driving a full `hello` run
 
 ### Layer 2b — the run view
 
-Second Vite entry bundling run page + store + middleware + `IslandHost`; no router, no
-shell, no network of its own. `HttpJson` is implemented over
+Second Vite entry bundling the run engine + store + middleware + `IslandHost`; no router,
+no shell, no graph, no network of its own. **Layout is a vertical job/step accordion**
+(GitHub-run-detail-shaped), not the harness's horizontal DAG: a chat column is narrow,
+host-sized, height-negotiated (`size-changed`) and vertically scrolled, and mid-run the
+questions are progress, not topology — order + `needs` badges carry structure. Sections
+reuse the harness's pane components; the waiting section auto-expands (07's
+keep-the-island-on-screen rule) and a collapsed header still shows its state. The graph
+stays a harness-page surface; a responsive vertical harness run page is a Later item
+(ratified with the user 2026-09-01). `HttpJson` is implemented over
 `app.callServerTool('workflow.http', { path, method, body })` — one app-only tool,
 path-fenced to the project's `/api/*`, executed server-side as the member.
 `workflow.start`/`resume` link it via `_meta.ui.resourceUri`. The browser-drives-runs
@@ -224,7 +231,7 @@ are filed when Phase 3 starts.
 | 8 | (CE) Generic `mcp_handler` pipeline handler; workflow's `/api/workflow/mcp` rule swaps from function_handler guts to it | ce |
 | 9 | (CE) OAuth 2.1: DCR, PKCE, RFC 9728/8707, access token = app token; SuperTokens-provider-vs-built-in spike inside the story; app ships its `.well-known` rule | ce |
 | **Phase 4 — the run view** · *gate: a full `hello` run started, driven and island-completed entirely inside claude.ai; workflow-live walk green* |||
-| 10 | Run-view bundle: second Vite entry, store + middleware + `IslandHost` over `HttpJson`-on-`callServerTool('workflow.http')` | apps |
+| 10 | Run-view bundle: second Vite entry, vertical job/step accordion layout (no graph), store + middleware + `IslandHost` over `HttpJson`-on-`callServerTool('workflow.http')` | apps |
 | 11 | Server wiring: `start`/`resume` link the run view; app-only path-fenced `workflow.http`; connectDomains for storage; lease/take-over from the view | apps |
 | 12 | M5 closeout: Claude-path live verification (headless where possible, scripted-manual checklist where not); docs (`writing-an-implementation.md` — what implementations get for free in Claude; 00-overview M5 done-block); file deferred-item issues | apps |
 
