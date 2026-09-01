@@ -4,9 +4,10 @@ The **M0 `workflow lint` prototype** from the Workflow app spec
 ([`apps/workflow/docs/spec/00-overview.md`](../../apps/workflow/docs/spec/00-overview.md)):
 YAML → JSON Schema validation (ajv, draft 2020-12) → `${{ }}` expression
 parsing → static checks. Pure TypeScript ESM — **no React, no network, no
-`eval`** — so it runs in CI, in the future `bffless workflows lint` CLI verb
-(which wraps `lintFile`), and in the M1 harness's "View workflow file" screen
-alike (spec 09).
+`eval`** — so it runs in CI, in `@bffless/workflow`'s `lint`/`index` verbs
+(the authoring CLI, apps#420 — workflow tooling stays outside the `bffless`
+platform CLI per the 2026-08-31 ruling), and in the M1 harness's "View
+workflow file" screen alike (spec 09).
 
 This package lives in `packages/` (not `apps/`) deliberately: `apps/workflow/`
 stays spec-only until M1 builds the harness, and spec 07 already plans

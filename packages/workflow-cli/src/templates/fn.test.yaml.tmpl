@@ -1,0 +1,17 @@
+handler: ./__SEGMENT__.fn.js
+cases:
+  - name: echoes the request body back
+    data:
+      request:
+        body: { hello: world }
+    expect:
+      result:
+        ok: true
+        body: { hello: world }
+  - name: a bodyless request echoes null
+    data:
+      request: {}
+    expect:
+      result:
+        ok: true
+        body: null

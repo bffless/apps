@@ -1,0 +1,8 @@
+# The M1 test implementation: `workflow-hello`, alias `hello`. Decoys
+# planted for the rename engine's tests: othello, shellhello — must never be
+# rewritten. Workflow filenames are not identity (plan Decision 6) — only
+# this file's text content goes through the boundary-aware textual pass.
+
+spec: 1
+name: Hello workflow
+description: Smoke-tests every non-interactive feature of the harness.

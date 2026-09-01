@@ -1,0 +1,20 @@
+targetUrl: pipeline
+pipeline:
+  name: __TITLE__
+  description: "__DESCRIPTION__"
+  steps:
+    - id: __SEGMENT__
+      name: __SEGMENT__
+      handler: function_handler
+      code: ./__SEGMENT__.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.__SEGMENT__}}}"
+        status: 200
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true }
+description: "__DESCRIPTION__"
