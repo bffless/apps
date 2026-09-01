@@ -110,8 +110,12 @@ they're reported as skipped.
 It never clobbers an existing destination either: a path collision refuses the whole command
 up front (exit 2, every colliding path listed, `--skip-existing` named as the way past it) —
 `--skip-existing` keeps the host's version at each collision instead and reports it under a
-"skipped (already exists) — merge by hand" section. `--dry-run` prints the full copy/rename/
-generate plan and writes nothing.
+"skipped (already exists) — merge by hand" section. When a collision is a load-bearing file
+(`package.json`, `tsconfig.json`, a lockfile, `vite.config.*`), `--skip-existing` refuses too
+(exit 2, nothing written) — skipping those orphans the copy or breaks the host's own build —
+and recommends `--dest <subdir>` instead. The report also lists every pre-existing destination
+directory the copy merges files into (e.g. `merged into existing scripts/ (1 file added)`).
+`--dry-run` prints the full copy/rename/generate plan and writes nothing.
 
 `init` finishes by printing the manual steps it can't do for you: create the GitHub repo (if
 new), set the `BFFLESS_API_KEY` secret and `BFFLESS_URL` variable the generated workflows

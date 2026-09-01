@@ -90,12 +90,17 @@ Options:
 | `--dest <dir>` | `./<alias>` | Where to copy the package; `.` for a repo-root implementation |
 | `--project <owner/name>` | — | The BFFless project this deploys to (required to generate `.github/workflows`) |
 | `--harness-alias <alias>` | `workflow` | Which harness alias it deploys under |
-| `--skip-existing` | off | On a path collision with the destination, keep the host's version and proceed instead of refusing — colliding paths are reported under a "skipped (already exists) — merge by hand" section, never copied |
+| `--skip-existing` | off | On a path collision with the destination, keep the host's version and proceed instead of refusing — colliding paths are reported under a "skipped (already exists) — merge by hand" section, never copied. Refused (exit 2, nothing written) when a collision is a load-bearing file — `package.json`, `tsconfig.json`, a lockfile, `vite.config.*` — since skipping those orphans the copy or breaks the host's build; use `--dest <subdir>` instead |
 | `--dry-run` | off | Print the copy/rename/generate plan; write nothing |
 
 Without `--skip-existing`, any path the copy would overwrite at `--dest`
 refuses the whole command up front (exit 2, every colliding path listed) —
 the error also names `--skip-existing` as the way past it.
+
+The report (real run and `--dry-run` alike) also lists every pre-existing
+destination directory the copy merges files into (e.g. `merged into
+existing scripts/ (1 file added)`) — directory-level merges never show up
+as file conflicts, so this is the only trace they leave.
 
 If the destination isn't `.`, `init` prints a reminder to add it to
 `pnpm-workspace.yaml` (creating the file if the host repo doesn't have one

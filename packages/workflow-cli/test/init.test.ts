@@ -565,18 +565,18 @@ describe('C1: the rename pass never touches host files it did not copy', () => {
  * I5 (whole-branch review, controller ruling): `--skip-existing`. Default
  * behavior (refuse, exit 2) is unchanged and already covered by the
  * "destination conflict guard" describe block above — this covers the flag
- * itself: colliding paths are left as the host has them (not copied),
- * everything else still lands renamed, and the report says what was
- * skipped.
+ * itself for NON-tier-1 collisions (#559 narrowed the flag: a tier-1
+ * collision — package.json, tsconfig.json, a lockfile, vite.config.* — is
+ * now a refusal, see the "tier-1 collision guard" block below): colliding
+ * paths are left as the host has them (not copied), everything else still
+ * lands renamed, and the report says what was skipped.
  */
 describe('--skip-existing', () => {
-  test('the Task 8 dogfood shape — nested --path, --dest . into a host repo with BOTH unrelated and colliding files — succeeds, keeping the host\'s colliding files and copying the rest renamed', () => {
+  test('the Task 8 dogfood shape — nested --path, --dest . into a host repo with BOTH unrelated and non-tier-1 colliding files — succeeds, keeping the host\'s colliding files and copying the rest renamed', () => {
     const src = monorepoSource()
     const cwd = freshCwd()
-    const hostPkg = '{"name":"host-repo-package-json"}\n'
     const hostReadme = "# Host repo\nThis is the host repo's own README, not the package's.\n"
     const hostNotes = 'unrelated host notes, nothing to do with the package\n'
-    writeFileSync(join(cwd, 'package.json'), hostPkg)
     writeFileSync(join(cwd, 'README.md'), hostReadme)
     writeFileSync(join(cwd, 'notes.txt'), hostNotes)
 
@@ -589,8 +589,7 @@ describe('--skip-existing', () => {
     )
     expect(status).toBe(0)
 
-    // Host's colliding files: untouched.
-    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe(hostPkg)
+    // Host's colliding file: untouched.
     expect(readFileSync(join(cwd, 'README.md'), 'utf8')).toBe(hostReadme)
     // Unrelated host file: untouched (C1's guarantee, still holding here too).
     expect(readFileSync(join(cwd, 'notes.txt'), 'utf8')).toBe(hostNotes)
@@ -604,14 +603,14 @@ describe('--skip-existing', () => {
     // Reported under the skipped section.
     const out = lines.join('\n')
     expect(out).toContain('skipped (already exists) — merge by hand:')
-    expect(out).toContain('  package.json')
     expect(out).toContain('  README.md')
   })
 
   test('--dry-run --skip-existing shows the same skip list and writes nothing', () => {
     const src = monorepoSource()
     const cwd = freshCwd()
-    writeFileSync(join(cwd, 'package.json'), '{"name":"host-repo-package-json"}\n')
+    const hostReadme = "# Host repo\nThis is the host repo's own README, not the package's.\n"
+    writeFileSync(join(cwd, 'README.md'), hostReadme)
 
     const lines: string[] = []
     const status = runInit(
@@ -635,9 +634,192 @@ describe('--skip-existing', () => {
 
     const out = lines.join('\n')
     expect(out).toContain('(dry run) skipped (already exists) — merge by hand:')
-    expect(out).toContain('(dry run)   package.json')
+    expect(out).toContain('(dry run)   README.md')
     // Unchanged: the host file itself was never touched.
-    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe('{"name":"host-repo-package-json"}\n')
+    expect(readFileSync(join(cwd, 'README.md'), 'utf8')).toBe(hostReadme)
+  })
+})
+
+/**
+ * #559 (found in #420's Phase-4 dogfood): `--skip-existing` used to resolve
+ * EVERY file-level collision in the host's favour and exit 0 — but when the
+ * skipped set includes a load-bearing file (package.json: the copy's deps
+ * and build script never arrive; tsconfig.json: the host's own build breaks
+ * sweeping up the copy's test files), that "merge" is an unrecoverable
+ * state presented as success. Now a collision on a tier-1 file —
+ * package.json, tsconfig.json, a lockfile, vite.config.* — refuses the
+ * whole command (exit 2, zero writes) and recommends `--dest <subdir>`;
+ * non-tier-1 collisions keep the skip behaviour (block above).
+ */
+describe('tier-1 collision guard (--skip-existing)', () => {
+  test('a host with its own package.json → --dest . --skip-existing exits 2 naming package.json, zero writes', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostPkg = '{"name":"host-repo-package-json"}\n'
+    writeFileSync(join(cwd, 'package.json'), hostPkg)
+
+    const errors: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site', skipExisting: true },
+      () => {},
+      (l) => errors.push(l),
+    )
+    expect(status).toBe(2)
+    const message = errors.join('\n')
+    expect(message).toContain('package.json')
+    // The way out is a subdirectory destination, not a hand-merge.
+    expect(message).toContain('--dest')
+    // Zero writes: host file untouched, nothing from the package landed.
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe(hostPkg)
+    expect(existsSync(join(cwd, '.bffless'))).toBe(false)
+    expect(existsSync(join(cwd, '.github'))).toBe(false)
+  })
+
+  test('--dry-run parity: the tier-1 refusal fires identically under --dry-run', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostPkg = '{"name":"host-repo-package-json"}\n'
+    writeFileSync(join(cwd, 'package.json'), hostPkg)
+
+    const errors: string[] = []
+    const status = runInit(
+      cwd,
+      {
+        ...baseArgs,
+        alias: 'studio',
+        from: src,
+        path: 'workflows/hello',
+        dest: '.',
+        project: 'acme/site',
+        skipExisting: true,
+        dryRun: true,
+      },
+      () => {},
+      (l) => errors.push(l),
+    )
+    expect(status).toBe(2)
+    const message = errors.join('\n')
+    expect(message).toMatch(/\(dry run\)/)
+    expect(message).toContain('package.json')
+    expect(message).toContain('--dest')
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe(hostPkg)
+    expect(existsSync(join(cwd, '.bffless'))).toBe(false)
+  })
+
+  test('a mixed collision set (tier-1 package.json + non-tier-1 README.md) still refuses, naming the tier-1 file', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostPkg = '{"name":"host-repo-package-json"}\n'
+    const hostReadme = '# Host repo\n'
+    writeFileSync(join(cwd, 'package.json'), hostPkg)
+    writeFileSync(join(cwd, 'README.md'), hostReadme)
+
+    const errors: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site', skipExisting: true },
+      () => {},
+      (l) => errors.push(l),
+    )
+    expect(status).toBe(2)
+    expect(errors.join('\n')).toContain('package.json')
+    // Zero writes even though README.md alone would have been skippable.
+    expect(readFileSync(join(cwd, 'package.json'), 'utf8')).toBe(hostPkg)
+    expect(readFileSync(join(cwd, 'README.md'), 'utf8')).toBe(hostReadme)
+    expect(existsSync(join(cwd, '.bffless'))).toBe(false)
+  })
+})
+
+/**
+ * #559, second half: directory-level merges were invisible — the conflict
+ * check is file-level, so copying into a host that already has a `scripts/`
+ * (no individual filename clashing) reported nothing at all. The report
+ * (real run and --dry-run alike, sharing the one plan) now lists every
+ * top-level directory the copy writes into that already exists at the
+ * destination, with the count of files added. Not conditional on
+ * --skip-existing: a plain successful run can merge too.
+ */
+describe('directory merge report', () => {
+  test('--skip-existing with a colliding README.md plus an existing scripts/ → succeeds, README skipped, scripts/ merge reported', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    const hostReadme = '# Host repo\n'
+    const hostScript = '#!/bin/sh\necho host\n'
+    writeFileSync(join(cwd, 'README.md'), hostReadme)
+    mkdirSync(join(cwd, 'scripts'))
+    writeFileSync(join(cwd, 'scripts', 'host.sh'), hostScript)
+
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site', skipExisting: true },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+
+    const out = lines.join('\n')
+    expect(out).toContain('skipped (already exists) — merge by hand:')
+    expect(out).toContain('  README.md')
+    expect(out).toContain('merged into existing scripts/ (1 file added)')
+
+    // The merge really happened: host's file kept, package's file added.
+    expect(readFileSync(join(cwd, 'scripts', 'host.sh'), 'utf8')).toBe(hostScript)
+    expect(existsSync(join(cwd, 'scripts', 'build.mjs'))).toBe(true)
+    expect(readFileSync(join(cwd, 'README.md'), 'utf8')).toBe(hostReadme)
+  })
+
+  test('--dry-run parity: the same merge line appears, nothing written', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    writeFileSync(join(cwd, 'README.md'), '# Host repo\n')
+    mkdirSync(join(cwd, 'scripts'))
+    writeFileSync(join(cwd, 'scripts', 'host.sh'), '#!/bin/sh\necho host\n')
+
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      {
+        ...baseArgs,
+        alias: 'studio',
+        from: src,
+        path: 'workflows/hello',
+        dest: '.',
+        project: 'acme/site',
+        skipExisting: true,
+        dryRun: true,
+      },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+    expect(lines.join('\n')).toContain('(dry run) merged into existing scripts/ (1 file added)')
+    // Zero writes.
+    expect(existsSync(join(cwd, '.bffless'))).toBe(false)
+    expect(existsSync(join(cwd, 'scripts', 'build.mjs'))).toBe(false)
+  })
+
+  test('a plain run (no --skip-existing) with no file collisions still reports the merge into an existing directory', () => {
+    const src = monorepoSource()
+    const cwd = freshCwd()
+    mkdirSync(join(cwd, 'assets'))
+    writeFileSync(join(cwd, 'assets', 'host.css'), 'body {}\n')
+
+    const lines: string[] = []
+    const status = runInit(
+      cwd,
+      { ...baseArgs, alias: 'studio', from: src, path: 'workflows/hello', dest: '.', project: 'acme/site' },
+      (l) => lines.push(l),
+      () => {},
+    )
+    expect(status).toBe(0)
+    const out = lines.join('\n')
+    expect(out).toContain('merged into existing assets/ (1 file added)')
+    // A directory the host did NOT already have is not a "merge".
+    expect(out).not.toContain('merged into existing scripts/')
+    expect(readFileSync(join(cwd, 'assets', 'host.css'), 'utf8')).toBe('body {}\n')
+    expect(existsSync(join(cwd, 'assets', 'logo.bin'))).toBe(true)
   })
 })
 

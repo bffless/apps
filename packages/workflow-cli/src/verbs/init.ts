@@ -57,7 +57,13 @@
  * repo's own business and is left alone. `--skip-existing` (I5) turns that
  * refusal into a merge: colliding paths are left exactly as the host has
  * them (not copied at all, reported under a "skipped" section), and every
- * non-colliding package file still lands, renamed, same as always.
+ * non-colliding package file still lands, renamed, same as always — unless
+ * the collision set includes a tier-1 file (package.json, tsconfig.json, a
+ * lockfile, vite.config.*), in which case the skip would orphan the copy or
+ * break the host's build, so init refuses outright and recommends `--dest
+ * <subdir>` (#559). The report additionally lists every pre-existing
+ * destination directory the copy merged files into, since directory-level
+ * merges never show up as file conflicts (#559).
  */
 import { execFileSync } from 'node:child_process'
 import {
@@ -277,6 +283,54 @@ function findDestinationConflicts(destDir: string, stagedFiles: string[]): strin
   return stagedFiles.filter((f) => existsSync(join(destDir, f)))
 }
 
+/**
+ * Tier-1: files whose collision `--skip-existing` must NOT resolve in the
+ * host's favour (#559, from #420's Phase-4 dogfood). Skipping the package's
+ * `package.json` orphans the whole copy — its dependencies and build script
+ * never arrive, so nothing can install or build the copied files; skipping
+ * `tsconfig.json` leaves the host's `include` sweeping up the copy's test
+ * files, breaking the HOST's own build (measured: 10 TS2307 errors).
+ * Lockfiles and `vite.config.*` are the same class. Matched by basename at
+ * any depth — the friction evidence is all root-level, but a nested
+ * `package.json` is load-bearing for the same reason.
+ */
+const TIER1_BASENAMES = new Set(['package.json', 'tsconfig.json', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock'])
+const TIER1_VITE_CONFIG_RE = /^vite\.config\.[cm]?[jt]s$/
+
+function isTier1(relPath: string): boolean {
+  const base = relPath.slice(relPath.lastIndexOf('/') + 1)
+  return TIER1_BASENAMES.has(base) || TIER1_VITE_CONFIG_RE.test(base)
+}
+
+interface DirMerge {
+  dir: string
+  count: number
+}
+
+/**
+ * Top-level directories the copy writes into that already exist at the
+ * destination (#559): the conflict check is file-level, so a copy into a
+ * host that already has e.g. `scripts/` — with no individual filename
+ * clashing — used to happen with no report at all. Computed off the files
+ * the run will actually write (post-skip), BEFORE anything is copied.
+ */
+function findDirectoryMerges(destDir: string, copiedFiles: string[]): DirMerge[] {
+  const counts = new Map<string, number>()
+  for (const f of copiedFiles) {
+    const slash = f.indexOf('/')
+    if (slash === -1) continue
+    const top = f.slice(0, slash)
+    counts.set(top, (counts.get(top) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .filter(([dir]) => {
+      const existing = join(destDir, dir)
+      return existsSync(existing) && statSync(existing).isDirectory()
+    })
+    .map(([dir, count]) => ({ dir, count }))
+    .sort((a, b) => a.dir.localeCompare(b.dir))
+}
+
 const TEMPLATES_DIR = fileURLToPath(new URL('../templates/', import.meta.url))
 const DEPLOY_TMPL = readFileSync(join(TEMPLATES_DIR, 'deploy.yml.tmpl'), 'utf8')
 const PREVIEW_TMPL = readFileSync(join(TEMPLATES_DIR, 'preview.yml.tmpl'), 'utf8')
@@ -362,6 +416,11 @@ function printSkipped(out: Print, tag: string, skipped: string[]): void {
   if (skipped.length === 0) return
   out(`${tag}skipped (already exists) — merge by hand:`)
   for (const s of skipped) out(`${tag}  ${s}`)
+}
+
+/** #559: every pre-existing destination directory the copy added files into — real run and dry run alike. */
+function printMerged(out: Print, tag: string, merges: DirMerge[]): void {
+  for (const m of merges) out(`${tag}merged into existing ${m.dir}/ (${m.count} file${m.count === 1 ? '' : 's'} added)`)
 }
 
 /**
@@ -490,11 +549,35 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
         return 2
       }
 
+      // #559: --skip-existing must not "merge" past a load-bearing file.
+      // Skipping the package's own package.json/tsconfig.json/lockfile/
+      // vite.config.* orphans the copy (or breaks the host's build) while
+      // exiting 0 — an unrecoverable state presented as success. Refuse
+      // instead (exit 2, nothing written), pointing at --dest <subdir>,
+      // where nothing collides at all. Non-tier-1 collisions keep the skip
+      // behaviour below.
+      if (parsed.skipExisting) {
+        const tier1 = conflicts.filter(isTier1)
+        if (tier1.length > 0) {
+          const tag = parsed.dryRun ? '(dry run) ' : ''
+          err(
+            `workflow: ${tag}--skip-existing would keep the host's version of ${tier1.length} load-bearing file(s) the copied ` +
+              'implementation cannot install or build without — refusing (use --dest <subdir> to land it in its own directory instead):',
+          )
+          for (const c of tier1) err(`  ${c}`)
+          return 2
+        }
+      }
+
       // I5: with --skip-existing, colliding paths are left exactly as the
       // host has them — not copied at all — rather than refusing outright.
       const skippedExisting = parsed.skipExisting ? conflicts : []
       const skipSet = new Set(skippedExisting)
       const copiedFiles = stagedFiles.filter((f) => !skipSet.has(f))
+
+      // #559: computed before anything is written — after the copy, every
+      // directory exists and the distinction this reports would be gone.
+      const dirMerges = findDirectoryMerges(destDir, copiedFiles)
 
       if (parsed.dryRun) {
         const tag = '(dry run) '
@@ -502,6 +585,7 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
         for (const f of copiedFiles) out(`${tag}  ${f}`)
         printRenameReport(out, tag, report, identity.alias, parsed.alias)
         printSkipped(out, tag, skippedExisting)
+        printMerged(out, tag, dirMerges)
         printGenerated(out, tag, generatedFiles, skippedGenerated)
         printManualSteps(out, parsed.project, parsed.harnessAlias, destRel)
         out(`${tag}would init ${parsed.alias} in ${destRel}/`)
@@ -537,6 +621,7 @@ export function runInit(cwd: string, parsed: InitArgs, out: Print, err: Print): 
       for (const f of copiedFiles) out(`  ${f}`)
       printRenameReport(out, '', report, identity.alias, parsed.alias)
       printSkipped(out, '', skippedExisting)
+      printMerged(out, '', dirMerges)
       printGenerated(out, '', generatedFiles, skippedGenerated)
       printManualSteps(out, parsed.project, parsed.harnessAlias, destRel)
       out(`✔ initialized ${parsed.alias} in ${destRel}/`)
