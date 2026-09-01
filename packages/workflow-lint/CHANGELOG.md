@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/bffless/apps/compare/workflow-lint-v1.4.0...workflow-lint-v1.5.0) (2026-09-01)
+
+
+### Features
+
+* **workflow-cli:** the @bffless/workflow CLI — identity engine, init, rename, add ([#556](https://github.com/bffless/apps/issues/556)) ([c9460d9](https://github.com/bffless/apps/commit/c9460d98440281e6145df4ac25da0b07e80f5ecb))
+
 ## [1.4.0](https://github.com/bffless/apps/compare/workflow-lint-v1.3.0...workflow-lint-v1.4.0) (2026-08-30)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@bffless/workflow",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": false,
   "type": "module",
   "description": "Authoring CLI for BFFless Workflow implementations — init/rename/add/lint/index/publish (spec apps/workflow/docs/spec/06-discovery-publishing-files.md)",

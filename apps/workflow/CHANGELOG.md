@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/bffless/apps/compare/workflow-v1.1.0...workflow-v1.2.0) (2026-09-01)
+
+
+### Features
+
+* **workflow-cli:** publish drives index → rules push → upload → attach ([#558](https://github.com/bffless/apps/issues/558)) ([7015ce2](https://github.com/bffless/apps/commit/7015ce2f27204c04b7aaea8f0ea111080bfe04a5))
+
 ## [1.1.0](https://github.com/bffless/apps/compare/workflow-v1.0.0...workflow-v1.1.0) (2026-08-31)
 
 
