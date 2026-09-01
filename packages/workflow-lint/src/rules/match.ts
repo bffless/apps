@@ -44,6 +44,14 @@ export interface RuleSetIndex {
    * rule should be added at carries no prefix at all (`''`).
    */
   layout: string
+  /**
+   * `--path-prefix` exactly as given, when it was. Kept apart from `prefix`
+   * because the flag needs validating in its own right: it is prepended to
+   * *both* sides of the rule-missing comparison, so a wrong value cancels out
+   * of it — `checks/rules.ts` instead checks the flag against `/api/<alias>`,
+   * the one shape the publishers actually apply (#560).
+   */
+  pathPrefix?: string
   rules: RuleEntry[]
 }
 

@@ -35,8 +35,10 @@ Options (both):
   --alias <alias>      which set under .bffless/proxy-rules/ to use (and the alias
                        it deploys to); only needed when the search finds several
   --path-prefix <p>    the prefix the publisher prepends to every derived
-                       pathPattern at sync time (\`--path-prefix /api/hello\`), so
-                       a prefix-free rule set resolves the way it will once live
+                       pathPattern at sync time, so a prefix-free rule set
+                       resolves the way it will once live; must be /api/<alias>
+                       (\`--path-prefix /api/hello\`) — any other value is a
+                       path-prefix-mismatch error
 
 Without --rules the set is looked for in the nearest .bffless/proxy-rules above
 each file; when none is found the rule check is skipped with a notice.

@@ -49,8 +49,30 @@ function spotsOf(def: Definition): Spot[] {
  */
 export function checkRules(def: Definition, rules?: RuleSetContext): Finding[] {
   if (!rules) return []
+
+  // `--path-prefix` is prepended to *both* sides of the comparison below — the
+  // derived patterns and every resolved URL — so a wrong value cancels out and
+  // lints exactly as clean as the right one. Validate the flag itself instead,
+  // against the one shape both publishers apply (`workflow publish` and
+  // bffless/publish-workflow both derive it from the alias): `/api/<alias>`.
+  // This fires regardless of the file's paths — the flag describes the whole
+  // sync, and a set pushed under any other prefix 404s once live (#560).
+  const prefixFindings: Finding[] = []
+  if (rules.found && rules.pathPrefix !== undefined && rules.pathPrefix !== `/api/${rules.alias}`) {
+    prefixFindings.push({
+      rule: 'path-prefix-mismatch',
+      severity: 'error',
+      message:
+        `--path-prefix \`${rules.pathPrefix}\` is not the prefix the publisher applies — the ` +
+        `\`${rules.alias}\` set deploys under \`/api/${rules.alias}\`, so paths resolved against ` +
+        `\`${rules.pathPrefix}\` would 404 once live (06)`,
+      path: '',
+      hint: `the alias comes from the set's \`name:\` (or --alias); pass --path-prefix /api/${rules.alias}`,
+    })
+  }
+
   const spots = spotsOf(def)
-  if (spots.length === 0) return []
+  if (spots.length === 0) return prefixFindings
 
   if (!rules.found) {
     return [
@@ -63,7 +85,7 @@ export function checkRules(def: Definition, rules?: RuleSetContext): Finding[] {
     ]
   }
 
-  const findings: Finding[] = []
+  const findings: Finding[] = prefixFindings
   for (const spot of spots) {
     const url = resolveUrl(rules, spot.path)
     if (findRule(rules, url, spot.method)) continue
