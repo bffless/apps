@@ -111,7 +111,8 @@ function resolveTargetUrl(project: string, alias: string, path: string): string 
   return `${DEFAULT_BACKEND_URL}/public/${project}/alias/${alias}/${cleanRelPath(path)}`
 }
 
-function splitProject(project: string): [string, string] {
+/** Splits `owner/name`; throws otherwise. Ported from publish-workflow's lib.mjs `splitRepository`. */
+export function splitProject(project: string): [string, string] {
   const parts = project.split('/')
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new Error(`--project "${project}" is not owner/name`)
@@ -119,14 +120,25 @@ function splitProject(project: string): [string, string] {
   return [parts[0], parts[1]]
 }
 
-/** Throws with the status + body on a non-2xx response; otherwise the parsed JSON body. */
-async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+/** A fetch-compatible function, injectable so tests can stub the network — same shape as attach.mjs's own `fetchImpl` option. */
+export type FetchImpl = typeof fetch
+
+/** Throws with the status + body on a non-2xx response; otherwise the parsed JSON body. Ported from publish-workflow's lib.mjs `request`. */
+async function requestJson<T>(fetchImpl: FetchImpl, url: string, init: RequestInit): Promise<T> {
+  const res = await fetchImpl(url, init)
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`${init.method ?? 'GET'} ${url} failed: ${res.status} ${res.statusText} ${body}`.trim())
   }
   return (await res.json()) as T
+}
+
+export interface ResolveRuleSetIdOptions {
+  apiUrl: string
+  apiKey: string
+  project: string
+  alias: string
+  fetchImpl?: FetchImpl
 }
 
 /**
@@ -138,14 +150,16 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
  * (packages/cli/src/api/resolve.ts in bffless/ce) — `--project` is always
  * `owner/name` here (Decision 8's interface), so only that form is handled.
  */
-async function resolveRuleSetId(apiUrl: string, apiKey: string, project: string, alias: string): Promise<string> {
+export async function resolveRuleSetId({ apiUrl, apiKey, project, alias, fetchImpl = fetch }: ResolveRuleSetIdOptions): Promise<string> {
   const [owner, name] = splitProject(project)
   const headers = { 'X-API-Key': apiKey, Accept: 'application/json' }
   const proj = await requestJson<{ id: string }>(
+    fetchImpl,
     new URL(`/api/projects/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, apiUrl).toString(),
     { headers },
   )
   const list = await requestJson<{ ruleSets: { id: string; name: string }[] }>(
+    fetchImpl,
     new URL(`/api/proxy-rule-sets/project/${proj.id}`, apiUrl).toString(),
     { headers },
   )
@@ -161,24 +175,42 @@ function ruleSetIdsOf(alias: { proxyRuleSetIds?: string[]; proxyRuleSetId?: stri
   return alias.proxyRuleSetId ? [alias.proxyRuleSetId] : []
 }
 
+/** Append `id` unless it is already present; order is the harness's rule precedence. Ported from publish-workflow's lib.mjs `unionIds`. */
+export function unionIds(existing: string[] | undefined, id: string): string[] {
+  const ids = Array.isArray(existing) ? [...existing] : []
+  if (!ids.includes(id)) ids.push(id)
+  return ids
+}
+
+export interface AttachToHarnessOptions {
+  apiUrl: string
+  apiKey: string
+  project: string
+  harnessAlias: string
+  ruleSetId: string
+  fetchImpl?: FetchImpl
+}
+
 /**
  * Union `ruleSetId` into the harness alias's own `proxyRuleSetIds` — ported
  * from publish-workflow's scripts/attach.mjs `attach()`. Idempotent:
  * publishing the same implementation twice PATCHes nothing the second time.
  */
-async function attachToHarness(
-  apiUrl: string,
-  apiKey: string,
-  project: string,
-  harnessAlias: string,
-  ruleSetId: string,
-): Promise<{ changed: boolean; proxyRuleSetIds: string[] }> {
+export async function attachToHarness({
+  apiUrl,
+  apiKey,
+  project,
+  harnessAlias,
+  ruleSetId,
+  fetchImpl = fetch,
+}: AttachToHarnessOptions): Promise<{ changed: boolean; proxyRuleSetIds: string[] }> {
   const [owner, name] = splitProject(project)
   const base = apiUrl.replace(/\/+$/, '')
   const headers = { 'X-API-Key': apiKey, Accept: 'application/json' }
   const listUrl = `${base}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/aliases`
 
   const list = await requestJson<{ aliases?: { name: string; proxyRuleSetIds?: string[]; proxyRuleSetId?: string }[] }>(
+    fetchImpl,
     listUrl,
     { headers },
   )
@@ -192,10 +224,10 @@ async function attachToHarness(
   }
 
   const before = ruleSetIdsOf(harnessRow)
-  if (before.includes(ruleSetId)) return { changed: false, proxyRuleSetIds: before }
-  const proxyRuleSetIds = [...before, ruleSetId]
+  const proxyRuleSetIds = unionIds(before, ruleSetId)
+  if (proxyRuleSetIds.length === before.length) return { changed: false, proxyRuleSetIds: before }
 
-  await requestJson(`${listUrl}/${encodeURIComponent(harnessAlias)}`, {
+  await requestJson(fetchImpl, `${listUrl}/${encodeURIComponent(harnessAlias)}`, {
     method: 'PATCH',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ proxyRuleSetIds }),
@@ -216,6 +248,18 @@ function addDirToZip(zip: JSZip, root: string, prefix: string): void {
   walk(root, '')
 }
 
+export interface UploadBundleOptions {
+  apiUrl: string
+  apiKey: string
+  project: string
+  alias: string
+  outPath: string
+  path: string
+  commitSha: string
+  branch: string
+  fetchImpl?: FetchImpl
+}
+
 /**
  * Zips `outPath` (the built bundle) under a `<path>/` prefix — same
  * "bundle root is `path` AS GIVEN, not its basename" rule
@@ -226,16 +270,17 @@ function addDirToZip(zip: JSZip, root: string, prefix: string): void {
  * from the harness attach above, which unions the rule set into the
  * *harness* alias's own list).
  */
-async function uploadBundle(
-  apiUrl: string,
-  apiKey: string,
-  project: string,
-  alias: string,
-  outPath: string,
-  path: string,
-  commitSha: string,
-  branch: string,
-): Promise<UploadResponse> {
+export async function uploadBundle({
+  apiUrl,
+  apiKey,
+  project,
+  alias,
+  outPath,
+  path,
+  commitSha,
+  branch,
+  fetchImpl = fetch,
+}: UploadBundleOptions): Promise<UploadResponse> {
   const zip = new JSZip()
   addDirToZip(zip, outPath, cleanRelPath(path))
   const buf = await zip.generateAsync({ type: 'nodebuffer' })
@@ -250,7 +295,7 @@ async function uploadBundle(
   form.append('basePath', '/')
   form.append('proxyRuleSetNames', alias)
 
-  const res = await fetch(new URL('/api/deployments/zip', apiUrl), {
+  const res = await fetchImpl(new URL('/api/deployments/zip', apiUrl), {
     method: 'POST',
     headers: { 'X-API-Key': apiKey },
     body: form,
@@ -387,8 +432,17 @@ export async function runPublish(
     let ruleSetId: string
     let upload: UploadResponse
     try {
-      ruleSetId = await resolveRuleSetId(apiUrl, apiKey, project, alias)
-      upload = await uploadBundle(apiUrl, apiKey, project, alias, outPath, parsed.path, env.GITHUB_SHA ?? 'unknown', env.GITHUB_REF_NAME ?? 'unknown')
+      ruleSetId = await resolveRuleSetId({ apiUrl, apiKey, project, alias })
+      upload = await uploadBundle({
+        apiUrl,
+        apiKey,
+        project,
+        alias,
+        outPath,
+        path: parsed.path,
+        commitSha: env.GITHUB_SHA ?? 'unknown',
+        branch: env.GITHUB_REF_NAME ?? 'unknown',
+      })
     } catch (e) {
       err(`workflow: ${(e as Error).message}`)
       return 2
@@ -396,7 +450,7 @@ export async function runPublish(
     out(`4. uploaded deployment ${upload.deploymentId} (${upload.fileCount} file(s), ${upload.totalSize} bytes)`)
 
     try {
-      const attached = await attachToHarness(apiUrl, apiKey, project, parsed.harnessAlias, ruleSetId)
+      const attached = await attachToHarness({ apiUrl, apiKey, project, harnessAlias: parsed.harnessAlias, ruleSetId })
       out(
         attached.changed
           ? `   attached to harness "${parsed.harnessAlias}" → ${attached.proxyRuleSetIds.length} rule set(s)`
