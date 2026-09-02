@@ -108,6 +108,21 @@ bffless/apps
 
 ---
 
+## Phase 2 as shipped (2026-09-02; the claude.ai gate pending)
+
+Landed on `epic/agent-embedding` as #577 (this plan), #578 (Story 5) and #579 (Story 6, draft until the screenshots are on it). Departures from the plan, all recorded on the PRs:
+
+- **Alias discovery reads CE's API in-process** (`http://localhost:3000/api/aliases?repository=…`, the relay rule's own target) rather than the harness's `/api/workflow/aliases` relay: the relay forwards a *cookie* and the endpoint has none (Task 3/5). Every other sibling fetch goes through the harness host's own forwarders (`https://<host>/w/<impl>/…` — the hairpin from CE works on j5s).
+- **The two response steps are both gated** (`accepted` on `isNotification`, `respond` on `isRequest`): CE runs every step whose condition holds, so an unconditional `respond` after a 202 answered 200 (Task 5).
+- **`resources/list` runs the storage probe too** — the first walk caught a CSP without the storage origin on the listing (Task 7).
+- **The endpoint gets its own `SERVER_VERSION`** rather than importing `HOST_INFO` from `IslandHost` (which would drag the ext-apps bridge into the sandbox); a test pins it to `HOST_INFO.version`.
+- **The driver signs in on a public host**: `loginViaRelay` goes to `admin.<domain>/login?redirect=…` itself when the gate never bounces (a public deployment renders signed out and every `auth_required` rule 401s); `loginUrl` is exported. The j5s CI member also had to be granted `contributor` on the scratch project (CE's alias list is permission-filtered) — via CE's `POST /api/projects/:owner/:repo/permissions/users { userEmail, role }`, there being no MCP tool.
+- **The rule-set fence test** learned `http_request` and the MCP rules' authless exception (it asserts the `identity` gate instead).
+- **The walk waits for the `waiting` row before closing the browser**: the page's `workflow.await` answers from its store a beat ahead of the middleware's write; the endpoint reads rows and rightly refused a `queued` step (Task 12 — the same read-after-write shape as the Phase-1 follow-up).
+- **Bucket CORS**: `https://workflow-mcp.j5s.dev` is not in the storage bucket's CORS, so the harness page's own `card` upload fails on the scratch host (`page-tools` there reads 11/17); a `gcloud` step for a person. The endpoint and the island round trip are unaffected.
+
+Verified: `mcp` walk **24/24** on `https://workflow-mcp.j5s.dev` (Story 5's 13 + Story 6's 11); the spike's (a)/(b) on #554 with evidence, (c) up to the wire (the official SDK client), the connector UI itself awaiting the person's screenshot. Scratch project kept, named, documented (`apps/workflow/bffless/README.md`).
+
 # Phase A — Story 5: the endpoint (Tasks 1–8)
 
 *Deliverable: `POST /api/workflow/mcp` exists in the harness rule set as a built `function_handler` pipeline; on the scratch project it answers `initialize`, `tools/list` (catalog parity), `tools/call` for `list`/`describe`/`status`/`runs`/`outputs`/`sign`, `resources/list`; `GET` is 405; the `mcp` walk is green; the spike's three answers are on #554. Branch `feat/m5-mcp-endpoint`, worktree `.claude/worktrees/m5-mcp-endpoint`.*
