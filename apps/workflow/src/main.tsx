@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from 'react-redux'
 import { BrowserRouter } from 'react-router-dom'
+import { AgentTools } from './agent/AgentTools'
 import App from './App'
 import { installDiagnostics } from './lib/diagnostics'
 import { MOCKS_ENABLED } from './mocks/config'
@@ -32,6 +33,8 @@ function render() {
       <Provider store={store}>
         <BrowserRouter>
           <App />
+          {/* The page's WebMCP tool surface (spec 10): once, beside the app, inside the router. */}
+          <AgentTools />
         </BrowserRouter>
       </Provider>
     </StrictMode>,

@@ -24,7 +24,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { KickoffForm } from '../components/kickoff/KickoffForm'
-import { decodeInputs, initialValues, validateInputs } from '../lib/autoStart'
+import { START_REFUSALS, decodeInputs, initialValues, validateInputs } from '../lib/autoStart'
 import { offersUnattended } from '../lib/runner/headless'
 import { workflowId } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
@@ -131,12 +131,12 @@ export function KickoffPage() {
     if (invalid) return invalid
     // Nothing has gone wrong while discovery is still in flight.
     if (isLoading) return null
-    if (isError) return { discovery: 'The implementations could not be listed' }
+    if (isError) return { discovery: START_REFUSALS.discovery }
     // One guard, because `listing` is derived from `impl`'s own workflows: no
     // such alias, or no workflow by that name in it.
-    if (!impl || !listing) return { workflow: 'No implementation here publishes that workflow' }
-    if (yamlFailed) return { workflow: "This workflow's file could not be fetched" }
-    if (loaded && !loaded.ok) return { workflow: 'This workflow does not validate, so it cannot be run' }
+    if (!impl || !listing) return { workflow: START_REFUSALS.noWorkflow }
+    if (yamlFailed) return { workflow: START_REFUSALS.fileUnreadable }
+    if (loaded && !loaded.ok) return { workflow: START_REFUSALS.doesNotLint }
     return null
   }, [auto, invalid, isLoading, isError, impl, listing, yamlFailed, loaded])
 
