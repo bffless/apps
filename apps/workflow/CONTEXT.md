@@ -173,3 +173,22 @@ never page tools)
 `window.__workflow`'s shape plus `waitingOn` — for each waiting step what would satisfy it.
 What `workflow.status` answers.
 _Avoid_: run state (the engine's), run record (the rows)
+
+**MCP endpoint**:
+`POST /api/workflow/mcp` — the harness's MCP server as one rule in its own rule set (spec 10,
+D22): stateless Streamable HTTP, the catalog served against the `/api/workflow/*` rows. Its
+function steps are built from `src/mcp/` (`pnpm --filter workflow mcp:build`).
+_Avoid_: a CE endpoint, `/_bffless/*`, the platform-admin MCP server, "streaming" (one POST,
+one JSON body)
+
+**Service identity**:
+The `WORKFLOW_MCP_KEY` project secret the endpoint's sibling calls carry — auth ladder rung 1
+(D23). Absent, the endpoint answers "not enabled" to everything but `initialize`.
+_Avoid_: the member's session (an agent host has none), an app token (rung 2, Phase 3)
+
+**Step view**:
+`ui://bffless/workflow/step.html` — the engine-less host page that mounts one waiting island
+inside an agent host, under the same `IslandHost` the harness page uses; what
+`workflow.submitStep` renders in claude.ai.
+_Avoid_: the run view (Phase 4's, with the engine), the island itself (served unchanged as
+`ui://bffless/<impl>/islands/<name>.html`)
