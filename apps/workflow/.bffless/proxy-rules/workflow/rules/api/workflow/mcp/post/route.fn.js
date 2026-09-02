@@ -325,6 +325,10 @@ var __mcp = (() => {
     if (!/^[a-z][a-z0-9-]*$/.test(impl) || rest === "") return null;
     return { impl, rest };
   }
+  function withAliases(route) {
+    route.isAliases = route.isList && route.impl === "" && route.aliasesUrl !== "";
+    return route;
+  }
   function handler(data) {
     const request = data.request ?? { body: void 0, headers: {}, method: "POST", path: "" };
     const deployment = data.deployment ?? {};
@@ -344,6 +348,8 @@ var __mcp = (() => {
       uri: "",
       params: {},
       isNotification: false,
+      hasOrigin: appOrigin !== "",
+      isAliases: false,
       needsRun: false,
       isRuns: false,
       isList: false,
@@ -388,13 +394,13 @@ var __mcp = (() => {
       case "resources/list":
         route.kind = "resourcesList";
         route.isList = true;
-        return route;
+        return withAliases(route);
       case "resources/read": {
         route.kind = "resourcesRead";
         route.uri = str(message.params.uri);
-        route.isCsp = true;
+        route.isCsp = route.probePath !== "";
         if (route.uri === STEP_VIEW_URI) {
-          route.isStepView = true;
+          route.isStepView = route.stepViewUrl !== "";
         } else {
           const island = parseIslandUri(route.uri);
           if (island) {
@@ -422,7 +428,7 @@ var __mcp = (() => {
     if (RUN_SCOPED.has(route.tool) && route.runId !== "") route.needsRun = true;
     if (route.tool === "workflow.runs" && route.impl !== "" && route.workflow !== "") route.isRuns = true;
     if (route.tool === "workflow.list") route.isList = true;
-    if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "") route.isDescribe = true;
+    if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "" && appOrigin !== "") route.isDescribe = true;
     if ((route.isList || route.isDescribe) && route.impl !== "" && appOrigin !== "") {
       route.indexUrl = `${appOrigin}/w/${route.impl}/.bffless/workflows/index.json`;
     }
@@ -433,7 +439,7 @@ var __mcp = (() => {
         route.signStoragePath = `${project}/uploads/${route.signPath}`;
       }
     }
-    return route;
+    return withAliases(route);
   }
   return __toCommonJS(route_exports);
 })();

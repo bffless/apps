@@ -122,3 +122,18 @@ export function snapshotFromRows(run: RunRowLike, steps: StepRowLike[]): RunSnap
     waitingOn,
   }
 }
+
+function describeWaiting(snapshot: RunSnapshot): string {
+  if (snapshot.waitingOn.length === 0) return ''
+  return `, waiting on ${snapshot.waitingOn.map((step) => `${step.key} (${step.kind})`).join(', ')}`
+}
+
+/**
+ * The one sentence both adapters say about a snapshot — "Run <id> is
+ * <status>, waiting on <key> (<kind>)" — so a model hears the same thing from
+ * the harness page and from the MCP endpoint (D19).
+ */
+export function snapshotText(snapshot: RunSnapshot): string {
+  if (snapshot.status === 'invalid') return 'No run was started'
+  return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`
+}

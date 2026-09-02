@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ACTIVE_STEP_STATUSES, snapshotFromRows } from '../src/snapshot.js'
+import { ACTIVE_STEP_STATUSES, snapshotFromRows, snapshotText } from '../src/snapshot.js'
 import type { RunRowLike, StepRowLike } from '../src/snapshot.js'
 
 /** Hello's `interactive` definition, trimmed to what the derivation reads. */
@@ -102,5 +102,25 @@ describe('snapshotFromRows', () => {
       steps: {},
       waitingOn: [],
     })
+  })
+})
+
+describe('snapshotText', () => {
+  it('says what the page says', () => {
+    expect(snapshotText({ runId: 'r', status: 'running', currentSteps: [], outputs: {}, steps: {}, waitingOn: [] })).toBe('Run r is running')
+    expect(
+      snapshotText({
+        runId: 'r',
+        status: 'running',
+        currentSteps: ['pick/0/choose'],
+        outputs: {},
+        steps: {},
+        waitingOn: [
+          { key: 'pick/0/choose', kind: 'island', inputs: {} },
+          { key: 'review/0/confirm', kind: 'form', inputs: {} },
+        ],
+      }),
+    ).toBe('Run r is running, waiting on pick/0/choose (island), review/0/confirm (form)')
+    expect(snapshotText({ runId: '', status: 'invalid', currentSteps: [], outputs: {}, steps: {}, waitingOn: [], errors: { inputs: 'x' } })).toBe('No run was started')
   })
 })

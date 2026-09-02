@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { CATALOG } from '@bffless/workflow-agent-tools'
 import { describe, expect, it } from 'vitest'
-import { HOST_TOOLS, RESOURCE_MIME, STEP_VIEW_URI, isHostTool, listedTools } from './hostTools'
+import { HOST_TOOLS, RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool, listedTools } from './hostTools'
 
 describe('listedTools', () => {
   const listed = listedTools()
@@ -34,6 +34,12 @@ describe('listedTools', () => {
       expect(isHostTool(tool.name)).toBe(true)
     }
     expect(isHostTool('workflow.sign')).toBe(false)
+  })
+
+  it("announces the island host's protocol version", async () => {
+    const source = await import('node:fs').then((fs) => fs.readFileSync(new URL('../islands/IslandHost.ts', import.meta.url), 'utf8'))
+    const hostInfo = source.match(/const HOST_INFO = \{ name: '[^']+', version: '([^']+)' \}/)
+    expect(hostInfo?.[1]).toBe(SERVER_VERSION)
   })
 
   it('names the MCP Apps MIME type', () => {

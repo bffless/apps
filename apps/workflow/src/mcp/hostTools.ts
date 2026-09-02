@@ -13,6 +13,14 @@
  */
 import { CATALOG, type JsonSchema } from '@bffless/workflow-agent-tools'
 
+/**
+ * The endpoint's `serverInfo.version` — the *host protocol* version, the same
+ * number `IslandHost`'s `HOST_INFO` announces on `ui/initialize`, because an
+ * island served through this endpoint meets the same host surface. Bump both
+ * together when that surface changes.
+ */
+export const SERVER_VERSION = '1.0.0'
+
 /** The engine-less host page that mounts a waiting island inside an agent host (plan Decision 3). */
 export const STEP_VIEW_URI = 'ui://bffless/workflow/step.html'
 

@@ -61,6 +61,10 @@ export interface Route {
 
   // --- one flag per gated step -------------------------------------------
   isNotification: boolean
+  /** The request named a host, so the derived URLs are real — gates `identity`. */
+  hasOrigin: boolean
+  /** `list` / `resources/list` without `impl` → `steps.aliases` (the harness's alias relay). */
+  isAliases: boolean
   /** Read the run row + its step rows (`steps.run`, `steps.steps`). */
   needsRun: boolean
   /** `workflow.runs` with impl + workflow → `steps.runs` + `steps.waiting`. */
@@ -147,6 +151,12 @@ export function parseIslandUri(uri: string): { impl: string; rest: string } | nu
   return { impl, rest }
 }
 
+/** The alias relay is asked only when discovery has no `impl` to go straight to, and only when there is a URL to ask. */
+function withAliases(route: Route): Route {
+  route.isAliases = route.isList && route.impl === '' && route.aliasesUrl !== ''
+  return route
+}
+
 export function handler(data: { request: FnRequest; deployment?: FnDeployment }): Route {
   const request = data.request ?? { body: undefined, headers: {}, method: 'POST', path: '' }
   const deployment = data.deployment ?? {}
@@ -168,6 +178,8 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     uri: '',
     params: {},
     isNotification: false,
+    hasOrigin: appOrigin !== '',
+    isAliases: false,
     needsRun: false,
     isRuns: false,
     isList: false,
@@ -214,13 +226,13 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     case 'resources/list':
       route.kind = 'resourcesList'
       route.isList = true
-      return route
+      return withAliases(route)
     case 'resources/read': {
       route.kind = 'resourcesRead'
       route.uri = str(message.params.uri)
-      route.isCsp = true
+      route.isCsp = route.probePath !== ''
       if (route.uri === STEP_VIEW_URI) {
-        route.isStepView = true
+        route.isStepView = route.stepViewUrl !== ''
       } else {
         const island = parseIslandUri(route.uri)
         if (island) {
@@ -250,7 +262,7 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
   if (RUN_SCOPED.has(route.tool) && route.runId !== '') route.needsRun = true
   if (route.tool === 'workflow.runs' && route.impl !== '' && route.workflow !== '') route.isRuns = true
   if (route.tool === 'workflow.list') route.isList = true
-  if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '') route.isDescribe = true
+  if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '' && appOrigin !== '') route.isDescribe = true
   if ((route.isList || route.isDescribe) && route.impl !== '' && appOrigin !== '') {
     route.indexUrl = `${appOrigin}/w/${route.impl}/.bffless/workflows/index.json`
   }
@@ -261,5 +273,5 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
       route.signStoragePath = `${project}/uploads/${route.signPath}`
     }
   }
-  return route
+  return withAliases(route)
 }

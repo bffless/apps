@@ -36,12 +36,14 @@ describe('route', () => {
     const list = route(req({ jsonrpc: '2.0', id: 1, method: 'resources/list' }))
     expect(list.kind).toBe('resourcesList')
     expect(list.isList).toBe(true)
+    expect(list.isAliases).toBe(true)
+    expect(list.hasOrigin).toBe(true)
     const batch = route(req([{ jsonrpc: '2.0', id: 1, method: 'ping' }]))
     expect(batch.kind).toBe('invalid')
     const notification = route(req({ jsonrpc: '2.0', method: 'notifications/initialized' }))
     expect(notification.kind).toBe('notification')
     expect(notification.isNotification).toBe(true)
-    for (const flag of ['needsRun', 'isRuns', 'isList', 'isDescribe', 'isIslandUri', 'isStepView', 'isCsp', 'isSign'] as const) {
+    for (const flag of ['needsRun', 'isRuns', 'isList', 'isAliases', 'isDescribe', 'isIslandUri', 'isStepView', 'isCsp', 'isSign'] as const) {
       expect(notification[flag], flag).toBe(false)
     }
   })
@@ -68,8 +70,10 @@ describe('route', () => {
   it('names the discovery URLs', () => {
     const list = route(call('workflow.list'))
     expect(list.isList).toBe(true)
+    expect(list.isAliases).toBe(true)
     expect(list.indexUrl).toBe('')
     const one = route(call('workflow.list', { impl: 'hello' }))
+    expect(one.isAliases).toBe(false)
     expect(one.indexUrl).toBe('https://h.example/w/hello/.bffless/workflows/index.json')
     const describe = route(call('workflow.describe', { impl: 'hello', workflow: 'interactive' }))
     expect(describe.isDescribe).toBe(true)
@@ -118,6 +122,10 @@ describe('route', () => {
   it('leaves the aliases URL empty without a serving project', () => {
     const r = handler({ request: call('workflow.list') })
     expect(r.aliasesUrl).toBe('')
+    expect(r.isAliases).toBe(false)
     expect(r.probePath).toBe('')
+    const bare = route(req({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workflow.describe', arguments: { impl: 'hello', workflow: 'x' } } }, {}))
+    expect(bare.hasOrigin).toBe(false)
+    expect(bare.isDescribe).toBe(false)
   })
 })

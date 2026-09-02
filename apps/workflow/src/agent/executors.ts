@@ -16,6 +16,7 @@
 import {
   errorResult,
   snapshotFromRows,
+  snapshotText,
   textResult,
   type CallToolResult,
   type RunSnapshot,
@@ -74,16 +75,6 @@ function missing(key: string, what = 'is required'): CallToolResult {
 function routeTarget(pathname: string): { impl?: string; workflow?: string } {
   const [impl, workflow] = pathname.split('/').filter((segment) => segment !== '')
   return { ...(impl ? { impl } : {}), ...(workflow ? { workflow } : {}) }
-}
-
-function describeWaiting(snapshot: RunSnapshot): string {
-  if (snapshot.waitingOn.length === 0) return ''
-  return `, waiting on ${snapshot.waitingOn.map((step) => `${step.key} (${step.kind})`).join(', ')}`
-}
-
-export function snapshotText(snapshot: RunSnapshot): string {
-  if (snapshot.status === 'invalid') return 'No run was started'
-  return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`
 }
 
 type Resolved = { ok: true; snapshot: RunSnapshot; live: boolean } | { ok: false; result: CallToolResult }

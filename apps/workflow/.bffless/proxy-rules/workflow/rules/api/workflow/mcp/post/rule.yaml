@@ -1,0 +1,188 @@
+targetUrl: pipeline
+order: 30
+pipeline:
+  name: MCP endpoint
+  description: "POST /api/workflow/mcp — the harness's MCP server as ONE rule (spec 10, D22): stateless Streamable HTTP, one JSON-RPC message in, one JSON body out, no SSE, no session. The function steps are esbuild bundles of src/mcp/*.ts (the agent tool catalog + the app's own pure adapters), so tools/list IS the catalog and the own-implementation fence IS island.ts. A function cannot fetch, so `route` plans, the gated http_request/data_query/signed_url steps execute, and `reply` assembles. Authless prototype (D23 rung 1): inert unless the WORKFLOW_MCP_KEY project secret holds a service identity (the `identity` probe)."
+  steps:
+    - id: route
+      name: route
+      handler: function_handler
+      code: ./route.fn.js
+    # Phase 2 plan, Decision 6: the service identity, probed through the harness's
+    # own whoami with the secret every sibling call carries. Not ok ⇒ every
+    # method but initialize/ping answers -32000 (not enabled on this install).
+    - id: identity
+      name: identity
+      handler: http_request
+      config:
+        condition: steps.route.hasOrigin
+        url: steps.route.whoamiUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+        timeout: 10000
+    # --- run-scoped tools (status / outputs, and the write branch): the same rows run/get reads
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        condition: steps.route.needsRun
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: steps.route.runId }
+    - id: steps
+      name: steps
+      handler: data_query
+      config:
+        condition: steps.route.needsRun
+        schemaId: $schema:workflow_run_steps
+        limit: 1000
+        filters:
+          runId: { op: eq, value: steps.route.runId }
+    # --- workflow.runs: the same two queries runs/get runs (apps#473)
+    - id: runs
+      name: runs
+      handler: data_query
+      config:
+        condition: steps.route.isRuns
+        schemaId: $schema:workflow_runs
+        limit: 50
+        filters:
+          impl: { op: eq, value: steps.route.impl }
+          workflow: { op: eq, value: steps.route.workflow }
+    - id: waiting
+      name: waiting
+      handler: data_query
+      config:
+        condition: steps.route.isRuns
+        schemaId: $schema:workflow_run_steps
+        limit: 1000
+        filters:
+          status: { op: eq, value: waiting }
+    # --- discovery (list / describe / resources): only a route serves these.
+    # The harness's own alias relay (06) rather than CE's API directly, so the
+    # service key is honoured the same way wherever the app is installed.
+    - id: aliases
+      name: aliases
+      handler: http_request
+      config:
+        condition: steps.route.isAliases
+        url: steps.route.aliasesUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    - id: index
+      name: index
+      handler: http_request
+      config:
+        condition: steps.route.isDescribe
+        url: steps.route.indexUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    # `plan` needs the alias list / the index / the run rows above: the fan-out
+    # URLs, the YAML an index names, the island file a waiting step names.
+    - id: plan
+      name: plan
+      handler: function_handler
+      code: ./plan.fn.js
+    # The fan-out is a static step list, so it is capped at three (LIST_FANOUT);
+    # `plan.skipped` reports the rest — the prototype limit story 8 removes.
+    - id: index1
+      name: index1
+      handler: http_request
+      config:
+        condition: steps.plan.has1
+        url: steps.plan.url1
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    - id: index2
+      name: index2
+      handler: http_request
+      config:
+        condition: steps.plan.has2
+        url: steps.plan.url2
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    - id: index3
+      name: index3
+      handler: http_request
+      config:
+        condition: steps.plan.has3
+        url: steps.plan.url3
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    - id: yaml
+      name: yaml
+      handler: http_request
+      config:
+        condition: steps.plan.hasYaml
+        url: steps.plan.yamlUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    # --- ui:// resources: an island file (unchanged, through resolveSrc's fence) and the step view
+    - id: island
+      name: island
+      handler: http_request
+      config:
+        condition: steps.plan.hasIsland
+        url: steps.plan.islandUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    - id: stepView
+      name: stepView
+      handler: http_request
+      config:
+        condition: steps.route.isStepView
+        url: steps.route.stepViewUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    # --- files: the same signed_url the files/sign rule mints (04, Decision 6);
+    # the probe answers only "where is storage" for the CSP (Phase 2 plan, Decision 9).
+    - id: signed
+      name: signed
+      handler: signed_url
+      config:
+        condition: steps.route.isSign
+        path: steps.route.signStoragePath
+        expiresIn: 3600
+    - id: probe
+      name: probe
+      handler: signed_url
+      config:
+        condition: steps.route.isCsp
+        path: steps.route.probePath
+        expiresIn: 60
+    # --- the write branch (Story 6): validate a submit/annotate, then read-merge-write the step row
+    - id: merge
+      name: merge
+      handler: function_handler
+      code: ./merge.fn.js
+    - id: reply
+      name: reply
+      handler: function_handler
+      code: ./reply.fn.js
+    # A notification (no id) is acknowledged and nothing else (stateless profile).
+    - id: accepted
+      name: accepted
+      handler: response_handler
+      config:
+        condition: steps.route.isNotification
+        body: ''
+        status: 202
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.reply.json}}}"
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+description: "The MCP endpoint (spec 10, D22): stateless Streamable HTTP over one rule. No auth validator on purpose — auth ladder rung 1 (D23) is an authless prototype on a scratch public project, and the rule is inert without the WORKFLOW_MCP_KEY service identity; Phase 3 puts app tokens + requiredScopes in front. no-store: every answer is per-message."
