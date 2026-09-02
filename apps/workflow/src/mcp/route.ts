@@ -88,7 +88,7 @@ export interface Route {
   isIslandUri: boolean
   /** `resources/read` of the step view → `steps.stepView`. */
   isStepView: boolean
-  /** Any `resources/read` — the storage-origin probe (`steps.probe`). */
+  /** Any `resources/list` or `resources/read` — the storage-origin probe (`steps.probe`) behind every `_meta.ui.csp`. */
   isCsp: boolean
   /** `workflow.sign` with a confined path → `steps.signed`. */
   isSign: boolean
@@ -239,6 +239,7 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     case 'resources/list':
       route.kind = 'resourcesList'
       route.isList = true
+      route.isCsp = route.probePath !== ''
       return withAliases(route)
     case 'resources/read': {
       route.kind = 'resourcesRead'

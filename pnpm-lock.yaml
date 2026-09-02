@@ -667,9 +667,15 @@ importers:
 
   packages/workflow-live:
     dependencies:
+      '@bffless/workflow-agent-tools':
+        specifier: workspace:*
+        version: link:../workflow-agent-tools
       '@bffless/workflow-headless':
         specifier: workspace:*
         version: link:../workflow-headless
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.4.3)
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

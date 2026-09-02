@@ -23,7 +23,7 @@ export {
   type WorkflowListing,
 } from './discover.js'
 export { DriverError, EXIT, type ExitCode } from './errors.js'
-export { loginViaRelay, type Credentials } from './login.js'
+export { loginUrl, loginViaRelay, type Credentials } from './login.js'
 export {
   formatTransition,
   readGlobal,

@@ -38,6 +38,7 @@ describe('route', () => {
     expect(list.isList).toBe(true)
     expect(list.isAliases).toBe(true)
     expect(list.hasOrigin).toBe(true)
+    expect(list.isCsp).toBe(true)
     const batch = route(req([{ jsonrpc: '2.0', id: 1, method: 'ping' }]))
     expect(batch.kind).toBe('invalid')
     const notification = route(req({ jsonrpc: '2.0', method: 'notifications/initialized' }))

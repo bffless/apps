@@ -398,6 +398,7 @@ var __mcp = (() => {
       case "resources/list":
         route.kind = "resourcesList";
         route.isList = true;
+        route.isCsp = route.probePath !== "";
         return withAliases(route);
       case "resources/read": {
         route.kind = "resourcesRead";
