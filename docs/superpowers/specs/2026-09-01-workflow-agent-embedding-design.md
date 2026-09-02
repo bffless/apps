@@ -190,8 +190,17 @@ serve *that island* as `workflow.submitStep`'s UI — the Phase-2 demonstrator.
 
 ### Auth ladder
 
-1. **Authless prototype** — dev instance only (scratch project), fixed service identity,
-   never a production domain.
+1. **Authless prototype** — a scratch **public** project on j5s, fixed service identity,
+   never a production domain. Public is a hard requirement: CE's deployment visibility
+   gate answers anonymous callers *before* proxy rules run — verified live 2026-09-02 on
+   `workflow.bffless.dev` (anon `GET /api/workflow/whoami` → 302 to login, same for
+   `/.well-known/oauth-protected-resource`; the members-only j5s harness behaves the same
+   way) — so a private deploy cannot host an authless MCP endpoint at all. Two CE
+   obligations recorded in spec 10: the gate must honor Bearer app tokens like sessions,
+   and the `.well-known` rule needs a served-despite-visibility mechanism (discovery
+   happens pre-credential). Whether `X-API-Key` alone passes the gate is unverified —
+   story 5 checks it. (All M5 build/acceptance work stays on j5s; bffless.dev is not a
+   target, ratified 2026-09-02.)
 2. **App tokens (CE)** — first-class scoped user-bound bearers `{ user, project, scopes,
    expiry }`; `auth_required` resolves `Authorization: Bearer` to the member wherever it
    accepts a session (`user.id` flows into pipelines: `startedBy`, delete gate); mint/revoke
@@ -234,10 +243,10 @@ are filed when Phase 3 starts.
 | 3 | WebMCP read-only: `src/agent/{registry,executors,useWebMcp}.ts`, native-or-polyfill, `list/describe/status/runs/outputs`, fake-registry tests | apps |
 | 4 | WebMCP mutations + live proof: `start/await/submitStep/sign/cancel/resume`, navigation coupling; `workflow-headless` + `workflow-live` page-tools walk | apps |
 | **Phase 2 — MCP Apps prototype (authless, dev instance only)** · *gate: an island renders and round-trips `workflow.submit` inside claude.ai* |||
-| 5 | Spike: stateless MCP over a `function_handler` rule (`POST /api/workflow/mcp`) — initialize / tools-list / tools-call for reads; findings comment on the epic (can a function execute sibling rules? if not, narrow and fold execution into story 8) | apps |
+| 5 | Spike: stateless MCP over a `function_handler` rule (`POST /api/workflow/mcp`) on a **scratch public project (j5s)** — initialize / tools-list / tools-call for reads; findings comment on the epic (can a function execute sibling rules? does `X-API-Key` alone pass the visibility gate? if a function can't reach siblings, narrow and fold execution into story 8) | apps |
 | 6 | Islands as `ui://` in Claude: `resources/read` of island HTML, one demo tool with `_meta.ui.resourceUri` + generated CSP, server-side `workflow.submit`/`sign`; manual claude.ai verification, screenshots on the PR — **ADR-0002's "why", proven** | apps |
-| **Phase 3 — CE: auth + generic handler** · *gate: claude.ai completes DCR+PKCE against the app and calls `workflow.status` as the member* |||
-| 7 | (CE) App tokens: scoped user-bound bearers, `auth_required` resolution **incl. per-rule `requiredScopes` enforcement** (sessions unscoped; effective = member ∩ token), mint/revoke + admin UI; apps follow-ups: `requiredScopes` on the workflow rules, driver may use an app token instead of relay login | ce |
+| **Phase 3 — CE: auth + generic handler** · *gate: claude.ai completes DCR+PKCE against `workflow.j5s.dev` and calls `workflow.status` as the member* |||
+| 7 | (CE) App tokens: scoped user-bound bearers, `auth_required` resolution **incl. per-rule `requiredScopes` enforcement** (sessions unscoped; effective = member ∩ token), **visibility-gate acceptance of Bearer tokens + a served-despite-visibility mechanism for `.well-known`**, mint/revoke + admin UI; apps follow-ups: `requiredScopes` on the workflow rules, driver may use an app token instead of relay login | ce |
 | 8 | (CE) Generic `mcp_handler` pipeline handler; workflow's `/api/workflow/mcp` rule swaps from function_handler guts to it | ce |
 | 9 | (CE) OAuth 2.1: DCR, PKCE, RFC 9728/8707, access token = app token; SuperTokens-provider-vs-built-in spike inside the story; app ships its `.well-known` rule | ce |
 | **Phase 4 — the run view** · *gate: a full `hello` run started, driven and island-completed entirely inside claude.ai; workflow-live walk green* |||
@@ -248,6 +257,13 @@ are filed when Phase 3 starts.
 Deferred, explicitly: per-workflow generated tools; dynamic island tools on the page
 (`toolchange`); server-side driver / `on.schedule`; double-iframe CSP; wiring
 `ui/update-model-context` through to the embedding model.
+
+Coordination with parallel efforts (2026-09-02): apps#565 (`@bffless/island-kit` + bridge
+protocol spec) must not assume the harness-page host — islands will also run under the MCP
+endpoint (server-side `workflow.submit`/`sign`, Claude's hostContext, no
+`bffless.headless` guarantee); apps#563 / workflow-implementations#7 (self-contained
+`.bffless/` layout) moves island paths, and `ui://bffless/<impl>/…` mirrors whatever 04's
+resolution becomes — spec 10 inherits it, but the layout spec should carry the pointer.
 
 ## 5. Key sources
 

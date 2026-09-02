@@ -206,9 +206,12 @@ The landmine, pre-recorded in 07: a CE API key is pinned to role `user`, is not 
 member, and cannot mint a session — it is not a credential the MCP endpoint can act on a
 member's behalf with. The ladder (D23):
 
-1. **Authless prototype** — dev instance only, scratch data, `startedBy` a fixed service
-   identity; never on a production domain. claude.ai connects to authless servers, which is
-   what makes the Phase-2 demo cheap.
+1. **Authless prototype** — a scratch **public** project on the dev instance (j5s), scratch
+   data, `startedBy` a fixed service identity; never on a production domain. Public is not
+   a nicety, it is a requirement: a private deployment's visibility gate answers anonymous
+   callers before any rule runs (below), so a members-only harness cannot host an authless
+   endpoint at all. claude.ai connects to authless servers, which is what makes the Phase-2
+   demo cheap.
 2. **App tokens (CE)** — first-class scoped, user-bound bearer tokens: `{ user, project,
    scopes, expiry }`, minted and revoked by the member. `auth_required` accepts
    `Authorization: Bearer <app-token>` wherever it accepts a session and resolves it to the
@@ -235,6 +238,23 @@ member's behalf with. The ladder (D23):
    pattern. claude.ai's one-click connector flow (DCR → consent → tokens) is the acceptance
    test. Scopes v1: `workflow:read`, `workflow:run`, `workflow:files`.
 
+**The deployment visibility gate sits in front of all of this**, and the ladder does not
+work until it cooperates. On a private deployment CE's gate answers before proxy rules run
+— verified live on `workflow.bffless.dev` (2026-09-02): anonymous `GET
+/api/workflow/whoami` gets a 302 to the login page, never the rule's own 401, and so does
+`GET /.well-known/oauth-protected-resource`. Two CE obligations follow, both
+app-agnostic:
+
+- The gate must honor `Authorization: Bearer <app-token>` exactly as it honors a session
+  cookie — otherwise a valid token is bounced by the front door of every real
+  (members-only) harness install, and rule-level enforcement never gets a say. Whether an
+  `X-API-Key` alone passes the gate today is unverified; the Phase-2 spike checks it.
+- The `.well-known` rule needs a **served-despite-visibility** mechanism (a per-rule
+  opt-out of the gate, or a gate exemption): OAuth discovery is performed by a client that
+  by definition has no credential yet, and a 302-to-login there breaks the connector flow
+  before it starts. Deployment visibility is all-or-nothing today, so this is a real CE
+  design point, not configuration.
+
 The iframe itself never holds a durable credential: the view acts through `tools/call`
 (the host attaches the server session), and the only bearer it ever sees is the same
 short-lived signed URL an island gets today (D6). WebMCP needs none of this ladder — the
@@ -248,7 +268,7 @@ session cookie is already on the page.
 | D20 | Generic `workflow.*` tools + `describe` in v1; per-workflow generated tools are a later MCP-endpoint option |
 | D21 | WebMCP on the page only: polyfill always, executors drive the store and navigate, no pipeline tools on the page, islands never register page tools |
 | D22 | The MCP endpoint is a rule in the app's rule set (`POST /api/workflow/mcp`), stateless Streamable HTTP; prototype `function_handler`, GA a generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` |
-| D23 | Auth ladder: authless dev prototype → CE user-bound scoped app tokens (Bearer = member) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule; per-rule `requiredScopes` enforced by `auth_required` (sessions unscoped, tokens intersect with the member's own permissions), tool→scope map owned by the catalog |
+| D23 | Auth ladder: authless dev prototype (scratch public project) → CE user-bound scoped app tokens (Bearer = member, honored by the deployment visibility gate too) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule and must be served despite deployment visibility; per-rule `requiredScopes` enforced by `auth_required` (sessions unscoped, tokens intersect with the member's own permissions), tool→scope map owned by the catalog |
 | D24 | In agent hosts the run view drives: the pure runner + island host bundled as `ui://bffless/workflow/run.html` over an app-only `workflow.http` seam; its layout is a vertical job/step accordion (no graph); same lease, same rows; a server-side driver stays deferred |
 
 ## Later
