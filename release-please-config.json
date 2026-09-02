@@ -50,6 +50,11 @@
       "release-type": "node",
       "component": "workflow-headless",
       "include-component-in-tag": true
+    },
+    "packages/workflow-agent-tools": {
+      "release-type": "node",
+      "component": "workflow-agent-tools",
+      "include-component-in-tag": true
     }
   },
   "changelog-sections": [
