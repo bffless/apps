@@ -110,10 +110,16 @@ export interface Route {
    * Falls back to `appOrigin` when the request path carries no such prefix.
    */
   siblingBase: string
+  /** The public host (`x-forwarded-host ?? host`), sent back to CE as `x-forwarded-host` on in-process calls. */
+  host: string
   whoamiUrl: string
+  /** The public-relative path of each in-process call — CE's proxy middleware matches rules on `x-original-uri`, not on the `/public/…` URL. */
+  whoamiPath: string
   aliasesUrl: string
   indexUrl: string
+  indexPath: string
   stepViewUrl: string
+  stepViewPath: string
   /** `workflow.sign`: the uploads-relative key when confined, else `''`. */
   signPath: string
   signStoragePath: string
@@ -234,11 +240,15 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     rest: '',
     appOrigin,
     siblingBase,
+    host,
     whoamiUrl: siblingBase === '' ? '' : `${siblingBase}/api/workflow/whoami`,
+    whoamiPath: '/api/workflow/whoami',
     // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
     aliasesUrl: project === '' ? '' : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
     indexUrl: '',
+    indexPath: '',
     stepViewUrl: siblingBase === '' ? '' : `${siblingBase}/step.html`,
+    stepViewPath: '/step.html',
     signPath: '',
     signStoragePath: '',
     probePath: project === '' ? '' : `${project}/uploads/workflows/.mcp-csp-probe`,
@@ -306,7 +316,8 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
   if (route.tool === 'workflow.list') route.isList = true
   if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '' && appOrigin !== '') route.isDescribe = true
   if ((route.isList || route.isDescribe) && route.impl !== '' && siblingBase !== '') {
-    route.indexUrl = `${siblingBase}/w/${route.impl}/.bffless/workflows/index.json`
+    route.indexPath = `/w/${route.impl}/.bffless/workflows/index.json`
+    route.indexUrl = `${siblingBase}${route.indexPath}`
   }
   if (route.tool === 'workflow.sign') {
     route.signPath = confinedSignPath(args.path)

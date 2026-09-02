@@ -446,23 +446,30 @@ var __mcp = (() => {
       url1: "",
       url2: "",
       url3: "",
+      path1: "",
+      path2: "",
+      path3: "",
       aliases: [],
       skipped: [],
       hasYaml: false,
       yamlUrl: "",
+      yamlPath: "",
       listing: null,
       hasIsland: false,
       islandUrl: "",
+      islandPath: "",
       islandError: "",
       isPipelinePost: false,
       isPipelineGet: false,
       pipelineUrl: "",
+      pipelinePath: "",
       pipelineBody: {},
       pipelineError: ""
     };
     if (!route) return plan;
     const base = route.siblingBase;
-    const indexUrlOf = (alias) => `${base}/w/${alias}/.bffless/workflows/index.json`;
+    const indexPathOf = (alias) => `/w/${alias}/.bffless/workflows/index.json`;
+    const indexUrlOf = (alias) => `${base}${indexPathOf(alias)}`;
     if (route.isList && base !== "") {
       let wanted;
       if (route.impl !== "") {
@@ -474,7 +481,8 @@ var __mcp = (() => {
       plan.aliases = wanted.slice(0, LIST_FANOUT);
       plan.skipped = wanted.slice(LIST_FANOUT);
       const [url1 = "", url2 = "", url3 = ""] = plan.aliases.map(indexUrlOf);
-      Object.assign(plan, { has1: url1 !== "", url1, has2: url2 !== "", url2, has3: url3 !== "", url3 });
+      const [path1 = "", path2 = "", path3 = ""] = plan.aliases.map(indexPathOf);
+      Object.assign(plan, { has1: url1 !== "", url1, path1, has2: url2 !== "", url2, path2, has3: url3 !== "", url3, path3 });
     }
     if (route.isDescribe) {
       const index = data.steps.index;
@@ -486,7 +494,8 @@ var __mcp = (() => {
       if (listing && base !== "") {
         plan.listing = listing;
         plan.hasYaml = true;
-        plan.yamlUrl = `${base}/w/${route.impl}/.bffless/workflows/${listing.file}`;
+        plan.yamlPath = `/w/${route.impl}/.bffless/workflows/${listing.file}`;
+        plan.yamlUrl = `${base}${plan.yamlPath}`;
       }
     }
     if (route.isIslandUri) {
@@ -494,6 +503,7 @@ var __mcp = (() => {
         const url = resolveSrc(route.impl, route.rest);
         if (base !== "") {
           plan.hasIsland = true;
+          plan.islandPath = url;
           plan.islandUrl = `${base}${url}`;
         }
       } catch (err) {
@@ -520,6 +530,7 @@ var __mcp = (() => {
             const url = resolveSrc(impl, src);
             if (base !== "") {
               plan.hasIsland = true;
+              plan.islandPath = url;
               plan.islandUrl = `${base}${url}`;
             }
           } catch (err) {
@@ -536,9 +547,11 @@ var __mcp = (() => {
         else if (base === "") plan.pipelineError = "the request named no host";
         else if (target.method === "GET") {
           plan.isPipelineGet = true;
-          plan.pipelineUrl = `${base}${target.url}${queryOf(args)}`;
+          plan.pipelinePath = `${target.url}${queryOf(args)}`;
+          plan.pipelineUrl = `${base}${plan.pipelinePath}`;
         } else {
           plan.isPipelinePost = true;
+          plan.pipelinePath = target.url;
           plan.pipelineUrl = `${base}${target.url}`;
           plan.pipelineBody = args;
         }

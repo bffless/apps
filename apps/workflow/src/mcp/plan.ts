@@ -33,21 +33,28 @@ export interface Plan {
   url1: string
   url2: string
   url3: string
+  /** The public-relative paths of url1..3 (CE matches `x-original-uri`). */
+  path1: string
+  path2: string
+  path3: string
   /** The implementation aliases whose index is fetched, in order. */
   aliases: string[]
   /** Implementation aliases past the fan-out cap, not listed. */
   skipped: string[]
   hasYaml: boolean
   yamlUrl: string
+  yamlPath: string
   /** The `workflows[]` entry `describe` asked for, as the index lists it. */
   listing: Record<string, unknown> | null
   hasIsland: boolean
   islandUrl: string
+  islandPath: string
   /** Why no island is fetched (a fenced-out `src`, no such step, …). */
   islandError: string
   isPipelinePost: boolean
   isPipelineGet: boolean
   pipelineUrl: string
+  pipelinePath: string
   pipelineBody: Record<string, unknown>
   pipelineError: string
 }
@@ -82,24 +89,31 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
     url1: '',
     url2: '',
     url3: '',
+    path1: '',
+    path2: '',
+    path3: '',
     aliases: [],
     skipped: [],
     hasYaml: false,
     yamlUrl: '',
+    yamlPath: '',
     listing: null,
     hasIsland: false,
     islandUrl: '',
+    islandPath: '',
     islandError: '',
     isPipelinePost: false,
     isPipelineGet: false,
     pipelineUrl: '',
+    pipelinePath: '',
     pipelineBody: {},
     pipelineError: '',
   }
   // A pipeline always runs `route` first; a bare smoke call answers the empty plan.
   if (!route) return plan
   const base = route.siblingBase
-  const indexUrlOf = (alias: string) => `${base}/w/${alias}/.bffless/workflows/index.json`
+  const indexPathOf = (alias: string) => `/w/${alias}/.bffless/workflows/index.json`
+  const indexUrlOf = (alias: string) => `${base}${indexPathOf(alias)}`
 
   if (route.isList && base !== '') {
     let wanted: string[]
@@ -112,7 +126,8 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
     plan.aliases = wanted.slice(0, LIST_FANOUT)
     plan.skipped = wanted.slice(LIST_FANOUT)
     const [url1 = '', url2 = '', url3 = ''] = plan.aliases.map(indexUrlOf)
-    Object.assign(plan, { has1: url1 !== '', url1, has2: url2 !== '', url2, has3: url3 !== '', url3 })
+    const [path1 = '', path2 = '', path3 = ''] = plan.aliases.map(indexPathOf)
+    Object.assign(plan, { has1: url1 !== '', url1, path1, has2: url2 !== '', url2, path2, has3: url3 !== '', url3, path3 })
   }
 
   if (route.isDescribe) {
@@ -126,7 +141,8 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
     if (listing && base !== '') {
       plan.listing = listing
       plan.hasYaml = true
-      plan.yamlUrl = `${base}/w/${route.impl}/.bffless/workflows/${listing.file as string}`
+      plan.yamlPath = `/w/${route.impl}/.bffless/workflows/${listing.file as string}`
+      plan.yamlUrl = `${base}${plan.yamlPath}`
     }
   }
 
@@ -135,6 +151,7 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       const url = resolveSrc(route.impl, route.rest)
       if (base !== '') {
         plan.hasIsland = true
+        plan.islandPath = url
         plan.islandUrl = `${base}${url}`
       }
     } catch (err) {
@@ -162,6 +179,7 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
           const url = resolveSrc(impl, src)
           if (base !== '') {
             plan.hasIsland = true
+            plan.islandPath = url
             plan.islandUrl = `${base}${url}`
           }
         } catch (err) {
@@ -178,9 +196,11 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       else if (base === '') plan.pipelineError = 'the request named no host'
       else if (target.method === 'GET') {
         plan.isPipelineGet = true
-        plan.pipelineUrl = `${base}${target.url}${queryOf(args)}`
+        plan.pipelinePath = `${target.url}${queryOf(args)}`
+        plan.pipelineUrl = `${base}${plan.pipelinePath}`
       } else {
         plan.isPipelinePost = true
+        plan.pipelinePath = target.url
         plan.pipelineUrl = `${base}${target.url}`
         plan.pipelineBody = args
       }
