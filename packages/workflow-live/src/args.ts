@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 // says `UsageError`, not `Error`; re-exported so importers keep using `./args.js`.
 export { UsageError }
 
-export const USAGE = `workflow-live walk <m1|interactive|hello|headless|studio-audit|studio-headless|all>
+export const USAGE = `workflow-live walk <m1|interactive|hello|headless|studio-audit|studio-headless|page-tools|all>
   [--harness https://workflow.j5s.dev] [--out DIR] [--dispatch] [--clip PATH] [--run RUN_ID] [--timeout 90m]
 
 env: WORKFLOW_EMAIL/WORKFLOW_PASSWORD (or WORKFLOW_CI_EMAIL/WORKFLOW_CI_PASSWORD); optional ADMIN_API_KEY

@@ -21,11 +21,11 @@
  */
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { completeFormStep, formFieldDefs, formInitialValues } from '../../lib/runner/adapters/form'
+import { formFieldDefs, formInitialValues } from '../../lib/runner/adapters/form'
 import type { Definition, FileRef, RunState, StepKey } from '../../lib/runner/types'
 import { uploadFile } from '../../lib/upload'
 import { useAppDispatch } from '../../store/hooks'
-import { runEvent } from '../../store/runSlice'
+import { submitStep } from '../../store/submitActions'
 import { StatusPill } from '../StatusPill'
 import { FieldControl } from '../kickoff/FieldControl'
 import { PaneCrumbs } from './PaneCrumbs'
@@ -105,22 +105,14 @@ export function FormStepPane({ def, state, stepKey: key, upload, trail = [] }: F
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    const r = completeFormStep({
-      step: step!,
-      key,
-      job: parts!.job,
-      index: parts!.index,
-      def,
-      state,
-      values,
-      at: Date.now(),
-    })
-    if (r.ok) {
-      setErrors({})
-      dispatch(runEvent(r.event))
-    } else {
-      setErrors(r.errors)
-    }
+    // The one submit path (spec 10): the same thunk an agent's
+    // `workflow.submitStep` dispatches, so a person and an agent are judged
+    // by the same validator. A refusal keyed `step`/`runId` (the step stopped
+    // waiting under us, the tab lost the lease) reads under the form as a
+    // whole rather than under a field.
+    const r = dispatch(submitStep({ key, values }))
+    if (r.ok) setErrors({})
+    else setErrors(r.errors)
   }
 
   return (
@@ -150,6 +142,13 @@ export function FormStepPane({ def, state, stepKey: key, upload, trail = [] }: F
             error={errors[name]}
           />
         ))}
+        {/* A refusal no field is to blame for — the step stopped waiting under
+            us, or this tab is no longer driving the run — reads under the form. */}
+        {(errors.step ?? errors.runId) && (
+          <p className="note" data-testid="form-error">
+            {errors.step ?? errors.runId}
+          </p>
+        )}
         <button type="submit">{submitLabel}</button>
       </form>
     </aside>

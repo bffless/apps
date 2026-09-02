@@ -173,13 +173,3 @@ describe('workflow.runs', () => {
     expect(result.structuredContent!.errors).toEqual({ workflow: 'Pass impl and workflow — this page has no current workflow' })
   })
 })
-
-describe('the mutation tools', () => {
-  it('are registered but honest about not being here yet', async () => {
-    const { exec } = executorsFor(makeStore())
-    for (const name of ['workflow.start', 'workflow.await', 'workflow.submitStep', 'workflow.sign', 'workflow.cancel', 'workflow.resume'] as const) {
-      const result = await exec[name]({})
-      expect(result.isError, name).toBe(true)
-    }
-  })
-})

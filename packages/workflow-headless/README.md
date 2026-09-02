@@ -167,3 +167,23 @@ await browser.close()
 
 Everything below the CLI talks to a `PageLike`/`BrowserLike` seam rather than
 to Playwright, so the unit suite launches no browser.
+
+## Page tools (WebMCP)
+
+The harness page registers its agent tool catalog on `document.modelContext`
+([spec 10](https://github.com/bffless/apps/blob/main/apps/workflow/docs/spec/10-agent-embedding.md)),
+polyfilled when the browser has no native WebMCP. `listPageTools`,
+`waitForPageTools` and `callPageTool` drive those tools through `page.evaluate`
+— how a walk proves the catalog against a real deployment with no agent host:
+
+```ts
+import { callPageTool, waitForPageTools } from '@bffless/workflow-headless'
+
+await waitForPageTools(page, { timeoutMs: 30_000 })
+const started = await callPageTool(page, 'workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} })
+const done = await callPageTool(page, 'workflow.await', { until: 'terminal' })
+```
+
+`callPageTool` resolves to the `CallToolResult` — an `isError` refusal included,
+since that is an answer to assert on — and throws `PageToolError` only when the
+bridge itself fails (no registry, no such tool).
