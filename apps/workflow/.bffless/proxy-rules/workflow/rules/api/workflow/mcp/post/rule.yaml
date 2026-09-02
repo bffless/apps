@@ -145,6 +145,28 @@ pipeline:
         method: GET
         headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
         failOnError: false
+    # --- workflow.pipeline: the island's own implementation's rule, at the URL
+    # `plan` fenced (resolveToolName against the RUN's impl); the island says the
+    # verb (04, Decision 10), so one step per method.
+    - id: pipelinePost
+      name: pipelinePost
+      handler: http_request
+      config:
+        condition: steps.plan.isPipelinePost
+        url: steps.plan.pipelineUrl
+        method: POST
+        body: steps.plan.pipelineBody
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
+    - id: pipelineGet
+      name: pipelineGet
+      handler: http_request
+      config:
+        condition: steps.plan.isPipelineGet
+        url: steps.plan.pipelineUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        failOnError: false
     # --- files: the same signed_url the files/sign rule mints (04, Decision 6);
     # the probe answers only "where is storage" for the CSP (Phase 2 plan, Decision 9).
     - id: signed
@@ -161,11 +183,33 @@ pipeline:
         condition: steps.route.isCsp
         path: steps.route.probePath
         expiresIn: 60
-    # --- the write branch (Story 6): validate a submit/annotate, then read-merge-write the step row
+    # --- the write branch: validate a submit/annotate with the page's own
+    # validators, then read-merge-write the step row — run-step's column set.
     - id: merge
       name: merge
       handler: function_handler
       code: ./merge.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        condition: steps.merge.update
+        schemaId: $schema:workflow_run_steps
+        recordId: steps.merge.recordId
+        fields:
+          status: steps.merge.fields.status
+          attempt: steps.merge.fields.attempt
+          inputs: steps.merge.fields.inputs
+          response: steps.merge.fields.response
+          outputs: steps.merge.fields.outputs
+          error: steps.merge.fields.error
+          summary: steps.merge.fields.summary
+          annotations: steps.merge.fields.annotations
+          log: steps.merge.fields.log
+          logId: steps.merge.fields.logId
+          startedAt: steps.merge.fields.startedAt
+          finishedAt: steps.merge.fields.finishedAt
+          heartbeatAt: steps.merge.fields.heartbeatAt
     - id: reply
       name: reply
       handler: function_handler

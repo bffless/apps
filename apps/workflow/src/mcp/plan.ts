@@ -15,9 +15,15 @@
  * - `resources/read ui://bffless/<impl>/<rest>`: `resolveSrc`'s fence — the
  *   very check the harness page applies to an island's `src` — decides whether
  *   `/w/<impl>/<rest>` is fetched at all.
+ * - `workflow.stepView`: the waiting step's `with.src` from the run's
+ *   definition snapshot, through the same fence, against the **run's** impl.
+ * - `workflow.pipeline`: `resolveToolName` against the run's impl — the
+ *   own-implementation fence exactly as `IslandHost` applies it (04) — names
+ *   the sibling rule the `pipelinePost`/`pipelineGet` step calls.
  */
-import { resolveSrc } from '../lib/runner/adapters/island'
+import { resolveSrc, resolveToolName } from '../lib/runner/adapters/island'
 import { workflowId } from './ids'
+import { fieldsOf, rows } from './rows'
 import { LIST_FANOUT, type FnDeployment, type FnRequest, type Route } from './route'
 
 export interface Plan {
@@ -135,5 +141,66 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
     }
   }
 
+  if (route.tool === 'workflow.stepView' || route.tool === 'workflow.pipeline') {
+    const runRow = rows(data.steps.run)[0]
+    const run = runRow ? fieldsOf(runRow) : null
+    const impl = run && typeof run.impl === 'string' ? run.impl : ''
+    if (!run || impl === '') {
+      const missing = `No such run: ${route.runId}`
+      plan.islandError = missing
+      plan.pipelineError = missing
+      return plan
+    }
+    if (route.tool === 'workflow.stepView') {
+      const row = rows(data.steps.steps).map(fieldsOf).find((r) => r.key === route.key)
+      const src = row ? declaredSrc(run.definition, String(row.job ?? ''), String(row.step ?? '')) : ''
+      if (!row) plan.islandError = `No such step: ${route.key}`
+      else if (src === '') plan.islandError = `${route.key}: the run's definition snapshot declares no island src`
+      else {
+        try {
+          const url = resolveSrc(impl, src)
+          if (route.appOrigin !== '') {
+            plan.hasIsland = true
+            plan.islandUrl = `${route.appOrigin}${url}`
+          }
+        } catch (err) {
+          plan.islandError = err instanceof Error ? err.message : String(err)
+        }
+      }
+    } else {
+      const name = typeof route.args.name === 'string' ? route.args.name : ''
+      const method = route.args.method === 'GET' ? 'GET' : 'POST'
+      const target = resolveToolName(impl, name, { bffless: { method } })
+      const args = isPlainObject(route.args.arguments) ? route.args.arguments : {}
+      if (target.kind === 'rejected') plan.pipelineError = target.reason
+      else if (target.kind === 'host') plan.pipelineError = `tool "${name}": workflow.${target.tool} is a host tool — call it directly`
+      else if (route.appOrigin === '') plan.pipelineError = 'the request named no host'
+      else if (target.method === 'GET') {
+        plan.isPipelineGet = true
+        plan.pipelineUrl = `${route.appOrigin}${target.url}${queryOf(args)}`
+      } else {
+        plan.isPipelinePost = true
+        plan.pipelineUrl = `${route.appOrigin}${target.url}`
+        plan.pipelineBody = args
+      }
+    }
+  }
+
   return plan
+}
+
+/** The `with.src` of (job, stepId) in a raw definition snapshot, or `''`. */
+function declaredSrc(definition: unknown, job: string, stepId: string): string {
+  if (!isPlainObject(definition) || !isPlainObject(definition.jobs)) return ''
+  const jobDecl = definition.jobs[job]
+  if (!isPlainObject(jobDecl) || !Array.isArray(jobDecl.steps)) return ''
+  const step = jobDecl.steps.find((entry: unknown): entry is Record<string, unknown> => isPlainObject(entry) && entry.id === stepId)
+  const withDecl = step && isPlainObject(step.with) ? step.with : undefined
+  return withDecl && typeof withDecl.src === 'string' ? withDecl.src : ''
+}
+
+/** `?a=1&b=x` for a GET's arguments — a pipeline's query string, `''` when there are none. */
+export function queryOf(args: Record<string, unknown>): string {
+  const pairs = Object.entries(args).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'string' ? value : JSON.stringify(value))}`)
+  return pairs.length ? `?${pairs.join('&')}` : ''
 }

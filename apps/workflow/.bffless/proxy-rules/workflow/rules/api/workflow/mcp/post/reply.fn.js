@@ -205,14 +205,14 @@ var __mcp = (() => {
   }
 
   // ../../packages/workflow-agent-tools/dist/results.js
-  function textResult(text, structured) {
+  function textResult(text, structured2) {
     return {
       content: [{ type: "text", text }],
-      ...structured === void 0 ? {} : { structuredContent: structured }
+      ...structured2 === void 0 ? {} : { structuredContent: structured2 }
     };
   }
-  function errorResult(text, structured) {
-    return { content: [{ type: "text", text }], structuredContent: structured, isError: true };
+  function errorResult(text, structured2) {
+    return { content: [{ type: "text", text }], structuredContent: structured2, isError: true };
   }
 
   // ../../packages/workflow-agent-tools/dist/snapshot.js
@@ -1130,13 +1130,13 @@ var __mcp = (() => {
   };
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/stringify/stringifyComment.js
-  var stringifyComment = (str2) => str2.replace(/^(?!$)(?: $)?/gm, "#");
+  var stringifyComment = (str3) => str3.replace(/^(?!$)(?: $)?/gm, "#");
   function indentComment(comment, indent) {
     if (/^\n+$/.test(comment))
       return comment.substring(1);
     return indent ? comment.replace(/^(?! *$)/gm, indent) : comment;
   }
-  var lineComment = (str2, indent, comment) => str2.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str2.endsWith(" ") ? "" : " ") + comment;
+  var lineComment = (str3, indent, comment) => str3.endsWith("\n") ? indentComment(comment, indent) : comment.includes("\n") ? "\n" + indentComment(comment, indent) : (str3.endsWith(" ") ? "" : " ") + comment;
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/stringify/foldFlowLines.js
   var FOLD_FLOW = "flow";
@@ -1271,16 +1271,16 @@ ${indent}${text.slice(fold + 1, end2)}`;
     lineWidth: ctx.options.lineWidth,
     minContentWidth: ctx.options.minContentWidth
   });
-  var containsDocumentMarker = (str2) => /^(%|---|\.\.\.)/m.test(str2);
-  function lineLengthOverLimit(str2, lineWidth, indentLength) {
+  var containsDocumentMarker = (str3) => /^(%|---|\.\.\.)/m.test(str3);
+  function lineLengthOverLimit(str3, lineWidth, indentLength) {
     if (!lineWidth || lineWidth < 0)
       return false;
     const limit = lineWidth - indentLength;
-    const strLen = str2.length;
+    const strLen = str3.length;
     if (strLen <= limit)
       return false;
     for (let i = 0, start = 0; i < strLen; ++i) {
-      if (str2[i] === "\n") {
+      if (str3[i] === "\n") {
         if (i - start > limit)
           return true;
         start = i + 1;
@@ -1297,11 +1297,11 @@ ${indent}${text.slice(fold + 1, end2)}`;
     const { implicitKey } = ctx;
     const minMultiLineLength = ctx.options.doubleQuotedMinMultiLineLength;
     const indent = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
-    let str2 = "";
+    let str3 = "";
     let start = 0;
     for (let i = 0, ch = json[i]; ch; ch = json[++i]) {
       if (ch === " " && json[i + 1] === "\\" && json[i + 2] === "n") {
-        str2 += json.slice(start, i) + "\\ ";
+        str3 += json.slice(start, i) + "\\ ";
         i += 1;
         start = i;
         ch = "\\";
@@ -1310,38 +1310,38 @@ ${indent}${text.slice(fold + 1, end2)}`;
         switch (json[i + 1]) {
           case "u":
             {
-              str2 += json.slice(start, i);
+              str3 += json.slice(start, i);
               const code = json.substr(i + 2, 4);
               switch (code) {
                 case "0000":
-                  str2 += "\\0";
+                  str3 += "\\0";
                   break;
                 case "0007":
-                  str2 += "\\a";
+                  str3 += "\\a";
                   break;
                 case "000b":
-                  str2 += "\\v";
+                  str3 += "\\v";
                   break;
                 case "001b":
-                  str2 += "\\e";
+                  str3 += "\\e";
                   break;
                 case "0085":
-                  str2 += "\\N";
+                  str3 += "\\N";
                   break;
                 case "00a0":
-                  str2 += "\\_";
+                  str3 += "\\_";
                   break;
                 case "2028":
-                  str2 += "\\L";
+                  str3 += "\\L";
                   break;
                 case "2029":
-                  str2 += "\\P";
+                  str3 += "\\P";
                   break;
                 default:
                   if (code.substr(0, 2) === "00")
-                    str2 += "\\x" + code.substr(2);
+                    str3 += "\\x" + code.substr(2);
                   else
-                    str2 += json.substr(i, 6);
+                    str3 += json.substr(i, 6);
               }
               i += 5;
               start = i + 1;
@@ -1351,14 +1351,14 @@ ${indent}${text.slice(fold + 1, end2)}`;
             if (implicitKey || json[i + 2] === '"' || json.length < minMultiLineLength) {
               i += 1;
             } else {
-              str2 += json.slice(start, i) + "\n\n";
+              str3 += json.slice(start, i) + "\n\n";
               while (json[i + 2] === "\\" && json[i + 3] === "n" && json[i + 4] !== '"') {
-                str2 += "\n";
+                str3 += "\n";
                 i += 2;
               }
-              str2 += indent;
+              str3 += indent;
               if (json[i + 2] === " ")
-                str2 += "\\";
+                str3 += "\\";
               i += 1;
               start = i + 1;
             }
@@ -1367,8 +1367,8 @@ ${indent}${text.slice(fold + 1, end2)}`;
             i += 1;
         }
     }
-    str2 = start ? str2 + json.slice(start) : json;
-    return implicitKey ? str2 : foldFlowLines(str2, indent, FOLD_QUOTED, getFoldOptions(ctx, false));
+    str3 = start ? str3 + json.slice(start) : json;
+    return implicitKey ? str3 : foldFlowLines(str3, indent, FOLD_QUOTED, getFoldOptions(ctx, false));
   }
   function singleQuotedString(value, ctx) {
     if (ctx.options.singleQuote === false || ctx.implicitKey && value.includes("\n") || /[ \t]\n|\n[ \t]/.test(value))
@@ -1496,15 +1496,15 @@ ${indent}${start}${value}${end}`;
         return quotedString(value, ctx);
       }
     }
-    const str2 = value.replace(/\n+/g, `$&
+    const str3 = value.replace(/\n+/g, `$&
 ${indent}`);
     if (actualString) {
-      const test = (tag) => tag.default && tag.tag !== "tag:yaml.org,2002:str" && tag.test?.test(str2);
+      const test = (tag) => tag.default && tag.tag !== "tag:yaml.org,2002:str" && tag.test?.test(str3);
       const { compat, tags } = ctx.doc.schema;
       if (tags.some(test) || compat?.some(test))
         return quotedString(value, ctx);
     }
-    return implicitKey ? str2 : foldFlowLines(str2, indent, FOLD_FLOW, getFoldOptions(ctx, false));
+    return implicitKey ? str3 : foldFlowLines(str3, indent, FOLD_FLOW, getFoldOptions(ctx, false));
   }
   function stringifyString(item, ctx, onComment, onChompKeep) {
     const { implicitKey, inFlow } = ctx;
@@ -1646,11 +1646,11 @@ ${indent}`);
     const props = stringifyProps(node, tagObj, ctx);
     if (props.length > 0)
       ctx.indentAtStart = (ctx.indentAtStart ?? 0) + props.length + 1;
-    const str2 = typeof tagObj.stringify === "function" ? tagObj.stringify(node, ctx, onComment, onChompKeep) : isScalar(node) ? stringifyString(node, ctx, onComment, onChompKeep) : node.toString(ctx, onComment, onChompKeep);
+    const str3 = typeof tagObj.stringify === "function" ? tagObj.stringify(node, ctx, onComment, onChompKeep) : isScalar(node) ? stringifyString(node, ctx, onComment, onChompKeep) : node.toString(ctx, onComment, onChompKeep);
     if (!props)
-      return str2;
-    return isScalar(node) || str2[0] === "{" || str2[0] === "[" ? `${props} ${str2}` : `${props}
-${ctx.indent}${str2}`;
+      return str3;
+    return isScalar(node) || str3[0] === "{" || str3[0] === "[" ? `${props} ${str3}` : `${props}
+${ctx.indent}${str3}`;
   }
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/stringify/stringifyPair.js
@@ -1674,8 +1674,8 @@ ${ctx.indent}${str2}`;
     });
     let keyCommentDone = false;
     let chompKeep = false;
-    let str2 = stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
-    if (!explicitKey && !ctx.inFlow && str2.length > 1024) {
+    let str3 = stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+    if (!explicitKey && !ctx.inFlow && str3.length > 1024) {
       if (simpleKeys)
         throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
       explicitKey = true;
@@ -1684,27 +1684,27 @@ ${ctx.indent}${str2}`;
       if (allNullValues || value == null) {
         if (keyCommentDone && onComment)
           onComment();
-        return str2 === "" ? "?" : explicitKey ? `? ${str2}` : str2;
+        return str3 === "" ? "?" : explicitKey ? `? ${str3}` : str3;
       }
     } else if (allNullValues && !simpleKeys || value == null && explicitKey) {
-      str2 = `? ${str2}`;
+      str3 = `? ${str3}`;
       if (keyComment && !keyCommentDone) {
-        str2 += lineComment(str2, ctx.indent, commentString(keyComment));
+        str3 += lineComment(str3, ctx.indent, commentString(keyComment));
       } else if (chompKeep && onChompKeep)
         onChompKeep();
-      return str2;
+      return str3;
     }
     if (keyCommentDone)
       keyComment = null;
     if (explicitKey) {
       if (keyComment)
-        str2 += lineComment(str2, ctx.indent, commentString(keyComment));
-      str2 = `? ${str2}
+        str3 += lineComment(str3, ctx.indent, commentString(keyComment));
+      str3 = `? ${str3}
 ${indent}:`;
     } else {
-      str2 = `${str2}:`;
+      str3 = `${str3}:`;
       if (keyComment)
-        str2 += lineComment(str2, ctx.indent, commentString(keyComment));
+        str3 += lineComment(str3, ctx.indent, commentString(keyComment));
     }
     let vsb, vcb, valueComment;
     if (isNode(value)) {
@@ -1720,7 +1720,7 @@ ${indent}:`;
     }
     ctx.implicitKey = false;
     if (!explicitKey && !keyComment && isScalar(value))
-      ctx.indentAtStart = str2.length + 1;
+      ctx.indentAtStart = str3.length + 1;
     chompKeep = false;
     if (!indentSeq && indentStep.length >= 2 && !ctx.inFlow && !explicitKey && isSeq(value) && !value.flow && !value.tag && !value.anchor) {
       ctx.indent = ctx.indent.substring(2);
@@ -1764,16 +1764,16 @@ ${ctx.indent}`;
     } else if (valueStr === "" || valueStr[0] === "\n") {
       ws = "";
     }
-    str2 += ws + valueStr;
+    str3 += ws + valueStr;
     if (ctx.inFlow) {
       if (valueCommentDone && onComment)
         onComment();
     } else if (valueComment && !valueCommentDone) {
-      str2 += lineComment(str2, ctx.indent, commentString(valueComment));
+      str3 += lineComment(str3, ctx.indent, commentString(valueComment));
     } else if (chompKeep && onChompKeep) {
       onChompKeep();
     }
-    return str2;
+    return str3;
   }
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/log.js
@@ -1944,31 +1944,31 @@ ${ctx.indent}`;
         }
       }
       chompKeep = false;
-      let str3 = stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+      let str4 = stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
       if (comment2)
-        str3 += lineComment(str3, itemIndent, commentString(comment2));
+        str4 += lineComment(str4, itemIndent, commentString(comment2));
       if (chompKeep && comment2)
         chompKeep = false;
-      lines.push(blockItemPrefix + str3);
+      lines.push(blockItemPrefix + str4);
     }
-    let str2;
+    let str3;
     if (lines.length === 0) {
-      str2 = flowChars.start + flowChars.end;
+      str3 = flowChars.start + flowChars.end;
     } else {
-      str2 = lines[0];
+      str3 = lines[0];
       for (let i = 1; i < lines.length; ++i) {
         const line = lines[i];
-        str2 += line ? `
+        str3 += line ? `
 ${indent}${line}` : "\n";
       }
     }
     if (comment) {
-      str2 += "\n" + indentComment(commentString(comment), indent);
+      str3 += "\n" + indentComment(commentString(comment), indent);
       if (onComment)
         onComment();
     } else if (chompKeep && onChompKeep)
       onChompKeep();
-    return str2;
+    return str3;
   }
   function stringifyFlowCollection({ items }, ctx, { flowChars, itemIndent }) {
     const { indent, indentStep, flowCollectionPadding: fcPadding, options: { commentString } } = ctx;
@@ -2011,21 +2011,21 @@ ${indent}${line}` : "\n";
       }
       if (comment)
         reqNewline = true;
-      let str2 = stringify(item, itemCtx, () => comment = null);
-      reqNewline || (reqNewline = lines.length > linesAtValue || str2.includes("\n"));
+      let str3 = stringify(item, itemCtx, () => comment = null);
+      reqNewline || (reqNewline = lines.length > linesAtValue || str3.includes("\n"));
       if (i < items.length - 1) {
-        str2 += ",";
+        str3 += ",";
       } else if (ctx.options.trailingComma) {
         if (ctx.options.lineWidth > 0) {
-          reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str2.length + 2) > ctx.options.lineWidth);
+          reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str3.length + 2) > ctx.options.lineWidth);
         }
         if (reqNewline) {
-          str2 += ",";
+          str3 += ",";
         }
       }
       if (comment)
-        str2 += lineComment(str2, itemIndent, commentString(comment));
-      lines.push(str2);
+        str3 += lineComment(str3, itemIndent, commentString(comment));
+      lines.push(str3);
       linesAtValue = lines.length;
     }
     const { start, end } = flowChars;
@@ -2037,11 +2037,11 @@ ${indent}${line}` : "\n";
         reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
       }
       if (reqNewline) {
-        let str2 = start;
+        let str3 = start;
         for (const line of lines)
-          str2 += line ? `
+          str3 += line ? `
 ${indentStep}${indent}${line}` : "\n";
-        return `${str2}
+        return `${str3}
 ${indent}${end}`;
       } else {
         return `${start}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
@@ -2325,7 +2325,7 @@ ${indent}${end}`;
     identify: (value) => typeof value === "string",
     default: true,
     tag: "tag:yaml.org,2002:str",
-    resolve: (str2) => str2,
+    resolve: (str3) => str3,
     stringify(item, ctx, onComment, onChompKeep) {
       ctx = Object.assign({ actualString: true }, ctx);
       return stringifyString(item, ctx, onComment, onChompKeep);
@@ -2349,7 +2349,7 @@ ${indent}${end}`;
     default: true,
     tag: "tag:yaml.org,2002:bool",
     test: /^(?:[Tt]rue|TRUE|[Ff]alse|FALSE)$/,
-    resolve: (str2) => new Scalar(str2[0] === "t" || str2[0] === "T"),
+    resolve: (str3) => new Scalar(str3[0] === "t" || str3[0] === "T"),
     stringify({ source, value }, ctx) {
       if (source && boolTag.test.test(source)) {
         const sv = source[0] === "t" || source[0] === "T";
@@ -2387,7 +2387,7 @@ ${indent}${end}`;
     default: true,
     tag: "tag:yaml.org,2002:float",
     test: /^(?:[-+]?\.(?:inf|Inf|INF)|\.nan|\.NaN|\.NAN)$/,
-    resolve: (str2) => str2.slice(-3).toLowerCase() === "nan" ? NaN : str2[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
+    resolve: (str3) => str3.slice(-3).toLowerCase() === "nan" ? NaN : str3[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
     stringify: stringifyNumber
   };
   var floatExp = {
@@ -2396,7 +2396,7 @@ ${indent}${end}`;
     tag: "tag:yaml.org,2002:float",
     format: "EXP",
     test: /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+$/,
-    resolve: (str2) => parseFloat(str2),
+    resolve: (str3) => parseFloat(str3),
     stringify(node) {
       const num = Number(node.value);
       return isFinite(num) ? num.toExponential() : stringifyNumber(node);
@@ -2407,11 +2407,11 @@ ${indent}${end}`;
     default: true,
     tag: "tag:yaml.org,2002:float",
     test: /^[-+]?(?:\.[0-9]+|[0-9]+\.[0-9]*)$/,
-    resolve(str2) {
-      const node = new Scalar(parseFloat(str2));
-      const dot = str2.indexOf(".");
-      if (dot !== -1 && str2[str2.length - 1] === "0")
-        node.minFractionDigits = str2.length - dot - 1;
+    resolve(str3) {
+      const node = new Scalar(parseFloat(str3));
+      const dot = str3.indexOf(".");
+      if (dot !== -1 && str3[str3.length - 1] === "0")
+        node.minFractionDigits = str3.length - dot - 1;
       return node;
     },
     stringify: stringifyNumber
@@ -2419,7 +2419,7 @@ ${indent}${end}`;
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/schema/core/int.js
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
-  var intResolve = (str2, offset, radix, { intAsBigInt }) => intAsBigInt ? BigInt(str2) : parseInt(str2.substring(offset), radix);
+  var intResolve = (str3, offset, radix, { intAsBigInt }) => intAsBigInt ? BigInt(str3) : parseInt(str3.substring(offset), radix);
   function intStringify(node, radix, prefix) {
     const { value } = node;
     if (intIdentify(value) && value >= 0)
@@ -2432,7 +2432,7 @@ ${indent}${end}`;
     tag: "tag:yaml.org,2002:int",
     format: "OCT",
     test: /^0o[0-7]+$/,
-    resolve: (str2, _onError, opt) => intResolve(str2, 2, 8, opt),
+    resolve: (str3, _onError, opt) => intResolve(str3, 2, 8, opt),
     stringify: (node) => intStringify(node, 8, "0o")
   };
   var int = {
@@ -2440,7 +2440,7 @@ ${indent}${end}`;
     default: true,
     tag: "tag:yaml.org,2002:int",
     test: /^[-+]?[0-9]+$/,
-    resolve: (str2, _onError, opt) => intResolve(str2, 0, 10, opt),
+    resolve: (str3, _onError, opt) => intResolve(str3, 0, 10, opt),
     stringify: stringifyNumber
   };
   var intHex = {
@@ -2449,7 +2449,7 @@ ${indent}${end}`;
     tag: "tag:yaml.org,2002:int",
     format: "HEX",
     test: /^0x[0-9a-fA-F]+$/,
-    resolve: (str2, _onError, opt) => intResolve(str2, 2, 16, opt),
+    resolve: (str3, _onError, opt) => intResolve(str3, 2, 16, opt),
     stringify: (node) => intStringify(node, 16, "0x")
   };
 
@@ -2478,7 +2478,7 @@ ${indent}${end}`;
       identify: (value) => typeof value === "string",
       default: true,
       tag: "tag:yaml.org,2002:str",
-      resolve: (str2) => str2,
+      resolve: (str3) => str3,
       stringify: stringifyJSON
     },
     {
@@ -2495,7 +2495,7 @@ ${indent}${end}`;
       default: true,
       tag: "tag:yaml.org,2002:bool",
       test: /^true$|^false$/,
-      resolve: (str2) => str2 === "true",
+      resolve: (str3) => str3 === "true",
       stringify: stringifyJSON
     },
     {
@@ -2503,7 +2503,7 @@ ${indent}${end}`;
       default: true,
       tag: "tag:yaml.org,2002:int",
       test: /^-?(?:0|[1-9][0-9]*)$/,
-      resolve: (str2, _onError, { intAsBigInt }) => intAsBigInt ? BigInt(str2) : parseInt(str2, 10),
+      resolve: (str3, _onError, { intAsBigInt }) => intAsBigInt ? BigInt(str3) : parseInt(str3, 10),
       stringify: ({ value }) => intIdentify2(value) ? value.toString() : JSON.stringify(value)
     },
     {
@@ -2511,7 +2511,7 @@ ${indent}${end}`;
       default: true,
       tag: "tag:yaml.org,2002:float",
       test: /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?$/,
-      resolve: (str2) => parseFloat(str2),
+      resolve: (str3) => parseFloat(str3),
       stringify: stringifyJSON
     }
   ];
@@ -2519,9 +2519,9 @@ ${indent}${end}`;
     default: true,
     tag: "",
     test: /^/,
-    resolve(str2, onError) {
-      onError(`Unresolved plain scalar ${JSON.stringify(str2)}`);
-      return str2;
+    resolve(str3, onError) {
+      onError(`Unresolved plain scalar ${JSON.stringify(str3)}`);
+      return str3;
     }
   };
   var schema2 = [map, seq].concat(jsonScalars, jsonError);
@@ -2542,10 +2542,10 @@ ${indent}${end}`;
      */
     resolve(src, onError) {
       if (typeof atob === "function") {
-        const str2 = atob(src.replace(/[\n\r]/g, ""));
-        const buffer = new Uint8Array(str2.length);
-        for (let i = 0; i < str2.length; ++i)
-          buffer[i] = str2.charCodeAt(i);
+        const str3 = atob(src.replace(/[\n\r]/g, ""));
+        const buffer = new Uint8Array(str3.length);
+        for (let i = 0; i < str3.length; ++i)
+          buffer[i] = str3.charCodeAt(i);
         return buffer;
       } else {
         onError("This environment does not support reading binary tags; either Buffer or atob is required");
@@ -2556,26 +2556,26 @@ ${indent}${end}`;
       if (!value)
         return "";
       const buf = value;
-      let str2;
+      let str3;
       if (typeof btoa === "function") {
         let s = "";
         for (let i = 0; i < buf.length; ++i)
           s += String.fromCharCode(buf[i]);
-        str2 = btoa(s);
+        str3 = btoa(s);
       } else {
         throw new Error("This environment does not support writing binary tags; either Buffer or btoa is required");
       }
       type ?? (type = Scalar.BLOCK_LITERAL);
       if (type !== Scalar.QUOTE_DOUBLE) {
         const lineWidth = Math.max(ctx.options.lineWidth - ctx.indent.length, ctx.options.minContentWidth);
-        const n = Math.ceil(str2.length / lineWidth);
+        const n = Math.ceil(str3.length / lineWidth);
         const lines = new Array(n);
         for (let i = 0, o = 0; i < n; ++i, o += lineWidth) {
-          lines[i] = str2.substr(o, lineWidth);
+          lines[i] = str3.substr(o, lineWidth);
         }
-        str2 = lines.join(type === Scalar.BLOCK_LITERAL ? "\n" : " ");
+        str3 = lines.join(type === Scalar.BLOCK_LITERAL ? "\n" : " ");
       }
-      return stringifyString({ comment, type, value: str2 }, ctx, onComment, onChompKeep);
+      return stringifyString({ comment, type, value: str3 }, ctx, onComment, onChompKeep);
     }
   };
 
@@ -2741,7 +2741,7 @@ ${cn.comment}` : item.comment;
     default: true,
     tag: "tag:yaml.org,2002:float",
     test: /^(?:[-+]?\.(?:inf|Inf|INF)|\.nan|\.NaN|\.NAN)$/,
-    resolve: (str2) => str2.slice(-3).toLowerCase() === "nan" ? NaN : str2[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
+    resolve: (str3) => str3.slice(-3).toLowerCase() === "nan" ? NaN : str3[0] === "-" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY,
     stringify: stringifyNumber
   };
   var floatExp2 = {
@@ -2750,7 +2750,7 @@ ${cn.comment}` : item.comment;
     tag: "tag:yaml.org,2002:float",
     format: "EXP",
     test: /^[-+]?(?:[0-9][0-9_]*)?(?:\.[0-9_]*)?[eE][-+]?[0-9]+$/,
-    resolve: (str2) => parseFloat(str2.replace(/_/g, "")),
+    resolve: (str3) => parseFloat(str3.replace(/_/g, "")),
     stringify(node) {
       const num = Number(node.value);
       return isFinite(num) ? num.toExponential() : stringifyNumber(node);
@@ -2761,11 +2761,11 @@ ${cn.comment}` : item.comment;
     default: true,
     tag: "tag:yaml.org,2002:float",
     test: /^[-+]?(?:[0-9][0-9_]*)?\.[0-9_]*$/,
-    resolve(str2) {
-      const node = new Scalar(parseFloat(str2.replace(/_/g, "")));
-      const dot = str2.indexOf(".");
+    resolve(str3) {
+      const node = new Scalar(parseFloat(str3.replace(/_/g, "")));
+      const dot = str3.indexOf(".");
       if (dot !== -1) {
-        const f = str2.substring(dot + 1).replace(/_/g, "");
+        const f = str3.substring(dot + 1).replace(/_/g, "");
         if (f[f.length - 1] === "0")
           node.minFractionDigits = f.length;
       }
@@ -2776,34 +2776,34 @@ ${cn.comment}` : item.comment;
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/schema/yaml-1.1/int.js
   var intIdentify3 = (value) => typeof value === "bigint" || Number.isInteger(value);
-  function intResolve2(str2, offset, radix, { intAsBigInt }) {
-    const sign2 = str2[0];
+  function intResolve2(str3, offset, radix, { intAsBigInt }) {
+    const sign2 = str3[0];
     if (sign2 === "-" || sign2 === "+")
       offset += 1;
-    str2 = str2.substring(offset).replace(/_/g, "");
+    str3 = str3.substring(offset).replace(/_/g, "");
     if (intAsBigInt) {
       switch (radix) {
         case 2:
-          str2 = `0b${str2}`;
+          str3 = `0b${str3}`;
           break;
         case 8:
-          str2 = `0o${str2}`;
+          str3 = `0o${str3}`;
           break;
         case 16:
-          str2 = `0x${str2}`;
+          str3 = `0x${str3}`;
           break;
       }
-      const n2 = BigInt(str2);
+      const n2 = BigInt(str3);
       return sign2 === "-" ? BigInt(-1) * n2 : n2;
     }
-    const n = parseInt(str2, radix);
+    const n = parseInt(str3, radix);
     return sign2 === "-" ? -1 * n : n;
   }
   function intStringify2(node, radix, prefix) {
     const { value } = node;
     if (intIdentify3(value)) {
-      const str2 = value.toString(radix);
-      return value < 0 ? "-" + prefix + str2.substr(1) : prefix + str2;
+      const str3 = value.toString(radix);
+      return value < 0 ? "-" + prefix + str3.substr(1) : prefix + str3;
     }
     return stringifyNumber(node);
   }
@@ -2813,7 +2813,7 @@ ${cn.comment}` : item.comment;
     tag: "tag:yaml.org,2002:int",
     format: "BIN",
     test: /^[-+]?0b[0-1_]+$/,
-    resolve: (str2, _onError, opt) => intResolve2(str2, 2, 2, opt),
+    resolve: (str3, _onError, opt) => intResolve2(str3, 2, 2, opt),
     stringify: (node) => intStringify2(node, 2, "0b")
   };
   var intOct2 = {
@@ -2822,7 +2822,7 @@ ${cn.comment}` : item.comment;
     tag: "tag:yaml.org,2002:int",
     format: "OCT",
     test: /^[-+]?0[0-7_]+$/,
-    resolve: (str2, _onError, opt) => intResolve2(str2, 1, 8, opt),
+    resolve: (str3, _onError, opt) => intResolve2(str3, 1, 8, opt),
     stringify: (node) => intStringify2(node, 8, "0")
   };
   var int2 = {
@@ -2830,7 +2830,7 @@ ${cn.comment}` : item.comment;
     default: true,
     tag: "tag:yaml.org,2002:int",
     test: /^[-+]?[0-9][0-9_]*$/,
-    resolve: (str2, _onError, opt) => intResolve2(str2, 0, 10, opt),
+    resolve: (str3, _onError, opt) => intResolve2(str3, 0, 10, opt),
     stringify: stringifyNumber
   };
   var intHex2 = {
@@ -2839,7 +2839,7 @@ ${cn.comment}` : item.comment;
     tag: "tag:yaml.org,2002:int",
     format: "HEX",
     test: /^[-+]?0x[0-9a-fA-F_]+$/,
-    resolve: (str2, _onError, opt) => intResolve2(str2, 2, 16, opt),
+    resolve: (str3, _onError, opt) => intResolve2(str3, 2, 16, opt),
     stringify: (node) => intStringify2(node, 16, "0x")
   };
 
@@ -2923,9 +2923,9 @@ ${cn.comment}` : item.comment;
   };
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/schema/yaml-1.1/timestamp.js
-  function parseSexagesimal(str2, asBigInt) {
-    const sign2 = str2[0];
-    const parts = sign2 === "-" || sign2 === "+" ? str2.substring(1) : str2;
+  function parseSexagesimal(str3, asBigInt) {
+    const sign2 = str3[0];
+    const parts = sign2 === "-" || sign2 === "+" ? str3.substring(1) : str3;
     const num = (n) => asBigInt ? BigInt(n) : Number(n);
     const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num(60) + num(p), num(0));
     return sign2 === "-" ? num(-1) * res : res;
@@ -2962,7 +2962,7 @@ ${cn.comment}` : item.comment;
     tag: "tag:yaml.org,2002:int",
     format: "TIME",
     test: /^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+$/,
-    resolve: (str2, _onError, { intAsBigInt }) => parseSexagesimal(str2, intAsBigInt),
+    resolve: (str3, _onError, { intAsBigInt }) => parseSexagesimal(str3, intAsBigInt),
     stringify: stringifySexagesimal
   };
   var floatTime = {
@@ -2971,7 +2971,7 @@ ${cn.comment}` : item.comment;
     tag: "tag:yaml.org,2002:float",
     format: "TIME",
     test: /^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*$/,
-    resolve: (str2) => parseSexagesimal(str2, false),
+    resolve: (str3) => parseSexagesimal(str3, false),
     stringify: stringifySexagesimal
   };
   var timestamp = {
@@ -2982,8 +2982,8 @@ ${cn.comment}` : item.comment;
     // may be omitted altogether, resulting in a date format. In such a case, the time part is
     // assumed to be 00:00:00Z (start of day, UTC).
     test: RegExp("^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:(?:t|T|[ \\t]+)([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2}(\\.[0-9]+)?)(?:[ \\t]*(Z|[-+][012]?[0-9](?::[0-9]{2})?))?)?$"),
-    resolve(str2) {
-      const match = str2.match(timestamp.test);
+    resolve(str3) {
+      const match = str3.match(timestamp.test);
       if (!match)
         throw new Error("!!timestamp expects a date, starting with yyyy-mm-dd");
       const [, year, month, day, hour, minute, second] = match.map(Number);
@@ -6850,6 +6850,25 @@ ${end.comment}` : end.comment;
     });
   }
 
+  // src/mcp/toolResults.ts
+  function structured(body) {
+    if (body !== null && typeof body === "object" && !Array.isArray(body)) return body;
+    return typeof body === "string" ? { text: body } : { value: body };
+  }
+  function str(value) {
+    return typeof value === "string" && value !== "" ? value : void 0;
+  }
+  function pipelineResult(body) {
+    return textResult(JSON.stringify(body), structured(body));
+  }
+  function pipelineError(url, status2, body) {
+    const b = structured(body);
+    const code = str(b.code) ?? str(b.error) ?? `HTTP_${status2}`;
+    const message = str(b.message) ?? str(b.error) ?? str(typeof body === "string" ? body : void 0) ?? `${url} failed with status ${status2}`;
+    const text = `${code}: ${message}`;
+    return { ...errorResult(text, { errors: { pipeline: text }, status: status2 }), _meta: { bffless: { status: status2 } } };
+  }
+
   // src/mcp/reply.ts
   var SERVER_NAME = "bffless-workflow";
   var NOT_SERVED = /* @__PURE__ */ new Set(["workflow.start", "workflow.cancel", "workflow.resume"]);
@@ -6860,7 +6879,7 @@ ${end.comment}` : end.comment;
   function isPlainObject4(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
-  function str(value) {
+  function str2(value) {
     return typeof value === "string" && value !== "" ? value : void 0;
   }
   function jsonBody(step) {
@@ -6887,15 +6906,15 @@ ${end.comment}` : end.comment;
     const workflows = (Array.isArray(body.workflows) ? body.workflows : []).filter((entry) => isPlainObject4(entry) && typeof entry.file === "string").map((entry) => ({
       id: workflowId(entry.file),
       file: entry.file,
-      name: str(entry.name) ?? workflowId(entry.file),
-      ...str(entry.description) === void 0 ? {} : { description: entry.description },
+      name: str2(entry.name) ?? workflowId(entry.file),
+      ...str2(entry.description) === void 0 ? {} : { description: entry.description },
       headlessSafe: entry.headlessSafe === true
     }));
     const islands = (Array.isArray(body.islands) ? body.islands : []).filter((entry) => typeof entry === "string");
     return {
-      alias: str(body.impl) ?? alias,
-      name: str(body.name) ?? alias,
-      ...str(body.version) === void 0 ? {} : { version: body.version },
+      alias: str2(body.impl) ?? alias,
+      name: str2(body.name) ?? alias,
+      ...str2(body.version) === void 0 ? {} : { version: body.version },
       preview: false,
       workflows,
       islands
@@ -6945,8 +6964,8 @@ ${end.comment}` : end.comment;
     const entry = plan.listing;
     const listing = {
       file: entry.file,
-      name: str(entry.name) ?? route.workflow,
-      ...str(entry.description) === void 0 ? {} : { description: entry.description },
+      name: str2(entry.name) ?? route.workflow,
+      ...str2(entry.description) === void 0 ? {} : { description: entry.description },
       inputs: typeof entry.inputs === "number" ? entry.inputs : 0,
       jobs: typeof entry.jobs === "number" ? entry.jobs : 0,
       headlessSafe: entry.headlessSafe === true
@@ -6985,7 +7004,7 @@ ${end.comment}` : end.comment;
   }
   function runs(route, steps) {
     if (!route.isRuns) return refuse("workflow", NEED_IMPL_WORKFLOW);
-    const wanted = str(route.args.status);
+    const wanted = str2(route.args.status);
     const limitArg = route.args.limit;
     const limit = typeof limitArg === "number" && limitArg >= 1 ? Math.min(Math.floor(limitArg), RUNS_MAX) : RUNS_DEFAULT;
     const listed = runsWithWaiting(steps.runs, steps.waiting).filter((row) => typeof row.runId === "string" && typeof row.status === "string").filter((row) => wanted === void 0 || row.status === wanted).sort((a, b) => (typeof b.startedAt === "number" ? b.startedAt : 0) - (typeof a.startedAt === "number" ? a.startedAt : 0)).slice(0, limit).map((row) => ({
@@ -7009,12 +7028,66 @@ ${lines.join("\n")}`,
     );
   }
   function sign(route, steps) {
-    const path = str(route.args.path);
+    const path = str2(route.args.path);
     if (path === void 0) return refuse("path", "`path` is required");
     if (!route.isSign) return refuse("path", NOT_CONFINED);
-    const url = str(steps.signed?.url);
+    const url = str2(steps.signed?.url);
     if (url === void 0) return refuse("path", `${route.signPath}: the sign rule returned no url`);
     return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN });
+  }
+  function stepUpdated(update) {
+    if (update === void 0 || update === null) return false;
+    if (isPlainObject4(update) && update.success === false) return false;
+    return true;
+  }
+  function declaredStep2(definition, job, stepId) {
+    if (!isPlainObject4(definition) || !isPlainObject4(definition.jobs)) return void 0;
+    const jobDecl = definition.jobs[job];
+    if (!isPlainObject4(jobDecl) || !Array.isArray(jobDecl.steps)) return void 0;
+    return jobDecl.steps.find((entry) => isPlainObject4(entry) && entry.id === stepId);
+  }
+  function stepView(route, steps) {
+    const resolved = resolveRun(route, steps);
+    if (!resolved.ok) return resolved.result;
+    if (route.key === "") return refuse("step", "`step` is required");
+    const row = resolved.stepRows.find((r) => r.key === route.key);
+    if (!row) return refuse("step", `No such step: ${route.key}`);
+    if (row.kind !== "island") return refuse("step", `${route.key} is a ${String(row.kind)} step, not an island`);
+    if (row.status !== "waiting") return refuse("step", `${route.key} is ${String(row.status)}, not waiting`);
+    const plan = steps.plan;
+    if (!plan?.hasIsland) return refuse("step", plan?.islandError || `${route.key}: no island to show`);
+    const island = steps.island;
+    if (island?.ok !== true || typeof island.body !== "string") {
+      return refuse("step", `${route.key}: the island file could not be fetched${island?.status ? ` (${island.status})` : ""}`);
+    }
+    const decl = declaredStep2(resolved.run.definition, String(row.job ?? ""), String(row.step ?? ""));
+    const withDecl = decl && isPlainObject4(decl.with) ? decl.with : {};
+    const inputs = isPlainObject4(row.inputs) ? row.inputs : {};
+    const src = typeof withDecl.src === "string" ? withDecl.src : "";
+    return textResult(`${route.key} (island) is waiting \u2014 ${Object.keys(inputs).length} arguments`, {
+      runId: route.runId,
+      step: route.key,
+      impl: String(resolved.run.impl ?? ""),
+      workflow: String(resolved.run.workflow ?? ""),
+      kind: "island",
+      status: "waiting",
+      src,
+      arguments: inputs,
+      ...decl && isPlainObject4(decl.outputs) ? { outputs: decl.outputs } : {},
+      html: island.body
+    });
+  }
+  function pipeline(route, steps) {
+    const resolved = resolveRun(route, steps);
+    if (!resolved.ok) return resolved.result;
+    const plan = steps.plan;
+    if (!plan) return refuse("name", "the plan step did not run");
+    if (plan.pipelineError !== "") return refuse("name", plan.pipelineError);
+    const answer = plan.isPipelineGet ? steps.pipelineGet : steps.pipelinePost;
+    if (!answer) return refuse("name", `${plan.pipelineUrl}: the pipeline step did not run`);
+    const status2 = typeof answer.status === "number" ? answer.status : answer.ok ? 200 : 500;
+    if (answer.ok !== true) return pipelineError(plan.pipelineUrl, status2, answer.body);
+    return pipelineResult(answer.body);
   }
   function notServed(tool) {
     const message = tool === "workflow.await" ? "workflow.await is not served by the MCP endpoint \u2014 a stateless POST cannot wait; poll workflow.status" : `${tool} is not served by the MCP endpoint yet (Phase 4 adds the run view that drives runs)`;
@@ -7042,10 +7115,15 @@ ${lines.join("\n")}`,
         break;
     }
     if (NOT_SERVED.has(tool)) return notServed(tool);
+    if (tool === "workflow.stepView") return stepView(route, steps);
+    if (tool === "workflow.pipeline") return pipeline(route, steps);
     if (WRITE_TOOLS.has(tool) || isHostTool(tool)) {
       const verdict = steps.merge?.result;
-      if (verdict) return verdict;
-      return refuse("tool", `${tool} is not served by this build of the MCP endpoint`);
+      if (!verdict) return refuse("tool", `${tool} is not served by this build of the MCP endpoint`);
+      if (steps.merge?.update === true && !stepUpdated(steps.update)) {
+        return refuse("step", `${route.key}: the step row could not be written`);
+      }
+      return verdict;
     }
     if (toolByName(tool)) return notServed(tool);
     return errorResult(`No such tool: ${tool}`, { errors: { tool: "No such tool" } });

@@ -31,6 +31,7 @@ import type { Plan } from './plan'
 import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
 import { fieldsOf, rows, runsWithWaiting, type Row } from './rows'
 import type { FnDeployment, FnRequest, Route } from './route'
+import { pipelineError, pipelineResult } from './toolResults'
 
 /** What an `http_request` step with `failOnError: false` answers. */
 export interface HttpStep {
@@ -287,6 +288,68 @@ function sign(route: Route, steps: StepOutputs): CallToolResult {
   return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN })
 }
 
+/** `data_update` answered a record (any envelope) — the write landed. */
+function stepUpdated(update: unknown): boolean {
+  if (update === undefined || update === null) return false
+  if (isPlainObject(update) && update.success === false) return false
+  return true
+}
+
+/** The declared step (raw) of a step row in the run's definition snapshot, or `undefined`. */
+function declaredStep(definition: unknown, job: string, stepId: string): Record<string, unknown> | undefined {
+  if (!isPlainObject(definition) || !isPlainObject(definition.jobs)) return undefined
+  const jobDecl = definition.jobs[job]
+  if (!isPlainObject(jobDecl) || !Array.isArray(jobDecl.steps)) return undefined
+  return jobDecl.steps.find((entry: unknown): entry is Record<string, unknown> => isPlainObject(entry) && entry.id === stepId)
+}
+
+/** `workflow.stepView`: everything the step view needs to mount the waiting island (Decision 3). */
+function stepView(route: Route, steps: StepOutputs): CallToolResult {
+  const resolved = resolveRun(route, steps)
+  if (!resolved.ok) return resolved.result
+  if (route.key === '') return refuse('step', '`step` is required')
+  const row = resolved.stepRows.find((r) => r.key === route.key)
+  if (!row) return refuse('step', `No such step: ${route.key}`)
+  if (row.kind !== 'island') return refuse('step', `${route.key} is a ${String(row.kind)} step, not an island`)
+  if (row.status !== 'waiting') return refuse('step', `${route.key} is ${String(row.status)}, not waiting`)
+  const plan = steps.plan
+  if (!plan?.hasIsland) return refuse('step', plan?.islandError || `${route.key}: no island to show`)
+  const island = steps.island
+  if (island?.ok !== true || typeof island.body !== 'string') {
+    return refuse('step', `${route.key}: the island file could not be fetched${island?.status ? ` (${island.status})` : ''}`)
+  }
+  const decl = declaredStep(resolved.run.definition, String(row.job ?? ''), String(row.step ?? ''))
+  const withDecl = decl && isPlainObject(decl.with) ? decl.with : {}
+  const inputs = isPlainObject(row.inputs) ? row.inputs : {}
+  const src = typeof withDecl.src === 'string' ? withDecl.src : ''
+  return textResult(`${route.key} (island) is waiting — ${Object.keys(inputs).length} arguments`, {
+    runId: route.runId,
+    step: route.key,
+    impl: String(resolved.run.impl ?? ''),
+    workflow: String(resolved.run.workflow ?? ''),
+    kind: 'island',
+    status: 'waiting',
+    src,
+    arguments: inputs,
+    ...(decl && isPlainObject(decl.outputs) ? { outputs: decl.outputs } : {}),
+    html: island.body,
+  })
+}
+
+/** `workflow.pipeline`: the island's own pipeline, fenced to the run's implementation (Decision 4). */
+function pipeline(route: Route, steps: StepOutputs): CallToolResult {
+  const resolved = resolveRun(route, steps)
+  if (!resolved.ok) return resolved.result
+  const plan = steps.plan
+  if (!plan) return refuse('name', 'the plan step did not run')
+  if (plan.pipelineError !== '') return refuse('name', plan.pipelineError)
+  const answer = plan.isPipelineGet ? steps.pipelineGet : steps.pipelinePost
+  if (!answer) return refuse('name', `${plan.pipelineUrl}: the pipeline step did not run`)
+  const status = typeof answer.status === 'number' ? answer.status : answer.ok ? 200 : 500
+  if (answer.ok !== true) return pipelineError(plan.pipelineUrl, status, answer.body)
+  return pipelineResult(answer.body)
+}
+
 function notServed(tool: string): CallToolResult {
   const message =
     tool === 'workflow.await'
@@ -317,10 +380,15 @@ function callTool(route: Route, steps: StepOutputs): CallToolResult {
       break
   }
   if (NOT_SERVED.has(tool)) return notServed(tool)
+  if (tool === 'workflow.stepView') return stepView(route, steps)
+  if (tool === 'workflow.pipeline') return pipeline(route, steps)
   if (WRITE_TOOLS.has(tool) || isHostTool(tool)) {
     const verdict = steps.merge?.result
-    if (verdict) return verdict
-    return refuse('tool', `${tool} is not served by this build of the MCP endpoint`)
+    if (!verdict) return refuse('tool', `${tool} is not served by this build of the MCP endpoint`)
+    if (steps.merge?.update === true && !stepUpdated(steps.update)) {
+      return refuse('step', `${route.key}: the step row could not be written`)
+    }
+    return verdict
   }
   if (toolByName(tool)) return notServed(tool)
   return errorResult(`No such tool: ${tool}`, { errors: { tool: 'No such tool' } })

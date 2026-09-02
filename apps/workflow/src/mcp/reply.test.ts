@@ -3,6 +3,7 @@ import { CATALOG } from '@bffless/workflow-agent-tools'
 import { describe, expect, it } from 'vitest'
 import { HELLO_INDEX, INTERACTIVE_YAML, RUN_ID, runRow, stepRows } from './fixtures/index'
 import { STEP_VIEW_URI, listedTools } from './hostTools'
+import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
 import { handler as reply, type StepOutputs } from './reply'
@@ -24,6 +25,7 @@ function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}) 
   const route = routeOf({ request: req, deployment: DEPLOYMENT })
   const steps: StepOutputs = { identity: IDENTITY, ...fetched, route }
   steps.plan = planOf({ steps: { route, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps }, deployment: DEPLOYMENT })
+  if (!fetched.merge) steps.merge = mergeOf({ steps: { route, run: steps.run, steps: steps.steps } })
   const out = reply({ request: req, steps, deployment: DEPLOYMENT })
   return { out, body: out.json === '' ? null : (JSON.parse(out.json) as { id: unknown; result?: Record<string, unknown>; error?: { code: number; message: string } }) }
 }
@@ -190,7 +192,7 @@ describe('tools this build does not serve', () => {
       expect(r.structuredContent!.errors).toHaveProperty('tool')
     }
     expect(text(result(callOf('workflow.await', { runId: 'r', until: 'terminal' })))).toContain('poll workflow.status')
-    expect(text(result(callOf('workflow.submit', { runId: 'r', step: 's', outputs: {} }), { run: [runRow()], steps: stepRows() }))).toContain('not served')
+    expect(text(result(callOf('workflow.submit', { runId: 'r', step: 's', outputs: {} }), { run: [], steps: [] }))).toBe('No such run: r')
     expect(result(callOf('echo')).structuredContent!.errors).toEqual({ tool: 'No such tool' })
   })
 })
@@ -222,5 +224,44 @@ describe('resources', () => {
     expect(run(message('resources/read', { uri: 'ui://bffless/hello/../x.html' }), { probe }).body!.error).toMatchObject({ code: -32002 })
     expect(run(message('resources/read', { uri: 'ui://bffless/hello/islands/x.html' }), { island: http('', 404), probe }).body!.error).toMatchObject({ code: -32002 })
     expect(run(message('resources/read', { uri: 'file:///etc/passwd' })).body!.error).toMatchObject({ code: -32002 })
+  })
+})
+
+describe('workflow.stepView / workflow.pipeline / the write verdict', () => {
+  const html = '<!doctype html><script>pick</script>'
+
+  it('answers what the step view mounts: the island HTML, the persisted inputs, the declared outputs', () => {
+    const r = result(callOf('workflow.stepView', { runId: RUN_ID, step: 'pick/0/choose' }), { run: [runRow()], steps: stepRows(), island: http(html) })
+    expect(r.isError).toBeUndefined()
+    expect(r.structuredContent).toEqual({
+      runId: RUN_ID, step: 'pick/0/choose', impl: 'hello', workflow: 'interactive', kind: 'island', status: 'waiting', src: 'islands/pick-line.html',
+      arguments: { lines: ['Hello, world!', 'Hello, studio!'], words: [{ w: 'Hello' }] },
+      outputs: { line: { type: 'string', required: true }, index: { type: 'number' } },
+      html,
+    })
+    expect(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'greet/0/say' }), { run: [runRow()], steps: stepRows(), island: http(html) }).structuredContent!.errors).toEqual({ step: 'greet/0/say is a pipeline step, not an island' })
+    expect(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'pick/0/choose' }), { run: [runRow()], steps: stepRows(), island: http('', 404) }).structuredContent!.errors).toEqual({ step: 'pick/0/choose: the island file could not be fetched (404)' })
+  })
+
+  it('relays a pipeline answer the way IslandHost reports one, and refuses outside the fence', () => {
+    const ok = result(callOf('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: 'echo', arguments: { text: 'hi' } }), { run: [runRow()], steps: stepRows(), pipelinePost: http({ text: 'HI' }) })
+    expect(ok).toEqual({ content: [{ type: 'text', text: '{"text":"HI"}' }], structuredContent: { text: 'HI' } })
+    const failed = result(callOf('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: 'fail' }), { run: [runRow()], steps: stepRows(), pipelinePost: http({ code: 'ON_PURPOSE', message: 'as asked' }, 500) }) as { isError?: boolean; content: { text: string }[]; _meta?: unknown }
+    expect(failed.isError).toBe(true)
+    expect(failed.content[0].text).toBe('ON_PURPOSE: as asked')
+    expect(failed._meta).toEqual({ bffless: { status: 500 } })
+    const fenced = result(callOf('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: '../workflow/run' }), { run: [runRow()], steps: stepRows() })
+    expect(fenced.isError).toBe(true)
+    expect(text(fenced)).toContain('resolves outside /api/hello/')
+  })
+
+  it('answers the write verdict, and notices a write that did not land', () => {
+    const submitted = result(callOf('workflow.submit', { runId: RUN_ID, step: 'pick/0/choose', outputs: { line: 'Hello, world!', index: 0 } }), { run: [runRow()], steps: stepRows(), update: { id: 'rec_s4' } })
+    expect(text(submitted)).toBe(`Submitted pick/0/choose; Run ${RUN_ID} is running`)
+    const lost = result(callOf('workflow.submit', { runId: RUN_ID, step: 'pick/0/choose', outputs: { line: 'Hello, world!', index: 0 } }), { run: [runRow()], steps: stepRows() })
+    expect(lost.structuredContent!.errors).toEqual({ step: 'pick/0/choose: the step row could not be written' })
+    const refused = result(callOf('workflow.submit', { runId: RUN_ID, step: 'pick/0/choose', outputs: {} }), { run: [runRow()], steps: stepRows() })
+    expect(refused.structuredContent!.errors).toEqual({ line: 'This field is required' })
+    expect(text(result(callOf('workflow.annotate', { runId: RUN_ID, step: 'pick/0/choose', summary: 's' }), { run: [runRow()], steps: stepRows(), update: { id: 'rec_s4' } }))).toBe('ok')
   })
 })
