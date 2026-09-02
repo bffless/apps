@@ -61,8 +61,9 @@ pipeline:
         filters:
           status: { op: eq, value: waiting }
     # --- discovery (list / describe / resources): only a route serves these.
-    # The harness's own alias relay (06) rather than CE's API directly, so the
-    # service key is honoured the same way wherever the app is installed.
+    # The alias list comes from CE's API in-process (the relay rule's own
+    # target, spec 06) because the relay forwards a cookie and the endpoint has
+    # none; index/YAML/island files come through the harness host's forwarders.
     - id: aliases
       name: aliases
       handler: http_request

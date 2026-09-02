@@ -17,6 +17,15 @@ import { parseMessage, type Id } from './jsonrpc'
 
 export const LIST_FANOUT = 3
 
+/**
+ * CE's own API, reached in-process — the same target the harness's
+ * `/api/workflow/aliases` relay rule and every `/w/<impl>/*` forwarder use
+ * (spec 06, ADR-0001 amendment). The relay forwards a *cookie*, and the
+ * endpoint has none: it carries the service key instead, which CE's API
+ * honours and the relay would not pass on.
+ */
+export const CE_BACKEND = 'http://localhost:3000'
+
 /** `request` as CE's function_handler hands it (`function.handler.ts`). */
 export interface FnRequest {
   body: unknown
@@ -198,7 +207,8 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     rest: '',
     appOrigin,
     whoamiUrl: appOrigin === '' ? '' : `${appOrigin}/api/workflow/whoami`,
-    aliasesUrl: appOrigin === '' || project === '' ? '' : `${appOrigin}/api/workflow/aliases?repository=${encodeURIComponent(project)}`,
+    // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
+    aliasesUrl: project === '' ? '' : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
     indexUrl: '',
     stepViewUrl: appOrigin === '' ? '' : `${appOrigin}/step.html`,
     signPath: '',

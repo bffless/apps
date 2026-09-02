@@ -22,6 +22,7 @@ var __mcp = (() => {
   // src/mcp/route.ts
   var route_exports = {};
   __export(route_exports, {
+    CE_BACKEND: () => CE_BACKEND,
     LIST_FANOUT: () => LIST_FANOUT,
     confinedSignPath: () => confinedSignPath,
     handler: () => handler,
@@ -288,6 +289,7 @@ var __mcp = (() => {
 
   // src/mcp/route.ts
   var LIST_FANOUT = 3;
+  var CE_BACKEND = "http://localhost:3000";
   var RUN_SCOPED = /* @__PURE__ */ new Set([
     "workflow.status",
     "workflow.outputs",
@@ -366,7 +368,8 @@ var __mcp = (() => {
       rest: "",
       appOrigin,
       whoamiUrl: appOrigin === "" ? "" : `${appOrigin}/api/workflow/whoami`,
-      aliasesUrl: appOrigin === "" || project === "" ? "" : `${appOrigin}/api/workflow/aliases?repository=${encodeURIComponent(project)}`,
+      // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
+      aliasesUrl: project === "" ? "" : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
       indexUrl: "",
       stepViewUrl: appOrigin === "" ? "" : `${appOrigin}/step.html`,
       signPath: "",

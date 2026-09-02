@@ -19,7 +19,7 @@ describe('route', () => {
     expect(r.kind).toBe('ping')
     expect(r.appOrigin).toBe('https://h.example')
     expect(r.whoamiUrl).toBe('https://h.example/api/workflow/whoami')
-    expect(r.aliasesUrl).toBe('https://h.example/api/workflow/aliases?repository=o%2Fr')
+    expect(r.aliasesUrl).toBe('http://localhost:3000/api/aliases?repository=o%2Fr')
     expect(r.stepViewUrl).toBe('https://h.example/step.html')
     expect(r.probePath).toBe('o/r/uploads/workflows/.mcp-csp-probe')
     const bare = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }, { host: 'only.example' }))
