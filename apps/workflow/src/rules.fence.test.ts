@@ -87,6 +87,14 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     }
     const validators: { type: string; config?: { allowApiKey?: unknown } }[] = doc.pipeline.validators ?? []
     const auth = validators.find((v) => v.type === 'auth_required')
+    if (file.includes('/_custom/well-known/')) {
+      // OAuth discovery happens before any credential exists (RFC 9728): the
+      // 404 that says "no metadata here" cannot sit behind a session. Phase 3's
+      // real protected-resource document replaces it, equally unauthenticated.
+      expect(auth, `${file} answers pre-credential discovery (spec 10, D23)`).toBeUndefined()
+      expect(doc.pathPattern).toBe('/.well-known/*')
+      return
+    }
     if (file.includes('/api/workflow/mcp/')) {
       // The MCP endpoint (spec 10, D22) is authless by design in Phase 2 — auth
       // ladder rung 1 (D23): claude.ai connects to an authless server on a scratch
