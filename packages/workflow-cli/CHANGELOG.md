@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/bffless/apps/compare/workflow-cli-v1.0.0...workflow-cli-v1.1.0) (2026-09-02)
+
+
+### Features
+
+* **workflow-cli:** publish --name/--description flow into the index ([#569](https://github.com/bffless/apps/issues/569)) ([a28102a](https://github.com/bffless/apps/commit/a28102a205f79dad844f1f2ce782f987ee035793))
+
+
+### Bug Fixes
+
+* **workflow-cli:** refuse --skip-existing on load-bearing collisions; report directory merges ([#566](https://github.com/bffless/apps/issues/566)) ([e61e334](https://github.com/bffless/apps/commit/e61e3344ca9deab25979c818fce47533d0640a85)), closes [#559](https://github.com/bffless/apps/issues/559)
+
 ## 1.0.0 (2026-09-01)
 
 

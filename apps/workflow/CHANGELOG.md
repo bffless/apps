@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/bffless/apps/compare/workflow-v1.2.0...workflow-v1.2.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **workflow-cli:** refuse --skip-existing on load-bearing collisions; report directory merges ([#566](https://github.com/bffless/apps/issues/566)) ([e61e334](https://github.com/bffless/apps/commit/e61e3344ca9deab25979c818fce47533d0640a85)), closes [#559](https://github.com/bffless/apps/issues/559)
+
 ## [1.2.0](https://github.com/bffless/apps/compare/workflow-v1.1.0...workflow-v1.2.0) (2026-09-01)
 
 
