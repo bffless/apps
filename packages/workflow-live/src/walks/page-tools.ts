@@ -120,9 +120,13 @@ export const pageTools: Walk = async ({ args, env, report }) => {
     const presigned = /^https?:\/\//.test(url) && !url.startsWith(args.harness) && /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(url)
     report.expect('D6.signIsPresigned', !signed.isError && presigned && Number(structured(signed).expiresIn) > 0, { ...brief(signed), url: redactUrl(url), expiresIn: structured(signed).expiresIn })
 
+    // One read, no retry (apps#580): `workflow.await` answers only after the
+    // run's write-ahead queue has drained, so the very first list must
+    // already show the run sealed — a retry here would hide a regression.
     const runs = await call('workflow.runs', { impl: 'hello', workflow: 'interactive', limit: 5 })
-    const listed = ((structured(runs).runs ?? []) as Array<{ runId: string }>).map((run) => run.runId)
-    report.expect('spec10.runsListsIt', !runs.isError && listed.includes(runId), { ...brief(runs), listed })
+    const listedRuns = (structured(runs).runs ?? []) as Array<{ runId: string; status?: string }>
+    const listedRun = listedRuns.find((run) => run.runId === runId)
+    report.expect('spec10.runsListsIt', !runs.isError && listedRun?.status === 'succeeded', { ...brief(runs), listed: listedRuns.map((run) => run.runId), status: listedRun?.status })
 
     // --- The record agrees with the page
     const sealed = await waitForSealedRecord(s.api, runId, (line) => report.note(line))

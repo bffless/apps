@@ -30,6 +30,7 @@ import { httpJsonWithReauth } from '../lib/http'
 import type { AppStore } from '../store'
 import { LeaseTransportError, cancelRun, takeOver } from '../store/lifecycleActions'
 import { startRun } from '../store/runnerActions'
+import { whenPersisted } from '../store/runnerMiddleware'
 import { submitStep } from '../store/submitActions'
 import { workflowApi } from '../store/workflowApi'
 import { loadWorkflowDefinition } from '../store/workflowLoad'
@@ -46,6 +47,12 @@ export interface ExecutorDeps {
   pollMs?: number
   /** `workflow.sign`'s exchange; the app's real one by default. */
   sign?: (path: string) => Promise<{ url: string; expiresIn: number }>
+  /**
+   * `workflow.await`'s drain: the tail of the run's write-ahead persist queue
+   * (apps#580); the middleware's real one by default. Resolves at once for a
+   * run this tab does not drive.
+   */
+  whenPersisted?: (runId: string) => Promise<void>
 }
 
 export type Executor = (args: Record<string, unknown>) => Promise<CallToolResult>
@@ -283,6 +290,16 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
    * `workflow.await`: the run this tab drives is followed off the store (one
    * subscription, released on resolve); any other run is re-read from its
    * record every `pollMs`. A timeout answers with the snapshot it got to.
+   *
+   * The store runs a beat ahead of the record — every event persists through
+   * the run's write-ahead queue — so a satisfied condition is not yet a
+   * written one. Every successful answer, the fast path included, first
+   * drains that queue (`whenPersisted`, apps#580): an agent that reads the
+   * record back after "done" must find the rows the snapshot promised. The
+   * timeout answer is the one exception: it reports the snapshot it reached
+   * and does not wait further. The drain is read only once the condition has
+   * settled (never inside the subscriber — that fires inside `dispatch`,
+   * before the persisting effect has queued the write).
    */
   const awaitRun: Executor = async (args) => {
     const until = args.until
@@ -295,9 +312,14 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     const satisfied = (snapshot: RunSnapshot) =>
       TERMINAL.has(snapshot.status) || (until === 'waiting' && snapshot.waitingOn.length > 0)
 
+    const drained = async (snapshot: RunSnapshot): Promise<CallToolResult> => {
+      await (deps.whenPersisted ?? whenPersisted)(snapshot.runId)
+      return textResult(snapshotText(snapshot), { ...snapshot })
+    }
+
     const first = await resolveSnapshot(deps, stringArg(args, 'runId'))
     if (!first.ok) return first.result
-    if (satisfied(first.snapshot)) return textResult(snapshotText(first.snapshot), { ...first.snapshot })
+    if (satisfied(first.snapshot)) return drained(first.snapshot)
 
     const runId = first.snapshot.runId
     const fromSlice = (): RunSnapshot | null => {
@@ -329,7 +351,7 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
       }, deps.pollMs ?? 2_000)
       check()
     })
-    if (settled) return textResult(snapshotText(settled), { ...settled })
+    if (settled) return drained(settled)
 
     const latest = await resolveSnapshot(deps, runId)
     const snapshot = latest.ok ? latest.snapshot : first.snapshot

@@ -276,6 +276,29 @@ export function flushPendingSeals(): void {
   for (const flush of pendingSeals.values()) flush()
 }
 
+/**
+ * The tail of `runId`'s write-ahead queue (apps#580): resolves once every
+ * write queued for the run *so far* has settled, and at once when nothing is
+ * queued — a run this tab does not drive, or one whose seal already landed
+ * (`finishRunCleanup` drops the entry). It never rejects: `persistWrite`
+ * returns an outcome rather than throwing, and a task that somehow did throw
+ * is swallowed here — the caller wants "the rows have caught up", not the
+ * write's result. This is what lets `workflow.await` answer only when the
+ * record says what the snapshot says.
+ *
+ * Read it *after* a store condition has settled, never inside a subscriber:
+ * subscribers fire inside `dispatch`, before the listener effect's
+ * synchronous `enqueue`, so a subscriber would see the queue one write short.
+ */
+export function whenPersisted(runId: string): Promise<void> {
+  const tail = writeQueues.get(runId)
+  if (!tail) return Promise.resolve()
+  return tail.then(
+    () => undefined,
+    () => undefined,
+  )
+}
+
 /** Retry once; never rejects — the caller reads `.ok`. */
 async function persistWrite(store: RunStore, write: PersistWrite): Promise<{ ok: true } | { ok: false; error: unknown }> {
   try {
