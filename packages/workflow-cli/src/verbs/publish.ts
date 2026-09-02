@@ -5,7 +5,16 @@
  * in-process instead of composing three separate GitHub Actions:
  *
  *   1. index     — `buildIndex` (via ../index-bundle.js's `writeIndexBundle`,
- *                  the exact machinery `workflow index` itself uses — Task 1)
+ *                  the exact machinery `workflow index` itself uses — Task 1).
+ *                  `--name`/`--description` flow straight through to it
+ *                  (both already part of `buildIndex`'s own args, apps#420
+ *                  follow-up — publish-workflow's action v2 was blocked on
+ *                  this exact gap, bffless/publish-workflow#4/#5): `--name`
+ *                  always resolves to a concrete value (default: the
+ *                  alias, same default `buildIndex` itself would apply);
+ *                  `--description` has no meaningful default and stays
+ *                  absent when omitted — unchanged from before this flag
+ *                  existed.
  *   2. prepare   — the alias-named copy + generated `/w/<alias>/*` forwarder
  *                  (../prepare.js, a port of publish-workflow's
  *                  scripts/prepare-rules.mjs)
@@ -75,6 +84,10 @@ export interface PublishArgs {
   path: string
   workflows: string
   rules?: string
+  /** Display name shown on the Implementations screen (move 1's index.json). Default: the alias. */
+  name?: string
+  /** One line about the bundle (move 1's index.json). Default: absent (buildIndex's own `''`). */
+  description?: string
   dryRun: boolean
 }
 
@@ -84,7 +97,17 @@ const BFFLESS_CLI_PIN = 'bffless@0.3.3'
 /** publish-workflow action.yml's default `backend-url` — the CE backend's own address, as reachable from itself. */
 const DEFAULT_BACKEND_URL = 'http://localhost:3000'
 
-const VALUE_FLAGS = new Set(['--api-url', '--project', '--alias', '--harness-alias', '--path', '--workflows', '--rules'])
+const VALUE_FLAGS = new Set([
+  '--api-url',
+  '--project',
+  '--alias',
+  '--harness-alias',
+  '--path',
+  '--workflows',
+  '--rules',
+  '--name',
+  '--description',
+])
 
 /** `--dry-run` aside, every flag takes a value; publish has no positional arguments. */
 export function parsePublish(rest: string[]): PublishArgs | { error: string } {
@@ -112,6 +135,8 @@ export function parsePublish(rest: string[]): PublishArgs | { error: string } {
     path: values['--path'] ?? 'dist',
     workflows: values['--workflows'] ?? '.bffless/workflows',
     rules: values['--rules'],
+    name: values['--name'],
+    description: values['--description'],
     dryRun,
   }
 }
@@ -403,14 +428,22 @@ export async function runPublish(
   const rulesDir = parsed.rules ? resolve(cwd, parsed.rules) : join(cwd, '.bffless', 'proxy-rules', alias)
   const targetUrl = resolveTargetUrl(project, alias, parsed.path)
   const pathPrefix = `/api/${alias}`
+  // move 1's `name:` — always concretely resolved (defaults to the alias,
+  // same default buildIndex itself would apply); `description` has no
+  // meaningful default to resolve to, so it stays absent unless given.
+  const name = parsed.name ?? alias
+  const description = parsed.description
 
   if (parsed.dryRun) {
     // Read-only: previews which of the two commitSha cases a real run would
     // hit (a human-visible short prefix, or the placeholder) without
     // writing anything or calling out over the network.
     const commitSha = resolveCommitSha(cwd)
+    const descriptionFlag = description !== undefined ? ` --description "${description}"` : ''
     out(`workflow publish (dry run) — alias=${alias} harness-alias=${parsed.harnessAlias} project=${project} api-url=${apiUrl}`)
-    out(`  1. index      ${workflowsDir} --out ${outPath} --impl ${alias} --rules ${rulesDir} --path-prefix ${pathPrefix}`)
+    out(
+      `  1. index      ${workflowsDir} --out ${outPath} --impl ${alias} --name "${name}"${descriptionFlag} --rules ${rulesDir} --path-prefix ${pathPrefix}`,
+    )
     out(`  2. prepare    ${rulesDir} -> <tmp>/${alias} (rename ruleset.yaml name: to "${alias}"; forwarder /w/${alias}/* -> ${targetUrl})`)
     out(
       `  3. rules push npx --yes ${BFFLESS_CLI_PIN} rules push <prepared-dir> --path-prefix ${pathPrefix} --project ${project} --api-url ${apiUrl} --prune`,
@@ -444,7 +477,7 @@ export async function runPublish(
   }
   let indexed: WriteResult
   try {
-    indexed = writeIndexBundle({ workflowsDir, out: outPath, impl: alias, name: alias }, rules)
+    indexed = writeIndexBundle({ workflowsDir, out: outPath, impl: alias, name, description }, rules)
   } catch (e) {
     err(`workflow: ${(e as Error).message}`)
     return 2

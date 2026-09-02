@@ -59,7 +59,7 @@ operating on the current directory's .bffless/workflow.json by default:
 
   publish [--api-url <url>] [--project <owner/name>] [--alias <alias>]
           [--harness-alias <alias>] [--path <dir>] [--workflows <dir>]
-          [--rules <dir>] [--dry-run]
+          [--rules <dir>] [--name <display name>] [--description <text>] [--dry-run]
 
 Options (publish):
   --api-url <url>         base URL of the BFFless instance (default: BFFLESS_API_URL)
@@ -69,6 +69,8 @@ Options (publish):
   --path <dir>            built bundle directory, also index's --out (default: dist)
   --workflows <dir>       directory of authored workflow YAML (default: .bffless/workflows)
   --rules <dir>           the implementation rule-set directory (default: .bffless/proxy-rules/<alias>)
+  --name <display name>   display name shown on the Implementations screen (default: the alias)
+  --description <text>    one line about the bundle, shown on the Implementations screen (default: none)
   --dry-run               print the four resolved moves; write nothing, call no network
 
 The API key comes from BFFLESS_API_KEY only — never a flag.
