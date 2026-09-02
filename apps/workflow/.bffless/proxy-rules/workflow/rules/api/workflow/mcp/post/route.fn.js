@@ -26,7 +26,8 @@ var __mcp = (() => {
     LIST_FANOUT: () => LIST_FANOUT,
     confinedSignPath: () => confinedSignPath,
     handler: () => handler,
-    parseIslandUri: () => parseIslandUri
+    parseIslandUri: () => parseIslandUri,
+    siblingBaseOf: () => siblingBaseOf
   });
 
   // ../../packages/workflow-agent-tools/dist/schemas.js
@@ -172,7 +173,7 @@ var __mcp = (() => {
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
-    "workflow.submitStep": "Complete a waiting interactive step. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value.",
+    "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island step: the step\u2019s own island is shown and the person completes it there \u2014 do not invent values for them.",
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
@@ -327,6 +328,13 @@ var __mcp = (() => {
     if (!/^[a-z][a-z0-9-]*$/.test(impl) || rest === "") return null;
     return { impl, rest };
   }
+  var MCP_PATH = "/api/workflow/mcp";
+  function siblingBaseOf(path, appOrigin) {
+    const at = path.indexOf(MCP_PATH);
+    const prefix = at > 0 ? path.slice(0, at) : "";
+    if (prefix.startsWith("/public/")) return `${CE_BACKEND}${prefix}`;
+    return appOrigin;
+  }
   function withAliases(route) {
     route.isAliases = route.isList && route.impl === "" && route.aliasesUrl !== "";
     return route;
@@ -337,6 +345,7 @@ var __mcp = (() => {
     const message = parseMessage(request.body);
     const host = header(request.headers, "x-forwarded-host") || header(request.headers, "host");
     const appOrigin = host === "" ? "" : `https://${host}`;
+    const siblingBase = siblingBaseOf(str(request.path), appOrigin);
     const owner = str(deployment.owner);
     const repo = str(deployment.repo);
     const project = owner !== "" && repo !== "" ? `${owner}/${repo}` : "";
@@ -367,11 +376,16 @@ var __mcp = (() => {
       workflow: "",
       rest: "",
       appOrigin,
-      whoamiUrl: appOrigin === "" ? "" : `${appOrigin}/api/workflow/whoami`,
+      siblingBase,
+      host,
+      whoamiUrl: siblingBase === "" ? "" : `${siblingBase}/api/workflow/whoami`,
+      whoamiPath: "/api/workflow/whoami",
       // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
       aliasesUrl: project === "" ? "" : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
       indexUrl: "",
-      stepViewUrl: appOrigin === "" ? "" : `${appOrigin}/step.html`,
+      indexPath: "",
+      stepViewUrl: siblingBase === "" ? "" : `${siblingBase}/step.html`,
+      stepViewPath: "/step.html",
       signPath: "",
       signStoragePath: "",
       probePath: project === "" ? "" : `${project}/uploads/workflows/.mcp-csp-probe`
@@ -434,8 +448,9 @@ var __mcp = (() => {
     if (route.tool === "workflow.runs" && route.impl !== "" && route.workflow !== "") route.isRuns = true;
     if (route.tool === "workflow.list") route.isList = true;
     if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "" && appOrigin !== "") route.isDescribe = true;
-    if ((route.isList || route.isDescribe) && route.impl !== "" && appOrigin !== "") {
-      route.indexUrl = `${appOrigin}/w/${route.impl}/.bffless/workflows/index.json`;
+    if ((route.isList || route.isDescribe) && route.impl !== "" && siblingBase !== "") {
+      route.indexPath = `/w/${route.impl}/.bffless/workflows/index.json`;
+      route.indexUrl = `${siblingBase}${route.indexPath}`;
     }
     if (route.tool === "workflow.sign") {
       route.signPath = confinedSignPath(args.path);

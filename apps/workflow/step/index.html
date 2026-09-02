@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workflow step</title>
+    <!-- The step view (spec 10; Phase 2 plan, Decision 3): an engine-less host page an
+         agent host mounts for `workflow.submitStep`. It is an MCP App outward
+         (`@modelcontextprotocol/ext-apps` App) and the harness's own IslandHost inward;
+         the waiting island mounts in the nested frame below, unchanged. Built as one file
+         by vite.step.config.ts — the sandbox it runs in loads nothing over the network. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2328;
+        --muted: #59636e;
+        --border: #d1d9e0;
+        --ok: #1a7f37;
+        --err: #cf222e;
+        --surface: #ffffff;
+        font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --fg: #e6edf3; --muted: #9198a1; --border: #3d444d; --ok: #3fb950; --err: #f85149; --surface: #0d1117; }
+      }
+      html, body { margin: 0; background: var(--surface); color: var(--fg); }
+      body { padding: 12px 14px; }
+      header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+      h1 { font-size: 16px; font-weight: 600; margin: 0; }
+      code { font-family: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      [data-testid='status'] { font-size: 12px; color: var(--muted); }
+      [data-testid='status'][data-level='error'] { color: var(--err); }
+      iframe[data-testid='island'] { display: block; width: 100%; min-height: 160px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+      [data-testid='submitted'] { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--ok); border-radius: 6px; font-size: 13px; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 data-testid="title">Workflow step</h1>
+      <span data-testid="status">Connecting to the harness…</span>
+    </header>
+    <iframe data-testid="island" title="Island" sandbox="allow-scripts"></iframe>
+    <p data-testid="submitted" hidden></p>
+    <script type="module" src="/src/step-view/main.ts"></script>
+  </body>
+</html>

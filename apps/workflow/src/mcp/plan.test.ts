@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { aliasNames, handler } from './plan'
+import { RUN_ID, runRow, stepRows } from './fixtures/index'
+import { aliasNames, handler, queryOf } from './plan'
 import { handler as routeOf, type FnRequest } from './route'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
@@ -70,5 +71,43 @@ describe('plan: island resources', () => {
     const plan = handler({ steps: { route: read('ui://bffless/hello/../other/x.html') }, deployment: DEPLOYMENT })
     expect(plan.hasIsland).toBe(false)
     expect(plan.islandError).toContain('must resolve inside /w/hello/')
+  })
+})
+
+describe('plan: stepView and pipeline (the run’s implementation is the fence)', () => {
+  const run = [runRow()]
+  const steps = stepRows()
+
+  it("names the waiting step's island file through resolveSrc against the run's impl", () => {
+    const plan = handler({ steps: { route: call('workflow.stepView', { runId: RUN_ID, step: 'pick/0/choose' }), run, steps }, deployment: DEPLOYMENT })
+    expect(plan.hasIsland).toBe(true)
+    expect(plan.islandUrl).toBe('https://h.example/w/hello/islands/pick-line.html')
+    const gone = handler({ steps: { route: call('workflow.stepView', { runId: RUN_ID, step: 'nope/0/x' }), run, steps }, deployment: DEPLOYMENT })
+    expect(gone.hasIsland).toBe(false)
+    expect(gone.islandError).toBe('No such step: nope/0/x')
+    const escaped = handler({ steps: { route: call('workflow.stepView', { runId: RUN_ID, step: 'pick/0/choose' }), run: [runRow({ definition: { jobs: { pick: { steps: [{ id: 'choose', with: { src: '../other/x.html' } }] } } } })], steps }, deployment: DEPLOYMENT })
+    expect(escaped.hasIsland).toBe(false)
+    expect(escaped.islandError).toContain('must resolve inside /w/hello/')
+    expect(handler({ steps: { route: call('workflow.stepView', { runId: 'nope', step: 'pick/0/choose' }), run: [], steps: [] }, deployment: DEPLOYMENT }).islandError).toBe('No such run: nope')
+  })
+
+  it('resolves a pipeline name exactly as IslandHost does, and refuses what it refuses', () => {
+    const post = handler({ steps: { route: call('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: 'echo', arguments: { text: 'hi', upper: true } }), run, steps }, deployment: DEPLOYMENT })
+    expect(post.isPipelinePost).toBe(true)
+    expect(post.pipelineUrl).toBe('https://h.example/api/hello/echo')
+    expect(post.pipelineBody).toEqual({ text: 'hi', upper: true })
+    const get = handler({ steps: { route: call('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: 'job', arguments: { id: '7' }, method: 'GET' }), run, steps }, deployment: DEPLOYMENT })
+    expect(get.isPipelineGet).toBe(true)
+    expect(get.pipelineUrl).toBe('https://h.example/api/hello/job?id=7')
+    const dotted = handler({ steps: { route: call('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: 'video.slice' }), run, steps }, deployment: DEPLOYMENT })
+    expect(dotted.pipelineUrl).toBe('https://h.example/api/hello/video/slice')
+    for (const name of ['../workflow/run', '/api/other/x', '', 'a b']) {
+      const bad = handler({ steps: { route: call('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name }), run, steps }, deployment: DEPLOYMENT })
+      expect(bad.isPipelinePost || bad.isPipelineGet, name).toBe(false)
+      expect(bad.pipelineError, name).not.toBe('')
+    }
+    const host = handler({ steps: { route: call('workflow.pipeline', { runId: RUN_ID, step: 'pick/0/choose', name: 'workflow.submit' }), run, steps }, deployment: DEPLOYMENT })
+    expect(host.pipelineError).toContain('host tool')
+    expect(queryOf({ a: 1, b: 'x y' })).toBe('?a=1&b=x%20y')
   })
 })

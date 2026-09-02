@@ -25,7 +25,7 @@ import {
 import { signFile } from '../islands/hostDeps'
 import { initialValues, validateInputs } from '../lib/autoStart'
 import { workflowId } from '../lib/coerce'
-import { describeWorkflow } from '../lib/describe'
+import { describeText, describeWorkflow } from '../lib/describe'
 import { httpJsonWithReauth } from '../lib/http'
 import type { AppStore } from '../store'
 import { LeaseTransportError, cancelRun, takeOver } from '../store/lifecycleActions'
@@ -172,11 +172,7 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     const loaded = await deps.store.dispatch(loadWorkflowDefinition({ impl, workflow }))
     if (!loaded.ok) return errorResult(Object.values(loaded.errors)[0] ?? 'The workflow could not be loaded', { errors: loaded.errors })
     const described = describeWorkflow({ impl, workflow, listing: loaded.listing, def: loaded.def })
-    const interactive = described.jobs.flatMap((job) =>
-      job.steps.filter((step) => step.kind === 'island' || step.kind === 'form').map((step) => `${job.id}/${step.id} (${step.kind}${step.headless ? `, headless: ${step.headless}` : ', needs a person'})`),
-    )
-    const text = `${described.name} (${impl}/${workflow}): ${Object.keys(described.inputs).length} inputs, ${described.jobs.length} jobs, ${Object.keys(described.outputs).length} outputs${interactive.length ? `; interactive steps: ${interactive.join(', ')}` : '; no interactive steps'}${described.headlessSafe ? '; headless-safe' : ''}`
-    return textResult(text, { ...described })
+    return textResult(describeText(described), { ...described })
   }
 
   const status: Executor = async (args) => {

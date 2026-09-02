@@ -123,9 +123,36 @@ export function snapshotFromRows(run: RunRowLike, steps: StepRowLike[]): RunSnap
   }
 }
 
+/**
+ * `name (type[, required])` per declaration — an island's `outputs` map or a
+ * form's `fields` — so a reader that only sees the text (an agent host shows
+ * a model `content[0].text` and nothing else) still learns what would satisfy
+ * the step. An untyped island output is `json`, an untyped form field `string` (02).
+ */
+export function declaredList(decls: unknown, defaultType: string): string {
+  if (!isPlainObject(decls)) return ''
+  return Object.entries(decls)
+    .map(([name, declared]) => {
+      const decl = isPlainObject(declared) ? declared : {}
+      const type = typeof decl.type === 'string' ? decl.type : defaultType
+      const list = decl.list === true ? '[]' : ''
+      return `${name} (${type}${list}${decl.required === true ? ', required' : ''})`
+    })
+    .join(', ')
+}
+
+function describeStep(step: WaitingStep): string {
+  const detail =
+    step.kind === 'island'
+      ? declaredList(step.outputs, 'json')
+      : declaredList(isPlainObject(step.inputs) ? step.inputs.fields : undefined, 'string')
+  if (detail === '') return `${step.key} (${step.kind})`
+  return `${step.key} (${step.kind}; ${step.kind === 'island' ? 'outputs' : 'fields'}: ${detail})`
+}
+
 function describeWaiting(snapshot: RunSnapshot): string {
   if (snapshot.waitingOn.length === 0) return ''
-  return `, waiting on ${snapshot.waitingOn.map((step) => `${step.key} (${step.kind})`).join(', ')}`
+  return `, waiting on ${snapshot.waitingOn.map(describeStep).join(', ')}`
 }
 
 /**

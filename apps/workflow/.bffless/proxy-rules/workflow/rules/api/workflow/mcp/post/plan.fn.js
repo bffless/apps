@@ -23,7 +23,8 @@ var __mcp = (() => {
   var plan_exports = {};
   __export(plan_exports, {
     aliasNames: () => aliasNames,
-    handler: () => handler
+    handler: () => handler,
+    queryOf: () => queryOf
   });
 
   // src/mcp/polyfills.ts
@@ -91,6 +92,11 @@ var __mcp = (() => {
   // src/lib/runner/results.ts
   var RESPONSE_BUDGET_BYTES = 256 * 1024;
 
+  // src/lib/runner/adapters/declared.ts
+  function obj(value) {
+    return value !== null && typeof value === "object" ? value : {};
+  }
+
   // src/lib/runner/adapters/island.ts
   var HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
   var ENCODED_OR_BACKSLASH = /[\\%]/;
@@ -118,6 +124,39 @@ var __mcp = (() => {
     }
     return url;
   }
+  var HOST_TOOLS = /* @__PURE__ */ new Map([
+    ["workflow.submit", "submit"],
+    ["workflow/submit", "submit"],
+    ["workflow.annotate", "annotate"],
+    ["workflow/annotate", "annotate"],
+    ["workflow.sign", "sign"],
+    ["workflow/sign", "sign"]
+  ]);
+  function methodOf(meta) {
+    return obj(obj(meta).bffless).method === "GET" ? "GET" : "POST";
+  }
+  function rejected(reason) {
+    return { kind: "rejected", reason };
+  }
+  function resolveToolName(impl, name, meta) {
+    if (typeof name !== "string" || name === "") return rejected("a tool name is required");
+    if (/\s/.test(name)) return rejected(`tool "${name}": a tool name may not contain whitespace`);
+    const host = HOST_TOOLS.get(name);
+    if (host) return { kind: "host", tool: host };
+    if (name.startsWith("/")) {
+      return rejected(`tool "${name}": absolute paths are not callable from an island`);
+    }
+    if (ENCODED_OR_BACKSLASH.test(name)) {
+      return rejected(`tool "${name}": a tool name may not contain a backslash or a percent-escape`);
+    }
+    const path = name.includes("/") ? name : name.split(".").join("/");
+    const segments = path.split("/");
+    const url = `/api/${impl}/${path}`;
+    if (segments.some((s) => s === "" || s === "." || s === "..") || !inside(url, `/api/${impl}/`)) {
+      return rejected(`tool "${name}": resolves outside /api/${impl}/`);
+    }
+    return { kind: "pipeline", path, method: methodOf(meta), url };
+  }
   var ANNOTATION_BUDGET = {
     /** Annotations per step, the recorded ones included. */
     count: 100,
@@ -131,6 +170,21 @@ var __mcp = (() => {
   function workflowId(file) {
     const base = file.split("/").pop() ?? file;
     return base.replace(/\.workflow\.ya?ml$/i, "").replace(/\.ya?ml$/i, "");
+  }
+
+  // src/mcp/rows.ts
+  function isPlainObject2(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+  function rows(result) {
+    if (Array.isArray(result)) return result.filter(isPlainObject2);
+    if (!isPlainObject2(result)) return [];
+    const inner = result.records ?? result.data ?? result.rows;
+    return Array.isArray(inner) ? inner.filter(isPlainObject2) : [];
+  }
+  function fieldsOf(row) {
+    const fields = row.fields;
+    return isPlainObject2(fields) && Object.keys(fields).length > 0 ? fields : row;
   }
 
   // ../../packages/workflow-agent-tools/dist/schemas.js
@@ -276,7 +330,7 @@ var __mcp = (() => {
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
-    "workflow.submitStep": "Complete a waiting interactive step. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value.",
+    "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island step: the step\u2019s own island is shown and the person completes it there \u2014 do not invent values for them.",
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
@@ -308,7 +362,7 @@ var __mcp = (() => {
   var RUN_ID2 = { type: "string", description: "The run the island belongs to." };
   var STEP = { type: "string", description: "The step key, `<job>/<index>/<step>`, of the waiting island step." };
   var APP_ONLY = { ui: { visibility: ["app"] } };
-  var HOST_TOOLS = Object.freeze([
+  var HOST_TOOLS2 = Object.freeze([
     {
       name: "workflow.submit",
       description: "Complete the waiting island step of a run with its declared outputs \u2014 the island's own `workflow.submit` (spec 04), answered server-side: validated against the step's declared output map exactly as the harness page validates it, then written to the step row. Refused while a harness tab still drives the run.",
@@ -365,7 +419,7 @@ var __mcp = (() => {
       _meta: APP_ONLY
     }
   ]);
-  var HOST_TOOL_NAMES = new Set(HOST_TOOLS.map((tool) => tool.name));
+  var HOST_TOOL_NAMES = new Set(HOST_TOOLS2.map((tool) => tool.name));
 
   // src/mcp/jsonrpc.ts
   var PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -375,12 +429,12 @@ var __mcp = (() => {
   var LIST_FANOUT = 3;
 
   // src/mcp/plan.ts
-  function isPlainObject2(value) {
+  function isPlainObject3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
   function aliasNames(body) {
-    const list = Array.isArray(body) ? body : isPlainObject2(body) && Array.isArray(body.data) ? body.data : [];
-    return list.map((entry) => isPlainObject2(entry) && typeof entry.alias === "string" ? entry.alias : "").filter((alias) => alias !== "");
+    const list = Array.isArray(body) ? body : isPlainObject3(body) && Array.isArray(body.data) ? body.data : [];
+    return list.map((entry) => isPlainObject3(entry) && typeof entry.alias === "string" ? entry.alias : "").filter((alias) => alias !== "");
   }
   function handler(data) {
     const route = data.steps?.route;
@@ -392,23 +446,31 @@ var __mcp = (() => {
       url1: "",
       url2: "",
       url3: "",
+      path1: "",
+      path2: "",
+      path3: "",
       aliases: [],
       skipped: [],
       hasYaml: false,
       yamlUrl: "",
+      yamlPath: "",
       listing: null,
       hasIsland: false,
       islandUrl: "",
+      islandPath: "",
       islandError: "",
       isPipelinePost: false,
       isPipelineGet: false,
       pipelineUrl: "",
+      pipelinePath: "",
       pipelineBody: {},
       pipelineError: ""
     };
     if (!route) return plan;
-    const indexUrlOf = (alias) => `${route.appOrigin}/w/${alias}/.bffless/workflows/index.json`;
-    if (route.isList && route.appOrigin !== "") {
+    const base = route.siblingBase;
+    const indexPathOf = (alias) => `/w/${alias}/.bffless/workflows/index.json`;
+    const indexUrlOf = (alias) => `${base}${indexPathOf(alias)}`;
+    if (route.isList && base !== "") {
       let wanted;
       if (route.impl !== "") {
         wanted = [route.impl];
@@ -419,33 +481,95 @@ var __mcp = (() => {
       plan.aliases = wanted.slice(0, LIST_FANOUT);
       plan.skipped = wanted.slice(LIST_FANOUT);
       const [url1 = "", url2 = "", url3 = ""] = plan.aliases.map(indexUrlOf);
-      Object.assign(plan, { has1: url1 !== "", url1, has2: url2 !== "", url2, has3: url3 !== "", url3 });
+      const [path1 = "", path2 = "", path3 = ""] = plan.aliases.map(indexPathOf);
+      Object.assign(plan, { has1: url1 !== "", url1, path1, has2: url2 !== "", url2, path2, has3: url3 !== "", url3, path3 });
     }
     if (route.isDescribe) {
       const index = data.steps.index;
-      const body = index?.ok === true && isPlainObject2(index.body) ? index.body : null;
+      const body = index?.ok === true && isPlainObject3(index.body) ? index.body : null;
       const workflows = body && Array.isArray(body.workflows) ? body.workflows : [];
       const listing = workflows.find(
-        (entry) => isPlainObject2(entry) && typeof entry.file === "string" && workflowId(entry.file) === route.workflow
+        (entry) => isPlainObject3(entry) && typeof entry.file === "string" && workflowId(entry.file) === route.workflow
       );
-      if (listing && route.appOrigin !== "") {
+      if (listing && base !== "") {
         plan.listing = listing;
         plan.hasYaml = true;
-        plan.yamlUrl = `${route.appOrigin}/w/${route.impl}/.bffless/workflows/${listing.file}`;
+        plan.yamlPath = `/w/${route.impl}/.bffless/workflows/${listing.file}`;
+        plan.yamlUrl = `${base}${plan.yamlPath}`;
       }
     }
     if (route.isIslandUri) {
       try {
         const url = resolveSrc(route.impl, route.rest);
-        if (route.appOrigin !== "") {
+        if (base !== "") {
           plan.hasIsland = true;
-          plan.islandUrl = `${route.appOrigin}${url}`;
+          plan.islandPath = url;
+          plan.islandUrl = `${base}${url}`;
         }
       } catch (err) {
         plan.islandError = err instanceof Error ? err.message : String(err);
       }
     }
+    if (route.tool === "workflow.stepView" || route.tool === "workflow.pipeline") {
+      const runRow = rows(data.steps.run)[0];
+      const run = runRow ? fieldsOf(runRow) : null;
+      const impl = run && typeof run.impl === "string" ? run.impl : "";
+      if (!run || impl === "") {
+        const missing = `No such run: ${route.runId}`;
+        plan.islandError = missing;
+        plan.pipelineError = missing;
+        return plan;
+      }
+      if (route.tool === "workflow.stepView") {
+        const row = rows(data.steps.steps).map(fieldsOf).find((r) => r.key === route.key);
+        const src = row ? declaredSrc(run.definition, String(row.job ?? ""), String(row.step ?? "")) : "";
+        if (!row) plan.islandError = `No such step: ${route.key}`;
+        else if (src === "") plan.islandError = `${route.key}: the run's definition snapshot declares no island src`;
+        else {
+          try {
+            const url = resolveSrc(impl, src);
+            if (base !== "") {
+              plan.hasIsland = true;
+              plan.islandPath = url;
+              plan.islandUrl = `${base}${url}`;
+            }
+          } catch (err) {
+            plan.islandError = err instanceof Error ? err.message : String(err);
+          }
+        }
+      } else {
+        const name = typeof route.args.name === "string" ? route.args.name : "";
+        const method = route.args.method === "GET" ? "GET" : "POST";
+        const target = resolveToolName(impl, name, { bffless: { method } });
+        const args = isPlainObject3(route.args.arguments) ? route.args.arguments : {};
+        if (target.kind === "rejected") plan.pipelineError = target.reason;
+        else if (target.kind === "host") plan.pipelineError = `tool "${name}": workflow.${target.tool} is a host tool \u2014 call it directly`;
+        else if (base === "") plan.pipelineError = "the request named no host";
+        else if (target.method === "GET") {
+          plan.isPipelineGet = true;
+          plan.pipelinePath = `${target.url}${queryOf(args)}`;
+          plan.pipelineUrl = `${base}${plan.pipelinePath}`;
+        } else {
+          plan.isPipelinePost = true;
+          plan.pipelinePath = target.url;
+          plan.pipelineUrl = `${base}${target.url}`;
+          plan.pipelineBody = args;
+        }
+      }
+    }
     return plan;
+  }
+  function declaredSrc(definition, job, stepId) {
+    if (!isPlainObject3(definition) || !isPlainObject3(definition.jobs)) return "";
+    const jobDecl = definition.jobs[job];
+    if (!isPlainObject3(jobDecl) || !Array.isArray(jobDecl.steps)) return "";
+    const step = jobDecl.steps.find((entry) => isPlainObject3(entry) && entry.id === stepId);
+    const withDecl = step && isPlainObject3(step.with) ? step.with : void 0;
+    return withDecl && typeof withDecl.src === "string" ? withDecl.src : "";
+  }
+  function queryOf(args) {
+    const pairs = Object.entries(args).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(typeof value === "string" ? value : JSON.stringify(value))}`);
+    return pairs.length ? `?${pairs.join("&")}` : "";
   }
   return __toCommonJS(plan_exports);
 })();

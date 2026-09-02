@@ -23,7 +23,7 @@ From a Claude Code session whose working directory is this repo, or headlessly:
 `claude -p "Walk studio-headless against https://workflow.j5s.dev" --agent apps-live-walk`.
 The input is one walk name (`m1`, `interactive`, `hello`, `headless`, `studio-audit`,
 `studio-headless`, `page-tools`, `mcp`, or `all`), a harness URL (default `https://workflow.j5s.dev`),
-optional `--dispatch`, optional `--out`, optional `--run`/`--clip`. Nothing triggers
+optional `--dispatch`, optional `--out`, optional `--run`/`--clip`, and for `mcp` optional `--park-only`. Nothing triggers
 you automatically — do not assume a CI run or a deploy is waiting on you.
 
 ## Step 0 — read the house rules

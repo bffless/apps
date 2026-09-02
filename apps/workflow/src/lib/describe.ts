@@ -10,6 +10,7 @@
  * (`headlessMode`), so the description and the runner cannot disagree about
  * what a step does without a person.
  */
+import { declaredList } from '@bffless/workflow-agent-tools'
 import type {
   DescribedInput,
   DescribedJob,
@@ -97,4 +98,29 @@ export function describeWorkflow(a: {
     outputs,
     jobs,
   }
+}
+
+/**
+ * The one sentence both adapters say about a description. An agent host shows a
+ * model `content[0].text` and nothing else, so the names a model needs to act —
+ * the inputs with their types/defaults, each interactive step's declared
+ * outputs or fields — are in the prose, not only in `structuredContent`.
+ */
+export function describeText(described: WorkflowDescription): string {
+  const inputs = Object.entries(described.inputs).map(([name, input]) => {
+    const parts = [`${input.type}${input.list ? '[]' : ''}`]
+    if (input.required) parts.push('required')
+    if (input.default !== undefined) parts.push(`default ${JSON.stringify(input.default)}`)
+    return `${name} (${parts.join(', ')})`
+  })
+  const interactive = described.jobs.flatMap((job) =>
+    job.steps
+      .filter((step) => step.kind === 'island' || step.kind === 'form')
+      .map((step) => {
+        const declared = step.kind === 'island' ? declaredList(step.outputs, 'json') : declaredList(step.fields, 'string')
+        const headless = step.headless ? `headless: ${step.headless}` : 'needs a person'
+        return `${job.id}/${step.id} (${step.kind}, ${headless}${declared ? `; ${step.kind === 'island' ? 'outputs' : 'fields'}: ${declared}` : ''})`
+      }),
+  )
+  return `${described.name} (${described.impl}/${described.workflow}): ${inputs.length} inputs${inputs.length ? ` — ${inputs.join(', ')}` : ''}; ${described.jobs.length} jobs; ${Object.keys(described.outputs).length} outputs${interactive.length ? `; interactive steps: ${interactive.join(', ')}` : '; no interactive steps'}${described.headlessSafe ? '; headless-safe' : ''}`
 }

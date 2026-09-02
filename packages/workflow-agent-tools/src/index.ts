@@ -38,6 +38,7 @@ export {
 } from './results.js'
 export {
   ACTIVE_STEP_STATUSES,
+  declaredList,
   snapshotFromRows,
   snapshotText,
   type RunRowLike,

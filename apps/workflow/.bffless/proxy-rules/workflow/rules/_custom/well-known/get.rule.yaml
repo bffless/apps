@@ -1,0 +1,16 @@
+pathPattern: /.well-known/*
+targetUrl: pipeline
+order: 32
+pipeline:
+  name: No OAuth discovery here (yet)
+  description: "GET /.well-known/* → 404 JSON. The harness is a SPA, so without this rule every /.well-known/ path answered 200 text/html (index.html) — and an MCP client that fetches RFC 9728's /.well-known/oauth-protected-resource before connecting parsed HTML as metadata and aborted with 'Failed to start MCP authorization' (claude.ai, 2026-09-02). The authless prototype (spec 10, D23 rung 1) has no authorization server to advertise; Phase 3 (story 9) replaces this rule with the real protected-resource document pointing at CE's OAuth endpoints. Authless by necessity: discovery happens before any credential exists."
+  steps:
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"error":"not_found","message":"This harness advertises no OAuth metadata: the MCP endpoint at /api/workflow/mcp is authless (spec 10, auth ladder rung 1)"}'
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+description: "404 JSON for /.well-known/* so MCP clients' OAuth discovery gets a clean miss instead of the SPA's index.html (spec 10, D23)."

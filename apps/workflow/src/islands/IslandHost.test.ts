@@ -233,6 +233,23 @@ describe('tools/call → the host tools', () => {
     expect(result.isError).toBeFalsy()
   })
 
+  it('awaits an asynchronous onSubmit — the step view answers from the endpoint (Phase 2 plan, Decision 13)', async () => {
+    const h = await mounted({
+      onSubmit: (async (outputs: unknown) => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        return Object.keys(outputs as object).length ? { ok: true as const } : { ok: false as const, errors: { spans: 'Required' } }
+      }) as unknown as IslandHostDeps['onSubmit'],
+    })
+
+    const accepted = await h.island.app.callServerTool({ name: 'workflow.submit', arguments: { outputs: { spans: [1] } } })
+    expect(accepted.isError).toBeFalsy()
+    expect(firstText(accepted)).toBe('ok')
+
+    const refused = await h.island.app.callServerTool({ name: 'workflow.submit', arguments: { outputs: {} } })
+    expect(refused.isError).toBe(true)
+    expect(refused.structuredContent).toEqual({ errors: { spans: 'Required' } })
+  })
+
   it('returns a rejected submit as the tool error and leaves the step alone', async () => {
     const errors = { spans: 'Required' }
     const h = await mounted()

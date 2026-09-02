@@ -1,0 +1,152 @@
+/**
+ * The step view's bridge (spec 10 §Islands and the run view; Phase 2 plan,
+ * Decisions 3–4): how one waiting island's every capability rides the outer
+ * MCP Apps bridge as `tools/call` to the harness's own endpoint.
+ *
+ * Inward the view is the harness's `IslandHost` (the island cannot tell which
+ * host it is in); outward it is an ext-apps `App`, and the four app-only tools
+ * — `workflow.stepView`, `workflow.pipeline`, `workflow.submit`,
+ * `workflow.annotate` — plus the catalog's `workflow.sign` are the whole
+ * surface. The fence still holds server-side: `workflow.pipeline` resolves a
+ * name against the *run's* implementation, never against anything the view
+ * says. Pure: no DOM, so `deps.test.ts` drives it with a recording `call`.
+ */
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import type { IslandHostDeps } from '../islands/IslandHost'
+import { resolveSrc } from '../lib/runner/adapters/island'
+
+/** `App.callServerTool`, narrowed to what the view sends. */
+export type ServerCall = (params: { name: string; arguments: Record<string, unknown> }) => Promise<CallToolResult>
+
+/** What `workflow.stepView` answers: enough to mount the island exactly as the harness page would. */
+export interface StepViewData {
+  runId: string
+  step: string
+  impl: string
+  workflow: string
+  kind: string
+  status: string
+  src: string
+  arguments: Record<string, unknown>
+  outputs?: Record<string, unknown>
+  html: string
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** The text blocks of a tool result, joined — how a refusal reads. */
+export function resultText(result: CallToolResult): string {
+  return (result.content ?? [])
+    .map((block) => (block.type === 'text' ? block.text : ''))
+    .filter((text) => text !== '')
+    .join('\n')
+}
+
+/** The `workflow.stepView` result, validated into `StepViewData`; throws with the result's text on a refusal or a malformed answer. */
+export function readStepView(result: CallToolResult): StepViewData {
+  if (result.isError) throw new Error(resultText(result) || 'workflow.stepView refused')
+  const s = isPlainObject(result.structuredContent) ? result.structuredContent : {}
+  const str = (key: string) => (typeof s[key] === 'string' ? (s[key] as string) : '')
+  const view: StepViewData = {
+    runId: str('runId'),
+    step: str('step'),
+    impl: str('impl'),
+    workflow: str('workflow'),
+    kind: str('kind'),
+    status: str('status'),
+    src: str('src'),
+    arguments: isPlainObject(s.arguments) ? s.arguments : {},
+    ...(isPlainObject(s.outputs) ? { outputs: s.outputs } : {}),
+    html: str('html'),
+  }
+  for (const key of ['runId', 'step', 'impl', 'src', 'html'] as const) {
+    if (view[key] === '') throw new Error(`workflow.stepView answered without ${key}`)
+  }
+  return view
+}
+
+/** `_meta.bffless.status` of a pipeline answer the endpoint relayed, when it carried one. */
+function relayedStatus(result: CallToolResult): number | undefined {
+  const meta = isPlainObject(result._meta) ? result._meta : {}
+  const bffless = isPlainObject(meta.bffless) ? meta.bffless : {}
+  return typeof bffless.status === 'number' ? bffless.status : undefined
+}
+
+export interface StepViewHooks {
+  /** `ui/message` and logging from the island — the view shows the last line. */
+  onLog(line: string): void
+  /** The island's `workflow.submit` was accepted server-side. */
+  onSubmitted(): void
+}
+
+/**
+ * `IslandHostDeps` for one waiting step, every capability over `call`:
+ * - `http` (the island's pipeline tools, which `IslandHost` has already fenced
+ *   to `/api/<impl>/<path>`) → `workflow.pipeline { runId, step, name: path,
+ *   arguments, method }`; the endpoint re-fences `name` against the run's impl;
+ * - `fetchText` answers the island's own URL with the HTML `stepView` carried
+ *   (the frame is mounted from text, like on the page) and nothing else — a
+ *   sibling asset is not reachable from inside an agent host in this phase;
+ * - `onSubmit` → `workflow.submit { runId, step, outputs }`, a refusal's
+ *   `structuredContent.errors` handed back per output as the page would;
+ * - `onAnnotate` → `workflow.annotate { runId, step, ...args }`;
+ * - `sign` → the catalog's `workflow.sign { runId, path }`.
+ */
+export function stepViewDeps(call: ServerCall, view: StepViewData, hooks: StepViewHooks): IslandHostDeps {
+  const islandUrl = resolveSrc(view.impl, view.src)
+  const scoped = { runId: view.runId, step: view.step }
+
+  return {
+    async http(url, init) {
+      const prefix = `/api/${view.impl}/`
+      const name = url.startsWith(prefix) ? url.slice(prefix.length) : url
+      const method = init.method === 'GET' ? 'GET' : 'POST'
+      const args = method === 'GET' ? (init.query ?? {}) : (init.body ?? {})
+      const result = await call({ name: 'workflow.pipeline', arguments: { ...scoped, name, arguments: args, method } })
+      if (result.isError) {
+        return { ok: false, status: relayedStatus(result) ?? 500, body: { error: resultText(result) } }
+      }
+      return { ok: true, status: relayedStatus(result) ?? 200, body: result.structuredContent ?? {} }
+    },
+
+    async fetchText(url) {
+      if (url === islandUrl) return { ok: true, status: 200, text: view.html }
+      return { ok: false, status: 404, text: `${url}: only the island's own file is available inside an agent host` }
+    },
+
+    async onSubmit(outputs) {
+      const result = await call({ name: 'workflow.submit', arguments: { ...scoped, outputs } })
+      if (result.isError) {
+        const s = isPlainObject(result.structuredContent) ? result.structuredContent : {}
+        const errors = isPlainObject(s.errors)
+          ? Object.fromEntries(Object.entries(s.errors).map(([key, value]) => [key, String(value)]))
+          : { outputs: resultText(result) || 'workflow.submit refused' }
+        return { ok: false, errors }
+      }
+      hooks.onSubmitted()
+      return { ok: true }
+    },
+
+    async onAnnotate(args) {
+      const extra = isPlainObject(args) ? args : {}
+      const result = await call({ name: 'workflow.annotate', arguments: { ...scoped, ...extra } })
+      if (result.isError) return { ok: false, error: resultText(result) || 'workflow.annotate refused' }
+      return { ok: true }
+    },
+
+    async sign(path) {
+      const result = await call({ name: 'workflow.sign', arguments: { runId: view.runId, path } })
+      if (result.isError) throw new Error(resultText(result) || 'workflow.sign refused')
+      const s = isPlainObject(result.structuredContent) ? result.structuredContent : {}
+      if (typeof s.url !== 'string' || s.url === '') throw new Error(`${path}: the sign tool returned no url`)
+      return { url: s.url, expiresIn: typeof s.expiresIn === 'number' ? s.expiresIn : 3600 }
+    },
+
+    onDisplayMode: () => {},
+    onLog: hooks.onLog,
+    openLink: () => {},
+    now: () => Date.now(),
+  }
+}

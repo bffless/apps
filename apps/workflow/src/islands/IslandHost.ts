@@ -105,15 +105,22 @@ export class IslandMountAbandoned extends Error {
   }
 }
 
+export type SubmitAnswer = { ok: true } | { ok: false; errors: Record<string, string> }
+export type AnnotateAnswer = { ok: true } | { ok: false; error: string }
+
 export interface IslandHostDeps {
   /** `tools/call` → the implementation's own proxy rules. */
   http: HttpJson
   /** The island HTML, and `resources/read` for its siblings. */
   fetchText: (url: string) => Promise<{ ok: boolean; status: number; text: string }>
-  /** `workflow.submit` — the middleware's `completeIslandStep`. */
-  onSubmit: (outputs: unknown) => { ok: true } | { ok: false; errors: Record<string, string> }
-  /** `workflow.annotate` — the middleware's `annotateEvent` (Decision 12). */
-  onAnnotate: (args: unknown) => { ok: true } | { ok: false; error: string }
+  /**
+   * `workflow.submit` — the middleware's `completeIslandStep` on the harness
+   * page (synchronous), or the step view's server round trip inside an agent
+   * host (a promise; Phase 2 plan, Decision 13). The host awaits either.
+   */
+  onSubmit: (outputs: unknown) => SubmitAnswer | Promise<SubmitAnswer>
+  /** `workflow.annotate` — the middleware's `annotateEvent` (Decision 12), or the step view's server round trip. */
+  onAnnotate: (args: unknown) => AnnotateAnswer | Promise<AnnotateAnswer>
   /**
    * `workflow.sign` — `hostDeps`'s `signFile`, bound to the caller's `http`
    * (Decision 6). Rejects with the message the island should see.
@@ -443,7 +450,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
           if (a.viewer) {
             return toolError('workflow.submit is not available in a read-only viewer')
           }
-          const submitted = deps.onSubmit(args.outputs)
+          const submitted = await deps.onSubmit(args.outputs)
           if (submitted.ok) return { content: [{ type: 'text', text: 'ok' }] }
           return {
             isError: true,
@@ -467,7 +474,7 @@ export function createIslandHost(deps: IslandHostDeps): IslandHost {
           }
         }
 
-        const annotated = deps.onAnnotate(args)
+        const annotated = await deps.onAnnotate(args)
         if (annotated.ok) return { content: [{ type: 'text', text: 'ok' }] }
         return {
           isError: true,

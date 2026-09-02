@@ -11,6 +11,11 @@ pipeline:
     # Phase 2 plan, Decision 6: the service identity, probed through the harness's
     # own whoami with the secret every sibling call carries. Not ok ⇒ every
     # method but initialize/ping answers -32000 (not enabled on this install).
+    # Every sibling call is in-process (CE at the request's own /public/… base,
+    # `route.siblingBase`) and carries the two headers nginx would have set:
+    # CE's proxy middleware matches rules on `x-original-uri` and resolves the
+    # domain on `x-forwarded-host` (proxy.middleware.ts) — without them the
+    # /public/… URL is read as a file path and 404s.
     - id: identity
       name: identity
       handler: http_request
@@ -18,7 +23,7 @@ pipeline:
         condition: steps.route.hasOrigin
         url: steps.route.whoamiUrl
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.route.whoamiPath, x-forwarded-host: steps.route.host }
         failOnError: false
         timeout: 10000
     # --- run-scoped tools (status / outputs, and the write branch): the same rows run/get reads
@@ -80,7 +85,7 @@ pipeline:
         condition: steps.route.isDescribe
         url: steps.route.indexUrl
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.route.indexPath, x-forwarded-host: steps.route.host }
         failOnError: false
     # `plan` needs the alias list / the index / the run rows above: the fan-out
     # URLs, the YAML an index names, the island file a waiting step names.
@@ -97,7 +102,7 @@ pipeline:
         condition: steps.plan.has1
         url: steps.plan.url1
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.path1, x-forwarded-host: steps.route.host }
         failOnError: false
     - id: index2
       name: index2
@@ -106,7 +111,7 @@ pipeline:
         condition: steps.plan.has2
         url: steps.plan.url2
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.path2, x-forwarded-host: steps.route.host }
         failOnError: false
     - id: index3
       name: index3
@@ -115,7 +120,7 @@ pipeline:
         condition: steps.plan.has3
         url: steps.plan.url3
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.path3, x-forwarded-host: steps.route.host }
         failOnError: false
     - id: yaml
       name: yaml
@@ -124,7 +129,7 @@ pipeline:
         condition: steps.plan.hasYaml
         url: steps.plan.yamlUrl
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.yamlPath, x-forwarded-host: steps.route.host }
         failOnError: false
     # --- ui:// resources: an island file (unchanged, through resolveSrc's fence) and the step view
     - id: island
@@ -134,7 +139,7 @@ pipeline:
         condition: steps.plan.hasIsland
         url: steps.plan.islandUrl
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.islandPath, x-forwarded-host: steps.route.host }
         failOnError: false
     - id: stepView
       name: stepView
@@ -143,7 +148,29 @@ pipeline:
         condition: steps.route.isStepView
         url: steps.route.stepViewUrl
         method: GET
-        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY }
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.route.stepViewPath, x-forwarded-host: steps.route.host }
+        failOnError: false
+    # --- workflow.pipeline: the island's own implementation's rule, at the URL
+    # `plan` fenced (resolveToolName against the RUN's impl); the island says the
+    # verb (04, Decision 10), so one step per method.
+    - id: pipelinePost
+      name: pipelinePost
+      handler: http_request
+      config:
+        condition: steps.plan.isPipelinePost
+        url: steps.plan.pipelineUrl
+        method: POST
+        body: steps.plan.pipelineBody
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.pipelinePath, x-forwarded-host: steps.route.host }
+        failOnError: false
+    - id: pipelineGet
+      name: pipelineGet
+      handler: http_request
+      config:
+        condition: steps.plan.isPipelineGet
+        url: steps.plan.pipelineUrl
+        method: GET
+        headers: { x-api-key: secrets.WORKFLOW_MCP_KEY, x-original-uri: steps.plan.pipelinePath, x-forwarded-host: steps.route.host }
         failOnError: false
     # --- files: the same signed_url the files/sign rule mints (04, Decision 6);
     # the probe answers only "where is storage" for the CSP (Phase 2 plan, Decision 9).
@@ -161,11 +188,33 @@ pipeline:
         condition: steps.route.isCsp
         path: steps.route.probePath
         expiresIn: 60
-    # --- the write branch (Story 6): validate a submit/annotate, then read-merge-write the step row
+    # --- the write branch: validate a submit/annotate with the page's own
+    # validators, then read-merge-write the step row — run-step's column set.
     - id: merge
       name: merge
       handler: function_handler
       code: ./merge.fn.js
+    - id: update
+      name: update
+      handler: data_update
+      config:
+        condition: steps.merge.update
+        schemaId: $schema:workflow_run_steps
+        recordId: steps.merge.recordId
+        fields:
+          status: steps.merge.fields.status
+          attempt: steps.merge.fields.attempt
+          inputs: steps.merge.fields.inputs
+          response: steps.merge.fields.response
+          outputs: steps.merge.fields.outputs
+          error: steps.merge.fields.error
+          summary: steps.merge.fields.summary
+          annotations: steps.merge.fields.annotations
+          log: steps.merge.fields.log
+          logId: steps.merge.fields.logId
+          startedAt: steps.merge.fields.startedAt
+          finishedAt: steps.merge.fields.finishedAt
+          heartbeatAt: steps.merge.fields.heartbeatAt
     - id: reply
       name: reply
       handler: function_handler
