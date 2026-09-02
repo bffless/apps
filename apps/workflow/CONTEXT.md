@@ -154,3 +154,22 @@ _Avoid_: register, install (that's the harness), sync (the rules half only)
 **Discovery**:
 How the harness finds implementations: listing the project's aliases and probing each for
 `/.bffless/workflows/index.json`.
+
+### Agent embedding
+
+**Tool catalog**:
+`@bffless/workflow-agent-tools` — the eleven `workflow.*` tools (names, schemas, annotations,
+the tool→scope map, result builders, the run snapshot) both embedding adapters consume.
+_Avoid_: plugin, SDK, "the MCP server" (that is one adapter of it)
+
+**Page tools**:
+The catalog registered on the harness page's `document.modelContext` (WebMCP; polyfilled
+when the browser has none), executed against the store — an agent in the member's own
+browser does what a click does, with the member's session.
+_Avoid_: page MCP server, browser plugin, pipeline tools (an implementation's pipelines are
+never page tools)
+
+**Run snapshot**:
+`window.__workflow`'s shape plus `waitingOn` — for each waiting step what would satisfy it.
+What `workflow.status` answers.
+_Avoid_: run state (the engine's), run record (the rows)

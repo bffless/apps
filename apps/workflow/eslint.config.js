@@ -41,4 +41,23 @@ export default defineConfig([
       }],
     },
   },
+  {
+    // The agent layer binds the catalog to the store (spec 10, D19/D21): it may
+    // import `@bffless/workflow-agent-tools`, `../store/*`, the lib modules the
+    // page itself reads from (`workflowGlobal`, `autoStart`, `describe`,
+    // `coerce`) and `islands/hostDeps` (the one browser capability — signing —
+    // it shares with islands). Never the engine, a component, a page or the
+    // mocks: the agent does what a click does; it does not reach past the click.
+    files: ['src/agent/**/*.{ts,tsx}'],
+    ignores: ['src/agent/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['../lib/runner/*', '../lib/runner/**', '../components/*', '../components/**',
+            '../pages/*', '../pages/**', '../islands/*', '!../islands/hostDeps', '../mocks/*', '../scripts/*'],
+            message: 'src/agent imports the catalog package, ../store/*, lib/{workflowGlobal,autoStart,describe,coerce} and islands/hostDeps only (spec 10, D19).' },
+        ],
+      }],
+    },
+  },
 ])

@@ -20,7 +20,9 @@
     ]
   },
   "dependencies": {
+    "@bffless/workflow-agent-tools": "workspace:*",
     "@bffless/workflow-lint": "workspace:*",
+    "@mcp-b/webmcp-polyfill": "^5.1.0",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@reduxjs/toolkit": "^2.12.0",
