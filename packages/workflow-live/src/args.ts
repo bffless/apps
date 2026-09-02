@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 export { UsageError }
 
 export const USAGE = `workflow-live walk <m1|interactive|hello|headless|studio-audit|studio-headless|page-tools|mcp|all>
-  [--harness https://workflow.j5s.dev] [--out DIR] [--dispatch] [--clip PATH] [--run RUN_ID] [--timeout 90m]
+  [--harness https://workflow.j5s.dev] [--out DIR] [--dispatch] [--clip PATH] [--run RUN_ID] [--park-only] [--timeout 90m]
 
 env: WORKFLOW_EMAIL/WORKFLOW_PASSWORD (or WORKFLOW_CI_EMAIL/WORKFLOW_CI_PASSWORD); optional ADMIN_API_KEY
 exit: 0 all checks passed · 1 a check failed · 2 blocked (precondition missing / driver fault)`
@@ -19,6 +19,8 @@ export interface WalkArgs {
   dispatch: boolean
   clip?: string
   run?: string
+  /** `mcp`: park a run on its island through the page tools, print the id, stop. */
+  parkOnly: boolean
   timeoutMs: number
 }
 
@@ -28,7 +30,7 @@ export function parseWalkArgs(argv: string[]): WalkArgs {
   const [command, walk, ...rest] = argv
   if (command !== 'walk') throw new UsageError(USAGE)
   if (!walk || walk.startsWith('--')) throw new UsageError(USAGE)
-  const a: WalkArgs = { walk, harness: 'https://workflow.j5s.dev', out: '', dispatch: false, timeoutMs: parseDuration('90m') }
+  const a: WalkArgs = { walk, harness: 'https://workflow.j5s.dev', out: '', dispatch: false, parkOnly: false, timeoutMs: parseDuration('90m') }
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i]
     const value = () => {
@@ -43,6 +45,7 @@ export function parseWalkArgs(argv: string[]): WalkArgs {
     }
     else if (flag === '--out') a.out = value()
     else if (flag === '--dispatch') a.dispatch = true
+    else if (flag === '--park-only') a.parkOnly = true
     else if (flag === '--clip') a.clip = value()
     else if (flag === '--run') a.run = value()
     else if (flag === '--timeout') {
