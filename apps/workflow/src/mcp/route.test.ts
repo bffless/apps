@@ -1,0 +1,123 @@
+// @vitest-environment node
+import { describe, expect, it } from 'vitest'
+import { STEP_VIEW_URI } from './hostTools'
+import { confinedSignPath, handler, parseIslandUri, type FnRequest } from './route'
+
+const HEADERS = { 'x-forwarded-host': 'h.example', host: 'localhost:3000' }
+const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
+
+function req(body: unknown, headers: FnRequest['headers'] = HEADERS): FnRequest {
+  return { body, headers, method: 'POST', path: '/api/workflow/mcp' }
+}
+const call = (name: string, args: Record<string, unknown> = {}, id: number | string = 1) =>
+  req({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })
+const route = (request: FnRequest) => handler({ request, deployment: DEPLOYMENT })
+
+describe('route', () => {
+  it('derives the instance from the request, never from a constant', () => {
+    const r = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }))
+    expect(r.kind).toBe('ping')
+    expect(r.appOrigin).toBe('https://h.example')
+    expect(r.whoamiUrl).toBe('https://h.example/api/workflow/whoami')
+    expect(r.aliasesUrl).toBe('https://h.example/api/workflow/aliases?repository=o%2Fr')
+    expect(r.stepViewUrl).toBe('https://h.example/step.html')
+    expect(r.probePath).toBe('o/r/uploads/workflows/.mcp-csp-probe')
+    const bare = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }, { host: 'only.example' }))
+    expect(bare.appOrigin).toBe('https://only.example')
+    const none = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }, {}))
+    expect(none.appOrigin).toBe('')
+    expect(none.whoamiUrl).toBe('')
+  })
+
+  it('classifies the protocol methods', () => {
+    expect(route(req({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } })).kind).toBe('initialize')
+    expect(route(req({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).kind).toBe('toolsList')
+    expect(route(req({ jsonrpc: '2.0', id: 1, method: 'prompts/list' })).kind).toBe('unknown')
+    const list = route(req({ jsonrpc: '2.0', id: 1, method: 'resources/list' }))
+    expect(list.kind).toBe('resourcesList')
+    expect(list.isList).toBe(true)
+    const batch = route(req([{ jsonrpc: '2.0', id: 1, method: 'ping' }]))
+    expect(batch.kind).toBe('invalid')
+    const notification = route(req({ jsonrpc: '2.0', method: 'notifications/initialized' }))
+    expect(notification.kind).toBe('notification')
+    expect(notification.isNotification).toBe(true)
+    for (const flag of ['needsRun', 'isRuns', 'isList', 'isDescribe', 'isIslandUri', 'isStepView', 'isCsp', 'isSign'] as const) {
+      expect(notification[flag], flag).toBe(false)
+    }
+  })
+
+  it('reads a tools/call, slash-tolerant, and gates the run rows on runId', () => {
+    const status = route(call('workflow/status', { runId: 'run_1' }))
+    expect(status.kind).toBe('toolsCall')
+    expect(status.tool).toBe('workflow.status')
+    expect(status.needsRun).toBe(true)
+    expect(status.runId).toBe('run_1')
+    expect(route(call('workflow.status')).needsRun).toBe(false)
+    expect(route(call('workflow.outputs', { runId: 'r' })).needsRun).toBe(true)
+    expect(route(call('workflow.submitStep', { runId: 'r', step: 'pick/0/choose' })).key).toBe('pick/0/choose')
+    expect(route(call('workflow.list', { runId: 'r' })).needsRun).toBe(false)
+  })
+
+  it('gates runs on impl + workflow', () => {
+    const runs = route(call('workflow.runs', { impl: 'hello', workflow: 'interactive' }))
+    expect(runs.isRuns).toBe(true)
+    expect(runs.impl).toBe('hello')
+    expect(route(call('workflow.runs', { impl: 'hello' })).isRuns).toBe(false)
+  })
+
+  it('names the discovery URLs', () => {
+    const list = route(call('workflow.list'))
+    expect(list.isList).toBe(true)
+    expect(list.indexUrl).toBe('')
+    const one = route(call('workflow.list', { impl: 'hello' }))
+    expect(one.indexUrl).toBe('https://h.example/w/hello/.bffless/workflows/index.json')
+    const describe = route(call('workflow.describe', { impl: 'hello', workflow: 'interactive' }))
+    expect(describe.isDescribe).toBe(true)
+    expect(describe.indexUrl).toBe('https://h.example/w/hello/.bffless/workflows/index.json')
+    expect(route(call('workflow.describe', { impl: 'hello' })).isDescribe).toBe(false)
+  })
+
+  it('confines a sign path exactly as files/sign does', () => {
+    const ok = route(call('workflow.sign', { runId: 'r', path: 'workflows/a/b.svg' }))
+    expect(ok.isSign).toBe(true)
+    expect(ok.signStoragePath).toBe('o/r/uploads/workflows/a/b.svg')
+    expect(confinedSignPath('/api/uploads/workflows/a/b.svg?x=1')).toBe('workflows/a/b.svg')
+    for (const bad of ['../x', 'workflows/../x', 'workflows//x', 'other/x', '', 42]) {
+      expect(confinedSignPath(bad), String(bad)).toBe('')
+    }
+    const refused = route(call('workflow.sign', { path: '../x' }))
+    expect(refused.isSign).toBe(false)
+    expect(refused.signStoragePath).toBe('')
+  })
+
+  it('reads resources/read for the step view and for islands', () => {
+    const view = route(req({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: STEP_VIEW_URI } }))
+    expect(view.kind).toBe('resourcesRead')
+    expect(view.isStepView).toBe(true)
+    expect(view.isIslandUri).toBe(false)
+    expect(view.isCsp).toBe(true)
+    const island = route(req({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ui://bffless/hello/islands/pick-line.html' } }))
+    expect(island.isIslandUri).toBe(true)
+    expect(island.impl).toBe('hello')
+    expect(island.rest).toBe('islands/pick-line.html')
+    expect(island.isCsp).toBe(true)
+    const other = route(req({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'file:///etc/passwd' } }))
+    expect(other.isIslandUri).toBe(false)
+    expect(other.isStepView).toBe(false)
+  })
+
+  it('parses ui:// URIs strictly', () => {
+    expect(parseIslandUri('ui://bffless/hello/islands/x.html')).toEqual({ impl: 'hello', rest: 'islands/x.html' })
+    expect(parseIslandUri('ui://bffless/hello')).toBeNull()
+    expect(parseIslandUri('ui://bffless/hello/')).toBeNull()
+    expect(parseIslandUri('ui://bffless/Bad Alias/x')).toBeNull()
+    expect(parseIslandUri(STEP_VIEW_URI)).toBeNull()
+    expect(parseIslandUri('ui://other/hello/x')).toBeNull()
+  })
+
+  it('leaves the aliases URL empty without a serving project', () => {
+    const r = handler({ request: call('workflow.list') })
+    expect(r.aliasesUrl).toBe('')
+    expect(r.probePath).toBe('')
+  })
+})

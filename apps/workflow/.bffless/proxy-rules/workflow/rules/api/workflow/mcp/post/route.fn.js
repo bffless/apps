@@ -22,10 +22,418 @@ var __mcp = (() => {
   // src/mcp/route.ts
   var route_exports = {};
   __export(route_exports, {
-    handler: () => handler
+    LIST_FANOUT: () => LIST_FANOUT,
+    confinedSignPath: () => confinedSignPath,
+    handler: () => handler,
+    parseIslandUri: () => parseIslandUri
   });
-  function handler() {
-    return { placeholder: "route" };
+
+  // ../../packages/workflow-agent-tools/dist/schemas.js
+  var RUN_ID = {
+    type: "string",
+    description: "The run to act on. Optional where a current run exists (the harness page); required over the MCP endpoint."
+  };
+  var IMPL = { type: "string", description: "The implementation alias, e.g. `hello`." };
+  var WORKFLOW = {
+    type: "string",
+    description: "The workflow id \u2014 the file base name minus `.workflow.yaml`, e.g. `interactive`."
+  };
+  var LIST_SCHEMA = {
+    type: "object",
+    properties: { impl: { ...IMPL, description: "Only this implementation." } },
+    required: [],
+    additionalProperties: false
+  };
+  var DESCRIBE_SCHEMA = {
+    type: "object",
+    properties: { impl: IMPL, workflow: WORKFLOW },
+    required: ["impl", "workflow"],
+    additionalProperties: false
+  };
+  var START_SCHEMA = {
+    type: "object",
+    properties: {
+      impl: IMPL,
+      workflow: WORKFLOW,
+      inputs: {
+        type: "object",
+        description: "Values for `on.manual.inputs`, keyed by input name. An omitted input takes its declared default; a `file` input is a whole File ref (`{ path, name, contentType, size, url }`), never a bare path or a URL. Pass `{}` for a workflow with no inputs.",
+        additionalProperties: true
+      }
+    },
+    required: ["impl", "workflow", "inputs"],
+    additionalProperties: false
+  };
+  var STATUS_SCHEMA = {
+    type: "object",
+    properties: { runId: RUN_ID },
+    required: [],
+    additionalProperties: false
+  };
+  var OUTPUTS_SCHEMA = STATUS_SCHEMA;
+  var CANCEL_SCHEMA = STATUS_SCHEMA;
+  var AWAIT_SCHEMA = {
+    type: "object",
+    properties: {
+      runId: RUN_ID,
+      until: {
+        type: "string",
+        enum: ["waiting", "terminal"],
+        description: "`waiting`: resolve as soon as the run needs input (a step is `waiting`) or ends; `terminal`: resolve only when the run ends."
+      },
+      timeoutMs: {
+        type: "integer",
+        minimum: 1,
+        maximum: 6e5,
+        description: "How long to wait before answering with the current snapshot and `timedOut: true` (default 120000)."
+      }
+    },
+    required: ["until"],
+    additionalProperties: false
+  };
+  var RUNS_SCHEMA = {
+    type: "object",
+    properties: {
+      impl: { ...IMPL, description: "The implementation alias; defaults to the current run\u2019s (or the page\u2019s) on the harness page." },
+      workflow: { ...WORKFLOW, description: "The workflow id; defaults to the current run\u2019s (or the page\u2019s) on the harness page." },
+      status: { type: "string", enum: ["running", "succeeded", "failed", "cancelled"], description: "Only runs in this status." },
+      limit: { type: "integer", minimum: 1, maximum: 50, description: "At most this many runs, newest first (default 20)." }
+    },
+    required: [],
+    additionalProperties: false
+  };
+  var SUBMIT_STEP_SCHEMA = {
+    type: "object",
+    properties: {
+      runId: RUN_ID,
+      step: { type: "string", description: "The waiting step\u2019s key, `<job>/<index>/<step>` \u2014 as listed in the snapshot\u2019s `waitingOn`." },
+      values: {
+        type: "object",
+        description: "For a `form` step: a value per field, keyed by field name (a `choice` over File refs takes the ref\u2019s `path`). For an `island` step: the step\u2019s declared outputs, keyed by output name.",
+        additionalProperties: true
+      }
+    },
+    required: ["step", "values"],
+    additionalProperties: false
+  };
+  var SIGN_SCHEMA = {
+    type: "object",
+    properties: {
+      runId: RUN_ID,
+      path: {
+        type: "string",
+        description: "A File ref\u2019s `path` \u2014 an uploads-relative key under `workflows/`. Nothing else is signable."
+      }
+    },
+    required: ["path"],
+    additionalProperties: false
+  };
+  var RESUME_SCHEMA = {
+    type: "object",
+    properties: { runId: { ...RUN_ID, description: "The `running` run to take over." } },
+    required: ["runId"],
+    additionalProperties: false
+  };
+
+  // ../../packages/workflow-agent-tools/dist/scopes.js
+  var TOOL_SCOPES = {
+    "workflow.list": "workflow:read",
+    "workflow.describe": "workflow:read",
+    "workflow.status": "workflow:read",
+    "workflow.await": "workflow:read",
+    "workflow.runs": "workflow:read",
+    "workflow.outputs": "workflow:read",
+    "workflow.start": "workflow:run",
+    "workflow.submitStep": "workflow:run",
+    "workflow.cancel": "workflow:run",
+    "workflow.resume": "workflow:run",
+    "workflow.sign": "workflow:files"
+  };
+
+  // ../../packages/workflow-agent-tools/dist/catalog.js
+  var TOOL_NAMES = [
+    "workflow.list",
+    "workflow.describe",
+    "workflow.start",
+    "workflow.status",
+    "workflow.await",
+    "workflow.runs",
+    "workflow.submitStep",
+    "workflow.outputs",
+    "workflow.sign",
+    "workflow.cancel",
+    "workflow.resume"
+  ];
+  var DESCRIPTIONS = {
+    "workflow.list": "List the implementations published to this harness and their workflows, each with its `headlessSafe` mark (whether every interactive step declares what to do without a person).",
+    "workflow.describe": "Describe one workflow before deciding a run can complete without a person: its inputs (types, required, defaults), its outputs, the job/step graph in dependency order, and each interactive step\u2019s `headless` declaration.",
+    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. Returns the run id and its first snapshot, and moves the page to the run.",
+    "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
+    "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
+    "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
+    "workflow.submitStep": "Complete a waiting interactive step. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value.",
+    "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
+    "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
+    "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
+    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease) so this surface drives it from here \u2014 how an agent adopts a run another tab or host abandoned."
+  };
+  var SCHEMAS = {
+    "workflow.list": LIST_SCHEMA,
+    "workflow.describe": DESCRIBE_SCHEMA,
+    "workflow.start": START_SCHEMA,
+    "workflow.status": STATUS_SCHEMA,
+    "workflow.await": AWAIT_SCHEMA,
+    "workflow.runs": RUNS_SCHEMA,
+    "workflow.submitStep": SUBMIT_STEP_SCHEMA,
+    "workflow.outputs": OUTPUTS_SCHEMA,
+    "workflow.sign": SIGN_SCHEMA,
+    "workflow.cancel": CANCEL_SCHEMA,
+    "workflow.resume": RESUME_SCHEMA
+  };
+  var CATALOG = Object.freeze(TOOL_NAMES.map((name) => Object.freeze({
+    name,
+    description: DESCRIPTIONS[name],
+    inputSchema: SCHEMAS[name],
+    annotations: Object.freeze({ readOnlyHint: TOOL_SCOPES[name] === "workflow:read" }),
+    scope: TOOL_SCOPES[name]
+  })));
+  function canonicalToolName(name) {
+    return name.replace(/\//g, ".");
+  }
+  var BY_NAME = new Map(CATALOG.map((tool) => [tool.name, tool]));
+
+  // src/mcp/hostTools.ts
+  var STEP_VIEW_URI = "ui://bffless/workflow/step.html";
+  var RUN_ID2 = { type: "string", description: "The run the island belongs to." };
+  var STEP = { type: "string", description: "The step key, `<job>/<index>/<step>`, of the waiting island step." };
+  var APP_ONLY = { ui: { visibility: ["app"] } };
+  var HOST_TOOLS = Object.freeze([
+    {
+      name: "workflow.submit",
+      description: "Complete the waiting island step of a run with its declared outputs \u2014 the island's own `workflow.submit` (spec 04), answered server-side: validated against the step's declared output map exactly as the harness page validates it, then written to the step row. Refused while a harness tab still drives the run.",
+      inputSchema: {
+        type: "object",
+        properties: { runId: RUN_ID2, step: STEP, outputs: { type: "object", description: "The values for the step\u2019s declared outputs.", additionalProperties: true } },
+        required: ["runId", "step", "outputs"],
+        additionalProperties: false
+      },
+      _meta: APP_ONLY
+    },
+    {
+      name: "workflow.annotate",
+      description: "Record annotations and/or a summary on the waiting island step \u2014 the island's own `workflow.annotate` (spec 04), budgeted per step exactly as on the harness page.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          runId: RUN_ID2,
+          step: STEP,
+          annotations: { type: "array", description: "Entries of `{ level: notice|warning|error, message, title? }`.", items: { type: "object", additionalProperties: true } },
+          summary: { type: "string" }
+        },
+        required: ["runId", "step"],
+        additionalProperties: false
+      },
+      _meta: APP_ONLY
+    },
+    {
+      name: "workflow.pipeline",
+      description: "Call one of the run's own implementation's pipelines on the island's behalf \u2014 a tool name resolves to `/api/<impl>/<path>` (dots as slashes) and is fenced to that implementation exactly as on the harness page (spec 04).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          runId: RUN_ID2,
+          step: STEP,
+          name: { type: "string", description: "The pipeline\u2019s tool name, e.g. `echo` or `video.slice`." },
+          arguments: { type: "object", description: "The JSON body (POST) or query (GET).", additionalProperties: true },
+          method: { type: "string", enum: ["GET", "POST"], description: "Defaults to POST." }
+        },
+        required: ["runId", "step", "name"],
+        additionalProperties: false
+      },
+      _meta: APP_ONLY
+    },
+    {
+      name: "workflow.stepView",
+      description: "What the step view needs to mount a waiting island: the island HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments), and its declared outputs.",
+      inputSchema: {
+        type: "object",
+        properties: { runId: RUN_ID2, step: STEP },
+        required: ["runId", "step"],
+        additionalProperties: false
+      },
+      _meta: APP_ONLY
+    }
+  ]);
+  var HOST_TOOL_NAMES = new Set(HOST_TOOLS.map((tool) => tool.name));
+
+  // src/mcp/jsonrpc.ts
+  var PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+  var LATEST_PROTOCOL_VERSION = PROTOCOL_VERSIONS[0];
+  function isPlainObject(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+  function idOf(value) {
+    return typeof value === "string" || typeof value === "number" ? value : null;
+  }
+  function parseMessage(body) {
+    if (Array.isArray(body)) return { kind: "invalid", id: null, message: "Batches are not accepted: POST one JSON-RPC message" };
+    if (!isPlainObject(body)) return { kind: "invalid", id: null, message: "The body must be one JSON-RPC 2.0 object" };
+    const id = idOf(body.id);
+    if (body.jsonrpc !== "2.0") return { kind: "invalid", id, message: 'jsonrpc must be "2.0"' };
+    if (typeof body.method !== "string" || body.method === "") return { kind: "invalid", id, message: "method must be a string" };
+    const params = isPlainObject(body.params) ? body.params : {};
+    if (!Object.hasOwn(body, "id") || body.id === void 0) return { kind: "notification", method: body.method, params };
+    return { kind: "request", id, method: body.method, params };
+  }
+
+  // src/mcp/route.ts
+  var LIST_FANOUT = 3;
+  var RUN_SCOPED = /* @__PURE__ */ new Set([
+    "workflow.status",
+    "workflow.outputs",
+    "workflow.submitStep",
+    "workflow.submit",
+    "workflow.annotate",
+    "workflow.pipeline",
+    "workflow.stepView"
+  ]);
+  function isPlainObject2(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+  function str(value) {
+    return typeof value === "string" ? value : "";
+  }
+  function header(headers, name) {
+    const value = headers?.[name] ?? headers?.[name.toLowerCase()];
+    const first = Array.isArray(value) ? value[0] : value;
+    return typeof first === "string" ? first.split(",")[0].trim() : "";
+  }
+  function confinedSignPath(raw) {
+    if (typeof raw !== "string") return "";
+    const path = raw.replace(/^\/+/, "").replace(/^api\/uploads\//, "").split("?")[0];
+    const ok = path.startsWith("workflows/") && !path.includes("..") && !path.includes("//");
+    return ok ? path : "";
+  }
+  var UI_PREFIX = "ui://bffless/";
+  function parseIslandUri(uri) {
+    if (!uri.startsWith(UI_PREFIX) || uri === STEP_VIEW_URI) return null;
+    const tail = uri.slice(UI_PREFIX.length);
+    const slash = tail.indexOf("/");
+    if (slash <= 0) return null;
+    const impl = tail.slice(0, slash);
+    const rest = tail.slice(slash + 1);
+    if (!/^[a-z][a-z0-9-]*$/.test(impl) || rest === "") return null;
+    return { impl, rest };
+  }
+  function handler(data) {
+    const request = data.request ?? { body: void 0, headers: {}, method: "POST", path: "" };
+    const deployment = data.deployment ?? {};
+    const message = parseMessage(request.body);
+    const host = header(request.headers, "x-forwarded-host") || header(request.headers, "host");
+    const appOrigin = host === "" ? "" : `https://${host}`;
+    const owner = str(deployment.owner);
+    const repo = str(deployment.repo);
+    const project = owner !== "" && repo !== "" ? `${owner}/${repo}` : "";
+    const route = {
+      kind: "unknown",
+      id: null,
+      method: "",
+      message: "",
+      tool: "",
+      args: {},
+      uri: "",
+      params: {},
+      isNotification: false,
+      needsRun: false,
+      isRuns: false,
+      isList: false,
+      isDescribe: false,
+      isIslandUri: false,
+      isStepView: false,
+      isCsp: false,
+      isSign: false,
+      runId: "",
+      key: "",
+      impl: "",
+      workflow: "",
+      rest: "",
+      appOrigin,
+      whoamiUrl: appOrigin === "" ? "" : `${appOrigin}/api/workflow/whoami`,
+      aliasesUrl: appOrigin === "" || project === "" ? "" : `${appOrigin}/api/workflow/aliases?repository=${encodeURIComponent(project)}`,
+      indexUrl: "",
+      stepViewUrl: appOrigin === "" ? "" : `${appOrigin}/step.html`,
+      signPath: "",
+      signStoragePath: "",
+      probePath: project === "" ? "" : `${project}/uploads/workflows/.mcp-csp-probe`
+    };
+    if (message.kind === "invalid") {
+      return { ...route, kind: "invalid", id: message.id, message: message.message };
+    }
+    route.method = message.method;
+    route.params = message.params;
+    if (message.kind === "notification") {
+      return { ...route, kind: "notification", isNotification: true };
+    }
+    route.id = message.id;
+    switch (message.method) {
+      case "initialize":
+        route.kind = "initialize";
+        return route;
+      case "ping":
+        route.kind = "ping";
+        return route;
+      case "tools/list":
+        route.kind = "toolsList";
+        return route;
+      case "resources/list":
+        route.kind = "resourcesList";
+        route.isList = true;
+        return route;
+      case "resources/read": {
+        route.kind = "resourcesRead";
+        route.uri = str(message.params.uri);
+        route.isCsp = true;
+        if (route.uri === STEP_VIEW_URI) {
+          route.isStepView = true;
+        } else {
+          const island = parseIslandUri(route.uri);
+          if (island) {
+            route.isIslandUri = true;
+            route.impl = island.impl;
+            route.rest = island.rest;
+          }
+        }
+        return route;
+      }
+      case "tools/call":
+        break;
+      default:
+        route.kind = "unknown";
+        return route;
+    }
+    route.kind = "toolsCall";
+    route.tool = canonicalToolName(str(message.params.name));
+    route.args = isPlainObject2(message.params.arguments) ? message.params.arguments : {};
+    const args = route.args;
+    route.runId = str(args.runId);
+    route.key = str(args.step);
+    route.impl = str(args.impl);
+    route.workflow = str(args.workflow);
+    if (RUN_SCOPED.has(route.tool) && route.runId !== "") route.needsRun = true;
+    if (route.tool === "workflow.runs" && route.impl !== "" && route.workflow !== "") route.isRuns = true;
+    if (route.tool === "workflow.list") route.isList = true;
+    if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "") route.isDescribe = true;
+    if ((route.isList || route.isDescribe) && route.impl !== "" && appOrigin !== "") {
+      route.indexUrl = `${appOrigin}/w/${route.impl}/.bffless/workflows/index.json`;
+    }
+    if (route.tool === "workflow.sign") {
+      route.signPath = confinedSignPath(args.path);
+      if (route.signPath !== "" && project !== "") {
+        route.isSign = true;
+        route.signStoragePath = `${project}/uploads/${route.signPath}`;
+      }
+    }
+    return route;
   }
   return __toCommonJS(route_exports);
 })();
