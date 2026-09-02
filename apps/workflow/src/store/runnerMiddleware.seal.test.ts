@@ -25,7 +25,7 @@ import type { RunStore } from '../lib/runStore'
 import { flush, pumpUntil, virtualClock } from '../test/helloHarness'
 import type { AppStore } from './index'
 import { makeStore } from './index'
-import { runnerControllers } from './runnerMiddleware'
+import { runnerControllers, whenPersisted } from './runnerMiddleware'
 import type { RunnerDeps } from './runnerMiddleware'
 import { startRun } from './runnerActions'
 import { runClosed } from './runSlice'
@@ -228,5 +228,54 @@ describe('the pending seal — pagehide re-issues a record-sealing patch that ha
     pagehide()
     await flush()
     expect(fake.patches.length).toBe(attempted + 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `whenPersisted` (apps#580): the tail of a run's write-ahead queue — what
+// `workflow.await` drains before it answers.
+// ---------------------------------------------------------------------------
+
+/** Whether `promise` has settled once the tick queue is empty. */
+async function settledYet(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false
+  void promise.then(
+    () => {
+      settled = true
+    },
+    () => {
+      settled = true
+    },
+  )
+  await flush()
+  return settled
+}
+
+describe('whenPersisted — the tail of the write-ahead queue', () => {
+  it('resolves at once for a run with nothing queued', async () => {
+    expect(await settledYet(whenPersisted('run_nobody_drives'))).toBe(true)
+  })
+
+  it('stays pending while a write is parked ahead of the seal, and resolves once the queue has drained', async () => {
+    const fake = gatedRunStore()
+    const { store, advance } = start(fake.store)
+    const runId = store.getState().run.state!.runId
+
+    await pumpUntil(advance, () => fake.parked() > 0)
+    fake.release()
+    await pumpUntil(advance, () => store.getState().run.state?.status === 'succeeded')
+    await flush()
+
+    // The slice says succeeded; one upsert is still parked and the seal is
+    // queued behind it — exactly the window `workflow.await` used to answer in.
+    expect(fake.writes.some((w) => w.op === 'patch')).toBe(false)
+    const drained = whenPersisted(runId)
+    expect(await settledYet(drained)).toBe(false)
+
+    fake.release()
+    await drained
+    expect(fake.writes.some((w) => w.op === 'patch')).toBe(true)
+    // Once the seal has landed the queue entry is gone: a later read is immediate.
+    expect(await settledYet(whenPersisted(runId))).toBe(true)
   })
 })

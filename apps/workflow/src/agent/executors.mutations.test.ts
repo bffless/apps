@@ -10,7 +10,7 @@ import { WAITING_RUN_ID, WAITING_STEP_KEY } from '../mocks/fixtures/waitingRun'
 import { makeStore } from '../store'
 import type { AppStore } from '../store'
 import { runModeChanged } from '../store/runSlice'
-import { REVIEW_KEY, pumpUntil, resetHelloHarness, startHelloAtConfirmWaiting, trackedHelloStore } from '../test/helloHarness'
+import { REVIEW_KEY, flush, pumpUntil, resetHelloHarness, startHelloAtConfirmWaiting, trackedHelloStore } from '../test/helloHarness'
 import { createExecutors } from './executors'
 import type { ExecutorDeps } from './executors'
 
@@ -18,6 +18,38 @@ function executorsFor(store: AppStore, extra: Partial<ExecutorDeps> = {}) {
   const navigated: string[] = []
   const exec = createExecutors({ store, navigate: (to) => navigated.push(to), location: () => ({ pathname: '/' }), ...extra })
   return { exec, navigated }
+}
+
+/**
+ * A `whenPersisted` whose queue is held open until `land()` — the write-ahead
+ * queue with the run's last write still in flight (apps#580).
+ */
+function heldQueue() {
+  const drained: string[] = []
+  let land!: () => void
+  const tail = new Promise<void>((resolve) => {
+    land = resolve
+  })
+  const whenPersisted = (runId: string) => {
+    drained.push(runId)
+    return tail
+  }
+  return { whenPersisted, drained, land }
+}
+
+/** Whether `promise` has settled by the time the microtask/tick queue is empty. */
+async function settledYet(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false
+  void promise.then(
+    () => {
+      settled = true
+    },
+    () => {
+      settled = true
+    },
+  )
+  await flush()
+  return settled
 }
 
 /** What an agent does with a waiting form: each evaluated field's default. */
@@ -123,6 +155,52 @@ describe('workflow.await', () => {
     const { exec } = executorsFor(makeStore())
     const result = await exec['workflow.await']({ until: 'later' })
     expect(Object.keys(result.structuredContent!.errors as object)).toEqual(['until'])
+  })
+
+  // The store runs a beat ahead of the record (apps#580): the answer waits
+  // for the run's write-ahead queue, whichever path made the condition true.
+  it('holds a terminal answer until the sealing write settles', async () => {
+    const { store, advance } = await startHelloAtConfirmWaiting()
+    const queue = heldQueue()
+    const { exec } = executorsFor(store, { whenPersisted: queue.whenPersisted })
+    const pending = exec['workflow.await']({ until: 'terminal', timeoutMs: 30_000 })
+    const status = await exec['workflow.status']({})
+    await exec['workflow.submitStep']({ step: REVIEW_KEY, values: defaultsOf(status.structuredContent) })
+    await pumpUntil(advance, () => store.getState().run.state?.status !== 'running')
+    const runId = store.getState().run.state!.runId
+
+    // The snapshot is terminal, the seal is still queued: no answer yet.
+    expect(await settledYet(pending)).toBe(false)
+    expect(queue.drained).toEqual([runId])
+
+    queue.land()
+    const result = await pending
+    expect(result.isError).toBeUndefined()
+    expect(result.structuredContent).toMatchObject({ runId, status: 'succeeded' })
+  })
+
+  it('drains the queue on the fast path too — a run already waiting on the first read', async () => {
+    const { store } = await startHelloAtConfirmWaiting()
+    const queue = heldQueue()
+    const { exec } = executorsFor(store, { whenPersisted: queue.whenPersisted })
+    const pending = exec['workflow.await']({ until: 'waiting' })
+    expect(await settledYet(pending)).toBe(false)
+    expect(queue.drained).toEqual([store.getState().run.state!.runId])
+
+    queue.land()
+    const result = await pending
+    expect(result.isError).toBeUndefined()
+    expect(result.structuredContent).toMatchObject({ waitingOn: [{ key: REVIEW_KEY, kind: 'form' }] })
+  })
+
+  it('does not wait for the queue on a timeout — it answers with the snapshot it reached', async () => {
+    const { store } = await startHelloAtConfirmWaiting()
+    const queue = heldQueue()
+    const { exec } = executorsFor(store, { whenPersisted: queue.whenPersisted })
+    const result = await exec['workflow.await']({ until: 'terminal', timeoutMs: 10 })
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({ timedOut: true, snapshot: { status: 'running' } })
+    expect(queue.drained).toEqual([])
   })
 })
 
