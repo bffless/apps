@@ -105,6 +105,10 @@ bffless/apps
 
 ---
 
+## Phase 1 as shipped (2026-09-02)
+
+Landed on `epic/agent-embedding` as #572 (Story 2), #573 (Story 3), #574 (Story 4) and #575 (a deploy-workflow fix); the gate passed 16/16 on `workflow.j5s.dev` (report on #554). Departures from the plan, all recorded on the PRs: the "only the driving tab may submit" guard lives in the **executor**, not the `submitStep` thunk (the pane's fixtures replay in read-only mode, and adopting them live under real timers stalls the suite); `workflow.await` grew a `pollMs` seam and `workflow.sign` a `sign` seam for tests; the mock-backend e2e proves `resume` by adopting the seeded parked run rather than reloading (the mock db lives in the page). The gate ran against j5s itself, not a local Vite server: `deploy-workflow.yml` was dispatched on the epic branch, which is also what surfaced the missing catalog-package build step there — j5s serves the epic build until `main` next deploys.
+
 # Phase A — Story 2: the catalog package (Tasks 1–3)
 
 *Deliverable: `@bffless/workflow-agent-tools` exists on the release train, with the 11 tools, their schemas, scopes, result builders, `RunSnapshot`, `snapshotFromRows` and `WorkflowDescription`, fully unit-tested. Branch `feat/m5-agent-tools`, worktree `.claude/worktrees/m5-agent-tools`.*

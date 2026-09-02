@@ -105,7 +105,9 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
   harness rule set — islands render inside claude.ai unchanged, and a bundled run view
   keeps the browser-drives-runs invariant inside the agent host's iframe. CE contributes
   generic pieces only: user-bound scoped app tokens, a generic `mcp_handler` pipeline
-  handler, OAuth 2.1. Tracked by the `EPIC: Agent embedding` issue.
+  handler, OAuth 2.1. Tracked by the `EPIC: Agent embedding` issue. **Phase 1 (WebMCP)
+  landed on the epic branch 2026-09-02** — `@bffless/workflow-agent-tools` on the release
+  train, all eleven tools on `document.modelContext`, the `page-tools` walk green on j5s.
 
 ## Decisions at a glance
 
