@@ -122,5 +122,20 @@ describe('snapshotText', () => {
       }),
     ).toBe('Run r is running, waiting on pick/0/choose (island), review/0/confirm (form)')
     expect(snapshotText({ runId: '', status: 'invalid', currentSteps: [], outputs: {}, steps: {}, waitingOn: [], errors: { inputs: 'x' } })).toBe('No run was started')
+    expect(
+      snapshotText({
+        runId: 'r',
+        status: 'running',
+        currentSteps: ['pick/0/choose'],
+        outputs: {},
+        steps: {},
+        waitingOn: [
+          { key: 'pick/0/choose', kind: 'island', inputs: { lines: [] }, outputs: { line: { type: 'string', required: true }, index: { type: 'number' }, notes: 'expr' }, src: 'islands/pick-line.html' },
+          { key: 'review/0/confirm', kind: 'form', inputs: { fields: { cover: { type: 'choice', required: true, options: ['a'] }, notes: { type: 'markdown' }, tags: { type: 'string', list: true } } } },
+        ],
+      }),
+    ).toBe(
+      'Run r is running, waiting on pick/0/choose (island; outputs: line (string, required), index (number), notes (json)), review/0/confirm (form; fields: cover (choice, required), notes (markdown), tags (string[]))',
+    )
   })
 })

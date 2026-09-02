@@ -65,7 +65,7 @@ describe('merge: submit', () => {
       const panel = merge({ steps: { route: call('workflow.submitStep', args), run: run(), steps: stepRows() } })
       expect(panel.update).toBe(false)
       expect(panel.result.isError).toBeUndefined()
-      expect(text(panel)).toContain(`Run ${RUN_ID} is running, waiting on ${STEP} (island). The step's island is rendered`)
+      expect(text(panel)).toContain(`Run ${RUN_ID} is running, waiting on ${STEP} (island; outputs: line (string, required), index (number)). The step's island is rendered`)
       expect(panel.result.structuredContent).toMatchObject({ step: STEP, ui: 'rendered', waitingOn: [{ key: STEP }] })
     }
   })

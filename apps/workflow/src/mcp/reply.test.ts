@@ -109,7 +109,7 @@ describe('workflow.describe', () => {
     const r = result(callOf('workflow.describe', { impl: 'hello', workflow: 'interactive' }), { index: http(HELLO_INDEX), yaml: http(INTERACTIVE_YAML) })
     expect(r.isError).toBeUndefined()
     expect(text(r)).toBe(
-      'Interactive hello (hello/interactive): 2 inputs, 5 jobs, 5 outputs; interactive steps: pick/choose (island, headless: auto), review/confirm (form, headless: skip); headless-safe',
+      'Interactive hello (hello/interactive): 2 inputs — greeting (string, required, default "Hello"), names (choice[], default ["world","studio"]); 5 jobs; 5 outputs; interactive steps: pick/choose (island, headless: auto; outputs: line (string, required), index (number)), review/confirm (form, headless: skip; fields: cover (choice, required), notes (markdown), extra (file)); headless-safe',
     )
     const jobs = r.structuredContent!.jobs as Array<{ id: string }>
     expect(jobs.map((job) => job.id)).toEqual(['greet', 'analyze', 'pick', 'card', 'review'])
@@ -128,7 +128,9 @@ describe('workflow.describe', () => {
 describe('workflow.status / outputs', () => {
   it('derives the snapshot from the rows and says what the page says', () => {
     const r = result(callOf('workflow.status', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() })
-    expect(text(r)).toBe(`Run ${RUN_ID} is running, waiting on pick/0/choose (island)`)
+    expect(text(r)).toBe(
+      `Run ${RUN_ID} is running, waiting on pick/0/choose (island; outputs: line (string, required), index (number))\nTo let the person complete pick/0/choose here, call workflow.submitStep { runId: "${RUN_ID}", step: "pick/0/choose", values: {} } — the step's island renders in this chat; do not invent its values.`,
+    )
     expect(r.structuredContent).toMatchObject({
       runId: RUN_ID,
       status: 'running',

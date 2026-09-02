@@ -276,10 +276,26 @@ var __mcp = (() => {
       waitingOn
     };
   }
+  function declaredList(decls, defaultType) {
+    if (!isPlainObject(decls))
+      return "";
+    return Object.entries(decls).map(([name, declared]) => {
+      const decl = isPlainObject(declared) ? declared : {};
+      const type = typeof decl.type === "string" ? decl.type : defaultType;
+      const list = decl.list === true ? "[]" : "";
+      return `${name} (${type}${list}${decl.required === true ? ", required" : ""})`;
+    }).join(", ");
+  }
+  function describeStep(step) {
+    const detail = step.kind === "island" ? declaredList(step.outputs, "json") : declaredList(isPlainObject(step.inputs) ? step.inputs.fields : void 0, "string");
+    if (detail === "")
+      return `${step.key} (${step.kind})`;
+    return `${step.key} (${step.kind}; ${step.kind === "island" ? "outputs" : "fields"}: ${detail})`;
+  }
   function describeWaiting(snapshot) {
     if (snapshot.waitingOn.length === 0)
       return "";
-    return `, waiting on ${snapshot.waitingOn.map((step) => `${step.key} (${step.kind})`).join(", ")}`;
+    return `, waiting on ${snapshot.waitingOn.map(describeStep).join(", ")}`;
   }
   function snapshotText(snapshot) {
     if (snapshot.status === "invalid")

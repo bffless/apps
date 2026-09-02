@@ -66,7 +66,8 @@ describe('workflow.describe', () => {
     expect(described.inputs.greeting?.type).toBe('string')
     const choose = described.jobs.find((job) => job.id === 'pick')?.steps[0]
     expect(choose).toMatchObject({ id: 'choose', kind: 'island', headless: 'auto' })
-    expect(result.content[0]!.text).toContain('pick/choose (island, headless: auto)')
+    expect(result.content[0]!.text).toContain('pick/choose (island, headless: auto; outputs: line (string, required), index (number))')
+    expect(result.content[0]!.text).toContain('greeting (string, required, default "Hello")')
   })
 
   it('refuses with spec 07 vocabulary, verbatim', async () => {
@@ -103,7 +104,7 @@ describe('workflow.status / workflow.outputs', () => {
     expect(snapshot.status).toBe('running')
     expect(snapshot.currentSteps).toEqual([REVIEW_KEY])
     expect(snapshot.waitingOn).toMatchObject([{ key: REVIEW_KEY, kind: 'form' }])
-    expect(result.content[0]!.text).toBe(`Run ${snapshot.runId} is running, waiting on ${REVIEW_KEY} (form)`)
+    expect(result.content[0]!.text).toContain(`Run ${snapshot.runId} is running, waiting on ${REVIEW_KEY} (form; fields: approved (boolean, required), report (markdown))`)
 
     const outputs = await exec['workflow.outputs']({ runId: snapshot.runId })
     expect(outputs.structuredContent).toEqual({ runId: snapshot.runId, status: 'running', outputs: {} })

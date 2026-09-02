@@ -22,7 +22,7 @@ var __mcp = (() => {
   // src/mcp/reply.ts
   var reply_exports = {};
   __export(reply_exports, {
-    describeText: () => describeText,
+    agentHostHint: () => agentHostHint,
     handler: () => handler,
     snapshotOf: () => snapshotOf
   });
@@ -265,10 +265,26 @@ var __mcp = (() => {
       waitingOn
     };
   }
+  function declaredList(decls, defaultType) {
+    if (!isPlainObject(decls))
+      return "";
+    return Object.entries(decls).map(([name, declared]) => {
+      const decl = isPlainObject(declared) ? declared : {};
+      const type = typeof decl.type === "string" ? decl.type : defaultType;
+      const list2 = decl.list === true ? "[]" : "";
+      return `${name} (${type}${list2}${decl.required === true ? ", required" : ""})`;
+    }).join(", ");
+  }
+  function describeStep(step) {
+    const detail = step.kind === "island" ? declaredList(step.outputs, "json") : declaredList(isPlainObject(step.inputs) ? step.inputs.fields : void 0, "string");
+    if (detail === "")
+      return `${step.key} (${step.kind})`;
+    return `${step.key} (${step.kind}; ${step.kind === "island" ? "outputs" : "fields"}: ${detail})`;
+  }
   function describeWaiting(snapshot) {
     if (snapshot.waitingOn.length === 0)
       return "";
-    return `, waiting on ${snapshot.waitingOn.map((step) => `${step.key} (${step.kind})`).join(", ")}`;
+    return `, waiting on ${snapshot.waitingOn.map(describeStep).join(", ")}`;
   }
   function snapshotText(snapshot) {
     if (snapshot.status === "invalid")
@@ -6640,7 +6656,7 @@ ${end.comment}` : end.comment;
     if (typeof decl.render === "string") output.render = decl.render;
     return output;
   }
-  function describeStep(step) {
+  function describeStep2(step) {
     const raw = isPlainObject2(step.raw) ? step.raw : {};
     const withDecl = isPlainObject2(raw.with) ? raw.with : {};
     const described = { id: step.id, kind: step.uses };
@@ -6669,7 +6685,7 @@ ${end.comment}` : end.comment;
     const jobs = orderedJobs(a.def).flatMap((id) => {
       const job = a.def.jobs[id];
       if (!job) return [];
-      const described = { id, needs: [...job.needs], steps: job.steps.map(describeStep) };
+      const described = { id, needs: [...job.needs], steps: job.steps.map(describeStep2) };
       if (typeof job.if === "string") described.if = job.if;
       if (isPlainObject2(job.matrix)) described.matrix = job.matrix;
       return [described];
@@ -6685,6 +6701,22 @@ ${end.comment}` : end.comment;
       outputs: outputs2,
       jobs
     };
+  }
+  function describeText(described) {
+    const inputs = Object.entries(described.inputs).map(([name, input]) => {
+      const parts = [`${input.type}${input.list ? "[]" : ""}`];
+      if (input.required) parts.push("required");
+      if (input.default !== void 0) parts.push(`default ${JSON.stringify(input.default)}`);
+      return `${name} (${parts.join(", ")})`;
+    });
+    const interactive = described.jobs.flatMap(
+      (job) => job.steps.filter((step) => step.kind === "island" || step.kind === "form").map((step) => {
+        const declared = step.kind === "island" ? declaredList(step.outputs, "json") : declaredList(step.fields, "string");
+        const headless = step.headless ? `headless: ${step.headless}` : "needs a person";
+        return `${job.id}/${step.id} (${step.kind}, ${headless}${declared ? `; ${step.kind === "island" ? "outputs" : "fields"}: ${declared}` : ""})`;
+      })
+    );
+    return `${described.name} (${described.impl}/${described.workflow}): ${inputs.length} inputs${inputs.length ? ` \u2014 ${inputs.join(", ")}` : ""}; ${described.jobs.length} jobs; ${Object.keys(described.outputs).length} outputs${interactive.length ? `; interactive steps: ${interactive.join(", ")}` : "; no interactive steps"}${described.headlessSafe ? "; headless-safe" : ""}`;
   }
 
   // src/mcp/csp.ts
@@ -6946,12 +6978,6 @@ ${end.comment}` : end.comment;
 (+${skipped.length} more implementation${skipped.length === 1 ? "" : "s"} not listed by the prototype endpoint)` : "");
     return textResult(text, { implementations, ...skipped.length ? { skipped } : {} });
   }
-  function describeText(described, impl, workflow) {
-    const interactive = described.jobs.flatMap(
-      (job) => job.steps.filter((step) => step.kind === "island" || step.kind === "form").map((step) => `${job.id}/${step.id} (${step.kind}${step.headless ? `, headless: ${step.headless}` : ", needs a person"})`)
-    );
-    return `${described.name} (${impl}/${workflow}): ${Object.keys(described.inputs).length} inputs, ${described.jobs.length} jobs, ${Object.keys(described.outputs).length} outputs${interactive.length ? `; interactive steps: ${interactive.join(", ")}` : "; no interactive steps"}${described.headlessSafe ? "; headless-safe" : ""}`;
-  }
   function describe(route, steps) {
     if (route.impl === "") return refuse("impl", "`impl` is required");
     if (route.workflow === "") return refuse("workflow", "`workflow` is required");
@@ -6977,7 +7003,7 @@ ${end.comment}` : end.comment;
     } catch {
       return refuse("workflow", REFUSALS.doesNotLint);
     }
-    return textResult(describeText(described, route.impl, route.workflow), { ...described });
+    return textResult(describeText(described), { ...described });
   }
   function resolveRun(route, steps) {
     if (route.runId === "") return { ok: false, result: refuse("runId", NEED_RUN_ID) };
@@ -6988,11 +7014,18 @@ ${end.comment}` : end.comment;
   function snapshotOf(run, stepRows) {
     return snapshotFromRows(run, stepRows);
   }
+  function agentHostHint(runId, snapshot) {
+    return snapshot.waitingOn.map(
+      (step) => step.kind === "island" ? `
+To let the person complete ${step.key} here, call workflow.submitStep { runId: "${runId}", step: "${step.key}", values: {} } \u2014 the step's island renders in this chat; do not invent its values.` : `
+${step.key} is a form step; in this phase it is completed on the harness page.`
+    ).join("");
+  }
   function status(route, steps) {
     const resolved = resolveRun(route, steps);
     if (!resolved.ok) return resolved.result;
     const snapshot = snapshotOf(resolved.run, resolved.stepRows);
-    return textResult(snapshotText(snapshot), { ...snapshot });
+    return textResult(snapshotText(snapshot) + agentHostHint(route.runId, snapshot), { ...snapshot });
   }
   function outputs(route, steps) {
     const resolved = resolveRun(route, steps);

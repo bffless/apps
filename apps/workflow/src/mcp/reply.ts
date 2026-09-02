@@ -22,7 +22,7 @@ import {
 } from '@bffless/workflow-agent-tools'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { parse } from 'yaml'
-import { describeWorkflow } from '../lib/describe'
+import { describeText, describeWorkflow } from '../lib/describe'
 import { originOf, uiMeta } from './csp'
 import { RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool, listedTools } from './hostTools'
 import { workflowId } from './ids'
@@ -178,16 +178,6 @@ function list(route: Route, steps: StepOutputs): CallToolResult {
   return textResult(text, { implementations, ...(skipped.length ? { skipped } : {}) })
 }
 
-/** The page's `describe` executor's sentence, verbatim (`src/agent/executors.ts`). */
-export function describeText(described: ReturnType<typeof describeWorkflow>, impl: string, workflow: string): string {
-  const interactive = described.jobs.flatMap((job) =>
-    job.steps
-      .filter((step) => step.kind === 'island' || step.kind === 'form')
-      .map((step) => `${job.id}/${step.id} (${step.kind}${step.headless ? `, headless: ${step.headless}` : ', needs a person'})`),
-  )
-  return `${described.name} (${impl}/${workflow}): ${Object.keys(described.inputs).length} inputs, ${described.jobs.length} jobs, ${Object.keys(described.outputs).length} outputs${interactive.length ? `; interactive steps: ${interactive.join(', ')}` : '; no interactive steps'}${described.headlessSafe ? '; headless-safe' : ''}`
-}
-
 function describe(route: Route, steps: StepOutputs): CallToolResult {
   if (route.impl === '') return refuse('impl', '`impl` is required')
   if (route.workflow === '') return refuse('workflow', '`workflow` is required')
@@ -213,7 +203,7 @@ function describe(route: Route, steps: StepOutputs): CallToolResult {
   } catch {
     return refuse('workflow', REFUSALS.doesNotLint)
   }
-  return textResult(describeText(described, route.impl, route.workflow), { ...described })
+  return textResult(describeText(described), { ...described })
 }
 
 /** The run a run-scoped tool named, as rows, or the page's refusal. */
@@ -228,11 +218,26 @@ export function snapshotOf(run: Row, stepRows: Row[]) {
   return snapshotFromRows(run as unknown as RunRowLike, stepRows as unknown as StepRowLike[])
 }
 
+/**
+ * What a model in an agent host must be told in prose (it sees no
+ * `structuredContent`): an island step is completed by the person, in this
+ * chat, once the model calls `workflow.submitStep` with empty values.
+ */
+export function agentHostHint(runId: string, snapshot: { waitingOn: Array<{ key: string; kind: string }> }): string {
+  return snapshot.waitingOn
+    .map((step) =>
+      step.kind === 'island'
+        ? `\nTo let the person complete ${step.key} here, call workflow.submitStep { runId: "${runId}", step: "${step.key}", values: {} } — the step's island renders in this chat; do not invent its values.`
+        : `\n${step.key} is a form step; in this phase it is completed on the harness page.`,
+    )
+    .join('')
+}
+
 function status(route: Route, steps: StepOutputs): CallToolResult {
   const resolved = resolveRun(route, steps)
   if (!resolved.ok) return resolved.result
   const snapshot = snapshotOf(resolved.run, resolved.stepRows)
-  return textResult(snapshotText(snapshot), { ...snapshot })
+  return textResult(snapshotText(snapshot) + agentHostHint(route.runId, snapshot), { ...snapshot })
 }
 
 function outputs(route: Route, steps: StepOutputs): CallToolResult {
