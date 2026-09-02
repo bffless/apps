@@ -100,8 +100,16 @@ export interface Route {
   workflow: string
   /** `resources/read`: the path after `ui://bffless/<impl>/`. */
   rest: string
-  /** `https://<x-forwarded-host ?? host>`; `''` when the request carries neither. */
+  /** `https://<x-forwarded-host ?? host>`; `''` when the request carries neither. The CSP's app domain. */
   appOrigin: string
+  /**
+   * Where sibling calls go: CE in-process at the request's own base path
+   * (`http://localhost:3000/public/<owner>/<repo>/alias/<alias>/<dir>` — the
+   * path nginx rewrote this very request to, read off `request.path`), so the
+   * harness's rules and forwarders answer without a hairpin through the edge.
+   * Falls back to `appOrigin` when the request path carries no such prefix.
+   */
+  siblingBase: string
   whoamiUrl: string
   aliasesUrl: string
   indexUrl: string
@@ -162,6 +170,24 @@ export function parseIslandUri(uri: string): { impl: string; rest: string } | nu
   return { impl, rest }
 }
 
+const MCP_PATH = '/api/workflow/mcp'
+
+/**
+ * `request.path` as CE saw it is nginx's rewrite of the public request —
+ * `/public/<owner>/<repo>/alias/<alias>/<dir>/api/workflow/mcp` on a domain
+ * mapping — so everything before `/api/workflow/mcp` is the alias's base path
+ * on CE's own router, and CE in-process at that base answers every sibling
+ * route (rules, forwarders, the bundle) exactly as the edge would, minus the
+ * edge. A bare `/api/workflow/mcp` (a preview host, a dev proxy) carries no
+ * prefix and the public origin is used instead.
+ */
+export function siblingBaseOf(path: string, appOrigin: string): string {
+  const at = path.indexOf(MCP_PATH)
+  const prefix = at > 0 ? path.slice(0, at) : ''
+  if (prefix.startsWith('/public/')) return `${CE_BACKEND}${prefix}`
+  return appOrigin
+}
+
 /** The alias relay is asked only when discovery has no `impl` to go straight to, and only when there is a URL to ask. */
 function withAliases(route: Route): Route {
   route.isAliases = route.isList && route.impl === '' && route.aliasesUrl !== ''
@@ -175,6 +201,7 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
 
   const host = header(request.headers, 'x-forwarded-host') || header(request.headers, 'host')
   const appOrigin = host === '' ? '' : `https://${host}`
+  const siblingBase = siblingBaseOf(str(request.path), appOrigin)
   const owner = str(deployment.owner)
   const repo = str(deployment.repo)
   const project = owner !== '' && repo !== '' ? `${owner}/${repo}` : ''
@@ -206,11 +233,12 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     workflow: '',
     rest: '',
     appOrigin,
-    whoamiUrl: appOrigin === '' ? '' : `${appOrigin}/api/workflow/whoami`,
+    siblingBase,
+    whoamiUrl: siblingBase === '' ? '' : `${siblingBase}/api/workflow/whoami`,
     // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
     aliasesUrl: project === '' ? '' : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
     indexUrl: '',
-    stepViewUrl: appOrigin === '' ? '' : `${appOrigin}/step.html`,
+    stepViewUrl: siblingBase === '' ? '' : `${siblingBase}/step.html`,
     signPath: '',
     signStoragePath: '',
     probePath: project === '' ? '' : `${project}/uploads/workflows/.mcp-csp-probe`,
@@ -277,8 +305,8 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
   if (route.tool === 'workflow.runs' && route.impl !== '' && route.workflow !== '') route.isRuns = true
   if (route.tool === 'workflow.list') route.isList = true
   if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '' && appOrigin !== '') route.isDescribe = true
-  if ((route.isList || route.isDescribe) && route.impl !== '' && appOrigin !== '') {
-    route.indexUrl = `${appOrigin}/w/${route.impl}/.bffless/workflows/index.json`
+  if ((route.isList || route.isDescribe) && route.impl !== '' && siblingBase !== '') {
+    route.indexUrl = `${siblingBase}/w/${route.impl}/.bffless/workflows/index.json`
   }
   if (route.tool === 'workflow.sign') {
     route.signPath = confinedSignPath(args.path)

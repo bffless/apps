@@ -26,7 +26,8 @@ var __mcp = (() => {
     LIST_FANOUT: () => LIST_FANOUT,
     confinedSignPath: () => confinedSignPath,
     handler: () => handler,
-    parseIslandUri: () => parseIslandUri
+    parseIslandUri: () => parseIslandUri,
+    siblingBaseOf: () => siblingBaseOf
   });
 
   // ../../packages/workflow-agent-tools/dist/schemas.js
@@ -327,6 +328,13 @@ var __mcp = (() => {
     if (!/^[a-z][a-z0-9-]*$/.test(impl) || rest === "") return null;
     return { impl, rest };
   }
+  var MCP_PATH = "/api/workflow/mcp";
+  function siblingBaseOf(path, appOrigin) {
+    const at = path.indexOf(MCP_PATH);
+    const prefix = at > 0 ? path.slice(0, at) : "";
+    if (prefix.startsWith("/public/")) return `${CE_BACKEND}${prefix}`;
+    return appOrigin;
+  }
   function withAliases(route) {
     route.isAliases = route.isList && route.impl === "" && route.aliasesUrl !== "";
     return route;
@@ -337,6 +345,7 @@ var __mcp = (() => {
     const message = parseMessage(request.body);
     const host = header(request.headers, "x-forwarded-host") || header(request.headers, "host");
     const appOrigin = host === "" ? "" : `https://${host}`;
+    const siblingBase = siblingBaseOf(str(request.path), appOrigin);
     const owner = str(deployment.owner);
     const repo = str(deployment.repo);
     const project = owner !== "" && repo !== "" ? `${owner}/${repo}` : "";
@@ -367,11 +376,12 @@ var __mcp = (() => {
       workflow: "",
       rest: "",
       appOrigin,
-      whoamiUrl: appOrigin === "" ? "" : `${appOrigin}/api/workflow/whoami`,
+      siblingBase,
+      whoamiUrl: siblingBase === "" ? "" : `${siblingBase}/api/workflow/whoami`,
       // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
       aliasesUrl: project === "" ? "" : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
       indexUrl: "",
-      stepViewUrl: appOrigin === "" ? "" : `${appOrigin}/step.html`,
+      stepViewUrl: siblingBase === "" ? "" : `${siblingBase}/step.html`,
       signPath: "",
       signStoragePath: "",
       probePath: project === "" ? "" : `${project}/uploads/workflows/.mcp-csp-probe`
@@ -434,8 +444,8 @@ var __mcp = (() => {
     if (route.tool === "workflow.runs" && route.impl !== "" && route.workflow !== "") route.isRuns = true;
     if (route.tool === "workflow.list") route.isList = true;
     if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "" && appOrigin !== "") route.isDescribe = true;
-    if ((route.isList || route.isDescribe) && route.impl !== "" && appOrigin !== "") {
-      route.indexUrl = `${appOrigin}/w/${route.impl}/.bffless/workflows/index.json`;
+    if ((route.isList || route.isDescribe) && route.impl !== "" && siblingBase !== "") {
+      route.indexUrl = `${siblingBase}/w/${route.impl}/.bffless/workflows/index.json`;
     }
     if (route.tool === "workflow.sign") {
       route.signPath = confinedSignPath(args.path);

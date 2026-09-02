@@ -98,9 +98,10 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
   }
   // A pipeline always runs `route` first; a bare smoke call answers the empty plan.
   if (!route) return plan
-  const indexUrlOf = (alias: string) => `${route.appOrigin}/w/${alias}/.bffless/workflows/index.json`
+  const base = route.siblingBase
+  const indexUrlOf = (alias: string) => `${base}/w/${alias}/.bffless/workflows/index.json`
 
-  if (route.isList && route.appOrigin !== '') {
+  if (route.isList && base !== '') {
     let wanted: string[]
     if (route.impl !== '') {
       wanted = [route.impl]
@@ -122,19 +123,19 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       (entry: unknown): entry is Record<string, unknown> =>
         isPlainObject(entry) && typeof entry.file === 'string' && workflowId(entry.file) === route.workflow,
     )
-    if (listing && route.appOrigin !== '') {
+    if (listing && base !== '') {
       plan.listing = listing
       plan.hasYaml = true
-      plan.yamlUrl = `${route.appOrigin}/w/${route.impl}/.bffless/workflows/${listing.file as string}`
+      plan.yamlUrl = `${base}/w/${route.impl}/.bffless/workflows/${listing.file as string}`
     }
   }
 
   if (route.isIslandUri) {
     try {
       const url = resolveSrc(route.impl, route.rest)
-      if (route.appOrigin !== '') {
+      if (base !== '') {
         plan.hasIsland = true
-        plan.islandUrl = `${route.appOrigin}${url}`
+        plan.islandUrl = `${base}${url}`
       }
     } catch (err) {
       plan.islandError = err instanceof Error ? err.message : String(err)
@@ -159,9 +160,9 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       else {
         try {
           const url = resolveSrc(impl, src)
-          if (route.appOrigin !== '') {
+          if (base !== '') {
             plan.hasIsland = true
-            plan.islandUrl = `${route.appOrigin}${url}`
+            plan.islandUrl = `${base}${url}`
           }
         } catch (err) {
           plan.islandError = err instanceof Error ? err.message : String(err)
@@ -174,13 +175,13 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       const args = isPlainObject(route.args.arguments) ? route.args.arguments : {}
       if (target.kind === 'rejected') plan.pipelineError = target.reason
       else if (target.kind === 'host') plan.pipelineError = `tool "${name}": workflow.${target.tool} is a host tool — call it directly`
-      else if (route.appOrigin === '') plan.pipelineError = 'the request named no host'
+      else if (base === '') plan.pipelineError = 'the request named no host'
       else if (target.method === 'GET') {
         plan.isPipelineGet = true
-        plan.pipelineUrl = `${route.appOrigin}${target.url}${queryOf(args)}`
+        plan.pipelineUrl = `${base}${target.url}${queryOf(args)}`
       } else {
         plan.isPipelinePost = true
-        plan.pipelineUrl = `${route.appOrigin}${target.url}`
+        plan.pipelineUrl = `${base}${target.url}`
         plan.pipelineBody = args
       }
     }

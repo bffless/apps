@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { STEP_VIEW_URI } from './hostTools'
-import { confinedSignPath, handler, parseIslandUri, type FnRequest } from './route'
+import { confinedSignPath, handler, parseIslandUri, siblingBaseOf, type FnRequest } from './route'
 
 const HEADERS = { 'x-forwarded-host': 'h.example', host: 'localhost:3000' }
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
@@ -27,6 +27,19 @@ describe('route', () => {
     const none = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }, {}))
     expect(none.appOrigin).toBe('')
     expect(none.whoamiUrl).toBe('')
+  })
+
+  it('sends sibling calls to CE in-process at the request’s own base path, and to the public origin without one', () => {
+    const rewritten: FnRequest = { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workflow.describe', arguments: { impl: 'hello', workflow: 'interactive' } } }, headers: HEADERS, method: 'POST', path: '/public/o/r/alias/workflow/dist/api/workflow/mcp' }
+    const r = route(rewritten)
+    expect(r.appOrigin).toBe('https://h.example')
+    expect(r.siblingBase).toBe('http://localhost:3000/public/o/r/alias/workflow/dist')
+    expect(r.whoamiUrl).toBe('http://localhost:3000/public/o/r/alias/workflow/dist/api/workflow/whoami')
+    expect(r.stepViewUrl).toBe('http://localhost:3000/public/o/r/alias/workflow/dist/step.html')
+    expect(r.indexUrl).toBe('http://localhost:3000/public/o/r/alias/workflow/dist/w/hello/.bffless/workflows/index.json')
+    expect(route(call('workflow.list')).siblingBase).toBe('https://h.example')
+    expect(siblingBaseOf('/api/workflow/mcp', 'https://h.example')).toBe('https://h.example')
+    expect(siblingBaseOf('/other/api/workflow/mcp', 'https://h.example')).toBe('https://h.example')
   })
 
   it('classifies the protocol methods', () => {
