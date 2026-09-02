@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/bffless/apps/compare/workflow-lint-v1.5.0...workflow-lint-v1.5.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **workflow-lint:** validate --path-prefix against the publisher's /api/&lt;alias&gt; ([#567](https://github.com/bffless/apps/issues/567)) ([e8310f2](https://github.com/bffless/apps/commit/e8310f22255afd23b19072a1afb1454cdf6a1a42)), closes [#560](https://github.com/bffless/apps/issues/560)
+
 ## [1.5.0](https://github.com/bffless/apps/compare/workflow-lint-v1.4.0...workflow-lint-v1.5.0) (2026-09-01)
 
 
