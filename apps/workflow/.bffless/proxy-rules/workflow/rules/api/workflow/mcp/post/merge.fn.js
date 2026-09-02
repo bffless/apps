@@ -2976,13 +2976,17 @@ ${indent}${end}`;
     for (const field of STEP_ROW_FIELDS) base[field] = Object.hasOwn(row, field) ? row[field] : null;
     if (route.tool === "workflow.submit" || route.tool === "workflow.submitStep") {
       const raw = route.tool === "workflow.submit" ? route.args.outputs : route.args.values;
-      if (raw === void 0 && route.tool === "workflow.submitStep") {
+      const noValues = raw === void 0 || isPlainObject4(raw) && Object.keys(raw).length === 0;
+      if (noValues && route.tool === "workflow.submitStep") {
         const snapshot2 = snapshotOf(run, stepRowsFields);
         return {
           update: false,
           recordId,
           key,
-          result: textResult(`${snapshotText(snapshot2)}; pick in the panel to complete ${key}`, { ...snapshot2, step: key })
+          result: textResult(
+            `${snapshotText(snapshot2)}. The step's island is rendered for the person to complete ${key} in; no values are needed from you \u2014 once they submit, workflow.status shows ${key} succeeded.`,
+            { ...snapshot2, step: key, ui: "rendered" }
+          )
         };
       }
       if (!isPlainObject4(raw)) {

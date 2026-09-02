@@ -116,14 +116,21 @@ export function handler(data: { steps: { route?: Route; run?: unknown; steps?: u
   // --- submit: workflow.submit { outputs } or workflow.submitStep { values }
   if (route.tool === 'workflow.submit' || route.tool === 'workflow.submitStep') {
     const raw = route.tool === 'workflow.submit' ? route.args.outputs : route.args.values
-    if (raw === undefined && route.tool === 'workflow.submitStep') {
-      // No values: the host renders the step view (linked from the tool) and the island completes it.
+    const noValues = raw === undefined || (isPlainObject(raw) && Object.keys(raw).length === 0)
+    if (noValues && route.tool === 'workflow.submitStep') {
+      // No values (absent, or the `{}` a model sends because the schema marks
+      // `values` required): the host renders the step view linked from the tool
+      // and the island collects the outputs — the lightweight path (spec 10).
+      // Seen live 2026-09-02: claude.ai called `submitStep { values: {} }`.
       const snapshot = snapshotOf(run, stepRowsFields)
       return {
         update: false,
         recordId,
         key,
-        result: textResult(`${snapshotText(snapshot)}; pick in the panel to complete ${key}`, { ...snapshot, step: key }),
+        result: textResult(
+          `${snapshotText(snapshot)}. The step's island is rendered for the person to complete ${key} in; no values are needed from you — once they submit, workflow.status shows ${key} succeeded.`,
+          { ...snapshot, step: key, ui: 'rendered' },
+        ),
       }
     }
     if (!isPlainObject(raw)) {
