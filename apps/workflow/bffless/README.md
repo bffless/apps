@@ -560,6 +560,19 @@ npx -y bffless@0.3.5 rules push /tmp/hello-rules --project bffless/workflow-mcp 
 # then, if the set ids changed: update_alias workflow → [workflow, hello], hello → [hello]
 ```
 
+**Cloudflare blocks Anthropic's MCP client** (found 2026-09-02, the first claude.ai connect):
+the `j5s.dev` zone's AI-bot blocking answers **403** to any user agent containing `Claude` /
+`anthropic` (`Claude-User`, `ClaudeBot`, …) on `/api/workflow/mcp` and `/step.html`, while
+`curl`/`node` get the rule's 405/200 — so claude.ai "detects" the server from the browser and
+then fails to connect from its servers (*"Failed to start MCP authorization"* → *"Connection
+issue"*). Reproduce: `curl -s -o /dev/null -w '%{http_code}' -A Claude-User/1.0
+https://workflow-mcp.j5s.dev/api/workflow/mcp` → 403. Fix is in the Cloudflare dashboard, not
+the app: Security → Bots → turn off *Block AI bots* (or a WAF custom rule that skips bot
+protection for host `workflow-mcp.j5s.dev`, later `workflow.j5s.dev`). Every MCP host that
+fetches from its own servers hits this on any j5s host until the zone allows it. The SPA's
+`/.well-known/*` also had to answer 404 (the `_custom/well-known` rule): the client's OAuth
+discovery read `index.html` as metadata before that.
+
 **Verify:** `pnpm workflow-live:walk mcp --harness https://workflow-mcp.j5s.dev --out /tmp/walk-mcp`
 (13 checks, Story 5) and `pnpm workflow-live:walk page-tools --harness https://workflow-mcp.j5s.dev`
 (the harness itself; the driver signs in through the relay on a public host too).
