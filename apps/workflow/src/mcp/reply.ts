@@ -152,7 +152,7 @@ function discovered(steps: StepOutputs): Listed[] {
     .filter((impl): impl is Listed => impl !== null)
 }
 
-function listText(implementations: Listed[]): string {
+function listText(implementations: Array<Omit<Listed, 'islands'>>): string {
   const lines = implementations.map((impl) => {
     const workflows = impl.workflows.map((workflow) => `${workflow.id}${workflow.headlessSafe ? ' (headless-safe)' : ''}`).join(', ')
     return `${impl.alias} — ${impl.name}${impl.version ? ` v${impl.version}` : ''}${impl.error ? ` (unusable: ${impl.error})` : ''}: ${workflows || 'no workflows'}`
