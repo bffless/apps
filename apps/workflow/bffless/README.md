@@ -573,6 +573,27 @@ fetches from its own servers hits this on any j5s host until the zone allows it.
 `/.well-known/*` also had to answer 404 (the `_custom/well-known` rule): the client's OAuth
 discovery read `index.html` as metadata before that.
 
+**What the first claude.ai session taught (2026-09-02), all folded into #579:**
+- **A text-only host.** claude.ai hands the model a tool result's `content[0].text` and nothing
+  else — `structuredContent` never reaches it. The model reasoned from "a terse snapshot" and
+  refused to act until the prose carried the island's declared outputs and the exact call to
+  make (`snapshotText`/`describeText` now list declarations; `workflow.status` over the endpoint
+  appends the agent-host hint). Design rule for every tool: the text must stand alone.
+- **`workflow.submitStep { values: {} }` is how a model opens the panel** — the catalog schema
+  marks `values` required, so the model sends `{}`; an empty object on an island step now means
+  "render the step's island", not an empty submit. The tool's description says so.
+- **The host mounts the UI only on a non-error result**; an `isError` answer shows as text in
+  the card. And a model that was refused once keeps reasoning from it — retries need a new chat
+  after a connector reconnect (claude.ai caches `tools/list` per connection).
+- **Sibling calls are in-process.** They used to hairpin `https://<host>/…` (CE → Cloudflare →
+  nginx → CE); the island's parallel bridge calls timed out at 10 s and surfaced as Cloudflare
+  502s. They now go to `http://localhost:3000/public/<owner>/<repo>/alias/<alias>/<dir>/…` — the
+  base path nginx rewrote the request to, read off `request.path` — with `x-original-uri` and
+  `x-forwarded-host`, which CE's proxy middleware matches rules and domains on. 0.3–0.6 s per
+  call. The second after a `rules push`, calls can 404 while the rule cache repopulates.
+- **The island's echo can lag a click** under latency (hello's `pick-line` does not cancel the
+  previous `echo`); the submitted value is always the highlighted one.
+
 **Verify:** `pnpm workflow-live:walk mcp --harness https://workflow-mcp.j5s.dev --out /tmp/walk-mcp`
 (13 checks, Story 5) and `pnpm workflow-live:walk page-tools --harness https://workflow-mcp.j5s.dev`
 (the harness itself; the driver signs in through the relay on a public host too).
