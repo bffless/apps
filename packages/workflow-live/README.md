@@ -16,6 +16,7 @@ deployment or it fails, and nothing about the verdict comes from reading code. S
 | `headless` | Task 25 Step 2: `driver.exit0`, `driver.wroteRunJson` (failure-branch only), the five `checkHeadlessHello` checks (`run.succeeded`, `run.headlessFlag`, `D7.islandSelfSubmitted`, `D11.reviewSkippedWithOutputs`, `run.posterIsFileRef`), `driver.savedPoster`, `driver.wrongTypeIsExit3`, and — with `--dispatch` — the same five re-scoped as `dispatch.*` plus `dispatch.jobGreen`, `dispatch.artifactDownloaded`, `dispatch.artifactHasRunJson` (failure-branch only), `dispatch.savedPoster` | nothing (CI minutes with `--dispatch`) |
 | `studio-audit` | Task 25 Step 3, as an *audit* of the by-hand run `run_01M17CG3W0YTA4T0ZVRTD88VE7` (`STUDIO_AUDIT_RUN`, override with `--run <id>` once that run is deleted — the walk then `BLOCK`s with a hint): `run.succeeded`, `R.scenesCarrySourceSpans`, `D2.sheetsDrawn`, `trim.keepRecorded`, `outputs.shortBlogCoverAreFileRefs`, `D16.wordsNotOffloaded`, `run.interactiveFlag` | nothing |
 | `studio-headless` | Task 25 Step 4: the six common Studio checks (`checkStudioCommon`: `run.succeeded`, `R.scenesCarrySourceSpans`, `D2.sheetsDrawn`, `trim.keepRecorded`, `outputs.shortBlogCoverAreFileRefs`, `D16.wordsNotOffloaded`) plus `run.headlessFlag`, `D11.blogReviewSkippedWithPost`, `D11.coverFormsSkipped`, `cover.rendered`, `D7.trimAutoAccepted`, `driver.exit0`, `driver.wroteRunJson` (failure-branch only), `driver.savedShort`, `driver.savedCover`, `driver.savedBlogZip` (failure-branch only), and on the saved zip `blog.zipHasFrames` + `blog.zipHasOnePost` (`blog.zipReadable`, failure-branch only) — not the `studio-audit` checks (that walk alone adds `run.interactiveFlag`) | **one Studio kickoff**: WhisperX, Gemini director + refiner, Claude describe/blog, nano-banana ×2 |
+| `page-tools` | the M5 Phase-1 gate (spec 10, D19–D21; apps#554): `hello/interactive` driven end to end through the page's WebMCP tools alone — `D21.onlyWorkflowTools`, `D19.readOnlyHints`, `D19.listsHello`, `D20.describeInteractive`, `spec07.refusalVerbatim`, `D21.startNavigates`, `spec10.awaitWaitingIsland`, `D21.submitIslandStep`, `spec10.awaitWaitingForm`, `D21.submitFormStep`, `run.succeeded`, `D6.signIsPresigned`, `spec10.runsListsIt`, `record.matchesPage` (asserted on the `run.json` it writes), then a second run for `D21.resumeAdopts` (after a reload) and `D21.cancelIsCancelled`, and `page.noConsoleErrors` — see `src/walks/page-tools.ts`. Not part of `all` | two hello runs (nothing metered) |
 
 `all` runs `hello → headless → studio-audit → studio-headless` in that order, writing
 each walk's `report.json`/`report.md` under `<out>/<name>/` rather than directly under
@@ -27,6 +28,7 @@ the sequence; a missing precondition does).
 ```bash
 source ~/.config/bffless/workflow-ci.env
 pnpm workflow-live:walk hello --harness https://workflow.j5s.dev --out /tmp/walk-hello
+pnpm workflow-live:walk page-tools --harness https://workflow.j5s.dev --out /tmp/walk-page-tools
 ```
 
 Flags: `--harness <url>` (default `https://workflow.j5s.dev`), `--out <dir>` (default a

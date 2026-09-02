@@ -36,6 +36,17 @@ export {
 } from './observe.js'
 export type { BrowserLike, ConsoleMessageLike, PageLike } from './page.js'
 export {
+  PageToolError,
+  WORKFLOW_PAGE_TOOLS,
+  callPageTool,
+  canonicalPageToolName,
+  listPageTools,
+  resultText,
+  waitForPageTools,
+  type PageToolInfo,
+  type PageToolResult,
+} from './pageTools.js'
+export {
   encodeInputs,
   runWorkflow,
   startUrl,
