@@ -533,7 +533,12 @@ deployment's visibility gate answers anonymous MCP callers with a 302 before any
 (subdomain, alias `workflow`, path `/dist`) + `update_domain { isSpa: true }` → `update_alias`
 attachments → `create_response_header_rule`). Membership: the walks sign in as the j5s CI member
 (`~/.config/bffless/workflow-ci.env`), who must be a member of the project — CE's alias list is
-permission-filtered, so a non-member sees an empty harness.
+permission-filtered, so a non-member sees an empty harness; there is no MCP tool for it, so:
+`curl -X POST $BFFLESS_API_URL/api/projects/bffless/workflow-mcp/permissions/users -H "X-API-Key: $BFFLESS_API_KEY" -H 'Content-Type: application/json' -d '{"userEmail":"<member>","role":"contributor"}'`
+(the scratch key's owner owns the project, so it may grant). **Bucket CORS** (the note at the
+top of this file): `https://workflow-mcp.j5s.dev` must be in the storage bucket's CORS origins
+or the harness page's own uploads (`card`'s poster) fail there — the MCP endpoint is unaffected;
+`gcloud` is not on the VPS, so this is a person's step.
 
 **Redeploy** from a worktree of the epic branch (the key env sourced; `bffless` ≥ 0.3.5 for
 `--path-prefix`):
