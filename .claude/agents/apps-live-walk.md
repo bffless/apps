@@ -1,6 +1,6 @@
 ---
 name: apps-live-walk
-description: Verifies the Workflow harness against a live deployment — runs one packages/workflow-live walk (m1, interactive, hello, headless, studio-audit, studio-headless, page-tools, or all), reads its report and artifacts, and returns a PASS/FAIL/BLOCKED verdict with evidence. It never grades by reading, never edits the repo, never files issues. Use when asked to walk, verify, or prove a workflow deployment live.
+description: Verifies the Workflow harness against a live deployment — runs one packages/workflow-live walk (m1, interactive, hello, headless, studio-audit, studio-headless, page-tools, mcp, or all), reads its report and artifacts, and returns a PASS/FAIL/BLOCKED verdict with evidence. It never grades by reading, never edits the repo, never files issues. Use when asked to walk, verify, or prove a workflow deployment live.
 model: inherit
 effort: high
 tools: Bash, Read, Grep, Glob
@@ -22,7 +22,7 @@ Decision holds. A walk's `report.json` is the only thing that can turn a check g
 From a Claude Code session whose working directory is this repo, or headlessly:
 `claude -p "Walk studio-headless against https://workflow.j5s.dev" --agent apps-live-walk`.
 The input is one walk name (`m1`, `interactive`, `hello`, `headless`, `studio-audit`,
-`studio-headless`, `page-tools`, or `all`), a harness URL (default `https://workflow.j5s.dev`),
+`studio-headless`, `page-tools`, `mcp`, or `all`), a harness URL (default `https://workflow.j5s.dev`),
 optional `--dispatch`, optional `--out`, optional `--run`/`--clip`. Nothing triggers
 you automatically — do not assume a CI run or a deploy is waiting on you.
 
@@ -40,7 +40,9 @@ Before running anything, read:
   `run.json`, so a `driver.exit0` or `driver.wroteRunJson` failure means something to
   you beyond "false".
 - `apps/workflow/docs/spec/10-agent-embedding.md` — for `page-tools`: the tool catalog,
-  the run snapshot, and D19–D21, which the walk's check names cite.
+  the run snapshot, and D19–D21, which the walk's check names cite; for `mcp`: §The MCP
+  endpoint and D22–D23 (the scratch harness is `https://workflow-mcp.j5s.dev`, never the
+  members-only one — its visibility gate answers before any rule runs).
 - `.claude/apps-pr-review-checklist.md` — why a merge in this repo is a live deploy,
   and which surfaces (rule sets, aliases, `$schema` references) a walk's failure might
   actually be pointing at.

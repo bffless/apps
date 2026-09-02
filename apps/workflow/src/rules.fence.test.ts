@@ -6,7 +6,10 @@ import { parse } from 'yaml'
 const ROOT = join(__dirname, '..', '.bffless', 'proxy-rules')
 const KNOWN = new Set(['data_query', 'data_create', 'data_update', 'data_delete', 'data_upsert_many',
   'function_handler', 'response_handler', 'presigned_upload', 'register_upload', 'file_serve_handler',
-  'file_delete', 'signed_url'])
+  'file_delete', 'signed_url',
+  // CE's http-request.handler.ts — how the MCP endpoint rule reaches its sibling
+  // routes (a function_handler cannot fetch; spec 10 D22, Phase 2 plan Decision 5).
+  'http_request'])
 
 function ruleFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -84,6 +87,22 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     }
     const validators: { type: string; config?: { allowApiKey?: unknown } }[] = doc.pipeline.validators ?? []
     const auth = validators.find((v) => v.type === 'auth_required')
+    if (file.includes('/api/workflow/mcp/')) {
+      // The MCP endpoint (spec 10, D22) is authless by design in Phase 2 — auth
+      // ladder rung 1 (D23): claude.ai connects to an authless server on a scratch
+      // public project, and a session validator would refuse it before any rule
+      // ran. Its gate is the `identity` step instead: every sibling call carries
+      // the WORKFLOW_MCP_KEY service identity, and without that secret the rule
+      // answers "not enabled" to everything but initialize (Phase 2 plan,
+      // Decision 6). Phase 3 puts app tokens + requiredScopes in front (story 7).
+      expect(auth, `${file} is the authless prototype endpoint (D23 rung 1)`).toBeUndefined()
+      if (file.includes('/mcp/post/')) {
+        const identity = doc.pipeline.steps.find((s: { id: string }) => s.id === 'identity')
+        expect(identity?.handler, `${file}: the identity probe is the endpoint's gate`).toBe('http_request')
+        expect(identity?.config?.headers?.['x-api-key'], `${file}: identity carries the service key`).toBe('secrets.WORKFLOW_MCP_KEY')
+      }
+      return
+    }
     expect(auth, `${file} must be auth_required (D14)`).toBeDefined()
     // The global constraint names `allowApiKey` explicitly: CI (`workflow-ci`)
     // and the headless runner call every route with an API key, not a cookie.

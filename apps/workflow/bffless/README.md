@@ -507,3 +507,66 @@ Phase 4 docs PR (pre-approved deviation).
 
 The scratch install has since been removed (Task 10 step 3); `workflow-test-w.j5s.dev` now
 answers 404.
+
+### M5 Phase 2 — the MCP Apps scratch project `bffless/workflow-mcp` (2026-09-02)
+
+The authless MCP endpoint prototype (spec 10, D22–D23 rung 1; apps#554 stories 5–6) runs on
+a **scratch, public** project on the dev instance — public on purpose: a private
+deployment's visibility gate answers anonymous MCP callers with a 302 before any rule runs
+(verified 2026-09-02 on `workflow.j5s.dev`). Never `bffless.dev`, never the members-only
+`bffless/workflow` harness. Scratch data only.
+
+| what | value |
+|---|---|
+| project | `bffless/workflow-mcp` · id `26d0496e-97cd-4f8b-9597-e993f7d330e7` · public |
+| harness | `https://workflow-mcp.j5s.dev` (domain `802bc041-1fb5-4a5d-be94-b63f59ddae3d`, alias `workflow`, path `/dist`, SPA) |
+| MCP endpoint | `POST https://workflow-mcp.j5s.dev/api/workflow/mcp` (GET → 405) |
+| service identity | project secret `WORKFLOW_MCP_KEY` = the project-scoped key `e0a0b726-5f06-4280-861b-146d28b8c823` ("workflow-mcp scratch"); the same key deploys, kept in `~/.config/bffless/workflow-mcp.env` (mode 600, never in the repo) |
+| rule sets | `workflow` `b84aee6c-7934-4fb2-adba-d846bb17a3b2` (this directory, pushed with `--prune`) · `hello` `f7e8b817-3eff-4057-948e-9a8c5bc2dff4` (hello's set + the `/w/hello/*` forwarder, `--path-prefix /api/hello`) |
+| aliases | `workflow` → sets [`workflow`, `hello`] · `hello` → [`hello`] |
+| deployments | harness `b369ec7b-0acb-4005-9c90-982e8ae21821` (the epic branch's build) · hello `dd350e9a-5b1d-4cc5-a750-08b902b5c77a` (`hello.ref`) |
+| response-header rule | `32367162-8b1c-49cd-9373-44d9f6a640f9` — islands `Cache-Control: no-transform, no-cache` (mirrors `bffless/workflow`'s) |
+| teardown | `delete_project 26d0496e-…` — **irreversible; ask first.** Until then the project's description says what it is. |
+
+**Provisioning** (done once, through the j5s MCP — `create_project` (public) → `create_api_key
+{ repository }` → `set_secret WORKFLOW_MCP_KEY` → the pushes/uploads below → `create_domain`
+(subdomain, alias `workflow`, path `/dist`) + `update_domain { isSpa: true }` → `update_alias`
+attachments → `create_response_header_rule`). Membership: the walks sign in as the j5s CI member
+(`~/.config/bffless/workflow-ci.env`), who must be a member of the project — CE's alias list is
+permission-filtered, so a non-member sees an empty harness; there is no MCP tool for it, so:
+`curl -X POST $BFFLESS_API_URL/api/projects/bffless/workflow-mcp/permissions/users -H "X-API-Key: $BFFLESS_API_KEY" -H 'Content-Type: application/json' -d '{"userEmail":"<member>","role":"contributor"}'`
+(the scratch key's owner owns the project, so it may grant). **Bucket CORS** (the note at the
+top of this file): `https://workflow-mcp.j5s.dev` must be in the storage bucket's CORS origins
+or the harness page's own uploads (`card`'s poster) fail there — the MCP endpoint is unaffected;
+`gcloud` is not on the VPS, so this is a person's step.
+
+**Redeploy** from a worktree of the epic branch (the key env sourced; `bffless` ≥ 0.3.5 for
+`--path-prefix`):
+
+```bash
+set -a; source ~/.config/bffless/workflow-mcp.env; set +a
+# 1. the harness rule set (adds/updates/prunes to this directory)
+bffless rules push apps/workflow/.bffless/proxy-rules/workflow --project bffless/workflow-mcp --api-url $BFFLESS_API_URL --prune
+# 2. the harness build → alias workflow (the set is attached by name)
+pnpm --filter workflow stage && pnpm --filter workflow mcp:build && pnpm --filter workflow build
+(cd apps/workflow && python3 -c "import shutil; shutil.make_archive('/tmp/wf','zip','.','dist')")
+curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_API_KEY" -F file=@/tmp/wf.zip -F repository=bffless/workflow-mcp -F commitSha=$(git rev-parse HEAD) -F branch=$(git branch --show-current) -F isPublic=true -F alias=workflow -F proxyRuleSetNames=workflow
+# 3. hello (only when hello.ref moves): its dist → alias hello; its rules + forwarder → set hello
+mkdir -p /tmp/hello && rm -rf /tmp/hello/dist && cp -r apps/workflow/hello-dist /tmp/hello/dist && (cd /tmp/hello && python3 -c "import shutil; shutil.make_archive('/tmp/hello','zip','.','dist')")
+curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_API_KEY" -F file=@/tmp/hello.zip -F repository=bffless/workflow-mcp -F commitSha=$(cat apps/workflow/hello.ref) -F branch=main -F isPublic=true -F alias=hello
+cp -r apps/workflow/hello-src/workflows/hello/.bffless/proxy-rules/hello /tmp/hello-rules && mkdir -p /tmp/hello-rules/rules/_custom/forward
+printf 'pathPattern: /w/hello/*\ntargetUrl: http://localhost:3000/public/bffless/workflow-mcp/alias/hello/dist\nstripPrefix: true\nforwardCookies: true\norder: 5\n' > /tmp/hello-rules/rules/_custom/forward/get.rule.yaml
+npx -y bffless@0.3.5 rules push /tmp/hello-rules --project bffless/workflow-mcp --api-url $BFFLESS_API_URL --path-prefix /api/hello --prune
+# then, if the set ids changed: update_alias workflow → [workflow, hello], hello → [hello]
+```
+
+**Verify:** `pnpm workflow-live:walk mcp --harness https://workflow-mcp.j5s.dev --out /tmp/walk-mcp`
+(13 checks, Story 5) and `pnpm workflow-live:walk page-tools --harness https://workflow-mcp.j5s.dev`
+(the harness itself; the driver signs in through the relay on a public host too).
+
+**Story 5 spike findings** are recorded on apps#554; in one line each: a `function_handler`
+cannot call a sibling rule (no `fetch`, frozen `data`) but the *pipeline* can (`http_request`
+steps at URLs a function derived, carrying the service key — CE's own API in-process for the
+alias list, the harness host's forwarders for `/w/<impl>/…`); `X-API-Key` alone **does** pass a
+private deployment's visibility gate (200 on `/`, `whoami`, `project` with a project-scoped key,
+302 anonymous); claude.ai's connector is confirmed by a person in Story 6.

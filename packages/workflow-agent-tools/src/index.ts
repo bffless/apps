@@ -39,6 +39,7 @@ export {
 export {
   ACTIVE_STEP_STATUSES,
   snapshotFromRows,
+  snapshotText,
   type RunRowLike,
   type RunSnapshot,
   type RunStatus,
