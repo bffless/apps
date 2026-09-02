@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build -c vite.step.config.ts",
     "lint": "eslint .",
     "mcp:build": "node scripts/build-mcp.mjs",
     "stage": "node scripts/stage-hello.mjs",
@@ -58,6 +58,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.7"
   }
 }
