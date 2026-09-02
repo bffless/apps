@@ -61,6 +61,8 @@ export interface Route {
 
   // --- one flag per gated step -------------------------------------------
   isNotification: boolean
+  /** Everything that is not a notification gets a JSON-RPC body — gates the final `respond` step. */
+  isRequest: boolean
   /** The request named a host, so the derived URLs are real — gates `identity`. */
   hasOrigin: boolean
   /** `list` / `resources/list` without `impl` → `steps.aliases` (the harness's alias relay). */
@@ -178,6 +180,7 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     uri: '',
     params: {},
     isNotification: false,
+    isRequest: true,
     hasOrigin: appOrigin !== '',
     isAliases: false,
     needsRun: false,
@@ -209,7 +212,7 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
   route.method = message.method
   route.params = message.params
   if (message.kind === 'notification') {
-    return { ...route, kind: 'notification', isNotification: true }
+    return { ...route, kind: 'notification', isNotification: true, isRequest: false }
   }
   route.id = message.id
 

@@ -170,6 +170,8 @@ pipeline:
       handler: function_handler
       code: ./reply.fn.js
     # A notification (no id) is acknowledged and nothing else (stateless profile).
+    # Both response steps are gated: CE runs every step whose condition holds,
+    # so an unconditional `respond` after `accepted` would answer 200 twice over.
     - id: accepted
       name: accepted
       handler: response_handler
@@ -181,6 +183,7 @@ pipeline:
       name: respond
       handler: response_handler
       config:
+        condition: steps.route.isRequest
         body: "{{{steps.reply.json}}}"
         status: 200
         headers: { Cache-Control: no-store }

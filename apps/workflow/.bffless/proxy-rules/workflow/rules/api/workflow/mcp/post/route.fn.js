@@ -348,6 +348,7 @@ var __mcp = (() => {
       uri: "",
       params: {},
       isNotification: false,
+      isRequest: true,
       hasOrigin: appOrigin !== "",
       isAliases: false,
       needsRun: false,
@@ -378,7 +379,7 @@ var __mcp = (() => {
     route.method = message.method;
     route.params = message.params;
     if (message.kind === "notification") {
-      return { ...route, kind: "notification", isNotification: true };
+      return { ...route, kind: "notification", isNotification: true, isRequest: false };
     }
     route.id = message.id;
     switch (message.method) {

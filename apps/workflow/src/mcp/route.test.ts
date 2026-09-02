@@ -43,6 +43,8 @@ describe('route', () => {
     const notification = route(req({ jsonrpc: '2.0', method: 'notifications/initialized' }))
     expect(notification.kind).toBe('notification')
     expect(notification.isNotification).toBe(true)
+    expect(notification.isRequest).toBe(false)
+    expect(batch.isRequest).toBe(true)
     for (const flag of ['needsRun', 'isRuns', 'isList', 'isAliases', 'isDescribe', 'isIslandUri', 'isStepView', 'isCsp', 'isSign'] as const) {
       expect(notification[flag], flag).toBe(false)
     }
