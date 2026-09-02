@@ -60,4 +60,29 @@ export default defineConfig([
       }],
     },
   },
+  {
+    // The MCP endpoint's function sources (spec 10, D22; Phase 2 plan, Decision 1)
+    // are bundled by scripts/build-mcp.mjs into CE function_handler code that
+    // runs in a vm sandbox with no DOM, no store and no fetch. They may import
+    // the catalog package, workflow-lint's definition model, `yaml`,
+    // lib/describe, the pure island/declared adapters and the runner types —
+    // and `islands/IslandHost` for HOST_INFO only. Anything React-, Redux- or
+    // DOM-shaped would either break the bundle or bloat it into the sandbox.
+    files: ['src/mcp/**/*.ts'],
+    ignores: ['src/mcp/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['react', 'react-*', '@reduxjs/*', 'react-redux', 'msw*',
+            '../store/*', '../store/**', '../components/*', '../components/**', '../pages/*', '../pages/**',
+            '../mocks/*', '../mocks/**', '../scripts/*', '../scripts/**', '../agent/*', '../agent/**',
+            '../islands/*', '!../islands/IslandHost',
+            '../lib/*', '!../lib/describe', '!../lib/runner',
+            '../lib/runner/*', '!../lib/runner/adapters', '!../lib/runner/types',
+            '../lib/runner/adapters/*', '!../lib/runner/adapters/island', '!../lib/runner/adapters/declared'],
+            message: 'src/mcp is bundled into a CE function_handler (spec 10, D22): only the catalog package, @bffless/workflow-lint/definition, yaml, lib/describe, lib/runner/{adapters/island,adapters/declared,types} and islands/IslandHost (HOST_INFO) may be imported.' },
+        ],
+      }],
+    },
+  },
 ])
