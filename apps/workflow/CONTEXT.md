@@ -176,9 +176,13 @@ _Avoid_: run state (the engine's), run record (the rows)
 
 **MCP endpoint**:
 `POST /api/workflow/mcp` — the harness's MCP server as one rule in its own rule set (spec 10,
-D22): stateless Streamable HTTP, the catalog served against the `/api/workflow/*` rows. Its
-function steps are built from `src/mcp/` (`pnpm --filter workflow mcp:build`).
+D22): from Phase 3 story 8 a single CE `mcp_handler` step whose config (the catalog's tools,
+the app-only four, the `ui://` resources) is rendered from `src/mcp/mcpConfig.ts`; every tool
+is its own sibling rule under `mcp-tools/`, invoked in-process as the caller with its own
+`requiredScopes`. The sibling rules' function steps are the shared bundles under `mcp-fn/`
+(`pnpm --filter workflow mcp:build` builds and renders everything).
 _Avoid_: a CE endpoint, `/_bffless/*`, the platform-admin MCP server, "streaming" (one POST,
+one JSON body), "the 24-step pipeline" (the Phase-2 prototype, retired)
 one JSON body)
 
 **App token**:
