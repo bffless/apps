@@ -108,10 +108,13 @@ export const oauth: Walk = async ({ args, env, report }) => {
     if (!t) return
 
     // --- as the member: park a run through the page, read it back through the token
+    // The consent flow left the page on the callback listener; the page tools live on the harness.
+    await browser.page.goto(args.harness, { waitUntil: 'networkidle' })
     await waitForPageTools(browser.page, { timeoutMs: 30_000 })
-    const started = await callPageTool(browser.page, 'workflow.start', { impl: 'hello', workflow: 'interactive', inputs: { greeting: 'Hello', names: ['world', 'oauth'] } })
+    const started = await callPageTool(browser.page, 'workflow.start', { impl: 'hello', workflow: 'interactive', inputs: { greeting: 'Hello', names: ['world', 'studio'] } })
     const runId = String(((started.structuredContent ?? {}) as { runId?: string }).runId ?? '')
-    await callPageTool(browser.page, 'workflow.await', { until: 'waiting', timeoutMs: 120_000 })
+    const awaited = await callPageTool(browser.page, 'workflow.await', { until: 'waiting', timeoutMs: 120_000 })
+    report.note(`page workflow.start → ${JSON.stringify(started).slice(0, 300)}; await → ${JSON.stringify(awaited).slice(0, 200)}`)
     const session = await openMcp(args.harness, { token: t.access_token })
     try {
       const status = (await session.client.callTool({ name: 'workflow.status', arguments: { runId } })) as ToolAnswer
