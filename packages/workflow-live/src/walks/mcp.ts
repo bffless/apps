@@ -5,22 +5,28 @@
  * the answers to the catalog and to the page's own wording. Story 5 covers
  * the protocol and the read tools; Story 6 adds the island round trip.
  *
- * The protocol and read checks need no browser or member: the endpoint is
- * authless by design on the scratch project it targets (auth ladder rung 1).
- * The Story 6 round trip parks a `hello/interactive` run **through the page
- * tools** (a member's browser, closed afterwards so the lease lapses), then
- * completes its island from outside: `stepView` → `pipeline` → `annotate` →
- * `submit` → the record. `--run <id>` skips the park; `--park-only` parks,
- * prints the run id and stops — how a person gets a fresh run to hand to
- * claude.ai. Check names cite the decision they prove; keep them stable.
+ * From Phase 3 story 7 the endpoint runs as the caller (auth ladder rung 2):
+ * the walk signs in through the relay first, mints two app tokens through
+ * that browser context (all three scopes; read-only), and carries the first
+ * as `Authorization: Bearer` on every MCP message. A person's
+ * `WORKFLOW_APP_TOKEN` skips the mint. The Story 6 round trip parks a
+ * `hello/interactive` run **through the page tools** (the member's browser,
+ * closed afterwards so the lease lapses), then completes its island from
+ * outside: `stepView` → `pipeline` → `annotate` → `submit` → the record.
+ * `--run <id>` skips the park; `--park-only` parks, prints the run id and
+ * stops — how a person gets a fresh run to hand to claude.ai. The two D23
+ * checks at the end prove the token is the member and that a read-only
+ * token cannot submit. Check names cite the decision they prove; keep them
+ * stable — the 24 Phase-2 checks are unchanged.
  */
 import { CATALOG } from '@bffless/workflow-agent-tools'
 import { callPageTool, waitForPageTools } from '@bffless/workflow-headless'
 import { writeFile } from 'node:fs/promises'
-import { adminKey, credentials } from '../env.js'
+import { adminKey, appToken, credentials } from '../env.js'
 import { cspOf, originOf, toolParity, type ListedTool } from '../mcp-checks.js'
 import { openMcp, rawGet, rawPost } from '../mcp-client.js'
-import { openSession } from '../session.js'
+import { openSession, type Session } from '../session.js'
+import { mintAppToken, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const APP_ONLY = ['workflow.submit', 'workflow.annotate', 'workflow.pipeline', 'workflow.stepView']
@@ -44,15 +50,43 @@ export const mcp: Walk = async ({ args, env, report }) => {
     log.push(line)
   }
   let session: Awaited<ReturnType<typeof openMcp>> | null = null
+  let browser: Session | null = null
+  const minted: MintedToken[] = []
+  let memberId = ''
   try {
-    // --- D22: the transport profile
+    // --- D23 rung 2: the endpoint runs as the caller, so sign in and mint the walk's tokens first
     const url = `${args.harness}/api/workflow/mcp`
-    const got = await rawGet(url)
+    const creds = credentials(env)
+    let token = appToken(env)
+    let readOnly: MintedToken | undefined
+    if (!token || !args.run) {
+      if (!creds) return report.block('WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing (needed to mint an app token and to park a run)')
+      browser = await openSession({ base: args.harness, out: args.out, credentials: creds })
+      const who = await browser.api.json('/api/workflow/whoami')
+      memberId = String((who.body as { id?: string } | null)?.id ?? '')
+      const project = await browser.api.json('/api/workflow/project')
+      const repository = String((project.body as { repository?: string } | null)?.repository ?? '')
+      if (repository === '') return report.block('GET /api/workflow/project answered no repository — cannot bind a token')
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      if (!token) {
+        const all = await mintAppToken(browser.request, args.harness, repository, ['workflow:read', 'workflow:run', 'workflow:files'], `workflow-live mcp ${stamp}`)
+        minted.push(all)
+        token = all.token
+        say(`minted app token ${all.id} (all scopes) for ${repository}`)
+      }
+      readOnly = await mintAppToken(browser.request, args.harness, repository, ['workflow:read'], `workflow-live mcp read-only ${stamp}`)
+      minted.push(readOnly)
+      say(`minted app token ${readOnly.id} (read-only) for ${repository}`)
+    }
+    const auth = { token }
+
+    // --- D22: the transport profile
+    const got = await rawGet(url, auth)
     report.expect('D22.getIs405', got.status === 405 && /post/i.test(got.headers.allow ?? ''), { status: got.status, allow: got.headers.allow })
     say(`GET ${url} → ${got.status}`)
 
     try {
-      session = await openMcp(args.harness)
+      session = await openMcp(args.harness, auth)
     } catch (e) {
       report.block(`initialize failed against ${url}: ${e instanceof Error ? e.message : String(e)}`)
       return
@@ -151,7 +185,7 @@ export const mcp: Walk = async ({ args, env, report }) => {
     report.expect('spec10.resourcesList', uris.includes(STEP_VIEW_URI) && uris.includes(ISLAND_URI) && everyCsp, { uris, csp: cspOf(resources[0]), harnessOrigin, storageOrigin })
 
     // --- JSON-RPC: an unknown method is -32601 (the SDK would throw; ask by hand)
-    const unknown = await rawPost(session.url, { id: 99, method: 'prompts/list' })
+    const unknown = await rawPost(session.url, { id: 99, method: 'prompts/list' }, auth)
     const code = (unknown.body as { error?: { code?: number } } | null)?.error?.code
     report.expect('D22.unknownMethod', unknown.status === 200 && code === -32601, { status: unknown.status, body: unknown.body })
 
@@ -161,9 +195,8 @@ export const mcp: Walk = async ({ args, env, report }) => {
     const STEP = 'pick/0/choose'
     let parked = args.run
     if (!parked) {
-      const creds = credentials(env)
-      if (!creds) return report.block('WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing (needed to park a run through the page tools)')
-      const s = await openSession({ base: args.harness, out: args.out, credentials: creds })
+      const s = browser
+      if (!s) return report.block('no browser session to park a run with')
       try {
         await waitForPageTools(s.page, { timeoutMs: 30_000 })
         const started = await callPageTool(s.page, 'workflow.start', { impl: 'hello', workflow: 'interactive', inputs: { greeting: 'Hello', names: ['world', 'studio'] } })
@@ -190,6 +223,7 @@ export const mcp: Walk = async ({ args, env, report }) => {
         await s.shot('01-parked')
       } finally {
         await s.close() // the driver goes away; the lease lapses within 60 s
+        browser = null
       }
       if (parked === '') return report.block('no run was parked')
       say(`parked ${parked} on ${STEP}`)
@@ -256,8 +290,10 @@ export const mcp: Walk = async ({ args, env, report }) => {
 
     // --- the record: the row is succeeded with the outputs and the annotation; the run is still running (no driver sealed it)
     const key = adminKey(env)
-    if (key) {
-      const res = await fetch(`${args.harness}/api/workflow/run?id=${encodeURIComponent(parked)}`, { headers: { 'x-api-key': key } })
+    if (token || key) {
+      const res = await fetch(`${args.harness}/api/workflow/run?id=${encodeURIComponent(parked)}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : { 'x-api-key': key as string },
+      })
       const record = (await res.json().catch(() => null)) as { run?: { status?: string }; steps?: Array<Record<string, unknown>> } | null
       const rowOf = (r: Record<string, unknown>) => (r.fields && typeof r.fields === 'object' ? (r.fields as Record<string, unknown>) : r)
       const row = (record?.steps ?? []).map(rowOf).find((r) => r.key === STEP)
@@ -275,8 +311,39 @@ export const mcp: Walk = async ({ args, env, report }) => {
     }
     const again = await call('workflow.submit', { runId: parked, step: STEP, outputs: { line: 'Hello, world!', index: 0 } })
     report.expect('spec10.submitTwiceRefused', again.isError === true && errorsOf(again).step === `${STEP} is succeeded, not waiting`, { ...brief(again), errors: errorsOf(again) })
+
+    // =====================================================================
+    // Phase 3 story 7 — the token is the member; a read-only consent cannot submit (D23)
+    // =====================================================================
+    const anon = await rawPost(session.url, { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'anon', version: '0' } } })
+    const listedRunsAsMember = await call('workflow.runs', { impl: 'hello', workflow: 'interactive', limit: 50 })
+    const mine = ((structured(listedRunsAsMember).runs ?? []) as Array<{ runId: string; startedBy?: string }>).find((r) => r.runId === parked)
+    const startedByMember = memberId === '' ? mine?.startedBy !== undefined : mine?.startedBy === memberId
+    report.expect('D23.bearerIsMember', anon.status === 401 && !listedRunsAsMember.isError && startedByMember, {
+      anonymous: anon.status,
+      memberId: memberId || '(no browser session — --run mode; startedBy presence only)',
+      startedBy: mine?.startedBy,
+    })
+
+    if (readOnly) {
+      const ro = await openMcp(args.harness, { token: readOnly.token })
+      try {
+        const denied = (await ro.client.callTool({ name: 'workflow.submit', arguments: { runId: parked, step: STEP, outputs: { line: 'x', index: 0 } } })) as ToolAnswer
+        const allowed = (await ro.client.callTool({ name: 'workflow.status', arguments: { runId: parked } })) as ToolAnswer
+        report.expect('D23.readOnlyCannotSubmit', denied.isError === true && /workflow:run/.test(errorsOf(denied).scope ?? '') && !allowed.isError, {
+          denied: { ...brief(denied), errors: errorsOf(denied) },
+          allowed: brief(allowed),
+        })
+      } finally {
+        await ro.close()
+      }
+    } else {
+      report.note('D23.readOnlyCannotSubmit skipped: WORKFLOW_APP_TOKEN given and --run set, so no read-only token was minted')
+    }
   } finally {
     await writeFile(`${args.out}/mcp.log`, log.join('\n'), 'utf8').catch(() => undefined)
     await session?.close()
+    for (const t of minted) await t.revoke()
+    await browser?.close()
   }
 }

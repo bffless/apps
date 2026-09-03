@@ -18,10 +18,17 @@ export interface McpSession {
   close(): Promise<void>
 }
 
-export async function openMcp(base: string): Promise<McpSession> {
+export interface McpAuth {
+  /** An app token, sent as `Authorization: Bearer` on every message (spec 10, D23 rung 2). */
+  token?: string
+}
+
+const authHeaders = (auth?: McpAuth): Record<string, string> => (auth?.token ? { authorization: `Bearer ${auth.token}` } : {})
+
+export async function openMcp(base: string, auth: McpAuth = {}): Promise<McpSession> {
   const url = `${base.replace(/\/+$/, '')}${MCP_PATH}`
   const client = new Client({ name: 'workflow-live', version: '0.0.0' })
-  const transport = new StreamableHTTPClientTransport(new URL(url))
+  const transport = new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: authHeaders(auth) } })
   await client.connect(transport)
   return {
     client,
@@ -39,17 +46,17 @@ export interface RawAnswer {
 }
 
 /** One JSON-RPC message by plain fetch; `body` is parsed when JSON, else the text. */
-export async function rawPost(url: string, message: Record<string, unknown>): Promise<RawAnswer> {
+export async function rawPost(url: string, message: Record<string, unknown>, auth: McpAuth = {}): Promise<RawAnswer> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...authHeaders(auth) },
     body: JSON.stringify({ jsonrpc: '2.0', ...message }),
   })
   return answerOf(res)
 }
 
-export async function rawGet(url: string): Promise<RawAnswer> {
-  return answerOf(await fetch(url, { headers: { accept: 'text/event-stream' } }))
+export async function rawGet(url: string, auth: McpAuth = {}): Promise<RawAnswer> {
+  return answerOf(await fetch(url, { headers: { accept: 'text/event-stream', ...authHeaders(auth) } }))
 }
 
 async function answerOf(res: Response): Promise<RawAnswer> {

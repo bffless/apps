@@ -53,6 +53,16 @@ export interface ApiOptions {
    * owner. Reads are safe to widen; writes are not.
    */
   token?: string
+  /**
+   * `WORKFLOW_APP_TOKEN`, sent as `Authorization: Bearer` on **every**
+   * `/api/workflow/*` call, reads and writes alike (spec 10, D23 rung 2): an
+   * app token *is* the member, narrowed by its scopes, so the identity
+   * mismatch that keeps `token` to GETs does not arise. Wins over `token` on
+   * the calls both would touch. The browser login stays the relay's — a token
+   * cannot mint a SuperTokens session, and a private deployment's document
+   * load carries no header — so this is the driver's own calls, not the page's.
+   */
+  appToken?: string
 }
 
 /** In-page fetch, as run by `page.evaluate`. */
@@ -132,7 +142,10 @@ export function pageApi(page: PageLike, options: ApiOptions): ApiLike {
 
   const headersFor = (url: string, method: string, extra: Record<string, string> = {}) => {
     const headers: Record<string, string> = { ...extra }
-    if (options.token && method === 'GET' && new URL(url).pathname.startsWith('/api/workflow/')) {
+    const harnessApi = new URL(url).pathname.startsWith('/api/workflow/')
+    if (options.appToken && harnessApi) {
+      headers.Authorization = `Bearer ${options.appToken}`
+    } else if (options.token && method === 'GET' && harnessApi) {
       headers['X-API-Key'] = options.token
     }
     return headers
