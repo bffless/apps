@@ -508,6 +508,34 @@ Phase 4 docs PR (pre-approved deviation).
 The scratch install has since been removed (Task 10 step 3); `workflow-test-w.j5s.dev` now
 answers 404.
 
+### Connecting an MCP host (OAuth) — Phase 3 story 9
+
+From story 9 a chat host connects to the harness the way it connects to any OAuth-protected
+MCP server, on a **private** deployment too (CE ≥ the story-9 release, `bffless/deploy-proxy-rules`
+≥ the release that knows `bypassVisibility`):
+
+1. Add the connector with the URL `https://workflow.<domain>/api/workflow/mcp`. The host reads
+   `https://workflow.<domain>/.well-known/oauth-protected-resource` (a rule of this set, served
+   despite deployment visibility), which names CE's authorization server on `admin.<domain>`
+   and the catalog's scopes; then CE's RFC 8414 document at
+   `https://admin.<domain>/.well-known/oauth-authorization-server`.
+2. The host registers itself (RFC 7591, no secret) and sends you to
+   `https://admin.<domain>/api/oauth/authorize…` — the admin login if you are signed out, then
+   the consent page: the client's name, the project, one checkbox per scope. Untick to grant less
+   (`workflow:read` alone lets it watch runs and never start or complete one).
+3. Allow → the host exchanges the code (PKCE) for an **app token** bound to the project with
+   the scopes you granted (1 h, refreshed silently for 30 d). Every tool then runs as you:
+   `startedBy` is your id, the delete gate is yours, and a tool whose scope the token lacks is
+   refused naming it.
+4. Revoke any time from *Settings → App Tokens* (OAuth tokens are listed with the client's name).
+
+The `oauth` walk (`packages/workflow-live`) drives 1–4 headlessly against either host; the
+claude.ai flow itself is a person's step with screenshots (the Phase-3 gate). Two person-owned
+preconditions on j5s: the Cloudflare zone's AI-bot block stays off, and the member has a project
+role. Assumption recorded (Phase 3 plan, Decision 23): the authorization server is derived as
+`admin.<the host minus its first label>` — a custom-domain install would need CE to advertise
+its issuer (a filed follow-up).
+
 ### M5 Phase 3 — the endpoint on CE's `mcp_handler` (2026-09-03)
 
 From story 8 the endpoint is **one `mcp_handler` step** (CE ≥ the release carrying ce#728):

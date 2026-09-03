@@ -30,8 +30,8 @@ import { stringify } from 'yaml'
 const app = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SET = join(app, '.bffless/proxy-rules/workflow')
 
-/** One entry per function step shared by the tool rules. */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply']
+/** One entry per function step shared by the tool rules, plus the RFC 9728 document (`wellKnown`, one rule). */
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'wellKnown']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 

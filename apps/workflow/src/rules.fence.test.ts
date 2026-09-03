@@ -92,10 +92,13 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     const auth = validators.find((v) => v.type === 'auth_required')
     if (file.includes('/_custom/well-known/')) {
       // OAuth discovery happens before any credential exists (RFC 9728): the
-      // 404 that says "no metadata here" cannot sit behind a session. Phase 3's
-      // real protected-resource document replaces it, equally unauthenticated.
+      // protected-resource document cannot sit behind a session, so the rule opts
+      // out of the deployment visibility gate (bypassVisibility, CE story 7) and
+      // carries no validator. Its one function is the shared `wellknown` bundle.
       expect(auth, `${file} answers pre-credential discovery (spec 10, D23)`).toBeUndefined()
-      expect(doc.pathPattern).toBe('/.well-known/*')
+      expect(doc.pathPattern).toBe('/.well-known/oauth-protected-resource*')
+      expect(doc.bypassVisibility).toBe(true)
+      expect(doc.pipeline.steps.find((s: { id: string }) => s.id === 'doc')?.code).toMatch(/mcp-fn\/wellKnown\.fn\.js$/)
       return
     }
     if (file.includes('/api/workflow/mcp/')) {

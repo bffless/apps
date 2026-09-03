@@ -193,6 +193,17 @@ every sibling rule see the person, narrowed to the token's scopes (`workflow:rea
 _Avoid_: "service identity" (the retired Phase-2 `WORKFLOW_MCP_KEY` secret), "API key" (pinned
 to role `user`, bound to no person)
 
+**Protected-resource document**:
+The harness's `/.well-known/oauth-protected-resource` rule (RFC 9728), served despite
+deployment visibility: this host's MCP endpoint as the resource, CE's authorization server on
+`admin.<domain>`, the catalog's scopes. How a chat host finds the login from the app.
+_Avoid_: "OAuth discovery endpoint" (CE has none for apps), the Phase-2 404 rule (retired)
+
+**Consent**:
+The admin-side page (`/oauth/consent`) where a member grants a client a subset of the scopes it
+asked for, per project; a `workflow:read`-only consent yields a token that watches but never runs.
+_Avoid_: "login" (the member is already signed in), "permission" (the member's project role)
+
 **Step view**:
 `ui://bffless/workflow/step.html` — the engine-less host page that mounts one waiting island
 inside an agent host, under the same `IslandHost` the harness page uses; what
