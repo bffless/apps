@@ -573,7 +573,7 @@ curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_AP
 mkdir -p /tmp/hello && rm -rf /tmp/hello/dist && cp -r apps/workflow/hello-dist /tmp/hello/dist && (cd /tmp/hello && python3 -c "import shutil; shutil.make_archive('/tmp/hello','zip','.','dist')")
 curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_API_KEY" -F file=@/tmp/hello.zip -F repository=bffless/workflow-mcp -F commitSha=$(cat apps/workflow/hello.ref) -F branch=main -F isPublic=true -F alias=hello
 cp -r apps/workflow/hello-src/workflows/hello/.bffless/proxy-rules/hello /tmp/hello-rules && mkdir -p /tmp/hello-rules/rules/_custom/forward
-printf 'pathPattern: /w/hello/*\ntargetUrl: http://localhost:3000/public/bffless/workflow-mcp/alias/hello/dist\nstripPrefix: true\nforwardCookies: true\norder: 5\n' > /tmp/hello-rules/rules/_custom/forward/get.rule.yaml
+printf 'pathPattern: /w/hello/*\ntargetUrl: http://localhost:3000/public/bffless/workflow-mcp/alias/hello/dist\nstripPrefix: true\nforwardCookies: true\nheaderConfig:\n  forward: [accept, accept-language, content-type, user-agent, x-request-id, cookie, authorization]\n  strip: [host, connection, keep-alive, transfer-encoding]\norder: 5\n' > /tmp/hello-rules/rules/_custom/forward/get.rule.yaml
 npx -y bffless@0.3.5 rules push /tmp/hello-rules --project bffless/workflow-mcp --api-url $BFFLESS_API_URL --path-prefix /api/hello --prune
 # then, if the set ids changed: update_alias workflow → [workflow, hello], hello → [hello]
 ```
