@@ -11,8 +11,8 @@
  * file to fetch a workflow's YAML from, the island a waiting step names) is
  * `plan`'s job, one step later.
  */
-import { canonicalToolName } from '@bffless/workflow-agent-tools'
-import { STEP_VIEW_URI } from './hostTools'
+import { canonicalToolName, scopeOf } from '@bffless/workflow-agent-tools'
+import { HOST_TOOL_SCOPES, STEP_VIEW_URI, isHostTool } from './hostTools'
 import { parseMessage, type Id } from './jsonrpc'
 
 export const LIST_FANOUT = 3
@@ -33,6 +33,15 @@ export interface FnRequest {
   headers: Record<string, string | string[] | undefined>
   method: string
   path: string
+}
+
+/** `user` as CE's function_handler hands it: the member, and for an app token what it was delegated (CE `user.scopes`). */
+export interface FnUser {
+  id?: string
+  email?: string
+  role?: string
+  credential?: string
+  scopes?: string[]
 }
 
 /** `deployment` as CE hands it: the **serving project** (`owner/repo`) and alias (apps#363). */
@@ -67,13 +76,18 @@ export interface Route {
   uri: string
   /** The client's `initialize` params (protocolVersion, clientInfo), for `reply`. */
   params: Record<string, unknown>
+  /**
+   * `tools/call` by an app token that lacks the tool's scope: the scope it is
+   * missing (D23). Every I/O flag is cleared, so no step runs and `reply`
+   * answers the refusal. `''` otherwise. Interim until story 8 makes each tool
+   * its own validator-gated rule.
+   */
+  scopeMissing: string
 
   // --- one flag per gated step -------------------------------------------
   isNotification: boolean
   /** Everything that is not a notification gets a JSON-RPC body — gates the final `respond` step. */
   isRequest: boolean
-  /** The request named a host, so the derived URLs are real — gates `identity`. */
-  hasOrigin: boolean
   /** `list` / `resources/list` without `impl` → `steps.aliases` (the harness's alias relay). */
   isAliases: boolean
   /** Read the run row + its step rows (`steps.run`, `steps.steps`). */
@@ -112,9 +126,7 @@ export interface Route {
   siblingBase: string
   /** The public host (`x-forwarded-host ?? host`), sent back to CE as `x-forwarded-host` on in-process calls. */
   host: string
-  whoamiUrl: string
   /** The public-relative path of each in-process call — CE's proxy middleware matches rules on `x-original-uri`, not on the `/public/…` URL. */
-  whoamiPath: string
   aliasesUrl: string
   indexUrl: string
   indexPath: string
@@ -200,9 +212,10 @@ function withAliases(route: Route): Route {
   return route
 }
 
-export function handler(data: { request: FnRequest; deployment?: FnDeployment }): Route {
+export function handler(data: { request: FnRequest; deployment?: FnDeployment; user?: FnUser }): Route {
   const request = data.request ?? { body: undefined, headers: {}, method: 'POST', path: '' }
   const deployment = data.deployment ?? {}
+  const user = data.user
   const message = parseMessage(request.body)
 
   const host = header(request.headers, 'x-forwarded-host') || header(request.headers, 'host')
@@ -221,9 +234,9 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     args: {},
     uri: '',
     params: {},
+    scopeMissing: '',
     isNotification: false,
     isRequest: true,
-    hasOrigin: appOrigin !== '',
     isAliases: false,
     needsRun: false,
     isRuns: false,
@@ -241,8 +254,6 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     appOrigin,
     siblingBase,
     host,
-    whoamiUrl: siblingBase === '' ? '' : `${siblingBase}/api/workflow/whoami`,
-    whoamiPath: '/api/workflow/whoami',
     // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
     aliasesUrl: project === '' ? '' : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
     indexUrl: '',
@@ -305,6 +316,17 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
   route.kind = 'toolsCall'
   route.tool = canonicalToolName(str(message.params.name))
   route.args = isPlainObject(message.params.arguments) ? message.params.arguments : {}
+
+  // Scopes are a second gate on top of identity (spec 10 D23): a session passes
+  // every scope check, an app token must carry the tool's. Refused here, before
+  // any step runs — CE's `user.scopes` says what the token was delegated.
+  if (user?.credential === 'app_token') {
+    const need = scopeOf(route.tool) ?? (isHostTool(route.tool) ? HOST_TOOL_SCOPES[route.tool] : undefined)
+    if (need !== undefined && !(user.scopes ?? []).includes(need)) {
+      route.scopeMissing = need
+      return route
+    }
+  }
   const args = route.args
   route.runId = str(args.runId)
   route.key = str(args.step)

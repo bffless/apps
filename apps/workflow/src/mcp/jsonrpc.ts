@@ -14,8 +14,6 @@ export const ERR = {
   METHOD_NOT_FOUND: -32601,
   INVALID_PARAMS: -32602,
   INTERNAL: -32603,
-  /** The endpoint exists but has no service identity on this install (Phase 2 plan, Decision 6). */
-  NOT_ENABLED: -32000,
   /** `resources/read` of a URI the endpoint does not serve (MCP's own code). */
   RESOURCE_NOT_FOUND: -32002,
 } as const

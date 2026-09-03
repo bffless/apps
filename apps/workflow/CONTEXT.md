@@ -181,10 +181,13 @@ function steps are built from `src/mcp/` (`pnpm --filter workflow mcp:build`).
 _Avoid_: a CE endpoint, `/_bffless/*`, the platform-admin MCP server, "streaming" (one POST,
 one JSON body)
 
-**Service identity**:
-The `WORKFLOW_MCP_KEY` project secret the endpoint's sibling calls carry — auth ladder rung 1
-(D23). Absent, the endpoint answers "not enabled" to everything but `initialize`.
-_Avoid_: the member's session (an agent host has none), an app token (rung 2, Phase 3)
+**App token**:
+A CE-minted, member-bound, project-bound, scoped bearer (`Authorization: Bearer bfat_…`) — auth
+ladder rung 2 (D23). Over the MCP endpoint it *is* the member: `startedBy`, the delete gate and
+every sibling rule see the person, narrowed to the token's scopes (`workflow:read` /
+`workflow:run` / `workflow:files`, the catalog's map). A session is never scope-checked.
+_Avoid_: "service identity" (the retired Phase-2 `WORKFLOW_MCP_KEY` secret), "API key" (pinned
+to role `user`, bound to no person)
 
 **Step view**:
 `ui://bffless/workflow/step.html` — the engine-less host page that mounts one waiting island

@@ -151,6 +151,10 @@ var __mcp = (() => {
     "workflow.resume": "workflow:run",
     "workflow.sign": "workflow:files"
   };
+  function scopeOf(name) {
+    const canonical = name.replace(/\//g, ".");
+    return Object.hasOwn(TOOL_SCOPES, canonical) ? TOOL_SCOPES[canonical] : void 0;
+  }
 
   // ../../packages/workflow-agent-tools/dist/catalog.js
   var TOOL_NAMES = [
@@ -266,7 +270,16 @@ var __mcp = (() => {
       _meta: APP_ONLY
     }
   ]);
+  var HOST_TOOL_SCOPES = {
+    "workflow.submit": "workflow:run",
+    "workflow.annotate": "workflow:run",
+    "workflow.pipeline": "workflow:run",
+    "workflow.stepView": "workflow:read"
+  };
   var HOST_TOOL_NAMES = new Set(HOST_TOOLS.map((tool) => tool.name));
+  function isHostTool(name) {
+    return HOST_TOOL_NAMES.has(name);
+  }
 
   // src/mcp/jsonrpc.ts
   var PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -342,6 +355,7 @@ var __mcp = (() => {
   function handler(data) {
     const request = data.request ?? { body: void 0, headers: {}, method: "POST", path: "" };
     const deployment = data.deployment ?? {};
+    const user = data.user;
     const message = parseMessage(request.body);
     const host = header(request.headers, "x-forwarded-host") || header(request.headers, "host");
     const appOrigin = host === "" ? "" : `https://${host}`;
@@ -358,9 +372,9 @@ var __mcp = (() => {
       args: {},
       uri: "",
       params: {},
+      scopeMissing: "",
       isNotification: false,
       isRequest: true,
-      hasOrigin: appOrigin !== "",
       isAliases: false,
       needsRun: false,
       isRuns: false,
@@ -378,8 +392,6 @@ var __mcp = (() => {
       appOrigin,
       siblingBase,
       host,
-      whoamiUrl: siblingBase === "" ? "" : `${siblingBase}/api/workflow/whoami`,
-      whoamiPath: "/api/workflow/whoami",
       // CE's alias API directly (CE_BACKEND), never the harness's relay: the relay forwards a session cookie, and the service key is a header.
       aliasesUrl: project === "" ? "" : `${CE_BACKEND}/api/aliases?repository=${encodeURIComponent(project)}`,
       indexUrl: "",
@@ -439,6 +451,13 @@ var __mcp = (() => {
     route.kind = "toolsCall";
     route.tool = canonicalToolName(str(message.params.name));
     route.args = isPlainObject2(message.params.arguments) ? message.params.arguments : {};
+    if (user?.credential === "app_token") {
+      const need = scopeOf(route.tool) ?? (isHostTool(route.tool) ? HOST_TOOL_SCOPES[route.tool] : void 0);
+      if (need !== void 0 && !(user.scopes ?? []).includes(need)) {
+        route.scopeMissing = need;
+        return route;
+      }
+    }
     const args = route.args;
     route.runId = str(args.runId);
     route.key = str(args.step);

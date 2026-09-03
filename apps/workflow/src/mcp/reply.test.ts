@@ -17,13 +17,12 @@ const message = (method: string, params: Record<string, unknown> = {}, id: numbe
   request({ jsonrpc: '2.0', ...(id === NO_ID ? {} : { id }), method, params })
 const callOf = (name: string, args: Record<string, unknown> = {}) => message('tools/call', { name, arguments: args })
 
-const IDENTITY = { ok: true, status: 200, body: { id: 'svc', email: 'svc@example', role: 'user' } }
 const http = (body: unknown, status = 200) => ({ ok: status < 400, status, body })
 
 /** Run the three function steps the way the pipeline does — route, plan, reply — over the fetched/queried outputs given. */
-function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}) {
-  const route = routeOf({ request: req, deployment: DEPLOYMENT })
-  const steps: StepOutputs = { identity: IDENTITY, ...fetched, route }
+function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}, user?: { id: string; credential?: string; scopes?: string[] }) {
+  const route = routeOf({ request: req, deployment: DEPLOYMENT, user })
+  const steps: StepOutputs = { ...fetched, route }
   steps.plan = planOf({ steps: { route, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps }, deployment: DEPLOYMENT })
   if (!fetched.merge) steps.merge = mergeOf({ steps: { route, run: steps.run, steps: steps.steps } })
   const out = reply({ request: req, steps, deployment: DEPLOYMENT })
@@ -36,8 +35,8 @@ const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>) =
 const text = (r: { content: { text: string }[] }) => r.content[0].text
 
 describe('protocol', () => {
-  it('answers initialize with a negotiated version and the server identity — even with no service identity', () => {
-    const { body } = run(message('initialize', { protocolVersion: '2025-03-26', clientInfo: { name: 'x', version: '0' } }), { identity: undefined })
+  it('answers initialize with a negotiated version and the server identity', () => {
+    const { body } = run(message('initialize', { protocolVersion: '2025-03-26', clientInfo: { name: 'x', version: '0' } }))
     expect(body!.result).toMatchObject({ protocolVersion: '2025-03-26', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'bffless-workflow' } })
   })
 
@@ -46,10 +45,14 @@ describe('protocol', () => {
     expect(out).toEqual({ json: '', status: 202 })
   })
 
-  it('refuses everything else without a service identity (-32000)', () => {
-    const { body } = run(message('tools/list'), { identity: { ok: false, status: 401, body: 'nope' } })
-    expect(body!.error).toMatchObject({ code: -32000 })
-    expect(body!.error!.message).toContain('WORKFLOW_MCP_KEY')
+  it('refuses a tool an app token has no scope for, as a tool error naming the scope (D23), and admits the scoped call', () => {
+    const { body } = run(callOf('workflow.submitStep', { runId: RUN_ID, step: 'pick/0/choose', values: { line: 'x' } }), {}, { id: 'u', credential: 'app_token', scopes: ['workflow:read'] })
+    const r = body!.result as { isError?: boolean; content: { text: string }[]; structuredContent?: { errors?: Record<string, string> } }
+    expect(r.isError).toBe(true)
+    expect(r.content[0].text).toBe('insufficient_scope: missing workflow:run')
+    expect(r.structuredContent?.errors).toEqual({ scope: 'missing workflow:run' })
+    const { body: ok } = run(callOf('workflow.status', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() }, { id: 'u', credential: 'app_token', scopes: ['workflow:read'] })
+    expect((ok!.result as { isError?: boolean }).isError).not.toBe(true)
   })
 
   it('lists the catalog byte for byte, plus the app-only tools', () => {

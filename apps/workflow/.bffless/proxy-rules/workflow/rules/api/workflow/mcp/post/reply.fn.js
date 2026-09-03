@@ -6826,8 +6826,6 @@ ${end.comment}` : end.comment;
     METHOD_NOT_FOUND: -32601,
     INVALID_PARAMS: -32602,
     INTERNAL: -32603,
-    /** The endpoint exists but has no service identity on this install (Phase 2 plan, Decision 6). */
-    NOT_ENABLED: -32e3,
     /** `resources/read` of a URI the endpoint does not serve (MCP's own code). */
     RESOURCE_NOT_FOUND: -32002
   };
@@ -6851,6 +6849,7 @@ ${end.comment}` : end.comment;
   var NEED_RUN_ID = "Pass runId \u2014 the MCP endpoint has no current run";
   var NEED_IMPL_WORKFLOW = "Pass impl and workflow \u2014 the MCP endpoint has no current run";
   var NOT_CONFINED = "path must be an uploads-relative key under workflows/ with no traversal";
+  var MISSING_SCOPE = (scopes) => `insufficient_scope: missing ${scopes.join(", ")}`;
 
   // src/mcp/rows.ts
   function isPlainObject3(value) {
@@ -7129,6 +7128,7 @@ ${lines.join("\n")}`,
   function callTool(route, steps) {
     const tool = route.tool;
     if (tool === "") return refuse("tool", "A tool `name` is required");
+    if (route.scopeMissing !== "") return errorResult(MISSING_SCOPE([route.scopeMissing]), { errors: { scope: `missing ${route.scopeMissing}` } });
     switch (tool) {
       case "workflow.list":
         return list(route, steps);
@@ -7218,13 +7218,6 @@ ${lines.join("\n")}`,
         return json(okResponse(id, {}));
       default:
         break;
-    }
-    if (steps.identity?.ok !== true) {
-      return json(
-        errorResponse(id, ERR.NOT_ENABLED, "MCP endpoint is not enabled on this install: no WORKFLOW_MCP_KEY service identity", {
-          status: steps.identity?.status ?? null
-        })
-      );
     }
     switch (route.kind) {
       case "toolsList":

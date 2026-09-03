@@ -171,7 +171,7 @@ bffless/apps  (four PRs into epic/agent-embedding; each its own worktree)
 ### Task 0: the plan PR, the CE issues
 
 - [ ] Worktree `m5-phase3-plan` (branch `docs/m5-phase3-plan` off `origin/epic/agent-embedding`); commit this file as `docs(workflow): the M5 Phase 3 plan — CE app tokens, mcp_handler, OAuth 2.1 (#554)`; PR into `epic/agent-embedding`; merge on green (docs only — no path-filtered gate triggers). Comment on #554: "Phase 3 kicked off; plan merged (#<n>); CE issues ce#<a> ce#<b> ce#<c>."
-- [ ] File three `bffless/ce` issues (`gh issue create -R bffless/ce --label enhancement`), titles = the three CE PR titles in Global Constraints, bodies: one paragraph of what and why (from Decisions 1–11 / 12–18 / 19–23), a link to this plan on the epic branch and to spec 10 §Auth / §The MCP endpoint, the acceptance line from the traceability table, and "built in the loop from the apps plan; not `ready-for-agent`". Record the numbers here (edit this section in the story-7 apps PR) and in the CE PR bodies as `Closes #<n>`.
+- [ ] File three `bffless/ce` issues (`gh issue create -R bffless/ce --label enhancement`), titles = the three CE PR titles in Global Constraints, bodies: one paragraph of what and why (from Decisions 1–11 / 12–18 / 19–23), a link to this plan on the epic branch and to spec 10 §Auth / §The MCP endpoint, the acceptance line from the traceability table, and "built in the loop from the apps plan; not `ready-for-agent`". Filed 2026-09-03: **ce#727** (story 7), **ce#728** (story 8), **ce#729** (story 9); story-7 CE PR **ce#730**. Each CE PR body says `Closes #<n>`.
 
 ### Task 1: the `app_tokens` schema and its migration
 

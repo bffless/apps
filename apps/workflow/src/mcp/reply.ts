@@ -28,7 +28,7 @@ import { RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool, listedTools }
 import { workflowId } from './ids'
 import { ERR, errorResponse, negotiateVersion, okResponse, type Id } from './jsonrpc'
 import type { Plan } from './plan'
-import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
+import { MISSING_SCOPE, NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
 import { fieldsOf, rows, runsWithWaiting, type Row } from './rows'
 import type { FnDeployment, FnRequest, Route } from './route'
 import { pipelineError, pipelineResult } from './toolResults'
@@ -44,7 +44,6 @@ export interface HttpStep {
 export interface StepOutputs {
   route?: Route
   plan?: Plan
-  identity?: HttpStep
   run?: unknown
   steps?: unknown
   runs?: unknown
@@ -366,6 +365,8 @@ function notServed(tool: string): CallToolResult {
 function callTool(route: Route, steps: StepOutputs): CallToolResult {
   const tool = route.tool
   if (tool === '') return refuse('tool', 'A tool `name` is required')
+  // An app token missing the tool's scope: refused before anything ran (route), named for the model (text-only host).
+  if (route.scopeMissing !== '') return errorResult(MISSING_SCOPE([route.scopeMissing]), { errors: { scope: `missing ${route.scopeMissing}` } })
   switch (tool) {
     case 'workflow.list':
       return list(route, steps)
@@ -466,14 +467,6 @@ export function handler(data: { request?: FnRequest; steps: StepOutputs; deploym
       return json(okResponse(id, {}))
     default:
       break
-  }
-
-  if (steps.identity?.ok !== true) {
-    return json(
-      errorResponse(id, ERR.NOT_ENABLED, 'MCP endpoint is not enabled on this install: no WORKFLOW_MCP_KEY service identity', {
-        status: steps.identity?.status ?? null,
-      }),
-    )
   }
 
   switch (route.kind) {

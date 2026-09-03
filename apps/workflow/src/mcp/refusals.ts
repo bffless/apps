@@ -17,3 +17,6 @@ export const NEED_RUN_ID = 'Pass runId — the MCP endpoint has no current run'
 export const NEED_IMPL_WORKFLOW = 'Pass impl and workflow — the MCP endpoint has no current run'
 /** The sign rule's own 400, verbatim (`files/sign/post/rule.yaml`; `islands/hostDeps.ts`). */
 export const NOT_CONFINED = 'path must be an uploads-relative key under workflows/ with no traversal'
+
+/** A token that lacks the tool's scope (spec 10 D23; Phase 3 plan Decisions 15/26) — CE's own wording, so the endpoint and a sibling rule's 403 read the same. */
+export const MISSING_SCOPE = (scopes: readonly string[]): string => `insufficient_scope: missing ${scopes.join(', ')}`
