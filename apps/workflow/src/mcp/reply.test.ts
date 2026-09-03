@@ -1,73 +1,42 @@
 // @vitest-environment node
-import { CATALOG } from '@bffless/workflow-agent-tools'
 import { describe, expect, it } from 'vitest'
 import { HELLO_INDEX, INTERACTIVE_YAML, RUN_ID, runRow, stepRows } from './fixtures/index'
-import { STEP_VIEW_URI, listedTools } from './hostTools'
 import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
 import { handler as reply, type StepOutputs } from './reply'
-import { handler as routeOf, type FnRequest } from './route'
+import { RESOURCES_PATH, TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
 const HEADERS = { host: 'h.example' }
-const request = (body: unknown): FnRequest => ({ body, headers: HEADERS, method: 'POST', path: '/api/workflow/mcp' })
-const NO_ID = Symbol('notification')
-const message = (method: string, params: Record<string, unknown> = {}, id: number | string | typeof NO_ID = 1) =>
-  request({ jsonrpc: '2.0', ...(id === NO_ID ? {} : { id }), method, params })
-const callOf = (name: string, args: Record<string, unknown> = {}) => message('tools/call', { name, arguments: args })
+/** A tool rule's request: the path names the tool, the body is the arguments (what CE's mcp_handler sends a sibling). */
+const callOf = (name: string, args: Record<string, unknown> = {}): FnRequest => ({ body: args, headers: HEADERS, method: 'POST', path: `${TOOLS_PATH}${name.replace(/^workflow\./, '')}` })
+const resourcesReq: FnRequest = { body: undefined, headers: HEADERS, method: 'GET', path: RESOURCES_PATH }
 
 const http = (body: unknown, status = 200) => ({ ok: status < 400, status, body })
 
-/** Run the three function steps the way the pipeline does — route, plan, reply — over the fetched/queried outputs given. */
-function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}, user?: { id: string; credential?: string; scopes?: string[] }) {
-  const route = routeOf({ request: req, deployment: DEPLOYMENT, user })
+/** Run the function steps the way a tool rule does — route, plan, merge, reply — over the fetched/queried outputs given. */
+function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}) {
+  const route = routeOf({ request: req, deployment: DEPLOYMENT })
   const steps: StepOutputs = { ...fetched, route }
   steps.plan = planOf({ steps: { route, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps }, deployment: DEPLOYMENT })
   if (!fetched.merge) steps.merge = mergeOf({ steps: { route, run: steps.run, steps: steps.steps } })
   const out = reply({ request: req, steps, deployment: DEPLOYMENT })
-  return { out, body: out.json === '' ? null : (JSON.parse(out.json) as { id: unknown; result?: Record<string, unknown>; error?: { code: number; message: string } }) }
+  return { out, body: JSON.parse(out.json) as unknown }
 }
-const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>) => {
-  const { body } = run(req, fetched)
-  return body!.result as { content: { text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
-}
+const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>) =>
+  run(req, fetched).body as { content: { text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
 const text = (r: { content: { text: string }[] }) => r.content[0].text
 
-describe('protocol', () => {
-  it('answers initialize with a negotiated version and the server identity', () => {
-    const { body } = run(message('initialize', { protocolVersion: '2025-03-26', clientInfo: { name: 'x', version: '0' } }))
-    expect(body!.result).toMatchObject({ protocolVersion: '2025-03-26', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'bffless-workflow' } })
-  })
-
-  it('answers a notification with 202 and an empty body', () => {
-    const { out } = run(message('notifications/initialized', {}, NO_ID))
-    expect(out).toEqual({ json: '', status: 202 })
-  })
-
-  it('refuses a tool an app token has no scope for, as a tool error naming the scope (D23), and admits the scoped call', () => {
-    const { body } = run(callOf('workflow.submitStep', { runId: RUN_ID, step: 'pick/0/choose', values: { line: 'x' } }), {}, { id: 'u', credential: 'app_token', scopes: ['workflow:read'] })
-    const r = body!.result as { isError?: boolean; content: { text: string }[]; structuredContent?: { errors?: Record<string, string> } }
+describe('the rule shape', () => {
+  it('answers one catalog CallToolResult as JSON for a tool rule, and a refusal for a path it does not know', () => {
+    const r = result(callOf('workflow.status'))
     expect(r.isError).toBe(true)
-    expect(r.content[0].text).toBe('insufficient_scope: missing workflow:run')
-    expect(r.structuredContent?.errors).toEqual({ scope: 'missing workflow:run' })
-    const { body: ok } = run(callOf('workflow.status', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() }, { id: 'u', credential: 'app_token', scopes: ['workflow:read'] })
-    expect((ok!.result as { isError?: boolean }).isError).not.toBe(true)
-  })
-
-  it('lists the catalog byte for byte, plus the app-only tools', () => {
-    const { body } = run(message('tools/list'))
-    expect(body!.result).toEqual({ tools: listedTools() })
-    const tools = (body!.result as { tools: Array<{ name: string }> }).tools
-    expect(tools.slice(0, CATALOG.length).map((tool) => tool.name)).toEqual(CATALOG.map((tool) => tool.name))
-  })
-
-  it('answers ping, unknown methods and invalid messages per JSON-RPC', () => {
-    expect(run(message('ping')).body!.result).toEqual({})
-    expect(run(message('prompts/list')).body!.error).toMatchObject({ code: -32601 })
-    const { body } = run(request([{ jsonrpc: '2.0', id: 1, method: 'ping' }]))
-    expect(body!.error).toMatchObject({ code: -32600 })
-    expect(body!.id).toBeNull()
+    expect(r.structuredContent!.errors).toHaveProperty('runId')
+    const stray = run({ body: {}, headers: HEADERS, method: 'POST', path: '/api/workflow/nope' }).body as { isError?: boolean; structuredContent?: { errors?: { tool?: string } } }
+    expect(stray.isError).toBe(true)
+    expect(stray.structuredContent?.errors?.tool).toContain('/api/workflow/nope')
+    expect(reply({ steps: {} }).json).toContain('The route step did not run')
   })
 })
 
@@ -202,33 +171,16 @@ describe('tools this build does not serve', () => {
   })
 })
 
-describe('resources', () => {
+describe('the resources-list rule', () => {
   const aliases = http({ data: [{ alias: 'workflow' }, { alias: 'hello' }] })
-  const probe = { url: 'https://storage.googleapis.com/j5s-dev/o/r/uploads/workflows/.mcp-csp-probe?X-Goog-Signature=x' }
 
-  it('lists the step view and every discovered island with a derived CSP', () => {
-    const { body } = run(message('resources/list'), { aliases, index1: http(HELLO_INDEX), probe })
-    const resources = (body!.result as { resources: Array<Record<string, unknown>> }).resources
-    expect(resources.map((r) => r.uri)).toEqual([STEP_VIEW_URI, 'ui://bffless/hello/islands/pick-line.html', 'ui://bffless/hello/islands/line-viewer.html'])
-    for (const r of resources) {
-      expect(r.mimeType).toBe('text/html;profile=mcp-app')
-      expect(r._meta).toEqual({ ui: { csp: { connectDomains: ['https://h.example', 'https://storage.googleapis.com'], resourceDomains: ['https://storage.googleapis.com'] }, prefersBorder: true } })
-    }
-  })
-
-  it('reads an island unchanged, and the step view', () => {
-    const { body } = run(message('resources/read', { uri: 'ui://bffless/hello/islands/pick-line.html' }), { island: http('<!doctype html><script>pick</script>'), probe })
-    expect(body!.result).toEqual({
-      contents: [{ uri: 'ui://bffless/hello/islands/pick-line.html', mimeType: 'text/html;profile=mcp-app', text: '<!doctype html><script>pick</script>', _meta: { ui: { csp: { connectDomains: ['https://h.example', 'https://storage.googleapis.com'], resourceDomains: ['https://storage.googleapis.com'] }, prefersBorder: true } } }],
-    })
-    const view = run(message('resources/read', { uri: STEP_VIEW_URI }), { stepView: http('<!doctype html>view'), probe })
-    expect((view.body!.result as { contents: Array<{ text: string }> }).contents[0].text).toBe('<!doctype html>view')
-  })
-
-  it('answers -32002 for a fenced-out, failed or foreign URI', () => {
-    expect(run(message('resources/read', { uri: 'ui://bffless/hello/../x.html' }), { probe }).body!.error).toMatchObject({ code: -32002 })
-    expect(run(message('resources/read', { uri: 'ui://bffless/hello/islands/x.html' }), { island: http('', 404), probe }).body!.error).toMatchObject({ code: -32002 })
-    expect(run(message('resources/read', { uri: 'file:///etc/passwd' })).body!.error).toMatchObject({ code: -32002 })
+  it('enumerates every discovered island for CE\'s mcp_handler to list (the step view is a static resource of the endpoint config)', () => {
+    const { body } = run(resourcesReq, { aliases, index1: http(HELLO_INDEX) })
+    expect(body).toEqual([
+      { uri: 'ui://bffless/hello/islands/pick-line.html', name: 'hello: islands/pick-line.html', description: 'An island of the Hello implementation, served unchanged (spec 04).', mimeType: 'text/html;profile=mcp-app' },
+      { uri: 'ui://bffless/hello/islands/line-viewer.html', name: 'hello: islands/line-viewer.html', description: 'An island of the Hello implementation, served unchanged (spec 04).', mimeType: 'text/html;profile=mcp-app' },
+    ])
+    expect(run(resourcesReq, { aliases: http('unauthorised', 401) }).body).toEqual([])
   })
 })
 

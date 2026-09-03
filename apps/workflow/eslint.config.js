@@ -10,9 +10,9 @@ export default defineConfig([
   // `bffless/workflow-implementations` (`hello-src/` — that repo lints its own
   // sources, and its `workflows/workflow-studio` tsconfig would confuse the
   // typed parser here) are not ours to lint.
-  // The MCP endpoint's `*.fn.js` are esbuild bundles (scripts/build-mcp.mjs) —
+  // The MCP rules' shared `*.fn.js` bundles (scripts/build-mcp.mjs, under mcp-fn/) —
   // generated, and carrying their sources' own eslint directives verbatim.
-  globalIgnores(['dist', 'coverage', 'public/mockServiceWorker.js', 'hello-src', 'hello-dist', '.bffless/proxy-rules/workflow/rules/api/workflow/mcp/post/*.fn.js']),
+  globalIgnores(['dist', 'coverage', 'public/mockServiceWorker.js', 'hello-src', 'hello-dist', '.bffless/proxy-rules/workflow/mcp-fn/*.fn.js']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

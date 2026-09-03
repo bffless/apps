@@ -11,7 +11,7 @@
  * catalog's `workflow.sign { runId?, path }` and the endpoint serves it for
  * both audiences.
  */
-import { CATALOG, type JsonSchema, type Scope } from '@bffless/workflow-agent-tools'
+import type { JsonSchema, Scope } from '@bffless/workflow-agent-tools'
 
 /**
  * The endpoint's `serverInfo.version` — the *host protocol* version, the same
@@ -114,21 +114,4 @@ const HOST_TOOL_NAMES = new Set<string>(HOST_TOOLS.map((tool) => tool.name))
 
 export function isHostTool(name: string): name is HostToolName {
   return HOST_TOOL_NAMES.has(name)
-}
-
-/**
- * The `tools/list` result's `tools`: the catalog — `{ name, description,
- * inputSchema, annotations }`, never `scope` (the consent screen's, not the
- * wire's) — with `workflow.submitStep` linking the step view, then the four
- * app-only tools.
- */
-export function listedTools(): Array<Record<string, unknown>> {
-  const catalog = CATALOG.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
-    annotations: tool.annotations,
-    ...(tool.name === 'workflow.submitStep' ? { _meta: { ui: { resourceUri: STEP_VIEW_URI } } } : {}),
-  }))
-  return [...catalog, ...HOST_TOOLS.map((tool) => ({ ...tool }))]
 }

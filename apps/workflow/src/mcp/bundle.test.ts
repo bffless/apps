@@ -11,7 +11,8 @@
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
-import { ENTRIES, bundle, outFile } from '../../scripts/build-mcp.mjs'
+import { join } from 'node:path'
+import { ENTRIES, SET, bundle, outFile, renderedRules } from '../../scripts/build-mcp.mjs'
 
 /**
  * Verbatim `PROHIBITED_PATTERNS` from
@@ -80,7 +81,7 @@ export async function runInCeSandbox(code: string, data: unknown): Promise<unkno
 }
 
 const SMOKE_DATA = {
-  request: { body: {}, query: {}, headers: {}, method: 'POST', path: '/api/workflow/mcp' },
+  request: { body: {}, query: {}, headers: {}, method: 'POST', path: '/api/workflow/mcp-tools/status' },
   steps: {},
   deployment: { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' },
 }
@@ -108,4 +109,14 @@ describe('MCP endpoint bundles', () => {
       })
     })
   }
+})
+
+describe('the rendered MCP rules', () => {
+  it('are fresh (run `pnpm --filter workflow mcp:build` after editing src/mcp/mcpConfig.ts or the generator)', async () => {
+    const files = await renderedRules()
+    expect(files.length).toBe(1 + 15 + 2)
+    for (const [rel, text] of files) {
+      expect(readFileSync(join(SET, rel), 'utf8'), rel).toBe(text)
+    }
+  }, 30_000)
 })

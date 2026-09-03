@@ -2,15 +2,13 @@
 import { describe, expect, it } from 'vitest'
 import { RUN_ID, runRow, stepRows } from './fixtures/index'
 import { aliasNames, handler, queryOf } from './plan'
-import { handler as routeOf, type FnRequest } from './route'
+import { TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
 const HEADERS = { host: 'h.example' }
-const request = (body: unknown): FnRequest => ({ body, headers: HEADERS, method: 'POST', path: '/api/workflow/mcp' })
+const request = (name: string, body: unknown): FnRequest => ({ body, headers: HEADERS, method: 'POST', path: `${TOOLS_PATH}${name.replace(/^workflow\./, '')}` })
 const call = (name: string, args: Record<string, unknown> = {}) =>
-  routeOf({ request: request({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }), deployment: DEPLOYMENT })
-const read = (uri: string) =>
-  routeOf({ request: request({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri } }), deployment: DEPLOYMENT })
+  routeOf({ request: request(name, args), deployment: DEPLOYMENT })
 
 const aliases = (...names: string[]) => ({ ok: true, status: 200, body: { data: names.map((alias) => ({ alias })) } })
 
@@ -61,20 +59,6 @@ describe('plan: describe', () => {
 })
 
 describe('plan: island resources', () => {
-  it('fetches /w/<impl>/<rest> through the same fence the page applies', () => {
-    const plan = handler({ steps: { route: read('ui://bffless/hello/islands/pick-line.html') }, deployment: DEPLOYMENT })
-    expect(plan.hasIsland).toBe(true)
-    expect(plan.islandUrl).toBe('https://h.example/w/hello/islands/pick-line.html')
-  })
-
-  it('refuses a traversal with the fence’s own message', () => {
-    const plan = handler({ steps: { route: read('ui://bffless/hello/../other/x.html') }, deployment: DEPLOYMENT })
-    expect(plan.hasIsland).toBe(false)
-    expect(plan.islandError).toContain('must resolve inside /w/hello/')
-  })
-})
-
-describe('plan: stepView and pipeline (the run’s implementation is the fence)', () => {
   const run = [runRow()]
   const steps = stepRows()
 

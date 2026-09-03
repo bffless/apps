@@ -2,12 +2,12 @@
 import { describe, expect, it } from 'vitest'
 import { RUN_ID, runRow, stepRows } from './fixtures/index'
 import { handler as merge } from './merge'
-import { handler as routeOf, type FnRequest } from './route'
+import { TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
-const request = (body: unknown): FnRequest => ({ body, headers: { host: 'h.example' }, method: 'POST', path: '/api/workflow/mcp' })
+const request = (name: string, body: unknown): FnRequest => ({ body, headers: { host: 'h.example' }, method: 'POST', path: `${TOOLS_PATH}${name.replace(/^workflow\./, '')}` })
 const call = (name: string, args: Record<string, unknown>) =>
-  routeOf({ request: request({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }), deployment: DEPLOYMENT })
+  routeOf({ request: request(name, args), deployment: DEPLOYMENT })
 const STEP = 'pick/0/choose'
 const run = (over: Record<string, unknown> = {}) => [runRow(over)]
 const text = (m: ReturnType<typeof merge>) => m.result.content[0].text
