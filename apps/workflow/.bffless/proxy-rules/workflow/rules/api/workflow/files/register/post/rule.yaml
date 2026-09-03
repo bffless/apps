@@ -46,5 +46,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:files] }
 description: "Files trio 2/3: finalize a direct-to-bucket upload into a File ref."

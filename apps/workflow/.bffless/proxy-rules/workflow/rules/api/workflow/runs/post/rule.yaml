@@ -38,5 +38,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
 description: "Create a workflow run row (run.started). auth_required; startedBy from the session."

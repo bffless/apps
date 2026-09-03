@@ -130,5 +130,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
 description: "Delete a run: its storage prefix, its file records, its step rows and the run row — owner or admin, terminal runs only. Kickoff inputs are kept (D18)."

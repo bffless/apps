@@ -16,6 +16,7 @@ Pure TypeScript, zero dependencies, no DOM and no HTTP.
 |---|---|
 | `CATALOG`, `TOOL_NAMES`, `toolByName`, `canonicalToolName` | the tools — name, description, JSON Schema, `annotations.readOnlyHint`, scope. Names are dot-canonical and slash-tolerant (`workflow/start` ≡ `workflow.start`) |
 | `SCOPES`, `TOOL_SCOPES`, `scopeOf` | the tool → scope map (D23): `workflow:read` · `workflow:run` · `workflow:files` |
+| `RULE_SCOPES`, `ruleScopeOf` | the harness rule → scope map: what each `/api/workflow/*` rule declares as `requiredScopes`, held equal by the app's fence test |
 | `textResult`, `errorResult`, `isErrorResult`, `CallToolResult` | MCP-shaped results: prose in `content[0].text`, data in `structuredContent`; refusals are `isError` with a spec-07-keyed `errors` map |
 | `RunSnapshot`, `WaitingStep`, `snapshotFromRows`, `snapshotText`, `declaredList` | the run snapshot — `window.__workflow` (07) plus `waitingOn` — its derivation from a run row + step rows, and the one sentence both adapters say about it |
 | `WorkflowDescription` | what `workflow.describe` answers |

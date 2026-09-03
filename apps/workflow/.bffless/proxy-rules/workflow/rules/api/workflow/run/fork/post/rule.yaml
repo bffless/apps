@@ -161,5 +161,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
 description: "Fork a run at a job: one new run row (forkedFrom, forkJob) plus a server-side copy of every row outside the job's downstream closure — owner or admin, terminal parents only, under the definition the client sends. Idempotent on id."

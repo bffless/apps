@@ -28,7 +28,7 @@ export {
   type SubmitStepArgs,
   type ToolArgs,
 } from './schemas.js'
-export { SCOPES, TOOL_SCOPES, scopeOf, type Scope } from './scopes.js'
+export { RULE_SCOPES, SCOPES, TOOL_SCOPES, ruleScopeOf, scopeOf, type Scope } from './scopes.js'
 export {
   errorResult,
   isErrorResult,

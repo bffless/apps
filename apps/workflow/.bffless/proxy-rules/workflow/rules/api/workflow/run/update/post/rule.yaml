@@ -48,5 +48,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
 description: "Patch a run row (status, finishedAt, lease, outputs, annotations, annotationCounts). Two terminal response branches — fine in rules-as-code (the admin UI bug ce#502 does not apply)."

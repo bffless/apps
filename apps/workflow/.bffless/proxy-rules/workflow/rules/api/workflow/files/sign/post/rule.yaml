@@ -34,5 +34,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:files] }
 description: "Files quartet 4/4: sign a run/inputs object for a sandboxed island's <video>/<audio>/<img>."

@@ -20,5 +20,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:read] }
 description: "The serving project for runtime discovery scope. no-store: per-deployment provenance, and the SPA caches its one read for the session anyway."
