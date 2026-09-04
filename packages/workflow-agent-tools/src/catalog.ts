@@ -70,7 +70,7 @@ const DESCRIPTIONS: Readonly<Record<ToolName, string>> = {
     'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
   'workflow.runs': 'Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.',
   'workflow.submitStep':
-    'Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person’s submit runs; a refusal names each bad value. In an agent host that renders this tool’s UI, call it with `values: {}` for an island step: the step’s own island is shown and the person completes it there — do not invent values for them.',
+    'Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person’s submit runs; a refusal names each bad value. In an agent host that renders this tool’s UI, call it with `values: {}` for an island or form step: the step’s own UI is shown and the person completes it there — do not invent values for them.',
   'workflow.outputs': 'The run’s outputs — File refs (`{ path, name, contentType, size, url }`), never bytes.',
   'workflow.sign':
     'Exchange a File ref’s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.',

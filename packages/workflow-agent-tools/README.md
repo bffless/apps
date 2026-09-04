@@ -53,5 +53,5 @@ returns a `CallToolResult`. `snapshotFromRows(run, steps)` turns what
 `GET /api/workflow/run` answers into the snapshot `workflow.status` returns.
 
 Not in v1 (spec 10): `fork`, `retry`, `annotate`, `delete`, and any pipeline of an
-implementation — an agent completes an island step with `workflow.submitStep`; it
+implementation — an agent completes an island or form step with `workflow.submitStep`; it
 does not do the island's job.
