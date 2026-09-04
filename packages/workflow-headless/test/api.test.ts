@@ -45,6 +45,25 @@ afterEach(() => {
 
 const base = 'https://harness.test'
 
+describe('the app-token bearer (D23 rung 2)', () => {
+  test('is sent on reads AND writes of /api/workflow/*', async () => {
+    const api = pageApi(page, { base, appToken: 'bfat_t' })
+    await api.json('/api/workflow/run?id=run_1')
+    await api.json('/api/workflow/runs', { method: 'POST', body: { runId: 'run_1' } })
+    expect(sent.map((s) => s.init.headers.Authorization)).toEqual(['Bearer bfat_t', 'Bearer bfat_t'])
+    expect(sent.map((s) => s.init.headers['X-API-Key'])).toEqual([undefined, undefined])
+  })
+
+  test('is NOT sent outside /api/workflow/, and wins over the X-API-Key extra', async () => {
+    const api = pageApi(page, { base, appToken: 'bfat_t', token: 'k1' })
+    await api.text('/w/hello/.bffless/workflows/index.json')
+    await api.json('/api/workflow/run?id=run_1')
+    expect(sent[0]!.init.headers.Authorization).toBeUndefined()
+    expect(sent[1]!.init.headers.Authorization).toBe('Bearer bfat_t')
+    expect(sent[1]!.init.headers['X-API-Key']).toBeUndefined()
+  })
+})
+
 describe('the X-API-Key gate', () => {
   test('is added to a GET of /api/workflow/*', async () => {
     await pageApi(page, { base, token: 'k1' }).json('/api/workflow/run?id=run_1')

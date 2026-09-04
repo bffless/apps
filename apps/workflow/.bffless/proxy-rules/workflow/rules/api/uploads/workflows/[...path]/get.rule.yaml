@@ -12,5 +12,5 @@ pipeline:
         download: request.query.download
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:files] }
 description: "auth_required file serving from the harness-owned run storage."

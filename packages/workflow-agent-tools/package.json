@@ -1,0 +1,54 @@
+{
+  "name": "@bffless/workflow-agent-tools",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "The Workflow harness's agent tool catalog — names, JSON Schemas, annotations, the tool→scope map, MCP CallToolResult builders and the RunSnapshot shape shared by the WebMCP page adapter and the MCP endpoint (spec apps/workflow/docs/spec/10-agent-embedding.md, ADR-0005)",
+  "keywords": [
+    "bffless",
+    "workflow",
+    "mcp",
+    "webmcp",
+    "agent",
+    "tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bffless/apps.git",
+    "directory": "packages/workflow-agent-tools"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.3",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^4.1.7"
+  }
+}

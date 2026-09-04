@@ -11,6 +11,8 @@ name: publish-workflow-lint
 #                               apps#420) — packages/workflow-cli, published under the
 #                               `@bffless/workflow` name rather than the by-convention
 #                               `@bffless/workflow-cli` (Decision 7)
+#   @bffless/workflow-agent-tools the agent tool catalog both embedding adapters
+#                               consume (spec 10, ADR-0005) — packages/workflow-agent-tools
 #
 # (The file keeps its workflow-lint name because release.yml calls it by path; it
 # has published more than that package since the second one joined.)
@@ -60,6 +62,7 @@ on:
           - '@bffless/workflow-script'
           - '@bffless/workflow-headless'
           - '@bffless/workflow'
+          - '@bffless/workflow-agent-tools'
       ref:
         description: 'the release tag to check out and publish, e.g. workflow-lint-v1.0.0'
         required: true
@@ -118,6 +121,7 @@ jobs:
             @bffless/workflow-script)   DIR=packages/workflow-script ;;
             @bffless/workflow-headless) DIR=packages/workflow-headless ;;
             @bffless/workflow)          DIR=packages/workflow-cli ;;  # not the by-convention @bffless/workflow-cli
+            @bffless/workflow-agent-tools) DIR=packages/workflow-agent-tools ;;
             *) echo "::error::unknown package $PKG"; exit 1 ;;
           esac
           COMPONENT="${DIR#packages/}"

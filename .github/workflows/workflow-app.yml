@@ -9,6 +9,7 @@ on:
         'packages/workflow-headless/**',
         'packages/workflow-live/**',
         'packages/workflow-cli/**',
+        'packages/workflow-agent-tools/**',
         '.github/workflows/workflow-app.yml',
       ]
   workflow_dispatch:
@@ -23,6 +24,12 @@ jobs:
         with: { node-version: '20', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-lint build
+      # The agent tool catalog (@bffless/workflow-agent-tools, spec 10 / apps#554).
+      # The app imports it, so it is built before the app's lint/build/test resolve
+      # it from dist/ — the same reason workflow-lint is built first.
+      - run: pnpm --filter @bffless/workflow-agent-tools build
+      - run: pnpm --filter @bffless/workflow-agent-tools lint
+      - run: pnpm --filter @bffless/workflow-agent-tools test:run
       # The authoring CLI (@bffless/workflow, packages/workflow-cli — apps#420
       # whole-branch review, I3). Same build/lint/test:run pattern as the
       # workflow-headless/workflow-live blocks below; it only depends on

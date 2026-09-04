@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build -c vite.step.config.ts",
     "lint": "eslint .",
+    "mcp:build": "node scripts/build-mcp.mjs",
     "stage": "node scripts/stage-hello.mjs",
     "preview": "vite preview",
     "test": "vitest",
@@ -20,7 +21,9 @@
     ]
   },
   "dependencies": {
+    "@bffless/workflow-agent-tools": "workspace:*",
     "@bffless/workflow-lint": "workspace:*",
+    "@mcp-b/webmcp-polyfill": "^5.1.0",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@reduxjs/toolkit": "^2.12.0",
@@ -45,6 +48,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "esbuild": "^0.28.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -54,6 +58,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.7"
   }
 }

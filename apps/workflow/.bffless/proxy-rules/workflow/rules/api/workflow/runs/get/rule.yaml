@@ -37,5 +37,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:read] }
 description: "List runs of one workflow (members see all runs, D14), each carrying `waitingOn` — the keys of its steps parked in `waiting`. no-store: run lists must never be stale."

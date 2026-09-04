@@ -507,3 +507,164 @@ Phase 4 docs PR (pre-approved deviation).
 
 The scratch install has since been removed (Task 10 step 3); `workflow-test-w.j5s.dev` now
 answers 404.
+
+### Connecting an MCP host (OAuth) — Phase 3 story 9
+
+From story 9 a chat host connects to the harness the way it connects to any OAuth-protected
+MCP server, on a **private** deployment too (CE ≥ the story-9 release, `bffless/deploy-proxy-rules`
+≥ the release that knows `bypassVisibility`):
+
+1. Add the connector with the URL `https://workflow.<domain>/api/workflow/mcp`. The host reads
+   `https://workflow.<domain>/.well-known/oauth-protected-resource` (a rule of this set, served
+   despite deployment visibility), which names CE's authorization server on `admin.<domain>`
+   and the catalog's scopes; then CE's RFC 8414 document at
+   `https://admin.<domain>/.well-known/oauth-authorization-server`.
+2. The host registers itself (RFC 7591, no secret) and sends you to
+   `https://admin.<domain>/api/oauth/authorize…` — the admin login if you are signed out, then
+   the consent page: the client's name, the project, one checkbox per scope. Untick to grant less
+   (`workflow:read` alone lets it watch runs and never start or complete one).
+3. Allow → the host exchanges the code (PKCE) for an **app token** bound to the project with
+   the scopes you granted (1 h, refreshed silently for 30 d). Every tool then runs as you:
+   `startedBy` is your id, the delete gate is yours, and a tool whose scope the token lacks is
+   refused naming it.
+4. Revoke any time from *Settings → App Tokens* (OAuth tokens are listed with the client's name).
+
+The `oauth` walk (`packages/workflow-live`) drives 1–4 headlessly against either host; the
+claude.ai flow itself is a person's step with screenshots (the Phase-3 gate). Two person-owned
+preconditions on j5s: the Cloudflare zone's AI-bot block stays off, and the member has a project
+role. Assumption recorded (Phase 3 plan, Decision 23): the authorization server is derived as
+`admin.<the host minus its first label>` — a custom-domain install would need CE to advertise
+its issuer (a filed follow-up).
+
+### M5 Phase 3 — the endpoint on CE's `mcp_handler` (2026-09-03)
+
+From story 8 the endpoint is **one `mcp_handler` step** (CE ≥ the release carrying ce#728):
+`rules/api/workflow/mcp/rule.yaml` is rendered from `src/mcp/mcpConfig.ts` — the catalog's
+eleven descriptors byte for byte, the four app-only tools, the step view as a static `ui://`
+resource, the island template `ui://bffless/{impl}/{path+}` → `/w/{impl}/{path+}`, and the
+resources-list rule — and every tool is a **sibling rule** under `rules/api/workflow/mcp-tools/
+<name>/post/` with exactly the steps that tool needs and `requiredScopes` from the catalog's map
+(D23). The sibling rules share four function bundles under `mcp-fn/` (route / plan / merge /
+reply — the Phase-2 functions minus the JSON-RPC envelope, which CE owns now). CE invokes a
+sibling in-process as the caller (cookie or Bearer app token forwarded), the sibling's validator
+is where a tool's scope is refused, and the per-request cost is one small pipeline per tool
+instead of the prototype's 24-step chain. `pnpm --filter workflow mcp:build` builds the bundles
+and renders every rule file; `src/mcp/bundle.test.ts` fails when any committed file is stale.
+The redeploy sequence below is unchanged (the set is pushed with `--prune`, so the retired
+`mcp/post` and `mcp/get` rules leave the instance). The `mcp` walk's 24 Phase-2 checks pass
+**unchanged** against this shape — that was the acceptance test.
+
+### M5 Phase 4 — forms in the step view (2026-09-04)
+
+Nothing to provision — the step view already served islands (Phase 3); story 10 taught it to
+render a waiting **form** step too (`validateFormOutputs` server-side, File-ref previews
+presigned through `workflow.sign`). The resource URI is revisioned,
+`ui://bffless/workflow/step-view.<rev>.html` (apps#587) — `<rev>` is a hash of the step view's
+own sources, so a host that caches a widget's resource per URI (claude.ai does, per connector)
+fetches every deploy fresh; nothing to bump by hand. `start`/`resume`/`cancel` refusals over the
+endpoint now point at the harness page (D24, amended 2026-09-04 — no run engine ships in a
+widget). Verify with the `mcp-app` walk, which drives both step kinds:
+
+```bash
+pnpm workflow-live:walk mcp-app --harness https://workflow.j5s.dev --park-only
+```
+
+parks a run waiting on its form step and prints the run id — the claude.ai part (opening the
+step view, submitting the form) is the person's screenshot step, same as the island half.
+
+### M5 Phase 2 — the MCP Apps scratch project `bffless/workflow-mcp` (2026-09-02)
+
+The authless MCP endpoint prototype (spec 10, D22–D23 rung 1; apps#554 stories 5–6) runs on
+a **scratch, public** project on the dev instance — public on purpose: a private
+deployment's visibility gate answers anonymous MCP callers with a 302 before any rule runs
+(verified 2026-09-02 on `workflow.j5s.dev`). Never `bffless.dev`, never the members-only
+`bffless/workflow` harness. Scratch data only.
+
+| what | value |
+|---|---|
+| project | `bffless/workflow-mcp` · id `26d0496e-97cd-4f8b-9597-e993f7d330e7` · public |
+| harness | `https://workflow-mcp.j5s.dev` (domain `802bc041-1fb5-4a5d-be94-b63f59ddae3d`, alias `workflow`, path `/dist`, SPA) |
+| MCP endpoint | `POST https://workflow-mcp.j5s.dev/api/workflow/mcp` (GET → 405) |
+| deploy key | the project-scoped key `e0a0b726-5f06-4280-861b-146d28b8c823` ("workflow-mcp scratch"), kept in `~/.config/bffless/workflow-mcp.env` (mode 600, never in the repo). **Phase 3 (story 7):** it no longer doubles as the endpoint's service identity — the `WORKFLOW_MCP_KEY` secret is retired; the endpoint runs as the caller (a member session or a Bearer app token) and the walks mint their own token through the signed-in browser |
+| rule sets | `workflow` `b84aee6c-7934-4fb2-adba-d846bb17a3b2` (this directory, pushed with `--prune`) · `hello` `f7e8b817-3eff-4057-948e-9a8c5bc2dff4` (hello's set + the `/w/hello/*` forwarder, `--path-prefix /api/hello`) |
+| aliases | `workflow` → sets [`workflow`, `hello`] · `hello` → [`hello`] |
+| deployments | harness `b369ec7b-0acb-4005-9c90-982e8ae21821` (the epic branch's build) · hello `dd350e9a-5b1d-4cc5-a750-08b902b5c77a` (`hello.ref`) |
+| response-header rule | `32367162-8b1c-49cd-9373-44d9f6a640f9` — islands `Cache-Control: no-transform, no-cache` (mirrors `bffless/workflow`'s) |
+| teardown | `delete_project 26d0496e-…` — **irreversible; ask first.** Until then the project's description says what it is. |
+
+**Provisioning** (done once, through the j5s MCP — `create_project` (public) → `create_api_key
+{ repository }` → (Phase 2 only: `set_secret WORKFLOW_MCP_KEY`, retired in Phase 3) → the pushes/uploads below → `create_domain`
+(subdomain, alias `workflow`, path `/dist`) + `update_domain { isSpa: true }` → `update_alias`
+attachments → `create_response_header_rule`). Membership: the walks sign in as the j5s CI member
+(`~/.config/bffless/workflow-ci.env`), who must be a member of the project — CE's alias list is
+permission-filtered, so a non-member sees an empty harness; there is no MCP tool for it, so:
+`curl -X POST $BFFLESS_API_URL/api/projects/bffless/workflow-mcp/permissions/users -H "X-API-Key: $BFFLESS_API_KEY" -H 'Content-Type: application/json' -d '{"userEmail":"<member>","role":"contributor"}'`
+(the scratch key's owner owns the project, so it may grant). **Bucket CORS** (the note at the
+top of this file): `https://workflow-mcp.j5s.dev` must be in the storage bucket's CORS origins
+or the harness page's own uploads (`card`'s poster) fail there — the MCP endpoint is unaffected;
+`gcloud` is not on the VPS, so this is a person's step.
+
+**Redeploy** from a worktree of the epic branch (the key env sourced; `bffless` ≥ 0.3.5 for
+`--path-prefix`):
+
+```bash
+set -a; source ~/.config/bffless/workflow-mcp.env; set +a
+# 1. the harness rule set (adds/updates/prunes to this directory)
+bffless rules push apps/workflow/.bffless/proxy-rules/workflow --project bffless/workflow-mcp --api-url $BFFLESS_API_URL --prune
+# 2. the harness build → alias workflow (the set is attached by name)
+pnpm --filter workflow stage && pnpm --filter workflow mcp:build && pnpm --filter workflow build
+(cd apps/workflow && python3 -c "import shutil; shutil.make_archive('/tmp/wf','zip','.','dist')")
+curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_API_KEY" -F file=@/tmp/wf.zip -F repository=bffless/workflow-mcp -F commitSha=$(git rev-parse HEAD) -F branch=$(git branch --show-current) -F isPublic=true -F alias=workflow -F proxyRuleSetNames=workflow
+# 3. hello (only when hello.ref moves): its dist → alias hello; its rules + forwarder → set hello
+mkdir -p /tmp/hello && rm -rf /tmp/hello/dist && cp -r apps/workflow/hello-dist /tmp/hello/dist && (cd /tmp/hello && python3 -c "import shutil; shutil.make_archive('/tmp/hello','zip','.','dist')")
+curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_API_KEY" -F file=@/tmp/hello.zip -F repository=bffless/workflow-mcp -F commitSha=$(cat apps/workflow/hello.ref) -F branch=main -F isPublic=true -F alias=hello
+cp -r apps/workflow/hello-src/workflows/hello/.bffless/proxy-rules/hello /tmp/hello-rules && mkdir -p /tmp/hello-rules/rules/_custom/forward
+printf 'pathPattern: /w/hello/*\ntargetUrl: http://localhost:3000/public/bffless/workflow-mcp/alias/hello/dist\nstripPrefix: true\nforwardCookies: true\nheaderConfig:\n  forward: [accept, accept-language, content-type, user-agent, x-request-id, cookie, authorization]\n  strip: [host, connection, keep-alive, transfer-encoding]\norder: 5\n' > /tmp/hello-rules/rules/_custom/forward/get.rule.yaml
+npx -y bffless@0.3.5 rules push /tmp/hello-rules --project bffless/workflow-mcp --api-url $BFFLESS_API_URL --path-prefix /api/hello --prune
+# then, if the set ids changed: update_alias workflow → [workflow, hello], hello → [hello]
+```
+
+**Cloudflare blocks Anthropic's MCP client** (found 2026-09-02, the first claude.ai connect):
+the `j5s.dev` zone's AI-bot blocking answers **403** to any user agent containing `Claude` /
+`anthropic` (`Claude-User`, `ClaudeBot`, …) on `/api/workflow/mcp` and `/step.html`, while
+`curl`/`node` get the rule's 405/200 — so claude.ai "detects" the server from the browser and
+then fails to connect from its servers (*"Failed to start MCP authorization"* → *"Connection
+issue"*). Reproduce: `curl -s -o /dev/null -w '%{http_code}' -A Claude-User/1.0
+https://workflow-mcp.j5s.dev/api/workflow/mcp` → 403. Fix is in the Cloudflare dashboard, not
+the app: Security → Bots → turn off *Block AI bots* (or a WAF custom rule that skips bot
+protection for host `workflow-mcp.j5s.dev`, later `workflow.j5s.dev`). Every MCP host that
+fetches from its own servers hits this on any j5s host until the zone allows it. The SPA's
+`/.well-known/*` also had to answer 404 (the `_custom/well-known` rule): the client's OAuth
+discovery read `index.html` as metadata before that.
+
+**What the first claude.ai session taught (2026-09-02), all folded into #579:**
+- **A text-only host.** claude.ai hands the model a tool result's `content[0].text` and nothing
+  else — `structuredContent` never reaches it. The model reasoned from "a terse snapshot" and
+  refused to act until the prose carried the island's declared outputs and the exact call to
+  make (`snapshotText`/`describeText` now list declarations; `workflow.status` over the endpoint
+  appends the agent-host hint). Design rule for every tool: the text must stand alone.
+- **`workflow.submitStep { values: {} }` is how a model opens the panel** — the catalog schema
+  marks `values` required, so the model sends `{}`; an empty object on an island step now means
+  "render the step's island", not an empty submit. The tool's description says so.
+- **The host mounts the UI only on a non-error result**; an `isError` answer shows as text in
+  the card. And a model that was refused once keeps reasoning from it — retries need a new chat
+  after a connector reconnect (claude.ai caches `tools/list` per connection).
+- **Sibling calls are in-process.** They used to hairpin `https://<host>/…` (CE → Cloudflare →
+  nginx → CE); the island's parallel bridge calls timed out at 10 s and surfaced as Cloudflare
+  502s. They now go to `http://localhost:3000/public/<owner>/<repo>/alias/<alias>/<dir>/…` — the
+  base path nginx rewrote the request to, read off `request.path` — with `x-original-uri` and
+  `x-forwarded-host`, which CE's proxy middleware matches rules and domains on. 0.3–0.6 s per
+  call. The second after a `rules push`, calls can 404 while the rule cache repopulates.
+- **The island's echo can lag a click** under latency (hello's `pick-line` does not cancel the
+  previous `echo`); the submitted value is always the highlighted one.
+
+**Verify:** `pnpm workflow-live:walk mcp --harness https://workflow-mcp.j5s.dev --out /tmp/walk-mcp`
+(13 checks, Story 5) and `pnpm workflow-live:walk page-tools --harness https://workflow-mcp.j5s.dev`
+(the harness itself; the driver signs in through the relay on a public host too).
+
+**Story 5 spike findings** are recorded on apps#554; in one line each: a `function_handler`
+cannot call a sibling rule (no `fetch`, frozen `data`) but the *pipeline* can (`http_request`
+steps at URLs a function derived, carrying the service key — CE's own API in-process for the
+alias list, the harness host's forwarders for `/w/<impl>/…`); `X-API-Key` alone **does** pass a
+private deployment's visibility gate (200 on `/`, `whoami`, `project` with a project-scoped key,
+302 anonymous); claude.ai's connector is confirmed by a person in Story 6.

@@ -1,0 +1,127 @@
+/**
+ * What `tools/list` answers (spec 10, D19): the catalog, verbatim, plus the
+ * four **app-only** tools the step view calls on an island's behalf (Phase 2
+ * plan, Decision 4). App-only tools carry `_meta.ui.visibility: ["app"]` — the
+ * MCP Apps extension's way of saying "callable by the embedded UI, hidden
+ * from the model" — and `workflow.submitStep` links the step view through
+ * `_meta.ui.resourceUri`, so a call to it renders the UI that completes it.
+ *
+ * The catalog owns every model-visible tool; nothing here re-declares one.
+ * `workflow.sign` in particular is *not* duplicated: the island calls the
+ * catalog's `workflow.sign { runId?, path }` and the endpoint serves it for
+ * both audiences.
+ */
+import type { JsonSchema, Scope } from '@bffless/workflow-agent-tools'
+
+/**
+ * The endpoint's `serverInfo.version` — the *host protocol* version, the same
+ * number `IslandHost`'s `HOST_INFO` announces on `ui/initialize`, because an
+ * island served through this endpoint meets the same host surface. Bump both
+ * together when that surface changes.
+ */
+export const SERVER_VERSION = '1.0.0'
+
+/**
+ * The step view's resource URI for one source revision (apps#587): claude.ai
+ * caches a widget's resource per URI per connector, so a stale fetch (the
+ * Phase-3 not-found page) outlived the deploy that fixed it until the URI
+ * changed. The revision is a hash of `src/**` plus the step view build's own
+ * two inputs, `step/index.html` and `vite.step.config.ts` (`scripts/build-mcp.mjs`
+ * `sourceRev`), rendered into the rule at `mcp:build` time — every deploy
+ * that changes the view is a cache miss by construction.
+ */
+export const stepViewUri = (rev: string): string => `ui://bffless/workflow/step-view.${rev}.html`
+/** What a host or a walk may assert about the URI; never a literal (the revision is the build's). */
+export const STEP_VIEW_URI_PATTERN = /^ui:\/\/bffless\/workflow\/step-view\.[0-9a-f]{8}\.html$/
+
+/** Every ui:// resource's MIME type (MCP Apps, `io.modelcontextprotocol/ui`). */
+export const RESOURCE_MIME = 'text/html;profile=mcp-app'
+
+export type HostToolName = 'workflow.submit' | 'workflow.annotate' | 'workflow.pipeline' | 'workflow.stepView'
+
+export interface HostToolDef {
+  name: HostToolName
+  description: string
+  inputSchema: JsonSchema
+  _meta: { ui: { visibility: ['app'] } }
+}
+
+const RUN_ID = { type: 'string', description: 'The run the island belongs to.' } as const
+const STEP = { type: 'string', description: 'The step key, `<job>/<index>/<step>`, of the waiting island step.' } as const
+const APP_ONLY = { ui: { visibility: ['app'] as ['app'] } }
+
+export const HOST_TOOLS: readonly HostToolDef[] = Object.freeze([
+  {
+    name: 'workflow.submit',
+    description:
+      "Complete the waiting island step of a run with its declared outputs — the island's own `workflow.submit` (spec 04), answered server-side: validated against the step's declared output map exactly as the harness page validates it, then written to the step row. Refused while a harness tab still drives the run.",
+    inputSchema: {
+      type: 'object',
+      properties: { runId: RUN_ID, step: STEP, outputs: { type: 'object', description: 'The values for the step’s declared outputs.', additionalProperties: true } },
+      required: ['runId', 'step', 'outputs'],
+      additionalProperties: false,
+    },
+    _meta: APP_ONLY,
+  },
+  {
+    name: 'workflow.annotate',
+    description:
+      "Record annotations and/or a summary on the waiting island step — the island's own `workflow.annotate` (spec 04), budgeted per step exactly as on the harness page.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: RUN_ID,
+        step: STEP,
+        annotations: { type: 'array', description: 'Entries of `{ level: notice|warning|error, message, title? }`.', items: { type: 'object', additionalProperties: true } },
+        summary: { type: 'string' },
+      },
+      required: ['runId', 'step'],
+      additionalProperties: false,
+    },
+    _meta: APP_ONLY,
+  },
+  {
+    name: 'workflow.pipeline',
+    description:
+      "Call one of the run's own implementation's pipelines on the island's behalf — a tool name resolves to `/api/<impl>/<path>` (dots as slashes) and is fenced to that implementation exactly as on the harness page (spec 04).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: RUN_ID,
+        step: STEP,
+        name: { type: 'string', description: 'The pipeline’s tool name, e.g. `echo` or `video.slice`.' },
+        arguments: { type: 'object', description: 'The JSON body (POST) or query (GET).', additionalProperties: true },
+        method: { type: 'string', enum: ['GET', 'POST'], description: 'Defaults to POST.' },
+      },
+      required: ['runId', 'step', 'name'],
+      additionalProperties: false,
+    },
+    _meta: APP_ONLY,
+  },
+  {
+    name: 'workflow.stepView',
+    description:
+      "What the step view needs to mount a waiting interactive step. An island: its HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments) and its declared outputs. A form: the fields the harness evaluated when the step started waiting, their initial values, the title and the submit label.",
+    inputSchema: {
+      type: 'object',
+      properties: { runId: RUN_ID, step: STEP },
+      required: ['runId', 'step'],
+      additionalProperties: false,
+    },
+    _meta: APP_ONLY,
+  },
+])
+
+/** What each app-only tool needs of a token (the catalog owns the model-visible map; these four are the endpoint's — Phase 3 plan, Decision 26). */
+export const HOST_TOOL_SCOPES: Readonly<Record<HostToolName, Scope>> = {
+  'workflow.submit': 'workflow:run',
+  'workflow.annotate': 'workflow:run',
+  'workflow.pipeline': 'workflow:run',
+  'workflow.stepView': 'workflow:read',
+}
+
+const HOST_TOOL_NAMES = new Set<string>(HOST_TOOLS.map((tool) => tool.name))
+
+export function isHostTool(name: string): name is HostToolName {
+  return HOST_TOOL_NAMES.has(name)
+}

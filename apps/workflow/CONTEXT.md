@@ -154,3 +154,63 @@ _Avoid_: register, install (that's the harness), sync (the rules half only)
 **Discovery**:
 How the harness finds implementations: listing the project's aliases and probing each for
 `/.bffless/workflows/index.json`.
+
+### Agent embedding
+
+**Tool catalog**:
+`@bffless/workflow-agent-tools` — the eleven `workflow.*` tools (names, schemas, annotations,
+the tool→scope map, result builders, the run snapshot) both embedding adapters consume.
+_Avoid_: plugin, SDK, "the MCP server" (that is one adapter of it)
+
+**Page tools**:
+The catalog registered on the harness page's `document.modelContext` (WebMCP; polyfilled
+when the browser has none), executed against the store — an agent in the member's own
+browser does what a click does, with the member's session.
+_Avoid_: page MCP server, browser plugin, pipeline tools (an implementation's pipelines are
+never page tools)
+
+**Run snapshot**:
+`window.__workflow`'s shape plus `waitingOn` — for each waiting step what would satisfy it.
+What `workflow.status` answers.
+_Avoid_: run state (the engine's), run record (the rows)
+
+**MCP endpoint**:
+`POST /api/workflow/mcp` — the harness's MCP server as one rule in its own rule set (spec 10,
+D22): from Phase 3 story 8 a single CE `mcp_handler` step whose config (the catalog's tools,
+the app-only four, the `ui://` resources) is rendered from `src/mcp/mcpConfig.ts`; every tool
+is its own sibling rule under `mcp-tools/`, invoked in-process as the caller with its own
+`requiredScopes`. The sibling rules' function steps are the shared bundles under `mcp-fn/`
+(`pnpm --filter workflow mcp:build` builds and renders everything).
+_Avoid_: a CE endpoint, `/_bffless/*`, the platform-admin MCP server, "streaming" (one POST,
+one JSON body), "the 24-step pipeline" (the Phase-2 prototype, retired)
+one JSON body)
+
+**App token**:
+A CE-minted, member-bound, project-bound, scoped bearer (`Authorization: Bearer bfat_…`) — auth
+ladder rung 2 (D23). Over the MCP endpoint it *is* the member: `startedBy`, the delete gate and
+every sibling rule see the person, narrowed to the token's scopes (`workflow:read` /
+`workflow:run` / `workflow:files`, the catalog's map). A session is never scope-checked.
+_Avoid_: "service identity" (the retired Phase-2 `WORKFLOW_MCP_KEY` secret), "API key" (pinned
+to role `user`, bound to no person)
+
+**Protected-resource document**:
+The harness's `/.well-known/oauth-protected-resource` rule (RFC 9728), served despite
+deployment visibility: this host's MCP endpoint as the resource, CE's authorization server on
+`admin.<domain>`, the catalog's scopes. How a chat host finds the login from the app.
+_Avoid_: "OAuth discovery endpoint" (CE has none for apps), the Phase-2 404 rule (retired)
+
+**Consent**:
+The admin-side page (`/oauth/consent`) where a member grants a client a subset of the scopes it
+asked for, per project; a `workflow:read`-only consent yields a token that watches but never runs.
+_Avoid_: "login" (the member is already signed in), "permission" (the member's project role)
+
+**Step view**:
+`ui://bffless/workflow/step-view.<rev>.html` — the engine-less host page that mounts one waiting
+island **or renders one waiting form** inside an agent host, under the same `IslandHost` the
+harness page uses; what `workflow.submitStep` renders in claude.ai. `<rev>` is `sourceRev()`
+(`scripts/build-mcp.mjs`), an 8-hex-char hash of `src/**` plus the step view build's own
+`step/index.html` and `vite.step.config.ts`, rendered into the URI at `mcp:build` time — every
+deploy that changes the view is a cache miss for a host that caches a widget's resource per URI
+(apps#587).
+_Avoid_: the run view (withdrawn 2026-09-04), the island itself (served unchanged as
+`ui://bffless/<impl>/islands/<name>.html`)

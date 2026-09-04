@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminKey, credentials } from '../src/env.js'
+import { adminKey, appToken, credentials } from '../src/env.js'
 
 describe('credentials', () => {
   it('prefers the driver names', () => {
@@ -18,5 +18,10 @@ describe('credentials', () => {
   it('adminKey is optional', () => {
     expect(adminKey({})).toBeUndefined()
     expect(adminKey({ ADMIN_API_KEY: 'k' })).toBe('k')
+  })
+  it('appToken is optional and ignores the empty string', () => {
+    expect(appToken({})).toBeUndefined()
+    expect(appToken({ WORKFLOW_APP_TOKEN: '' })).toBeUndefined()
+    expect(appToken({ WORKFLOW_APP_TOKEN: 'bfat_x' })).toBe('bfat_x')
   })
 })

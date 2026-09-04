@@ -3,11 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Live verification walks for the BFFless Workflow harness — the taste-free gate behind the apps-live-walk agent (spec docs/superpowers/specs/2026-08-30-apps-live-walk-design.md)",
-  "bin": { "workflow-live": "dist/cli.js" },
+  "description": "Live verification walks for the BFFless Workflow harness \u2014 the taste-free gate behind the apps-live-walk agent (spec docs/superpowers/specs/2026-08-30-apps-live-walk-design.md)",
+  "bin": {
+    "workflow-live": "dist/cli.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint .",
@@ -16,7 +20,9 @@
     "cli": "node dist/cli.js"
   },
   "dependencies": {
+    "@bffless/workflow-agent-tools": "workspace:*",
     "@bffless/workflow-headless": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "fflate": "^0.8.3",
     "playwright": "1.61.1"
   },

@@ -11,7 +11,8 @@ ADR-0005 is the anchor.
 Ratified with the user 2026-08-31 → 2026-09-01: WebMCP first; the MCP endpoint lives in the
 app's rule set, **never** baked into CE (no `/_bffless/*`, no coupling with CE's
 platform-admin MCP server — CE contributes only generic primitives); CE track = app tokens
-+ generic `mcp_handler` + OAuth 2.1; the run view drives runs inside agent hosts.
++ generic `mcp_handler` + OAuth 2.1; ~~the run view drives runs inside agent hosts~~ —
+withdrawn 2026-09-04, see §4 Phase 4 and ADR-0005's amendment.
 
 ---
 
@@ -60,7 +61,8 @@ announced 2025-11-21). SDK: `@modelcontextprotocol/ext-apps` (v1.1.2 docs at
 - Server exposes `ui://` resources, MIME `text/html;profile=mcp-app`, via normal
   `resources/read`; a tool links UI with `_meta.ui.resourceUri`; `visibility:
   ["model"]|["app"]` — app-only tools are callable by the embedded UI and **excluded from
-  the model's `tools/list`** (the mechanism behind `workflow.http`).
+  the model's `tools/list`** (the mechanism behind the step view's own `workflow.stepView`
+  / `.submit` / `.annotate` / `.pipeline` tools; `workflow.http` was never built — 09-04).
 - Sandbox: iframe `allow-scripts allow-same-origin` on a host-controlled origin; CSP built
   from `_meta.ui.csp` (`connectDomains`, `resourceDomains`, …); the default is fully locked
   down (inline everything, no network). Web hosts use a double-iframe sandbox proxy.
@@ -160,13 +162,18 @@ native API is absent. Contract test = a headless walk driving a full `hello` run
   endpoint, a `/_bffless/*` surface, or a merge with CE's platform-admin MCP server.
 - Resources: `ui://bffless/<impl>/islands/<name>.html` ← `/w/<impl>/islands/<name>.html`
   (islands run unchanged — the 04 sandbox contract *is* the agent-host contract), and
-  `ui://bffless/workflow/run.html` (below). `_meta.ui.csp.connectDomains` = app domain +
-  storage origin, derived per instance (catalog app stays instance-agnostic).
+  ~~`ui://bffless/workflow/run.html` (below)~~ — shipped instead as
+  `ui://bffless/workflow/step-view.<rev>.html` (Layer 2b below, withdrawn 2026-09-04).
+  `_meta.ui.csp.connectDomains` = app domain + storage origin, derived per instance
+  (catalog app stays instance-agnostic).
 - Island bridge calls (`workflow.submit`/`annotate`/`sign`, impl pipeline tools) are served
   as `visibility: ["app"]` tools; the own-implementation fence holds server-side exactly as
   in `island.ts` on the page.
 
 ### Layer 2b — the run view
+
+**Withdrawn 2026-09-04** — see spec 10 §Islands and forms inside an agent host and
+ADR-0005's amendment; kept for the record.
 
 Second Vite entry bundling the run engine + store + middleware + `IslandHost`; no router,
 no shell, no graph, no network of its own. **Layout is a vertical job/step accordion**
@@ -213,9 +220,10 @@ serve *that island* as `workflow.submitStep`'s UI — the Phase-2 demonstrator.
    declare `requiredScopes` in rules-as-code; sessions pass every scope check (a person is
    not a delegation); tokens must carry the scope. The catalog owns the tool→scope map
    (`read`: list/describe/status/await/runs/outputs · `run`: start/submitStep/cancel/resume
-   · `files`: sign) so consent and `tools/list` agree; `workflow.http` has no scope of its
-   own — path-fenced, it inherits the reached rule's `requiredScopes`, so a read-only token
-   can't drive a run through the run view.
+   · `files`: sign) so consent and `tools/list` agree; an app-only tool that reached a
+   harness rule would inherit that rule's `requiredScopes` (the fence is the rule's) — none
+   exists (`workflow.http` was withdrawn 2026-09-04); the step view's tools each declare
+   their own scope.
 3. **OAuth 2.1 (CE)** — DCR + PKCE + RFC 9728/8707; the access token *is* an app token;
    SuperTokens OAuth2-provider recipe vs built-in decided by an in-story spike. The app
    ships `/.well-known/oauth-protected-resource` **as a rule** pointing at CE's
@@ -249,10 +257,10 @@ are filed when Phase 3 starts.
 | 7 | (CE) App tokens: scoped user-bound bearers, `auth_required` resolution **incl. per-rule `requiredScopes` enforcement** (sessions unscoped; effective = member ∩ token), **visibility-gate acceptance of Bearer tokens + a served-despite-visibility mechanism for `.well-known`**, mint/revoke + admin UI; apps follow-ups: `requiredScopes` on the workflow rules, driver may use an app token instead of relay login | ce |
 | 8 | (CE) Generic `mcp_handler` pipeline handler; workflow's `/api/workflow/mcp` rule swaps from function_handler guts to it | ce |
 | 9 | (CE) OAuth 2.1: DCR, PKCE, RFC 9728/8707, access token = app token; SuperTokens-provider-vs-built-in spike inside the story; app ships its `.well-known` rule | ce |
-| **Phase 4 — the run view** · *gate: a full `hello` run started, driven and island-completed entirely inside claude.ai; workflow-live walk green* |||
-| 10 | Run-view bundle: second Vite entry, vertical job/step accordion layout (no graph), store + middleware + `IslandHost` over `HttpJson`-on-`callServerTool('workflow.http')` | apps |
-| 11 | Server wiring: `start`/`resume` link the run view; app-only path-fenced `workflow.http`; connectDomains for storage; lease/take-over from the view | apps |
-| 12 | M5 closeout: Claude-path live verification (headless where possible, scripted-manual checklist where not); docs (`writing-an-implementation.md` — what implementations get for free in Claude; 00-overview M5 done-block); file deferred-item issues | apps |
+| **Phase 4 — ~~the run view~~ forms in the step view** · *gate: ~~a full `hello` run started, driven and island-completed entirely inside claude.ai; workflow-live walk green~~ **an island and a form completed in claude.ai; `mcp-app` green on scratch and the private host*** |||
+| 10 | ~~Run-view bundle: second Vite entry, vertical job/step accordion layout (no graph), store + middleware + `IslandHost` over `HttpJson`-on-`callServerTool('workflow.http')`~~ **the step view completes forms** (apps#591) | apps |
+| 11 | ~~Server wiring: `start`/`resume` link the run view; app-only path-fenced `workflow.http`; connectDomains for storage; lease/take-over from the view~~ **#587 hashed URIs + #586 `mcp-app` walk** | apps |
+| 12 | ~~M5 closeout: Claude-path live verification (headless where possible, scripted-manual checklist where not); docs (`writing-an-implementation.md` — what implementations get for free in Claude; 00-overview M5 done-block); file deferred-item issues~~ **closeout; gate: an island and a form completed in claude.ai; `mcp-app` green on scratch and the private host** | apps |
 
 Deferred, explicitly: per-workflow generated tools; dynamic island tools on the page
 (`toolchange`); server-side driver / `on.schedule`; double-iframe CSP; wiring

@@ -23,7 +23,7 @@ export {
   type WorkflowListing,
 } from './discover.js'
 export { DriverError, EXIT, type ExitCode } from './errors.js'
-export { loginViaRelay, type Credentials } from './login.js'
+export { loginUrl, loginViaRelay, type Credentials } from './login.js'
 export {
   formatTransition,
   readGlobal,
@@ -35,6 +35,17 @@ export {
   type WatchOptions,
 } from './observe.js'
 export type { BrowserLike, ConsoleMessageLike, PageLike } from './page.js'
+export {
+  PageToolError,
+  WORKFLOW_PAGE_TOOLS,
+  callPageTool,
+  canonicalPageToolName,
+  listPageTools,
+  resultText,
+  waitForPageTools,
+  type PageToolInfo,
+  type PageToolResult,
+} from './pageTools.js'
 export {
   encodeInputs,
   runWorkflow,

@@ -15,6 +15,10 @@ jobs:
         with: { node-version: '20', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-lint build
+      # The agent tool catalog the harness imports (spec 10, apps#554) — built
+      # before the app for the same reason workflow-lint is: `tsc -b` resolves
+      # it from dist/. Keep in step with workflow-app.yml.
+      - run: pnpm --filter @bffless/workflow-agent-tools build
       # Same order as workflow-app.yml, so the harness deployed here is the
       # artefact CI tested: the MSW mock inlines `hello-dist/islands/*.html`
       # through an `import.meta.glob` at build time (mocks-only chunk, loaded

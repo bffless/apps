@@ -24,6 +24,20 @@ import type { InputDef } from '@bffless/workflow-lint/definition'
 import { validateInputConstraints } from './runner/inputConstraints'
 import { validateValue } from './runner/outputs'
 
+/**
+ * The four ways a start can be refused before any input is looked at (07's
+ * table, rows 3–6), keyed as `window.__workflow.errors` keys them. One
+ * spelling, exported: the kickoff page renders these, `?auto=1` publishes
+ * them, and `workflow.start` (spec 10) answers with them — "verbatim" is a
+ * property of the code, not of a copy.
+ */
+export const START_REFUSALS = {
+  discovery: 'The implementations could not be listed',
+  noWorkflow: 'No implementation here publishes that workflow',
+  fileUnreadable: "This workflow's file could not be fetched",
+  doesNotLint: 'This workflow does not validate, so it cannot be run',
+} as const
+
 export type DecodedInputs =
   | { ok: true; values: Record<string, unknown> }
   | { ok: false; error: string }

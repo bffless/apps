@@ -12,7 +12,7 @@ describe('parseWalkArgs', () => {
   })
   it('reads every flag', () => {
     const a = parseWalkArgs(['walk', 'studio-headless', '--harness', 'https://h.test/', '--out', '/tmp/o', '--dispatch', '--clip', '/c.mp4', '--run', 'run_1', '--timeout', '30m'])
-    expect(a).toEqual({ walk: 'studio-headless', harness: 'https://h.test', out: '/tmp/o', dispatch: true, clip: '/c.mp4', run: 'run_1', timeoutMs: 30 * 60_000 })
+    expect(a).toEqual({ walk: 'studio-headless', harness: 'https://h.test', out: '/tmp/o', dispatch: true, clip: '/c.mp4', run: 'run_1', parkOnly: false, timeoutMs: 30 * 60_000 })
   })
   it('rejects a missing walk name, an unknown flag and a non-walk command', () => {
     expect(() => parseWalkArgs(['walk'])).toThrow(UsageError)
@@ -42,5 +42,13 @@ describe('parseWalkArgs', () => {
     let err: unknown
     try { parseWalkArgs(['runs']) } catch (e) { err = e }
     expect((err as Error).name).toBe('UsageError')
+  })
+})
+
+describe('--park-only', () => {
+  it('parks and stops (the mcp walk hands a fresh run to an agent host)', async () => {
+    const { parseWalkArgs } = await import('../src/args.js')
+    expect(parseWalkArgs(['walk', 'mcp', '--park-only']).parkOnly).toBe(true)
+    expect(parseWalkArgs(['walk', 'mcp']).parkOnly).toBe(false)
   })
 })

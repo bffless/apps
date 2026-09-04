@@ -1,0 +1,111 @@
+# The M2 test implementation's second workflow: `workflow-hello`, alias `hello`.
+# It grows one phase at a time so every push-to-main deploy stays runnable live
+# (Decision 3): Phase 1 = island step + `render: island` viewer; Phase 2 adds a
+# script job; Phase 3 adds form upgrades and the named renderers.
+
+spec: 1
+name: Interactive hello
+description: Exercises every interactive feature of the harness (M2) — grows per phase.
+
+on:
+  manual:
+    inputs:
+      greeting: { type: string, default: "Hello", required: true }
+      names:    { type: choice, options: [world, studio, reader], list: true, default: [world, studio] }
+
+jobs:
+  greet:
+    strategy: { matrix: { who: "${{ inputs.names }}" } }
+    steps:
+      - id: say
+        uses: pipeline
+        with: { path: echo, body: { text: "${{ inputs.greeting }}, ${{ matrix.who }}!" } }
+        outputs: { line: { type: string, value: "${{ response.text }}" } }
+    outputs: { lines: "${{ steps.say.outputs.line }}" }
+
+  analyze:
+    needs: greet
+    steps:
+      - id: run
+        uses: pipeline
+        with: { path: analyze, body: { lines: "${{ needs.greet.outputs.lines }}" } }
+        outputs:
+          words:   { type: json, value: "${{ response.words }}", render: transcript }
+          counts:  { type: table, value: "${{ response.counts }}", render: chart, mapping: { x: line, y: chars, kind: bar }, columns: [{key: line}, {key: chars, type: number}] }
+          snippet: { type: string, value: "${{ response.snippet }}", render: code, mapping: { language: javascript } }
+          longest: { type: string, value: "${{ response.longest }}" }
+    outputs: { words: "${{ steps.run.outputs.words }}", counts: "${{ steps.run.outputs.counts }}", snippet: "${{ steps.run.outputs.snippet }}" }
+
+  pick:
+    needs: [greet, analyze]
+    steps:
+      - id: choose
+        uses: island
+        with:
+          src: islands/pick-line.html
+          title: Pick the best line
+          display: inline
+          lines: ${{ needs.greet.outputs.lines }}
+          words: ${{ needs.analyze.outputs.words }}
+        outputs:
+          line:  { type: string, required: true }
+          index: { type: number }
+        headless: auto
+        summary: "Picked **${{ steps.choose.outputs.line }}** (#${{ steps.choose.outputs.index }})"
+    outputs:
+      line:  ${{ steps.choose.outputs.line }}
+      view:  { type: json, value: "${{ steps.choose.outputs }}", render: island, src: islands/line-viewer.html }
+
+  card:
+    needs: [pick, analyze]
+    steps:
+      - id: draw
+        uses: script
+        with:
+          src: scripts/poster-card.js
+          line: ${{ needs.pick.outputs.line }}
+          counts: ${{ needs.analyze.outputs.counts }}
+        outputs:
+          poster: { type: file }              # an SVG Blob → File ref
+          # The same poster, as a one-item list: what `render: images` draws a
+          # grid from, and the options list the `review` form picks a tile out of.
+          posters: { type: file, list: true, render: images }
+          big:    { type: json }              # ~400 KB array → exercises {"$file"} (Task 12)
+        summary: "Card **${{ steps.draw.outputs.poster.name }}** (${{ steps.draw.outputs.poster.size }} bytes)"
+    outputs:
+      poster: ${{ steps.draw.outputs.poster }}
+      posters: ${{ steps.draw.outputs.posters }}
+      # Task 10 / `workflow.sign` proof: the same poster File ref, viewed
+      # through a sandboxed island. The island has no cookie, so it must
+      # exchange the ref's `path` for a presigned URL over the host tool
+      # rather than pointing an <img> straight at the deployment.
+      poster_view: { type: json, value: "${{ steps.draw.outputs.poster }}", render: island, src: islands/line-viewer.html }
+
+  review:
+    needs: [card, pick]
+    steps:
+      - id: confirm
+        uses: form
+        with:
+          title: Review the card
+          fields:
+            # 02's File-ref shorthand: an `options` list of File refs renders as
+            # a tile picker; a tile is *picked* by its ref's `path`, and the
+            # field's output is the ref itself.
+            cover: { type: choice, options: "${{ needs.card.outputs.posters }}", required: true }
+            notes: { type: markdown, default: "## Notes\n\n${{ needs.pick.outputs.line }}" }   # live preview
+            extra: { type: file, accept: "image/*" }                                          # mid-run upload (scope `inputs`)
+          submit: Approve
+        headless: { mode: skip, outputs: { cover: "${{ needs.card.outputs.posters[0] }}", notes: "", extra: null } }
+    outputs:
+      # The ref the form recorded, passed through whole (an exact expression
+      # keeps its type, 01), so the run-level `cover` carries name, size,
+      # content type and url — not just a path.
+      cover: { type: file, value: "${{ steps.confirm.outputs.cover }}" }
+
+outputs:
+  line: ${{ jobs.pick.outputs.line }}
+  view: ${{ jobs.pick.outputs.view }}
+  poster: ${{ jobs.card.outputs.poster }}
+  poster_view: ${{ jobs.card.outputs.poster_view }}
+  cover: ${{ jobs.review.outputs.cover }}

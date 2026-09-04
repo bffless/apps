@@ -1,0 +1,21 @@
+pathPattern: /.well-known/oauth-protected-resource*
+targetUrl: pipeline
+order: 32
+bypassVisibility: true
+pipeline:
+  name: OAuth protected-resource metadata
+  description: "RFC 9728: the document an MCP client reads before it has any credential — so it is served despite deployment visibility (bypassVisibility, CE ≥ the Phase-3 story-7 release; spec 10, D23 rung 3). Names this host's endpoint as the resource, CE's authorization server on admin.<domain>, and the catalog's scopes; every URL is derived from the request (no instance baked in). Matches the path-suffixed form a client tries first (…/oauth-protected-resource/api/workflow/mcp) too. Replaces the Phase-2 404 rule."
+  steps:
+    - id: doc
+      name: doc
+      handler: function_handler
+      code: ../../../mcp-fn/wellKnown.fn.js
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: "{{{steps.doc.json}}}"
+        status: 200
+        headers: { Cache-Control: "public, max-age=300" }
+        contentType: application/json
+description: "OAuth discovery for the MCP endpoint (RFC 9728), pre-credential by definition — served despite visibility."
