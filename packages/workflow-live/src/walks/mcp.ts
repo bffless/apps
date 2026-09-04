@@ -20,11 +20,11 @@
  * stable — the 24 Phase-2 checks are unchanged.
  */
 import { CATALOG } from '@bffless/workflow-agent-tools'
-import { callPageTool, waitForPageTools } from '@bffless/workflow-headless'
 import { writeFile } from 'node:fs/promises'
 import { adminKey, appToken, credentials } from '../env.js'
 import { STEP_VIEW_URI_PATTERN, cspOf, originOf, stepViewUriOf, toolParity, type ListedTool } from '../mcp-checks.js'
 import { openMcp, rawGet, rawPost } from '../mcp-client.js'
+import { ISLAND_STEP as STEP, parkHelloRun } from '../park.js'
 import { openSession, type Session } from '../session.js'
 import { mintAppToken, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
@@ -191,41 +191,20 @@ export const mcp: Walk = async ({ args, env, report }) => {
     // =====================================================================
     // Story 6 — an island completed from outside the harness page
     // =====================================================================
-    const STEP = 'pick/0/choose'
     let parked = args.run
     if (!parked) {
       const s = browser
       if (!s) return report.block('no browser session to park a run with')
-      try {
-        await waitForPageTools(s.page, { timeoutMs: 30_000 })
-        const started = await callPageTool(s.page, 'workflow.start', { impl: 'hello', workflow: 'interactive', inputs: { greeting: 'Hello', names: ['world', 'studio'] } })
-        const waiting = await callPageTool(s.page, 'workflow.await', { until: 'waiting', timeoutMs: 120_000 })
-        const waitingOn = ((waiting.structuredContent ?? {}) as { waitingOn?: Array<{ key: string; kind: string }> }).waitingOn ?? []
-        parked = String(((started.structuredContent ?? {}) as { runId?: string }).runId ?? '')
-        // The page answers `await` from its store; the `waiting` row lands a
-        // beat later (the middleware's run-step upsert). The endpoint reads rows,
-        // so the browser stays open until the row says what the page says.
-        let rowStatus = ''
-        const rowStart = Date.now()
-        while (parked !== '' && Date.now() - rowStart < 30_000 && rowStatus !== 'waiting') {
-          const record = await s.api.json(`/api/workflow/run?id=${encodeURIComponent(parked)}`)
-          const rows = ((record.body as { steps?: Array<Record<string, unknown>> } | null)?.steps ?? []).map((r) => (r.fields && typeof r.fields === 'object' ? (r.fields as Record<string, unknown>) : r))
-          rowStatus = String(rows.find((r) => r.key === STEP)?.status ?? '')
-          if (rowStatus !== 'waiting') await new Promise((resolve) => setTimeout(resolve, 1_000))
-        }
-        report.expect('spec10.parkIsland', !started.isError && !waiting.isError && parked !== '' && waitingOn[0]?.key === STEP && waitingOn[0].kind === 'island' && rowStatus === 'waiting', {
-          runId: parked,
-          waitingOn,
-          rowStatus,
-          rowWaitMs: Date.now() - rowStart,
-        })
-        await s.shot('01-parked')
-      } finally {
-        await s.close() // the driver goes away; the lease lapses within 60 s
-        browser = null
-      }
+      const p = await parkHelloRun(s, 'island', say)
+      browser = null
+      parked = p.runId
+      report.expect('spec10.parkIsland', p.startedOk && p.waitingOk && parked !== '' && p.waitingOn[0]?.key === STEP && p.waitingOn[0].kind === 'island' && p.rowStatus === 'waiting', {
+        runId: parked,
+        waitingOn: p.waitingOn,
+        rowStatus: p.rowStatus,
+        rowWaitMs: p.rowWaitMs,
+      })
       if (parked === '') return report.block('no run was parked')
-      say(`parked ${parked} on ${STEP}`)
       if (args.parkOnly) {
         report.note(`parked run ${parked}, waiting on ${STEP} — hand it to the agent host`)
         console.log(`parked ${parked}`)
