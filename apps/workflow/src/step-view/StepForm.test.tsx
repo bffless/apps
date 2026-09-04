@@ -62,4 +62,16 @@ describe('StepForm', () => {
     // A stale `done` (or a carried-over blank `cover`) would leave this disabled; a fresh mount off the new `initial` does not.
     expect(screen.getByRole('button', { name: 'Approve' })).not.toBeDisabled()
   })
+
+  it('submits from the button’s click, not from a native form submission (a sandboxed host without allow-forms never fires submit)', async () => {
+    const onSubmit = vi.fn(async () => ({ ok: true as const }))
+    renderForm(onSubmit)
+    fireEvent.click(screen.getAllByTestId('tile')[0]!)
+    const form = screen.getByTestId('form-step')
+    fireEvent.submit(form) // what a sandboxed frame would never deliver — and what the harness must not depend on
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('form-step-submit'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('form-step-submit')).toHaveAttribute('type', 'button')
+  })
 })

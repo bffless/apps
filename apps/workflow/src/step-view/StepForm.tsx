@@ -7,9 +7,13 @@
  * is the authority, and its per-field refusals land under the fields. Files
  * cannot be attached from a sandboxed origin, so the file control's upload
  * refuses with a message that says where to attach one.
+ *
+ * Submit is a button click, never a native form submission: a sandboxed host
+ * frame without `allow-forms` (claude.ai's is `allow-scripts allow-same-origin`)
+ * returns from the submission algorithm before the `submit` event fires, so a
+ * `<form onSubmit>` would silently do nothing there.
  */
 import { useState } from 'react'
-import type { FormEvent } from 'react'
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import { FieldControl } from '../components/kickoff/FieldControl'
 import type { SubmitAnswer } from '../islands/IslandHost'
@@ -46,8 +50,13 @@ export function StepForm({ title, description, submitLabel, fields, initial, onS
     })
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  const missingRequired = names.some((name) => {
+    const def = fields[name]!
+    return def.required === true && blank(values[name] ?? null, def.list === true)
+  })
+
+  async function submit(): Promise<void> {
+    if (pending || done || missingRequired) return
     setPending(true)
     try {
       const answer = await onSubmit(values)
@@ -62,13 +71,19 @@ export function StepForm({ title, description, submitLabel, fields, initial, onS
     }
   }
 
-  const missingRequired = names.some((name) => {
-    const def = fields[name]!
-    return def.required === true && blank(values[name] ?? null, def.list === true)
-  })
-
   return (
-    <form className="form step-form" data-testid="form-step" onSubmit={(e) => void handleSubmit(e)} noValidate>
+    <form
+      className="form step-form"
+      data-testid="form-step"
+      onSubmit={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+          e.preventDefault()
+          void submit()
+        }
+      }}
+      noValidate
+    >
       <h2 className="graph-panel-title">{title}</h2>
       {description && <p className="field-description">{description}</p>}
       {names.length === 0 && <p className="note">This step declares no fields.</p>}
@@ -80,7 +95,7 @@ export function StepForm({ title, description, submitLabel, fields, initial, onS
           {errors.values}
         </p>
       )}
-      <button type="submit" data-testid="form-step-submit" disabled={pending || done || missingRequired}>
+      <button type="button" data-testid="form-step-submit" disabled={pending || done || missingRequired} onClick={() => void submit()}>
         {submitLabel}
       </button>
     </form>
