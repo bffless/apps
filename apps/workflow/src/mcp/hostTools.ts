@@ -22,7 +22,7 @@ import type { JsonSchema, Scope } from '@bffless/workflow-agent-tools'
 export const SERVER_VERSION = '1.0.0'
 
 /** The engine-less host page that mounts a waiting island inside an agent host (plan Decision 3). */
-export const STEP_VIEW_URI = 'ui://bffless/workflow/step.html'
+export const STEP_VIEW_URI = 'ui://bffless/workflow/step-view.html'
 
 /** Every ui:// resource's MIME type (MCP Apps, `io.modelcontextprotocol/ui`). */
 export const RESOURCE_MIME = 'text/html;profile=mcp-app'

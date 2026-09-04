@@ -30,8 +30,8 @@ import { stringify } from 'yaml'
 const app = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SET = join(app, '.bffless/proxy-rules/workflow')
 
-/** One entry per function step shared by the tool rules. */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply']
+/** One entry per function step shared by the tool rules, plus the RFC 9728 document (`wellKnown`, one rule). */
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'wellKnown']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 
@@ -223,7 +223,7 @@ export async function renderedRules() {
         order: 41,
         pipeline: {
           name: 'MCP step view resource',
-          description: 'The step view (ui://bffless/workflow/step.html, spec 10): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it.',
+          description: 'The step view (ui://bffless/workflow/step-view.html, spec 10): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it.',
           steps: [
             defs.route,
             { id: 'stepView', name: 'stepView', handler: 'http_request', config: { condition: 'steps.route.isStepView', url: 'steps.route.stepViewUrl', method: 'GET', headers: { 'x-original-uri': 'steps.route.stepViewPath', 'x-forwarded-host': 'steps.route.host' }, forwardAuth: true, failOnError: false } },
