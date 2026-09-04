@@ -154,4 +154,34 @@ describe('signFormPreviews', () => {
     expect(calls.map((c) => c.arguments)).toEqual([{ runId: 'run_1', path: 'workflows/x/a.svg' }, { runId: 'run_1', path: 'workflows/x/b.svg' }])
     expect(view.fields.cover).not.toBe(out.view.fields.cover) // the input view is untouched
   })
+
+  it("signs a `file` field's prefilled File ref, keeps path, and leaves the input view's initial untouched", async () => {
+    const a = { path: 'workflows/x/a.svg', name: 'a.svg', contentType: 'image/svg+xml', size: 1, url: '/api/uploads/workflows/x/a.svg' }
+    const view = readStepView(
+      ok({ ...FORM_VIEW, fields: { extra: { type: 'file' }, notes: { type: 'markdown' } }, initial: { extra: a, notes: 'n' } }),
+    )
+    if (view.kind !== 'form') throw new Error('not a form')
+    const { call, calls } = recorder({ 'workflow.sign': (args) => ok({ url: `https://s/${String(args.path)}?sig=1`, expiresIn: 3600 }) })
+    const out = await signFormPreviews(call, view)
+    expect(out.view.initial).toEqual({ extra: { ...a, url: 'https://s/workflows/x/a.svg?sig=1' }, notes: 'n' })
+    expect(out.signed).toEqual(['https://s/workflows/x/a.svg?sig=1'])
+    expect(calls.map((c) => c.arguments)).toEqual([{ runId: 'run_1', path: 'workflows/x/a.svg' }])
+    expect(view.initial).not.toBe(out.view.initial) // the input view is untouched
+    expect(view.initial.extra).toBe(a) // and its own ref is not mutated in place
+  })
+
+  it("signs each ref of a `list: true` file field's prefilled value, leaving a refused one alone", async () => {
+    const a = { path: 'workflows/x/a.svg', name: 'a.svg', contentType: 'image/svg+xml', size: 1, url: '/api/uploads/workflows/x/a.svg' }
+    const b = { ...a, path: 'workflows/x/b.svg', name: 'b.svg', url: '/api/uploads/workflows/x/b.svg' }
+    const view = readStepView(
+      ok({ ...FORM_VIEW, fields: { extra: { type: 'file', list: true }, notes: { type: 'markdown' } }, initial: { extra: [a, b], notes: 'n' } }),
+    )
+    if (view.kind !== 'form') throw new Error('not a form')
+    const { call } = recorder({
+      'workflow.sign': (args) => (args.path === 'workflows/x/b.svg' ? refused('nope') : ok({ url: `https://s/${String(args.path)}?sig=1`, expiresIn: 3600 })),
+    })
+    const out = await signFormPreviews(call, view)
+    expect(out.view.initial.extra).toEqual([{ ...a, url: 'https://s/workflows/x/a.svg?sig=1' }, b])
+    expect(out.signed).toEqual(['https://s/workflows/x/a.svg?sig=1'])
+  })
 })

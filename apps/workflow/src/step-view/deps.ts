@@ -119,16 +119,21 @@ async function signRef(call: ServerCall, runId: string, ref: FileRef): Promise<s
 }
 
 /**
- * Task 3c (spec 10 D6): a form's File-ref options carry the harness page's
+ * Task 3c (spec 10 D6): a form's File-ref previews carry the harness page's
  * ordinary `url` — same-origin relative to *that* page — which resolves
  * against the wrong origin and carries no cookie inside an agent host's
  * sandbox. `main.tsx` calls this before rendering the form, re-pointing every
- * File-ref option (and File-ref `preview`) at a presigned GET the sandbox may
- * load; `path` is untouched, since it — not `url` — is the value a tile
- * submits. Signing is sequential on purpose: a form has a handful of options
- * and the bridge is one channel. A refused sign leaves that option exactly as
- * it was, so a broken preview degrades to whatever the page already renders
- * for an unloadable url rather than failing the whole form.
+ * File-ref preview at a presigned GET the sandbox may load: a `choice`
+ * field's File-ref `options` entries, a File-ref `options` entry's `preview`,
+ * and — Task 3c fix round 1 — a `file` field's own prefilled File ref(s) in
+ * `initial` (e.g. a `default` pointing at an upstream output), one per
+ * element when `list: true`. `path` is untouched everywhere, since it — not
+ * `url` — is the value a tile or a file field submits. Signing is sequential
+ * on purpose: a form has a handful of previews and the bridge is one channel.
+ * A refused sign leaves that ref exactly as it was, so a broken preview
+ * degrades to whatever the page already renders for an unloadable url rather
+ * than failing the whole form. The input `view` is read only — every
+ * returned collection (`fields`, `initial`) is a fresh object.
  */
 export async function signFormPreviews(call: ServerCall, view: FormStepView): Promise<{ view: FormStepView; signed: string[] }> {
   const signed: string[] = []
@@ -154,7 +159,32 @@ export async function signFormPreviews(call: ServerCall, view: FormStepView): Pr
     }
     fields[name] = { ...field, options } as InputDef
   }
-  return { view: { ...view, fields }, signed }
+
+  const initial: Record<string, unknown> = { ...view.initial }
+  for (const [name, field] of Object.entries(view.fields)) {
+    if (field.type !== 'file') continue
+    const value = view.initial[name]
+    if (field.list === true) {
+      if (!Array.isArray(value)) continue
+      const items: unknown[] = []
+      for (const item of value) {
+        if (!isFileRefLike(item)) {
+          items.push(item)
+          continue
+        }
+        const url = await signRef(call, view.runId, item)
+        if (url) signed.push(url)
+        items.push(url ? { ...item, url } : item)
+      }
+      initial[name] = items
+    } else if (isFileRefLike(value)) {
+      const url = await signRef(call, view.runId, value)
+      if (url) signed.push(url)
+      initial[name] = url ? { ...value, url } : value
+    }
+  }
+
+  return { view: { ...view, fields, initial }, signed }
 }
 
 /** `_meta.bffless.status` of a pipeline answer the endpoint relayed, when it carried one. */

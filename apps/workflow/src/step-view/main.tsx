@@ -84,7 +84,7 @@ app.ontoolinput = ({ arguments: args }) => {
             description={view.description}
             submitLabel={view.submit}
             fields={signedView.fields}
-            initial={view.initial}
+            initial={signedView.initial}
             onSubmit={async (values) => {
               const answer = await submitFormValues(call, view, values)
               if (answer.ok) finished()
