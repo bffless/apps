@@ -15,7 +15,7 @@ import { openEmulatedHost } from '../host-emu.js'
 import { STEP_VIEW_URI_PATTERN, cspOf, stepViewUriOf, type ListedTool } from '../mcp-checks.js'
 import { openMcp } from '../mcp-client.js'
 import { FORM_STEP, ISLAND_STEP, parkHelloRun } from '../park.js'
-import { openSession } from '../session.js'
+import { openSession, type Session } from '../session.js'
 import { mintAppToken, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
@@ -30,9 +30,16 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
   const minted: MintedToken[] = []
   let session: Awaited<ReturnType<typeof openMcp>> | null = null
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null
+  // The one `openSession`-opened Chromium a park is in flight with, closed
+  // unconditionally in the outer `finally` — `parkHelloRun` already closes it
+  // on every path once it is called (own `finally`), but everything between
+  // `openSession` and that call (`s.api.json`, `mintAppToken`) can throw
+  // first, and only this outer-scope handle can catch that (`walks/mcp.ts`'s
+  // `browser: Session | null` is the same guard).
+  let s: Session | null = null
   try {
     // --- sign in, mint the token the host will carry, park a run on its island
-    let s = await openSession({ base: args.harness, out: args.out, credentials: creds })
+    s = await openSession({ base: args.harness, out: args.out, credentials: creds })
     const project = await s.api.json('/api/workflow/project')
     const repository = String((project.body as { repository?: string } | null)?.repository ?? '')
     let token = appToken(env)
@@ -43,11 +50,13 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
     }
     if (args.parkOnly) {
       const p = await parkHelloRun(s, 'form', say)
+      s = null // parkHelloRun closed it
       report.note(`parked run ${p.runId}, waiting on ${p.step} — hand it to the agent host`)
       console.log(`parked ${p.runId}`)
       return
     }
     const island = await parkHelloRun(s, 'island', say)
+    s = null // parkHelloRun closed it
     report.run(island.runId)
     report.expect('D24.parkIsland', island.startedOk && island.waitingOk && island.rowStatus === 'waiting' && island.step === ISLAND_STEP, { runId: island.runId, rowStatus: island.rowStatus, rowWaitMs: island.rowWaitMs })
 
@@ -98,6 +107,7 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
     // --- a second run, parked on its form; the form renders and submits through the bridge
     s = await openSession({ base: args.harness, out: args.out, credentials: creds })
     const form = await parkHelloRun(s, 'form', say)
+    s = null // parkHelloRun closed it
     report.run(form.runId)
     report.expect('D24.parkForm', form.startedOk && form.waitingOk && form.rowStatus === 'waiting' && form.step === FORM_STEP, { runId: form.runId, rowStatus: form.rowStatus, rowWaitMs: form.rowWaitMs })
     await new Promise((resolve) => setTimeout(resolve, 61_000))
@@ -162,6 +172,7 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
     await writeFile(`${args.out}/mcp-app.log`, log.join('\n'), 'utf8').catch(() => undefined)
     await session?.close()
     await browser?.close()
+    await s?.close()
     for (const t of minted) await t.revoke()
   }
 }
