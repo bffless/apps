@@ -175,7 +175,10 @@ The harness page registers its agent tool catalog on `document.modelContext`
 ([spec 10](https://github.com/bffless/apps/blob/main/apps/workflow/docs/spec/10-agent-embedding.md)),
 polyfilled when the browser has no native WebMCP. `listPageTools`,
 `waitForPageTools` and `callPageTool` drive those tools through `page.evaluate`
-— how a walk proves the catalog against a real deployment with no agent host:
+— how a walk proves the catalog against a real deployment with no agent host.
+It is the same catalog the harness serves over its MCP endpoint
+(`POST /api/workflow/mcp`, app-token fronted — `WORKFLOW_APP_TOKEN` above is
+how the driver carries one); the page tools run in the page, with its session:
 
 ```ts
 import { callPageTool, waitForPageTools } from '@bffless/workflow-headless'
