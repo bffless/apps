@@ -75,6 +75,7 @@ app.ontoolinput = ({ arguments: args }) => {
         reactRoot ??= createRoot(formRoot)
         reactRoot.render(
           <StepForm
+            key={`${view.runId}:${view.step}`}
             title={view.title}
             description={view.description}
             submitLabel={view.submit}

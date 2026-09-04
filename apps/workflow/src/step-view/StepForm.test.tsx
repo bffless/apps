@@ -45,4 +45,21 @@ describe('StepForm', () => {
     fireEvent.change(input, { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } })
     await waitFor(() => expect(screen.getByText(/attach this one on the harness page/)).toBeInTheDocument())
   })
+
+  it('remounts fresh on a new key: a second step never inherits the first one’s state (main.tsx keys StepForm per step)', async () => {
+    const onSubmit = vi.fn(async () => ({ ok: true as const }))
+    const { rerender } = render(
+      <StepForm key="run_1:review/0/confirm" title="Step A" submitLabel="Approve" fields={fields} initial={initial} onSubmit={onSubmit} />,
+    )
+    fireEvent.click(screen.getAllByTestId('tile')[0]!)
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()) // submitted; done permanently disables Submit
+
+    rerender(
+      <StepForm key="run_1:review/1/confirm" title="Step B" submitLabel="Approve" fields={fields} initial={{ ...initial, cover: B.path }} onSubmit={onSubmit} />,
+    )
+    expect(screen.getByRole('heading', { name: 'Step B' })).toBeInTheDocument()
+    // A stale `done` (or a carried-over blank `cover`) would leave this disabled; a fresh mount off the new `initial` does not.
+    expect(screen.getByRole('button', { name: 'Approve' })).not.toBeDisabled()
+  })
 })
