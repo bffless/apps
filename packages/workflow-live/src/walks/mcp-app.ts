@@ -9,6 +9,7 @@
  */
 import { writeFile } from 'node:fs/promises'
 import { waitForSealedRecord } from '@bffless/workflow-headless'
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { chromium } from 'playwright'
 import { appToken, credentials } from '../env.js'
 import { openEmulatedHost } from '../host-emu.js'
@@ -21,6 +22,26 @@ import type { Walk } from './index.js'
 
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
 const text = (r: ToolAnswer) => (r.content ?? []).map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
+
+/**
+ * `workflow.status`, polled: the endpoint's own row write lands a beat after
+ * `workflow.submit`/`workflow.submitStep`'s reply (read-after-write lag), so
+ * a single read right after a bridge submit can still see the step
+ * `waiting`. Polls every second until `steps[key] === want` or `timeoutMs`
+ * elapses, returning the last answer either way and how long it took —
+ * the caller's own condition still decides pass/fail, this just gives it a
+ * fresh-enough read to decide against.
+ */
+async function stepStatus(client: Client, runId: string, key: string, want: string, timeoutMs = 15_000): Promise<{ answer: ToolAnswer; waitedMs: number }> {
+  const start = Date.now()
+  for (;;) {
+    const answer = (await client.callTool({ name: 'workflow.status', arguments: { runId } })) as ToolAnswer
+    const steps = (answer.structuredContent as { steps?: Record<string, string> } | undefined)?.steps
+    const waitedMs = Date.now() - start
+    if (steps?.[key] === want || waitedMs >= timeoutMs) return { answer, waitedMs }
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+  }
+}
 
 export const mcpApp: Walk = async ({ args, env, report }) => {
   const log: string[] = []
@@ -100,8 +121,8 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
     await islandFrame.getByTestId('line').first().click()
     await islandFrame.getByTestId('submit').click()
     await view.getByTestId('submitted').waitFor({ state: 'visible', timeout: 30_000 })
-    const afterIsland = (await client.callTool({ name: 'workflow.status', arguments: { runId: island.runId } })) as ToolAnswer
-    report.expect('D24.islandSubmitsThroughBridge', (afterIsland.structuredContent as { steps?: Record<string, string> })?.steps?.[ISLAND_STEP] === 'succeeded', { text: text(afterIsland).slice(0, 200) })
+    const { answer: afterIsland, waitedMs: islandStatusWaitedMs } = await stepStatus(client, island.runId, ISLAND_STEP, 'succeeded')
+    report.expect('D24.islandSubmitsThroughBridge', (afterIsland.structuredContent as { steps?: Record<string, string> })?.steps?.[ISLAND_STEP] === 'succeeded', { text: text(afterIsland).slice(0, 200), waitedMs: islandStatusWaitedMs })
     await page.close()
 
     // --- a second run, parked on its form; the form renders and submits through the bridge
@@ -130,9 +151,9 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
       say(`form-step-submit disabled before click: ${await view2.getByTestId('form-step-submit').isDisabled()}`)
       await view2.getByTestId('form-step-submit').click()
       await view2.getByTestId('submitted').waitFor({ state: 'visible', timeout: 45_000 })
-      const afterForm = (await client.callTool({ name: 'workflow.status', arguments: { runId: form.runId } })) as ToolAnswer
+      const { answer: afterForm, waitedMs: formStatusWaitedMs } = await stepStatus(client, form.runId, FORM_STEP, 'succeeded')
       const formSteps = (afterForm.structuredContent as { steps?: Record<string, string>; status?: string }) ?? {}
-      report.expect('D24.formSubmitsThroughBridge', formSteps.steps?.[FORM_STEP] === 'succeeded' && formSteps.status === 'running', { text: text(afterForm).slice(0, 200) })
+      report.expect('D24.formSubmitsThroughBridge', formSteps.steps?.[FORM_STEP] === 'succeeded' && formSteps.status === 'running', { text: text(afterForm).slice(0, 200), waitedMs: formStatusWaitedMs })
     } catch (e) {
       // Chromium never dispatches the `<form onSubmit>` at all here — the
       // click on the submit button is blocked pre-JS by the sandbox lacking
