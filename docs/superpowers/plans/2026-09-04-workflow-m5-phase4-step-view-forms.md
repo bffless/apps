@@ -88,6 +88,25 @@ docs/superpowers/specs/2026-09-01-workflow-agent-embedding-design.md   §Layer 2
 | Phase gate: island + form completed in claude.ai (screenshots); `mcp-app` green on scratch and `workflow.j5s.dev`; `mcp` 26/26, `oauth` 9/9 | 10, 11, 13 |
 | Story 12: docs, "Phase 4 as shipped", deferred items as issues, #554 ticked, #571 handed over, handoff memory | 12, 13, 14 |
 
+## Phase 4 as shipped (2026-09-04)
+
+Landed on `epic/agent-embedding` as **#590** (this plan), **#591** (story 10 — `feat/m5-step-view-forms`), **#592** (story 11 — `feat/m5-resource-uris`, one PR for #587 + #586, Decision "one story, one PR") and the closeout docs PR (story 12 — `docs/m5-phase4-closeout`, this block). The run view was **not built** (Decision 1); D24 is amended in spec 10, ADR-0005, the design doc and 00-overview.
+
+**Departures from the tasks, all ledgered as rulings:**
+- **Two plan defects in story 10 were found by the checks the phase built, not by reading.** The maintainer's claude.ai check of #591 found the poster tile's image not loading (a File ref's relative `/api/uploads/…` URL resolves against the widget's sandbox origin): fixed as Task 3c — the step view presigns File-ref options *and* a `file` field's prefilled ref through `workflow.sign` (D6), and the three media renderers accept a URL the page signed itself (`lib/url.ts` `isLoadableUrl`/`trustSignedUrl`; `downloadHref` passes a signed URL through). The first live run of the `mcp-app` walk found that the form's **Approve never fired** inside a sandboxed frame — the HTML form-submission algorithm returns before the `submit` event when `allow-forms` is absent (claude.ai's frame is `allow-scripts allow-same-origin`): fixed as Task 3d — `StepForm` submits from a button click (and Enter in a single-line input). Both are on #591.
+- **The `<StepForm>` root is keyed per step** (Task 3 fix round 1 — the plan's snippet would have carried one form's state into the next).
+- **`packages/workflow-agent-tools` and `packages/workflow-live` vitest configs now include `src/**`** — their `src/*.test.ts` files (13 in `mcp-checks.test.ts`) had never run.
+- **`no-restricted-imports` in `apps/workflow/eslint.config.js` admits `lib/runner/adapters/form`** (the one pure module the endpoint's form branch needs); `scripts/build-mcp.d.mts` declares `sourceRev` for `tsc -b`.
+- **Every `src/**` change re-keys the resource URI** (Decision 7), so each rebase of story 11 onto a story-10 fix needed a `mcp:build` + a regeneration commit — two of them on #592 (`rev` ended at `bbbac8d6`).
+- **Story work ran in the controller's worktree, one implementer at a time** — subagents inherit the session's cwd and the worktree guard blocks cross-worktree git (the first implementer committed on the plan branch; moved).
+- **bffless/apps has no automated PR reviewer** (that bot is on bffless/ce) — the "read the automated review comments" steps were dropped.
+- **The `mcp-app` walk asserts the record, not `workflow.status`, after a bridge submit:** on the private host the endpoint's in-process `workflow.status` lagged the durable row by minutes (never on scratch; converged ~30 min later) — recorded as a CE-side observation to file (below). The walk carries `workflow.status`'s view as evidence.
+- **The deferred-item issues were drafted but not filed** in this session: their citations are epic-only and the triage gate checks `origin/main`; file after #571 merges (drafts: server-side driver idea; uploads over the bridge idea; chat-completed step `summary` gap; the status-read lag with evidence).
+
+**Verified.** Scratch host `workflow-mcp.j5s.dev` (story-11 build, deployment 05e54cec): `mcp` 26/26, `oauth` 9/9, `mcp-app` 10/10. Private host `workflow.j5s.dev` (deployed from `feat/m5-resource-uris` by `deploy-workflow` run 33905444844, the person's yes): `mcp` 26/26, `oauth` 9/9, `mcp-app` **10/10** (record-based checks, `/tmp/claude-1000/gate-mcp-app-3/report.md`; an earlier run read 9/10 through `workflow.status` — the lag above). The person's claude.ai half: the checklist on #591 (comment 5544854762) — island and form completed in the chat, screenshots on #591 — pending the person's screenshots when this block was written; tick stories 10–12 on #554 once they are there. `dist/step.html` = 674 KB. Timings: plan 2026-09-04 morning; story 10 PR #591 by 14:30Z; story 11 PR #592 by 17:00Z; private deploy 18:00Z.
+
+**Rulings of note** (the full list is in the session's ledger): scope re-ruled with the maintainer (no run view; "the agent on my app in my domain running it" = WebMCP; server-side driver later); one PR for story 11; `workflow.start`/`resume`/`cancel` stay not served with the refusal pointing at the page; file fields do not upload from a chat.
+
 ---
 
 ### Task 0: the plan PR, the gate reworded on #554

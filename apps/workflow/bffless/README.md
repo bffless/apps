@@ -554,6 +554,24 @@ The redeploy sequence below is unchanged (the set is pushed with `--prune`, so t
 `mcp/post` and `mcp/get` rules leave the instance). The `mcp` walk's 24 Phase-2 checks pass
 **unchanged** against this shape — that was the acceptance test.
 
+### M5 Phase 4 — forms in the step view (2026-09-04)
+
+Nothing to provision — the step view already served islands (Phase 3); story 10 taught it to
+render a waiting **form** step too (`validateFormOutputs` server-side, File-ref previews
+presigned through `workflow.sign`). The resource URI is revisioned,
+`ui://bffless/workflow/step-view.<rev>.html` (apps#587) — `<rev>` is a hash of the step view's
+own sources, so a host that caches a widget's resource per URI (claude.ai does, per connector)
+fetches every deploy fresh; nothing to bump by hand. `start`/`resume`/`cancel` refusals over the
+endpoint now point at the harness page (D24, amended 2026-09-04 — no run engine ships in a
+widget). Verify with the `mcp-app` walk, which drives both step kinds:
+
+```bash
+pnpm workflow-live:walk mcp-app --harness https://workflow.j5s.dev --park-only
+```
+
+parks a run waiting on its form step and prints the run id — the claude.ai part (opening the
+step view, submitting the form) is the person's screenshot step, same as the island half.
+
 ### M5 Phase 2 — the MCP Apps scratch project `bffless/workflow-mcp` (2026-09-02)
 
 The authless MCP endpoint prototype (spec 10, D22–D23 rung 1; apps#554 stories 5–6) runs on
