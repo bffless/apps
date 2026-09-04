@@ -61,7 +61,7 @@ lists the project's aliases and probes `/w/<alias>/.bffless/workflows/index.json
 | Headless | [07-headless.md](07-headless.md) | `?auto=1&inputs=` contract, `window.__workflow`, `headless: skip\|auto`, the Playwright CLI. |
 | Harness UI | [08-harness-ui.md](08-harness-ui.md) | Screens derived from the prototype: implementations, workflow graph, kickoff form, run page with Input/Output panes, past runs. |
 | State management | [09-state-management.md](09-state-management.md) | Redux Toolkit + RTK Query; the run engine as a pure event-sourced reducer (ADR-0003). |
-| Agent embedding | [10-agent-embedding.md](10-agent-embedding.md) | One agent tool catalog, two adapters: WebMCP page tools (`document.modelContext`) and an MCP Apps endpoint shipped as a rule (`POST /api/workflow/mcp`) serving islands + a run view as `ui://` resources; app-token/OAuth auth ladder (ADR-0005). |
+| Agent embedding | [10-agent-embedding.md](10-agent-embedding.md) | One agent tool catalog, two adapters: WebMCP page tools (`document.modelContext`) and an MCP Apps endpoint shipped as a rule (`POST /api/workflow/mcp`) serving islands + the step view as `ui://` resources; app-token/OAuth auth ladder (ADR-0005). |
 | Examples | [`examples/`](examples/) | `hello.workflow.yaml` (M1 test implementation). The reference port, `studio.workflow.yaml`, ships with its implementation: [`workflows/workflow-studio/.bffless/workflows/studio.workflow.yaml` in `bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations/blob/main/workflows/workflow-studio/.bffless/workflows/studio.workflow.yaml). |
 
 ## Milestones
@@ -102,12 +102,15 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
   ADR-0005). Agents drive the harness on a member's behalf: a shared tool catalog
   (`@bffless/workflow-agent-tools`) registered as WebMCP page tools first (session-cookie
   auth, proven by the driver), then an MCP Apps endpoint shipped **as a rule** in the
-  harness rule set — islands render inside claude.ai unchanged, and a bundled run view
-  keeps the browser-drives-runs invariant inside the agent host's iframe. CE contributes
-  generic pieces only: user-bound scoped app tokens, a generic `mcp_handler` pipeline
-  handler, OAuth 2.1. Tracked by the `EPIC: Agent embedding` issue. **Phase 1 (WebMCP)
-  landed on the epic branch 2026-09-02** — `@bffless/workflow-agent-tools` on the release
-  train, all eleven tools on `document.modelContext`, the `page-tools` walk green on j5s.
+  harness rule set — islands render inside claude.ai unchanged, and the step view
+  completes a waiting island or form inside the chat; a widget never carries the engine
+  (D24 amended 2026-09-04). CE contributes generic pieces only: user-bound scoped app
+  tokens, a generic `mcp_handler` pipeline handler, OAuth 2.1. Tracked by the `EPIC:
+  Agent embedding` issue. **Phase 1 (WebMCP) landed on the epic branch 2026-09-02** —
+  `@bffless/workflow-agent-tools` on the release train, all eleven tools on
+  `document.modelContext`, the `page-tools` walk green on j5s. **M5 closed 2026-09-04 on
+  the epic branch** — Phases 1–4; gate: an island and a form completed in claude.ai
+  against the private harness; `mcp` 26/26, `oauth` 9/9, `mcp-app` 10/10.
 
 ## Decisions at a glance
 
@@ -136,7 +139,7 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
 | D21 | WebMCP on the page only: polyfill always, executors drive the store, no pipeline tools on the page | 10 |
 | D22 | The MCP endpoint is a rule in the app's rule set (stateless Streamable HTTP); prototype `function_handler` → generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` | 10, ADR-0005 |
 | D23 | Auth ladder: authless dev prototype (scratch public project) → CE user-bound scoped app tokens → OAuth 2.1 (access token = app token); `.well-known` ships as a rule, served despite deployment visibility; the visibility gate honors app tokens; per-rule `requiredScopes` enforced by `auth_required`, effective permission = member's ∩ token's | 10 |
-| D24 | In agent hosts the run view drives (pure runner + island host as `ui://bffless/workflow/run.html` over app-only `workflow.http`); vertical job/step accordion, no graph; same lease, same rows; server-side driver deferred | 10, ADR-0005 |
+| D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) — a server-side driver is the long-term direction (amended 2026-09-04; the run view of 2026-09-01 was not built) | 10, ADR-0005 |
 
 ## What this is not
 

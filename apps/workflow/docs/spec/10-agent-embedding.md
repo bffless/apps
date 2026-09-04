@@ -150,13 +150,13 @@ implementation's rules plus `workflow.*`, exactly as on the page (04).
 
 **Resources it serves**: `ui://bffless/<impl>/islands/<name>.html`, fetched from
 `/w/<impl>/islands/<name>.html` — the very namespace the page host already resolves (04) —
-and `ui://bffless/workflow/run.html`, the run view below. Each carries
+and `ui://bffless/workflow/step-view.<rev>.html`, the step view below. Each carries
 `_meta.ui` with a generated CSP: `connectDomains` lists the app domain and the storage
 origin only (presigned PUT/GET need direct network; everything else rides the bridge), and
 they are derived from the instance, never hardcoded (the catalog app is instance-agnostic,
 06).
 
-## Islands and the run view inside an agent host
+## Islands and forms inside an agent host
 
 An island file renders in claude.ai unchanged: the host fetches it as a `ui://` resource,
 mounts it in the sandboxed iframe, sends `tool-input`, and proxies its `tools/call` to the
@@ -165,42 +165,44 @@ writes. The sandbox contract islands were held to from day one (opaque origin, n
 everything through the bridge — 04) is exactly the agent-host contract, which is why this
 works without touching a single island.
 
-But a run is more than one island: on the harness page **the browser drives** — the store
-middleware executes pipeline steps, holds the lease, writes transitions (D8, D11). Inside
-an agent host there is no harness page, so the run view restores one (D24):
+**What an agent host is for (D24, amended 2026-09-04):** an MCP app *reports back and takes
+one input*. It never carries the run engine. A run is driven by a browser on the harness
+page — a person, or an agent through the page's own WebMCP tools (D21), which is what
+"the agent on my app, in my domain, running it" means — and, when the platform grows one,
+by a server-side driver (§Later). So over the endpoint `workflow.start`, `resume` and
+`cancel` are listed (D19) but not served: their refusal says where runs are driven.
 
-- `ui://bffless/workflow/run.html` is a second Vite entry — a self-contained build of the
-  run engine and panes: the pure runner (`lib/runner/`), the store and its middleware, the
-  island host; no router, no shell — **and no graph**.
-- **The run view is vertical**: a job/step accordion in dependency order, shaped like a
-  GitHub run detail, not the harness's horizontal DAG. A chat column is narrow, sized by
-  the host, and negotiated by *height* (`ui/notifications/size-changed`); it scrolls
-  vertically, and a horizontally-scrolling diagram inside it is the worst embed there is.
-  Mid-run the questions are progress questions — where is it, what is it waiting on, what
-  did it produce — so topology reads as order and `needs` badges, not geometry. The run
-  rows are the data either way (05, 09); the accordion is a simpler derivation of them
-  than the graph's layout. Sections expand to the same pane components the harness page
-  uses; the section the run is **waiting** on auto-expands (the rule that keeps a headless
-  island on screen, 07), and a collapsed section's header still carries its state — a
-  blocked run is never hidden by a fold. Islands inside a section keep the inline-height
-  cap and the Expand → fullscreen path (04). The graph stays a harness-page surface.
-- Its every HTTP call goes through **one** app-only tool, `workflow.http { path, method,
-  body }` — the `HttpJson` seam the middleware already injects, implemented over
-  `callServerTool`. The endpoint executes it server-side as the member, fenced to the
-  project's `/api/*` paths the page itself may call. `visibility: ["app"]`: the model
-  cannot call it, only the view.
-- `workflow.start` and `workflow.resume` link the view via `_meta.ui.resourceUri`, so
-  starting a run in Claude mounts it in the conversation; islands mount inside it as
-  nested srcdoc iframes under the same `IslandHost`, none the wiser.
-- The invariant survives: the sandboxed iframe **is** a browser, it takes the same 60 s
-  lease and writes the same rows, so a run started in Claude and abandoned there is in the
-  same state as a closed tab — open it on the harness page and Resume, or `workflow.resume`
-  it back into a conversation (05). One engine, one history, no divergence for 07's rules
-  to re-litigate.
+The one surface an agent host renders is the **step view**, `ui://bffless/workflow/step-view.<rev>.html`
+(`<rev>` is a hash of the harness's sources, so a host that caches a widget's resource per
+URI — claude.ai does, per connector — fetches every deploy fresh; apps#587). `workflow.submitStep`
+links it via `_meta.ui.resourceUri`; called with `values: {}` for a waiting step it opens:
 
-A run already waiting on a single island step has a lighter path that needs no engine: the
-endpoint serves *that island* as `workflow.submitStep`'s UI resource and answers its bridge
-directly. That is the Phase-2 demonstrator, and it stays valid at GA.
+- **an island** — mounted inside the view as a nested srcdoc iframe under the same
+  `IslandHost` the harness page uses; its `workflow.submit`/`annotate`/`sign` and its own
+  pipelines ride the outer bridge as the app-only tools `workflow.stepView`, `.submit`,
+  `.annotate`, `.pipeline` (Phase 2 plan, Decision 4); the island cannot tell which host it
+  is in.
+- **a form** — the built-in schema form (03). When a form starts waiting, the harness records
+  its `with` *evaluated against the run* — title, fields with `default`/`options` resolved,
+  the submit label — as the step row's `inputs` (`formInputs`). The endpoint answers exactly
+  those fields; the view draws them with the harness's own `FieldControl`s; Submit sends
+  `workflow.submitStep { values }`, judged by `validateFormOutputs` — the function the page's
+  own form pane runs (D12). Nothing is re-evaluated server-side. A `file` field cannot upload
+  from a sandboxed origin (the bucket's CORS will never list a per-widget host origin) and
+  says so; a required one keeps Submit disabled, and the person finishes that form on the
+  harness page.
+
+The invariant survives: the endpoint takes no lease and seals nothing. A step completed in
+Claude is a row; the run continues when a browser resumes it on the harness page — the same
+rows, one history. A submit is refused while a harness tab still holds the lease (Phase 2
+plan, Decision 7): the widget never races the driver.
+
+**Not built, on purpose:** a *run view* that bundles the runner, the store and the middleware
+into the agent host's iframe and drives the run from there (the D24 of 2026-09-01). The
+2026-09-04 sandbox probe priced it — the iframe's origin is a random per-widget subdomain,
+so every upload, Worker and file read the engine makes on the harness page has to be re-plumbed
+over the bridge — and the person ruled the shape wrong regardless of price: small apps in the
+chat, the engine in the browser today and on the server tomorrow. `workflow.http` goes with it.
 
 ## Auth
 
@@ -230,9 +232,9 @@ member's behalf with. The ladder (D23):
    passes every scope check (a person acting as themselves is not a delegation); a token
    must carry the scope or the call is refused with the missing scope named. The scope
    *vocabulary* is the app's, declared in its own rules — CE only compares strings. The
-   app-only `workflow.http` tool deliberately has no scope of its own: it is path-fenced,
-   so it inherits the `requiredScopes` of whichever rule it reaches — a read-only token
-   cannot drive a run through the run view's back door.
+   app-only tool that reached a harness rule would inherit that rule's `requiredScopes`
+   (the fence is the rule's); none exists — the step view's tools each declare their own
+   scope.
 3. **OAuth 2.1 (CE)** — dynamic client registration, PKCE, RFC 9728 protected-resource
    metadata, RFC 8707 resource indicators; the access token *is* an app token. The app
    ships its `/.well-known/oauth-protected-resource` document **as a rule** pointing at
@@ -271,16 +273,18 @@ session cookie is already on the page.
 | D21 | WebMCP on the page only: polyfill always, executors drive the store and navigate, no pipeline tools on the page, islands never register page tools |
 | D22 | The MCP endpoint is a rule in the app's rule set (`POST /api/workflow/mcp`), stateless Streamable HTTP; prototype `function_handler`, GA a generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` |
 | D23 | Auth ladder: authless dev prototype (scratch public project) → CE user-bound scoped app tokens (Bearer = member, honored by the deployment visibility gate too) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule and must be served despite deployment visibility; per-rule `requiredScopes` enforced by `auth_required` (sessions unscoped, tokens intersect with the member's own permissions), tool→scope map owned by the catalog |
-| D24 | In agent hosts the run view drives: the pure runner + island host bundled as `ui://bffless/workflow/run.html` over an app-only `workflow.http` seam; its layout is a vertical job/step accordion (no graph); same lease, same rows; a server-side driver stays deferred |
+| D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) — a server-side driver is the long-term direction (amended 2026-09-04; the run view of 2026-09-01 was not built) |
 
 ## Later
 
+- **A server-side run driver** — the person's stated long-term direction (2026-09-04):
+  what would make `workflow.start` over the endpoint start a run, and `on.schedule` /
+  `on.webhook` possible; needs its own ADR (a second engine runtime to keep honest,
+  contradicts D11).
 - Per-workflow generated tools on the MCP endpoint (synthesized from `index.json` at
   `tools/list` time), for hosts where ten generic tools read worse than one named verb.
 - Dynamically registering a waiting island's own tools on the WebMCP page while the step
   waits — the `toolchange` use case.
-- A server-side run driver (would unlock `on.schedule` / `on.webhook`; contradicts D11
-  until it earns its own ADR).
 - The web-host double-iframe sandbox proxy + per-island CSP, still gated on third-party
   islands (04).
 - The harness's own run page going vertical below a width breakpoint — the run view's

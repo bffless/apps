@@ -42,3 +42,12 @@ effect and an executor layer but no new state; CE work is sequenced as app token
 driver a real credential); the authless prototype is confined to a dev instance; islands
 run unmodified in agent hosts, and `ui/update-model-context` finally has somewhere to go
 (still a Later item).
+
+**Amendment (2026-09-04, apps#554 Phase 4):** the "bundled run view … the agent host's sandboxed
+iframe is the browser" clause is withdrawn. An MCP app reports and takes one input (the step
+view: islands and forms); it never carries the engine. Runs are driven on the harness page — a
+person, or an agent through WebMCP — and, as the long-term direction, by a server-side driver
+(its own ADR when it comes). Everything else here stands. Reason: the 2026-09-04 sandbox probe
+showed what the engine-in-widget shape would have cost (bridge-relayed uploads, Workers, file
+reads against a per-widget origin), and the maintainer ruled the shape wrong on principle: small
+apps in the chat, the engine in the browser today and on the server tomorrow.

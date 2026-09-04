@@ -322,6 +322,23 @@ as the bundle's root), no SPA fallback. Previews are reachable at
 `https://workflow.<domain>/w/<alias>/…` — their alias is `<impl>-pr-N` — with no domain of
 their own.
 
+## 8. Your workflow inside an agent host
+
+Nothing to add: an implementation's islands and forms already work inside claude.ai (spec 10).
+What a member sees there, once the harness's MCP connector is on:
+
+- the workflow listed and described (`workflow.list`, `workflow.describe`), its runs and their
+  status and outputs;
+- a run waiting on an **island** step: the island, unchanged, in the chat — its pipelines fenced to
+  your implementation exactly as on the page;
+- a run waiting on a **form** step: the form's fields as the page would draw them (defaults and
+  `options` expressions already evaluated), submitted with the same validation. A `file` field
+  cannot be attached from the chat — a required one sends the person back to the harness page.
+
+What the chat does **not** do: start or drive a run. A run is driven by a browser on the harness
+page — the person, or an agent through the page's own tools. Write forms with that in mind: keep
+`file` fields optional where a chat completion should be possible.
+
 ## Checklist
 
 - [ ] every relative `with.path` has a `rules/<path>/<method>/rule.yaml` (prefix-free) —
@@ -333,6 +350,7 @@ their own.
 - [ ] every `island` / `form` step declares `headless:` (or you accept `headlessSafe: false`)
 - [ ] `publish-workflow`'s `repository` input (or `workflow publish`'s `--project`) is right
       for this install (`target-url` only if you are overriding the in-process forwarder)
+- [ ] forms that should complete in a chat have no required `file` field
 
 ## Appendix: hand-authoring reference
 

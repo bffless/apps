@@ -35,9 +35,10 @@ export function scopeOf(name: string): Scope | undefined {
  * (`workflow/runs/post`, `uploads/workflows/[...path]/get`), which is how the
  * rule set's fence test looks a rule up — the rule set declares
  * `requiredScopes: [<this>]` and the fence holds the two equal, so the map and
- * the rules cannot drift. Phase 4's `workflow.http` inherits whichever rule it
- * reaches, which is why every rule is here, `aliases/get` included (a forwarder
- * with no validators: recorded, not enforced).
+ * the rules cannot drift. An app-only tool that reached a rule would inherit
+ * whichever rule it reaches; none exists (Phase 4's `workflow.http` was
+ * withdrawn 2026-09-04), which is why every rule is here anyway, `aliases/get`
+ * included (a forwarder with no validators: recorded, not enforced).
  */
 export const RULE_SCOPES: Readonly<Record<string, Scope>> = {
   'workflow/runs/get': 'workflow:read',
