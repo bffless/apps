@@ -23,14 +23,13 @@ import { CATALOG } from '@bffless/workflow-agent-tools'
 import { callPageTool, waitForPageTools } from '@bffless/workflow-headless'
 import { writeFile } from 'node:fs/promises'
 import { adminKey, appToken, credentials } from '../env.js'
-import { cspOf, originOf, toolParity, type ListedTool } from '../mcp-checks.js'
+import { STEP_VIEW_URI_PATTERN, cspOf, originOf, stepViewUriOf, toolParity, type ListedTool } from '../mcp-checks.js'
 import { openMcp, rawGet, rawPost } from '../mcp-client.js'
 import { openSession, type Session } from '../session.js'
 import { mintAppToken, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const APP_ONLY = ['workflow.submit', 'workflow.annotate', 'workflow.pipeline', 'workflow.stepView']
-const STEP_VIEW_URI = 'ui://bffless/workflow/step-view.html'
 const ISLAND_URI = 'ui://bffless/hello/islands/pick-line.html'
 
 interface ToolAnswer {
@@ -103,13 +102,13 @@ export const mcp: Walk = async ({ args, env, report }) => {
 
     // --- D19: the catalog, byte for byte; the app-only four hidden from the model
     const listed = (await client.listTools()).tools as ListedTool[]
+    const stepViewUri = stepViewUriOf(listed)
     const parity = toolParity(listed, CATALOG)
     report.expect('D19.toolsListParity', parity.length === 0 && listed.length === CATALOG.length + APP_ONLY.length, parity.length ? parity : listed.map((t) => t.name))
     const appOnly = listed.filter((tool) => (tool._meta?.ui?.visibility ?? []).includes('app')).map((tool) => tool.name).sort()
-    const submitStep = listed.find((tool) => tool.name === 'workflow.submitStep')
-    report.expect('spec10.appOnlyHidden', appOnly.join(',') === [...APP_ONLY].sort().join(',') && submitStep?._meta?.ui?.resourceUri === STEP_VIEW_URI, {
+    report.expect('spec10.appOnlyHidden', appOnly.join(',') === [...APP_ONLY].sort().join(',') && STEP_VIEW_URI_PATTERN.test(stepViewUri), {
       appOnly,
-      resourceUri: submitStep?._meta?.ui?.resourceUri,
+      resourceUri: stepViewUri,
     })
 
     // --- Discovery
@@ -182,7 +181,7 @@ export const mcp: Walk = async ({ args, env, report }) => {
       const csp = cspOf(r)
       return r.mimeType === 'text/html;profile=mcp-app' && !!csp && csp.connectDomains[0] === harnessOrigin && csp.connectDomains[1] === storageOrigin && csp.resourceDomains[0] === storageOrigin
     })
-    report.expect('spec10.resourcesList', uris.includes(STEP_VIEW_URI) && uris.includes(ISLAND_URI) && everyCsp, { uris, csp: cspOf(resources[0]), harnessOrigin, storageOrigin })
+    report.expect('spec10.resourcesList', uris.includes(stepViewUri) && uris.includes(ISLAND_URI) && everyCsp, { uris, csp: cspOf(resources[0]), harnessOrigin, storageOrigin })
 
     // --- JSON-RPC: an unknown method is -32601 (the SDK would throw; ask by hand)
     const unknown = await rawPost(session.url, { id: 99, method: 'prompts/list' }, auth)
