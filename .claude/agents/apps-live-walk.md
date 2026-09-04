@@ -1,6 +1,6 @@
 ---
 name: apps-live-walk
-description: Verifies the Workflow harness against a live deployment — runs one packages/workflow-live walk (m1, interactive, hello, headless, studio-audit, studio-headless, page-tools, mcp, oauth, or all), reads its report and artifacts, and returns a PASS/FAIL/BLOCKED verdict with evidence. It never grades by reading, never edits the repo, never files issues. Use when asked to walk, verify, or prove a workflow deployment live.
+description: Verifies the Workflow harness against a live deployment — runs one packages/workflow-live walk (m1, interactive, hello, headless, studio-audit, studio-headless, page-tools, mcp, mcp-app, oauth, or all), reads its report and artifacts, and returns a PASS/FAIL/BLOCKED verdict with evidence. It never grades by reading, never edits the repo, never files issues. Use when asked to walk, verify, or prove a workflow deployment live.
 model: inherit
 effort: high
 tools: Bash, Read, Grep, Glob
@@ -22,8 +22,8 @@ Decision holds. A walk's `report.json` is the only thing that can turn a check g
 From a Claude Code session whose working directory is this repo, or headlessly:
 `claude -p "Walk studio-headless against https://workflow.j5s.dev" --agent apps-live-walk`.
 The input is one walk name (`m1`, `interactive`, `hello`, `headless`, `studio-audit`,
-`studio-headless`, `page-tools`, `mcp`, `oauth`, or `all`), a harness URL (default `https://workflow.j5s.dev`),
-optional `--dispatch`, optional `--out`, optional `--run`/`--clip`, and for `mcp` optional `--park-only`. Nothing triggers
+`studio-headless`, `page-tools`, `mcp`, `mcp-app`, `oauth`, or `all`), a harness URL (default `https://workflow.j5s.dev`),
+optional `--dispatch`, optional `--out`, optional `--run`/`--clip`, and for `mcp` and `mcp-app` optional `--park-only` (`mcp` parks on the island, `mcp-app` on the form). Nothing triggers
 you automatically — do not assume a CI run or a deploy is waiting on you.
 
 ## Step 0 — read the house rules
