@@ -1,7 +1,7 @@
 /**
- * The step view build (spec 10 §Islands and the run view; Phase 2 plan,
- * Decision 3): `step/index.html` → `dist/step.html`, **one self-contained
- * file**. The MCP endpoint serves it as `ui://bffless/workflow/step-view.html`
+ * The step view build (spec 10 §Islands and forms inside an agent host; Phase
+ * 2 plan, Decision 3): `step/index.html` → `dist/step.html`, **one self-contained
+ * file**. The MCP endpoint serves it as `ui://bffless/workflow/step-view.<rev>.html`
  * (`resources/read`), and an agent host mounts it in a sandboxed iframe with a
  * default-deny CSP — so, like an island (04), every byte it needs is inline:
  * `vite-plugin-singlefile`, the same way hello builds its islands. React

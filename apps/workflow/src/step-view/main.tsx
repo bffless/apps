@@ -1,6 +1,7 @@
 /**
- * The step view (spec 10 §Islands and the run view; Phase 2 plan, Decision 3):
- * the engine-less host page an agent host mounts for `workflow.submitStep`.
+ * The step view (spec 10 §Islands and forms inside an agent host; Phase 2
+ * plan, Decision 3): the engine-less host page an agent host mounts for
+ * `workflow.submitStep`.
  *
  * Outward it is an MCP App: the host sends the tool call's arguments —
  * `{ runId, step }` — as `ui/notifications/tool-input`, and every capability
@@ -8,7 +9,10 @@
  * endpoint. Inward it is the harness's `IslandHost`: the waiting island is
  * fetched (through `workflow.stepView`) and mounted, unchanged, in the nested
  * `sandbox="allow-scripts"` srcdoc frame below, under the same bridge the
- * harness page gives it — the mechanism D24's run view will reuse.
+ * harness page gives it — the mechanism the step view's form branch shares
+ * (Phase 4). A `form` answer takes the sibling path one level up: a React
+ * root renders `StepForm` over the endpoint's evaluated fields into
+ * `[data-testid="form"]`, and its submit rides `workflow.submitStep`.
  *
  * Handlers are registered before `connect()` (the host may send `tool-input`
  * the moment the handshake completes). There is no engine here: a submit
@@ -19,7 +23,7 @@ import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { createIslandHost } from '../islands/IslandHost'
 import { StepForm } from './StepForm'
-import { readStepView, signFormPreviews, stepViewDeps, submitFormValues } from './deps'
+import { canonicalizeFileValues, readStepView, signFormPreviews, stepViewDeps, submitFormValues } from './deps'
 import { trustSignedUrl } from '../lib/url'
 import '../index.css'
 
@@ -73,7 +77,7 @@ app.ontoolinput = ({ arguments: args }) => {
         title.textContent = `${view.workflow}: ${view.title}`
         frame.hidden = true
         formRoot.hidden = false
-        const { view: signedView, signed } = await signFormPreviews(call, view)
+        const { view: signedView, signed, canonical } = await signFormPreviews(call, view)
         if (controller.signal.aborted) return
         for (const url of signed) trustSignedUrl(url)
         reactRoot ??= createRoot(formRoot)
@@ -86,7 +90,8 @@ app.ontoolinput = ({ arguments: args }) => {
             fields={signedView.fields}
             initial={signedView.initial}
             onSubmit={async (values) => {
-              const answer = await submitFormValues(call, view, values)
+              const canonicalValues = canonicalizeFileValues(values, signedView.fields, canonical)
+              const answer = await submitFormValues(call, view, canonicalValues)
               if (answer.ok) finished()
               return answer
             }}

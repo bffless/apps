@@ -7101,7 +7101,7 @@ ${lines.join("\n")}`,
     return pipelineResult(answer.body);
   }
   function notServed(tool) {
-    const message = tool === "workflow.await" ? "workflow.await is not served by the MCP endpoint \u2014 a stateless POST cannot wait; poll workflow.status" : `${tool} is not served by the MCP endpoint: runs are driven on the harness page \u2014 by a person, or by an agent through the page\u2019s own workflow.* tools (WebMCP). Ask the person to start it there; then watch it with workflow.status and complete its interactive steps here with workflow.submitStep.`;
+    const message = tool === "workflow.await" ? "workflow.await is not served by the MCP endpoint \u2014 a stateless POST cannot wait; poll workflow.status" : `${tool} is not served by the MCP endpoint: runs are driven on the harness page \u2014 by a person, or by an agent through the page\u2019s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.`;
     return refuse("tool", message);
   }
   function callTool(route, steps) {

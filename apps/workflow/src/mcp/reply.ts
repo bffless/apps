@@ -379,7 +379,7 @@ function notServed(tool: string): CallToolResult {
   const message =
     tool === 'workflow.await'
       ? 'workflow.await is not served by the MCP endpoint — a stateless POST cannot wait; poll workflow.status'
-      : `${tool} is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to start it there; then watch it with workflow.status and complete its interactive steps here with workflow.submitStep.`
+      : `${tool} is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.`
   return refuse('tool', message)
 }
 

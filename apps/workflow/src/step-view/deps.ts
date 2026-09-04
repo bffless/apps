@@ -1,6 +1,6 @@
 /**
- * The step view's bridge (spec 10 §Islands and the run view; Phase 2 plan,
- * Decisions 3–4; Phase 4 plan, Decisions 2–3): how one waiting step's every
+ * The step view's bridge (spec 10 §Islands and forms inside an agent host;
+ * Phase 2 plan, Decisions 3–4; Phase 4 plan, Decisions 2–3): how one waiting step's every
  * capability rides the outer MCP Apps bridge as `tools/call` to the harness's
  * own endpoint.
  *
@@ -134,9 +134,21 @@ async function signRef(call: ServerCall, runId: string, ref: FileRef): Promise<s
  * degrades to whatever the page already renders for an unloadable url rather
  * than failing the whole form. The input `view` is read only — every
  * returned collection (`fields`, `initial`) is a fresh object.
+ *
+ * The `file`-field pass also returns `canonical`: `signed url -> original
+ * url`. A `file` field's value is submitted verbatim (unlike `choice`, which
+ * submits `path`), so a prefilled ref the person never touched would
+ * otherwise ride the presigned GET straight into the step's outputs — an
+ * expiring `storage.googleapis.com/...?X-Goog-Signature=` url, not the file's
+ * real one. `main.tsx`'s submit restores the original before calling
+ * `submitFormValues` (`canonicalizeFileValues` below).
  */
-export async function signFormPreviews(call: ServerCall, view: FormStepView): Promise<{ view: FormStepView; signed: string[] }> {
+export async function signFormPreviews(
+  call: ServerCall,
+  view: FormStepView,
+): Promise<{ view: FormStepView; signed: string[]; canonical: Record<string, string> }> {
   const signed: string[] = []
+  const canonical: Record<string, string> = {}
   const fields: Record<string, InputDef> = {}
   for (const [name, field] of Object.entries(view.fields)) {
     if (!Array.isArray(field.options)) {
@@ -173,18 +185,55 @@ export async function signFormPreviews(call: ServerCall, view: FormStepView): Pr
           continue
         }
         const url = await signRef(call, view.runId, item)
-        if (url) signed.push(url)
+        if (url) {
+          signed.push(url)
+          canonical[url] = item.url
+        }
         items.push(url ? { ...item, url } : item)
       }
       initial[name] = items
     } else if (isFileRefLike(value)) {
       const url = await signRef(call, view.runId, value)
-      if (url) signed.push(url)
+      if (url) {
+        signed.push(url)
+        canonical[url] = value.url
+      }
       initial[name] = url ? { ...value, url } : value
     }
   }
 
-  return { view: { ...view, fields, initial }, signed }
+  return { view: { ...view, fields, initial }, signed, canonical }
+}
+
+/**
+ * The inverse of the `file`-field half of `signFormPreviews`, applied just
+ * before a form submits: for every `file` field's value (single, or each
+ * element when `list: true`) whose `url` is a key of `canonical`, restore the
+ * original `url` — the ref `signFormPreviews` started from — before
+ * `submitFormValues` sends it. A value the person changed (a fresh upload is
+ * refused, so in practice: left untouched or cleared) carries no signed url
+ * and passes through unchanged. Exported so `deps.test.ts` can drive the
+ * restore without a DOM.
+ */
+export function canonicalizeFileValues(
+  values: Record<string, unknown>,
+  fields: Record<string, InputDef>,
+  canonical: Record<string, string>,
+): Record<string, unknown> {
+  if (Object.keys(canonical).length === 0) return values
+  const restoreOne = (v: unknown): unknown => {
+    if (!isFileRefLike(v)) return v
+    const original = canonical[v.url]
+    return original === undefined ? v : { ...v, url: original }
+  }
+
+  const restored: Record<string, unknown> = { ...values }
+  for (const [name, field] of Object.entries(fields)) {
+    if (field.type !== 'file' || !(name in values)) continue
+    const value = values[name]
+    restored[name] = field.list === true && Array.isArray(value) ? value.map(restoreOne) : restoreOne(value)
+  }
+  return restored
 }
 
 /** `_meta.bffless.status` of a pipeline answer the endpoint relayed, when it carried one. */

@@ -243,6 +243,6 @@ describe('workflow.stepView / workflow.pipeline / the write verdict', () => {
     expect(text(status)).toContain(`call workflow.submitStep { runId: "${RUN_ID}", step: "review/0/confirm", values: {} } — the step's form renders in this chat`)
     const start = result(callOf('workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} }), {})
     expect(start.isError).toBe(true)
-    expect(text(start)).toBe('workflow.start is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to start it there; then watch it with workflow.status and complete its interactive steps here with workflow.submitStep.')
+    expect(text(start)).toBe('workflow.start is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.')
   })
 })

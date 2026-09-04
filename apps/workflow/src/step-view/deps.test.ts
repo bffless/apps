@@ -1,7 +1,7 @@
 // @vitest-environment node
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
-import { readStepView, signFormPreviews, stepViewDeps, submitFormValues, type ServerCall, type StepViewData } from './deps'
+import { canonicalizeFileValues, readStepView, signFormPreviews, stepViewDeps, submitFormValues, type ServerCall, type StepViewData } from './deps'
 
 const VIEW: StepViewData = {
   runId: 'run_1',
@@ -165,6 +165,7 @@ describe('signFormPreviews', () => {
     const out = await signFormPreviews(call, view)
     expect(out.view.initial).toEqual({ extra: { ...a, url: 'https://s/workflows/x/a.svg?sig=1' }, notes: 'n' })
     expect(out.signed).toEqual(['https://s/workflows/x/a.svg?sig=1'])
+    expect(out.canonical).toEqual({ 'https://s/workflows/x/a.svg?sig=1': a.url })
     expect(calls.map((c) => c.arguments)).toEqual([{ runId: 'run_1', path: 'workflows/x/a.svg' }])
     expect(view.initial).not.toBe(out.view.initial) // the input view is untouched
     expect(view.initial.extra).toBe(a) // and its own ref is not mutated in place
@@ -183,5 +184,30 @@ describe('signFormPreviews', () => {
     const out = await signFormPreviews(call, view)
     expect(out.view.initial.extra).toEqual([{ ...a, url: 'https://s/workflows/x/a.svg?sig=1' }, b])
     expect(out.signed).toEqual(['https://s/workflows/x/a.svg?sig=1'])
+    expect(out.canonical).toEqual({ 'https://s/workflows/x/a.svg?sig=1': a.url })
+  })
+})
+
+describe('canonicalizeFileValues', () => {
+  it('a prefilled file ref is submitted with its canonical url', async () => {
+    const a = { path: 'workflows/x/a.svg', name: 'a.svg', contentType: 'image/svg+xml', size: 1, url: '/api/uploads/workflows/x/a.svg' }
+    const b = { ...a, path: 'workflows/x/b.svg', name: 'b.svg', url: '/api/uploads/workflows/x/b.svg' }
+    const view = readStepView(
+      ok({ ...FORM_VIEW, fields: { extra: { type: 'file' }, more: { type: 'file', list: true }, notes: { type: 'markdown' } }, initial: { extra: a, more: [b], notes: 'n' } }),
+    )
+    if (view.kind !== 'form') throw new Error('not a form')
+    const { call } = recorder({ 'workflow.sign': (args) => ok({ url: `https://s/${String(args.path)}?sig=1`, expiresIn: 3600 }) })
+    const { view: signedView, canonical } = await signFormPreviews(call, view)
+
+    // The person never touched `extra`/`more` — the values submitted from the view
+    // still carry the presigned urls exactly as `signFormPreviews` left them.
+    const submitted = { extra: signedView.initial.extra, more: signedView.initial.more, notes: 'n' }
+    const restored = canonicalizeFileValues(submitted, signedView.fields, canonical)
+    expect(restored).toEqual({ extra: a, more: [b], notes: 'n' })
+
+    // A field the person cleared, or a non-file field, passes through untouched.
+    expect(canonicalizeFileValues({ extra: null, more: [], notes: 'n' }, signedView.fields, canonical)).toEqual({ extra: null, more: [], notes: 'n' })
+    // No signed urls at all → the input object comes back unchanged (same reference).
+    expect(canonicalizeFileValues(submitted, signedView.fields, {})).toBe(submitted)
   })
 })
