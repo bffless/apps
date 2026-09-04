@@ -165,7 +165,10 @@ process, against a live BFFless instance:
    checked against `--rules`.
 2. **prepare** — an alias-named copy of the rule set is staged under a
    disposable temp dir, plus a generated `/w/<alias>/*` forwarder rule
-   (`forwardCookies: true`, `order: 5`) pointing at the alias served
+   (`forwardCookies: true`, `order: 5`, and a `headerConfig` that forwards
+   `cookie` and `authorization` — the CE backend strips a caller's
+   credential from an in-process sibling call unless the rule lists it, so
+   an app token reaches the alias) pointing at the alias served
    in-process by the CE backend — never written into the source tree.
 3. **rules push** — spawns `npx --yes bffless@0.3.3 rules push` against the
    staged copy, syncing it under `/api/<alias>/` on `--project`.
