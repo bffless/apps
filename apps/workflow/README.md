@@ -17,7 +17,13 @@ writes the run's artifacts down. Its exit code is the contract CI reads.
   [`docs/spec/examples/`](docs/spec/examples/)
 - Decisions: [`docs/adr/`](docs/adr/)
 
-Milestones M0–M4 are in the overview; each gets its own implementation plan and session.
+Milestones M0–M5 are in the overview; each gets its own implementation plan and session.
+M5 — agent embedding — is [`docs/spec/10-agent-embedding.md`](docs/spec/10-agent-embedding.md):
+the page's tool catalog on `document.modelContext` (WebMCP), the same catalog served as an
+MCP endpoint at `POST /api/workflow/mcp` (a rule in the harness's rule set, fronted by app
+tokens), and a waiting island or form completed inside an agent host through the step view
+(`ui://bffless/workflow/step-view.<rev>.html`). Runs are driven on the harness page — a person,
+or an agent through the page tools; an agent host reports back and takes one input.
 
 ## Development
 
