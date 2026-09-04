@@ -12,7 +12,7 @@ import { HOST_TOOLS, HOST_TOOL_SCOPES, STEP_VIEW_URI, SERVER_VERSION, type HostT
 import { RESOURCES_PATH, STEP_VIEW_RESOURCE_PATH, TOOLS_PATH } from './route'
 
 /** The instructions `initialize` answers with — verbatim the prototype's. */
-export const INSTRUCTIONS = `The BFFless Workflow harness: ${CATALOG.length} workflow.* tools to list, describe and watch runs and complete a waiting island step. Pass runId to every run-scoped tool.`
+export const INSTRUCTIONS = `The BFFless Workflow harness: ${CATALOG.length} workflow.* tools to list, describe and watch runs and complete a waiting interactive step (island or form). Pass runId to every run-scoped tool.`
 
 export const SERVER_NAME = 'bffless-workflow'
 
@@ -53,7 +53,7 @@ export function mcpHandlerConfig(): Record<string, unknown> {
         {
           uri: STEP_VIEW_URI,
           name: 'Workflow step view',
-          description: 'Mounts a waiting island step of a run (spec 10).',
+          description: 'Mounts a waiting island or form step of a run (spec 10).',
           rule: { path: STEP_VIEW_RESOURCE_PATH },
         },
       ],

@@ -67,7 +67,7 @@ export default defineConfig([
     // are bundled by scripts/build-mcp.mjs into CE function_handler code that
     // runs in a vm sandbox with no DOM, no store and no fetch. They may import
     // the catalog package, workflow-lint's definition model, `yaml`,
-    // lib/describe, the pure island/declared adapters and the runner types —
+    // lib/describe, the pure island/declared/form adapters and the runner types —
     // never the island host itself (it would drag the ext-apps bridge into the
     // sandbox). Anything React-, Redux- or DOM-shaped would either break the
     // bundle or bloat it.
@@ -82,8 +82,8 @@ export default defineConfig([
             '../islands/*', '../islands/**',
             '../lib/*', '!../lib/describe', '!../lib/runner',
             '../lib/runner/*', '!../lib/runner/adapters', '!../lib/runner/types',
-            '../lib/runner/adapters/*', '!../lib/runner/adapters/island', '!../lib/runner/adapters/declared'],
-            message: 'src/mcp is bundled into a CE function_handler (spec 10, D22): only the catalog package, @bffless/workflow-lint/definition, yaml, lib/describe, lib/runner/{adapters/island,adapters/declared,types} may be imported.' },
+            '../lib/runner/adapters/*', '!../lib/runner/adapters/island', '!../lib/runner/adapters/declared', '!../lib/runner/adapters/form'],
+            message: 'src/mcp is bundled into a CE function_handler (spec 10, D22): only the catalog package, @bffless/workflow-lint/definition, yaml, lib/describe, lib/runner/{adapters/island,adapters/declared,adapters/form,types} may be imported.' },
         ],
       }],
     },

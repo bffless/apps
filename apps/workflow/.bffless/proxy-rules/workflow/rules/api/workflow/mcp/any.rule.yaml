@@ -16,7 +16,7 @@ pipeline:
         serverInfo:
           name: bffless-workflow
           version: 1.0.0
-        instructions: "The BFFless Workflow harness: 11 workflow.* tools to list, describe and watch runs and complete a waiting island step. Pass runId to every run-scoped tool."
+        instructions: "The BFFless Workflow harness: 11 workflow.* tools to list, describe and watch runs and complete a waiting interactive step (island or form). Pass runId to every run-scoped tool."
         tools:
           - name: workflow.list
             description: List the implementations published to this harness and their workflows, each with its `headlessSafe` mark (whether every interactive step declares what to do without a person).
@@ -146,7 +146,7 @@ pipeline:
               path: /api/workflow/mcp-tools/runs
               method: POST
           - name: workflow.submitStep
-            description: "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person’s submit runs; a refusal names each bad value. In an agent host that renders this tool’s UI, call it with `values: {}` for an island step: the step’s own island is shown and the person completes it there — do not invent values for them."
+            description: "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person’s submit runs; a refusal names each bad value. In an agent host that renders this tool’s UI, call it with `values: {}` for an island or form step: the step’s own UI is shown and the person completes it there — do not invent values for them."
             inputSchema:
               type: object
               properties:
@@ -299,7 +299,7 @@ pipeline:
               path: /api/workflow/mcp-tools/pipeline
               method: POST
           - name: workflow.stepView
-            description: "What the step view needs to mount a waiting island: the island HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments), and its declared outputs."
+            description: "What the step view needs to mount a waiting interactive step. An island: its HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments) and its declared outputs. A form: the fields the harness evaluated when the step started waiting, their initial values, the title and the submit label."
             inputSchema:
               type: object
               properties:
@@ -318,7 +318,7 @@ pipeline:
           static:
             - uri: ui://bffless/workflow/step-view.html
               name: Workflow step view
-              description: Mounts a waiting island step of a run (spec 10).
+              description: Mounts a waiting island or form step of a run (spec 10).
               rule:
                 path: /api/workflow/mcp-resources/step-view
           templates:

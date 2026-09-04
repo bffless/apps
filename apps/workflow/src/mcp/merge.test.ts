@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { RUN_ID, runRow, stepRows } from './fixtures/index'
+import { POSTER_A, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
 import { handler as merge } from './merge'
 import { TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
 
@@ -29,11 +29,9 @@ describe('merge: refusals', () => {
     const r = call('workflow.submit', { runId: RUN_ID, step: 'nope/0/x', outputs: {} })
     expect(text(merge({ steps: { route: r, run: run(), steps: stepRows() } }))).toBe('No such step: nope/0/x')
     const done = merge({ steps: { route: call('workflow.submit', { runId: RUN_ID, step: 'greet/0/say', outputs: {} }), run: run(), steps: stepRows() } })
-    expect(text(done)).toBe('greet/0/say is a pipeline step, not an island')
+    expect(text(done)).toBe('greet/0/say is a pipeline step, not an interactive one')
     const rows = stepRows().map((row) => (row.key === STEP ? { ...row, status: 'succeeded' } : row))
     expect(text(merge({ steps: { route: call('workflow.submit', { runId: RUN_ID, step: STEP, outputs: {} }), run: run(), steps: rows } }))).toBe(`${STEP} is succeeded, not waiting`)
-    const form = stepRows().map((row) => (row.key === STEP ? { ...row, kind: 'form' } : row))
-    expect(text(merge({ steps: { route: call('workflow.submit', { runId: RUN_ID, step: STEP, outputs: {} }), run: run(), steps: form } }))).toContain('form steps are not served')
   })
 })
 
@@ -88,5 +86,34 @@ describe('merge: annotate', () => {
     const full = merge({ steps: { route: call('workflow.annotate', { runId: RUN_ID, step: STEP, annotations: [{ level: 'notice', message: 'one more' }] }), run: run(), steps: rows } })
     expect(full.update).toBe(false)
     expect(text(full)).toContain('at most 100')
+  })
+})
+
+describe('merge: form steps (Phase 4, Decisions 2–3)', () => {
+  const FORM = 'review/0/confirm'
+  it('submitStep validates a form with the page’s validateFormOutputs and records the chosen ref, not its path', () => {
+    const m = merge({ steps: { route: call('workflow.submitStep', { runId: RUN_ID, step: FORM, values: { cover: POSTER_A.path, notes: 'ok', extra: null } }), run: run(), steps: formStepRows() } })
+    expect(m.update).toBe(true)
+    expect(m.recordId).toBe('rec_s6')
+    expect(m.fields).toMatchObject({ status: 'succeeded', outputs: { cover: POSTER_A, notes: 'ok', extra: null } })
+    expect(text(m)).toBe(`Submitted ${FORM}; Run ${RUN_ID} is running`)
+  })
+
+  it('refuses per field, exactly as the page’s form pane words it', () => {
+    const m = merge({ steps: { route: call('workflow.submitStep', { runId: RUN_ID, step: FORM, values: { notes: 'x' } }), run: run(), steps: formStepRows() } })
+    expect(m.update).toBe(false)
+    expect(errors(m)).toEqual({ cover: 'This field is required' })
+    const outside = merge({ steps: { route: call('workflow.submitStep', { runId: RUN_ID, step: FORM, values: { cover: 'workflows/elsewhere.svg' } }), run: run(), steps: formStepRows() } })
+    expect(errors(outside)).toHaveProperty('cover')
+  })
+
+  it('opens the panel for a form with no values, and keeps workflow.submit / annotate island-only', () => {
+    const panel = merge({ steps: { route: call('workflow.submitStep', { runId: RUN_ID, step: FORM, values: {} }), run: run(), steps: formStepRows() } })
+    expect(panel.update).toBe(false)
+    expect(text(panel)).toContain(`The step's form is rendered for the person to complete ${FORM} in`)
+    expect(text(merge({ steps: { route: call('workflow.submit', { runId: RUN_ID, step: FORM, outputs: { cover: POSTER_A.path } }), run: run(), steps: formStepRows() } }))).toBe(`${FORM} is a form step — complete it with workflow.submitStep { values }`)
+    expect(text(merge({ steps: { route: call('workflow.annotate', { runId: RUN_ID, step: FORM, summary: 's' }), run: run(), steps: formStepRows() } }))).toBe(`${FORM} is a form step, not an island`)
+    const bare = formStepRows().map((row) => (row.key === FORM ? { ...row, inputs: {} } : row))
+    expect(text(merge({ steps: { route: call('workflow.submitStep', { runId: RUN_ID, step: FORM, values: { cover: POSTER_A.path } }), run: run(), steps: bare } }))).toBe(`${FORM}: the form's evaluated fields were not recorded — complete it on the harness page`)
   })
 })

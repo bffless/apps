@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { HELLO_INDEX, INTERACTIVE_YAML, RUN_ID, runRow, stepRows } from './fixtures/index'
+import { HELLO_INDEX, INTERACTIVE_YAML, REVIEW_INPUTS, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
 import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
@@ -196,7 +196,7 @@ describe('workflow.stepView / workflow.pipeline / the write verdict', () => {
       outputs: { line: { type: 'string', required: true }, index: { type: 'number' } },
       html,
     })
-    expect(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'greet/0/say' }), { run: [runRow()], steps: stepRows(), island: http(html) }).structuredContent!.errors).toEqual({ step: 'greet/0/say is a pipeline step, not an island' })
+    expect(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'greet/0/say' }), { run: [runRow()], steps: stepRows(), island: http(html) }).structuredContent!.errors).toEqual({ step: 'greet/0/say is a pipeline step, not an interactive one' })
     expect(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'pick/0/choose' }), { run: [runRow()], steps: stepRows(), island: http('', 404) }).structuredContent!.errors).toEqual({ step: 'pick/0/choose: the island file could not be fetched (404)' })
   })
 
@@ -220,5 +220,29 @@ describe('workflow.stepView / workflow.pipeline / the write verdict', () => {
     const refused = result(callOf('workflow.submit', { runId: RUN_ID, step: 'pick/0/choose', outputs: {} }), { run: [runRow()], steps: stepRows() })
     expect(refused.structuredContent!.errors).toEqual({ line: 'This field is required' })
     expect(text(result(callOf('workflow.annotate', { runId: RUN_ID, step: 'pick/0/choose', summary: 's' }), { run: [runRow()], steps: stepRows(), update: { id: 'rec_s4' } }))).toBe('ok')
+  })
+
+  it('answers a waiting form off the row: the evaluated fields, their defaults as initial values, title and submit (Phase 4, Decision 2)', () => {
+    const r = result(callOf('workflow.stepView', { runId: RUN_ID, step: 'review/0/confirm' }), { run: [runRow()], steps: formStepRows() })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toBe('review/0/confirm (form) is waiting — 3 fields: cover, notes, extra')
+    expect(r.structuredContent).toEqual({
+      runId: RUN_ID, step: 'review/0/confirm', impl: 'hello', workflow: 'interactive', kind: 'form', status: 'waiting',
+      title: 'Review the card', submit: 'Approve',
+      fields: REVIEW_INPUTS.fields,
+      initial: { cover: null, notes: '## Notes\n\nHello, world!', extra: null },
+    })
+    const bare = formStepRows().map((row) => (row.key === 'review/0/confirm' ? { ...row, inputs: {} } : row))
+    expect(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'review/0/confirm' }), { run: [runRow()], steps: bare }).structuredContent!.errors).toEqual({
+      step: "review/0/confirm: the form's evaluated fields were not recorded — complete it on the harness page",
+    })
+  })
+
+  it('tells a text-only host how to open a form, and where runs are driven', () => {
+    const status = result(callOf('workflow.status', { runId: RUN_ID }), { run: [runRow()], steps: formStepRows() })
+    expect(text(status)).toContain(`call workflow.submitStep { runId: "${RUN_ID}", step: "review/0/confirm", values: {} } — the step's form renders in this chat`)
+    const start = result(callOf('workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} }), {})
+    expect(start.isError).toBe(true)
+    expect(text(start)).toBe('workflow.start is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to start it there; then watch it with workflow.status and complete its interactive steps here with workflow.submitStep.')
   })
 })

@@ -78,3 +78,27 @@ export function stepRows(): Record<string, unknown>[] {
     },
   ]
 }
+
+/** The evaluated `with` the harness records on a form's `step.waiting` (`formInputs`, lib/runner/adapters/form.ts): hello's `review` form after `card` drew two posters. */
+export const POSTER_A = { path: `workflows/hello/interactive/runs/${RUN_ID}/card/0/draw/poster.svg`, name: 'poster.svg', contentType: 'image/svg+xml', size: 1234, url: `/api/uploads/workflows/hello/interactive/runs/${RUN_ID}/card/0/draw/poster.svg` }
+export const POSTER_B = { ...POSTER_A, path: POSTER_A.path.replace('poster.svg', 'poster-2.svg'), name: 'poster-2.svg', url: POSTER_A.url.replace('poster.svg', 'poster-2.svg') }
+export const REVIEW_INPUTS = {
+  title: 'Review the card',
+  fields: {
+    cover: { type: 'choice', options: [POSTER_A, POSTER_B], required: true },
+    notes: { type: 'markdown', default: '## Notes\n\nHello, world!' },
+    extra: { type: 'file', accept: 'image/*' },
+  },
+  submit: 'Approve',
+}
+
+/** The same run, further along: pick and card done, `review/0/confirm` waiting on its form. */
+export function formStepRows(): Record<string, unknown>[] {
+  const [s1, s2, s3, pick] = stepRows()
+  return [
+    s1, s2, s3,
+    { ...pick, status: 'succeeded', outputs: { line: 'Hello, world!', index: 0 } },
+    { id: 'rec_s5', runId: RUN_ID, key: 'card/0/draw', job: 'card', index: 0, step: 'draw', kind: 'script', status: 'succeeded', outputs: { poster: POSTER_A, posters: [POSTER_A, POSTER_B], big: [] } },
+    { id: 'rec_s6', runId: RUN_ID, key: 'review/0/confirm', job: 'review', index: 0, step: 'confirm', kind: 'form', status: 'waiting', attempt: 1, inputs: REVIEW_INPUTS, annotations: [], startedAt: 1_756_800_020_000 },
+  ]
+}
