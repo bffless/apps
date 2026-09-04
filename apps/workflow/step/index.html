@@ -7,7 +7,8 @@
     <!-- The step view (spec 10; Phase 2 plan, Decision 3): an engine-less host page an
          agent host mounts for `workflow.submitStep`. It is an MCP App outward
          (`@modelcontextprotocol/ext-apps` App) and the harness's own IslandHost inward;
-         the waiting island mounts in the nested frame below, unchanged. Built as one file
+         the waiting island mounts in the nested frame below, unchanged; a waiting form
+         renders in the React root beside it (Phase 4). Built as one file
          by vite.step.config.ts — the sandbox it runs in loads nothing over the network. -->
     <style>
       :root {
@@ -41,7 +42,8 @@
       <span data-testid="status">Connecting to the harness…</span>
     </header>
     <iframe data-testid="island" title="Island" sandbox="allow-scripts"></iframe>
+    <div data-testid="form" hidden></div>
     <p data-testid="submitted" hidden></p>
-    <script type="module" src="/src/step-view/main.ts"></script>
+    <script type="module" src="/src/step-view/main.tsx"></script>
   </body>
 </html>

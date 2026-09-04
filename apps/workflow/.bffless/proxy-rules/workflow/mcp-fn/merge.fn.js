@@ -187,7 +187,7 @@ var __mcp = (() => {
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
-    "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island step: the step\u2019s own island is shown and the person completes it there \u2014 do not invent values for them.",
+    "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island or form step: the step\u2019s own UI is shown and the person completes it there \u2014 do not invent values for them.",
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
@@ -495,6 +495,48 @@ var __mcp = (() => {
       outputs[name] = value;
     }
     return { outputs, errors };
+  }
+
+  // src/lib/runner/adapters/form.ts
+  function validateFormOutputs(fields, values) {
+    const { outputs, errors } = validateDeclared(fields, withOptionPaths(fields, values), {
+      defaultType: "string"
+    });
+    if (Object.keys(errors).length > 0) return { ok: false, errors };
+    return { ok: true, outputs: withFileRefs(fields, outputs) };
+  }
+  function fileRefOptions(field) {
+    if (field.type !== "choice" || !Array.isArray(field.options)) return void 0;
+    const refs = /* @__PURE__ */ new Map();
+    for (const option of field.options) {
+      if (isFileRefLike(option)) refs.set(option.path, option);
+    }
+    return refs.size === 0 ? void 0 : refs;
+  }
+  function withOptionPaths(fields, values) {
+    const normalized = { ...values };
+    for (const [name, field] of Object.entries(fields)) {
+      if (!fileRefOptions(field)) continue;
+      const value = normalized[name];
+      if (isFileRefLike(value)) normalized[name] = value.path;
+      else if (Array.isArray(value)) {
+        normalized[name] = value.map((v) => isFileRefLike(v) ? v.path : v);
+      }
+    }
+    return normalized;
+  }
+  function withFileRefs(fields, outputs) {
+    const upgraded = { ...outputs };
+    for (const [name, field] of Object.entries(fields)) {
+      const refs = fileRefOptions(field);
+      if (!refs) continue;
+      const value = outputs[name];
+      if (typeof value === "string") upgraded[name] = refs.get(value) ?? value;
+      else if (Array.isArray(value)) {
+        upgraded[name] = value.map((v) => typeof v === "string" ? refs.get(v) ?? v : v);
+      }
+    }
+    return upgraded;
   }
 
   // src/lib/runner/adapters/island.ts
@@ -2882,7 +2924,7 @@ ${indent}${end}`;
     },
     {
       name: "workflow.stepView",
-      description: "What the step view needs to mount a waiting island: the island HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments), and its declared outputs.",
+      description: "What the step view needs to mount a waiting interactive step. An island: its HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments) and its declared outputs. A form: the fields the harness evaluated when the step started waiting, their initial values, the title and the submit label.",
       inputSchema: {
         type: "object",
         properties: { runId: RUN_ID2, step: STEP },
@@ -2975,8 +3017,10 @@ ${indent}${end}`;
     if (!rowRecord) return { ...refuse("step", `No such step: ${key}`), key };
     const row = fieldsOf(rowRecord);
     const recordId = recordIdOf(rowRecord);
-    if (row.kind === "form") return { ...refuse("step", "form steps are not served over the MCP endpoint yet \u2014 complete it on the harness"), key };
-    if (row.kind !== "island") return { ...refuse("step", `${key} is a ${String(row.kind)} step, not an island`), key };
+    const kind = row.kind === "form" ? "form" : row.kind === "island" ? "island" : null;
+    if (kind === null) return { ...refuse("step", `${key} is a ${String(row.kind)} step, not an interactive one`), key };
+    if (kind === "form" && route.tool === "workflow.submit") return { ...refuse("step", `${key} is a form step \u2014 complete it with workflow.submitStep { values }`), key };
+    if (kind === "form" && route.tool === "workflow.annotate") return { ...refuse("step", `${key} is a form step, not an island`), key };
     if (row.status !== "waiting") return { ...refuse("step", `${key} is ${String(row.status)}, not waiting`), key };
     if (recordId === null) return { ...refuse("step", `${key}: the step row has no record id`), key };
     const stepRowsFields = stepRows.map(fieldsOf);
@@ -2996,7 +3040,7 @@ ${indent}${end}`;
           recordId,
           key,
           result: textResult(
-            `${snapshotText(snapshot2)}. The step's island is rendered for the person to complete ${key} in; no values are needed from you \u2014 once they submit, workflow.status shows ${key} succeeded.`,
+            `${snapshotText(snapshot2)}. The step's ${kind} is rendered for the person to complete ${key} in; no values are needed from you \u2014 once they submit, workflow.status shows ${key} succeeded.`,
             { ...snapshot2, step: key, ui: "rendered" }
           )
         };
@@ -3004,11 +3048,22 @@ ${indent}${end}`;
       if (!isPlainObject4(raw)) {
         return { ...refuse(route.tool === "workflow.submit" ? "outputs" : "values", "Expected an object of outputs"), key };
       }
-      const step = declaredStep2(run.definition, String(row.job ?? ""), String(row.step ?? ""));
-      if (!step) return { ...refuse("step", `${key}: the run's definition snapshot does not declare it`), key };
-      const { outputs, errors } = validateDeclared(outputDecls(step), raw, { defaultType: "json" });
-      if (Object.keys(errors).length > 0) {
-        return { update: false, recordId, key, result: errorResult(JSON.stringify(errors), { errors }) };
+      let outputs;
+      if (kind === "form") {
+        const inputs = isPlainObject4(row.inputs) ? row.inputs : {};
+        const fields3 = isPlainObject4(inputs.fields) ? inputs.fields : null;
+        if (!fields3) return { ...refuse("step", `${key}: the form's evaluated fields were not recorded \u2014 complete it on the harness page`), key };
+        const verdict = validateFormOutputs(fields3, raw);
+        if (!verdict.ok) return { update: false, recordId, key, result: errorResult(JSON.stringify(verdict.errors), { errors: verdict.errors }) };
+        outputs = verdict.outputs;
+      } else {
+        const step = declaredStep2(run.definition, String(row.job ?? ""), String(row.step ?? ""));
+        if (!step) return { ...refuse("step", `${key}: the run's definition snapshot does not declare it`), key };
+        const declared = validateDeclared(outputDecls(step), raw, { defaultType: "json" });
+        if (Object.keys(declared.errors).length > 0) {
+          return { update: false, recordId, key, result: errorResult(JSON.stringify(declared.errors), { errors: declared.errors }) };
+        }
+        outputs = declared.outputs;
       }
       const fields2 = { ...base, status: "succeeded", outputs, finishedAt: now };
       const snapshot = snapshotWith({ ...row, ...fields2 });

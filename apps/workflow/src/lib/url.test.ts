@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSafeUrl, isSameOriginUrl, isServeUrl } from './url'
+import { downloadHref, isLoadableUrl, isSafeUrl, isSameOriginUrl, isServeUrl, trustSignedUrl } from './url'
 
 describe('isSafeUrl', () => {
   it.each([
@@ -116,5 +116,18 @@ describe('isSameOriginUrl', () => {
   it('refuses anything that is not a string', () => {
     expect(isSameOriginUrl(undefined)).toBe(false)
     expect(isSameOriginUrl(42)).toBe(false)
+  })
+})
+
+describe('isLoadableUrl / trustSignedUrl (spec 10 D6 inside an agent host)', () => {
+  it('loads same-origin urls as before, refuses a foreign absolute url, and admits one the page signed itself', () => {
+    expect(isLoadableUrl('/api/uploads/workflows/x/a.svg')).toBe(true)
+    const signed = 'https://storage.googleapis.com/b/o/a.svg?X-Goog-Signature=abc'
+    expect(isLoadableUrl(signed)).toBe(false)
+    trustSignedUrl(signed)
+    expect(isLoadableUrl(signed)).toBe(true)
+    expect(isLoadableUrl('https://storage.googleapis.com/b/o/other.svg?X-Goog-Signature=abc')).toBe(false)
+    expect(downloadHref(signed)).toBe(signed)
+    expect(downloadHref('/api/uploads/workflows/x/a.svg')).toBe('/api/uploads/workflows/x/a.svg?download=1')
   })
 })

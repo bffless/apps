@@ -15,27 +15,28 @@
  * own. (Single-select still emits the tile's value on every click, so the
  * selection moves rather than clearing.)
  *
- * A preview only ever reaches an `<img src>` through `isSameOriginUrl`: an
+ * A preview only ever reaches an `<img src>` through `isLoadableUrl`: an
  * option list is run-row JSON, and a cross-origin image is a beacon that
- * carries the member's session.
+ * carries the member's session — same-origin, or presigned by this page (D6).
  */
-import { isSameOriginUrl } from '../../lib/url'
+import { isLoadableUrl } from '../../lib/url'
 import { FileCard } from '../values/FileCard'
 import { isFileRef } from '../values/fileRef'
 import type { Option, OptionPreview } from './options'
 
 /**
- * A tile's picture: an image preview (same-origin only) as an `<img>`, any
- * other File ref as its own card, anything unreadable as nothing at all —
- * the label below it still names the option either way.
+ * A tile's picture: an image preview (same-origin, or presigned by this page
+ * (D6)) as an `<img>`, any other File ref as its own card, anything
+ * unreadable as nothing at all — the label below it still names the option
+ * either way.
  */
 export function TilePreview({ preview, label }: { preview: OptionPreview | undefined; label: string }) {
   if (typeof preview === 'string') {
-    return isSameOriginUrl(preview) ? <img className="tile-image" src={preview} alt={label} /> : null
+    return isLoadableUrl(preview) ? <img className="tile-image" src={preview} alt={label} /> : null
   }
   if (!isFileRef(preview)) return null
   const contentType = typeof preview.contentType === 'string' ? preview.contentType : ''
-  if (contentType.startsWith('image/') && isSameOriginUrl(preview.url)) {
+  if (contentType.startsWith('image/') && isLoadableUrl(preview.url)) {
     return <img className="tile-image" src={preview.url} alt={preview.name || label} />
   }
   return <FileCard refValue={preview} />

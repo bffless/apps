@@ -91,7 +91,7 @@ export const HOST_TOOLS: readonly HostToolDef[] = Object.freeze([
   {
     name: 'workflow.stepView',
     description:
-      "What the step view needs to mount a waiting island: the island HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments), and its declared outputs.",
+      "What the step view needs to mount a waiting interactive step. An island: its HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments) and its declared outputs. A form: the fields the harness evaluated when the step started waiting, their initial values, the title and the submit label.",
     inputSchema: {
       type: 'object',
       properties: { runId: RUN_ID, step: STEP },

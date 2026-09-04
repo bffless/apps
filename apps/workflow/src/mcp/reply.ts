@@ -216,9 +216,9 @@ export function snapshotOf(run: Row, stepRows: Row[]) {
 export function agentHostHint(runId: string, snapshot: { waitingOn: Array<{ key: string; kind: string }> }): string {
   return snapshot.waitingOn
     .map((step) =>
-      step.kind === 'island'
-        ? `\nTo let the person complete ${step.key} here, call workflow.submitStep { runId: "${runId}", step: "${step.key}", values: {} } — the step's island renders in this chat; do not invent its values.`
-        : `\n${step.key} is a form step; in this phase it is completed on the harness page.`,
+      step.kind === 'island' || step.kind === 'form'
+        ? `\nTo let the person complete ${step.key} here, call workflow.submitStep { runId: "${runId}", step: "${step.key}", values: {} } — the step's ${step.kind} renders in this chat; do not invent its values.`
+        : '',
     )
     .join('')
 }
@@ -298,6 +298,35 @@ function declaredStep(definition: unknown, job: string, stepId: string): Record<
   return jobDecl.steps.find((entry: unknown): entry is Record<string, unknown> => isPlainObject(entry) && entry.id === stepId)
 }
 
+/** `workflow.stepView` for a form (Phase 4, Decision 2): the fields the page evaluated when the step started waiting, straight off the row — nothing is re-evaluated here. */
+function formView(route: Route, run: Row, row: Row): CallToolResult {
+  if (row.status !== 'waiting') return refuse('step', `${route.key} is ${String(row.status)}, not waiting`)
+  const inputs = isPlainObject(row.inputs) ? row.inputs : {}
+  const fields = isPlainObject(inputs.fields) ? inputs.fields : null
+  if (!fields) return refuse('step', `${route.key}: the form's evaluated fields were not recorded — complete it on the harness page`)
+  const initial: Record<string, unknown> = {}
+  for (const [name, decl] of Object.entries(fields)) {
+    const field = isPlainObject(decl) ? decl : {}
+    initial[name] = field.default === undefined ? null : field.default
+  }
+  const names = Object.keys(fields)
+  const title = str(inputs.title) ?? String(row.step ?? route.key)
+  const description = str(inputs.description)
+  return textResult(`${route.key} (form) is waiting — ${names.length} field${names.length === 1 ? '' : 's'}: ${names.join(', ')}`, {
+    runId: route.runId,
+    step: route.key,
+    impl: String(run.impl ?? ''),
+    workflow: String(run.workflow ?? ''),
+    kind: 'form',
+    status: 'waiting',
+    title,
+    ...(description === undefined ? {} : { description }),
+    submit: str(inputs.submit) ?? 'Submit',
+    fields,
+    initial,
+  })
+}
+
 /** `workflow.stepView`: everything the step view needs to mount the waiting island (Decision 3). */
 function stepView(route: Route, steps: StepOutputs): CallToolResult {
   const resolved = resolveRun(route, steps)
@@ -305,7 +334,8 @@ function stepView(route: Route, steps: StepOutputs): CallToolResult {
   if (route.key === '') return refuse('step', '`step` is required')
   const row = resolved.stepRows.find((r) => r.key === route.key)
   if (!row) return refuse('step', `No such step: ${route.key}`)
-  if (row.kind !== 'island') return refuse('step', `${route.key} is a ${String(row.kind)} step, not an island`)
+  if (row.kind === 'form') return formView(route, resolved.run, row)
+  if (row.kind !== 'island') return refuse('step', `${route.key} is a ${String(row.kind)} step, not an interactive one`)
   if (row.status !== 'waiting') return refuse('step', `${route.key} is ${String(row.status)}, not waiting`)
   const plan = steps.plan
   if (!plan?.hasIsland) return refuse('step', plan?.islandError || `${route.key}: no island to show`)
@@ -349,7 +379,7 @@ function notServed(tool: string): CallToolResult {
   const message =
     tool === 'workflow.await'
       ? 'workflow.await is not served by the MCP endpoint — a stateless POST cannot wait; poll workflow.status'
-      : `${tool} is not served by the MCP endpoint yet (Phase 4 adds the run view that drives runs)`
+      : `${tool} is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.`
   return refuse('tool', message)
 }
 

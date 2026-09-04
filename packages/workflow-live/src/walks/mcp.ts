@@ -172,7 +172,7 @@ export const mcp: Walk = async ({ args, env, report }) => {
 
     // --- Honesty: what this build does not serve says so as a tool error, never a protocol error
     const start = await call('workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} })
-    report.expect('spec10.notServedHonest', start.isError === true && 'tool' in errorsOf(start) && /Phase 4/.test(text(start)), brief(start))
+    report.expect('spec10.notServedHonest', start.isError === true && 'tool' in errorsOf(start) && /driven on the harness page/.test(text(start)), brief(start))
 
     // --- Resources: the step view and the islands, each with a CSP derived from the instance
     const resources = (await client.listResources()).resources as Array<{ uri: string; mimeType?: string; _meta?: unknown }>

@@ -30,7 +30,7 @@ describe('the rendered mcp_handler config (D19 by construction)', () => {
 
   it('declares the step view, the island template, the list rule and the CSP tokens', () => {
     expect(config.resources).toEqual({
-      static: [{ uri: STEP_VIEW_URI, name: 'Workflow step view', description: 'Mounts a waiting island step of a run (spec 10).', rule: { path: '/api/workflow/mcp-resources/step-view' } }],
+      static: [{ uri: STEP_VIEW_URI, name: 'Workflow step view', description: 'Mounts a waiting island or form step of a run (spec 10).', rule: { path: '/api/workflow/mcp-resources/step-view' } }],
       templates: [{ uriTemplate: 'ui://bffless/{impl}/{path+}', name: 'island', description: 'An island of an implementation, served unchanged from its bundle (spec 04).', rule: { path: '/w/{impl}/{path+}' } }],
       list: { rule: { path: '/api/workflow/mcp-resources', method: 'GET' } },
       csp: { connectDomains: ['$app', '$storage'], resourceDomains: ['$storage'] },

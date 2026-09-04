@@ -40,11 +40,16 @@
  *   honours `Range`, so `preload="metadata"` reads only the header — which is
  *   also what a Re-run prefill or a Resume has, so the preview survives a
  *   reload. The gate is the ref's `contentType` (what `files/register` echoed
- *   from CE), and the `src` only ever takes `url` through `isSameOriginUrl`,
- *   the same rule a tile's preview obeys: a ref can be run-row JSON, and a
- *   cross-origin `src` is a beacon that carries the member's session. No
- *   presigning here — unlike an island's opaque-origin frame, this page is
- *   same-origin and sends the cookie the serve route wants.
+ *   from CE), and the `src` only ever takes `url` through `isLoadableUrl` —
+ *   same-origin, or presigned by this page (D6) — the same rule a tile's
+ *   preview obeys: a ref can be run-row JSON, and a cross-origin `src` is a
+ *   beacon that carries the member's session. On this page itself no
+ *   presigning happens — unlike an island's or the step view's opaque-origin
+ *   frame, this page is same-origin and sends the cookie the serve route
+ *   wants — but a `file` field's `initial` value can be a File ref the step
+ *   view (`signFormPreviews`) already presigned before this same component
+ *   renders inside an agent host, and `isLoadableUrl` is what lets that
+ *   preview through there too.
  *
  * A `list: true` field collapses each player behind a Play button
  * (`MediaPreview`'s `collapsed`), so ten recordings are ten small tiles, not
@@ -53,7 +58,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import type { FileRef } from '../../lib/runner/types'
-import { isSameOriginUrl } from '../../lib/url'
+import { isLoadableUrl } from '../../lib/url'
 import { isFileRef } from '../values/fileRef'
 import { formatDuration, mediaKind } from '../values/media'
 import { MediaPreview } from '../values/MediaPreview'
@@ -107,7 +112,7 @@ function itemOfRef(ref: FileRef, key: string): FileItem {
     name: ref.name,
     size: typeof ref.size === 'number' ? ref.size : undefined,
     contentType,
-    src: previewable && isSameOriginUrl(ref.url) ? ref.url : undefined,
+    src: previewable && isLoadableUrl(ref.url) ? ref.url : undefined,
   }
 }
 

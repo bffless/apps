@@ -10,13 +10,15 @@
  * harness page (D12). The write is `run-step`'s read-merge-write (the full
  * column set), and it is refused while a harness tab still drives the run:
  * the endpoint takes no lease and seals nothing; the run continues when it is
- * resumed on the harness (05). Islands only: a form's evaluated fields live in
- * the page's state; a submitted step's `summary` needs run contexts — both
- * recorded gaps of the prototype.
+ * resumed on the harness (05). Forms too (Phase 4): a form's evaluated fields
+ * ride its `waiting` row (`formInputs`), so `validateFormOutputs` — the
+ * page's own — judges a submit here. A submitted step's `summary` needs run
+ * contexts — a recorded gap of the prototype.
  */
 import { errorResult, snapshotText, textResult, type CallToolResult } from '@bffless/workflow-agent-tools'
-import { toDefinition, type Step } from '@bffless/workflow-lint/definition'
+import { toDefinition, type Step, type InputDef } from '@bffless/workflow-lint/definition'
 import { outputDecls, validateDeclared } from '../lib/runner/adapters/declared'
+import { validateFormOutputs } from '../lib/runner/adapters/form'
 import { annotateEvent } from '../lib/runner/adapters/island'
 import type { Annotation } from '../lib/runner/types'
 import { snapshotOf } from './reply'
@@ -99,8 +101,11 @@ export function handler(data: { steps: { route?: Route; run?: unknown; steps?: u
   if (!rowRecord) return { ...refuse('step', `No such step: ${key}`), key }
   const row = fieldsOf(rowRecord)
   const recordId = recordIdOf(rowRecord)
-  if (row.kind === 'form') return { ...refuse('step', 'form steps are not served over the MCP endpoint yet — complete it on the harness'), key }
-  if (row.kind !== 'island') return { ...refuse('step', `${key} is a ${String(row.kind)} step, not an island`), key }
+  const kind = row.kind === 'form' ? 'form' : row.kind === 'island' ? 'island' : null
+  if (kind === null) return { ...refuse('step', `${key} is a ${String(row.kind)} step, not an interactive one`), key }
+  // workflow.submit is the island's own bridge verb (spec 04); a form is completed with submitStep { values } (Decision 3).
+  if (kind === 'form' && route.tool === 'workflow.submit') return { ...refuse('step', `${key} is a form step — complete it with workflow.submitStep { values }`), key }
+  if (kind === 'form' && route.tool === 'workflow.annotate') return { ...refuse('step', `${key} is a form step, not an island`), key }
   if (row.status !== 'waiting') return { ...refuse('step', `${key} is ${String(row.status)}, not waiting`), key }
   if (recordId === null) return { ...refuse('step', `${key}: the step row has no record id`), key }
 
@@ -128,7 +133,7 @@ export function handler(data: { steps: { route?: Route; run?: unknown; steps?: u
         recordId,
         key,
         result: textResult(
-          `${snapshotText(snapshot)}. The step's island is rendered for the person to complete ${key} in; no values are needed from you — once they submit, workflow.status shows ${key} succeeded.`,
+          `${snapshotText(snapshot)}. The step's ${kind} is rendered for the person to complete ${key} in; no values are needed from you — once they submit, workflow.status shows ${key} succeeded.`,
           { ...snapshot, step: key, ui: 'rendered' },
         ),
       }
@@ -136,12 +141,22 @@ export function handler(data: { steps: { route?: Route; run?: unknown; steps?: u
     if (!isPlainObject(raw)) {
       return { ...refuse(route.tool === 'workflow.submit' ? 'outputs' : 'values', 'Expected an object of outputs'), key }
     }
-    const step = declaredStep(run.definition, String(row.job ?? ''), String(row.step ?? ''))
-    if (!step) return { ...refuse('step', `${key}: the run's definition snapshot does not declare it`), key }
-    const { outputs, errors } = validateDeclared(outputDecls(step), raw, { defaultType: 'json' })
-    if (Object.keys(errors).length > 0) {
-      // IslandHost's wording: the per-output messages as the text, the map as structuredContent.errors.
-      return { update: false, recordId, key, result: errorResult(JSON.stringify(errors), { errors }) }
+    let outputs: Record<string, unknown>
+    if (kind === 'form') {
+      const inputs = isPlainObject(row.inputs) ? row.inputs : {}
+      const fields = isPlainObject(inputs.fields) ? (inputs.fields as Record<string, InputDef>) : null
+      if (!fields) return { ...refuse('step', `${key}: the form's evaluated fields were not recorded — complete it on the harness page`), key }
+      const verdict = validateFormOutputs(fields, raw)
+      if (!verdict.ok) return { update: false, recordId, key, result: errorResult(JSON.stringify(verdict.errors), { errors: verdict.errors }) }
+      outputs = verdict.outputs
+    } else {
+      const step = declaredStep(run.definition, String(row.job ?? ''), String(row.step ?? ''))
+      if (!step) return { ...refuse('step', `${key}: the run's definition snapshot does not declare it`), key }
+      const declared = validateDeclared(outputDecls(step), raw, { defaultType: 'json' })
+      if (Object.keys(declared.errors).length > 0) {
+        return { update: false, recordId, key, result: errorResult(JSON.stringify(declared.errors), { errors: declared.errors }) }
+      }
+      outputs = declared.outputs
     }
     const fields = { ...base, status: 'succeeded', outputs, finishedAt: now }
     const snapshot = snapshotWith({ ...row, ...fields })

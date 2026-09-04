@@ -171,7 +171,7 @@ var __mcp = (() => {
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
-    "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island step: the step\u2019s own island is shown and the person completes it there \u2014 do not invent values for them.",
+    "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island or form step: the step\u2019s own UI is shown and the person completes it there \u2014 do not invent values for them.",
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
@@ -6772,7 +6772,7 @@ ${end.comment}` : end.comment;
     },
     {
       name: "workflow.stepView",
-      description: "What the step view needs to mount a waiting island: the island HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments), and its declared outputs.",
+      description: "What the step view needs to mount a waiting interactive step. An island: its HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments) and its declared outputs. A form: the fields the harness evaluated when the step started waiting, their initial values, the title and the submit label.",
       inputSchema: {
         type: "object",
         properties: { runId: RUN_ID2, step: STEP },
@@ -6967,9 +6967,8 @@ ${end.comment}` : end.comment;
   }
   function agentHostHint(runId, snapshot) {
     return snapshot.waitingOn.map(
-      (step) => step.kind === "island" ? `
-To let the person complete ${step.key} here, call workflow.submitStep { runId: "${runId}", step: "${step.key}", values: {} } \u2014 the step's island renders in this chat; do not invent its values.` : `
-${step.key} is a form step; in this phase it is completed on the harness page.`
+      (step) => step.kind === "island" || step.kind === "form" ? `
+To let the person complete ${step.key} here, call workflow.submitStep { runId: "${runId}", step: "${step.key}", values: {} } \u2014 the step's ${step.kind} renders in this chat; do not invent its values.` : ""
     ).join("");
   }
   function status(route, steps) {
@@ -7030,13 +7029,41 @@ ${lines.join("\n")}`,
     if (!isPlainObject4(jobDecl) || !Array.isArray(jobDecl.steps)) return void 0;
     return jobDecl.steps.find((entry) => isPlainObject4(entry) && entry.id === stepId);
   }
+  function formView(route, run, row) {
+    if (row.status !== "waiting") return refuse("step", `${route.key} is ${String(row.status)}, not waiting`);
+    const inputs = isPlainObject4(row.inputs) ? row.inputs : {};
+    const fields = isPlainObject4(inputs.fields) ? inputs.fields : null;
+    if (!fields) return refuse("step", `${route.key}: the form's evaluated fields were not recorded \u2014 complete it on the harness page`);
+    const initial = {};
+    for (const [name, decl] of Object.entries(fields)) {
+      const field = isPlainObject4(decl) ? decl : {};
+      initial[name] = field.default === void 0 ? null : field.default;
+    }
+    const names = Object.keys(fields);
+    const title = str2(inputs.title) ?? String(row.step ?? route.key);
+    const description = str2(inputs.description);
+    return textResult(`${route.key} (form) is waiting \u2014 ${names.length} field${names.length === 1 ? "" : "s"}: ${names.join(", ")}`, {
+      runId: route.runId,
+      step: route.key,
+      impl: String(run.impl ?? ""),
+      workflow: String(run.workflow ?? ""),
+      kind: "form",
+      status: "waiting",
+      title,
+      ...description === void 0 ? {} : { description },
+      submit: str2(inputs.submit) ?? "Submit",
+      fields,
+      initial
+    });
+  }
   function stepView(route, steps) {
     const resolved = resolveRun(route, steps);
     if (!resolved.ok) return resolved.result;
     if (route.key === "") return refuse("step", "`step` is required");
     const row = resolved.stepRows.find((r) => r.key === route.key);
     if (!row) return refuse("step", `No such step: ${route.key}`);
-    if (row.kind !== "island") return refuse("step", `${route.key} is a ${String(row.kind)} step, not an island`);
+    if (row.kind === "form") return formView(route, resolved.run, row);
+    if (row.kind !== "island") return refuse("step", `${route.key} is a ${String(row.kind)} step, not an interactive one`);
     if (row.status !== "waiting") return refuse("step", `${route.key} is ${String(row.status)}, not waiting`);
     const plan = steps.plan;
     if (!plan?.hasIsland) return refuse("step", plan?.islandError || `${route.key}: no island to show`);
@@ -7074,7 +7101,7 @@ ${lines.join("\n")}`,
     return pipelineResult(answer.body);
   }
   function notServed(tool) {
-    const message = tool === "workflow.await" ? "workflow.await is not served by the MCP endpoint \u2014 a stateless POST cannot wait; poll workflow.status" : `${tool} is not served by the MCP endpoint yet (Phase 4 adds the run view that drives runs)`;
+    const message = tool === "workflow.await" ? "workflow.await is not served by the MCP endpoint \u2014 a stateless POST cannot wait; poll workflow.status" : `${tool} is not served by the MCP endpoint: runs are driven on the harness page \u2014 by a person, or by an agent through the page\u2019s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.`;
     return refuse("tool", message);
   }
   function callTool(route, steps) {
