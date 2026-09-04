@@ -287,8 +287,8 @@ session cookie is already on the page.
   waits — the `toolchange` use case.
 - The web-host double-iframe sandbox proxy + per-island CSP, still gated on third-party
   islands (04).
-- The harness's own run page going vertical below a width breakpoint — the run view's
-  accordion feeding back into the app; mobile is the customer.
+- The harness's own run page going vertical below a width breakpoint — a vertical
+  job/step accordion; mobile is the customer.
 - `ui/update-model-context` — the host capability accepted-and-ignored since v1 (04) —
   wired through so an island can push context to the *embedding* model in an agent host,
   and to a WebMCP consumer on the page.
