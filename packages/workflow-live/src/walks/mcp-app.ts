@@ -9,7 +9,6 @@
  */
 import { writeFile } from 'node:fs/promises'
 import { waitForSealedRecord } from '@bffless/workflow-headless'
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { chromium } from 'playwright'
 import { appToken, credentials } from '../env.js'
 import { openEmulatedHost } from '../host-emu.js'
@@ -23,22 +22,31 @@ import type { Walk } from './index.js'
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
 const text = (r: ToolAnswer) => (r.content ?? []).map((b) => (b.type === 'text' ? (b.text ?? '') : '')).join('\n')
 
+interface RunRecord { run?: { status?: string }; steps?: Array<Record<string, unknown>> }
+const rowOf = (r: Record<string, unknown>) => (r.fields && typeof r.fields === 'object' ? (r.fields as Record<string, unknown>) : r)
+
 /**
- * `workflow.status`, polled: the endpoint's own row write lands a beat after
- * `workflow.submit`/`workflow.submitStep`'s reply (read-after-write lag), so
- * a single read right after a bridge submit can still see the step
- * `waiting`. Polls every second until `steps[key] === want` or `timeoutMs`
- * elapses, returning the last answer either way and how long it took —
- * the caller's own condition still decides pass/fail, this just gives it a
- * fresh-enough read to decide against.
+ * The step's row off `GET /api/workflow/run?id=`, polled — not
+ * `workflow.status`. On the private host, `workflow.status` (the endpoint's
+ * in-process `data_query`) has been seen to lag the row by *minutes* (a
+ * CE-side read-path bug, filed separately: a REST read of this same
+ * endpoint showed the row `succeeded` with its outputs and annotations long
+ * before `workflow.status` stopped saying `waiting`, on a brand-new session
+ * with a bearer token and again with a cookie). The write itself is durable
+ * the instant a bridge submit answers, so the record — read straight off
+ * the row, the way `walks/mcp.ts`'s `record.stepSucceeded` does — is what a
+ * check asserts against; `workflow.status`'s own view is still fetched and
+ * carried in the evidence, unasserted, so a report shows the two agreeing
+ * or not.
  */
-async function stepStatus(client: Client, runId: string, key: string, want: string, timeoutMs = 15_000): Promise<{ answer: ToolAnswer; waitedMs: number }> {
+async function recordStep(harness: string, token: string, runId: string, key: string, want: string, timeoutMs = 15_000): Promise<{ row: Record<string, unknown> | undefined; run: { status?: string } | undefined; waitedMs: number }> {
   const start = Date.now()
   for (;;) {
-    const answer = (await client.callTool({ name: 'workflow.status', arguments: { runId } })) as ToolAnswer
-    const steps = (answer.structuredContent as { steps?: Record<string, string> } | undefined)?.steps
+    const res = await fetch(`${harness}/api/workflow/run?id=${encodeURIComponent(runId)}`, { headers: { authorization: `Bearer ${token}` } })
+    const record = (await res.json().catch(() => null)) as RunRecord | null
+    const row = (record?.steps ?? []).map(rowOf).find((r) => r.key === key)
     const waitedMs = Date.now() - start
-    if (steps?.[key] === want || waitedMs >= timeoutMs) return { answer, waitedMs }
+    if (row?.status === want || waitedMs >= timeoutMs) return { row, run: record?.run, waitedMs }
     await new Promise((resolve) => setTimeout(resolve, 1_000))
   }
 }
@@ -121,8 +129,14 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
     await islandFrame.getByTestId('line').first().click()
     await islandFrame.getByTestId('submit').click()
     await view.getByTestId('submitted').waitFor({ state: 'visible', timeout: 30_000 })
-    const { answer: afterIsland, waitedMs: islandStatusWaitedMs } = await stepStatus(client, island.runId, ISLAND_STEP, 'succeeded')
-    report.expect('D24.islandSubmitsThroughBridge', (afterIsland.structuredContent as { steps?: Record<string, string> })?.steps?.[ISLAND_STEP] === 'succeeded', { text: text(afterIsland).slice(0, 200), waitedMs: islandStatusWaitedMs })
+    const { row: islandRow, waitedMs: islandWaitedMs } = await recordStep(args.harness, token, island.runId, ISLAND_STEP, 'succeeded')
+    const islandStatusView = (await client.callTool({ name: 'workflow.status', arguments: { runId: island.runId } })) as ToolAnswer
+    const islandOutputs = (islandRow?.outputs ?? {}) as { line?: unknown }
+    report.expect('D24.islandSubmitsThroughBridge', islandRow?.status === 'succeeded' && islandOutputs.line === 'Hello, world!', {
+      waitedMs: islandWaitedMs,
+      row: islandRow && { status: islandRow.status, outputs: islandRow.outputs },
+      statusView: (islandStatusView.structuredContent as { steps?: Record<string, string> } | undefined)?.steps?.[ISLAND_STEP],
+    })
     await page.close()
 
     // --- a second run, parked on its form; the form renders and submits through the bridge
@@ -151,9 +165,15 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
       say(`form-step-submit disabled before click: ${await view2.getByTestId('form-step-submit').isDisabled()}`)
       await view2.getByTestId('form-step-submit').click()
       await view2.getByTestId('submitted').waitFor({ state: 'visible', timeout: 45_000 })
-      const { answer: afterForm, waitedMs: formStatusWaitedMs } = await stepStatus(client, form.runId, FORM_STEP, 'succeeded')
-      const formSteps = (afterForm.structuredContent as { steps?: Record<string, string>; status?: string }) ?? {}
-      report.expect('D24.formSubmitsThroughBridge', formSteps.steps?.[FORM_STEP] === 'succeeded' && formSteps.status === 'running', { text: text(afterForm).slice(0, 200), waitedMs: formStatusWaitedMs })
+      const { row: formRow, run: formRun, waitedMs: formWaitedMs } = await recordStep(args.harness, token, form.runId, FORM_STEP, 'succeeded')
+      const formStatusView = (await client.callTool({ name: 'workflow.status', arguments: { runId: form.runId } })) as ToolAnswer
+      const formOutputs = (formRow?.outputs ?? {}) as { cover?: { name?: unknown } }
+      report.expect('D24.formSubmitsThroughBridge', formRow?.status === 'succeeded' && formRun?.status === 'running', {
+        waitedMs: formWaitedMs,
+        cover: formOutputs.cover?.name,
+        run: formRun?.status,
+        statusView: (formStatusView.structuredContent as { steps?: Record<string, string> } | undefined)?.steps?.[FORM_STEP],
+      })
     } catch (e) {
       // Chromium never dispatches the `<form onSubmit>` at all here — the
       // click on the submit button is blocked pre-JS by the sandbox lacking
