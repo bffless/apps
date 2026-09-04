@@ -19,7 +19,8 @@ import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { createIslandHost } from '../islands/IslandHost'
 import { StepForm } from './StepForm'
-import { readStepView, stepViewDeps, submitFormValues } from './deps'
+import { readStepView, signFormPreviews, stepViewDeps, submitFormValues } from './deps'
+import { trustSignedUrl } from '../lib/url'
 import '../index.css'
 
 const HOST_PROTOCOL_VERSION = '1.0.0'
@@ -72,6 +73,9 @@ app.ontoolinput = ({ arguments: args }) => {
         title.textContent = `${view.workflow}: ${view.title}`
         frame.hidden = true
         formRoot.hidden = false
+        const { view: signedView, signed } = await signFormPreviews(call, view)
+        if (controller.signal.aborted) return
+        for (const url of signed) trustSignedUrl(url)
         reactRoot ??= createRoot(formRoot)
         reactRoot.render(
           <StepForm
@@ -79,7 +83,7 @@ app.ontoolinput = ({ arguments: args }) => {
             title={view.title}
             description={view.description}
             submitLabel={view.submit}
-            fields={view.fields}
+            fields={signedView.fields}
             initial={view.initial}
             onSubmit={async (values) => {
               const answer = await submitFormValues(call, view, values)

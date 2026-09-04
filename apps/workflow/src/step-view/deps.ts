@@ -17,6 +17,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import type { IslandHostDeps, SubmitAnswer } from '../islands/IslandHost'
 import { resolveSrc } from '../lib/runner/adapters/island'
+import { isFileRefLike } from '../lib/runner/fileRef'
+import type { FileRef } from '../lib/runner/types'
 
 /** `App.callServerTool`, narrowed to what the view sends. */
 export type ServerCall = (params: { name: string; arguments: Record<string, unknown> }) => Promise<CallToolResult>
@@ -106,6 +108,53 @@ export async function submitFormValues(call: ServerCall, view: FormStepView, val
     ? Object.fromEntries(Object.entries(s.errors).map(([key, value]) => [key, String(value)]))
     : { values: resultText(result) || 'workflow.submitStep refused' }
   return { ok: false, errors }
+}
+
+/** One `workflow.sign` round trip for a form preview; `null` on any refusal or malformed answer, so the caller can leave the option as it was. */
+async function signRef(call: ServerCall, runId: string, ref: FileRef): Promise<string | null> {
+  const result = await call({ name: 'workflow.sign', arguments: { runId, path: ref.path } })
+  if (result.isError) return null
+  const s = isPlainObject(result.structuredContent) ? result.structuredContent : {}
+  return typeof s.url === 'string' && s.url !== '' ? s.url : null
+}
+
+/**
+ * Task 3c (spec 10 D6): a form's File-ref options carry the harness page's
+ * ordinary `url` — same-origin relative to *that* page — which resolves
+ * against the wrong origin and carries no cookie inside an agent host's
+ * sandbox. `main.tsx` calls this before rendering the form, re-pointing every
+ * File-ref option (and File-ref `preview`) at a presigned GET the sandbox may
+ * load; `path` is untouched, since it — not `url` — is the value a tile
+ * submits. Signing is sequential on purpose: a form has a handful of options
+ * and the bridge is one channel. A refused sign leaves that option exactly as
+ * it was, so a broken preview degrades to whatever the page already renders
+ * for an unloadable url rather than failing the whole form.
+ */
+export async function signFormPreviews(call: ServerCall, view: FormStepView): Promise<{ view: FormStepView; signed: string[] }> {
+  const signed: string[] = []
+  const fields: Record<string, InputDef> = {}
+  for (const [name, field] of Object.entries(view.fields)) {
+    if (!Array.isArray(field.options)) {
+      fields[name] = field
+      continue
+    }
+    const options: unknown[] = []
+    for (const option of field.options) {
+      if (isFileRefLike(option)) {
+        const url = await signRef(call, view.runId, option)
+        if (url) signed.push(url)
+        options.push(url ? { ...option, url } : option)
+      } else if (isPlainObject(option) && isFileRefLike(option.preview)) {
+        const url = await signRef(call, view.runId, option.preview)
+        if (url) signed.push(url)
+        options.push(url ? { ...option, preview: { ...option.preview, url } } : option)
+      } else {
+        options.push(option)
+      }
+    }
+    fields[name] = { ...field, options } as InputDef
+  }
+  return { view: { ...view, fields }, signed }
 }
 
 /** `_meta.bffless.status` of a pipeline answer the endpoint relayed, when it carried one. */

@@ -9,12 +9,13 @@
  * the same allow-list a markdown link href uses (`lib/url`), so any http(s)
  * ref — cross-origin included — still gets a Download action (02: "always a
  * Download action"). The player (`<video>`/`<audio>`/`<img>`/`<object data>`)
- * is a stricter sink: it goes through `isSameOriginUrl`, because a
- * cross-origin `src` would leak the member's session cookie to a third party
- * the same way an untrusted fetch would. A url that fails `isSafeUrl` is
+ * is a stricter sink: it goes through `isLoadableUrl` — same-origin, or
+ * presigned by this page (D6) — because a cross-origin `src` would leak the
+ * member's session cookie to a third party the same way an untrusted fetch
+ * would. A url that fails `isSafeUrl` is
  * shown as text instead of a Download link: the card still reports what it
  * saw, it just refuses to be the thing that navigates or fetches it. A url
- * that passes `isSafeUrl` but fails `isSameOriginUrl` still gets its Download
+ * that passes `isSafeUrl` but fails `isLoadableUrl` still gets its Download
  * link, just no player.
  *
  * A `video`/`audio` player is the shared `MediaPreview` (apps#451): controls,
@@ -30,7 +31,7 @@
  * `ValueView` in a test — is unaffected.
  */
 import { useCallback, useRef, useState } from 'react'
-import { downloadHref, isSafeUrl, isSameOriginUrl } from '../../lib/url'
+import { downloadHref, isLoadableUrl, isSafeUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
 import { formatDuration, mediaKind } from './media'
 import { MediaPreview } from './MediaPreview'
@@ -85,7 +86,7 @@ function Player({
 export function FileCard({ refValue }: { refValue: FileRef }) {
   const { name, contentType, size, url } = refValue
   const safe = typeof url === 'string' && isSafeUrl(url)
-  const sameOrigin = typeof url === 'string' && isSameOriginUrl(url)
+  const sameOrigin = typeof url === 'string' && isLoadableUrl(url)
   const [duration, setDuration] = useState<number | undefined>(undefined)
   const durationLabel = formatDuration(duration)
   return (

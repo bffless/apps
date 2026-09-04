@@ -1,7 +1,7 @@
 // @vitest-environment node
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
-import { readStepView, stepViewDeps, submitFormValues, type ServerCall, type StepViewData } from './deps'
+import { readStepView, signFormPreviews, stepViewDeps, submitFormValues, type ServerCall, type StepViewData } from './deps'
 
 const VIEW: StepViewData = {
   runId: 'run_1',
@@ -135,5 +135,23 @@ describe('submitFormValues', () => {
     expect(await submitFormValues(refusing.call, view, {})).toEqual({ ok: false, errors: { cover: 'This field is required' } })
     const bare = recorder({ 'workflow.submitStep': refused('A harness tab still drives this run') })
     expect(await submitFormValues(bare.call, view, {})).toEqual({ ok: false, errors: { values: 'A harness tab still drives this run' } })
+  })
+})
+
+describe('signFormPreviews', () => {
+  it('re-points every File-ref option at a presigned url, keeps path, and leaves a refused one alone', async () => {
+    const a = { path: 'workflows/x/a.svg', name: 'a.svg', contentType: 'image/svg+xml', size: 1, url: '/api/uploads/workflows/x/a.svg' }
+    const b = { ...a, path: 'workflows/x/b.svg', name: 'b.svg', url: '/api/uploads/workflows/x/b.svg' }
+    const view = readStepView(ok({ ...FORM_VIEW, fields: { cover: { type: 'choice', options: [a, b, 'plain'], required: true }, notes: { type: 'markdown' } } }))
+    if (view.kind !== 'form') throw new Error('not a form')
+    const { call, calls } = recorder({
+      'workflow.sign': (args) => (args.path === 'workflows/x/b.svg' ? refused('nope') : ok({ url: `https://s/${String(args.path)}?sig=1`, expiresIn: 3600 })),
+    })
+    const out = await signFormPreviews(call, view)
+    const options = (out.view.fields.cover as { options: unknown[] }).options
+    expect(options).toEqual([{ ...a, url: 'https://s/workflows/x/a.svg?sig=1' }, b, 'plain'])
+    expect(out.signed).toEqual(['https://s/workflows/x/a.svg?sig=1'])
+    expect(calls.map((c) => c.arguments)).toEqual([{ runId: 'run_1', path: 'workflows/x/a.svg' }, { runId: 'run_1', path: 'workflows/x/b.svg' }])
+    expect(view.fields.cover).not.toBe(out.view.fields.cover) // the input view is untouched
   })
 })

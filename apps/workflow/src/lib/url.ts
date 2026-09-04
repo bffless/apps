@@ -108,14 +108,45 @@ export function isSameOriginUrl(url: unknown): url is string {
 }
 
 /**
- * 02: the Download action is always `url + (?|&) + download=1`. Lives beside
- * the allow-list because its two callers — `FileCard` (a `file` output's own
- * ref) and `ValueView`'s "payload unavailable" chip (an offloaded `{"$file"}`
- * payload whose bytes could not be read) — must build the same href from the
- * same, already-`isSafeUrl`-checked url.
+ * 02: the Download action is always `url + (?|&) + download=1` — except a url
+ * this page presigned itself: a signed GET's signature covers its exact query
+ * string, so appending `download=1` would invalidate it. `signedUrls.has`
+ * below is that one exception, and it's why this function must live after
+ * that registry.
  */
 export function downloadHref(url: string): string {
+  if (signedUrls.has(url)) return url
   return url + (url.includes('?') ? '&' : '?') + 'download=1'
+}
+
+/**
+ * Spec 10 D6: inside an agent host, a File-ref's ordinary `url` (same-origin
+ * relative to the harness page) resolves against the *sandbox's* origin and
+ * carries no session cookie — so `isSameOriginUrl` alone can never admit it
+ * there, D6's reason for signing form previews before the step view renders
+ * them (`step-view/deps.ts`'s `signFormPreviews`). A url this page minted for
+ * itself through `workflow.sign` is the one kind of absolute, off-origin url
+ * a renderer may still load — never a url a row handed us; nothing here
+ * widens `isSameOriginUrl` itself. Always empty on the harness page, which
+ * never calls `trustSignedUrl`.
+ */
+const signedUrls = new Set<string>()
+
+/** Registers a url this page presigned itself as loadable — see `isLoadableUrl`. */
+export function trustSignedUrl(url: string): void {
+  signedUrls.add(url)
+}
+
+/**
+ * `isSameOriginUrl`, plus a url the page presigned itself (D6). The media-sink
+ * gate every renderer that builds its own `<img>`/`<video>`/`<audio>` `src`
+ * should use in place of `isSameOriginUrl` — `TilePicker`'s `TilePreview`,
+ * `FileCard`'s player, `ImagesView`'s grid — so a form's File-ref previews
+ * still load once `signFormPreviews` has signed them, without loosening what
+ * an unsigned, writer-supplied url is trusted for.
+ */
+export function isLoadableUrl(url: unknown): url is string {
+  return isSameOriginUrl(url) || (typeof url === 'string' && signedUrls.has(url))
 }
 
 /**
