@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { ENTRIES, SET, bundle, outFile, renderedRules } from '../../scripts/build-mcp.mjs'
+import { ENTRIES, SET, bundle, outFile, renderedRules, sourceRev } from '../../scripts/build-mcp.mjs'
 
 /**
  * Verbatim `PROHIBITED_PATTERNS` from
@@ -119,4 +119,14 @@ describe('the rendered MCP rules', () => {
       expect(readFileSync(join(SET, rel), 'utf8'), rel).toBe(text)
     }
   }, 30_000)
+})
+
+describe('the source revision (apps#587)', () => {
+  it('is 8 hex chars, stable across calls, and the rendered endpoint rule carries it', async () => {
+    const rev = sourceRev()
+    expect(rev).toMatch(/^[0-9a-f]{8}$/)
+    expect(sourceRev()).toBe(rev)
+    const endpoint = (await renderedRules()).find(([rel]) => rel === 'rules/api/workflow/mcp/any.rule.yaml')![1]
+    expect(endpoint).toContain(`ui://bffless/workflow/step-view.${rev}.html`)
+  })
 })

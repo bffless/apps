@@ -1,11 +1,13 @@
 // @vitest-environment node
 import { CATALOG, SCOPES, TOOL_SCOPES } from '@bffless/workflow-agent-tools'
 import { describe, expect, it } from 'vitest'
-import { HOST_TOOLS, STEP_VIEW_URI } from './hostTools'
+import { HOST_TOOLS, stepViewUri } from './hostTools'
 import { ALL_TOOLS, TOOL_STEPS, mcpHandlerConfig, shortName, toolRulePath, toolScope } from './mcpConfig'
 
+const REV = '0123abcd'
+
 describe('the rendered mcp_handler config (D19 by construction)', () => {
-  const config = mcpHandlerConfig() as { tools: Array<Record<string, unknown>>; resources: Record<string, unknown>; serverInfo: { name: string } }
+  const config = mcpHandlerConfig({ rev: REV }) as { tools: Array<Record<string, unknown>>; resources: Record<string, unknown>; serverInfo: { name: string } }
 
   it('lists the catalog byte for byte, then the four app-only tools', () => {
     expect(config.tools).toHaveLength(CATALOG.length + HOST_TOOLS.length)
@@ -16,7 +18,7 @@ describe('the rendered mcp_handler config (D19 by construction)', () => {
       expect(tool).not.toHaveProperty('visibility')
     })
     for (const tool of config.tools.slice(CATALOG.length)) expect(tool.visibility).toEqual(['app'])
-    expect(config.tools.find((t) => t.name === 'workflow.submitStep')?._meta).toEqual({ ui: { resourceUri: STEP_VIEW_URI } })
+    expect(config.tools.find((t) => t.name === 'workflow.submitStep')?._meta).toEqual({ ui: { resourceUri: stepViewUri(REV) } })
     expect(config.tools.filter((t) => t._meta)).toHaveLength(1)
   })
 
@@ -30,7 +32,7 @@ describe('the rendered mcp_handler config (D19 by construction)', () => {
 
   it('declares the step view, the island template, the list rule and the CSP tokens', () => {
     expect(config.resources).toEqual({
-      static: [{ uri: STEP_VIEW_URI, name: 'Workflow step view', description: 'Mounts a waiting island or form step of a run (spec 10).', rule: { path: '/api/workflow/mcp-resources/step-view' } }],
+      static: [{ uri: stepViewUri(REV), name: 'Workflow step view', description: 'Mounts a waiting island or form step of a run (spec 10).', rule: { path: '/api/workflow/mcp-resources/step-view' } }],
       templates: [{ uriTemplate: 'ui://bffless/{impl}/{path+}', name: 'island', description: 'An island of an implementation, served unchanged from its bundle (spec 04).', rule: { path: '/w/{impl}/{path+}' } }],
       list: { rule: { path: '/api/workflow/mcp-resources', method: 'GET' } },
       csp: { connectDomains: ['$app', '$storage'], resourceDomains: ['$storage'] },

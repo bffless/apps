@@ -22,13 +22,41 @@
 // committed file is stale, so `pnpm --filter workflow mcp:build` after editing
 // `src/mcp/**` is part of the verify chain.
 import { build } from 'esbuild'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { createHash } from 'node:crypto'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stringify } from 'yaml'
 
 const app = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SET = join(app, '.bffless/proxy-rules/workflow')
+
+function walkFiles(dir) {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name)
+    return statSync(path).isDirectory() ? walkFiles(path) : [path]
+  })
+}
+
+/**
+ * The source revision the ui:// resource URIs carry (apps#587): SHA-256 over
+ * every non-test source file plus package.json, first 8 hex. Any change to the
+ * harness's sources re-keys the step view's URI; bundle.test.ts holds the
+ * committed rule to this value, so `mcp:build` stays in the verify chain.
+ */
+export function sourceRev() {
+  const src = join(app, 'src')
+  const files = walkFiles(src)
+    .filter((f) => !/\.test\.[jt]sx?$/.test(f))
+    .filter((f) => !f.includes(`${sep}mocks${sep}`) && !f.includes(`${sep}test${sep}`))
+    .sort()
+  const hash = createHash('sha256')
+  for (const f of files) {
+    hash.update(relative(app, f)).update('\0').update(readFileSync(f)).update('\0')
+  }
+  hash.update(readFileSync(join(app, 'package.json')))
+  return hash.digest('hex').slice(0, 8)
+}
 
 /** One entry per function step shared by the tool rules, plus the RFC 9728 document (`wellKnown`, one rule). */
 export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'wellKnown']
@@ -154,7 +182,8 @@ const respondJson = { id: 'respond', name: 'respond', handler: 'response_handler
 export async function renderedRules() {
   const cfg = await loadConfig()
   const files = []
-  const config = cfg.mcpHandlerConfig()
+  const rev = sourceRev()
+  const config = cfg.mcpHandlerConfig({ rev })
 
   files.push([
     'rules/api/workflow/mcp/any.rule.yaml',
@@ -223,7 +252,7 @@ export async function renderedRules() {
         order: 41,
         pipeline: {
           name: 'MCP step view resource',
-          description: 'The step view (ui://bffless/workflow/step-view.html, spec 10): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it.',
+          description: `The step view (${cfg.stepViewUri(rev)}, spec 10; apps#587): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it.`,
           steps: [
             defs.route,
             { id: 'stepView', name: 'stepView', handler: 'http_request', config: { condition: 'steps.route.isStepView', url: 'steps.route.stepViewUrl', method: 'GET', headers: { 'x-original-uri': 'steps.route.stepViewPath', 'x-forwarded-host': 'steps.route.host' }, forwardAuth: true, failOnError: false } },

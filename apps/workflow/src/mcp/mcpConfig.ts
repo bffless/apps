@@ -8,8 +8,11 @@
  * (D19, D23). `bundle.test.ts` compares the committed files to a fresh render.
  */
 import { CATALOG, TOOL_SCOPES, type ToolName } from '@bffless/workflow-agent-tools'
-import { HOST_TOOLS, HOST_TOOL_SCOPES, STEP_VIEW_URI, SERVER_VERSION, type HostToolName } from './hostTools'
+import { HOST_TOOLS, HOST_TOOL_SCOPES, stepViewUri, SERVER_VERSION, type HostToolName } from './hostTools'
 import { RESOURCES_PATH, STEP_VIEW_RESOURCE_PATH, TOOLS_PATH } from './route'
+
+/** Re-exported so `scripts/build-mcp.mjs`'s `loadConfig()` (which bundles this module and imports it) sees it too. */
+export { stepViewUri } from './hostTools'
 
 /** The instructions `initialize` answers with — verbatim the prototype's. */
 export const INSTRUCTIONS = `The BFFless Workflow harness: ${CATALOG.length} workflow.* tools to list, describe and watch runs and complete a waiting interactive step (island or form). Pass runId to every run-scoped tool.`
@@ -25,14 +28,15 @@ export function toolRulePath(tool: string): string {
   return `${TOOLS_PATH}${shortName(tool)}`
 }
 
-/** CE's `mcp_handler` config — the `config:` of the endpoint rule's one step. */
-export function mcpHandlerConfig(): Record<string, unknown> {
+/** CE's `mcp_handler` config — the `config:` of the endpoint rule's one step. `rev` is the build's `sourceRev()` (apps#587). */
+export function mcpHandlerConfig({ rev }: { rev: string }): Record<string, unknown> {
+  const uri = stepViewUri(rev)
   const tools: Array<Record<string, unknown>> = CATALOG.map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
     annotations: tool.annotations,
-    ...(tool.name === 'workflow.submitStep' ? { _meta: { ui: { resourceUri: STEP_VIEW_URI } } } : {}),
+    ...(tool.name === 'workflow.submitStep' ? { _meta: { ui: { resourceUri: uri } } } : {}),
     rule: { path: toolRulePath(tool.name), method: 'POST' },
   }))
   for (const tool of HOST_TOOLS) {
@@ -51,7 +55,7 @@ export function mcpHandlerConfig(): Record<string, unknown> {
     resources: {
       static: [
         {
-          uri: STEP_VIEW_URI,
+          uri,
           name: 'Workflow step view',
           description: 'Mounts a waiting island or form step of a run (spec 10).',
           rule: { path: STEP_VIEW_RESOURCE_PATH },
