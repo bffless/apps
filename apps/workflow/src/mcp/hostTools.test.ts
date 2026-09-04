@@ -1,30 +1,11 @@
 // @vitest-environment node
-import { CATALOG } from '@bffless/workflow-agent-tools'
 import { describe, expect, it } from 'vitest'
-import { HOST_TOOLS, RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool, listedTools } from './hostTools'
+import { HOST_TOOLS, HOST_TOOL_SCOPES, RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool } from './hostTools'
 
-describe('listedTools', () => {
-  const listed = listedTools()
-
-  it('is the catalog followed by the four app-only tools', () => {
-    expect(listed.length).toBe(CATALOG.length + 4)
-    expect(listed.slice(CATALOG.length).map((tool) => tool.name)).toEqual(HOST_TOOLS.map((tool) => tool.name))
-  })
-
-  it("carries the catalog's descriptors byte for byte, without the scope", () => {
-    for (let i = 0; i < CATALOG.length; i++) {
-      const { name, description, inputSchema, annotations } = CATALOG[i]
-      const { _meta, ...wire } = listed[i]
-      void _meta
-      expect(JSON.stringify(wire)).toBe(JSON.stringify({ name, description, inputSchema, annotations }))
-      expect(listed[i]).not.toHaveProperty('scope')
-    }
-  })
-
-  it('links the step view from workflow.submitStep only', () => {
-    const withUi = listed.filter((tool) => (tool._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri)
-    expect(withUi.map((tool) => tool.name)).toEqual(['workflow.submitStep'])
-    expect((withUi[0]._meta as { ui: { resourceUri: string } }).ui.resourceUri).toBe(STEP_VIEW_URI)
+describe('the app-only tools', () => {
+  it('map to the run scope except the read-only step view (Phase 3 plan, Decision 26)', () => {
+    expect(HOST_TOOL_SCOPES).toEqual({ 'workflow.submit': 'workflow:run', 'workflow.annotate': 'workflow:run', 'workflow.pipeline': 'workflow:run', 'workflow.stepView': 'workflow:read' })
+    expect(HOST_TOOLS.map((t) => t.name).sort()).toEqual(Object.keys(HOST_TOOL_SCOPES).sort())
   })
 
   it('marks every host tool app-only and run/step scoped', () => {
@@ -42,7 +23,8 @@ describe('listedTools', () => {
     expect(hostInfo?.[1]).toBe(SERVER_VERSION)
   })
 
-  it('names the MCP Apps MIME type', () => {
+  it('names the MCP Apps MIME type and the step view', () => {
     expect(RESOURCE_MIME).toBe('text/html;profile=mcp-app')
+    expect(STEP_VIEW_URI).toBe('ui://bffless/workflow/step.html')
   })
 })

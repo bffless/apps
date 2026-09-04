@@ -1,16 +1,13 @@
 /**
- * `reply` — the MCP endpoint rule's last function step (spec 10, D22; Phase 2
- * plan, Task 4): the JSON-RPC answer, assembled from what the gated steps
- * fetched or queried. Every `tools/call` answer is a catalog `CallToolResult`
- * built with the catalog's own builders (D19), worded as the harness page
- * words it (`src/agent/executors.ts` is the reference; the parity tests hold
- * the two together).
- *
- * The body is pre-serialized here and rendered by the `respond` step with
- * `{{{steps.reply.json}}}` — whoami's quote-safe shape (apps#381).
+ * `reply` — the last function step of every MCP tool rule (spec 10, D22 GA;
+ * Phase 3 plan, Task B1): one catalog `CallToolResult`, built with the
+ * catalog's own builders (D19) and worded as the harness page words it
+ * (`src/agent/executors.ts` is the reference; the parity tests hold the two
+ * together), pre-serialized for the `respond` step (`{{{steps.reply.json}}}`,
+ * apps#381). CE's `mcp_handler` passes a `content[]` body through verbatim.
+ * The resources-list rule answers the array CE's `resources.list` reads.
  */
 import {
-  CATALOG,
   errorResult,
   snapshotFromRows,
   snapshotText,
@@ -23,12 +20,10 @@ import {
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { parse } from 'yaml'
 import { describeText, describeWorkflow } from '../lib/describe'
-import { originOf, uiMeta } from './csp'
-import { RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool, listedTools } from './hostTools'
+import { RESOURCE_MIME, isHostTool } from './hostTools'
 import { workflowId } from './ids'
-import { ERR, errorResponse, negotiateVersion, okResponse, type Id } from './jsonrpc'
 import type { Plan } from './plan'
-import { MISSING_SCOPE, NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
+import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
 import { fieldsOf, rows, runsWithWaiting, type Row } from './rows'
 import type { FnDeployment, FnRequest, Route } from './route'
 import { pipelineError, pipelineResult } from './toolResults'
@@ -55,8 +50,6 @@ export interface StepOutputs {
   index3?: HttpStep
   yaml?: HttpStep
   island?: HttpStep
-  stepView?: HttpStep
-  probe?: { url?: string }
   signed?: { url?: string }
   /** Task 10: the write branch's verdict. */
   merge?: { update?: boolean; result?: CallToolResult }
@@ -67,10 +60,8 @@ export interface StepOutputs {
 
 export interface Reply {
   json: string
-  status: number
 }
 
-const SERVER_NAME = 'bffless-workflow'
 const NOT_SERVED = new Set(['workflow.start', 'workflow.cancel', 'workflow.resume'])
 const WRITE_TOOLS = new Set(['workflow.submit', 'workflow.annotate', 'workflow.submitStep'])
 const RUNS_DEFAULT = 20
@@ -365,8 +356,6 @@ function notServed(tool: string): CallToolResult {
 function callTool(route: Route, steps: StepOutputs): CallToolResult {
   const tool = route.tool
   if (tool === '') return refuse('tool', 'A tool `name` is required')
-  // An app token missing the tool's scope: refused before anything ran (route), named for the model (text-only host).
-  if (route.scopeMissing !== '') return errorResult(MISSING_SCOPE([route.scopeMissing]), { errors: { scope: `missing ${route.scopeMissing}` } })
   switch (tool) {
     case 'workflow.list':
       return list(route, steps)
@@ -401,18 +390,12 @@ function callTool(route: Route, steps: StepOutputs): CallToolResult {
 }
 
 // ---------------------------------------------------------------------------
-// Resources
+// The resources-list rule: what the app enumerates — every discovered island.
+// CE's mcp_handler adds the step view (a static resource) and every `_meta.ui`.
 // ---------------------------------------------------------------------------
 
-function storageOrigin(steps: StepOutputs): string {
-  return originOf(steps.probe?.url)
-}
-
-function resourcesList(route: Route, steps: StepOutputs): unknown {
-  const meta = uiMeta(route.appOrigin, storageOrigin(steps))
-  const resources: Array<Record<string, unknown>> = [
-    { uri: STEP_VIEW_URI, name: 'Workflow step view', description: 'Mounts a waiting island step of a run (spec 10).', mimeType: RESOURCE_MIME, _meta: meta },
-  ]
+export function resourcesList(steps: StepOutputs): Array<Record<string, unknown>> {
+  const resources: Array<Record<string, unknown>> = []
   for (const impl of discovered(steps)) {
     for (const island of impl.islands) {
       resources.push({
@@ -420,24 +403,10 @@ function resourcesList(route: Route, steps: StepOutputs): unknown {
         name: `${impl.alias}: ${island}`,
         description: `An island of the ${impl.name} implementation, served unchanged (spec 04).`,
         mimeType: RESOURCE_MIME,
-        _meta: meta,
       })
     }
   }
-  return { resources }
-}
-
-function resourcesRead(route: Route, steps: StepOutputs, id: Id): unknown {
-  const source = route.isStepView ? steps.stepView : route.isIslandUri ? steps.island : undefined
-  if (route.isIslandUri && steps.plan && !steps.plan.hasIsland) {
-    return errorResponse(id, ERR.RESOURCE_NOT_FOUND, `Resource not found: ${route.uri} (${steps.plan.islandError || 'not an island of that implementation'})`)
-  }
-  if (!source || source.ok !== true || typeof source.body !== 'string') {
-    return errorResponse(id, ERR.RESOURCE_NOT_FOUND, `Resource not found: ${route.uri}`)
-  }
-  return okResponse(id, {
-    contents: [{ uri: route.uri, mimeType: RESOURCE_MIME, text: source.body, _meta: uiMeta(route.appOrigin, storageOrigin(steps)) }],
-  })
+  return resources
 }
 
 // ---------------------------------------------------------------------------
@@ -445,40 +414,14 @@ function resourcesRead(route: Route, steps: StepOutputs, id: Id): unknown {
 export function handler(data: { request?: FnRequest; steps: StepOutputs; deployment?: FnDeployment }): Reply {
   const steps = data.steps ?? {}
   const route = steps.route
-  const json = (value: unknown): Reply => ({ json: JSON.stringify(value), status: 200 })
-  if (!route) return json(errorResponse(null, ERR.INTERNAL, 'The route step did not run'))
-  const id = route.id
-
+  const json = (value: unknown): Reply => ({ json: JSON.stringify(value) })
+  if (!route) return json(errorResult('The route step did not run', { errors: { tool: 'The route step did not run' } }))
   switch (route.kind) {
-    case 'invalid':
-      return json(errorResponse(id, ERR.INVALID_REQUEST, route.message))
-    case 'notification':
-      return { json: '', status: 202 }
-    case 'initialize':
-      return json(
-        okResponse(id, {
-          protocolVersion: negotiateVersion(route.params.protocolVersion),
-          capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-          instructions: `The BFFless Workflow harness: ${CATALOG.length} workflow.* tools to list, describe and watch runs and complete a waiting island step. Pass runId to every run-scoped tool.`,
-        }),
-      )
-    case 'ping':
-      return json(okResponse(id, {}))
-    default:
-      break
-  }
-
-  switch (route.kind) {
-    case 'toolsList':
-      return json(okResponse(id, { tools: listedTools() }))
-    case 'toolsCall':
-      return json(okResponse(id, callTool(route, steps)))
     case 'resourcesList':
-      return json(okResponse(id, resourcesList(route, steps)))
-    case 'resourcesRead':
-      return json(resourcesRead(route, steps, id))
+      return json(resourcesList(steps))
+    case 'toolsCall':
+      return json(callTool(route, steps))
     default:
-      return json(errorResponse(id, ERR.METHOD_NOT_FOUND, `Method not found: ${route.method}`))
+      return json(errorResult(route.message || 'Not a tool rule', { errors: { tool: route.message || 'Not a tool rule' } }))
   }
 }

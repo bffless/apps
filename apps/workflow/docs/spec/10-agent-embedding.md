@@ -132,7 +132,9 @@ Two implementations, one endpoint:
    by hand. Enough for discovery reads, `resources/read`, and however much of `tools/call`
    a function can reach (a spike settles whether it can call sibling rules; if not, the
    prototype narrows and the handler below absorbs execution).
-2. **GA — CE `mcp_handler`.** CE grows a *generic* pipeline handler — a peer of
+2. **GA — CE `mcp_handler`.** *(Shipped 2026-09-03, Phase 3 story 8 — bffless/ce#728;
+   the harness rule set swapped in the same phase. The Phase-2 prototype's walk passes
+   unchanged against it.)* CE grows a *generic* pipeline handler — a peer of
    `function_handler` / `data_query`, knowing nothing about workflow — that owns the
    protocol plumbing; the rule's config declares the tools (name → rule path, method,
    schema, visibility) and the `ui://` resources (path → served file + `_meta.ui`). The

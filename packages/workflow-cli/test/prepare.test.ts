@@ -43,6 +43,7 @@ describe('prepareRules', () => {
       pathPattern: string
       targetUrl: string
       forwardCookies: boolean
+      headerConfig: { forward: string[]; strip: string[] }
       order: number
       description: string
     }
@@ -50,6 +51,10 @@ describe('prepareRules', () => {
       pathPattern: '/w/hello-pr-3/*',
       targetUrl: 'https://hello-pr-3.example.test',
       forwardCookies: true,
+      headerConfig: {
+        forward: ['accept', 'accept-language', 'content-type', 'user-agent', 'x-request-id', 'cookie', 'authorization'],
+        strip: ['host', 'connection', 'keep-alive', 'transfer-encoding'],
+      },
       order: 5,
     })
     expect(description).toMatch(/hello-pr-3/)

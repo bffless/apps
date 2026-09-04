@@ -1,5 +1,9 @@
-/** Types for `build-mcp.mjs`, so `src/mcp/bundle.test.ts` can import the real builder. */
-export declare const ENTRIES: readonly string[]
-export declare const OUT_DIR: string
-export declare function outFile(name: string): string
-export declare function bundle(name: string): Promise<string>
+/** Types for the ESM build script, for `src/mcp/bundle.test.ts` (`allowJs` is off). */
+export const ENTRIES: readonly string[]
+export const OUT_DIR: string
+/** The rule-set directory the rendered rules live under. */
+export const SET: string
+export function outFile(name: string): string
+export function bundle(name: string): Promise<string>
+/** Every rendered rule file: `[path relative to SET, text]`. */
+export function renderedRules(): Promise<Array<[string, string]>>

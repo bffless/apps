@@ -508,6 +508,24 @@ Phase 4 docs PR (pre-approved deviation).
 The scratch install has since been removed (Task 10 step 3); `workflow-test-w.j5s.dev` now
 answers 404.
 
+### M5 Phase 3 — the endpoint on CE's `mcp_handler` (2026-09-03)
+
+From story 8 the endpoint is **one `mcp_handler` step** (CE ≥ the release carrying ce#728):
+`rules/api/workflow/mcp/rule.yaml` is rendered from `src/mcp/mcpConfig.ts` — the catalog's
+eleven descriptors byte for byte, the four app-only tools, the step view as a static `ui://`
+resource, the island template `ui://bffless/{impl}/{path+}` → `/w/{impl}/{path+}`, and the
+resources-list rule — and every tool is a **sibling rule** under `rules/api/workflow/mcp-tools/
+<name>/post/` with exactly the steps that tool needs and `requiredScopes` from the catalog's map
+(D23). The sibling rules share four function bundles under `mcp-fn/` (route / plan / merge /
+reply — the Phase-2 functions minus the JSON-RPC envelope, which CE owns now). CE invokes a
+sibling in-process as the caller (cookie or Bearer app token forwarded), the sibling's validator
+is where a tool's scope is refused, and the per-request cost is one small pipeline per tool
+instead of the prototype's 24-step chain. `pnpm --filter workflow mcp:build` builds the bundles
+and renders every rule file; `src/mcp/bundle.test.ts` fails when any committed file is stale.
+The redeploy sequence below is unchanged (the set is pushed with `--prune`, so the retired
+`mcp/post` and `mcp/get` rules leave the instance). The `mcp` walk's 24 Phase-2 checks pass
+**unchanged** against this shape — that was the acceptance test.
+
 ### M5 Phase 2 — the MCP Apps scratch project `bffless/workflow-mcp` (2026-09-02)
 
 The authless MCP endpoint prototype (spec 10, D22–D23 rung 1; apps#554 stories 5–6) runs on
@@ -555,7 +573,7 @@ curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_AP
 mkdir -p /tmp/hello && rm -rf /tmp/hello/dist && cp -r apps/workflow/hello-dist /tmp/hello/dist && (cd /tmp/hello && python3 -c "import shutil; shutil.make_archive('/tmp/hello','zip','.','dist')")
 curl -sS -X POST $BFFLESS_API_URL/api/deployments/zip -H "X-API-Key: $BFFLESS_API_KEY" -F file=@/tmp/hello.zip -F repository=bffless/workflow-mcp -F commitSha=$(cat apps/workflow/hello.ref) -F branch=main -F isPublic=true -F alias=hello
 cp -r apps/workflow/hello-src/workflows/hello/.bffless/proxy-rules/hello /tmp/hello-rules && mkdir -p /tmp/hello-rules/rules/_custom/forward
-printf 'pathPattern: /w/hello/*\ntargetUrl: http://localhost:3000/public/bffless/workflow-mcp/alias/hello/dist\nstripPrefix: true\nforwardCookies: true\norder: 5\n' > /tmp/hello-rules/rules/_custom/forward/get.rule.yaml
+printf 'pathPattern: /w/hello/*\ntargetUrl: http://localhost:3000/public/bffless/workflow-mcp/alias/hello/dist\nstripPrefix: true\nforwardCookies: true\nheaderConfig:\n  forward: [accept, accept-language, content-type, user-agent, x-request-id, cookie, authorization]\n  strip: [host, connection, keep-alive, transfer-encoding]\norder: 5\n' > /tmp/hello-rules/rules/_custom/forward/get.rule.yaml
 npx -y bffless@0.3.5 rules push /tmp/hello-rules --project bffless/workflow-mcp --api-url $BFFLESS_API_URL --path-prefix /api/hello --prune
 # then, if the set ids changed: update_alias workflow → [workflow, hello], hello → [hello]
 ```

@@ -12,9 +12,6 @@
  * - `workflow.describe`: the YAML named by the index's `workflows[].file` for
  *   the requested workflow — `interactive.workflow.yaml`, not a guessed
  *   `<workflow>.yaml`.
- * - `resources/read ui://bffless/<impl>/<rest>`: `resolveSrc`'s fence — the
- *   very check the harness page applies to an island's `src` — decides whether
- *   `/w/<impl>/<rest>` is fetched at all.
  * - `workflow.stepView`: the waiting step's `with.src` from the run's
  *   definition snapshot, through the same fence, against the **run's** impl.
  * - `workflow.pipeline`: `resolveToolName` against the run's impl — the
@@ -143,19 +140,6 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       plan.hasYaml = true
       plan.yamlPath = `/w/${route.impl}/.bffless/workflows/${listing.file as string}`
       plan.yamlUrl = `${base}${plan.yamlPath}`
-    }
-  }
-
-  if (route.isIslandUri) {
-    try {
-      const url = resolveSrc(route.impl, route.rest)
-      if (base !== '') {
-        plan.hasIsland = true
-        plan.islandPath = url
-        plan.islandUrl = `${base}${url}`
-      }
-    } catch (err) {
-      plan.islandError = err instanceof Error ? err.message : String(err)
     }
   }
 
