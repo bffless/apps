@@ -30,7 +30,7 @@ import { mintAppToken, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const APP_ONLY = ['workflow.submit', 'workflow.annotate', 'workflow.pipeline', 'workflow.stepView']
-const STEP_VIEW_URI = 'ui://bffless/workflow/step.html'
+const STEP_VIEW_URI = 'ui://bffless/workflow/step-view.html'
 const ISLAND_URI = 'ui://bffless/hello/islands/pick-line.html'
 
 interface ToolAnswer {

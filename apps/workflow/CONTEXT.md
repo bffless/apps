@@ -205,7 +205,7 @@ asked for, per project; a `workflow:read`-only consent yields a token that watch
 _Avoid_: "login" (the member is already signed in), "permission" (the member's project role)
 
 **Step view**:
-`ui://bffless/workflow/step.html` — the engine-less host page that mounts one waiting island
+`ui://bffless/workflow/step-view.html` — the engine-less host page that mounts one waiting island
 inside an agent host, under the same `IslandHost` the harness page uses; what
 `workflow.submitStep` renders in claude.ai.
 _Avoid_: the run view (Phase 4's, with the engine), the island itself (served unchanged as

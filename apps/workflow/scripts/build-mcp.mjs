@@ -223,7 +223,7 @@ export async function renderedRules() {
         order: 41,
         pipeline: {
           name: 'MCP step view resource',
-          description: 'The step view (ui://bffless/workflow/step.html, spec 10): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it.',
+          description: 'The step view (ui://bffless/workflow/step-view.html, spec 10): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it.',
           steps: [
             defs.route,
             { id: 'stepView', name: 'stepView', handler: 'http_request', config: { condition: 'steps.route.isStepView', url: 'steps.route.stepViewUrl', method: 'GET', headers: { 'x-original-uri': 'steps.route.stepViewPath', 'x-forwarded-host': 'steps.route.host' }, forwardAuth: true, failOnError: false } },

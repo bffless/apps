@@ -25,6 +25,6 @@ describe('the app-only tools', () => {
 
   it('names the MCP Apps MIME type and the step view', () => {
     expect(RESOURCE_MIME).toBe('text/html;profile=mcp-app')
-    expect(STEP_VIEW_URI).toBe('ui://bffless/workflow/step.html')
+    expect(STEP_VIEW_URI).toBe('ui://bffless/workflow/step-view.html')
   })
 })
