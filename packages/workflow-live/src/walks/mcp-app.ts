@@ -175,18 +175,16 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
         statusView: (formStatusView.structuredContent as { steps?: Record<string, string> } | undefined)?.steps?.[FORM_STEP],
       })
     } catch (e) {
-      // Chromium never dispatches the `<form onSubmit>` at all here — the
-      // click on the submit button is blocked pre-JS by the sandbox lacking
-      // `allow-forms` ("Blocked form submission … the 'allow-forms'
-      // permission is not set", captured by the page2 console listener
-      // above into `log`). That is a property of *any* conforming sandboxed
-      // host without `allow-forms`, not of this walk — `StepForm.tsx`'s
-      // `<button type="submit">` inside `<form onSubmit>` needs it
-      // regardless of which host mounts the view. Outside packages/workflow-
-      // live (host-emu.ts's sandbox string, or the app); recorded as a
-      // failure with evidence rather than let the walk die here so the
-      // remaining checks still run.
-      report.expect('D24.formSubmitsThroughBridge', false, { error: e instanceof Error ? e.message : String(e), note: 'native <form> submit blocked by the sandbox (no allow-forms) before StepForm.tsx\'s onSubmit ever runs — see page2 console error in mcp-app.log' })
+      // The click-submit fix (Task 3d, #591) is what this guards: `StepForm.tsx`
+      // submits from a `<button type="button" onClick>`, never a native
+      // `<form onSubmit>`, because a sandboxed host frame without
+      // `allow-forms` (claude.ai's, and this walk's) returns from the
+      // submission algorithm before the `submit` event ever fires — a
+      // property of any conforming sandboxed host without `allow-forms`,
+      // not of this walk. If that fix regresses, it shows here as a
+      // timed-out `submitted`; recorded as a failure with evidence rather
+      // than let the walk die here so the remaining checks still run.
+      report.expect('D24.formSubmitsThroughBridge', false, { error: e instanceof Error ? e.message : String(e), note: 'the click-submit fix (Task 3d, #591) is what this guards; a regression shows here as a timed-out `submitted`' })
     }
     await page2.close()
 

@@ -25,7 +25,8 @@ export const SERVER_VERSION = '1.0.0'
  * The step view's resource URI for one source revision (apps#587): claude.ai
  * caches a widget's resource per URI per connector, so a stale fetch (the
  * Phase-3 not-found page) outlived the deploy that fixed it until the URI
- * changed. The revision is a hash of `src/**` (`scripts/build-mcp.mjs`
+ * changed. The revision is a hash of `src/**` plus the step view build's own
+ * two inputs, `step/index.html` and `vite.step.config.ts` (`scripts/build-mcp.mjs`
  * `sourceRev`), rendered into the rule at `mcp:build` time — every deploy
  * that changes the view is a cache miss by construction.
  */

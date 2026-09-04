@@ -208,7 +208,8 @@ _Avoid_: "login" (the member is already signed in), "permission" (the member's p
 `ui://bffless/workflow/step-view.<rev>.html` — the engine-less host page that mounts one waiting
 island inside an agent host, under the same `IslandHost` the harness page uses; what
 `workflow.submitStep` renders in claude.ai. `<rev>` is `sourceRev()` (`scripts/build-mcp.mjs`), an
-8-hex-char hash of `src/**` rendered into the URI at `mcp:build` time — every deploy that changes
+8-hex-char hash of `src/**` plus the step view build's own `step/index.html` and
+`vite.step.config.ts`, rendered into the URI at `mcp:build` time — every deploy that changes
 the view is a cache miss for a host that caches a widget's resource per URI (apps#587).
 _Avoid_: the run view (Phase 4's, with the engine), the island itself (served unchanged as
 `ui://bffless/<impl>/islands/<name>.html`)

@@ -43,7 +43,17 @@ window.__mount = (html, toolInput) => {
     if (!m || m.jsonrpc !== '2.0') return
     window.__log.push(m.method ? m.method : 'reply ' + m.id)
     if (m.method === 'ui/notifications/size-changed' && m.params && typeof m.params.height === 'number') window.__heights.push(m.params.height)
-    for (const out of await hostReply(m, window.__callTool, toolInput)) frame.contentWindow.postMessage(out, '*')
+    try {
+      for (const out of await hostReply(m, window.__callTool, toolInput)) frame.contentWindow.postMessage(out, '*')
+    } catch (err) {
+      // window.__callTool (exposeFunction'd, so it can reject with anything —
+      // a live 401, a network failure) rejecting inside hostReply's
+      // tools/call branch would otherwise leave the app's pending call
+      // hanging forever. hostReply itself stays pure/self-contained (it is
+      // serialised with String(hostReply) into the page, so it cannot close
+      // over anything from this scope); the try/catch lives here instead.
+      if (m.id !== undefined) frame.contentWindow.postMessage({ jsonrpc: '2.0', id: m.id, error: { code: -32000, message: String(err) } }, '*')
+    }
   })
   frame.contentDocument.open(); frame.contentDocument.write(html); frame.contentDocument.close()
 }

@@ -40,9 +40,12 @@ function walkFiles(dir) {
 
 /**
  * The source revision the ui:// resource URIs carry (apps#587): SHA-256 over
- * every non-test source file plus package.json, first 8 hex. Any change to the
- * harness's sources re-keys the step view's URI; bundle.test.ts holds the
- * committed rule to this value, so `mcp:build` stays in the verify chain.
+ * every non-test source file, plus the step view build's two inputs outside
+ * `src/**` (`step/index.html`, `vite.step.config.ts` — the singlefile entry
+ * and the config that builds it, so a change to either also re-keys the
+ * URI), plus package.json, first 8 hex. Any change to the harness's sources
+ * re-keys the step view's URI; bundle.test.ts holds the committed rule to
+ * this value, so `mcp:build` stays in the verify chain.
  */
 export function sourceRev() {
   const src = join(app, 'src')
@@ -52,6 +55,9 @@ export function sourceRev() {
     .sort()
   const hash = createHash('sha256')
   for (const f of files) {
+    hash.update(relative(app, f)).update('\0').update(readFileSync(f)).update('\0')
+  }
+  for (const f of [join(app, 'step/index.html'), join(app, 'vite.step.config.ts')]) {
     hash.update(relative(app, f)).update('\0').update(readFileSync(f)).update('\0')
   }
   hash.update(readFileSync(join(app, 'package.json')))
