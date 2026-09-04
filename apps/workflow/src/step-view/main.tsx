@@ -15,8 +15,12 @@
  * writes the step row; the run continues when it is resumed on the harness.
  */
 import { App } from '@modelcontextprotocol/ext-apps'
+import { createRoot } from 'react-dom/client'
+import type { Root } from 'react-dom/client'
 import { createIslandHost } from '../islands/IslandHost'
-import { readStepView, stepViewDeps } from './deps'
+import { StepForm } from './StepForm'
+import { readStepView, stepViewDeps, submitFormValues } from './deps'
+import '../index.css'
 
 const HOST_PROTOCOL_VERSION = '1.0.0'
 
@@ -26,6 +30,8 @@ const title = el<HTMLHeadingElement>('title')
 const status = el<HTMLSpanElement>('status')
 const frame = el<HTMLIFrameElement>('island')
 const submitted = el<HTMLParagraphElement>('submitted')
+const formRoot = el<HTMLDivElement>('form')
+let reactRoot: Root | null = null
 
 function say(line: string, level: 'info' | 'error' = 'info'): void {
   status.textContent = line
@@ -57,17 +63,37 @@ app.ontoolinput = ({ arguments: args }) => {
     try {
       const view = readStepView(await call({ name: 'workflow.stepView', arguments: { runId, step } }))
       if (controller.signal.aborted) return
+      const finished = () => {
+        submitted.textContent = `Submitted ${view.step}. Open run ${view.runId} on the harness and Resume to continue.`
+        submitted.hidden = false
+        say(`${view.step} submitted`)
+      }
+      if (view.kind === 'form') {
+        title.textContent = `${view.workflow}: ${view.title}`
+        frame.hidden = true
+        formRoot.hidden = false
+        reactRoot ??= createRoot(formRoot)
+        reactRoot.render(
+          <StepForm
+            title={view.title}
+            description={view.description}
+            submitLabel={view.submit}
+            fields={view.fields}
+            initial={view.initial}
+            onSubmit={async (values) => {
+              const answer = await submitFormValues(call, view, values)
+              if (answer.ok) finished()
+              return answer
+            }}
+          />,
+        )
+        say(`${view.step} is waiting for you`)
+        return
+      }
+      formRoot.hidden = true
+      frame.hidden = false
       title.textContent = `${view.workflow}: ${view.step}`
-      const host = createIslandHost(
-        stepViewDeps(call, view, {
-          onLog: (line) => say(line),
-          onSubmitted: () => {
-            submitted.textContent = `Submitted ${view.step}. Open run ${view.runId} on the harness and Resume to continue.`
-            submitted.hidden = false
-            say(`${view.step} submitted`)
-          },
-        }),
-      )
+      const host = createIslandHost(stepViewDeps(call, view, { onLog: (line) => say(line), onSubmitted: finished }))
       await host.mount(frame, { impl: view.impl, src: view.src, arguments: view.arguments, headless: false, signal: controller.signal })
       say(`${view.impl}/${view.src} is waiting for you`)
     } catch (error) {

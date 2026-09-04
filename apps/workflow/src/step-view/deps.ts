@@ -1,36 +1,54 @@
 /**
  * The step view's bridge (spec 10 §Islands and the run view; Phase 2 plan,
- * Decisions 3–4): how one waiting island's every capability rides the outer
- * MCP Apps bridge as `tools/call` to the harness's own endpoint.
+ * Decisions 3–4; Phase 4 plan, Decisions 2–3): how one waiting step's every
+ * capability rides the outer MCP Apps bridge as `tools/call` to the harness's
+ * own endpoint.
  *
  * Inward the view is the harness's `IslandHost` (the island cannot tell which
  * host it is in); outward it is an ext-apps `App`, and the four app-only tools
  * — `workflow.stepView`, `workflow.pipeline`, `workflow.submit`,
- * `workflow.annotate` — plus the catalog's `workflow.sign` are the whole
- * surface. The fence still holds server-side: `workflow.pipeline` resolves a
- * name against the *run's* implementation, never against anything the view
- * says. Pure: no DOM, so `deps.test.ts` drives it with a recording `call`.
+ * `workflow.annotate` — plus the catalog's `workflow.sign` and, for a form
+ * step, `workflow.submitStep` are the whole surface. The fence still holds
+ * server-side: `workflow.pipeline` resolves a name against the *run's*
+ * implementation, never against anything the view says. Pure: no DOM, so
+ * `deps.test.ts` drives it with a recording `call`.
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import type { IslandHostDeps } from '../islands/IslandHost'
+import type { InputDef } from '@bffless/workflow-lint/definition'
+import type { IslandHostDeps, SubmitAnswer } from '../islands/IslandHost'
 import { resolveSrc } from '../lib/runner/adapters/island'
 
 /** `App.callServerTool`, narrowed to what the view sends. */
 export type ServerCall = (params: { name: string; arguments: Record<string, unknown> }) => Promise<CallToolResult>
 
-/** What `workflow.stepView` answers: enough to mount the island exactly as the harness page would. */
-export interface StepViewData {
+interface StepViewBase {
   runId: string
   step: string
   impl: string
   workflow: string
-  kind: string
   status: string
+}
+
+/** What `workflow.stepView` answers for an island: enough to mount it exactly as the harness page would. */
+export interface IslandStepView extends StepViewBase {
+  kind: 'island'
   src: string
   arguments: Record<string, unknown>
   outputs?: Record<string, unknown>
   html: string
 }
+
+/** …and for a form (Phase 4, Decision 2): the fields the harness evaluated when the step started waiting, off the row. */
+export interface FormStepView extends StepViewBase {
+  kind: 'form'
+  title: string
+  description?: string
+  submit: string
+  fields: Record<string, InputDef>
+  initial: Record<string, unknown>
+}
+
+export type StepViewData = IslandStepView | FormStepView
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -44,27 +62,50 @@ export function resultText(result: CallToolResult): string {
     .join('\n')
 }
 
-/** The `workflow.stepView` result, validated into `StepViewData`; throws with the result's text on a refusal or a malformed answer. */
+/** The `workflow.stepView` result, validated; throws with the result's text on a refusal or a malformed answer. */
 export function readStepView(result: CallToolResult): StepViewData {
   if (result.isError) throw new Error(resultText(result) || 'workflow.stepView refused')
   const s = isPlainObject(result.structuredContent) ? result.structuredContent : {}
   const str = (key: string) => (typeof s[key] === 'string' ? (s[key] as string) : '')
-  const view: StepViewData = {
-    runId: str('runId'),
-    step: str('step'),
-    impl: str('impl'),
-    workflow: str('workflow'),
-    kind: str('kind'),
-    status: str('status'),
+  const base: StepViewBase = { runId: str('runId'), step: str('step'), impl: str('impl'), workflow: str('workflow'), status: str('status') }
+  for (const key of ['runId', 'step', 'impl'] as const) {
+    if (base[key] === '') throw new Error(`workflow.stepView answered without ${key}`)
+  }
+  if (str('kind') === 'form') {
+    if (!isPlainObject(s.fields)) throw new Error('workflow.stepView answered without fields')
+    return {
+      ...base,
+      kind: 'form',
+      title: str('title') || base.step,
+      ...(str('description') === '' ? {} : { description: str('description') }),
+      submit: str('submit') || 'Submit',
+      fields: s.fields as Record<string, InputDef>,
+      initial: isPlainObject(s.initial) ? s.initial : {},
+    }
+  }
+  const view: IslandStepView = {
+    ...base,
+    kind: 'island',
     src: str('src'),
     arguments: isPlainObject(s.arguments) ? s.arguments : {},
     ...(isPlainObject(s.outputs) ? { outputs: s.outputs } : {}),
     html: str('html'),
   }
-  for (const key of ['runId', 'step', 'impl', 'src', 'html'] as const) {
+  for (const key of ['src', 'html'] as const) {
     if (view[key] === '') throw new Error(`workflow.stepView answered without ${key}`)
   }
   return view
+}
+
+/** A form's submit over the bridge: `workflow.submitStep { runId, step, values }`, the verdict read as the island path reads `workflow.submit`'s (Decision 3). */
+export async function submitFormValues(call: ServerCall, view: FormStepView, values: Record<string, unknown>): Promise<SubmitAnswer> {
+  const result = await call({ name: 'workflow.submitStep', arguments: { runId: view.runId, step: view.step, values } })
+  if (!result.isError) return { ok: true }
+  const s = isPlainObject(result.structuredContent) ? result.structuredContent : {}
+  const errors = isPlainObject(s.errors)
+    ? Object.fromEntries(Object.entries(s.errors).map(([key, value]) => [key, String(value)]))
+    : { values: resultText(result) || 'workflow.submitStep refused' }
+  return { ok: false, errors }
 }
 
 /** `_meta.bffless.status` of a pipeline answer the endpoint relayed, when it carried one. */
@@ -94,7 +135,7 @@ export interface StepViewHooks {
  * - `onAnnotate` → `workflow.annotate { runId, step, ...args }`;
  * - `sign` → the catalog's `workflow.sign { runId, path }`.
  */
-export function stepViewDeps(call: ServerCall, view: StepViewData, hooks: StepViewHooks): IslandHostDeps {
+export function stepViewDeps(call: ServerCall, view: IslandStepView, hooks: StepViewHooks): IslandHostDeps {
   const islandUrl = resolveSrc(view.impl, view.src)
   const scoped = { runId: view.runId, step: view.step }
 

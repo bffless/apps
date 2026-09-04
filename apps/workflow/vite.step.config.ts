@@ -4,7 +4,9 @@
  * file**. The MCP endpoint serves it as `ui://bffless/workflow/step-view.html`
  * (`resources/read`), and an agent host mounts it in a sandboxed iframe with a
  * default-deny CSP — so, like an island (04), every byte it needs is inline:
- * `vite-plugin-singlefile`, the same way hello builds its islands.
+ * `vite-plugin-singlefile`, the same way hello builds its islands. React
+ * (`@vitejs/plugin-react`) is here for the form branch only; the island
+ * branch stays vanilla.
  *
  * A second config rather than a second `rollupOptions.input`: the singlefile
  * plugin disables code splitting, which Rolldown refuses with multiple inputs,
@@ -17,6 +19,7 @@ import { renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
+import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -38,7 +41,7 @@ function flattenStep(): Plugin {
 
 export default defineConfig({
   root: here,
-  plugins: [viteSingleFile(), flattenStep()],
+  plugins: [react(), viteSingleFile(), flattenStep()],
   build: {
     outDir,
     emptyOutDir: false,
