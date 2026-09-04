@@ -52,6 +52,10 @@ An adapter registers `CATALOG` and supplies one executor per name; every executo
 returns a `CallToolResult`. `snapshotFromRows(run, steps)` turns what
 `GET /api/workflow/run` answers into the snapshot `workflow.status` returns.
 
+The harness's MCP endpoint (`POST /api/workflow/mcp`) is rendered from this catalog too:
+`pnpm --filter workflow mcp:build` writes the endpoint's tool list, scope map and sibling
+rules from `CATALOG` — never edited by hand, so both adapters answer with the same words.
+
 Not in v1 (spec 10): `fork`, `retry`, `annotate`, `delete`, and any pipeline of an
 implementation — an agent completes an island or form step with `workflow.submitStep`; it
 does not do the island's job.
