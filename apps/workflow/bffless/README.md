@@ -521,7 +521,7 @@ deployment's visibility gate answers anonymous MCP callers with a 302 before any
 | project | `bffless/workflow-mcp` · id `26d0496e-97cd-4f8b-9597-e993f7d330e7` · public |
 | harness | `https://workflow-mcp.j5s.dev` (domain `802bc041-1fb5-4a5d-be94-b63f59ddae3d`, alias `workflow`, path `/dist`, SPA) |
 | MCP endpoint | `POST https://workflow-mcp.j5s.dev/api/workflow/mcp` (GET → 405) |
-| service identity | project secret `WORKFLOW_MCP_KEY` = the project-scoped key `e0a0b726-5f06-4280-861b-146d28b8c823` ("workflow-mcp scratch"); the same key deploys, kept in `~/.config/bffless/workflow-mcp.env` (mode 600, never in the repo) |
+| deploy key | the project-scoped key `e0a0b726-5f06-4280-861b-146d28b8c823` ("workflow-mcp scratch"), kept in `~/.config/bffless/workflow-mcp.env` (mode 600, never in the repo). **Phase 3 (story 7):** it no longer doubles as the endpoint's service identity — the `WORKFLOW_MCP_KEY` secret is retired; the endpoint runs as the caller (a member session or a Bearer app token) and the walks mint their own token through the signed-in browser |
 | rule sets | `workflow` `b84aee6c-7934-4fb2-adba-d846bb17a3b2` (this directory, pushed with `--prune`) · `hello` `f7e8b817-3eff-4057-948e-9a8c5bc2dff4` (hello's set + the `/w/hello/*` forwarder, `--path-prefix /api/hello`) |
 | aliases | `workflow` → sets [`workflow`, `hello`] · `hello` → [`hello`] |
 | deployments | harness `b369ec7b-0acb-4005-9c90-982e8ae21821` (the epic branch's build) · hello `dd350e9a-5b1d-4cc5-a750-08b902b5c77a` (`hello.ref`) |
@@ -529,7 +529,7 @@ deployment's visibility gate answers anonymous MCP callers with a 302 before any
 | teardown | `delete_project 26d0496e-…` — **irreversible; ask first.** Until then the project's description says what it is. |
 
 **Provisioning** (done once, through the j5s MCP — `create_project` (public) → `create_api_key
-{ repository }` → `set_secret WORKFLOW_MCP_KEY` → the pushes/uploads below → `create_domain`
+{ repository }` → (Phase 2 only: `set_secret WORKFLOW_MCP_KEY`, retired in Phase 3) → the pushes/uploads below → `create_domain`
 (subdomain, alias `workflow`, path `/dist`) + `update_domain { isSpa: true }` → `update_alias`
 attachments → `create_response_header_rule`). Membership: the walks sign in as the j5s CI member
 (`~/.config/bffless/workflow-ci.env`), who must be a member of the project — CE's alias list is

@@ -57,11 +57,12 @@ harness that has not published a `runId` by then is not slow, it is wrong, so a 
 |---|---|
 | `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` | the member login the harness relays. Required unless `--mocks` |
 | `WORKFLOW_TOKEN` | optional, sent as `X-API-Key` on `/api/workflow/*` reads |
+| `WORKFLOW_APP_TOKEN` | optional, an app token (`bfat_…`, Settings → App Tokens) sent as `Authorization: Bearer` on every `/api/workflow/*` call the driver makes — it *is* the member, narrowed to its scopes (spec 10, D23); wins over `WORKFLOW_TOKEN` |
 
 The credential is a **session cookie**, obtained by signing in through the
 harness's admin login relay exactly as a person does. An API key cannot mint a
 session, and two of the harness's relays forward the caller's cookies, so
-`WORKFLOW_TOKEN` is an extra on top of the session — never a replacement for it.
+`WORKFLOW_TOKEN` is an extra on top of the session — never a replacement for it. `WORKFLOW_APP_TOKEN` covers the driver's own reads *and* writes, but the browser still signs in through the relay: a token cannot mint a SuperTokens session, and a private deployment's page load carries no header.
 
 ## Artifacts (`--out`)
 

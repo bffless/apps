@@ -36,5 +36,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
 description: "Lease acquire/heartbeat/release-by-expiry. Response { ok, leaseUntil, heldBy }."

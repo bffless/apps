@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
+import { ruleScopeOf } from '@bffless/workflow-agent-tools'
 
 const ROOT = join(__dirname, '..', '.bffless', 'proxy-rules')
 const KNOWN = new Set(['data_query', 'data_create', 'data_update', 'data_delete', 'data_upsert_many',
@@ -85,7 +86,7 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
         'pageSize',
       )
     }
-    const validators: { type: string; config?: { allowApiKey?: unknown } }[] = doc.pipeline.validators ?? []
+    const validators: { type: string; config?: { allowApiKey?: unknown; requiredScopes?: unknown } }[] = doc.pipeline.validators ?? []
     const auth = validators.find((v) => v.type === 'auth_required')
     if (file.includes('/_custom/well-known/')) {
       // OAuth discovery happens before any credential exists (RFC 9728): the
@@ -96,18 +97,25 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       return
     }
     if (file.includes('/api/workflow/mcp/')) {
-      // The MCP endpoint (spec 10, D22) is authless by design in Phase 2 — auth
-      // ladder rung 1 (D23): claude.ai connects to an authless server on a scratch
-      // public project, and a session validator would refuse it before any rule
-      // ran. Its gate is the `identity` step instead: every sibling call carries
-      // the WORKFLOW_MCP_KEY service identity, and without that secret the rule
-      // answers "not enabled" to everything but initialize (Phase 2 plan,
-      // Decision 6). Phase 3 puts app tokens + requiredScopes in front (story 7).
-      expect(auth, `${file} is the authless prototype endpoint (D23 rung 1)`).toBeUndefined()
+      // The MCP endpoint (spec 10, D22) runs as the caller from Phase 3 story 7
+      // (D23 rung 2): auth_required admits a member session or a Bearer app
+      // token, with NO requiredScopes of its own — a token with any workflow
+      // scope may connect; the tool's scope is checked per call (route.ts,
+      // interim) and by each tool's own sibling rule from story 8. Every sibling
+      // http_request forwards the caller's credential; the Phase-2 service
+      // identity is gone.
       if (file.includes('/mcp/post/')) {
-        const identity = doc.pipeline.steps.find((s: { id: string }) => s.id === 'identity')
-        expect(identity?.handler, `${file}: the identity probe is the endpoint's gate`).toBe('http_request')
-        expect(identity?.config?.headers?.['x-api-key'], `${file}: identity carries the service key`).toBe('secrets.WORKFLOW_MCP_KEY')
+        expect(auth, `${file} must be auth_required (D23 rung 2)`).toBeDefined()
+        expect(auth!.config?.allowApiKey).toBe(true)
+        expect(auth!.config).not.toHaveProperty('requiredScopes')
+        const steps: Array<{ id: string; handler: string; config?: Record<string, unknown> }> = doc.pipeline.steps
+        expect(steps.find((s) => s.id === 'identity'), `${file}: the identity probe is retired`).toBeUndefined()
+        for (const s of steps.filter((s) => s.handler === 'http_request')) {
+          expect(s.config?.forwardAuth, `${file}: ${s.id} must forward the caller's credential`).toBe(true)
+          expect(JSON.stringify(s.config?.headers ?? {}), `${file}: ${s.id} must not carry a service key`).not.toContain('WORKFLOW_MCP_KEY')
+        }
+      } else {
+        expect(auth, `${file} (GET → 405) needs no validator`).toBeUndefined()
       }
       return
     }
@@ -115,6 +123,13 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     // The global constraint names `allowApiKey` explicitly: CI (`workflow-ci`)
     // and the headless runner call every route with an API key, not a cookie.
     expect(auth!.config?.allowApiKey, `${file} must allow API keys (D14)`).toBe(true)
+    // Every rule declares exactly the scope the catalog maps it to (spec 10 D23;
+    // Phase 3 plan, Decision 27): an app token must carry it, a session never
+    // needs it. The key is the rule's directory under rules/api/ plus its method.
+    const key = file.slice(file.indexOf('/rules/api/') + '/rules/api/'.length).replace(/\/rule\.yaml$/, '').replace(/\.rule\.yaml$/, '')
+    const scope = ruleScopeOf(key)
+    expect(scope, `${file}: ${key} has no entry in RULE_SCOPES`).toBeDefined()
+    expect(auth!.config?.requiredScopes, `${file} must declare requiredScopes [${scope}]`).toEqual([scope])
   })
 
   it('ships its schemas', () => {

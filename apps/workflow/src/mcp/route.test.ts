@@ -12,13 +12,13 @@ function req(body: unknown, headers: FnRequest['headers'] = HEADERS): FnRequest 
 const call = (name: string, args: Record<string, unknown> = {}, id: number | string = 1) =>
   req({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })
 const route = (request: FnRequest) => handler({ request, deployment: DEPLOYMENT })
+const asToken = (scopes: string[]) => ({ id: 'u', credential: 'app_token', scopes })
 
 describe('route', () => {
   it('derives the instance from the request, never from a constant', () => {
     const r = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }))
     expect(r.kind).toBe('ping')
     expect(r.appOrigin).toBe('https://h.example')
-    expect(r.whoamiUrl).toBe('https://h.example/api/workflow/whoami')
     expect(r.aliasesUrl).toBe('http://localhost:3000/api/aliases?repository=o%2Fr')
     expect(r.stepViewUrl).toBe('https://h.example/step.html')
     expect(r.probePath).toBe('o/r/uploads/workflows/.mcp-csp-probe')
@@ -26,7 +26,6 @@ describe('route', () => {
     expect(bare.appOrigin).toBe('https://only.example')
     const none = route(req({ jsonrpc: '2.0', id: 1, method: 'ping' }, {}))
     expect(none.appOrigin).toBe('')
-    expect(none.whoamiUrl).toBe('')
   })
 
   it('sends sibling calls to CE in-process at the request’s own base path, and to the public origin without one', () => {
@@ -34,7 +33,6 @@ describe('route', () => {
     const r = route(rewritten)
     expect(r.appOrigin).toBe('https://h.example')
     expect(r.siblingBase).toBe('http://localhost:3000/public/o/r/alias/workflow/dist')
-    expect(r.whoamiUrl).toBe('http://localhost:3000/public/o/r/alias/workflow/dist/api/workflow/whoami')
     expect(r.stepViewUrl).toBe('http://localhost:3000/public/o/r/alias/workflow/dist/step.html')
     expect(r.indexUrl).toBe('http://localhost:3000/public/o/r/alias/workflow/dist/w/hello/.bffless/workflows/index.json')
     expect(route(call('workflow.list')).siblingBase).toBe('https://h.example')
@@ -50,7 +48,6 @@ describe('route', () => {
     expect(list.kind).toBe('resourcesList')
     expect(list.isList).toBe(true)
     expect(list.isAliases).toBe(true)
-    expect(list.hasOrigin).toBe(true)
     expect(list.isCsp).toBe(true)
     const batch = route(req([{ jsonrpc: '2.0', id: 1, method: 'ping' }]))
     expect(batch.kind).toBe('invalid')
@@ -141,7 +138,30 @@ describe('route', () => {
     expect(r.isAliases).toBe(false)
     expect(r.probePath).toBe('')
     const bare = route(req({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workflow.describe', arguments: { impl: 'hello', workflow: 'x' } } }, {}))
-    expect(bare.hasOrigin).toBe(false)
     expect(bare.isDescribe).toBe(false)
+  })
+
+  it('refuses a tool whose scope an app token lacks before any step runs, and never scope-checks a session (D23)', () => {
+    const submit = handler({ request: call('workflow.submitStep', { runId: 'run_1', step: 'k', values: { a: 1 } }), deployment: DEPLOYMENT, user: asToken(['workflow:read']) })
+    expect(submit.scopeMissing).toBe('workflow:run')
+    expect(submit.needsRun).toBe(false)
+    expect(submit.kind).toBe('toolsCall')
+    const status = handler({ request: call('workflow.status', { runId: 'run_1' }), deployment: DEPLOYMENT, user: asToken(['workflow:read']) })
+    expect(status.scopeMissing).toBe('')
+    expect(status.needsRun).toBe(true)
+    const list = handler({ request: call('workflow.list'), deployment: DEPLOYMENT, user: asToken([]) })
+    expect(list.scopeMissing).toBe('workflow:read')
+    expect(list.isList).toBe(false)
+    // the four app-only tools have their own map
+    const pipeline = handler({ request: call('workflow.pipeline', { runId: 'run_1', step: 'k', name: 'echo' }), deployment: DEPLOYMENT, user: asToken(['workflow:read']) })
+    expect(pipeline.scopeMissing).toBe('workflow:run')
+    const view = handler({ request: call('workflow.stepView', { runId: 'run_1', step: 'k' }), deployment: DEPLOYMENT, user: asToken(['workflow:read']) })
+    expect(view.scopeMissing).toBe('')
+    // a session is never a delegation; a stranger tool has no scope to miss
+    const session = handler({ request: call('workflow.submitStep', { runId: 'run_1', step: 'k', values: {} }), deployment: DEPLOYMENT, user: { id: 'u', credential: 'session' } })
+    expect(session.scopeMissing).toBe('')
+    expect(session.needsRun).toBe(true)
+    const stranger = handler({ request: call('video.slice'), deployment: DEPLOYMENT, user: asToken([]) })
+    expect(stranger.scopeMissing).toBe('')
   })
 })

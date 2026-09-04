@@ -94,6 +94,7 @@ async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<
         timeoutMs: command.timeoutMs,
         mocks: command.mocks,
         ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}),
+        ...(io.env.WORKFLOW_APP_TOKEN ? { appToken: io.env.WORKFLOW_APP_TOKEN } : {}),
         ...(credentials ? { credentials } : {}),
       },
       {
@@ -138,7 +139,11 @@ async function doRuns(command: RunsCommand, io: CliIo, state: Interrupt): Promis
     if (credentials) await loginViaRelay(page, base, credentials)
     else await page.goto(`${base}/?mocks=on`, { waitUntil: 'networkidle' })
 
-    const api = pageApi(page, { base, ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}) })
+    const api = pageApi(page, {
+      base,
+      ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}),
+      ...(io.env.WORKFLOW_APP_TOKEN ? { appToken: io.env.WORKFLOW_APP_TOKEN } : {}),
+    })
     io.out(formatRunsTable(await listRuns(api, command.impl, command.workflow, command.last)))
     return EXIT.OK
   } finally {

@@ -73,5 +73,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
 description: "Upsert one step row keyed <job>/<index>/<step>. The lease serializes writers, so query-then-write is race-safe in practice."

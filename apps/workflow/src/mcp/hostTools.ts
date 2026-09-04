@@ -11,7 +11,7 @@
  * catalog's `workflow.sign { runId?, path }` and the endpoint serves it for
  * both audiences.
  */
-import { CATALOG, type JsonSchema } from '@bffless/workflow-agent-tools'
+import { CATALOG, type JsonSchema, type Scope } from '@bffless/workflow-agent-tools'
 
 /**
  * The endpoint's `serverInfo.version` — the *host protocol* version, the same
@@ -101,6 +101,14 @@ export const HOST_TOOLS: readonly HostToolDef[] = Object.freeze([
     _meta: APP_ONLY,
   },
 ])
+
+/** What each app-only tool needs of a token (the catalog owns the model-visible map; these four are the endpoint's — Phase 3 plan, Decision 26). */
+export const HOST_TOOL_SCOPES: Readonly<Record<HostToolName, Scope>> = {
+  'workflow.submit': 'workflow:run',
+  'workflow.annotate': 'workflow:run',
+  'workflow.pipeline': 'workflow:run',
+  'workflow.stepView': 'workflow:read',
+}
 
 const HOST_TOOL_NAMES = new Set<string>(HOST_TOOLS.map((tool) => tool.name))
 

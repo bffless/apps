@@ -20,11 +20,13 @@
  */
 import { mkdir } from 'node:fs/promises'
 import { loginViaRelay, pageApi, type ApiLike, type FileRef } from '@bffless/workflow-headless'
-import { chromium, type Browser, type Page } from 'playwright'
+import { chromium, type APIRequestContext, type Browser, type Page } from 'playwright'
 
 export interface Session {
   base: string
   page: Page
+  /** The context's request client — shares the page's cookie jar, so admin.<domain> answers as the signed-in member (token.ts). */
+  request: APIRequestContext
   api: ApiLike
   consoleErrors: string[]
   failed: string[]
@@ -106,6 +108,7 @@ export async function openSession(o: SessionOptions): Promise<Session> {
   const s: Session = {
     base: o.base,
     page,
+    request: page.context().request,
     api: pageApi(page, { base: o.base }),
     consoleErrors: [],
     failed: [],

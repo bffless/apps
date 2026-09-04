@@ -34,5 +34,5 @@ pipeline:
         contentType: application/json
   validators:
     - type: auth_required
-      config: { allowApiKey: true }
+      config: { allowApiKey: true, requiredScopes: [workflow:read] }
 description: "Run record: { run, steps } or { run: null, steps: [] } when the id is unknown."
