@@ -1,6 +1,6 @@
 import { CATALOG } from '@bffless/workflow-agent-tools'
 import { describe, expect, it } from 'vitest'
-import { canonical, cspOf, originOf, toolParity, type ListedTool } from './mcp-checks.js'
+import { STEP_VIEW_URI_PATTERN, canonical, cspOf, originOf, stepViewUriOf, toolParity, type ListedTool } from './mcp-checks.js'
 
 const wire = (): ListedTool[] =>
   CATALOG.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema, annotations: tool.annotations }))
@@ -33,5 +33,14 @@ describe('cspOf / originOf / canonical', () => {
     expect(originOf('https://storage.googleapis.com/x/y?z=1')).toBe('https://storage.googleapis.com')
     expect(originOf('nope')).toBe('')
     expect(canonical({ b: 1, a: [{ d: 1, c: 2 }] })).toBe('{"a":[{"c":2,"d":1}],"b":1}')
+  })
+})
+
+describe('stepViewUriOf', () => {
+  it('reads the revisioned step-view URI off tools/list', () => {
+    const listed = [{ name: 'workflow.submitStep', _meta: { ui: { resourceUri: 'ui://bffless/workflow/step-view.0123abcd.html' } } }, { name: 'workflow.status' }]
+    expect(stepViewUriOf(listed)).toBe('ui://bffless/workflow/step-view.0123abcd.html')
+    expect(STEP_VIEW_URI_PATTERN.test(stepViewUriOf(listed))).toBe(true)
+    expect(stepViewUriOf([{ name: 'workflow.status' }])).toBe('')
   })
 })

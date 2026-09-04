@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { HOST_TOOLS, HOST_TOOL_SCOPES, RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI, isHostTool } from './hostTools'
+import { HOST_TOOLS, HOST_TOOL_SCOPES, RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI_PATTERN, isHostTool, stepViewUri } from './hostTools'
 
 describe('the app-only tools', () => {
   it('map to the run scope except the read-only step view (Phase 3 plan, Decision 26)', () => {
@@ -23,8 +23,10 @@ describe('the app-only tools', () => {
     expect(hostInfo?.[1]).toBe(SERVER_VERSION)
   })
 
-  it('names the MCP Apps MIME type and the step view', () => {
+  it('names the MCP Apps MIME type and a revisioned step-view URI (apps#587)', () => {
     expect(RESOURCE_MIME).toBe('text/html;profile=mcp-app')
-    expect(STEP_VIEW_URI).toBe('ui://bffless/workflow/step-view.html')
+    expect(stepViewUri('0123abcd')).toBe('ui://bffless/workflow/step-view.0123abcd.html')
+    expect(STEP_VIEW_URI_PATTERN.test(stepViewUri('0123abcd'))).toBe(true)
+    expect(STEP_VIEW_URI_PATTERN.test('ui://bffless/workflow/step-view.html')).toBe(false)
   })
 })

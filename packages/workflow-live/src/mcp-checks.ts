@@ -68,3 +68,11 @@ export function originOf(url: string): string {
     return ''
   }
 }
+
+/** `apps/workflow/src/mcp/hostTools.ts`'s pattern, restated: the walks never import the app. */
+export const STEP_VIEW_URI_PATTERN = /^ui:\/\/bffless\/workflow\/step-view\.[0-9a-f]{8}\.html$/
+
+/** The step view's URI as `tools/list` carries it on `workflow.submitStep` (apps#587), `''` when absent. */
+export function stepViewUriOf(listed: ListedTool[]): string {
+  return listed.find((tool) => tool.name === 'workflow.submitStep')?._meta?.ui?.resourceUri ?? ''
+}

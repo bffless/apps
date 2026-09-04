@@ -21,8 +21,18 @@ import type { JsonSchema, Scope } from '@bffless/workflow-agent-tools'
  */
 export const SERVER_VERSION = '1.0.0'
 
-/** The engine-less host page that mounts a waiting island inside an agent host (plan Decision 3). */
-export const STEP_VIEW_URI = 'ui://bffless/workflow/step-view.html'
+/**
+ * The step view's resource URI for one source revision (apps#587): claude.ai
+ * caches a widget's resource per URI per connector, so a stale fetch (the
+ * Phase-3 not-found page) outlived the deploy that fixed it until the URI
+ * changed. The revision is a hash of `src/**` plus the step view build's own
+ * two inputs, `step/index.html` and `vite.step.config.ts` (`scripts/build-mcp.mjs`
+ * `sourceRev`), rendered into the rule at `mcp:build` time — every deploy
+ * that changes the view is a cache miss by construction.
+ */
+export const stepViewUri = (rev: string): string => `ui://bffless/workflow/step-view.${rev}.html`
+/** What a host or a walk may assert about the URI; never a literal (the revision is the build's). */
+export const STEP_VIEW_URI_PATTERN = /^ui:\/\/bffless\/workflow\/step-view\.[0-9a-f]{8}\.html$/
 
 /** Every ui:// resource's MIME type (MCP Apps, `io.modelcontextprotocol/ui`). */
 export const RESOURCE_MIME = 'text/html;profile=mcp-app'
