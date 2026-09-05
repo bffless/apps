@@ -45,17 +45,32 @@ export interface StartRunArgs {
    * read it off `runState`, and a resumed run must see what it started with.
    */
   unattended?: boolean
+  /**
+   * `?wait=park` sets it (07): the driver would rather the run waited for a
+   * person than failed at a step that declares no `headless:`. Rides on
+   * `RunMeta`, not on `run.started`, because it is page state — how *this*
+   * tab was asked to behave, not a fact the record keeps about the run.
+   */
+  park?: boolean
+  /**
+   * `?runId=` (07, ADR-0006): a driver mints the id before the browser exists
+   * (so it can dispatch a headless driver and hand the id back immediately),
+   * and the page inserts the row under it instead of minting its own. Absent
+   * on every person-driven start, which still mints one here as always.
+   */
+  runId?: string
 }
 
 export function startRun(a: StartRunArgs): AppThunk<string> {
   return (dispatch) => {
-    const runId = newRunId()
+    const runId = a.runId ?? newRunId()
 
     const meta: RunMeta = {
       def: a.def,
       yaml: a.yaml,
       workflowName: a.workflowName,
       ...(a.workflowVersion === undefined ? {} : { workflowVersion: a.workflowVersion }),
+      ...(a.park ? { park: true } : {}),
     }
     dispatch(runOpened({ meta }))
 

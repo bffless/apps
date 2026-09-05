@@ -11,13 +11,17 @@
  * `invalid` is a *page* state, not a run status: a `?auto=1` start the kickoff
  * page refused never produced a run at all (there is no row, and `runId` is
  * empty). It is deliberately absent from `RunStatus`, which is persisted.
+ * `parked` and `busy` (07 `wait=park`) are page states of the same kind: the
+ * run behind them is a perfectly ordinary `running` row, and what they report
+ * is what *this page* is doing about it — nothing, and waiting for a person.
  */
 import type { RunState, RunStatus, StepKey, StepStatus } from './runner/types'
 
 export interface WorkflowGlobal {
   /** The run this page is showing; `''` when a start was refused before a run existed. */
   runId: string
-  status: RunStatus | 'invalid'
+  /** `parked` and `busy` are page states like `invalid`: no row ever carries them (07). */
+  status: RunStatus | 'invalid' | 'parked' | 'busy'
   /** Keys of the steps that are `running`, `polling` or `waiting` right now. */
   currentSteps: StepKey[]
   /** The run's top-level outputs — filled at completion (File refs, not bytes). */
@@ -39,11 +43,20 @@ declare global {
   }
 }
 
+/**
+ * What `snapshotOf` produces: the same contract, narrowed to the run's **own**
+ * status. The page states (`parked`, `busy`) are only ever put on top of one of
+ * these by `withPageState`, so anything reading a snapshot straight off a
+ * `RunState` — `runSnapshotOf` (agent/snapshot.ts) and the `RunSnapshot` the
+ * agent tools declare — still sees the persisted statuses and nothing else.
+ */
+export type RunGlobal = WorkflowGlobal & { status: RunStatus }
+
 /** A step a driver should still be waiting on. */
 const ACTIVE: ReadonlySet<StepStatus> = new Set<StepStatus>(['running', 'polling', 'waiting'])
 
 /** The run, as the contract describes it. */
-export function snapshotOf(state: RunState): WorkflowGlobal {
+export function snapshotOf(state: RunState): RunGlobal {
   const steps: Record<StepKey, StepStatus> = {}
   const currentSteps: StepKey[] = []
   for (const [key, step] of Object.entries(state.steps)) {
@@ -57,6 +70,11 @@ export function snapshotOf(state: RunState): WorkflowGlobal {
     outputs: state.outputs ?? {},
     steps,
   }
+}
+
+/** The run, with the page's own state on top of the record's (07: `parked`, `busy` are page states). */
+export function withPageState(snapshot: WorkflowGlobal, pageState: 'parked' | 'busy' | null): WorkflowGlobal {
+  return pageState === null ? snapshot : { ...snapshot, status: pageState }
 }
 
 /**

@@ -43,7 +43,7 @@ import { launchScriptStep } from './scriptLaunch'
 import type { ScriptLaunchDeps } from './scriptLaunch'
 import { armWaitClock, disarmAllWaitClocks, disarmWaitClock } from './waitClock'
 import { getOwnerId } from './runnerActions'
-import { runClosed, runEvent, runModeChanged, runOpened, runPaused, runReplaced } from './runSlice'
+import { runClosed, runEvent, runModeChanged, runOpened, runParked, runPaused, runReplaced } from './runSlice'
 import type { RunSliceState } from './runSlice'
 import { workflowApi } from './workflowApi'
 
@@ -857,8 +857,15 @@ type HeadlessDecision =
  * declaration as an unattended run would, and every other step is left to
  * the person. A bad `auto-accept` expression fails the step (`AUTO_ACCEPT`),
  * not the run — it is this step's declaration that is wrong.
+ *
+ * `park` is the driver's own answer to the undeclared case (07 `wait=park`,
+ * ADR-0006): it asked for a run that *waits* for a person rather than one that
+ * fails, so an undeclared step runs exactly as it would attended and the run
+ * parks around it (`parkIfIdle`). It changes nothing else — a `skip` still
+ * skips and an `auto` still runs, because those steps said how they run
+ * without anybody.
  */
-function headlessDecision(a: StepScope): HeadlessDecision {
+function headlessDecision(a: StepScope, park: boolean): HeadlessDecision {
   if (a.step.uses !== 'form' && a.step.uses !== 'island') return { act: 'run' }
   if (!a.state.headless) {
     let unattended: boolean
@@ -877,6 +884,10 @@ function headlessDecision(a: StepScope): HeadlessDecision {
   const mode = headlessMode(a.step)
   if (mode === undefined) {
     if (!a.state.headless) return { act: 'run' }
+    // 07 `wait=park` (ADR-0006): the driver would rather wait for a person than
+    // fail — the step runs as it would for a person, and `parkIfIdle` parks the
+    // run once it is the only thing left waiting.
+    if (park) return { act: 'run' }
     return {
       act: 'fail',
       error: {
@@ -978,6 +989,13 @@ async function handleNextAction(
   deps: RunnerDeps,
   dispatch: (action: unknown) => unknown,
   getRunState: () => RunState | undefined,
+  /**
+   * Whether this tab was asked to park rather than fail on an undeclared
+   * interactive step (07 `wait=park`). Read as a thunk off the freshest slice,
+   * like `getRunState`: it lives on `RunMeta`, which the listener has to hand
+   * and this function deliberately does not take whole.
+   */
+  getPark: () => boolean,
 ): Promise<void> {
   switch (a.kind) {
     case 'expand':
@@ -1036,7 +1054,7 @@ async function handleNextAction(
         def,
         state: runState,
       }
-      const headless = headlessDecision(scope)
+      const headless = headlessDecision(scope, getPark())
 
       // Registered *before* the headless skip below, not just for the kinds
       // that run: a skip carries outputs, and an oversized one is offloaded
@@ -1127,7 +1145,12 @@ async function handleNextAction(
         // — and `headlessDecision` has already let this form through only
         // because it declared `auto` (or is being driven), so `unattendedStep`
         // cannot throw here: the same expression was just evaluated.
-        if (runState.headless || (unattendedStep(scope) && headlessMode(step) === 'auto')) {
+        //
+        // The `auto` test comes first for both halves now (07 `wait=park`): a
+        // headless run that parks reaches this branch with an *undeclared*
+        // form, which is precisely the one nobody may submit on the person's
+        // behalf — it is being left for them.
+        if (headlessMode(step) === 'auto' && (runState.headless || unattendedStep(scope))) {
           autoSubmitForm({ ...scope, deps, dispatch, getRunState })
         }
       } else if (step.uses === 'island') {
@@ -1293,11 +1316,67 @@ function armWaitingStep(
     key,
     state,
     clock: deps.clock,
-    headless: state.headless,
+    // A step nobody declared `headless:` for gets no `HEADLESS_AUTO_DEFAULT_MS`
+    // budget (07 `wait=park`): on a driven run it is only reachable because the
+    // driver asked to park on it, and parking means waiting for a person for as
+    // long as a person takes — the same open-ended wait an attended run gives
+    // it. A declared step keeps the headless budget it always had.
+    headless: state.headless && headlessMode(decl) !== undefined,
     scoped: scopedDispatch(state.runId, dispatch, getRunState),
     now: deps.clock.now(),
     getRunState,
   })
+}
+
+/**
+ * 07 `wait=park` (ADR-0006): a driven run with nothing left to do but wait on
+ * a person parks — the lease is cleared with the same patch `run.finished`
+ * writes (rows.ts), the tab stops driving, and the driver reads `parked` off
+ * the global. A run whose only waiting steps declare `headless: auto` is
+ * still driving itself (they submit on their own) and never parks.
+ *
+ * Called only after the schedule pass, and only when the pass proposed
+ * nothing: anything still queued, running or polling is work this tab owes
+ * the run, and a step that is about to be started is not a run out of work.
+ * A failed patch leaves the tab live and shows the 05 pause banner instead —
+ * a lease this tab still holds must not be *believed* released.
+ *
+ * **No wait clock survives the park.** `loseLease` disarms every one of them,
+ * and that is deliberate rather than incidental: a parked tab holds no lease,
+ * and a clock that fired here would write a terminal row for a run this tab no
+ * longer owns. A step's declared `timeout-minutes` is not forgiven by that — it
+ * is re-armed when the run is **resumed**, from the `startedAt` the record
+ * kept (`armWaitingStep`, off the `runReplaced` listener), exactly as 07's
+ * Resume already mandates: a run adopted after its budget has passed fails
+ * `HEADLESS_TIMEOUT` the moment it is picked up. What a parked run cannot do
+ * is spend a budget with nobody watching it.
+ */
+async function parkIfIdle(
+  runId: string,
+  def: Definition,
+  state: RunState,
+  proposed: NextAction[],
+  deps: RunnerDeps,
+  dispatch: (action: unknown) => unknown,
+): Promise<void> {
+  if (proposed.length > 0 || state.status !== 'running' || !state.headless) return
+  const steps = Object.values(state.steps)
+  if (steps.some((s) => s.status === 'queued' || s.status === 'running' || s.status === 'polling')) return
+  const undeclared = steps.some((s) => {
+    if (s.status !== 'waiting') return false
+    const decl = stepOf(def, s.job, s.stepId)
+    return decl !== undefined && headlessMode(decl) === undefined
+  })
+  if (!undeclared) return
+  stopHeartbeat(runId)
+  try {
+    await deps.runStore.patchRun(runId, { leaseOwner: null, leaseUntil: null })
+  } catch (err) {
+    dispatch(runPaused(`the run could not be parked: ${messageOf(err)}`))
+    return
+  }
+  loseLease(dispatch)
+  dispatch(runParked())
 }
 
 /**
@@ -1435,6 +1514,9 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
 
       const after = (listenerApi.getState() as HasRunSlice).run
       const getRunState = () => (listenerApi.getState() as HasRunSlice).run.state ?? undefined
+      // 07 `wait=park`: read off the freshest slice for the same reason
+      // `getRunState` is — the schedule pass below dispatches as it goes.
+      const getPark = () => (listenerApi.getState() as HasRunSlice).run.meta?.park === true
 
       // A step that just parked on a person (or on an island answering for
       // one) gets its `timeout-minutes` clock — after the write, so a run
@@ -1451,8 +1533,24 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // `exclusiveMinimum: 0`) makes `remaining <= 0` unreachable on a step
       // that only just reached `waiting`.
       if (after.mode === 'live' && !after.paused && after.meta && after.state?.status === 'running') {
-        for (const a of nextActions(after.meta.def, after.state)) {
-          await handleNextAction(a, after.meta.def, after.state, deps, listenerApi.dispatch, getRunState)
+        const actions = nextActions(after.meta.def, after.state)
+        for (const a of actions) {
+          await handleNextAction(a, after.meta.def, after.state, deps, listenerApi.dispatch, getRunState, getPark)
+        }
+        // 07 `wait=park`: read the slice *again* — the actions above have been
+        // dispatched, so `after` is a pre-schedule snapshot and the question
+        // ("is there anything left but a person?") is only answerable off the
+        // state they left behind.
+        const fresh = (listenerApi.getState() as HasRunSlice).run
+        if (fresh.meta?.park && fresh.mode === 'live' && !fresh.paused && fresh.state) {
+          await parkIfIdle(
+            fresh.state.runId,
+            fresh.meta.def,
+            fresh.state,
+            actions,
+            deps,
+            listenerApi.dispatch,
+          )
         }
       }
     },
@@ -1720,7 +1818,15 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // already emitted above can never be re-proposed here.
       if (def && state.status === 'running') {
         for (const a of nextActions(def, state)) {
-          await handleNextAction(a, def, state, deps, listenerApi.dispatch, getRunState)
+          await handleNextAction(
+            a,
+            def,
+            state,
+            deps,
+            listenerApi.dispatch,
+            getRunState,
+            () => (listenerApi.getState() as HasRunSlice).run.meta?.park === true,
+          )
         }
       }
     },

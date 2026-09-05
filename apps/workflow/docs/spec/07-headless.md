@@ -46,12 +46,31 @@ and interactive runs are the same code, the same rows, the same history.
   `run-status`) hangs through the last four rows, which are also the likeliest ways a CI run
   goes wrong — a typo'd alias, an unreachable instance.
 
+- **`wait=park`** (with `auto=1`; ADR-0006). An `island`/`form` step that declares no `headless:`
+  **parks** the run instead of failing `HEADLESS_REQUIRED`: the step is queued and mounted as it
+  would be for a person, its row reaches `waiting`, and once nothing else is queued, running or
+  polling the page clears the lease (the same `run/update` patch `run.finished` writes; the
+  status stays `running`), stops driving, and publishes `status: 'parked'`. A `headless: auto`
+  step still submits itself and a `skip` still stands its outputs in; a run whose only waiting
+  steps are `auto` never parks. A parked step runs no clock at all — a parked tab holds no
+  lease and must not write a terminal row; a declared `timeout-minutes` applies again once the
+  run is resumed, re-armed from the step's recorded `startedAt` exactly as §Resume already says
+  (a run adopted after its budget has passed fails `HEADLESS_TIMEOUT` immediately). The
+  `HEADLESS_AUTO_DEFAULT_MS` budget is never applied to an undeclared step.
+- **`runId=<run_ulid>`** (with `auto=1`). The row is inserted under this id instead of a minted
+  one, so a caller can hand the id out before the browser exists. Malformed → `invalid`,
+  `errors.runId`; already in use → `invalid`, `errors.runId` (and the create rule answers
+  `409 RUN_EXISTS` as a backstop).
+- **`resume=1`** (on a run page, optionally with `wait=park`). The page adopts the lease without
+  the confirm and relaunches non-terminal steps through Resume (05). Held by someone else →
+  `status: 'busy'`, nothing driven. A terminal run → its terminal status; nothing to do.
+
 **Observe:** every run page — headless or not — publishes
 
 ```ts
 window.__workflow = {
   runId: string,           // '' when a start was refused before a run existed
-  status: 'running'|'succeeded'|'failed'|'cancelled'|'invalid',
+  status: 'running'|'succeeded'|'failed'|'cancelled'|'invalid'|'parked'|'busy',
   currentSteps: string[],  // keys whose status is running | polling | waiting
   outputs: Record<string, unknown>,  // the run's outputs, filled at completion (File refs, not bytes)
   steps: Record<string, StepStatus>, // every step the run has reached → its status
@@ -65,13 +84,14 @@ It is `undefined` when no run page is mounted, and is cleared on unmount so a st
 never outlives the page that wrote it. That includes the seam a start goes through: between the
 kickoff page navigating and the run page's first publish there is one commit with no global at
 all, so a driver **polls for `runId` to appear** rather than reading the global the instant the
-navigation lands. `invalid` is a **page** state, not a run status: no row
-ever carries it, and it is deliberately absent from the persisted `RunStatus` vocabulary.
+navigation lands. `invalid`, `parked` and `busy` are **page** states, not run statuses: no row
+ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
 
-And stable `data-testid`s: `run-status[data-state=…]`, `step[data-key][data-state]`,
-`run-outputs`, and on the kickoff page `kickoff-auto` / `kickoff-invalid` (plus, inside the
-hello bundle's own poster island, `island-sign-error`). `data-testid`s are a **contract**
-(Studio rule): the driver depends on them, a UI change that breaks one breaks headless.
+And stable `data-testid`s: `run-status[data-state=…]` (now also `parked` and `busy`, the page
+states of a driven run), `step[data-key][data-state]`, `run-outputs`, and on the kickoff page
+`kickoff-auto` / `kickoff-invalid` (plus, inside the hello bundle's own poster island,
+`island-sign-error`). `data-testid`s are a **contract** (Studio rule): the driver depends on
+them, a UI change that breaks one breaks headless.
 
 **Islands, unattended:** the pane is the only thing that mounts an island (Decision 11), and in
 a headless run nobody clicks a chip — so the run page opens the oldest `running`/`waiting`
@@ -254,7 +274,25 @@ Two things exist, and a third does not.
   repo wants to run a workflow in CI. Either way it would be Playwright in CI, never a
   server-side runner.
 
+## Driven runs — park and resume (ADR-0006)
+
+| moment | `workflow_runs.status` | waiting step row | lease |
+|---|---|---|---|
+| job driving | `running` | — | job's owner, heartbeat every 15 s |
+| parked | `running` | `waiting` | released (`lease_owner` null) |
+| grace window | `running` | `waiting` | released; driver polls the run |
+| answered over the endpoint | `running` | `succeeded` (outputs written by `submitStep`) | released → `drive` dispatches |
+| answered on the page | `running` → … | `succeeded` | the person's tab |
+| resumed by a job | `running` | — | job's owner |
+
+The browser owns what it claimed: a person who resumes on the harness page drives to the end in
+their tab; a server-side submit over the MCP endpoint re-dispatches the driver (10).
+
 ## Resume
+
+**Driven runs are the exception:** a run the driver parked is a `running` row with a `waiting`
+step and no lease; `workflow-headless resume <runId>` (or a person on the page) resumes it
+exactly as any abandoned run is resumed.
 
 Headless runs **do not resume**; a failed CI step re-runs the workflow. That is a rule the
 harness leans on, not just advice: a `headless: auto` **form** that was `waiting` when the run

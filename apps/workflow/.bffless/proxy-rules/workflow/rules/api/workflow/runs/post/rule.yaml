@@ -2,13 +2,29 @@ targetUrl: pipeline
 order: 10
 pipeline:
   name: Create workflow run
-  description: "Insert the workflow_runs row at run start (event run.started, spec 05). The client sends the full row: runId, definition snapshot, yaml text, inputs (File refs), lease fields."
+  description: "Insert the workflow_runs row at run start (event run.started, spec 05). The client sends the full row: runId, definition snapshot, yaml text, inputs (File refs), lease fields. Refuses a duplicate runId (07 `runId=`, ADR-0006) with 409 RUN_EXISTS — the page checks first, this is only the backstop for the race between that read and this insert."
   steps:
+    # Duplicate check first (07 `runId=`): a driver that mints its own id
+    # before the browser exists can race the page's own pre-insert read, so
+    # the insert itself must refuse rather than silently overwrite.
+    - id: find
+      name: find
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.runId }
+    - id: exists
+      name: exists
+      handler: function_handler
+      code: ./exists.fn.js
     - id: create
       name: create
       handler: data_create
       config:
         schemaId: $schema:workflow_runs
+        condition: steps.exists.fresh
         fields:
           runId: request.body.runId
           impl: request.body.impl
@@ -29,14 +45,27 @@ pipeline:
           # A forked run's parent and fork job (apps#501); absent on a kickoff run.
           forkedFrom: request.body.forkedFrom
           forkJob: request.body.forkJob
+    # Exactly one of `duplicate`/`respond` ever runs (both gated on
+    # `steps.exists`, one on each side of it) — a skipped response_handler
+    # leaves the response to whichever one did (pipeline-execution.service.ts),
+    # which is why `respond` below is gated too rather than left to run always.
+    - id: duplicate
+      name: duplicate
+      handler: response_handler
+      config:
+        condition: steps.exists.exists
+        status: 409
+        body: '{"code":"RUN_EXISTS","error":"a run with this id already exists"}'
+        contentType: application/json
     - id: respond
       name: respond
       handler: response_handler
       config:
+        condition: steps.exists.fresh
         body: "{{{steps.create}}}"
         status: 200
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Create a workflow run row (run.started). auth_required; startedBy from the session."
+description: "Create a workflow run row (run.started). auth_required; startedBy from the session. Refuses a duplicate runId with 409 RUN_EXISTS (07 `runId=`)."

@@ -25,10 +25,19 @@ export interface RunMeta {
    * the run, so it rides here rather than on `RunState`. Absent on a kickoff.
    */
   forkedFrom?: { runId: string; job: string }
+  /**
+   * The driver asked the page to park rather than fail at an interactive
+   * step that declares no `headless:` (07 `wait=park`, ADR-0006). Page state:
+   * never on a row, never on `RunState` — a person's tab never sets it.
+   */
+  park?: boolean
 }
 
-/** `readonly` = replayed rows; another tab holds the lease (05 Resume). */
-export type RunMode = 'live' | 'readonly'
+/**
+ * `readonly` = replayed rows; another tab holds the lease (05 Resume).
+ * `parked` = this tab parked the run and released the lease (07 `wait=park`).
+ */
+export type RunMode = 'live' | 'readonly' | 'parked'
 
 export interface RunSliceState {
   meta: RunMeta | null
@@ -89,6 +98,14 @@ export const runSlice = createSlice({
       state.mode = action.payload
     },
 
+    /**
+     * The run parked (07 `wait=park`): the lease is already cleared; nothing
+     * in this tab drives it any more.
+     */
+    runParked(state) {
+      state.mode = 'parked'
+    },
+
     /** A persistence failure parked the run; `undefined` clears the banner. */
     runPaused(state, action: PayloadAction<string | undefined>) {
       state.paused = action.payload
@@ -100,5 +117,5 @@ export const runSlice = createSlice({
   },
 })
 
-export const { runOpened, runEvent, runReplaced, runModeChanged, runPaused, runClosed } =
+export const { runOpened, runEvent, runReplaced, runModeChanged, runPaused, runParked, runClosed } =
   runSlice.actions
