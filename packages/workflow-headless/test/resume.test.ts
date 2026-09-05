@@ -17,7 +17,9 @@ import { fakeBrowser, type Route } from './fakes.js'
 
 const RUN_ID = 'run_1'
 const RECORD = `/api/workflow/run?id=${RUN_ID}`
-const RESUME_URL = 'https://harness.test/hello/demo/runs/run_1?resume=1&wait=park'
+const RUN_URL = 'https://harness.test/hello/demo/runs/run_1'
+/** What the driver *opens*; the report says `RUN_URL`, the page a person would want. */
+const RESUME_URL = `${RUN_URL}?resume=1&wait=park`
 
 const out = () => mkdtempSync(join(tmpdir(), 'wfh-resume-'))
 
@@ -69,7 +71,7 @@ describe('resumeRun', () => {
     // the record do, and `resume=1` is what makes the page adopt the lease
     // without a person clicking Resume.
     expect(page.gotos).toContain(RESUME_URL)
-    expect(report).toMatchObject({ runId: RUN_ID, status: 'succeeded', url: RESUME_URL })
+    expect(report).toMatchObject({ runId: RUN_ID, status: 'succeeded', url: RUN_URL })
   })
 
   test('a lease held elsewhere is `busy` — nothing was driven', async () => {

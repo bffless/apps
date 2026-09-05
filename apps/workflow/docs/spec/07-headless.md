@@ -50,7 +50,10 @@ and interactive runs are the same code, the same rows, the same history.
   **parks** the run instead of failing `HEADLESS_REQUIRED`: the step is queued and mounted as it
   would be for a person, its row reaches `waiting`, and once nothing else is queued, running or
   polling the page clears the lease (the same `run/update` patch `run.finished` writes; the
-  status stays `running`), stops driving, and publishes `status: 'parked'`. A `headless: auto`
+  status stays `running`), stops driving, and publishes `status: 'parked'`. Releasing the lease
+  tears the run's live machinery down, so **only a `form` stays answerable on screen**: an
+  island's handle is disposed with every other bridge and its frame goes, and a person who wants
+  to answer it clicks *Resume* — which re-mounts the island on its recorded inputs. A `headless: auto`
   step still submits itself and a `skip` still stands its outputs in; a run whose only waiting
   steps are `auto` never parks. A parked step runs no clock at all — a parked tab holds no
   lease and must not write a terminal row; a declared `timeout-minutes` applies again once the
@@ -189,9 +192,12 @@ so before a run is attempted.
 `workflow-headless`:
 
 ```
-workflow-headless run  <harness-url> <impl>/<workflow> --inputs inputs.json
-                       [--out ./artifacts] [--timeout 60m] [--mocks] [--headed]
-workflow-headless runs <harness-url> <impl>/<workflow> [--last 10] [--mocks]
+workflow-headless run    <harness-url> <impl>/<workflow> --inputs inputs.json
+                         [--out ./artifacts] [--timeout 60m] [--mocks] [--headed]
+                         [--wait fail|park] [--run-id run_…] [--grace 5m]
+workflow-headless runs   <harness-url> <impl>/<workflow> [--last 10] [--mocks]
+workflow-headless resume <harness-url> <run-id>
+                         [--out ./artifacts] [--timeout 60m] [--grace 5m] [--mocks] [--headed]
 ```
 
 **Auth is a member login through the admin relay** (Decision 13) — `WORKFLOW_EMAIL` /
@@ -227,8 +233,25 @@ occurred — assert on `run.json`. An output is downloaded when its **value** is
 when its declared type is `file`: a run-level output that forwards a step's file declares no type
 at all.
 
-`--timeout` bounds the **run**; the start is separately capped at **120 s** within it, because a
-harness that has not published a `runId` by then is not slow. A start that times out still writes
+**Driven runs** (ADR-0006). `--wait park` (default `fail`) parks at a step that needs a person
+instead of failing: the driver stops driving, leaves with 0, writes `03-parked.png`, and reports
+`parkedOn` — the CLI's `parked: <run id> (<step keys>)` line. Which keys those are is the
+driver's own read of the page (`currentSteps`), not a field of the record: `run.json` is the
+record verbatim, and a parked run's row still says `running`. `--run-id run_…` inserts the row
+under a pre-minted id, so a `--wait park` run and its `resume` name the same one. `--grace`
+(default 5 m) keeps re-reading the record every 10 s after a park: once every parked step's row
+has settled and nobody took the lease, the driver re-opens the run page with `?resume=1` and
+finishes the run **in the same job**; the window running out — or a live lease, a person's tab
+or a second job — ends the job at 0, parked. `resume <harness-url> <run-id>` picks that up
+later: `impl`/`workflow` come off the record, it opens the run page with `?resume=1&wait=park`,
+writes `01-resume.png` and follows the run home under the same park rules (a second interactive
+step parks again). A run that has already ended is reported at its own status without being
+opened; a run someone else is driving is exit 5, untouched. `--timeout` bounds each **follow
+leg** — a start or a `resume` to the next park or terminal status — not the job as a whole, so
+a park-and-resume job may take up to N × `--timeout`.
+
+Each leg's start is separately capped at **120 s** within `--timeout`, because a harness that
+has not published a `runId` by then is not slow. A start that times out still writes
 `failed.png`, `console.log` and `steps.log` before it leaves with 4 — it is the one refusal with
 no run record behind it, since everything the page can explain comes back as `invalid` (3).
 
@@ -236,11 +259,12 @@ no run record behind it, since everything the page can explain comes back as `in
 
 | code | |
 |---|---|
-| `0` | the run succeeded |
+| `0` | the run succeeded, or parked (`--wait park`): it waits on a person and the report says where |
 | `1` | the run `failed` or was `cancelled` |
 | `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault — never a run that ran and failed |
 | `3` | the page refused the start (`status: 'invalid'`) |
 | `4` | the driver timed out (the run may still be going) |
+| `5` | another tab or job holds the lease, so nothing was driven — `resume`, or a `run --wait park` that resumed after its grace window and lost the race for the lease |
 | `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first |
 
 SIGINT is the driver's own (Playwright's handler is disabled at launch, because it kills the
@@ -251,7 +275,7 @@ so a CI cancellation ends as **exit 2** with the run left `running` (not 130, an
 
 ## In CI
 
-Two things exist, and a third does not.
+Three things exist, and a fourth does not.
 
 - **`.github/workflows/workflow-headless-run.yml`** (`bffless/apps`) — the live run.
   `workflow_dispatch` only, deliberately: a run there writes a real row, uploads to the
@@ -268,6 +292,16 @@ Two things exist, and a third does not.
   (no `page` fixture, so only the driver's Chromium runs) and reads the artifacts back off disk.
   From M3 the headless CLI *is* the e2e (09). It **fails**, rather than skipping, when the driver
   is not built.
+- **`.github/workflows/workflow-drive.yml`** in the **implementation's** repo — the driver job a
+  driven run dispatches (ADR-0006). `@bffless/workflow init` writes it; `index.json`'s
+  `driver.repo` names the repo the harness's `drive` rule dispatches to. It listens on
+  `repository_dispatch` `types: [workflow-drive]` and reads `client_payload`
+  (`mode`, `run_id`, `harness_url`, and for `mode: run` a `workflow` and `inputs`), running
+  `workflow-headless run --wait park --run-id …` or `workflow-headless resume …`. It carries
+  three secrets: `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` — the `run` verb still signs in through
+  the admin relay — plus `WORKFLOW_APP_TOKEN`, optional until the app-token-only session lands
+  (apps#588). The dispatch itself is authorised by the project's CE GitHub integration (Project
+  Settings → Integrations), not by a repo secret.
 - **There is no `bffless/run-workflow` GitHub Action.** Earlier drafts of this file promised one —
   a thin `with`-inputs wrapper around the CLI. It was not built: the repo-local dispatch workflow
   is the right shape for a single monorepo, and the Action is a follow-up for the day a second
@@ -291,8 +325,8 @@ their tab; a server-side submit over the MCP endpoint re-dispatches the driver (
 ## Resume
 
 **Driven runs are the exception:** a run the driver parked is a `running` row with a `waiting`
-step and no lease; `workflow-headless resume <runId>` (or a person on the page) resumes it
-exactly as any abandoned run is resumed.
+step and no lease; `workflow-headless resume <harness-url> <run-id>` (or a person on the page)
+resumes it exactly as any abandoned run is resumed.
 
 Headless runs **do not resume**; a failed CI step re-runs the workflow. That is a rule the
 harness leans on, not just advice: a `headless: auto` **form** that was `waiting` when the run

@@ -370,6 +370,17 @@ describe('workflow.submitStep re-dispatches after its write', () => {
     expect(r.structuredContent.dispatched).toBe(false)
   })
 
+  // `LEASE_LIVE` is the one refusal that is good news: a page holds the lease,
+  // so the submit landed on a run that is already being driven — and pointing
+  // the model at the harness page to "resume" it would be pointing it at the
+  // tab already doing the work.
+  it('does not send the model to the harness page when a page is already driving the run', () => {
+    const r = submit({ ...rows, drive: refusedDrive('LEASE_LIVE', 'this run is open in tab_1') })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toBe(`Submitted pick/0/choose; Run ${RUN_ID} is running; not dispatched: a page is driving this run`)
+    expect(r.structuredContent.dispatched).toBe(false)
+  })
+
   it('dispatches nothing when no write landed: a refused submit, and the render path', () => {
     const lost = run(callOf('workflow.submitStep', { runId: RUN_ID, step: 'pick/0/choose', values: { line: 'x', index: 0 } }), { run: [runRow()], steps: stepRows() })
     expect(lost.steps.plan!.isDrive).toBe(false)

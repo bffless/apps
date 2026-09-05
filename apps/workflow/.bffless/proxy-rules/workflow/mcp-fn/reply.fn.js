@@ -7178,7 +7178,7 @@ ${lines.join("\n")}`,
     const dispatched = drive?.status === 202;
     const body = bodyObject(drive?.body) ?? {};
     const code = typeof body.code === "string" ? body.code : "DISPATCH_FAILED";
-    const note = dispatched ? "; a driver was dispatched to continue the run" : `; not dispatched (${code}): resume it on the harness page`;
+    const note = dispatched ? "; a driver was dispatched to continue the run" : code === "LEASE_LIVE" ? "; not dispatched: a page is driving this run" : `; not dispatched (${code}): resume it on the harness page`;
     return {
       ...verdict,
       content: verdict.content.map((entry, i) => i === 0 ? { ...entry, text: `${entry.text}${note}` } : entry),

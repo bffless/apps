@@ -486,7 +486,15 @@ function withDriveNote(verdict: CallToolResult, steps: StepOutputs): CallToolRes
   const dispatched = drive?.status === 202
   const body = bodyObject(drive?.body) ?? {}
   const code = typeof body.code === 'string' ? body.code : 'DISPATCH_FAILED'
-  const note = dispatched ? '; a driver was dispatched to continue the run' : `; not dispatched (${code}): resume it on the harness page`
+  // `LEASE_LIVE` is not a refusal to route around: a page already holds the
+  // lease, so the run *is* being driven and the submit just landed on it.
+  // Telling the model to "resume it on the harness page" would send it to
+  // undo the very thing that is carrying the run forward.
+  const note = dispatched
+    ? '; a driver was dispatched to continue the run'
+    : code === 'LEASE_LIVE'
+      ? '; not dispatched: a page is driving this run'
+      : `; not dispatched (${code}): resume it on the harness page`
   return {
     ...verdict,
     content: verdict.content.map((entry, i) => (i === 0 ? { ...entry, text: `${entry.text}${note}` } : entry)),

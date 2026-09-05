@@ -1817,7 +1817,8 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
       // it dispatches (`handleNextAction`'s own guards), so a step relaunch
       // already emitted above can never be re-proposed here.
       if (def && state.status === 'running') {
-        for (const a of nextActions(def, state)) {
+        const actions = nextActions(def, state)
+        for (const a of actions) {
           await handleNextAction(
             a,
             def,
@@ -1826,6 +1827,28 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
             listenerApi.dispatch,
             getRunState,
             () => (listenerApi.getState() as HasRunSlice).run.meta?.park === true,
+          )
+        }
+        // 07 `wait=park`: and the park check that goes with it (fix round 5,
+        // finding 1). A resumed run reaches the park decision *only* here —
+        // the `runEvent` listener's copy of this pass runs off an event, and
+        // a run whose one remaining step is an unanswered undeclared form
+        // emits none: the relaunch loops above leave a `waiting` row alone,
+        // and `nextActions` proposes nothing for a step that already has
+        // state. Without this the driver's own `resume` verb would adopt the
+        // lease and then heartbeat a run nobody is driving forward until its
+        // `--timeout` killed the job. Same guard and same freshly-read slice
+        // as the `runEvent` pass, for the same reason: the proposals above
+        // have already dispatched, so `state` is a pre-schedule snapshot.
+        const fresh = (listenerApi.getState() as HasRunSlice).run
+        if (fresh.meta?.park && fresh.mode === 'live' && !fresh.paused && fresh.state) {
+          await parkIfIdle(
+            fresh.state.runId,
+            fresh.meta.def,
+            fresh.state,
+            actions,
+            deps,
+            listenerApi.dispatch,
           )
         }
       }
