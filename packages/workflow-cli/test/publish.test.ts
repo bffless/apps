@@ -22,12 +22,25 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeAll, describe, expect, test } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { parsePublish, runPublish, type SpawnRulesPush } from '../src/verbs/publish.js'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
 const fixtureDir = fileURLToPath(new URL('./fixtures/hello-tree', import.meta.url))
+
+// `--driver-repo` defaults to `GITHUB_REPOSITORY` (ADR-0006), which GitHub Actions
+// sets on every job — so the exact-shape parse cases below would grow a
+// `driverRepo` key in CI and not on a laptop. Every test starts with the
+// variable unset; the `--driver-repo` cases set what they need themselves.
+const ORIGINAL_GITHUB_REPOSITORY_AT_LOAD = process.env.GITHUB_REPOSITORY
+beforeEach(() => {
+  delete process.env.GITHUB_REPOSITORY
+})
+afterEach(() => {
+  if (ORIGINAL_GITHUB_REPOSITORY_AT_LOAD === undefined) delete process.env.GITHUB_REPOSITORY
+  else process.env.GITHUB_REPOSITORY = ORIGINAL_GITHUB_REPOSITORY_AT_LOAD
+})
 
 /** execFileSync throws on a non-zero exit; unwrap it so a test can assert the exit status too. */
 function run(args: string[], cwd: string, env: NodeJS.ProcessEnv): { stdout: string; stderr: string; status: number } {
