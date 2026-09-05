@@ -153,13 +153,21 @@ jobs:
       # file, so the decision lives in the shell — and that is the point: a fourth
       # package joins by existing, not by remembering to widen an equality here.
       # Forgetting this is how a bin package reaches npm with no dist/ in it.
+      #
+      # `"$PKG..."` (pnpm's dependents-of selector) builds the package's *workspace*
+      # dependencies first, in topological order. Since apps#598 `@bffless/workflow`
+      # depends on `@bffless/workflow-lint` through the `workspace:` protocol rather
+      # than the npm release, so a bare `--filter "$PKG"` build fails with "Cannot
+      # find module '@bffless/workflow-lint'" — the link points at a package whose
+      # `dist/` nobody built (workflow-cli-v1.2.0, 2026-09-05). A package with no
+      # workspace dependencies builds exactly as before.
       - name: Build
         env:
           PKG: ${{ inputs.package }}
           DIR: ${{ steps.verify.outputs.dir }}
         run: |
           if jq -e '.scripts.build // empty' "$DIR/package.json" > /dev/null; then
-            pnpm --filter "$PKG" build
+            pnpm --filter "${PKG}..." build
           else
             echo "$PKG declares no build script — nothing to build"
           fi
