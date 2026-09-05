@@ -52,11 +52,18 @@ export interface StartRunArgs {
    * tab was asked to behave, not a fact the record keeps about the run.
    */
   park?: boolean
+  /**
+   * `?runId=` (07, ADR-0006): a driver mints the id before the browser exists
+   * (so it can dispatch a headless driver and hand the id back immediately),
+   * and the page inserts the row under it instead of minting its own. Absent
+   * on every person-driven start, which still mints one here as always.
+   */
+  runId?: string
 }
 
 export function startRun(a: StartRunArgs): AppThunk<string> {
   return (dispatch) => {
-    const runId = newRunId()
+    const runId = a.runId ?? newRunId()
 
     const meta: RunMeta = {
       def: a.def,

@@ -72,6 +72,18 @@ describe('the run record surface', () => {
     expect(list.records.find((r: { runId: string }) => r.runId === 'run_new').startedBy).toBe(MOCK_MEMBER.id)
   })
 
+  it('refuses a duplicate runId with 409 RUN_EXISTS and leaves one row (07 `runId=` backstop)', async () => {
+    const row = { ...FINISHED_RUN.run, runId: 'run_dupe', status: 'running', finishedAt: null }
+    const first = await json('/api/workflow/runs', row)
+    expect(first.status).toBe(200)
+
+    const second = await json('/api/workflow/runs', row)
+    expect(second.status).toBe(409)
+    expect(await second.json()).toEqual({ code: 'RUN_EXISTS', error: 'a run with this id already exists' })
+
+    expect([...db.runs.values()].filter((r) => r.runId === 'run_dupe')).toHaveLength(1)
+  })
+
   it('patches only the patchable columns and 404s an unknown run', async () => {
     await json('/api/workflow/run/update', {
       id: RUN_ID,

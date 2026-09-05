@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { InputDef } from '@bffless/workflow-lint/definition'
-import { decodeInputs, initialValues, validateInputs } from './autoStart'
+import { decodeInputs, initialValues, parseRunIdParam, validateInputs } from './autoStart'
 
 /** What a driver writes into the URL: base64url of the JSON, unpadded. */
 function encode(value: unknown): string {
@@ -74,6 +74,15 @@ describe('decodeInputs', () => {
       expect(decoded.ok).toBe(false)
       if (!decoded.ok) expect(decoded.error).toMatch(/inputs/)
     }
+  })
+})
+
+describe('parseRunIdParam (07 `runId=`)', () => {
+  it('accepts an absent parameter, a well-formed id, and refuses the rest', () => {
+    expect(parseRunIdParam(null)).toEqual({ ok: true })
+    expect(parseRunIdParam('run_01J8ZK3N4Q5R6S7T8V9WXYZABC')).toEqual({ ok: true, runId: 'run_01J8ZK3N4Q5R6S7T8V9WXYZABC' })
+    expect(parseRunIdParam('run_lower')).toEqual({ ok: false, error: '`runId` must be run_ followed by 26 Crockford-base32 characters' })
+    expect(parseRunIdParam('')).toEqual({ ok: false, error: '`runId` must be run_ followed by 26 Crockford-base32 characters' })
   })
 })
 

@@ -24,7 +24,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { KickoffForm } from '../components/kickoff/KickoffForm'
-import { START_REFUSALS, decodeInputs, initialValues, validateInputs } from '../lib/autoStart'
+import { START_REFUSALS, decodeInputs, initialValues, parseRunIdParam, validateInputs } from '../lib/autoStart'
 import { offersUnattended } from '../lib/runner/headless'
 import { workflowId } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
@@ -48,6 +48,20 @@ export function KickoffPage() {
   // driven start — a person's tab already waits.
   const park = auto && searchParams.get('wait') === 'park'
   const inputsParam = searchParams.get('inputs')
+  const runIdRaw = searchParams.get('runId')
+  // `?runId=` (07, ADR-0006): a driver mints the id before this page even
+  // loads, so it can hand the id to its own caller immediately. Parsed once,
+  // ahead of the inputs decode below — a malformed id is a refusal on its own,
+  // never a value worth resolving `inputs` against. Annotated to the same
+  // shape on both branches (rather than `parseRunIdParam`'s own return type
+  // narrowed to one arm) so every read below — `.ok`, `.runId` — type-checks
+  // the same regardless of `auto`. Memoized on the raw string (not `auto` and
+  // `searchParams` alone) so `autoStart`, below, only recomputes when this
+  // value actually changes rather than on every render.
+  const runIdParam = useMemo<{ ok: true; runId?: string } | { ok: false; error: string }>(
+    () => (auto ? parseRunIdParam(runIdRaw) : { ok: true }),
+    [auto, runIdRaw],
+  )
 
   const { impl, listing, isLoading, isError, error } = useWorkflowListing()
 
@@ -55,6 +69,13 @@ export function KickoffPage() {
   const { data: yaml, isError: yamlFailed } = useGetWorkflowYamlQuery(target)
 
   const { data: previousRun } = useGetRunQuery(from ?? skipToken)
+
+  // Does a run already exist under `?runId=`? Skipped whenever there is no id
+  // to check — a person's start, or `?auto=1` with no `runId` at all, mints a
+  // fresh one and never queries. The read, not the create rule's 409, is the
+  // primary defense (the design's own ruling): the rule is only a backstop for
+  // the race between this read and the insert.
+  const existing = useGetRunQuery(auto && runIdParam.ok && runIdParam.runId ? runIdParam.runId : skipToken)
 
   const loaded = useMemo(
     () => (yaml !== undefined && listing ? loadWorkflow(yaml, listing.file) : null),
@@ -76,6 +97,11 @@ export function KickoffPage() {
   // computed them.
   const autoStart = useMemo<{ values?: Record<string, unknown>; errors?: Record<string, string> } | null>(() => {
     if (!auto || !loaded?.ok || !loaded.def) return null
+    // A malformed `runId=` is refused before `inputs` is even looked at: it is
+    // never a value worth resolving against the declarations, and folding it
+    // in here (rather than a separate check) is what keeps the auto-start
+    // effect from firing on it — that effect only reads `autoStart.values`.
+    if (!runIdParam.ok) return { errors: { runId: runIdParam.error } }
     const decoded = decodeInputs(inputsParam)
     if (!decoded.ok) return { errors: { inputs: decoded.error } }
     // Resolved against the declarations first, exactly as the form's own
@@ -85,7 +111,7 @@ export function KickoffPage() {
     const values = initialValues(loaded.def.inputs, decoded.values)
     const errors = validateInputs(loaded.def.inputs, values)
     return Object.keys(errors).length > 0 ? { errors } : { values }
-  }, [auto, inputsParam, loaded])
+  }, [auto, inputsParam, loaded, runIdParam])
 
   const invalid = autoStart?.errors ?? null
 
@@ -107,20 +133,30 @@ export function KickoffPage() {
         headless,
         unattended: unattendedRun,
         park,
+        // Only ever set on the auto path with a well-formed `runId=` — a
+        // person's Start, and every other refusal, leaves this `undefined`,
+        // which `startRun` reads exactly like an absent field (mints its own).
+        runId: runIdParam.ok ? runIdParam.runId : undefined,
       }),
     )
     void navigate(`/${impl.alias}/${wfId}/runs/${runId}`)
   }
 
   useEffect(() => {
-    if (started.current || autoStart?.values === undefined) return
+    // `existing.isLoading` holds the effect until the `?runId=` read has
+    // settled — starting on the assumption that the row is fresh, then
+    // finding out otherwise from the 409 backstop, would be the exact race
+    // the page-side check exists to avoid. `existing.data?.run` stops it
+    // outright once settled: a duplicate id publishes `invalid` (`blocked`,
+    // below) instead of ever reaching `startRun`.
+    if (started.current || autoStart?.values === undefined || existing.isLoading || existing.data?.run) return
     started.current = true
     start(autoStart.values, true)
     // `start` closes over this render's discovery result; the `started` guard
     // is what makes the effect run-once, so re-listing it would only re-run
     // the effect on every render for nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart])
+  }, [autoStart, existing.isLoading, existing.data])
 
   // Every way `?auto=1` can end without a run: discovery that failed, a url
   // naming an implementation or workflow that is not there, a workflow file
@@ -142,8 +178,12 @@ export function KickoffPage() {
     if (!impl || !listing) return { workflow: START_REFUSALS.noWorkflow }
     if (yamlFailed) return { workflow: START_REFUSALS.fileUnreadable }
     if (loaded && !loaded.ok) return { workflow: START_REFUSALS.doesNotLint }
+    // `?runId=`'s own refusal (07): the id parsed fine, but a row already
+    // exists under it. Checked last, not first, because it depends on a
+    // network read (`existing`) the other checks don't need.
+    if (existing.data?.run) return { runId: 'A run with this id already exists' }
     return null
-  }, [auto, invalid, isLoading, isError, impl, listing, yamlFailed, loaded])
+  }, [auto, invalid, isLoading, isError, impl, listing, yamlFailed, loaded, existing.data])
 
   useEffect(() => {
     if (!blocked) return
