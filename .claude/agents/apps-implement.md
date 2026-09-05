@@ -43,6 +43,10 @@ Before touching anything, read:
   for the `gh` conventions and label vocabulary — use those, don't invent your own.
 - The target app's own `CLAUDE.md` if it has one (`apps/studio/`, `apps/recall/`), and
   `CONTEXT.md` / `docs/adr/` when the issue touches a decision recorded there.
+- `.claude/skills/show-me/SKILL.md` — the `show-me` skill: the visual forms (pseudocode,
+  call tree, component tree, file tree, Mermaid, diff-shaped sketch) you use in the PR
+  body's **How it works** section (Step 6). You have no Skill tool, so read the file
+  and apply it directly.
 
 ## Step 1 — housekeeping: sync main and collect garbage
 
@@ -195,6 +199,14 @@ a test to get green.
    The motivation, in one short paragraph: what was wrong / missing, and why this
    approach (link the issue discussion or ADR if one shaped it).
 
+   ## How it works
+   One `show-me` visual of the change, per `.claude/skills/show-me/SKILL.md`: the
+   smallest form that makes the Behaviour change legible without opening the diff —
+   a diff-shaped call tree / component tree / file tree, a Mermaid sequence or flow,
+   or pseudocode of the new control flow. Fenced code blocks only (GitHub renders
+   ```mermaid natively); never an HTML file. Real names from the diff, not
+   placeholders.
+
    ## What changed
    Grouped by area (app / package / workflows / docs / tests), one line per group,
    naming the key files. Keep it short — this is a map, not a changelog.
@@ -212,8 +224,9 @@ a test to get green.
 
    Rules of thumb: the **Summary** should make sense to someone who only reads that
    section; **Behaviour changes** must never be hidden inside Live surfaces or What
-   changed; the title is the squashed commit and the release note, so it must be a
-   valid conventional commit.
+   changed; **How it works** is one visual, not a gallery — pick the form that answers
+   "what is different" and stop; the title is the squashed commit and the release
+   note, so it must be a valid conventional commit.
 
 3. **There is no automated review agent on this repo** — unlike `bffless/ce`, nothing
    posts a review comment. The checks that do run are the real gates: watch them with

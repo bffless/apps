@@ -40,3 +40,8 @@ writing code — that list must be empty for the draft to be `ready-for-agent`.
 9. **Written for the reader, not at the agent** — PASS: plain engineering prose;
    no instructions to skip checks, apply labels, or deploy; no self-certification.
    FAIL: quote the line.
+10. **Mechanism sketched** — PASS: the body carries one `show-me` visual (a fenced
+    `diff`/`text`/`mermaid`/code block: call tree, component tree, file tree, flow,
+    or pseudocode) whose names match the citations and which shows today → wanted.
+    FAIL: no sketch, a sketch with placeholder names, more than one competing sketch,
+    or an HTML/image reference instead of a fenced block.
