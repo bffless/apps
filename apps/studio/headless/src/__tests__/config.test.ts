@@ -53,6 +53,15 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, FFMPEG_MT: 'true' } as never).ffmpegMt).toBe(true)
   })
 
+  it('VIDEO_BACKEND: unset → null, a known backend passes through, anything else throws', () => {
+    const base = { STUDIO_BASE_URL: 'http://localhost:5173', MOCK_MODE: 'true', FIXTURE_PATHS: '/tmp/f.mp4' }
+    expect(loadConfig(base as never).videoBackend).toBeNull()
+    expect(loadConfig({ ...base, VIDEO_BACKEND: '' } as never).videoBackend).toBeNull()
+    expect(loadConfig({ ...base, VIDEO_BACKEND: 'remote' } as never).videoBackend).toBe('remote')
+    expect(loadConfig({ ...base, VIDEO_BACKEND: ' wasm ' } as never).videoBackend).toBe('wasm')
+    expect(() => loadConfig({ ...base, VIDEO_BACKEND: 'bogus' } as never)).toThrow(/video_backend.*bogus/)
+  })
+
   it('defaults the export inputs off/empty', () => {
     const cfg = loadConfig(base as never)
     expect(cfg.thumbnailPrompt).toBe('')

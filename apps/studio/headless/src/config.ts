@@ -1,3 +1,7 @@
+/** Studio's `?videoBackend=` override values (`apps/studio/src/lib/videoBackend.ts`). */
+export type VideoBackend = 'wasm' | 'server' | 'local' | 'remote'
+const VIDEO_BACKENDS: readonly VideoBackend[] = ['wasm', 'server', 'local', 'remote']
+
 export type RunnerConfig = {
   baseUrl: string
   videoUrls: string[]
@@ -7,6 +11,8 @@ export type RunnerConfig = {
   mockMode: boolean
   smokeStopAfterStart: boolean
   ffmpegMt: boolean
+  /** Force Studio's video backend via `?videoBackend=`; null leaves the app's own choice. */
+  videoBackend: VideoBackend | null
   credentials: { email: string; password: string } | null
   buildTimeoutMs: number
   buildStallTimeoutMs: number
@@ -35,6 +41,16 @@ export function parseOptionalUrl(raw: string | undefined, name: string): string 
     throw new Error(`${name} has an unsupported protocol (need http/https): ${trimmed}`)
   }
   return trimmed
+}
+
+/** Validate an optional video-backend override (`VIDEO_BACKEND`); empty → null, unknown → throws. */
+export function parseVideoBackend(raw: string | undefined, name: string): VideoBackend | null {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return null
+  if (!(VIDEO_BACKENDS as readonly string[]).includes(trimmed)) {
+    throw new Error(`${name} must be one of ${VIDEO_BACKENDS.join(' | ')}, got: ${trimmed}`)
+  }
+  return trimmed as VideoBackend
 }
 
 export function parseVideoUrls(raw: string): string[] {
@@ -82,6 +98,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RunnerConfig {
     mockMode,
     smokeStopAfterStart: env.SMOKE_STOP_AFTER_START === 'true',
     ffmpegMt: env.FFMPEG_MT === 'true',
+    videoBackend: parseVideoBackend(env.VIDEO_BACKEND, 'video_backend'),
     credentials,
     prepTimeoutMs: minutes(env, 'PREP_TIMEOUT_MINUTES', 30),
     directorTimeoutMs: minutes(env, 'DIRECTOR_TIMEOUT_MINUTES', 10),

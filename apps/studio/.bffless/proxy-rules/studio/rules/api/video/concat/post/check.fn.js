@@ -13,5 +13,13 @@ function handler({ steps, deployment, stepErrors }) {
   // storage path <owner>/<repo>/uploads/<key>  ->  serve URL /api/uploads/<key>
   var prefix = deployment.owner + '/' + deployment.repo + '/uploads/'
   var key = path.indexOf(prefix) === 0 ? path.slice(prefix.length) : path
-  return { ok: true, notOk: false, error: '', data: { url: '/api/uploads/' + key } }
+  var data = { url: '/api/uploads/' + key }
+  // CE >= 0.4.31 (ce#684) reports which executor ran the op and how long it took. Keep
+  // them on the job row's `result` verbatim (apps#605) — the pipeline log ages out, the
+  // row doesn't. Only when present: a pre-0.4.31 CE yields no `null` keys here.
+  var stats = ['executor', 'timings', 'bytesIn', 'bytesOut']
+  for (var i = 0; i < stats.length; i++) {
+    if (out[stats[i]] !== undefined && out[stats[i]] !== null) data[stats[i]] = out[stats[i]]
+  }
+  return { ok: true, notOk: false, error: '', data: data }
 }

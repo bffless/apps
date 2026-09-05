@@ -56,6 +56,8 @@ on:
       # NOTE: workflow_dispatch caps at 10 inputs — the old ffmpeg_mt input made
       # 11, so it moved to the STUDIO_FFMPEG_MT repo variable (rarely-used debug
       # escape hatch; the proven default is Chrome + the single-threaded core).
+      # The video-backend override rides the same way: the STUDIO_VIDEO_BACKEND
+      # repo variable (wasm | server | local | remote; unset = the app's choice).
       browser:
         description: 'Browser to drive the site with. Chrome is the proven default: Chrome+ST built 4 scenes in 25 min (run 31552803617) while Firefox+ST could not finish one scene cut.'
         required: false
@@ -94,4 +96,5 @@ jobs:
           blog-direction: ${{ inputs.blog_direction }}
           browser: ${{ inputs.browser }}
           ffmpeg-mt: ${{ vars.STUDIO_FFMPEG_MT == 'true' && 'true' || 'false' }}
+          video-backend: ${{ vars.STUDIO_VIDEO_BACKEND }}
           artifact-name: run-output

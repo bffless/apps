@@ -24,6 +24,29 @@ cases:
         notOk: true
         error: Server stitch failed
         data: null
+  - name: CE >= 0.4.31 executor + timings + byte counts ride along on data (apps#605)
+    data:
+      steps:
+        stitch:
+          storage_path: o/r/uploads/projects/p1/export/server/s.mp4
+          content_type: video/mp4
+          size: 789
+          executor: remote
+          timings: { queueMs: 120, transferInMs: 3400, ffmpegMs: 15010, transferOutMs: 2300, totalMs: 20830 }
+          bytesIn: 104857600
+          bytesOut: 2097152
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          url: /api/uploads/projects/p1/export/server/s.mp4
+          executor: remote
+          timings: { queueMs: 120, transferInMs: 3400, ffmpegMs: 15010, transferOutMs: 2300, totalMs: 20830 }
+          bytesIn: 104857600
+          bytesOut: 2097152
   # NOTE: cases exercising `stepErrors` (ce#662 forward-compat in check.fn.js) are omitted until the
   # bffless CLI's fixture schema (packages/cli/src/format/manifest.ts FnTestCaseDataSchema, .strict())
   # accepts a `stepErrors` data root — see the CE follow-up filed from apps#346 Plan 3.
