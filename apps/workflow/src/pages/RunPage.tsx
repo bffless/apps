@@ -61,7 +61,7 @@ import { definitionOf } from '../lib/runDefinition'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
-import { publishWorkflowGlobal, snapshotOf } from '../lib/workflowGlobal'
+import { publishWorkflowGlobal, snapshotOf, withPageState } from '../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, RunState, StepKey, StepState } from '../lib/runner/types'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
@@ -521,10 +521,25 @@ export function RunPage() {
   // to?") is the same one this page answers, and a second source of truth for
   // it would be one more thing to keep in step. Cleared when the page goes:
   // a snapshot of a run nobody is showing any more is worse than none.
+  //
+  // What the *page* is doing sits on top of the record's own status (07
+  // `wait=park`): a parked run's row still says `running`, and only this tab
+  // knows it has stopped driving it, so the driver would otherwise poll a
+  // `running` run forever.
+  //
+  // Placeholder until Task 3 (`?resume=1`) brings the real value: a resume the
+  // page refused because the lease is held elsewhere reads `busy`.
+  const resumeOutcome: 'busy' | null = null
+  const pageState: 'parked' | 'busy' | null =
+    sliceMode === 'parked' && sliceState?.runId === runId
+      ? 'parked'
+      : resumeOutcome === 'busy'
+        ? 'busy'
+        : null
   useEffect(() => {
-    publishWorkflowGlobal(state ? snapshotOf(state) : null)
+    publishWorkflowGlobal(state ? withPageState(snapshotOf(state), pageState) : null)
     return () => publishWorkflowGlobal(null)
-  }, [state])
+  }, [state, pageState])
 
   // A `waiting` step opens as its own pane the moment the run reaches it —
   // first by topo order (08: "the pane is the form") — as long as nothing
@@ -824,6 +839,7 @@ export function RunPage() {
           unattended={isLive ? sliceState!.unattended : (run!.unattended ?? false)}
           yaml={isLive ? sliceMeta!.yaml : run!.yaml}
           status={shownStatus!}
+          pageState={pageState}
           annotations={annotations}
           base={base}
           progress={state ? stepProgress(state) : undefined}

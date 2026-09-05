@@ -45,6 +45,13 @@ export interface StartRunArgs {
    * read it off `runState`, and a resumed run must see what it started with.
    */
   unattended?: boolean
+  /**
+   * `?wait=park` sets it (07): the driver would rather the run waited for a
+   * person than failed at a step that declares no `headless:`. Rides on
+   * `RunMeta`, not on `run.started`, because it is page state — how *this*
+   * tab was asked to behave, not a fact the record keeps about the run.
+   */
+  park?: boolean
 }
 
 export function startRun(a: StartRunArgs): AppThunk<string> {
@@ -56,6 +63,7 @@ export function startRun(a: StartRunArgs): AppThunk<string> {
       yaml: a.yaml,
       workflowName: a.workflowName,
       ...(a.workflowVersion === undefined ? {} : { workflowVersion: a.workflowVersion }),
+      ...(a.park ? { park: true } : {}),
     }
     dispatch(runOpened({ meta }))
 

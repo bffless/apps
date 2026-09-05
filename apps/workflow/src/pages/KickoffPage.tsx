@@ -43,6 +43,10 @@ export function KickoffPage() {
   const [searchParams] = useSearchParams()
   const from = searchParams.get('from') ?? undefined
   const auto = searchParams.get('auto') === '1'
+  // `?wait=park` (07): the driver would rather the run waited for a person at a
+  // step that declares no `headless:` than failed there. Only meaningful on a
+  // driven start — a person's tab already waits.
+  const park = auto && searchParams.get('wait') === 'park'
   const inputsParam = searchParams.get('inputs')
 
   const { impl, listing, isLoading, isError, error } = useWorkflowListing()
@@ -102,6 +106,7 @@ export function KickoffPage() {
         values,
         headless,
         unattended: unattendedRun,
+        park,
       }),
     )
     void navigate(`/${impl.alias}/${wfId}/runs/${runId}`)
