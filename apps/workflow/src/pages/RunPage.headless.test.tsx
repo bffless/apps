@@ -29,8 +29,10 @@ import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { routes } from '../routes'
 import { makeStore } from '../store'
+import { newRunId } from '../lib/runner/ids'
 import { startRun } from '../store/runnerActions'
-import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
+import { runEvent, runOpened } from '../store/runSlice'
+import { flush, pumpUntil as pumpClock, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting, trackedHelloStore } from '../test/helloHarness'
 import { islandStore, pumpUntil, resetIslandHarness } from '../test/islandHarness'
 import type { FakeIslandHost } from '../test/islandHarness'
 import type { Definition, StepKey } from '../lib/runner/types'
@@ -97,6 +99,63 @@ describe('RunPage — window.__workflow', () => {
       'poster',
       'report',
     ])
+  })
+})
+
+describe('RunPage — window.__workflow on a parked run (07 `wait=park`)', () => {
+  /**
+   * Parking takes the lease, so the tab is no longer `live` and the page falls
+   * through to the run **record** — which a tab that drove the run never
+   * fetched. The global must read `parked` anyway, and the moment the park
+   * lands: it is what tells the driver to stop waiting and hand the run to a
+   * person. The record is withheld outright here (the `run` read answers
+   * `null`, so the page renders "No such run") because that is the strongest
+   * form of the same question — publishing off the record would leave a driver
+   * with nothing at all.
+   */
+  it('publishes `parked` off the slice, without waiting for the record', async () => {
+    server.use(http.get('/api/workflow/run', () => HttpResponse.json({ run: null, steps: [] })))
+
+    const def = toDefinition({
+      name: 'Park',
+      jobs: {
+        confirm: {
+          steps: [
+            { id: 'review', uses: 'form', with: { title: 'Review', fields: { note: { type: 'string' } }, submit: 'Approve' } },
+          ],
+        },
+      },
+    }) as Definition
+    const { store, advance } = trackedHelloStore()
+    const runId = newRunId()
+    store.dispatch(runOpened({ meta: { def, yaml: '# park\n', workflowName: 'Park', park: true } }))
+    store.dispatch(
+      runEvent({
+        type: 'run.started',
+        runId,
+        impl: 'hello',
+        workflow: 'park',
+        inputs: {},
+        headless: true,
+        unattended: false,
+        at: Date.now(),
+      }),
+    )
+    await flush()
+    await pumpClock(advance, () => store.getState().run.mode === 'parked', { maxSteps: 200 })
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/hello/park/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    await waitFor(() => expect(window.__workflow?.status).toBe('parked'))
+    expect(window.__workflow?.runId).toBe(runId)
+    // The step the person is being handed, still where the driver left it.
+    expect(window.__workflow?.steps[REVIEW_KEY]).toBe('waiting')
   })
 })
 

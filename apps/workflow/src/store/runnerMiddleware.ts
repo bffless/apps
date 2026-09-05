@@ -1340,6 +1340,16 @@ function armWaitingStep(
  * the run, and a step that is about to be started is not a run out of work.
  * A failed patch leaves the tab live and shows the 05 pause banner instead —
  * a lease this tab still holds must not be *believed* released.
+ *
+ * **No wait clock survives the park.** `loseLease` disarms every one of them,
+ * and that is deliberate rather than incidental: a parked tab holds no lease,
+ * and a clock that fired here would write a terminal row for a run this tab no
+ * longer owns. A step's declared `timeout-minutes` is not forgiven by that — it
+ * is re-armed when the run is **resumed**, from the `startedAt` the record
+ * kept (`armWaitingStep`, off the `runReplaced` listener), exactly as 07's
+ * Resume already mandates: a run adopted after its budget has passed fails
+ * `HEADLESS_TIMEOUT` the moment it is picked up. What a parked run cannot do
+ * is spend a budget with nobody watching it.
  */
 async function parkIfIdle(
   runId: string,

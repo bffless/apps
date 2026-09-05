@@ -3,7 +3,7 @@ targetUrl: pipeline
 order: 41
 pipeline:
   name: MCP step view resource
-  description: "The step view (ui://bffless/workflow/step-view.138f9a68.html, spec 10; apps#587): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it."
+  description: "The step view (ui://bffless/workflow/step-view.8372a76d.html, spec 10; apps#587): /step.html fetched in-process from the harness bundle and answered as text/html, the way resources/read serves it."
   steps:
     - id: route
       name: route

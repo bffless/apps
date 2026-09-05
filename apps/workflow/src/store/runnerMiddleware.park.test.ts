@@ -32,9 +32,34 @@ const ECHO: StepKey = stepKey('confirm', 0, 'echo')
 function withSteps(steps: Record<string, unknown>[]): Definition {
   return toDefinition({ name: 'Park', jobs: { confirm: { steps } } }) as Definition
 }
+/** Two jobs with no `needs` between them, so they are scheduled together. */
+function withJobs(jobs: Record<string, unknown>): Definition {
+  return toDefinition({ name: 'Park', jobs }) as Definition
+}
 const undeclaredForm = { id: 'review', uses: 'form', with: { title: 'Review', fields: { note: { type: 'string' } }, submit: 'Approve' } }
 const autoForm = { ...undeclaredForm, headless: 'auto' }
+const timedForm = { ...undeclaredForm, 'timeout-minutes': 1 }
 const echo = { id: 'echo', uses: 'pipeline', with: { path: 'echo', text: 'hi' }, outputs: { text: { type: 'string' } } }
+/**
+ * `hello`'s `slow` job in miniature, stretched: the mock answers one BUSY per
+ * distinct body (hence the `retry`) and its first poll tick is always
+ * `pending`, so a half-hour `every` leaves the step sitting in `polling` for
+ * as long as any case here needs it to. It is the *other* thing the run has to
+ * do while the form waits — which is what keeps the run from parking.
+ */
+const longPoll = {
+  id: 'wait',
+  uses: 'pipeline',
+  with: { path: 'slow', body: { lines: ['park'] } },
+  poll: {
+    path: 'job',
+    query: { id: '${{ response.jobId }}' },
+    until: "${{ response.status == 'done' }}",
+    every: '30m',
+    timeout: '90m',
+  },
+  retry: { max: 2, delay: '3s', if: "${{ error.code == 'BUSY' }}" },
+}
 
 /**
  * Start a headless run of `def`, with `park` on the meta the way the kickoff
@@ -78,10 +103,59 @@ describe('wait=park (spec 07 additions; DR2/DR3)', () => {
     expect(store.getState().run.state?.steps[REVIEW]?.status).toBe('succeeded')
   })
 
-  it('an undeclared form under park is not auto-submitted and gets no 5-minute budget', async () => {
+  it('nobody submits the parked form on the person’s behalf, however long they take', async () => {
     const { store, advance } = await start(withSteps([undeclaredForm, echo]), true)
     await pumpUntil(advance, () => store.getState().run.mode === 'parked', { maxSteps: 200 })
     await advance(6 * 60_000)
     expect(store.getState().run.state?.steps[REVIEW]?.status).toBe('waiting')
+  })
+
+  /**
+   * The budget half, which the case above cannot prove: parking disarms every
+   * clock (`loseLease`), so a step that has already parked would sit at
+   * `waiting` even with the old 5-minute default still being armed. Here the
+   * run has *not* parked — a sibling job is mid-poll, which is work this tab
+   * still owes the run — so the form's clock is the only thing that could
+   * fire, and six minutes is past the `HEADLESS_AUTO_DEFAULT_MS` an undeclared
+   * step used to be given.
+   */
+  it('gives an undeclared form no headless default budget while the run is still driving itself', async () => {
+    const { store, advance } = await start(
+      withJobs({ confirm: { steps: [undeclaredForm] }, work: { steps: [longPoll] } }),
+      true,
+    )
+    await pumpUntil(advance, () => store.getState().run.state?.steps[REVIEW]?.status === 'waiting', {
+      maxSteps: 200,
+    })
+    // The premise: the poll is unfinished work, so nothing parked.
+    expect(store.getState().run.mode).toBe('live')
+
+    await advance(6 * 60_000)
+
+    const state = store.getState().run.state
+    expect(state?.steps[REVIEW]?.status).toBe('waiting')
+    expect(state?.steps[REVIEW]?.error).toBeUndefined()
+    expect(state?.status).toBe('running')
+    expect(store.getState().run.mode).toBe('live')
+  })
+
+  /**
+   * A *declared* `timeout-minutes` is not spent while parked either (the
+   * ruling on DR3): a parked tab holds no lease and may not write a terminal
+   * row, so `loseLease` takes its clock with it. The budget is not forgiven —
+   * `armWaitingStep` re-arms it from the step's recorded `startedAt` when the
+   * run is resumed, and a run adopted past its budget fails immediately (07
+   * Resume) — it simply does not run down with nobody watching.
+   */
+  it('does not spend a declared timeout-minutes while parked', async () => {
+    const { store, advance } = await start(withSteps([timedForm, echo]), true)
+    await pumpUntil(advance, () => store.getState().run.mode === 'parked', { maxSteps: 200 })
+
+    await advance(2 * 60_000)
+
+    const state = store.getState().run.state
+    expect(state?.steps[REVIEW]?.status).toBe('waiting')
+    expect(state?.steps[REVIEW]?.error).toBeUndefined()
+    expect(state?.status).toBe('running')
   })
 })

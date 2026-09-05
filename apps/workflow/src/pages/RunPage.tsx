@@ -530,16 +530,24 @@ export function RunPage() {
   // Placeholder until Task 3 (`?resume=1`) brings the real value: a resume the
   // page refused because the lease is held elsewhere reads `busy`.
   const resumeOutcome: 'busy' | null = null
-  const pageState: 'parked' | 'busy' | null =
-    sliceMode === 'parked' && sliceState?.runId === runId
-      ? 'parked'
-      : resumeOutcome === 'busy'
-        ? 'busy'
-        : null
+  const parkedHere = sliceMode === 'parked' && sliceState?.runId === runId
+  const pageState: 'parked' | 'busy' | null = parkedHere
+    ? 'parked'
+    : resumeOutcome === 'busy'
+      ? 'busy'
+      : null
+  // A parked tab is no longer `live`, so `state` below falls through to the
+  // *record* — which this tab never fetched while it was driving (the live path
+  // passes `skipToken`). Publishing off that would take the global away for as
+  // long as the fetch takes, and leave it away entirely if the fetch fails,
+  // which is the one moment a driver is watching hardest. So while this tab is
+  // the one that parked this run, publish from the state it still holds: the
+  // park is a fact about the slice, and the slice is right here.
+  const publishedState = parkedHere ? sliceState : state
   useEffect(() => {
-    publishWorkflowGlobal(state ? withPageState(snapshotOf(state), pageState) : null)
+    publishWorkflowGlobal(publishedState ? withPageState(snapshotOf(publishedState), pageState) : null)
     return () => publishWorkflowGlobal(null)
-  }, [state, pageState])
+  }, [publishedState, pageState])
 
   // A `waiting` step opens as its own pane the moment the run reaches it —
   // first by topo order (08: "the pane is the form") — as long as nothing
