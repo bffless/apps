@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { ENTRIES, SET, bundle, outFile, renderedRules, sourceRev } from '../../scripts/build-mcp.mjs'
+import { ENTRIES, SET, bundle, outFile, packageJsonForRev, renderedRules, sourceRev } from '../../scripts/build-mcp.mjs'
 
 /**
  * Verbatim `PROHIBITED_PATTERNS` from
@@ -128,5 +128,12 @@ describe('the source revision (apps#587)', () => {
     expect(sourceRev()).toBe(rev)
     const endpoint = (await renderedRules()).find(([rel]) => rel === 'rules/api/workflow/mcp/any.rule.yaml')![1]
     expect(endpoint).toContain(`ui://bffless/workflow/step-view.${rev}.html`)
+  })
+
+  it("ignores package.json's version (a release PR bumps it and cannot run mcp:build) but not its dependencies", () => {
+    const at = (version: string, dep = '^1.0.0') =>
+      packageJsonForRev(JSON.stringify({ name: 'workflow', version, dependencies: { react: dep } }))
+    expect(at('1.2.1')).toBe(at('1.3.0'))
+    expect(at('1.2.1')).not.toBe(at('1.2.1', '^2.0.0'))
   })
 })
