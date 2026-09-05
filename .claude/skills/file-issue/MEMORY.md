@@ -62,3 +62,13 @@ settled and delete it here.
 - The user chose a 4-way split where one child (tests/hygiene) carried ~12 nits across
   three boxes grouped by surface (checks / tests / docs); triage accepted it, so "N nits =
   N issues" is a guideline — tight grouping under one `chore(...)` title passes.
+
+## 2026-09-05 — show-me sketch added to the body shape
+
+- The user asked every repo-local PR/issue writer (`apps-implement`, this skill,
+  `to-issues`) to use the `show-me` skill. Added a `<Sketch: …>` slot to the refile
+  shape, a rule with its reason in step 4, and rubric item 10. `grade.py` was left
+  alone on purpose: its calibration set (#421, #469, #471–#473) predates the rule and
+  a scripted "has a fenced sketch" check would fail every one of them. Recalibrate if
+  a scripted check is ever added. Not yet exercised on a real filing — the first run
+  after this should record whether triage reads the sketch or ignores it.

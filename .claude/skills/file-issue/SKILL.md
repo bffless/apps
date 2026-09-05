@@ -95,6 +95,8 @@ thing — no "and".
 ```
 <Provenance: "Refiled from #460 item 2." / "Found while …">  <**decided**: X.>
 <Mechanism: what happens today and why, every claim as `path:line`.>
+<Sketch: one `show-me` visual of the mechanism — today → wanted as a diff-shaped
+call tree / component tree / file tree, a Mermaid flow, or pseudocode. Fenced block only.>
 
 - [ ] <outcome 1 — testable, not a step>
 - [ ] <outcome 2>
@@ -106,9 +108,10 @@ Citations against `origin/main` `<sha>`.
 ```
 
 **Body — the bug-found-in-the-wild shape** (#421): `## What happens` (with the code
-that does it), `## Expected`, `## Suggested fix` (mirror a named sibling, numbered),
-`## Notes` (live surfaces, related issues, what is explicitly *not* in scope). Same
-rules apply; the checkboxes become the numbered fix plus a named test file.
+that does it, and the `show-me` sketch of the path that produces it), `## Expected`,
+`## Suggested fix` (mirror a named sibling, numbered), `## Notes` (live surfaces,
+related issues, what is explicitly *not* in scope). Same rules apply; the checkboxes
+become the numbered fix plus a named test file.
 
 Rules, each with its reason:
 
@@ -119,6 +122,14 @@ Rules, each with its reason:
   uncited claim is a question triage has to answer itself.
 - **Name the precedent to follow** — the sibling file, hook, or rule that already does
   it the wanted way. It converts a design question into a resolved one.
+- **Sketch the mechanism with the `show-me` skill** (`/show-me`; vendored at
+  `.claude/skills/show-me/SKILL.md`). One visual, the smallest form that shows
+  today → wanted: a diff-shaped call tree, component tree or file tree, a Mermaid
+  sequence/flow, or pseudocode of the control flow. Fenced code blocks only — the
+  body is GitHub markdown, which renders ```mermaid; never the HTML-file form. Use
+  the real names the citations name. Triage reads the mechanism paragraph as the
+  implementer would; a sketch answers "which call, in what order" in one glance where
+  prose needs a re-read, and it exposes an ordering or ownership gap before triage does.
 - **Checkboxes are outcomes**, and the last one is the test with the file it lives in.
   Triage checks "concrete enough to write a test for"; naming the test file answers
   "where" as well.
