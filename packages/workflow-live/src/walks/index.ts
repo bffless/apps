@@ -10,10 +10,11 @@ import { pageTools } from './page-tools.js'
 import { mcp } from './mcp.js'
 import { mcpApp } from './mcp-app.js'
 import { oauth } from './oauth.js'
+import { driven } from './driven.js'
 
 export interface WalkContext { args: WalkArgs; env: NodeJS.ProcessEnv; report: Report }
 export type Walk = (ctx: WalkContext) => Promise<void>
 
 export const ALL_ORDER = ['hello', 'headless', 'studio-audit', 'studio-headless'] as const
 
-export const WALKS: Record<string, Walk> = { m1, interactive, hello, headless, 'studio-audit': studioAudit, 'studio-headless': studioHeadless, 'page-tools': pageTools, mcp, 'mcp-app': mcpApp, oauth }
+export const WALKS: Record<string, Walk> = { m1, interactive, hello, headless, 'studio-audit': studioAudit, 'studio-headless': studioHeadless, 'page-tools': pageTools, mcp, 'mcp-app': mcpApp, oauth, driven }
