@@ -189,9 +189,12 @@ so before a run is attempted.
 `workflow-headless`:
 
 ```
-workflow-headless run  <harness-url> <impl>/<workflow> --inputs inputs.json
-                       [--out ./artifacts] [--timeout 60m] [--mocks] [--headed]
-workflow-headless runs <harness-url> <impl>/<workflow> [--last 10] [--mocks]
+workflow-headless run    <harness-url> <impl>/<workflow> --inputs inputs.json
+                         [--out ./artifacts] [--timeout 60m] [--mocks] [--headed]
+                         [--wait fail|park] [--run-id run_…] [--grace 5m]
+workflow-headless runs   <harness-url> <impl>/<workflow> [--last 10] [--mocks]
+workflow-headless resume <harness-url> <run-id>
+                         [--out ./artifacts] [--timeout 60m] [--grace 5m] [--mocks] [--headed]
 ```
 
 **Auth is a member login through the admin relay** (Decision 13) — `WORKFLOW_EMAIL` /
@@ -227,8 +230,25 @@ occurred — assert on `run.json`. An output is downloaded when its **value** is
 when its declared type is `file`: a run-level output that forwards a step's file declares no type
 at all.
 
-`--timeout` bounds the **run**; the start is separately capped at **120 s** within it, because a
-harness that has not published a `runId` by then is not slow. A start that times out still writes
+**Driven runs** (ADR-0006). `--wait park` (default `fail`) parks at a step that needs a person
+instead of failing: the driver stops driving, leaves with 0, writes `03-parked.png`, and reports
+`parkedOn` — the CLI's `parked: <run id> (<step keys>)` line. Which keys those are is the
+driver's own read of the page (`currentSteps`), not a field of the record: `run.json` is the
+record verbatim, and a parked run's row still says `running`. `--run-id run_…` inserts the row
+under a pre-minted id, so a `--wait park` run and its `resume` name the same one. `--grace`
+(default 5 m) keeps re-reading the record every 10 s after a park: once every parked step's row
+has settled and nobody took the lease, the driver re-opens the run page with `?resume=1` and
+finishes the run **in the same job**; the window running out — or a live lease, a person's tab
+or a second job — ends the job at 0, parked. `resume <harness-url> <run-id>` picks that up
+later: `impl`/`workflow` come off the record, it opens the run page with `?resume=1&wait=park`,
+writes `01-resume.png` and follows the run home under the same park rules (a second interactive
+step parks again). A run that has already ended is reported at its own status without being
+opened; a run someone else is driving is exit 5, untouched. `--timeout` bounds each **follow
+leg** — a start or a `resume` to the next park or terminal status — not the job as a whole, so
+a park-and-resume job may take up to N × `--timeout`.
+
+Each leg's start is separately capped at **120 s** within `--timeout`, because a harness that
+has not published a `runId` by then is not slow. A start that times out still writes
 `failed.png`, `console.log` and `steps.log` before it leaves with 4 — it is the one refusal with
 no run record behind it, since everything the page can explain comes back as `invalid` (3).
 
@@ -236,11 +256,12 @@ no run record behind it, since everything the page can explain comes back as `in
 
 | code | |
 |---|---|
-| `0` | the run succeeded |
+| `0` | the run succeeded, or parked (`--wait park`): it waits on a person and the report says where |
 | `1` | the run `failed` or was `cancelled` |
 | `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault — never a run that ran and failed |
 | `3` | the page refused the start (`status: 'invalid'`) |
 | `4` | the driver timed out (the run may still be going) |
+| `5` | another tab or job holds the lease, so nothing was driven — `resume`, or a `run --wait park` that resumed after its grace window and lost the race for the lease |
 | `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first |
 
 SIGINT is the driver's own (Playwright's handler is disabled at launch, because it kills the
