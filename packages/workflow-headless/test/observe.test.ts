@@ -3,6 +3,7 @@ import { DriverError, EXIT } from '../src/errors.js'
 import type { PageLike } from '../src/page.js'
 import {
   formatTransition,
+  waitForSettled,
   waitForStart,
   waitForTerminal,
   type Snapshot,
@@ -139,6 +140,73 @@ describe('waitForTerminal', () => {
     const page = fakePage([snap({ status: 'running' }), undefined, snap({ status: 'succeeded' })])
     const terminal = await waitForTerminal(page, { timeoutMs: 60_000, pollMs: 1000, ...clock })
     expect(terminal.status).toBe('succeeded')
+  })
+})
+
+/**
+ * `waitForSettled` is `waitForTerminal` plus the two *page* states a driven run
+ * can stop at (07 `wait=park`, `resume=1`): a run whose page has stopped
+ * driving it is done as far as this driver is concerned, even though the row
+ * behind it still says `running`. Waiting for a terminal status there is the
+ * hang the whole feature exists to remove.
+ */
+describe('waitForSettled', () => {
+  test('a parked page settles, carrying the keys it waits on', async () => {
+    const clock = fakeClock()
+    const page = fakePage([
+      snap({ status: 'running', steps: { 'ask/0/answer': 'running' } }),
+      snap({
+        status: 'parked',
+        currentSteps: ['ask/0/answer'],
+        steps: { 'ask/0/answer': 'waiting' },
+      }),
+    ])
+    const settled = await waitForSettled(page, { timeoutMs: 60_000, pollMs: 1000, ...clock })
+    expect(settled.status).toBe('parked')
+    expect(settled.currentSteps).toEqual(['ask/0/answer'])
+  })
+
+  test('a busy page settles — someone else holds the lease, so there is nothing to follow', async () => {
+    const clock = fakeClock()
+    const page = fakePage([snap({ status: 'busy' })])
+    const settled = await waitForSettled(page, { timeoutMs: 60_000, pollMs: 1000, ...clock })
+    expect(settled.status).toBe('busy')
+  })
+
+  test.each(['succeeded', 'failed', 'cancelled'])('%s still settles', async (status) => {
+    const clock = fakeClock()
+    const page = fakePage([snap({ status: 'running' }), snap({ status })])
+    const settled = await waitForSettled(page, { timeoutMs: 60_000, pollMs: 1000, ...clock })
+    expect(settled.status).toBe(status)
+  })
+
+  test('a run that neither ends nor parks rejects with the driver-timeout code', async () => {
+    const clock = fakeClock()
+    const page = fakePage([snap({ status: 'running' })])
+    await expect(
+      waitForSettled(page, { timeoutMs: 4_000, pollMs: 1000, ...clock }),
+    ).rejects.toMatchObject({ code: EXIT.TIMEOUT })
+  })
+
+  test('transitions are still logged, steps before the run', async () => {
+    const clock = fakeClock()
+    const page = fakePage([
+      snap({ status: 'running', steps: { 'ask/0/answer': 'running' } }),
+      snap({ status: 'parked', steps: { 'ask/0/answer': 'waiting' } }),
+    ])
+    const seen: Transition[] = []
+    await waitForSettled(page, {
+      timeoutMs: 60_000,
+      pollMs: 1000,
+      onTransition: (t) => seen.push(t),
+      ...clock,
+    })
+    expect(seen.map((t) => `${t.key} ${t.status}`)).toEqual([
+      'ask/0/answer running',
+      'run running',
+      'ask/0/answer waiting',
+      'run parked',
+    ])
   })
 })
 

@@ -27,7 +27,9 @@ export { loginUrl, loginViaRelay, type Credentials } from './login.js'
 export {
   formatTransition,
   readGlobal,
+  SETTLED,
   TERMINAL,
+  waitForSettled,
   waitForStart,
   waitForTerminal,
   type Snapshot,
@@ -46,11 +48,15 @@ export {
   type PageToolInfo,
   type PageToolResult,
 } from './pageTools.js'
+export { resumeRun, type ResumeOptions } from './resume.js'
 export {
   encodeInputs,
+  followRun,
+  graceVerdict,
   runWorkflow,
   startUrl,
   waitForSealedRecord,
+  type FollowContext,
   type RunDeps,
   type RunOptions,
   type RunReport,

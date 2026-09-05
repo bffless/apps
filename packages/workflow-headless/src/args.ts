@@ -31,14 +31,17 @@ Options (run):
                     ms/s/m/h suffixes, a bare number is seconds)
   --wait <mode>     fail or park: what to do when the run reaches a step
                     that needs a person (default fail). fail waits for the
-                    run to finish and reports it failed; park leaves the run
-                    waiting and exits 0 once run.json is written, for a later
-                    \`resume\` to drive it home
+                    run to finish and reports it failed; park hands the run
+                    back — the row stays running and the lease is released —
+                    then watches it for --grace, resuming it in this same job
+                    if the step is answered in time and exiting 0 with
+                    run.json written if it is not
   --run-id <run_…>  the run's pre-minted id (run_ + 26 Crockford-base32
                     characters), inserted under this id before the page opens
                     so a --wait park run and its \`resume\` share one id
-  --grace <5m>      --wait park only: how long to wait for the parked status
-                    before giving up (default 5m)
+  --grace <5m>      --wait park only: how long to keep watching a parked run
+                    for its answer, re-reading the record every 10s (default
+                    5m; 0 ends the job at the park)
   --mocks           drive the dev harness's MSW mock backend (adds &mocks=on)
                     and skip the login
   --headed          show the browser, for debugging
@@ -52,11 +55,14 @@ Options (resume):
                     milestone screenshots are written (default: no artifacts)
   --timeout <60m>   how long to wait for a terminal status (default 60m;
                     ms/s/m/h suffixes, a bare number is seconds)
-  --grace <5m>      how long to wait for the parked run to actually exist
-                    before giving up (default 5m)
+  --grace <5m>      how long to keep watching if the resumed run parks again
+                    at another step that needs a person (default 5m)
   --mocks           drive the dev harness's MSW mock backend (adds &mocks=on)
                     and skip the login
   --headed          show the browser, for debugging
+
+A run that has already ended is reported at its own status without being
+opened; a run another tab or job holds the lease on is left alone (exit 5).
 
 Environment:
   WORKFLOW_EMAIL / WORKFLOW_PASSWORD   the member login the harness relays
@@ -94,9 +100,9 @@ export interface RunCommand {
   timeoutMs: number
   /** What to do at a step that needs a person: fail waits it out (default), park leaves the run waiting. */
   wait: 'fail' | 'park'
-  /** The run's pre-minted id, shared with a later `resume` (Task 6). */
+  /** The run's pre-minted id, shared with a later `resume`. */
   runId?: string
-  /** `--wait park` only: how long to wait for the parked status before giving up. */
+  /** `--wait park` only: how long a parked run is watched for its answer before the job ends. */
   graceMs: number
   mocks: boolean
   headed: boolean
@@ -111,14 +117,14 @@ export interface RunsCommand {
   mocks: boolean
 }
 
-/** Drives home a run a prior `--wait park` left waiting on a person (Task 6). */
+/** Drives home a run a prior `--wait park` left waiting on a person. */
 export interface ResumeCommand {
   command: 'resume'
   harnessUrl: string
   runId: string
   out?: string
   timeoutMs: number
-  /** How long to wait for the parked run to actually exist before giving up. */
+  /** How long the run is watched for its answer if it parks again on this driver's watch. */
   graceMs: number
   mocks: boolean
   headed: boolean

@@ -104,6 +104,56 @@ describe('exit codes', () => {
     expect(code).not.toBe(EXIT.FAILED)
   })
 
+  /**
+   * A parked run is not a failure: the work got as far as it could without a
+   * person, and the id in the line is what the human (or the later `resume`)
+   * needs. CI must be able to treat it as a clean end, so it is 0.
+   */
+  test('a run that parked is 0, and says what it waits on', async () => {
+    const h = withBrowser({
+      globals: [
+        { runId: 'run_1', status: 'running' },
+        { runId: 'run_1', status: 'parked', currentSteps: ['ask/0/answer'] },
+      ],
+      routes: helloRoutes('running'),
+    })
+    expect(await runCli(argv('--wait', 'park', '--grace', '1ms'), h.io)).toBe(EXIT.OK)
+    expect(h.out).toContain('parked: run_1 (ask/0/answer)')
+  })
+
+  /**
+   * 5, and nothing else: a `resume` that lost the lease did no work at all, so
+   * it must not look like a run that failed (1) or like a driver that broke
+   * (2). CI retries this one; it does not report it.
+   */
+  test('a resume that found the lease held is 5', async () => {
+    const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
+    const h = withBrowser({
+      globals: [{ runId, status: 'busy' }],
+      routes: helloRoutes('running', runId),
+    })
+    const code = await runCli(['resume', 'https://harness.test', runId, '--mocks'], h.io)
+    expect(code).toBe(EXIT.BUSY)
+    expect(code).not.toBe(EXIT.FAILED)
+    expect(h.err).toContain(`busy: ${runId}`)
+  })
+
+  test('a resume drives the run home and is 0', async () => {
+    const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
+    const h = withBrowser({
+      globals: [
+        { runId, status: 'running' },
+        { runId, status: 'succeeded' },
+      ],
+      routes: helloRoutes('succeeded', runId),
+    })
+    // The record already says `succeeded`, so this is the "nothing to resume"
+    // path: reported at its own status, without taking a lease on it.
+    expect(await runCli(['resume', 'https://harness.test', runId, '--mocks'], h.io)).toBe(EXIT.OK)
+    expect(h.out).toContain(`succeeded: ${runId}`)
+    expect(h.page.gotos.some((url) => url.includes('resume=1'))).toBe(false)
+  })
+
   test('a usage error is 2, and prints the usage', async () => {
     const h = withBrowser(ended('succeeded'))
     expect(await runCli(['run', 'https://harness.test', 'hello/demo'], h.io)).toBe(EXIT.USAGE)
