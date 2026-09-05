@@ -16,8 +16,13 @@ function handler({ steps, deployment, stepErrors }) {
     return '/api/uploads/' + key
   }
   var audio = out.audio && typeof out.audio.storage_path === 'string' ? toUrl(out.audio.storage_path) : null
-  return {
-    ok: true, notOk: false, error: '',
-    data: { url: toUrl(path), audioUrl: audio, duration: typeof out.duration === 'number' ? out.duration : null },
+  var data = { url: toUrl(path), audioUrl: audio, duration: typeof out.duration === 'number' ? out.duration : null }
+  // CE >= 0.4.31 (ce#684) reports which executor ran the op and how long it took. Keep
+  // them on the job row's `result` verbatim (apps#605) — the pipeline log ages out, the
+  // row doesn't. Only when present: a pre-0.4.31 CE yields no `null` keys here.
+  var stats = ['executor', 'timings', 'bytesIn', 'bytesOut']
+  for (var i = 0; i < stats.length; i++) {
+    if (out[stats[i]] !== undefined && out[stats[i]] !== null) data[stats[i]] = out[stats[i]]
   }
+  return { ok: true, notOk: false, error: '', data: data }
 }

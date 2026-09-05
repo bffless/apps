@@ -57,6 +57,10 @@ inputs:
     description: 'true to ask Studio for its multithreaded ffmpeg core (?ffmpegCore=mt). Debug escape hatch.'
     required: false
     default: 'false'
+  video-backend:
+    description: "Force Studio's video backend via ?videoBackend= — wasm | server | local | remote. Empty leaves the app's own choice."
+    required: false
+    default: ''
   prep-timeout-minutes:
     description: 'Ceiling per prep stage, per source file'
     required: false
@@ -163,6 +167,7 @@ runs:
         BLOG_DIRECTION: ${{ inputs.blog-direction }}
         RUNNER_BROWSER: ${{ inputs.browser }}
         FFMPEG_MT: ${{ inputs.ffmpeg-mt }}
+        VIDEO_BACKEND: ${{ inputs.video-backend }}
         PREP_TIMEOUT_MINUTES: ${{ inputs.prep-timeout-minutes }}
         DIRECTOR_TIMEOUT_MINUTES: ${{ inputs.director-timeout-minutes }}
         BUILD_TIMEOUT_MINUTES: ${{ inputs.build-timeout-minutes }}

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
 import { loadConfig } from './config'
 import { downloadAll, downloadImage } from './download'
-import { JOB_POLL_PATH, transcribeWordCount } from './jobs'
+import { JOB_POLL_PATH, transcribeWordCount, videoJobStats, formatVideoJobLine, type VideoJobStats } from './jobs'
 import { createStallWatch } from './stall'
 
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'output')
@@ -56,6 +56,11 @@ test('studio headless run', async ({ page }, testInfo) => {
   // those words, so the run must fail HERE, not 30 credit-burning minutes
   // later at the export step.
   const transcribeWords = new Map<string, number>()
+  // Server video jobs (CE >= 0.4.31) also report which ffmpeg executor ran them
+  // and for how long (apps#605) — the DOM never shows it, so log one line per
+  // finished job as it lands and keep the list for run-summary.json. Keyed by
+  // poll URL (= job id) so a re-polled done row isn't logged twice.
+  const videoJobs = new Map<string, VideoJobStats>()
   page.on('response', (r) => {
     if (!r.url().includes(JOB_POLL_PATH) || r.status() !== 200) return
     void r
@@ -63,6 +68,11 @@ test('studio headless run', async ({ page }, testInfo) => {
       .then((body) => {
         const count = transcribeWordCount(body)
         if (count != null) transcribeWords.set(r.url(), count)
+        const stats = videoJobStats(body)
+        if (stats && !videoJobs.has(r.url())) {
+          videoJobs.set(r.url(), stats)
+          progress(formatVideoJobLine(stats))
+        }
       })
       .catch(() => {})
   })
@@ -120,7 +130,9 @@ test('studio headless run', async ({ page }, testInfo) => {
     // Land with the explicit core override: MT hangs its first exec in
     // headless CI Firefox, so default to the single-threaded core. The app
     // persists the choice to localStorage, so later SPA navigations keep it.
+    // Same for the optional video-backend override (`?videoBackend=`, apps#605).
     const landUrl = `${cfg.baseUrl}/?ffmpegCore=${cfg.ffmpegMt ? 'mt' : 'st'}`
+      + (cfg.videoBackend ? `&videoBackend=${cfg.videoBackend}` : '')
     progress(`opening ${landUrl}`)
     await page.goto(landUrl, { waitUntil: 'domcontentloaded' })
     if (!cfg.mockMode) {
@@ -469,6 +481,7 @@ test('studio headless run', async ({ page }, testInfo) => {
       thumbnail: thumbnailSaved,
       blogBundle: blogSaved,
       timings,
+      videoJobs: [...videoJobs.values()],
     }, null, 2))
   }
 })

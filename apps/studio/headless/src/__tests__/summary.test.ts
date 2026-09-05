@@ -59,9 +59,37 @@ describe('buildSummary', () => {
     expect(outputs.description).toBe('')
   })
 
+  it('renders a second | Job | Executor | ffmpeg | table after the phase table when videoJobs is non-empty', () => {
+    const { markdown } = buildSummary(
+      {
+        ...okSummary,
+        videoJobs: [
+          { kind: 'video-slice', executor: 'remote', totalMs: 20830 },
+          { kind: 'video-extract', executor: 'local', totalMs: 1200 },
+          { kind: 'video-concat', executor: null, totalMs: null },
+        ],
+      },
+      null,
+    )
+    expect(markdown).toContain('| Job | Executor | ffmpeg |')
+    expect(markdown).toContain('| video-slice | remote | 20.8 s |')
+    expect(markdown).toContain('| video-extract | local | 1.2 s |')
+    expect(markdown).toContain('| video-concat | — | — |')
+    // Phase table first, job table after it.
+    expect(markdown.indexOf('| Phase | Elapsed |')).toBeLessThan(markdown.indexOf('| Job | Executor | ffmpeg |'))
+  })
+
+  it('renders only the phase table when videoJobs is empty or absent', () => {
+    expect(buildSummary({ ...okSummary, videoJobs: [] }, null).markdown).not.toContain('| Job | Executor | ffmpeg |')
+    expect(buildSummary(okSummary, null).markdown).not.toContain('| Job | Executor | ffmpeg |')
+    expect(buildSummary(okSummary, null).markdown).toContain('| Phase | Elapsed |')
+  })
+
   it('handles the no-summary fallback (run never wrote the file)', () => {
     const { markdown, outputs } = buildSummary(DEFAULT_SUMMARY, null)
+    expect(DEFAULT_SUMMARY.videoJobs).toEqual([])
     expect(markdown).toContain('failed (during: no-summary)')
+    expect(markdown).not.toContain('| Job | Executor | ffmpeg |')
     expect(markdown).toContain('_No project was created._')
     expect(outputs).toMatchObject({ ok: 'false', phase: 'no-summary', 'project-url': '', 'project-id': '' })
   })

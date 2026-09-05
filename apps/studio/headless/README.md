@@ -128,7 +128,7 @@ other steps need a different toolchain.
 `director-prompt`, `project-title`, `thumbnail-prompt`,
 `thumbnail-reference-url`, `generate-blog`, `blog-direction`, `browser`
 (default `chrome` in the action, unlike the bare runner's Firefox default),
-`ffmpeg-mt`, and the six `*-timeout-minutes`), plus `upload-artifact`
+`ffmpeg-mt`, `video-backend`, and the six `*-timeout-minutes`), plus `upload-artifact`
 (default `true`) and `artifact-name` (default `studio-run-output`). Mock/smoke
 knobs are not exposed. See `action.yml` for descriptions.
 
@@ -167,6 +167,7 @@ full-featured reference caller (it uses the local-path form
 | `SMOKE_STOP_AFTER_START`    | no (`false` default)  | `true` to stop right after auto build engages instead of waiting for it to finish — used by the PR smoke check, which asserts the click-path is intact without paying for a full (mocked) build. |
 | `FFMPEG_MT`                 | no (`false` default)  | `true` lands on `?ffmpegCore=mt` instead of `?ffmpegCore=st`. By default the runner asks Studio for its single-threaded ffmpeg core via the explicit `?ffmpegCore=st` override — the MT core hung indefinitely on its first exec in headless CI Firefox, and forcing ST by disabling SharedArrayBuffer at the browser level breaks *both* cores (even the ST build carries atomics opcodes the validator then rejects). |
 
+| `VIDEO_BACKEND`             | no                    | Force Studio's video backend by landing on `&videoBackend=<value>` — `wasm` \| `server` \| `local` \| `remote` (any other value fails the run before it starts). Unset leaves the app's own choice (its picker / persisted override). This repo's dispatch workflow feeds it from the `STUDIO_VIDEO_BACKEND` repo variable, like `STUDIO_FFMPEG_MT`. |
 | `RUNNER_BROWSER`            | no (`firefox` default) | `chrome` drives Google Chrome stable instead of Playwright Firefox (preinstalled on ubuntu-latest; `playwright install chrome` locally). The platform for the MT-ffmpeg experiment: MT hangs its first exec in headless Firefox, and wasm threads are better exercised in headless Chromium. Dispatch with `browser: chrome` + `ffmpeg_mt: true` to test. |
 
 See `src/config.ts` for the exact parsing/validation rules (`loadConfig`).

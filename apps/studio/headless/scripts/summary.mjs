@@ -26,6 +26,7 @@ export const DEFAULT_SUMMARY = Object.freeze({
   thumbnail: false,
   blogBundle: false,
   timings: {},
+  videoJobs: [],
 })
 
 /** Load run-summary.json + post.md from outDir; falls back to DEFAULT_SUMMARY. */
@@ -71,6 +72,14 @@ export function buildSummary(s, postMd) {
   }
   lines.push('', '| Phase | Elapsed |', '| --- | --- |')
   lines.push(...Object.entries(s.timings ?? {}).map(([k, v]) => `| ${k} | ${Math.round(v / 1000)}s |`))
+  // Server video jobs: which ffmpeg executor ran each and for how long (apps#605).
+  // Mirrors the runner's progress line (one decimal, `—` for a missing field).
+  const videoJobs = Array.isArray(s.videoJobs) ? s.videoJobs : []
+  if (videoJobs.length > 0) {
+    lines.push('', '| Job | Executor | ffmpeg |', '| --- | --- | --- |')
+    lines.push(...videoJobs.map((j) =>
+      `| ${j.kind ?? '—'} | ${j.executor ?? '—'} | ${typeof j.totalMs === 'number' ? `${(j.totalMs / 1000).toFixed(1)} s` : '—'} |`))
+  }
 
   const outputs = {
     ok: s.ok ? 'true' : 'false',

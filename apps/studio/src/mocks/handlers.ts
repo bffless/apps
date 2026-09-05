@@ -212,7 +212,9 @@ const studioHandlers = [
     // Store as ArrayBuffer to match objectStore's { body: ArrayBuffer; type: string } shape
     const mockWavData = new TextEncoder().encode('mock-wav')
     objectStore.set(key, { body: mockWavData.buffer as ArrayBuffer, type: 'audio/wav' })
-    const jobId = enqueueJob('video-extract', { url: `/api/uploads/${key}` })
+    // Mock-parity with the real rule's `result` (apps#605): CE >= 0.4.31 reports the executor
+    // that ran the op and its timings, and check.fn.js keeps them on the job row.
+    const jobId = enqueueJob('video-extract', { url: `/api/uploads/${key}`, executor: 'local', timings: { totalMs: 1200 } })
     return HttpResponse.json({ jobId, status: 'pending' })
   }),
 
@@ -243,6 +245,8 @@ const studioHandlers = [
       url: `/api/uploads/${clipKey}`,
       audioUrl,
       duration,
+      executor: 'local',
+      timings: { totalMs: 2400 },
     })
     return HttpResponse.json({ jobId, status: 'pending' })
   }),
@@ -258,7 +262,7 @@ const studioHandlers = [
     const key = `projects/${body.projectId ?? 'mock'}/export/server/${Date.now()}.mp4`
     const mockMp4Data = new TextEncoder().encode('mock-mp4')
     objectStore.set(key, { body: mockMp4Data.buffer as ArrayBuffer, type: 'video/mp4' })
-    const jobId = enqueueJob('video-concat', { url: `/api/uploads/${key}` })
+    const jobId = enqueueJob('video-concat', { url: `/api/uploads/${key}`, executor: 'local', timings: { totalMs: 3600 } })
     return HttpResponse.json({ jobId, status: 'pending' })
   }),
 
