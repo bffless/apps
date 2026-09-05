@@ -43,10 +43,20 @@ function walkFiles(dir) {
  * every non-test source file, plus the step view build's two inputs outside
  * `src/**` (`step/index.html`, `vite.step.config.ts` — the singlefile entry
  * and the config that builds it, so a change to either also re-keys the
- * URI), plus package.json, first 8 hex. Any change to the harness's sources
- * re-keys the step view's URI; bundle.test.ts holds the committed rule to
- * this value, so `mcp:build` stays in the verify chain.
+ * URI), plus package.json without its `version`, first 8 hex. Any change to
+ * the harness's sources re-keys the step view's URI; bundle.test.ts holds the
+ * committed rule to this value, so `mcp:build` stays in the verify chain.
+ *
+ * The version is left out on purpose: release-please's release PR bumps it
+ * and cannot run `mcp:build`, so a rev that covered it would make every
+ * release PR fail the freshness test. Dependencies still count — they shape
+ * the built step view.
  */
+export function packageJsonForRev(text) {
+  const { version: _version, ...rest } = JSON.parse(text)
+  return JSON.stringify(rest)
+}
+
 export function sourceRev() {
   const src = join(app, 'src')
   const files = walkFiles(src)
@@ -60,7 +70,7 @@ export function sourceRev() {
   for (const f of [join(app, 'step/index.html'), join(app, 'vite.step.config.ts')]) {
     hash.update(relative(app, f)).update('\0').update(readFileSync(f)).update('\0')
   }
-  hash.update(readFileSync(join(app, 'package.json')))
+  hash.update(packageJsonForRev(readFileSync(join(app, 'package.json'), 'utf8')))
   return hash.digest('hex').slice(0, 8)
 }
 
