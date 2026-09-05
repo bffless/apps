@@ -54,8 +54,10 @@ pipeline:
         repo: steps.gate.repo
         eventType: steps.gate.eventType
         # Each value is an expression the handler evaluates; `workflow` and
-        # `inputs` are absent from a `resume` payload and resolve to null, which
-        # is what workflow-drive.yml's resume branch never reads.
+        # `inputs` are absent from a `resume` payload, so they resolve to
+        # `undefined` and CE's JSON.stringify drops the keys from
+        # `client_payload` altogether — which is fine, because
+        # workflow-drive.yml's resume branch never reads them.
         clientPayload:
           mode: steps.gate.payload.mode
           run_id: steps.gate.payload.run_id

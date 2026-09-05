@@ -50,7 +50,10 @@ and interactive runs are the same code, the same rows, the same history.
   **parks** the run instead of failing `HEADLESS_REQUIRED`: the step is queued and mounted as it
   would be for a person, its row reaches `waiting`, and once nothing else is queued, running or
   polling the page clears the lease (the same `run/update` patch `run.finished` writes; the
-  status stays `running`), stops driving, and publishes `status: 'parked'`. A `headless: auto`
+  status stays `running`), stops driving, and publishes `status: 'parked'`. Releasing the lease
+  tears the run's live machinery down, so **only a `form` stays answerable on screen**: an
+  island's handle is disposed with every other bridge and its frame goes, and a person who wants
+  to answer it clicks *Resume* — which re-mounts the island on its recorded inputs. A `headless: auto`
   step still submits itself and a `skip` still stands its outputs in; a run whose only waiting
   steps are `auto` never parks. A parked step runs no clock at all — a parked tab holds no
   lease and must not write a terminal row; a declared `timeout-minutes` applies again once the
