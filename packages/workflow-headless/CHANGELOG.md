@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/bffless/apps/compare/workflow-headless-v1.0.2...workflow-headless-v1.1.0) (2026-09-05)
+
+
+### Features
+
+* **workflow-headless:** page-tools helpers — listPageTools, waitForPageTools and callPageTool drive the harness's WebMCP catalog through page.evaluate ([b3ee012](https://github.com/bffless/apps/commit/b3ee0127c01f5309fc5f31164c3a626465475f53))
+* **workflow-headless:** WORKFLOW_APP_TOKEN — an app token sent as Authorization: Bearer on every /api/workflow/* call the driver makes; wins over WORKFLOW_TOKEN ([b3ee012](https://github.com/bffless/apps/commit/b3ee0127c01f5309fc5f31164c3a626465475f53))
+
 ## [1.0.2](https://github.com/bffless/apps/compare/workflow-headless-v1.0.1...workflow-headless-v1.0.2) (2026-08-31)
 
 

@@ -3,10 +3,10 @@
   "apps/handoff": "1.1.0",
   "apps/studio": "1.14.0",
   "apps/recall": "0.3.1",
-  "apps/workflow": "1.2.1",
+  "apps/workflow": "1.3.0",
   "packages/workflow-lint": "1.5.1",
-  "packages/workflow-cli": "1.1.0",
+  "packages/workflow-cli": "1.1.1",
   "packages/workflow-script": "1.0.0",
-  "packages/workflow-headless": "1.0.2",
-  "packages/workflow-agent-tools": "0.0.0"
+  "packages/workflow-headless": "1.1.0",
+  "packages/workflow-agent-tools": "1.0.0"
 }

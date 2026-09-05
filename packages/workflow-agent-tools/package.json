@@ -1,6 +1,6 @@
 {
   "name": "@bffless/workflow-agent-tools",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": false,
   "type": "module",
   "description": "The Workflow harness's agent tool catalog — names, JSON Schemas, annotations, the tool→scope map, MCP CallToolResult builders and the RunSnapshot shape shared by the WebMCP page adapter and the MCP endpoint (spec apps/workflow/docs/spec/10-agent-embedding.md, ADR-0005)",
