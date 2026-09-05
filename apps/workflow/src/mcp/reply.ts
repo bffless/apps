@@ -15,16 +15,17 @@ import {
   toolByName,
   type CallToolResult,
   type RunRowLike,
+  type RunSnapshot,
   type StepRowLike,
 } from '@bffless/workflow-agent-tools'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { parse } from 'yaml'
 import { describeText, describeWorkflow } from '../lib/describe'
 import { RESOURCE_MIME, isHostTool } from './hostTools'
-import { workflowId } from './ids'
+import { runIdTime, workflowId } from './ids'
 import type { Plan } from './plan'
 import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
-import { fieldsOf, rows, runsWithWaiting, type Row } from './rows'
+import { fieldsOf, rows, runsWithWaiting, stepUpdated, type Row } from './rows'
 import type { FnDeployment, FnRequest, Route } from './route'
 import { pipelineError, pipelineResult } from './toolResults'
 
@@ -56,13 +57,25 @@ export interface StepOutputs {
   update?: unknown
   pipelinePost?: HttpStep
   pipelineGet?: HttpStep
+  /** Task 11: what the harness's own `run/drive` rule answered (ADR-0006). */
+  drive?: HttpStep
 }
 
 export interface Reply {
   json: string
 }
 
-const NOT_SERVED = new Set(['workflow.start', 'workflow.cancel', 'workflow.resume'])
+/**
+ * `workflow.cancel` alone: cancelling is a write to the live run's state that
+ * only the surface holding the run can make (spec 10), and no rule of this
+ * harness performs it. `workflow.await` is refused too, in its own words — a
+ * stateless POST cannot wait. Everything else the catalog names is served
+ * here; `start` and `resume` became dispatches through the drive rule
+ * (ADR-0006), which is why they left this set.
+ */
+const NOT_SERVED = new Set(['workflow.cancel'])
+/** How long after a run id was minted its absent row still reads as `pending` rather than as no run at all (ADR-0006: the job writes its first row in about a minute). */
+export const PENDING_WINDOW_MS = 10 * 60_000
 const WRITE_TOOLS = new Set(['workflow.submit', 'workflow.annotate', 'workflow.submitStep'])
 const RUNS_DEFAULT = 20
 const RUNS_MAX = 50
@@ -76,9 +89,8 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
-function jsonBody(step: HttpStep | undefined): Record<string, unknown> | null {
-  if (step?.ok !== true) return null
-  const body = step.body
+/** A step's body as an object, whether or not the call succeeded — a refusal is JSON too. */
+function bodyObject(body: unknown): Record<string, unknown> | null {
   if (isPlainObject(body)) return body
   if (typeof body === 'string') {
     try {
@@ -89,6 +101,10 @@ function jsonBody(step: HttpStep | undefined): Record<string, unknown> | null {
     }
   }
   return null
+}
+
+function jsonBody(step: HttpStep | undefined): Record<string, unknown> | null {
+  return step?.ok === true ? bodyObject(step.body) : null
 }
 
 function refuse(key: string, message: string, extra: Record<string, unknown> = {}): CallToolResult {
@@ -225,7 +241,7 @@ export function agentHostHint(runId: string, snapshot: { waitingOn: Array<{ key:
 
 function status(route: Route, steps: StepOutputs): CallToolResult {
   const resolved = resolveRun(route, steps)
-  if (!resolved.ok) return resolved.result
+  if (!resolved.ok) return pendingOr(route, resolved.result)
   const snapshot = snapshotOf(resolved.run, resolved.stepRows)
   return textResult(snapshotText(snapshot) + agentHostHint(route.runId, snapshot), { ...snapshot })
 }
@@ -281,13 +297,6 @@ function sign(route: Route, steps: StepOutputs): CallToolResult {
   const url = str(steps.signed?.url)
   if (url === undefined) return refuse('path', `${route.signPath}: the sign rule returned no url`)
   return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN })
-}
-
-/** `data_update` answered a record (any envelope) — the write landed. */
-function stepUpdated(update: unknown): boolean {
-  if (update === undefined || update === null) return false
-  if (isPlainObject(update) && update.success === false) return false
-  return true
 }
 
 /** The declared step (raw) of a step row in the run's definition snapshot, or `undefined`. */
@@ -375,6 +384,116 @@ function pipeline(route: Route, steps: StepOutputs): CallToolResult {
   return pipelineResult(answer.body)
 }
 
+// ---------------------------------------------------------------------------
+// Driven runs (ADR-0006): `start`, `resume` and a re-dispatching `submitStep`
+//
+// The endpoint dispatches; it does not drive. All three end in the same place —
+// the harness's own `run/drive` rule, posted a body by the `drive` step — and
+// differ only in what they say about it. What that rule answers is the whole
+// outcome: 202 with a receipt, 400 with a code from its own table, or anything
+// else, which is a dispatch that did not happen.
+// ---------------------------------------------------------------------------
+
+/**
+ * A run that has been dispatched but whose job has not written a row yet: the
+ * one snapshot this harness reports with no rows to derive it from. It is the
+ * honest answer to "what is run X doing" in the minute between the dispatch and
+ * the first row — the alternative, `No such run`, reads as failure.
+ */
+function pendingSnapshot(runId: string): RunSnapshot {
+  return { runId, status: 'pending', currentSteps: [], outputs: {}, steps: {}, waitingOn: [] }
+}
+
+/**
+ * `workflow.status` for a run with no row: `pending` while the id was minted
+ * within the window (only this endpoint mints ids, and only for a dispatch),
+ * the caller's own refusal after it — a driver that never started must
+ * eventually be reported as no run, not as one forever about to begin.
+ */
+function pendingOr(route: Route, refusal: CallToolResult): CallToolResult {
+  const minted = runIdTime(route.runId)
+  if (minted === null || Math.abs(Date.now() - minted) > PENDING_WINDOW_MS) return refusal
+  const snapshot = pendingSnapshot(route.runId)
+  return textResult(`${snapshotText(snapshot)}. Poll again.`, { ...snapshot })
+}
+
+/** What the `drive` step's answer means: the receipt, the rule's own refusal by code, or a dispatch that did not happen. */
+function driveOutcome(steps: StepOutputs, dispatched: () => CallToolResult): CallToolResult {
+  const drive = steps.drive
+  const status = typeof drive?.status === 'number' ? drive.status : 0
+  if (status === 202) return dispatched()
+  const body = bodyObject(drive?.body) ?? {}
+  if (status === 400) {
+    const code = typeof body.code === 'string' ? body.code : 'BAD_REQUEST'
+    const message = typeof body.message === 'string' ? body.message : 'the drive rule refused this dispatch'
+    return errorResult(`${code}: ${message}`, { errors: { drive: code } })
+  }
+  const said = status === 0 ? 'did not answer' : `answered ${status}`
+  return errorResult(`DISPATCH_FAILED: the drive rule ${said} — nothing was dispatched; run it on the harness page instead`, {
+    errors: { drive: 'DISPATCH_FAILED' },
+  })
+}
+
+/** Where a start's own refusal belongs in `errors` (spec 07 keys it by what failed): the workflow, the tool, or the inputs. */
+function driveErrorKey(message: string): string {
+  if (message === REFUSALS.noWorkflow) return 'workflow'
+  return message.indexOf('NO_DRIVER') === 0 ? 'tool' : 'inputs'
+}
+
+/** `workflow.start`: the implementation's driver is dispatched, and the caller is handed the id it can poll. */
+function start(route: Route, steps: StepOutputs): CallToolResult {
+  if (route.impl === '') return refuse('impl', '`impl` is required')
+  if (route.workflow === '') return refuse('workflow', '`workflow` is required')
+  if (!route.isStart) return refuse('discovery', REFUSALS.discovery)
+  const plan = steps.plan
+  if (!plan) return refuse('tool', 'the plan step did not run')
+  if (plan.driveError !== '') return refuse(driveErrorKey(plan.driveError), plan.driveError)
+  const { runId } = plan
+  return driveOutcome(steps, () =>
+    textResult(
+      `Dispatched run ${runId} of ${route.impl}/${route.workflow} to its driver; pending — the row appears when the job starts (about a minute). Poll workflow.status; when it reports waiting, complete the step here with workflow.submitStep.`,
+      { ...pendingSnapshot(runId), pending: true },
+    ),
+  )
+}
+
+/** `workflow.resume`: a driver takes over a run nothing is driving — the endpoint's answer to an abandoned lease. */
+function resume(route: Route, steps: StepOutputs): CallToolResult {
+  const resolved = resolveRun(route, steps)
+  if (!resolved.ok) return resolved.result
+  const plan = steps.plan
+  if (!plan) return refuse('tool', 'the plan step did not run')
+  if (plan.driveError !== '') return refuse('runId', plan.driveError)
+  const snapshot = snapshotOf(resolved.run, resolved.stepRows)
+  return driveOutcome(steps, () =>
+    textResult(
+      `Dispatched a driver to resume ${route.runId}; it takes the run over when the job starts (about a minute). Poll workflow.status; when it reports waiting, complete the step here with workflow.submitStep.`,
+      { ...snapshot, dispatched: true },
+    ),
+  )
+}
+
+/**
+ * `workflow.submitStep`'s verdict, plus what became of the run it unblocked.
+ * The write is the answer and stands on its own — a dispatch that failed does
+ * not turn an accepted submit into an error — but a model that is not told has
+ * no way to know whether anything is carrying the run forward, so the note goes
+ * in the text (all a text-only host shows) as well as in `dispatched`.
+ */
+function withDriveNote(verdict: CallToolResult, steps: StepOutputs): CallToolResult {
+  if (steps.plan?.isDrive !== true) return verdict
+  const drive = steps.drive
+  const dispatched = drive?.status === 202
+  const body = bodyObject(drive?.body) ?? {}
+  const code = typeof body.code === 'string' ? body.code : 'DISPATCH_FAILED'
+  const note = dispatched ? '; a driver was dispatched to continue the run' : `; not dispatched (${code}): resume it on the harness page`
+  return {
+    ...verdict,
+    content: verdict.content.map((entry, i) => (i === 0 ? { ...entry, text: `${entry.text}${note}` } : entry)),
+    structuredContent: { ...verdict.structuredContent, dispatched },
+  }
+}
+
 function notServed(tool: string): CallToolResult {
   const message =
     tool === 'workflow.await'
@@ -399,6 +518,10 @@ function callTool(route: Route, steps: StepOutputs): CallToolResult {
       return runs(route, steps)
     case 'workflow.sign':
       return sign(route, steps)
+    case 'workflow.start':
+      return start(route, steps)
+    case 'workflow.resume':
+      return resume(route, steps)
     case 'workflow.await':
       return notServed(tool)
     default:
@@ -413,7 +536,9 @@ function callTool(route: Route, steps: StepOutputs): CallToolResult {
     if (steps.merge?.update === true && !stepUpdated(steps.update)) {
       return refuse('step', `${route.key}: the step row could not be written`)
     }
-    return verdict
+    // Only `submitStep` re-dispatches: `submit` and `annotate` are the island's
+    // own bridge verbs, called from a page that is already driving the run.
+    return tool === 'workflow.submitStep' ? withDriveNote(verdict, steps) : verdict
   }
   if (toolByName(tool)) return notServed(tool)
   return errorResult(`No such tool: ${tool}`, { errors: { tool: 'No such tool' } })

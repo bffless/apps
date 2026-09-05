@@ -18,10 +18,10 @@
  * FUNCTION_ERROR, not a status this rule gets to choose.
  */
 import { fieldsOf, rows } from './rows'
-import { header, siblingBaseOf, type FnRequest } from './route'
+import { DRIVE_PATH, header, siblingBaseOf, type FnRequest } from './route'
 
-/** This rule's own public path — where the alias's base path ends (`siblingBaseOf`). */
-export const DRIVE_PATH = '/api/workflow/run/drive'
+/** This rule's own public path — where the alias's base path ends (`siblingBaseOf`). Declared with the harness's other rule paths (`route.ts`), re-exported here because this rule is where it means something. */
+export { DRIVE_PATH }
 
 /**
  * An implementation alias, as CE names deployment aliases and as `/w/<impl>/`

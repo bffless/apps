@@ -25,6 +25,18 @@ export function fieldsOf(row: Row): Row {
   return isPlainObject(fields) && Object.keys(fields).length > 0 ? fields : row
 }
 
+/**
+ * `data_update` answered a record (any envelope) — the write landed. Read by
+ * `reply` (a verdict is only honest if its write did) and by `plan` (only a
+ * landed write re-dispatches the run's driver, ADR-0006), so it lives with the
+ * other readers of what a data step answers rather than in either caller.
+ */
+export function stepUpdated(update: unknown): boolean {
+  if (update === undefined || update === null) return false
+  if (isPlainObject(update) && update.success === false) return false
+  return true
+}
+
 /** The record's own id (needed by `data_update`), wherever this CE keeps it. */
 export function recordIdOf(row: Row): string | null {
   const id = row.id ?? fieldsOf(row).id

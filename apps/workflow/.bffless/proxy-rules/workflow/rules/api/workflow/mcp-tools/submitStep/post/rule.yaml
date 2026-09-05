@@ -56,6 +56,23 @@ pipeline:
           startedAt: steps.merge.fields.startedAt
           finishedAt: steps.merge.fields.finishedAt
           heartbeatAt: steps.merge.fields.heartbeatAt
+    - id: plan
+      name: plan
+      handler: function_handler
+      code: ../../../../../../mcp-fn/plan.fn.js
+    - id: drive
+      name: drive
+      handler: http_request
+      config:
+        condition: steps.plan.isDrive
+        url: steps.plan.driveUrl
+        method: POST
+        headers:
+          x-original-uri: steps.plan.drivePath
+          x-forwarded-host: steps.route.host
+        forwardAuth: true
+        failOnError: false
+        body: steps.plan.driveBody
     - id: reply
       name: reply
       handler: function_handler

@@ -19,8 +19,9 @@
  *   the sibling rule the `pipelinePost`/`pipelineGet` step calls.
  */
 import { resolveSrc, resolveToolName } from '../lib/runner/adapters/island'
-import { workflowId } from './ids'
-import { fieldsOf, rows } from './rows'
+import { mintRunId, workflowId } from './ids'
+import { REFUSALS } from './refusals'
+import { fieldsOf, rows, stepUpdated } from './rows'
 import { LIST_FANOUT, type FnDeployment, type FnRequest, type Route } from './route'
 
 export interface Plan {
@@ -54,6 +55,18 @@ export interface Plan {
   pipelinePath: string
   pipelineBody: Record<string, unknown>
   pipelineError: string
+  // --- driven runs (ADR-0006) ---------------------------------------------
+  /** Gate of the `drive` step: post `driveBody` to the harness's own `run/drive` rule. */
+  isDrive: boolean
+  /** `route.driveUrl`/`drivePath`, copied so the `drive` step reads one source. */
+  driveUrl: string
+  drivePath: string
+  /** The drive rule's body, exactly as it reads it: `{ id, mode }` plus, for a `run`, what to run. */
+  driveBody: Record<string, unknown>
+  /** Why no dispatch is planned — the caller's refusal, said once, here. */
+  driveError: string
+  /** The run the dispatch is about: minted for a `start`, the caller's for a `resume`. */
+  runId: string
 }
 
 export interface PlanSteps {
@@ -62,6 +75,8 @@ export interface PlanSteps {
   index?: { ok?: boolean; status?: number; body?: unknown }
   run?: unknown
   steps?: unknown
+  /** `workflow.submitStep` only: what the `data_update` step answered. Its rule runs `plan` AFTER the write, because only a landed write re-dispatches the driver (ADR-0006). */
+  update?: unknown
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -105,9 +120,17 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
     pipelinePath: '',
     pipelineBody: {},
     pipelineError: '',
+    isDrive: false,
+    driveUrl: '',
+    drivePath: '',
+    driveBody: {},
+    driveError: '',
+    runId: '',
   }
   // A pipeline always runs `route` first; a bare smoke call answers the empty plan.
   if (!route) return plan
+  plan.driveUrl = route.driveUrl
+  plan.drivePath = route.drivePath
   const base = route.siblingBase
   const indexPathOf = (alias: string) => `/w/${alias}/.bffless/workflows/index.json`
   const indexUrlOf = (alias: string) => `${base}${indexPathOf(alias)}`
@@ -128,13 +151,7 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
   }
 
   if (route.isDescribe) {
-    const index = data.steps.index
-    const body = index?.ok === true && isPlainObject(index.body) ? index.body : null
-    const workflows = body && Array.isArray(body.workflows) ? body.workflows : []
-    const listing = workflows.find(
-      (entry: unknown): entry is Record<string, unknown> =>
-        isPlainObject(entry) && typeof entry.file === 'string' && workflowId(entry.file) === route.workflow,
-    )
+    const listing = listedWorkflow(indexJson(data.steps.index), route.workflow)
     if (listing && base !== '') {
       plan.listing = listing
       plan.hasYaml = true
@@ -191,7 +208,78 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
     }
   }
 
+  // --- driven runs (ADR-0006): what the `drive` step posts, and why it may not
+  //
+  // The three tools that dispatch differ only in what they must know first: a
+  // `start` needs the implementation's index (the workflow it lists, the driver
+  // it publishes), a `resume` needs the run row, a `submitStep` needs its own
+  // write to have landed. Each refusal is decided once, here, and said once by
+  // `reply` — the drive rule judges the request again on arrival, but a caller
+  // should never be sent a dispatch that is already known to be pointless.
+  if (route.isStart) {
+    const index = indexJson(data.steps.index)
+    const driver = index !== null && isPlainObject(index.driver) ? index.driver : {}
+    const repo = typeof driver.repo === 'string' ? driver.repo : ''
+    if (!listedWorkflow(index, route.workflow)) plan.driveError = REFUSALS.noWorkflow
+    else if (repo === '') plan.driveError = NO_DRIVER
+    else if (!isPlainObject(route.args.inputs)) plan.driveError = '`inputs` must be an object'
+    else {
+      // The id is minted here, not by the driver: it is what `workflow.start`
+      // hands back before any row exists, so the caller can poll from the
+      // moment it is told the run was dispatched.
+      plan.runId = mintRunId(Date.now())
+      plan.isDrive = plan.driveUrl !== ''
+      plan.driveBody = { id: plan.runId, mode: 'run', impl: route.impl, workflow: route.workflow, inputs: route.args.inputs }
+    }
+  } else if (route.isResume) {
+    const runRow = rows(data.steps.run)[0]
+    const run = runRow ? fieldsOf(runRow) : null
+    const status = run === null ? '' : String(run.status)
+    if (run === null) plan.driveError = `No such run: ${route.runId}`
+    else if (status !== 'running') plan.driveError = `Run ${route.runId} is ${status}; only a running run can be resumed`
+    else {
+      plan.runId = route.runId
+      plan.isDrive = plan.driveUrl !== ''
+      plan.driveBody = { id: route.runId, mode: 'resume' }
+    }
+  } else if (route.tool === 'workflow.submitStep' && stepUpdated(data.steps.update)) {
+    // The write landed on a step the run was parked on, so the run can move
+    // again — and nothing is on the page to move it. A dispatch here is what
+    // makes an agent-completed step continue a driven run; the drive rule
+    // refuses it harmlessly (LEASE_LIVE) when a person does have the page open.
+    plan.runId = route.runId
+    plan.isDrive = plan.driveUrl !== ''
+    plan.driveBody = { id: route.runId, mode: 'resume' }
+  }
+
   return plan
+}
+
+/** The `NO_DRIVER` refusal in the vocabulary a model reads — the drive rule's own code, plus where the run can be started instead. */
+const NO_DRIVER = 'NO_DRIVER: this implementation publishes no driver — start it on the harness page'
+
+/** An implementation's `index.json` as an object, however the step answered it (CE parses JSON; a sibling that did not say JSON answers text). */
+function indexJson(step: PlanSteps['index']): Record<string, unknown> | null {
+  if (step?.ok !== true) return null
+  if (isPlainObject(step.body)) return step.body
+  if (typeof step.body === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(step.body)
+      return isPlainObject(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/** The `workflows[]` entry of an index whose file names this workflow — the id comes off the file name, never a guess (06). */
+function listedWorkflow(index: Record<string, unknown> | null, workflow: string): Record<string, unknown> | null {
+  const workflows = index !== null && Array.isArray(index.workflows) ? index.workflows : []
+  const listing = workflows.find(
+    (entry: unknown): entry is Record<string, unknown> => isPlainObject(entry) && typeof entry.file === 'string' && workflowId(entry.file) === workflow,
+  )
+  return listing ?? null
 }
 
 /** The `with.src` of (job, stepId) in a raw definition snapshot, or `''`. */

@@ -172,7 +172,8 @@ function stepDefs(ruleDir) {
     waiting: query('waiting', 'steps.route.isRuns', 'workflow_run_steps', 1000, { status: { op: 'eq', value: 'waiting' } }),
     // CE's alias API in-process (spec 06); the caller's credential is forwarded, so CE answers the member's own alias list.
     aliases: { id: 'aliases', name: 'aliases', handler: 'http_request', config: { condition: 'steps.route.isAliases', url: 'steps.route.aliasesUrl', method: 'GET', forwardAuth: true, failOnError: false } },
-    index: http('index', 'steps.route.isDescribe', 'steps.route.indexUrl', 'steps.route.indexPath'),
+    // `describe` reads the listing off the index; `start` reads the driver repo off the same file (ADR-0006), so one flag gates one step.
+    index: http('index', 'steps.route.needsIndex', 'steps.route.indexUrl', 'steps.route.indexPath'),
     index1: http('index1', 'steps.plan.has1', 'steps.plan.url1', 'steps.plan.path1'),
     index2: http('index2', 'steps.plan.has2', 'steps.plan.url2', 'steps.plan.path2'),
     index3: http('index3', 'steps.plan.has3', 'steps.plan.url3', 'steps.plan.path3'),
@@ -181,6 +182,10 @@ function stepDefs(ruleDir) {
     pipelinePost: http('pipelinePost', 'steps.plan.isPipelinePost', 'steps.plan.pipelineUrl', 'steps.plan.pipelinePath', { method: 'POST', body: 'steps.plan.pipelineBody' }),
     pipelineGet: http('pipelineGet', 'steps.plan.isPipelineGet', 'steps.plan.pipelineUrl', 'steps.plan.pipelinePath'),
     signed: { id: 'signed', name: 'signed', handler: 'signed_url', config: { condition: 'steps.route.isSign', path: 'steps.route.signStoragePath', expiresIn: 3600 } },
+    // The harness's own run/drive rule, in-process as the caller (ADR-0006): the one
+    // place a run is dispatched, posted the body `plan` built. `driveUrl`/`drivePath`
+    // are copied from `route` onto `plan` so this step reads a single source.
+    drive: http('drive', 'steps.plan.isDrive', 'steps.plan.driveUrl', 'steps.plan.drivePath', { method: 'POST', body: 'steps.plan.driveBody' }),
     update: {
       id: 'update',
       name: 'update',

@@ -32,6 +32,20 @@ export const HELLO_INDEX = {
   ceMin: '0.4.32',
 }
 
+/**
+ * The same index as `workflow index --driver-repo` writes it (ADR-0006): the
+ * implementation publishes a headless driver, so a run of it can be dispatched
+ * over the MCP endpoint instead of driven on the page.
+ */
+export const HELLO_INDEX_WITH_DRIVER = {
+  ...HELLO_INDEX,
+  workflows: [
+    ...HELLO_INDEX.workflows,
+    { file: 'driven.workflow.yaml', name: 'Driven hello', description: 'A run a driver can carry on its own.', inputs: 1, jobs: 2, headlessSafe: true },
+  ],
+  driver: { repo: 'bffless/workflow-implementations' },
+}
+
 export const RUN_ID = 'run_01TEST'
 
 /** The `workflow_runs` row of a parked `hello/interactive` run (columns flattened). */
