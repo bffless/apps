@@ -13,7 +13,7 @@ pipeline:
       name: index
       handler: http_request
       config:
-        condition: steps.route.isDescribe
+        condition: steps.route.needsIndex
         url: steps.route.indexUrl
         method: GET
         headers:

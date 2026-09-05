@@ -95,6 +95,7 @@ export type StepKey =
   | 'signed'
   | 'merge'
   | 'update'
+  | 'drive'
   | 'reply'
 
 const RUN_ROWS: StepKey[] = ['run', 'steps']
@@ -107,11 +108,15 @@ export const TOOL_STEPS: Readonly<Record<ToolName | HostToolName, StepKey[]>> = 
   'workflow.outputs': ['route', ...RUN_ROWS, 'reply'],
   'workflow.runs': ['route', 'runs', 'waiting', 'reply'],
   'workflow.sign': ['route', 'signed', 'reply'],
-  'workflow.start': ['route', 'reply'],
+  // The three that dispatch (ADR-0006). `start` reads the implementation's
+  // index first (the workflow it lists, the driver it publishes); `resume`
+  // reads the run's rows; `submitStep` runs `plan` AFTER its write, because
+  // whether to dispatch is whether the write landed.
+  'workflow.start': ['route', 'index', 'plan', 'drive', 'reply'],
   'workflow.await': ['route', 'reply'],
   'workflow.cancel': ['route', 'reply'],
-  'workflow.resume': ['route', 'reply'],
-  'workflow.submitStep': ['route', ...RUN_ROWS, 'merge', 'update', 'reply'],
+  'workflow.resume': ['route', ...RUN_ROWS, 'plan', 'drive', 'reply'],
+  'workflow.submitStep': ['route', ...RUN_ROWS, 'merge', 'update', 'plan', 'drive', 'reply'],
   'workflow.submit': ['route', ...RUN_ROWS, 'merge', 'update', 'reply'],
   'workflow.annotate': ['route', ...RUN_ROWS, 'merge', 'update', 'reply'],
   'workflow.pipeline': ['route', ...RUN_ROWS, 'plan', 'pipelinePost', 'pipelineGet', 'reply'],

@@ -1,0 +1,89 @@
+targetUrl: pipeline
+order: 22
+pipeline:
+  name: Drive a run
+  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Refuses on a live lease, a terminal run, a missing driver."
+  steps:
+    # The run row `id` names, if there is one: `resume` needs it (it carries the
+    # implementation, the lease and the status), `run` needs its ABSENCE — an id
+    # already taken is RUN_EXISTS, the same backstop `runs/post` applies.
+    - id: find
+      name: find
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.id }
+    - id: plan
+      name: plan
+      handler: function_handler
+      code: ../../../../../../mcp-fn/drivePlan.fn.js
+    # The implementation's own index.json, in-process at this request's base path
+    # (spec 06, ADR-0001 amendment) — the one place `driver.repo` is published.
+    # `failOnError: false`: an unfetchable index is NO_DRIVER, a 400 the gate
+    # words, never a pipeline failure.
+    - id: index
+      name: index
+      handler: http_request
+      config:
+        condition: steps.plan.hasIndex
+        url: steps.plan.indexUrl
+        method: GET
+        headers:
+          x-original-uri: steps.plan.indexPath
+          x-forwarded-host: steps.plan.host
+        forwardAuth: true
+        failOnError: false
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/driveGate.fn.js
+    # The dispatch itself. The token is the PROJECT's GitHub integration, never
+    # the caller's: a member with workflow:run may drive a run without holding
+    # any GitHub credential. A step that fails fails the pipeline, and that is
+    # the intended DISPATCH_FAILED path — an unconfigured integration
+    # (GITHUB_NOT_CONFIGURED) or a repo the token cannot reach must be loud.
+    - id: dispatch
+      name: dispatch
+      handler: github_api
+      config:
+        condition: steps.gate.dispatch
+        action: dispatch
+        owner: steps.gate.owner
+        repo: steps.gate.repo
+        eventType: steps.gate.eventType
+        # Each value is an expression the handler evaluates; `workflow` and
+        # `inputs` are absent from a `resume` payload and resolve to null, which
+        # is what workflow-drive.yml's resume branch never reads.
+        clientPayload:
+          mode: steps.gate.payload.mode
+          run_id: steps.gate.payload.run_id
+          harness_url: steps.gate.payload.harness_url
+          workflow: steps.gate.payload.workflow
+          inputs: steps.gate.payload.inputs
+    # Two responders, one per status: response_handler's `status` must be a
+    # literal number (ce response.handler.ts validateConfig), and the gate raises
+    # exactly one of the two flags, so exactly one of these ever runs.
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.gate.refused
+        body: "{{{steps.gate.response}}}"
+        status: 400
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        condition: steps.gate.dispatch
+        body: "{{{steps.gate.response}}}"
+        status: 202
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators:
+    - type: auth_required
+      config: { allowApiKey: true, requiredScopes: [workflow:run] }
+description: "Dispatch the driver for a run (ADR-0006). 202 dispatched · 400 { code } refused · the pipeline's own error when GitHub refuses (DISPATCH_FAILED)."

@@ -169,9 +169,15 @@ export const mcp: Walk = async ({ args, env, report }) => {
       refused: brief(refused),
     })
 
-    // --- Honesty: what this build does not serve says so as a tool error, never a protocol error
+    // --- Honesty: a run this endpoint cannot dispatch says so as a tool error, never a
+    // protocol error. `workflow.start` is served (ADR-0006) — it dispatches the
+    // implementation's headless driver — but hello publishes no `driver.repo` in its
+    // `index.json`, so the honest answer here is `NO_DRIVER` and where to start it instead.
     const start = await call('workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} })
-    report.expect('spec10.notServedHonest', start.isError === true && 'tool' in errorsOf(start) && /driven on the harness page/.test(text(start)), brief(start))
+    report.expect('spec10.notServedHonest', start.isError === true && 'tool' in errorsOf(start) && /NO_DRIVER/.test(text(start)), {
+      note: 'workflow.start on a driverless implementation refuses with NO_DRIVER as errors.tool',
+      ...brief(start),
+    })
 
     // --- Resources: the step view and the islands, each with a CSP derived from the instance
     const resources = (await client.listResources()).resources as Array<{ uri: string; mimeType?: string; _meta?: unknown }>

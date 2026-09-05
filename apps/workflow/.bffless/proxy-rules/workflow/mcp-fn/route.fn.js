@@ -23,12 +23,14 @@ var __mcp = (() => {
   var route_exports = {};
   __export(route_exports, {
     CE_BACKEND: () => CE_BACKEND,
+    DRIVE_PATH: () => DRIVE_PATH,
     LIST_FANOUT: () => LIST_FANOUT,
     RESOURCES_PATH: () => RESOURCES_PATH,
     STEP_VIEW_RESOURCE_PATH: () => STEP_VIEW_RESOURCE_PATH,
     TOOLS_PATH: () => TOOLS_PATH,
     confinedSignPath: () => confinedSignPath,
     handler: () => handler,
+    header: () => header,
     kindOfPath: () => kindOfPath,
     siblingBaseOf: () => siblingBaseOf
   });
@@ -172,7 +174,7 @@ var __mcp = (() => {
   var DESCRIPTIONS = {
     "workflow.list": "List the implementations published to this harness and their workflows, each with its `headlessSafe` mark (whether every interactive step declares what to do without a person).",
     "workflow.describe": "Describe one workflow before deciding a run can complete without a person: its inputs (types, required, defaults), its outputs, the job/step graph in dependency order, and each interactive step\u2019s `headless` declaration.",
-    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. Returns the run id and its first snapshot, and moves the page to the run.",
+    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation\u2019s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.",
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
@@ -180,7 +182,7 @@ var __mcp = (() => {
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
-    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease) so this surface drives it from here \u2014 how an agent adopts a run another tab or host abandoned."
+    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease). On the harness page this surface drives it from here. Over the MCP endpoint it dispatches the implementation\u2019s headless driver to resume the run \u2014 how a run answered here continues without a person on the page."
   };
   var SCHEMAS = {
     "workflow.list": LIST_SCHEMA,
@@ -217,7 +219,9 @@ var __mcp = (() => {
     "workflow.submit",
     "workflow.annotate",
     "workflow.pipeline",
-    "workflow.stepView"
+    "workflow.stepView",
+    // A resume names nothing but the run: its rows say which implementation to dispatch.
+    "workflow.resume"
   ]);
   function isPlainObject(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -239,6 +243,7 @@ var __mcp = (() => {
   var MCP_PATH = "/api/workflow/mcp";
   var TOOLS_PATH = "/api/workflow/mcp-tools/";
   var RESOURCES_PATH = "/api/workflow/mcp-resources";
+  var DRIVE_PATH = "/api/workflow/run/drive";
   var STEP_VIEW_RESOURCE_PATH = "/api/workflow/mcp-resources/step-view";
   function kindOfPath(path) {
     const at = path.indexOf(MCP_PATH);
@@ -251,8 +256,8 @@ var __mcp = (() => {
     }
     return { kind: "invalid", tool: "" };
   }
-  function siblingBaseOf(path, appOrigin) {
-    const at = path.indexOf(MCP_PATH);
+  function siblingBaseOf(path, appOrigin, marker = MCP_PATH) {
+    const at = path.indexOf(marker);
     const prefix = at > 0 ? path.slice(0, at) : "";
     if (prefix.startsWith("/public/")) return `${CE_BACKEND}${prefix}`;
     return appOrigin;
@@ -282,6 +287,9 @@ var __mcp = (() => {
       isRuns: false,
       isList: false,
       isDescribe: false,
+      isStart: false,
+      isResume: false,
+      needsIndex: false,
       isStepView: false,
       isSign: false,
       runId: "",
@@ -298,7 +306,9 @@ var __mcp = (() => {
       stepViewUrl: siblingBase === "" ? "" : `${siblingBase}/step.html`,
       stepViewPath: "/step.html",
       signPath: "",
-      signStoragePath: ""
+      signStoragePath: "",
+      driveUrl: siblingBase === "" ? "" : `${siblingBase}${DRIVE_PATH}`,
+      drivePath: DRIVE_PATH
     };
     if (kind === "invalid") {
       return { ...route, message: `${path || "(no path)"} is not an MCP tool or resource rule of this harness` };
@@ -321,7 +331,10 @@ var __mcp = (() => {
     if (route.tool === "workflow.runs" && route.impl !== "" && route.workflow !== "") route.isRuns = true;
     if (route.tool === "workflow.list") route.isList = true;
     if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "" && appOrigin !== "") route.isDescribe = true;
-    if ((route.isList || route.isDescribe) && route.impl !== "" && siblingBase !== "") {
+    if (route.tool === "workflow.start" && route.impl !== "" && route.workflow !== "" && siblingBase !== "") route.isStart = true;
+    if (route.tool === "workflow.resume" && route.runId !== "") route.isResume = true;
+    route.needsIndex = route.isDescribe || route.isStart;
+    if ((route.isList || route.isDescribe || route.isStart) && route.impl !== "" && siblingBase !== "") {
       route.indexPath = `/w/${route.impl}/.bffless/workflows/index.json`;
       route.indexUrl = `${siblingBase}${route.indexPath}`;
     }

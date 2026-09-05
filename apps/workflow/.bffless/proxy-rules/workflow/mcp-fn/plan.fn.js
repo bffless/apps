@@ -171,6 +171,26 @@ var __mcp = (() => {
     const base = file.split("/").pop() ?? file;
     return base.replace(/\.workflow\.ya?ml$/i, "").replace(/\.ya?ml$/i, "");
   }
+  var CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  function mintRunId(now, random = Math.random) {
+    let time = "", t = now;
+    for (let i = 0; i < 10; i++) {
+      const mod = t % 32;
+      time = CROCKFORD[mod] + time;
+      t = (t - mod) / 32;
+    }
+    let rand = "";
+    for (let i = 0; i < 16; i++) rand += CROCKFORD[Math.floor(random() * 32)];
+    return `run_${time}${rand}`;
+  }
+
+  // src/mcp/refusals.ts
+  var REFUSALS = {
+    discovery: "The implementations could not be listed",
+    noWorkflow: "No implementation here publishes that workflow",
+    fileUnreadable: "This workflow's file could not be fetched",
+    doesNotLint: "This workflow does not validate, so it cannot be run"
+  };
 
   // src/mcp/rows.ts
   function isPlainObject2(value) {
@@ -185,6 +205,11 @@ var __mcp = (() => {
   function fieldsOf(row) {
     const fields = row.fields;
     return isPlainObject2(fields) && Object.keys(fields).length > 0 ? fields : row;
+  }
+  function stepUpdated(update) {
+    if (update === void 0 || update === null) return false;
+    if (isPlainObject2(update) && update.success === false) return false;
+    return true;
   }
 
   // ../../packages/workflow-agent-tools/dist/schemas.js
@@ -326,7 +351,7 @@ var __mcp = (() => {
   var DESCRIPTIONS = {
     "workflow.list": "List the implementations published to this harness and their workflows, each with its `headlessSafe` mark (whether every interactive step declares what to do without a person).",
     "workflow.describe": "Describe one workflow before deciding a run can complete without a person: its inputs (types, required, defaults), its outputs, the job/step graph in dependency order, and each interactive step\u2019s `headless` declaration.",
-    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. Returns the run id and its first snapshot, and moves the page to the run.",
+    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation\u2019s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.",
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
@@ -334,7 +359,7 @@ var __mcp = (() => {
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
-    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease) so this surface drives it from here \u2014 how an agent adopts a run another tab or host abandoned."
+    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease). On the harness page this surface drives it from here. Over the MCP endpoint it dispatches the implementation\u2019s headless driver to resume the run \u2014 how a run answered here continues without a person on the page."
   };
   var SCHEMAS = {
     "workflow.list": LIST_SCHEMA,
@@ -397,9 +422,17 @@ var __mcp = (() => {
       pipelineUrl: "",
       pipelinePath: "",
       pipelineBody: {},
-      pipelineError: ""
+      pipelineError: "",
+      isDrive: false,
+      driveUrl: "",
+      drivePath: "",
+      driveBody: {},
+      driveError: "",
+      runId: ""
     };
     if (!route) return plan;
+    plan.driveUrl = route.driveUrl;
+    plan.drivePath = route.drivePath;
     const base = route.siblingBase;
     const indexPathOf = (alias) => `/w/${alias}/.bffless/workflows/index.json`;
     const indexUrlOf = (alias) => `${base}${indexPathOf(alias)}`;
@@ -418,12 +451,7 @@ var __mcp = (() => {
       Object.assign(plan, { has1: url1 !== "", url1, path1, has2: url2 !== "", url2, path2, has3: url3 !== "", url3, path3 });
     }
     if (route.isDescribe) {
-      const index = data.steps.index;
-      const body = index?.ok === true && isPlainObject3(index.body) ? index.body : null;
-      const workflows = body && Array.isArray(body.workflows) ? body.workflows : [];
-      const listing = workflows.find(
-        (entry) => isPlainObject3(entry) && typeof entry.file === "string" && workflowId(entry.file) === route.workflow
-      );
+      const listing = listedWorkflow(indexJson(data.steps.index), route.workflow);
       if (listing && base !== "") {
         plan.listing = listing;
         plan.hasYaml = true;
@@ -478,7 +506,56 @@ var __mcp = (() => {
         }
       }
     }
+    if (route.isStart) {
+      const index = indexJson(data.steps.index);
+      const driver = index !== null && isPlainObject3(index.driver) ? index.driver : {};
+      const repo = typeof driver.repo === "string" ? driver.repo : "";
+      if (!listedWorkflow(index, route.workflow)) plan.driveError = REFUSALS.noWorkflow;
+      else if (repo === "") plan.driveError = NO_DRIVER;
+      else if (!isPlainObject3(route.args.inputs)) plan.driveError = "`inputs` must be an object";
+      else {
+        plan.runId = mintRunId(Date.now());
+        plan.isDrive = plan.driveUrl !== "";
+        plan.driveBody = { id: plan.runId, mode: "run", impl: route.impl, workflow: route.workflow, inputs: route.args.inputs };
+      }
+    } else if (route.isResume) {
+      const runRow = rows(data.steps.run)[0];
+      const run = runRow ? fieldsOf(runRow) : null;
+      const status = run === null ? "" : String(run.status);
+      if (run === null) plan.driveError = `No such run: ${route.runId}`;
+      else if (status !== "running") plan.driveError = `Run ${route.runId} is ${status}; only a running run can be resumed`;
+      else {
+        plan.runId = route.runId;
+        plan.isDrive = plan.driveUrl !== "";
+        plan.driveBody = { id: route.runId, mode: "resume" };
+      }
+    } else if (route.tool === "workflow.submitStep" && stepUpdated(data.steps.update)) {
+      plan.runId = route.runId;
+      plan.isDrive = plan.driveUrl !== "";
+      plan.driveBody = { id: route.runId, mode: "resume" };
+    }
     return plan;
+  }
+  var NO_DRIVER = "NO_DRIVER: this implementation publishes no driver \u2014 start it on the harness page";
+  function indexJson(step) {
+    if (step?.ok !== true) return null;
+    if (isPlainObject3(step.body)) return step.body;
+    if (typeof step.body === "string") {
+      try {
+        const parsed = JSON.parse(step.body);
+        return isPlainObject3(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+  function listedWorkflow(index, workflow) {
+    const workflows = index !== null && Array.isArray(index.workflows) ? index.workflows : [];
+    const listing = workflows.find(
+      (entry) => isPlainObject3(entry) && typeof entry.file === "string" && workflowId(entry.file) === workflow
+    );
+    return listing ?? null;
   }
   function declaredSrc(definition, job, stepId) {
     if (!isPlainObject3(definition) || !isPlainObject3(definition.jobs)) return "";

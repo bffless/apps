@@ -54,7 +54,7 @@ pipeline:
               path: /api/workflow/mcp-tools/describe
               method: POST
           - name: workflow.start
-            description: Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person’s values; a refusal names each bad input. Returns the run id and its first snapshot, and moves the page to the run.
+            description: Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person’s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation’s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.
             inputSchema:
               type: object
               properties:
@@ -166,7 +166,7 @@ pipeline:
               readOnlyHint: false
             _meta:
               ui:
-                resourceUri: ui://bffless/workflow/step-view.86feea7f.html
+                resourceUri: ui://bffless/workflow/step-view.b91d5848.html
             rule:
               path: /api/workflow/mcp-tools/submitStep
               method: POST
@@ -204,7 +204,7 @@ pipeline:
               path: /api/workflow/mcp-tools/cancel
               method: POST
           - name: workflow.resume
-            description: Take over a `running` run whose driver went away (an expired lease) so this surface drives it from here — how an agent adopts a run another tab or host abandoned.
+            description: Take over a `running` run whose driver went away (an expired lease). On the harness page this surface drives it from here. Over the MCP endpoint it dispatches the implementation’s headless driver to resume the run — how a run answered here continues without a person on the page.
             inputSchema:
               type: object
               properties:
@@ -316,7 +316,7 @@ pipeline:
               method: POST
         resources:
           static:
-            - uri: ui://bffless/workflow/step-view.86feea7f.html
+            - uri: ui://bffless/workflow/step-view.b91d5848.html
               name: Workflow step view
               description: Mounts a waiting island or form step of a run (spec 10).
               rule:

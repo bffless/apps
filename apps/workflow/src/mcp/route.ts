@@ -65,6 +65,17 @@ export interface Route {
   isList: boolean
   /** `workflow.describe` → `steps.index` (then `plan` names the YAML). */
   isDescribe: boolean
+  /**
+   * `workflow.start` over the endpoint (ADR-0006): dispatch this
+   * implementation's driver for a run of this workflow. The index is read
+   * first — `plan` needs the driver repo it publishes, and the workflow it
+   * lists, before there is anything to dispatch.
+   */
+  isStart: boolean
+  /** `workflow.resume` over the endpoint: dispatch a driver to take an existing run over. */
+  isResume: boolean
+  /** Gate of the `index` step: `describe` reads the listing, `start` reads the driver. */
+  needsIndex: boolean
   /** The step-view resource rule → `steps.stepView` fetches `/step.html` in-process. */
   isStepView: boolean
   /** `workflow.sign` with a confined path → `steps.signed`. */
@@ -96,6 +107,14 @@ export interface Route {
   /** `workflow.sign`: the uploads-relative key when confined, else `''`. */
   signPath: string
   signStoragePath: string
+  /**
+   * The harness's own `run/drive` rule (ADR-0006), reached in-process like
+   * every other sibling: one rule owns the dispatch, and the three tools that
+   * dispatch (`start`, `resume`, `submitStep`) all post the same body to it.
+   * `plan` copies both onto itself so the `drive` step reads one source.
+   */
+  driveUrl: string
+  drivePath: string
 }
 
 const RUN_SCOPED = new Set([
@@ -106,6 +125,8 @@ const RUN_SCOPED = new Set([
   'workflow.annotate',
   'workflow.pipeline',
   'workflow.stepView',
+  // A resume names nothing but the run: its rows say which implementation to dispatch.
+  'workflow.resume',
 ])
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -116,7 +137,8 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function header(headers: FnRequest['headers'], name: string): string {
+/** One request header, first value, trimmed — `''` when absent. Shared with `drivePlan` (ADR-0006), which derives the same origin this does. */
+export function header(headers: FnRequest['headers'], name: string): string {
   const value = headers?.[name] ?? headers?.[name.toLowerCase()]
   const first = Array.isArray(value) ? value[0] : value
   return typeof first === 'string' ? first.split(',')[0].trim() : ''
@@ -138,6 +160,8 @@ export function confinedSignPath(raw: unknown): string {
 const MCP_PATH = '/api/workflow/mcp'
 export const TOOLS_PATH = '/api/workflow/mcp-tools/'
 export const RESOURCES_PATH = '/api/workflow/mcp-resources'
+/** The harness's driven-runs rule (ADR-0006) — its own public path, outside `mcp*`; `drivePlan` reads it as its `siblingBaseOf` marker. */
+export const DRIVE_PATH = '/api/workflow/run/drive'
 export const STEP_VIEW_RESOURCE_PATH = '/api/workflow/mcp-resources/step-view'
 
 /** What a rule's own path says it is: `…/mcp-tools/submitStep` → the tool `workflow.submitStep`; `…/mcp-resources` → the list; `…/step-view` → the step view. */
@@ -162,9 +186,13 @@ export function kindOfPath(path: string): { kind: RouteKind; tool: string } {
  * forwarders, the bundle) exactly as the edge would, minus the edge. A bare
  * path (a preview host, a dev proxy) carries no prefix and the public origin
  * is used instead.
+ *
+ * `marker` is the rule's own public path — everything before it is the prefix.
+ * It defaults to the MCP endpoint's, which is every caller here; the `drive`
+ * rule (ADR-0006) passes its own, since it lives outside `mcp*`.
  */
-export function siblingBaseOf(path: string, appOrigin: string): string {
-  const at = path.indexOf(MCP_PATH)
+export function siblingBaseOf(path: string, appOrigin: string, marker: string = MCP_PATH): string {
+  const at = path.indexOf(marker)
   const prefix = at > 0 ? path.slice(0, at) : ''
   if (prefix.startsWith('/public/')) return `${CE_BACKEND}${prefix}`
   return appOrigin
@@ -199,6 +227,9 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     isRuns: false,
     isList: false,
     isDescribe: false,
+    isStart: false,
+    isResume: false,
+    needsIndex: false,
     isStepView: false,
     isSign: false,
     runId: '',
@@ -216,6 +247,8 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     stepViewPath: '/step.html',
     signPath: '',
     signStoragePath: '',
+    driveUrl: siblingBase === '' ? '' : `${siblingBase}${DRIVE_PATH}`,
+    drivePath: DRIVE_PATH,
   }
 
   if (kind === 'invalid') {
@@ -242,7 +275,10 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
   if (route.tool === 'workflow.runs' && route.impl !== '' && route.workflow !== '') route.isRuns = true
   if (route.tool === 'workflow.list') route.isList = true
   if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '' && appOrigin !== '') route.isDescribe = true
-  if ((route.isList || route.isDescribe) && route.impl !== '' && siblingBase !== '') {
+  if (route.tool === 'workflow.start' && route.impl !== '' && route.workflow !== '' && siblingBase !== '') route.isStart = true
+  if (route.tool === 'workflow.resume' && route.runId !== '') route.isResume = true
+  route.needsIndex = route.isDescribe || route.isStart
+  if ((route.isList || route.isDescribe || route.isStart) && route.impl !== '' && siblingBase !== '') {
     route.indexPath = `/w/${route.impl}/.bffless/workflows/index.json`
     route.indexUrl = `${siblingBase}${route.indexPath}`
   }

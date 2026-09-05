@@ -22,12 +22,25 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { parsePublish, runPublish, type SpawnRulesPush } from '../src/verbs/publish.js'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
 const fixtureDir = fileURLToPath(new URL('./fixtures/hello-tree', import.meta.url))
+
+// `--driver-repo` defaults to `GITHUB_REPOSITORY` (ADR-0006), which GitHub Actions
+// sets on every job — so the exact-shape parse cases below would grow a
+// `driverRepo` key in CI and not on a laptop. Every test starts with the
+// variable unset; the `--driver-repo` cases set what they need themselves.
+const ORIGINAL_GITHUB_REPOSITORY_AT_LOAD = process.env.GITHUB_REPOSITORY
+beforeEach(() => {
+  delete process.env.GITHUB_REPOSITORY
+})
+afterEach(() => {
+  if (ORIGINAL_GITHUB_REPOSITORY_AT_LOAD === undefined) delete process.env.GITHUB_REPOSITORY
+  else process.env.GITHUB_REPOSITORY = ORIGINAL_GITHUB_REPOSITORY_AT_LOAD
+})
 
 /** execFileSync throws on a non-zero exit; unwrap it so a test can assert the exit status too. */
 function run(args: string[], cwd: string, env: NodeJS.ProcessEnv): { stdout: string; stderr: string; status: number } {
@@ -153,6 +166,55 @@ describe('parsePublish', () => {
 
   test('publish takes no positional arguments', () => {
     expect(parsePublish(['studio'])).toEqual({ error: 'unknown option studio' })
+  })
+})
+
+describe('parsePublish — --driver-repo (ADR-0006)', () => {
+  const REQUIRED = ['--api-url', 'https://x.example.test', '--project', 'o/n']
+  const ORIGINAL_GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY
+
+  afterEach(() => {
+    if (ORIGINAL_GITHUB_REPOSITORY === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = ORIGINAL_GITHUB_REPOSITORY
+  })
+
+  test('an explicit --driver-repo is carried onto driverRepo', () => {
+    delete process.env.GITHUB_REPOSITORY
+    const r = parsePublish([...REQUIRED, '--driver-repo', 'acme/site'])
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBe('acme/site')
+  })
+
+  test('GITHUB_REPOSITORY is the default when no flag is given', () => {
+    process.env.GITHUB_REPOSITORY = 'acme/site'
+    const r = parsePublish(REQUIRED)
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBe('acme/site')
+  })
+
+  test('an explicit flag wins over GITHUB_REPOSITORY', () => {
+    process.env.GITHUB_REPOSITORY = 'env/repo'
+    const r = parsePublish([...REQUIRED, '--driver-repo', 'flag/repo'])
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBe('flag/repo')
+  })
+
+  test('neither flag nor GITHUB_REPOSITORY leaves driverRepo absent', () => {
+    delete process.env.GITHUB_REPOSITORY
+    const r = parsePublish(REQUIRED)
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBeUndefined()
+  })
+
+  test('a malformed explicit --driver-repo is a usage error', () => {
+    const r = parsePublish([...REQUIRED, '--driver-repo', 'not-a-repo'])
+    expect(r).toEqual({ error: '--driver-repo must look like owner/name, got "not-a-repo"' })
+  })
+
+  test('a malformed GITHUB_REPOSITORY default is also a usage error', () => {
+    process.env.GITHUB_REPOSITORY = 'not-a-repo'
+    const r = parsePublish(REQUIRED)
+    expect(r).toEqual({ error: '--driver-repo must look like owner/name, got "not-a-repo"' })
   })
 })
 
@@ -569,6 +631,70 @@ describe('runPublish — move 1 (index) --name/--description', () => {
       const index = readIndexJson(dir)
       expect(index.name).toBe('hello')
       expect(index.description).toBe('')
+    })
+  })
+})
+
+describe("runPublish — --driver-repo (ADR-0006) flows into move 1's index.json", () => {
+  // Same stub as the --name/--description block above: moves 1-2 (real
+  // filesystem work) run to completion, then move 3 is stubbed to fail —
+  // all these tests need is what move 1 already wrote.
+  const stopAfterMove2: SpawnRulesPush = () => {
+    throw new Error('stub: stops the run right after move 1/2')
+  }
+
+  function readIndexJson(dir: string): { driver?: { repo: string } } {
+    return JSON.parse(readFileSync(join(dir, 'dist/.bffless/workflows/index.json'), 'utf8')) as {
+      driver?: { repo: string }
+    }
+  }
+
+  test('an explicit driverRepo lands on the written index.json as driver.repo', () => {
+    const dir = freshLintableCopy()
+    return runPublish(
+      dir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        driverRepo: 'acme/site',
+        dryRun: false,
+      },
+      () => {},
+      () => {},
+      { BFFLESS_API_KEY: 'fake-key-for-this-test' },
+      stopAfterMove2,
+    ).then((code) => {
+      expect(code).toBe(2) // move 3 stubbed to fail — irrelevant to what move 1 already wrote
+      expect(readIndexJson(dir).driver).toEqual({ repo: 'acme/site' })
+    })
+  })
+
+  test('an omitted driverRepo leaves index.json without a driver key', () => {
+    const dir = freshLintableCopy()
+    return runPublish(
+      dir,
+      {
+        apiUrl: 'https://x.example.test',
+        project: 'acme/site',
+        alias: 'hello',
+        harnessAlias: 'workflow',
+        path: 'dist',
+        workflows: '.bffless/workflows',
+        rules: undefined,
+        dryRun: false,
+      },
+      () => {},
+      () => {},
+      { BFFLESS_API_KEY: 'fake-key-for-this-test' },
+      stopAfterMove2,
+    ).then((code) => {
+      expect(code).toBe(2)
+      expect(readIndexJson(dir)).not.toHaveProperty('driver')
     })
   })
 })

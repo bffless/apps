@@ -63,7 +63,7 @@ const DESCRIPTIONS: Readonly<Record<ToolName, string>> = {
   'workflow.describe':
     'Describe one workflow before deciding a run can complete without a person: its inputs (types, required, defaults), its outputs, the job/step graph in dependency order, and each interactive step’s `headless` declaration.',
   'workflow.start':
-    'Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person’s values; a refusal names each bad input. Returns the run id and its first snapshot, and moves the page to the run.',
+    'Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person’s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation’s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.',
   'workflow.status':
     'The run snapshot: status, the steps in flight, every reached step’s status, the outputs so far, and `waitingOn` — for each waiting step what would satisfy it (its kind, its evaluated inputs, an island’s declared outputs and src).',
   'workflow.await':
@@ -76,7 +76,7 @@ const DESCRIPTIONS: Readonly<Record<ToolName, string>> = {
     'Exchange a File ref’s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.',
   'workflow.cancel': 'Cancel the run. Server-side pipeline jobs already enqueued keep running.',
   'workflow.resume':
-    'Take over a `running` run whose driver went away (an expired lease) so this surface drives it from here — how an agent adopts a run another tab or host abandoned.',
+    'Take over a `running` run whose driver went away (an expired lease). On the harness page this surface drives it from here. Over the MCP endpoint it dispatches the implementation’s headless driver to resume the run — how a run answered here continues without a person on the page.',
 }
 
 const SCHEMAS: Readonly<Record<ToolName, JsonSchema>> = {

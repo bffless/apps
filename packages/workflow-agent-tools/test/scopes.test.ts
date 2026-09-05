@@ -30,11 +30,12 @@ describe('the tool → scope map (D23)', () => {
 
   it('maps every harness rule to one of the three scopes (Phase 3 plan, Decision 27)', () => {
     const keys = Object.keys(RULE_SCOPES)
-    expect(keys).toHaveLength(15)
+    expect(keys).toHaveLength(16)
     for (const key of keys) expect(SCOPES).toContain(RULE_SCOPES[key])
     expect(ruleScopeOf('workflow/runs/post')).toBe('workflow:run')
     expect(ruleScopeOf('workflow/run/delete/post')).toBe('workflow:run')
     expect(ruleScopeOf('uploads/workflows/[...path]/get')).toBe('workflow:files')
+    expect(ruleScopeOf('workflow/run/drive/post')).toBe('workflow:run')
     expect(ruleScopeOf('workflow/mcp/post')).toBeUndefined()
     expect(ruleScopeOf('constructor')).toBeUndefined()
   })
