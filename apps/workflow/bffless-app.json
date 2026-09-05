@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "workflow",
   "name": "Workflow",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "summary": "Run reviewable, resumable AI workflows — interactive or headless — against your own BFFless project.",
   "category": "automation",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/workflow",

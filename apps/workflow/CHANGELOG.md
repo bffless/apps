@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.3.0](https://github.com/bffless/apps/compare/workflow-v1.2.1...workflow-v1.3.0) (2026-09-05)
+
+
+### Features
+
+* **workflow:** app tokens front the MCP endpoint — requiredScopes on every /api/workflow rule; the endpoint runs as the caller ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** build-hashed ui:// resource URIs — the step view's URI carries a source revision so a host's per-URI cache never pins a stale fetch ([#587](https://github.com/bffless/apps/issues/587)) ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** islands as ui:// resources — the step view mounts a waiting island inside an agent host; server-side workflow.submit, annotate, stepView and the fenced workflow.pipeline ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** OAuth discovery — /.well-known/oauth-protected-resource served as a bypassVisibility rule ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** submitStep thunk — the one submit path for forms, islands, people and agents ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** the MCP endpoint — POST /api/workflow/mcp on CE's mcp_handler, one sibling rule per tool, the config rendered from the catalog ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** the step view completes form steps — evaluated fields off the row, the harness's own field controls, workflow.submitStep validated through validateFormOutputs ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** WebMCP page tools — the agent tool catalog registered on document.modelContext, read tools and start/await/submitStep/sign/cancel/resume ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+
+
+### Bug Fixes
+
+* **workflow:** /.well-known/* answers 404 JSON on the harness — an MCP client's OAuth discovery must not read the SPA's index.html ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** a prefilled file ref is submitted with its canonical url, not the presigned one ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** submitStep with empty values opens the island's panel — a model sends {} because the schema marks values required ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** the step view presigns a form's File-ref previews and a file field's prefilled ref — a tile image loads inside an agent host (D6) ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** the step view's form submits from a button click — a sandboxed host frame without allow-forms never fires a native submit ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+* **workflow:** the step view's source revision ignores package.json's version — a release bump no longer stales the MCP rules ([#603](https://github.com/bffless/apps/issues/603)) ([090d050](https://github.com/bffless/apps/commit/090d0507c213ca8191e2ba853d97ab7e12d96d39))
+* **workflow:** workflow.await drains the run's write-ahead queue before answering, so the record says what the snapshot says ([#580](https://github.com/bffless/apps/issues/580)) ([e822392](https://github.com/bffless/apps/commit/e822392949b692929cfff519b63944de2517eaaa))
+
 ## [1.2.1](https://github.com/bffless/apps/compare/workflow-v1.2.0...workflow-v1.2.1) (2026-09-02)
 
 

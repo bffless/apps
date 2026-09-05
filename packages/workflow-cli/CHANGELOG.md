@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/bffless/apps/compare/workflow-cli-v1.1.0...workflow-cli-v1.1.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **workflow-cli:** the /w/&lt;alias&gt;/* forwarder lists the caller's credential (cookie, authorization) in its headerConfig — the CE backend strips it from an in-process sibling call otherwise, so an app token never reached the alias ([3e3778c](https://github.com/bffless/apps/commit/3e3778c331b5db5f8fccbf5331a3e74c1ff822e0))
+
 ## [1.1.0](https://github.com/bffless/apps/compare/workflow-cli-v1.0.0...workflow-cli-v1.1.0) (2026-09-02)
 
 
