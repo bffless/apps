@@ -251,7 +251,7 @@ so a CI cancellation ends as **exit 2** with the run left `running` (not 130, an
 
 ## In CI
 
-Two things exist, and a third does not.
+Three things exist, and a fourth does not.
 
 - **`.github/workflows/workflow-headless-run.yml`** (`bffless/apps`) — the live run.
   `workflow_dispatch` only, deliberately: a run there writes a real row, uploads to the
@@ -268,6 +268,16 @@ Two things exist, and a third does not.
   (no `page` fixture, so only the driver's Chromium runs) and reads the artifacts back off disk.
   From M3 the headless CLI *is* the e2e (09). It **fails**, rather than skipping, when the driver
   is not built.
+- **`.github/workflows/workflow-drive.yml`** in the **implementation's** repo — the driver job a
+  driven run dispatches (ADR-0006). `@bffless/workflow init` writes it; `index.json`'s
+  `driver.repo` names the repo the harness's `drive` rule dispatches to. It listens on
+  `repository_dispatch` `types: [workflow-drive]` and reads `client_payload`
+  (`mode`, `run_id`, `harness_url`, and for `mode: run` a `workflow` and `inputs`), running
+  `workflow-headless run --wait park --run-id …` or `workflow-headless resume …`. It carries
+  three secrets: `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` — the `run` verb still signs in through
+  the admin relay — plus `WORKFLOW_APP_TOKEN`, optional until the app-token-only session lands
+  (apps#588). The dispatch itself is authorised by the project's CE GitHub integration (Project
+  Settings → Integrations), not by a repo secret.
 - **There is no `bffless/run-workflow` GitHub Action.** Earlier drafts of this file promised one —
   a thin `with`-inputs wrapper around the CLI. It was not built: the repo-local dispatch workflow
   is the right shape for a single monorepo, and the Action is a follow-up for the day a second
@@ -291,8 +301,8 @@ their tab; a server-side submit over the MCP endpoint re-dispatches the driver (
 ## Resume
 
 **Driven runs are the exception:** a run the driver parked is a `running` row with a `waiting`
-step and no lease; `workflow-headless resume <runId>` (or a person on the page) resumes it
-exactly as any abandoned run is resumed.
+step and no lease; `workflow-headless resume <harness-url> <run-id>` (or a person on the page)
+resumes it exactly as any abandoned run is resumed.
 
 Headless runs **do not resume**; a failed CI step re-runs the workflow. That is a rule the
 harness leans on, not just advice: a `headless: auto` **form** that was `waiting` when the run

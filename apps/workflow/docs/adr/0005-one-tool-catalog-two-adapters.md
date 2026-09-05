@@ -51,3 +51,6 @@ person, or an agent through WebMCP — and, as the long-term direction, by a ser
 showed what the engine-in-widget shape would have cost (bridge-relayed uploads, Workers, file
 reads against a per-widget origin), and the maintainer ruled the shape wrong on principle: small
 apps in the chat, the engine in the browser today and on the server tomorrow.
+
+**ADR-0006 (2026-09-05)** names the driver: the dispatched headless browser, not a server-side
+engine; this rejection stands.

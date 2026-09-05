@@ -139,12 +139,13 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
 | D21 | WebMCP on the page only: polyfill always, executors drive the store, no pipeline tools on the page | 10 |
 | D22 | The MCP endpoint is a rule in the app's rule set (stateless Streamable HTTP); prototype `function_handler` → generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` | 10, ADR-0005 |
 | D23 | Auth ladder: authless dev prototype (scratch public project) → CE user-bound scoped app tokens → OAuth 2.1 (access token = app token); `.well-known` ships as a rule, served despite deployment visibility; the visibility gate honors app tokens; per-rule `requiredScopes` enforced by `auth_required`, effective permission = member's ∩ token's | 10 |
-| D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) — a server-side driver is the long-term direction (amended 2026-09-04; the run view of 2026-09-01 was not built) | 10, ADR-0005 |
+| D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) — **driven by a dispatched headless driver** when the implementation declares one (ADR-0006) (amended 2026-09-04; the run view of 2026-09-01 was not built) | 10, ADR-0005 |
+| D25 | Driven runs: no second engine — a headless run parks at an undeclared interactive step (`wait=park`), and the harness's `drive` rule re-dispatches the implementation's Playwright job (`repository_dispatch`) to resume it; the browser owns what it claimed | 07, 10, ADR-0006 |
 
 ## What this is not
 
-- Not a server-side engine: no `on.schedule`/`on.webhook` without a browser; no secrets in
-  the browser (secrets live in pipelines).
+- Not an engine outside a browser: `on.schedule`/`on.webhook` dispatch a headless browser
+  (ADR-0006); no secrets in the browser (secrets live in pipelines).
 - Not a pipeline builder: pipelines are authored as rules-as-code in the implementation.
 - Not a replacement for bespoke apps: Studio keeps existing; `workflow-studio` is the
   proof that its pipelines are reusable by a generic harness.
