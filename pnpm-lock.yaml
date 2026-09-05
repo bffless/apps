@@ -575,7 +575,7 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1
       '@bffless/workflow-lint':
-        specifier: workspace:^1.4.0
+        specifier: workspace:^
         version: link:../workflow-lint
       jszip:
         specifier: ^3.10.1

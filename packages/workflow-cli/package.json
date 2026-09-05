@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@bffless/artifact-client": "^1.1.1",
-    "@bffless/workflow-lint": "workspace:^1.4.0",
+    "@bffless/workflow-lint": "workspace:^",
     "jszip": "^3.10.1",
     "yaml": "^2.8.0"
   },
