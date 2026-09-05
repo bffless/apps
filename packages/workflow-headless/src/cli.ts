@@ -16,6 +16,7 @@ import {
   parseArgs,
   UsageError,
   USAGE,
+  type ResumeCommand,
   type RunCommand,
   type RunsCommand,
 } from './args.js'
@@ -127,6 +128,15 @@ async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<
   }
 }
 
+// Stub: Task 6 implements resume's behaviour (drives a --wait park run home).
+// This keeps the CLI type-checking and exhaustive over `Command` in the
+// meantime, with a clear exit code (2, not a made-up 5) for anyone who runs
+// it early.
+async function doResume(command: ResumeCommand, io: CliIo): Promise<ExitCode> {
+  io.err('resume: not implemented yet (Task 6)')
+  return EXIT.USAGE
+}
+
 async function doRuns(command: RunsCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
   const credentials = command.mocks ? undefined : credentialsFromEnv(io.env)
   const browser = await (io.launch ?? launchBrowser)({})
@@ -166,7 +176,9 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     const command = parseArgs(argv)
     return command.command === 'run'
       ? await doRun(command, io, state)
-      : await doRuns(command, io, state)
+      : command.command === 'runs'
+        ? await doRuns(command, io, state)
+        : await doResume(command, io)
   } catch (error) {
     // A Ctrl-C that closed the browser aborts the in-flight call; that
     // exception is the interrupt's own wake, not a fault to report.

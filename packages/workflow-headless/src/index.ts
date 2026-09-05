@@ -72,9 +72,11 @@ export {
   loadInputs,
   parseArgs,
   parseDuration,
+  RUN_ID_PATTERN,
   UsageError,
   USAGE,
   type Command,
+  type ResumeCommand,
   type RunCommand,
   type RunsCommand,
 } from './args.js'
