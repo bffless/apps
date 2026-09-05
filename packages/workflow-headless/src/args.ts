@@ -13,6 +13,7 @@ export class UsageError extends Error {
 
 export const USAGE = `Usage: workflow-headless run <harness-url> <impl>/<workflow> --inputs <file.json> [options]
        workflow-headless runs <harness-url> <impl>/<workflow> [--last 10]
+       workflow-headless resume <harness-url> <run-id> [options]
 
 Runs one Workflow harness workflow unattended: a headless Chromium opens
 <harness-url>/<impl>/<workflow>/run?auto=1&inputs=…, follows the run through
@@ -28,6 +29,19 @@ Options (run):
                     milestone screenshots are written (default: no artifacts)
   --timeout <60m>   how long to wait for a terminal status (default 60m;
                     ms/s/m/h suffixes, a bare number is seconds)
+  --wait <mode>     fail or park: what to do when the run reaches a step
+                    that needs a person (default fail). fail waits for the
+                    run to finish and reports it failed; park hands the run
+                    back — the row stays running and the lease is released —
+                    then watches it for --grace, resuming it in this same job
+                    if the step is answered in time and exiting 0 with
+                    run.json written if it is not
+  --run-id <run_…>  the run's pre-minted id (run_ + 26 Crockford-base32
+                    characters), inserted under this id before the page opens
+                    so a --wait park run and its \`resume\` share one id
+  --grace <5m>      --wait park only: how long to keep watching a parked run
+                    for its answer, re-reading the record every 10s (default
+                    5m; 0 ends the job at the park)
   --mocks           drive the dev harness's MSW mock backend (adds &mocks=on)
                     and skip the login
   --headed          show the browser, for debugging
@@ -35,6 +49,20 @@ Options (run):
 Options (runs):
   --last <n>        how many past runs to list (default 10)
   --mocks           list the mock harness's runs, and skip the login
+
+Options (resume):
+  --out <dir>       where run.json, outputs/, steps.log, console.log and the
+                    milestone screenshots are written (default: no artifacts)
+  --timeout <60m>   how long to wait for a terminal status (default 60m;
+                    ms/s/m/h suffixes, a bare number is seconds)
+  --grace <5m>      how long to keep watching if the resumed run parks again
+                    at another step that needs a person (default 5m)
+  --mocks           drive the dev harness's MSW mock backend (adds &mocks=on)
+                    and skip the login
+  --headed          show the browser, for debugging
+
+A run that has already ended is reported at its own status without being
+opened; a run another tab or job holds the lease on is left alone (exit 5).
 
 Environment:
   WORKFLOW_EMAIL / WORKFLOW_PASSWORD   the member login the harness relays
@@ -45,7 +73,8 @@ Environment:
                                        whoever owns it
 
 Exit codes:
-  0    the run succeeded
+  0    the run succeeded, or parked (--wait park: the run waits on a person;
+       run.json says where)
   1    the run failed or was cancelled
   2    any driver-side fault: usage, an unreadable --inputs, a refused login, a
        failed upload, an unreachable harness, an unexpected error. Never a run
@@ -53,6 +82,8 @@ Exit codes:
   3    the page refused the start (bad values, bad \`inputs\`, no such workflow,
        a workflow that does not lint, discovery)
   4    the driver timed out; the run may still be going
+  5    another tab or job holds the lease (resume, or a run that resumed
+       after a park)
   130  SIGINT: the driver was interrupted. Before the run page exists it closes
        the browser and leaves; once the run is up it clicks Cancel and follows
        the run to \`cancelled\` first
@@ -68,6 +99,12 @@ export interface RunCommand {
   inputsFile: string
   out?: string
   timeoutMs: number
+  /** What to do at a step that needs a person: fail waits it out (default), park leaves the run waiting. */
+  wait: 'fail' | 'park'
+  /** The run's pre-minted id, shared with a later `resume`. */
+  runId?: string
+  /** `--wait park` only: how long a parked run is watched for its answer before the job ends. */
+  graceMs: number
   mocks: boolean
   headed: boolean
 }
@@ -81,7 +118,23 @@ export interface RunsCommand {
   mocks: boolean
 }
 
-export type Command = RunCommand | RunsCommand
+/** Drives home a run a prior `--wait park` left waiting on a person. */
+export interface ResumeCommand {
+  command: 'resume'
+  harnessUrl: string
+  runId: string
+  out?: string
+  timeoutMs: number
+  /** How long the run is watched for its answer if it parks again on this driver's watch. */
+  graceMs: number
+  mocks: boolean
+  headed: boolean
+}
+
+export type Command = RunCommand | RunsCommand | ResumeCommand
+
+/** `run_` + 26 Crockford-base32 characters (no I, L, O, U). */
+export const RUN_ID_PATTERN = /^run_[0-9A-HJKMNP-TV-Z]{26}$/
 
 const DURATION = /^(-?\d+(?:\.\d+)?)(ms|s|m|h)?$/
 
@@ -127,8 +180,49 @@ function harness(url: string | undefined): string {
 
 export function parseArgs(argv: string[]): Command {
   const verb = argv[0]
-  if (verb !== 'run' && verb !== 'runs') {
+  if (verb !== 'run' && verb !== 'runs' && verb !== 'resume') {
     throw new UsageError(verb === undefined ? 'a command is required' : `unknown command: ${verb}`)
+  }
+
+  if (verb === 'resume') {
+    const harnessUrl = harness(argv[1])
+    const id = argv[2]
+    if (id === undefined || !RUN_ID_PATTERN.test(id)) {
+      throw new UsageError('a run id is required (run_…)')
+    }
+
+    let out: string | undefined
+    let timeoutMs = 60 * 60_000
+    let graceMs = 5 * 60_000
+    let mocks = false
+    let headed = false
+
+    for (let i = 3; i < argv.length; i += 1) {
+      const flag = argv[i]!
+      if (flag === '--out') {
+        out = value(argv, i, '--out')
+        i += 1
+      } else if (flag === '--timeout') {
+        timeoutMs = parseDuration(value(argv, i, '--timeout'))
+        i += 1
+      } else if (flag === '--grace') {
+        graceMs = parseDuration(value(argv, i, '--grace'))
+        i += 1
+      } else if (flag === '--mocks') mocks = true
+      else if (flag === '--headed') headed = true
+      else throw new UsageError(`unknown option: ${flag}`)
+    }
+
+    return {
+      command: 'resume',
+      harnessUrl,
+      runId: id,
+      ...(out === undefined ? {} : { out }),
+      timeoutMs,
+      graceMs,
+      mocks,
+      headed,
+    }
   }
 
   const harnessUrl = harness(argv[1])
@@ -153,6 +247,9 @@ export function parseArgs(argv: string[]): Command {
   let inputsFile: string | undefined
   let out: string | undefined
   let timeoutMs = 60 * 60_000
+  let wait: 'fail' | 'park' = 'fail'
+  let runId: string | undefined
+  let graceMs = 5 * 60_000
   let mocks = false
   let headed = false
 
@@ -166,6 +263,19 @@ export function parseArgs(argv: string[]): Command {
       i += 1
     } else if (flag === '--timeout') {
       timeoutMs = parseDuration(value(argv, i, '--timeout'))
+      i += 1
+    } else if (flag === '--wait') {
+      const w = value(argv, i, '--wait')
+      if (w !== 'fail' && w !== 'park') throw new UsageError(`--wait: expected fail or park, got: ${w}`)
+      wait = w
+      i += 1
+    } else if (flag === '--run-id') {
+      const id = value(argv, i, '--run-id')
+      if (!RUN_ID_PATTERN.test(id)) throw new UsageError(`--run-id: not a run id (run_…): ${id}`)
+      runId = id
+      i += 1
+    } else if (flag === '--grace') {
+      graceMs = parseDuration(value(argv, i, '--grace'))
       i += 1
     } else if (flag === '--mocks') mocks = true
     else if (flag === '--headed') headed = true
@@ -184,6 +294,9 @@ export function parseArgs(argv: string[]): Command {
     inputsFile,
     ...(out === undefined ? {} : { out }),
     timeoutMs,
+    wait,
+    ...(runId === undefined ? {} : { runId }),
+    graceMs,
     mocks,
     headed,
   }

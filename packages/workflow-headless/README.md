@@ -23,6 +23,9 @@ workflow-headless run https://workflow.example.com hello/interactive \
   --inputs inputs.json --out ./run-artifacts --timeout 30m
 
 workflow-headless runs https://workflow.example.com hello/interactive --last 10
+
+workflow-headless resume https://workflow.example.com run_01M1BREJZK5V77ZRPXKTG7ZG7C \
+  --out ./run-artifacts
 ```
 
 `--inputs` is a JSON object of kickoff values keyed by the names in the
@@ -43,13 +46,20 @@ file input takes an array of paths.
 | `--inputs <file>` | the kickoff values (required) |
 | `--out <dir>` | where the artifacts are written; omit it and none are |
 | `--timeout <60m>` | how long to wait for a terminal status (`ms`/`s`/`m`/`h`; a bare number is seconds) |
+| `--wait <fail\|park>` | what to do at a step that needs a person (default `fail`); see *Driven runs* |
+| `--run-id <run_…>` | (`run`) the run's pre-minted id, so a `--wait park` run and its `resume` share one |
+| `--grace <5m>` | how long a parked run is watched for its answer before the job ends |
 | `--mocks` | drive the dev harness's MSW mock backend, and skip the login (see the note below) |
 | `--headed` | show the browser |
 | `--last <n>` | (`runs`) how many past runs to list |
 
-`--timeout` bounds the **run**. The *start* is separately capped at **120 s** inside it: a
-harness that has not published a `runId` by then is not slow, it is wrong, so a generous
-`--timeout` never turns a bad harness url into an hour of waiting.
+`--timeout` bounds each **follow leg** — from a start or a `resume` to the next park or
+terminal status — not the job as a whole: a run that parks and is later resumed can take up
+to N × `--timeout`, because a resumed run has just been answered by a person and holding it
+to what was left of the first leg's budget would time out a run that is moving. Each leg's
+*start* is separately capped at **120 s** (or `--timeout`, if shorter): a harness that has not
+published a `runId` by then is not slow, it is wrong, so a generous `--timeout` never turns a
+bad harness url into an hour of waiting.
 
 ### Environment
 
@@ -72,7 +82,9 @@ outputs/          every File-ref output, named after the output (poster.svg, pos
 steps.log         one timestamped line per status transition
 console.log       the page console
 01-start.png      the run page, just after the start settled
+01-resume.png     (resume) the run page, just after it re-opened with ?resume=1
 02-<status>.png   the run page at its terminal status
+03-parked.png     the run page at a step that needs a person (--wait park)
 failed.png        written whenever the run did not succeed
 ```
 
@@ -84,6 +96,11 @@ The run's status is `run.json.run.status`, and each step's settled status is a r
 `run.json.steps` (`{ key, status, … }`). Read verdicts from there rather than
 from `steps.log`, which is a 1 s sampler: it can miss a status a run passed
 through, so it is a narrative, not proof that something never happened.
+
+A `parked` run's own record only says the row is still `running`; which step keys it is
+waiting on is the driver's own read of the page (`currentSteps`, not a field of the record),
+reported as `parkedOn` on the library's `RunReport` and as the CLI's own
+`parked: <run id> (<step keys>)` line on stdout — not something `run.json` itself carries.
 
 An output is saved when its **value is a File ref**, not when its declared type
 is `file`: a run-level `outputs:` entry that simply forwards a step's file
@@ -102,15 +119,55 @@ asks for them. The ref itself is correct and the run is real — only a *downloa
 of a mock-uploaded input 404s. Against a deployment the bytes are in the bucket
 and this does not arise.
 
+## Driven runs (`--wait park` and `resume`)
+
+By default a run that reaches a step needing a person is followed to whatever
+the harness makes of it — for an undeclared interactive step, a failure. That
+is right for a workflow meant to be unattended and wrong for one where a human
+approval is a *step*, so `--wait park` says so:
+
+```bash
+workflow-headless run https://workflow.example.com hello/interactive \
+  --inputs inputs.json --wait park --grace 10m --out ./run-artifacts
+```
+
+At such a step the page hands the run back — the row stays `running`, and the
+lease is released so a person's tab can take it — and the driver stops driving.
+It then watches the record for `--grace`, re-reading it every 10 s:
+
+- **answered inside the window** — every parked step's row has settled and
+  nobody took the lease: the driver re-opens the run page with `?resume=1` and
+  finishes the run **in the same job**;
+- **the window ran out** — exit `0`, with `run.json` and a `parked: <run id>
+  (<step keys>)` line saying where it stopped;
+- **someone else took the lease** — a person's tab, or a second job: exit `0`
+  the same way, and the run is left to them.
+
+`resume` picks up from the second and third cases later. It is given the run id
+alone — `impl`/`workflow` come off the record — and it adopts the lease without
+a person clicking Resume, then follows the run home under the same `park` rules
+(a second interactive step parks again). A run that has already ended is
+reported at its own status without being opened; a run someone else is driving
+is exit `5`, untouched.
+
+Pair `--run-id` with `--wait park` when the id has to be known before the run
+exists — a job that posts "approve here" links, say: the kickoff page inserts
+the row under that id, and the later `resume` names the same one.
+
+The full contract for parking, the lease, and who is allowed to resume what is
+[spec 07 §"Driven runs — park and resume (ADR-0006)"](https://github.com/bffless/apps/blob/main/apps/workflow/docs/spec/07-headless.md)
+and [ADR-0006](https://github.com/bffless/apps/blob/main/apps/workflow/docs/adr/0006-driven-runs.md).
+
 ## Exit codes
 
 | code | |
 |---|---|
-| `0` | the run succeeded |
+| `0` | the run succeeded, or parked: it waits on a person and `run.json` says where |
 | `1` | the run failed or was cancelled |
 | `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault (a failed upload, an API read that would not answer, an unexpected exception) — deliberately never `1`, so `if: failure()` can tell "the run failed" from "the driver could not reach the harness" |
 | `3` | the page refused the start (`status: 'invalid'`) — bad values, an undecodable `inputs`, a workflow that does not lint or could not be read, no such implementation/workflow, or a discovery failure |
 | `4` | the driver timed out (the run may still be going) |
+| `5` | another tab or job holds the lease, so nothing was driven — retryable, and deliberately neither `1` nor `2` (reachable from `resume`, or from a `run --wait park` that resumed after its grace window and lost the race for the lease) |
 | `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first (see *Signals*) |
 
 Exit `3` is watched on `window.__workflow`, not on the `kickoff-invalid`

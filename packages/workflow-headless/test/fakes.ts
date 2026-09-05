@@ -57,9 +57,14 @@ export function helloRoutes(status: string, runId = 'run_1'): Record<string, Rou
       status: 200,
       text: 'name: Demo\non:\n  manual:\n    inputs: {}\n',
     },
+    // `impl`/`workflow` are on the row because `resume` has nothing else to go
+    // on: a run id alone does not say which run page to open.
     [`/api/workflow/run?id=${runId}`]: {
       status: 200,
-      text: JSON.stringify({ run: { runId, status, outputs: {} }, steps: [] }),
+      text: JSON.stringify({
+        run: { runId, status, impl: 'hello', workflow: 'demo', outputs: {} },
+        steps: [],
+      }),
     },
   }
 }
