@@ -168,9 +168,12 @@ works without touching a single island.
 **What an agent host is for (D24, amended 2026-09-04):** an MCP app *reports back and takes
 one input*. It never carries the run engine. A run is driven by a browser on the harness
 page — a person, or an agent through the page's own WebMCP tools (D21), which is what
-"the agent on my app, in my domain, running it" means — and, when the platform grows one,
-by a server-side driver (§Later). So over the endpoint `workflow.start`, `resume` and
-`cancel` are listed (D19) but not served: their refusal says where runs are driven.
+"the agent on my app, in my domain, running it" means — or by the implementation's own
+headless driver, a GitHub Actions job the endpoint dispatches and never hosts (ADR-0006).
+So over the endpoint `workflow.start` and `workflow.resume` are served **by dispatching the
+implementation's headless driver** (ADR-0006; `drive`, 07 §Driven runs) and answer `pending`
+until the row exists; `workflow.submitStep` re-dispatches after its write; `workflow.cancel`
+is listed (D19) but not served.
 
 The one surface an agent host renders is the **step view**, `ui://bffless/workflow/step-view.<rev>.html`
 (`<rev>` is a hash of the harness's sources, so a host that caches a widget's resource per
@@ -203,6 +206,29 @@ into the agent host's iframe and drives the run from there (the D24 of 2026-09-0
 so every upload, Worker and file read the engine makes on the harness page has to be re-plumbed
 over the bridge — and the person ruled the shape wrong regardless of price: small apps in the
 chat, the engine in the browser today and on the server tomorrow. `workflow.http` goes with it.
+
+## Driven runs over the endpoint
+
+The endpoint dispatches; it does not drive. Three tools post a body to the harness's own
+`run/drive` rule (ADR-0006), which `repository_dispatch`es the implementation's
+`workflow-drive.yml` through the project's GitHub integration; what that rule answers — a
+202 receipt, a 400 with a code from its own table, or anything else — is the whole outcome.
+The refusals a tool can decide before dispatching (it has the index or the run row in front
+of it) are said in the page's own vocabulary (D12); the rest arrive as the rule's codes.
+
+| tool | what `drive` does | refusals |
+|---|---|---|
+| `workflow.start` | posts `mode: run` with a freshly minted `runId`, `impl`, `workflow`, `inputs`; answers that id with `status: pending` | before: `No implementation here publishes that workflow`, `NO_DRIVER`, an `inputs` that is not an object. From the rule: `RUN_EXISTS`, `NO_DRIVER`, `BAD_REQUEST`; otherwise `DISPATCH_FAILED` |
+| `workflow.resume` | posts `mode: resume` for a `running` run nothing holds — the answer to an abandoned lease; answers the run's snapshot | before: `No such run`, `Run … is <status>; only a running run can be resumed`. From the rule: `RUN_NOT_FOUND`, `RUN_TERMINAL`, `LEASE_LIVE`, `NO_DRIVER`; otherwise `DISPATCH_FAILED` |
+| `workflow.submitStep` | after the step row is written, posts `mode: resume` so a driven run moves again | never an error: the write is the answer. A dispatch that did not happen is a note on the text and `dispatched: false` — `LEASE_LIVE` (a tab still has the run) reads as "resume it on the harness page" |
+| `workflow.status` | nothing | a minted id with no row reads `pending` for ten minutes (the job writes its first row in about a minute), then `No such run` |
+| `workflow.cancel` | nothing | listed (D19), not served: cancelling is a write only the surface holding the run can make |
+| `workflow.await` | nothing | not served: a stateless POST cannot wait — poll `workflow.status` |
+
+`NO_DRIVER` is the one every implementation meets first: it means the implementation's
+`index.json` publishes no `driver.repo`, so there is no `workflow-drive.yml` to reach and the
+run is started on the harness page instead. It is also what a driverless harness answers on
+the live walk (`spec10.notServedHonest`).
 
 ## Auth
 
@@ -273,14 +299,12 @@ session cookie is already on the page.
 | D21 | WebMCP on the page only: polyfill always, executors drive the store and navigate, no pipeline tools on the page, islands never register page tools |
 | D22 | The MCP endpoint is a rule in the app's rule set (`POST /api/workflow/mcp`), stateless Streamable HTTP; prototype `function_handler`, GA a generic CE `mcp_handler`; never an app-aware CE endpoint, never `/_bffless/*` |
 | D23 | Auth ladder: authless dev prototype (scratch public project) → CE user-bound scoped app tokens (Bearer = member, honored by the deployment visibility gate too) → OAuth 2.1 where the access token is an app token; `.well-known` ships as a rule and must be served despite deployment visibility; per-rule `requiredScopes` enforced by `auth_required` (sessions unscoped, tokens intersect with the member's own permissions), tool→scope map owned by the catalog |
-| D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) — a server-side driver is the long-term direction (amended 2026-09-04; the run view of 2026-09-01 was not built) |
+| D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) or by the implementation's own headless driver, which `start`/`resume`/`submitStep` dispatch and never host (ADR-0006, §Driven runs over the endpoint) — amended 2026-09-04; the run view of 2026-09-01 was not built |
 
 ## Later
 
-- **A server-side run driver** — the person's stated long-term direction (2026-09-04):
-  what would make `workflow.start` over the endpoint start a run, and `on.schedule` /
-  `on.webhook` possible; needs its own ADR (a second engine runtime to keep honest,
-  contradicts D11).
+- **`on.schedule` / `on.webhook`** — a `schedule:` block or a second `repository_dispatch`
+  type on `workflow-drive.yml`, dispatching `mode: run` (ADR-0006 DR11).
 - Per-workflow generated tools on the MCP endpoint (synthesized from `index.json` at
   `tools/list` time), for hosts where ten generic tools read worse than one named verb.
 - Dynamically registering a waiting island's own tools on the WebMCP page while the step
