@@ -169,14 +169,16 @@ export const mcp: Walk = async ({ args, env, report }) => {
       refused: brief(refused),
     })
 
-    // --- Honesty: a run this endpoint cannot dispatch says so as a tool error, never a
-    // protocol error. `workflow.start` is served (ADR-0006) — it dispatches the
-    // implementation's headless driver — but hello publishes no `driver.repo` in its
-    // `index.json`, so the honest answer here is `NO_DRIVER` and where to start it instead.
-    const start = await call('workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} })
-    report.expect('spec10.notServedHonest', start.isError === true && 'tool' in errorsOf(start) && /NO_DRIVER/.test(text(start)), {
-      note: 'workflow.start on a driverless implementation refuses with NO_DRIVER as errors.tool',
-      ...brief(start),
+    // --- Honesty: a listed tool the endpoint does not serve says so as a tool error, never
+    // a protocol error. Since ADR-0006 `workflow.start` and `workflow.resume` ARE served —
+    // they dispatch the implementation's headless driver, a real Actions job this walk must
+    // never spend now that hello publishes a `driver.repo` — so the probe is `workflow.cancel`,
+    // the one catalog tool still not served over the endpoint: its refusal names where runs
+    // are driven instead.
+    const cancel = await call('workflow.cancel', {})
+    report.expect('spec10.notServedHonest', cancel.isError === true && 'tool' in errorsOf(cancel) && /not served by the MCP endpoint/.test(text(cancel)), {
+      note: 'workflow.cancel is listed but not served; the refusal says runs are driven on the harness page',
+      ...brief(cancel),
     })
 
     // --- Resources: the step view and the islands, each with a CSP derived from the instance
