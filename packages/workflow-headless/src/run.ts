@@ -68,7 +68,8 @@ export interface RunReport {
   /**
    * `succeeded` · `failed` · `cancelled` · `invalid` (the page refused the
    * start) · `parked` (the run waits on a person; the row is still `running`)
-   * · `busy` (`resume` only: another tab or job holds the lease).
+   * · `busy` (another tab or job holds the lease — reachable from `resume`,
+   * or from `run --wait park` after a grace resume races another lease-taker).
    */
   status: string
   url: string
@@ -343,7 +344,7 @@ export async function followRun(
         // Capped at two minutes however long `--timeout` is, for the same
         // reason the first start is: a run page that has not published its
         // `runId` by then is not slow, it is wrong.
-        await waitForStart(ctx.page, { timeoutMs: 120_000, pollMs: 250 })
+        await waitForStart(ctx.page, { timeoutMs: Math.min(ctx.timeoutMs, 120_000), pollMs: 250 })
         break
       }
       // The record went terminal under us — a person finished it elsewhere.

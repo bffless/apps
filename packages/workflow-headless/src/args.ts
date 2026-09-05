@@ -82,7 +82,8 @@ Exit codes:
   3    the page refused the start (bad values, bad \`inputs\`, no such workflow,
        a workflow that does not lint, discovery)
   4    the driver timed out; the run may still be going
-  5    resume: another tab or job holds the lease
+  5    another tab or job holds the lease (resume, or a run that resumed
+       after a park)
   130  SIGINT: the driver was interrupted. Before the run page exists it closes
        the browser and leaves; once the run is up it clicks Cancel and follows
        the run to \`cancelled\` first

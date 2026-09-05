@@ -138,7 +138,7 @@ describe('exit codes', () => {
     expect(h.err).toContain(`busy: ${runId}`)
   })
 
-  test('a resume drives the run home and is 0', async () => {
+  test('an already-finished run is 0 without being opened', async () => {
     const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
     const h = withBrowser({
       globals: [

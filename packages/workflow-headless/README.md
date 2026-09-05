@@ -53,9 +53,13 @@ file input takes an array of paths.
 | `--headed` | show the browser |
 | `--last <n>` | (`runs`) how many past runs to list |
 
-`--timeout` bounds the **run**. The *start* is separately capped at **120 s** inside it: a
-harness that has not published a `runId` by then is not slow, it is wrong, so a generous
-`--timeout` never turns a bad harness url into an hour of waiting.
+`--timeout` bounds each **follow leg** — from a start or a `resume` to the next park or
+terminal status — not the job as a whole: a run that parks and is later resumed can take up
+to N × `--timeout`, because a resumed run has just been answered by a person and holding it
+to what was left of the first leg's budget would time out a run that is moving. Each leg's
+*start* is separately capped at **120 s** (or `--timeout`, if shorter): a harness that has not
+published a `runId` by then is not slow, it is wrong, so a generous `--timeout` never turns a
+bad harness url into an hour of waiting.
 
 ### Environment
 
@@ -78,6 +82,7 @@ outputs/          every File-ref output, named after the output (poster.svg, pos
 steps.log         one timestamped line per status transition
 console.log       the page console
 01-start.png      the run page, just after the start settled
+01-resume.png     (resume) the run page, just after it re-opened with ?resume=1
 02-<status>.png   the run page at its terminal status
 03-parked.png     the run page at a step that needs a person (--wait park)
 failed.png        written whenever the run did not succeed
@@ -91,6 +96,11 @@ The run's status is `run.json.run.status`, and each step's settled status is a r
 `run.json.steps` (`{ key, status, … }`). Read verdicts from there rather than
 from `steps.log`, which is a 1 s sampler: it can miss a status a run passed
 through, so it is a narrative, not proof that something never happened.
+
+A `parked` run's own record only says the row is still `running`; which step keys it is
+waiting on is the driver's own read of the page (`currentSteps`, not a field of the record),
+reported as `parkedOn` on the library's `RunReport` and as the CLI's own
+`parked: <run id> (<step keys>)` line on stdout — not something `run.json` itself carries.
 
 An output is saved when its **value is a File ref**, not when its declared type
 is `file`: a run-level `outputs:` entry that simply forwards a step's file
@@ -144,6 +154,10 @@ Pair `--run-id` with `--wait park` when the id has to be known before the run
 exists — a job that posts "approve here" links, say: the kickoff page inserts
 the row under that id, and the later `resume` names the same one.
 
+The full contract for parking, the lease, and who is allowed to resume what is
+[spec 07 §"Driven runs — park and resume (ADR-0006)"](https://github.com/bffless/apps/blob/main/apps/workflow/docs/spec/07-headless.md)
+and [ADR-0006](https://github.com/bffless/apps/blob/main/apps/workflow/docs/adr/0006-driven-runs.md).
+
 ## Exit codes
 
 | code | |
@@ -153,7 +167,7 @@ the row under that id, and the later `resume` names the same one.
 | `2` | usage, an unreadable `--inputs`, a refused login, or any other driver-side fault (a failed upload, an API read that would not answer, an unexpected exception) — deliberately never `1`, so `if: failure()` can tell "the run failed" from "the driver could not reach the harness" |
 | `3` | the page refused the start (`status: 'invalid'`) — bad values, an undecodable `inputs`, a workflow that does not lint or could not be read, no such implementation/workflow, or a discovery failure |
 | `4` | the driver timed out (the run may still be going) |
-| `5` | `resume` only: another tab or job holds the lease, so nothing was driven — retryable, and deliberately neither `1` nor `2` |
+| `5` | another tab or job holds the lease, so nothing was driven — retryable, and deliberately neither `1` nor `2` (reachable from `resume`, or from a `run --wait park` that resumed after its grace window and lost the race for the lease) |
 | `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first (see *Signals*) |
 
 Exit `3` is watched on `window.__workflow`, not on the `kickoff-invalid`
