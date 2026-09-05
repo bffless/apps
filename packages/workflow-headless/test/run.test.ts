@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
 import { EXIT } from '../src/errors.js'
-import { runWorkflow } from '../src/run.js'
-import { fakeBrowser, helloRoutes } from './fakes.js'
+import { graceVerdict, runWorkflow } from '../src/run.js'
+import { fakeBrowser, helloRoutes, type Route } from './fakes.js'
 
 const out = () => mkdtempSync(join(tmpdir(), 'wfh-run-'))
 
@@ -94,6 +94,178 @@ describe('runWorkflow — a login that never returns', () => {
     expect(existsSync(join(dir, 'failed.png'))).toBe(true)
     expect(readFileSync(join(dir, 'console.log'), 'utf8')).toContain('challenge script')
     expect(page.clicks).toContain('button[type="submit"]')
+  })
+})
+
+describe('runWorkflow — --wait park', () => {
+  /**
+   * The whole point of a driven run (DR9): the driver reaches a step that needs
+   * a person, hands the run back — the row stays `running`, the lease is
+   * released — and says where it stopped, instead of failing the run or waiting
+   * out the timeout on something no unattended process can answer.
+   */
+  const RECORD = '/api/workflow/run?id=run_1'
+  const parked = [
+    { runId: 'run_1', status: 'running', steps: { 'ask/0/answer': 'running' } },
+    { runId: 'run_1', status: 'parked', currentSteps: ['ask/0/answer'] },
+  ]
+  const record = (over: { run?: Record<string, unknown>; steps?: unknown[] } = {}): Route => ({
+    status: 200,
+    text: JSON.stringify({
+      run: {
+        runId: 'run_1',
+        status: 'running',
+        impl: 'hello',
+        workflow: 'demo',
+        leaseOwner: null,
+        leaseUntil: null,
+        outputs: {},
+        ...over.run,
+      },
+      steps: over.steps ?? [{ key: 'ask/0/answer', status: 'waiting' }],
+    }),
+  })
+  const park = (dir: string | undefined, over: Record<string, unknown> = {}) => ({
+    ...options(5_000, dir),
+    wait: 'park' as const,
+    graceMs: 0,
+    ...over,
+  })
+
+  test('a parked page ends the job at exit-zero, saying which steps wait on a person', async () => {
+    const dir = out()
+    const { browser } = fakeBrowser({ globals: parked, routes: helloRoutes('running') })
+
+    const report = await runWorkflow(park(dir), { browser, log: () => {}, warn: () => {} })
+
+    expect(report).toMatchObject({ status: 'parked', parkedOn: ['ask/0/answer'] })
+    // The record is *not* sealed and must not be reported as if it were: what
+    // run.json carries is the row as it stands, `running`, which is exactly
+    // what a later `resume` has to find.
+    const written = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as {
+      run: { status: string }
+    }
+    expect(written.run.status).toBe('running')
+    expect(readFileSync(join(dir, 'steps.log'), 'utf8')).toContain('\trun\tparked')
+  })
+
+  test('the page is told to park, and to use the pre-minted id when there is one', async () => {
+    const { browser } = fakeBrowser({ globals: parked, routes: helloRoutes('running') })
+    const plain = await runWorkflow(park(undefined), { browser, log: () => {}, warn: () => {} })
+    expect(plain.url).toContain('&wait=park')
+    expect(plain.url).not.toContain('&runId=')
+
+    const second = fakeBrowser({ globals: parked, routes: helloRoutes('running') })
+    const withId = await runWorkflow(park(undefined, { runId: 'run_1' }), {
+      browser: second.browser,
+      log: () => {},
+      warn: () => {},
+    })
+    // One id shared by the run and its `resume`, minted before the page opens.
+    expect(withId.url).toContain('&runId=run_1')
+  })
+
+  /**
+   * The grace window (DR9): the person the run is waiting on is often right
+   * there. Rather than end the job and make CI schedule a second one, the
+   * driver watches the record — and the moment every parked step has an answer
+   * and nobody else has taken the lease, it re-opens the page with `resume=1`
+   * and drives the rest of the run in the same job.
+   */
+  test('an answer inside the window is picked up: the page is resumed and the run followed home', async () => {
+    const routes = helloRoutes('running')
+    routes[RECORD] = [
+      record(),
+      // The answered read comes back as a `{ fields }` envelope, which is how
+      // the data table hands rows back through the query endpoint.
+      record({ steps: [{ fields: { key: 'ask/0/answer', status: 'succeeded' } }] }),
+      record({ run: { status: 'succeeded' } }),
+    ]
+    const { browser, page } = fakeBrowser({
+      globals: [
+        ...parked,
+        { runId: 'run_1', status: 'running' },
+        { runId: 'run_1', status: 'succeeded' },
+      ],
+      routes,
+    })
+
+    const report = await runWorkflow(park(undefined, { graceMs: 60_000 }), {
+      browser,
+      log: () => {},
+      warn: () => {},
+      sleep: async () => {},
+    })
+
+    expect(page.gotos).toContain('https://harness.test/hello/demo/runs/run_1?resume=1&wait=park')
+    expect(report.status).toBe('succeeded')
+    expect(report.parkedOn).toBeUndefined()
+  })
+
+  test('a lease taken while the driver waited is left alone', async () => {
+    const routes = helloRoutes('running')
+    routes[RECORD] = record({
+      run: { leaseOwner: 'tab_x', leaseUntil: Date.now() + 60_000 },
+      steps: [{ key: 'ask/0/answer', status: 'succeeded' }],
+    })
+    const { browser, page } = fakeBrowser({ globals: parked, routes })
+
+    const report = await runWorkflow(park(undefined, { graceMs: 60_000 }), {
+      browser,
+      log: () => {},
+      warn: () => {},
+      sleep: async () => {},
+    })
+
+    // Answered, but somebody else is driving it now — a person's tab (DR4) or a
+    // second job. Two drivers on one run is the one thing the lease exists to
+    // prevent, so this one reports the park and leaves.
+    expect(report.status).toBe('parked')
+    expect(page.gotos.some((url) => url.includes('resume=1'))).toBe(false)
+  })
+})
+
+describe('graceVerdict', () => {
+  const body = (run: Record<string, unknown>, steps: unknown[]) => ({
+    run: { runId: 'run_1', status: 'running', leaseOwner: null, leaseUntil: null, ...run },
+    steps,
+  })
+  const now = 1_700_000_000_000
+
+  test('an unanswered step is still worth waiting for', () => {
+    expect(graceVerdict(body({}, [{ key: 'ask/0/answer', status: 'waiting' }]), ['ask/0/answer'], now)).toBe('wait')
+  })
+
+  test('every parked step answered, and the lease free, is a resume', () => {
+    const answered = body({}, [
+      { key: 'ask/0/answer', status: 'succeeded' },
+      { fields: { key: 'ask/1/sign', status: 'skipped' } },
+    ])
+    expect(graceVerdict(answered, ['ask/0/answer', 'ask/1/sign'], now)).toBe('answered')
+    // One of the two still waiting is not an answer.
+    expect(graceVerdict(answered, ['ask/0/answer', 'ask/2/other'], now)).toBe('wait')
+  })
+
+  test('a live lease is `held`, whatever the steps say', () => {
+    const held = body({ leaseOwner: 'tab_x', leaseUntil: now + 1 }, [
+      { key: 'ask/0/answer', status: 'succeeded' },
+    ])
+    expect(graceVerdict(held, ['ask/0/answer'], now)).toBe('held')
+    // A lapsed lease is nobody's: the owner's tab went away.
+    expect(graceVerdict(body({ leaseOwner: 'tab_x', leaseUntil: now }, [
+      { key: 'ask/0/answer', status: 'succeeded' },
+    ]), ['ask/0/answer'], now)).toBe('answered')
+  })
+
+  test('a run that ended under the driver reports its own status', () => {
+    expect(graceVerdict(body({ status: 'cancelled' }, []), ['ask/0/answer'], now)).toBe('cancelled')
+    // Even held: a terminal run has nothing left for either driver to do.
+    expect(graceVerdict(body({ status: 'succeeded', leaseOwner: 'tab_x', leaseUntil: now + 1 }, []), [], now)).toBe('succeeded')
+  })
+
+  test('a body that is not a record at all is a wait, never a crash', () => {
+    expect(graceVerdict(null, ['ask/0/answer'], now)).toBe('wait')
+    expect(graceVerdict('<!doctype html>', ['ask/0/answer'], now)).toBe('wait')
   })
 })
 

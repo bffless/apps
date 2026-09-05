@@ -58,7 +58,7 @@ import type { UploadResponse } from '@bffless/artifact-client'
 import { resolveRuleSet } from '@bffless/workflow-lint'
 import JSZip from 'jszip'
 import { readIdentity } from '../identity.js'
-import { writeIndexBundle, type WriteResult } from '../index-bundle.js'
+import { resolveDriverRepo, writeIndexBundle, type WriteResult } from '../index-bundle.js'
 import { prepareRules } from '../prepare.js'
 
 type Print = (line: string) => void
@@ -88,6 +88,8 @@ export interface PublishArgs {
   name?: string
   /** One line about the bundle (move 1's index.json). Default: absent (buildIndex's own `''`). */
   description?: string
+  /** ADR-0006: already resolved (flag or `GITHUB_REPOSITORY`) and validated — absent when neither is set. */
+  driverRepo?: string
   dryRun: boolean
 }
 
@@ -107,6 +109,7 @@ const VALUE_FLAGS = new Set([
   '--rules',
   '--name',
   '--description',
+  '--driver-repo',
 ])
 
 /** `--dry-run` aside, every flag takes a value; publish has no positional arguments. */
@@ -127,6 +130,9 @@ export function parsePublish(rest: string[]): PublishArgs | { error: string } {
     }
   }
 
+  const driver = resolveDriverRepo(values['--driver-repo'])
+  if ('error' in driver) return { error: driver.error }
+
   return {
     apiUrl: values['--api-url'],
     project: values['--project'],
@@ -137,6 +143,7 @@ export function parsePublish(rest: string[]): PublishArgs | { error: string } {
     rules: values['--rules'],
     name: values['--name'],
     description: values['--description'],
+    driverRepo: driver.repo,
     dryRun,
   }
 }
@@ -440,9 +447,10 @@ export async function runPublish(
     // writing anything or calling out over the network.
     const commitSha = resolveCommitSha(cwd)
     const descriptionFlag = description !== undefined ? ` --description "${description}"` : ''
+    const driverRepoFlag = parsed.driverRepo !== undefined ? ` --driver-repo ${parsed.driverRepo}` : ''
     out(`workflow publish (dry run) — alias=${alias} harness-alias=${parsed.harnessAlias} project=${project} api-url=${apiUrl}`)
     out(
-      `  1. index      ${workflowsDir} --out ${outPath} --impl ${alias} --name "${name}"${descriptionFlag} --rules ${rulesDir} --path-prefix ${pathPrefix}`,
+      `  1. index      ${workflowsDir} --out ${outPath} --impl ${alias} --name "${name}"${descriptionFlag}${driverRepoFlag} --rules ${rulesDir} --path-prefix ${pathPrefix}`,
     )
     out(`  2. prepare    ${rulesDir} -> <tmp>/${alias} (rename ruleset.yaml name: to "${alias}"; forwarder /w/${alias}/* -> ${targetUrl})`)
     out(
@@ -477,7 +485,7 @@ export async function runPublish(
   }
   let indexed: WriteResult
   try {
-    indexed = writeIndexBundle({ workflowsDir, out: outPath, impl: alias, name, description }, rules)
+    indexed = writeIndexBundle({ workflowsDir, out: outPath, impl: alias, name, description, driverRepo: parsed.driverRepo }, rules)
   } catch (e) {
     err(`workflow: ${(e as Error).message}`)
     return 2

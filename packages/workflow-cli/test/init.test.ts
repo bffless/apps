@@ -182,6 +182,15 @@ describe('runInit', () => {
     expect(preview).toContain('alias: studio-pr-${{ github.event.number }}')
     expect(preview).toContain('path: impl/dist')
 
+    // Generated workflow-drive.yml is one per repo — no alias placeholders in it.
+    const drive = readFileSync(join(cwd, '.github/workflows/workflow-drive.yml'), 'utf8')
+    expect(drive).toContain('repository_dispatch')
+    expect(drive).toContain('types: [workflow-drive]')
+    expect(drive).toContain('workflow-headless')
+    expect(drive).toContain('WORKFLOW_APP_TOKEN')
+    expect(drive).toContain('WORKFLOW_EMAIL')
+    expect(drive).not.toMatch(/__[A-Z_]+__/)
+
     // The source tree is untouched.
     expect(readIdentity(join(src, 'workflows/hello'))).toEqual({ alias: 'hello', harness: 'workflow' })
     expect(existsSync(join(src, 'workflows/hello/.bffless/proxy-rules/hello'))).toBe(true)
@@ -191,6 +200,7 @@ describe('runInit', () => {
     expect(out).toMatch(/rename .*proxy-rules\/hello.*proxy-rules\/studio/)
     expect(out).toContain('generate .github/workflows/deploy-studio.yml')
     expect(out).toContain('generate .github/workflows/preview-studio.yml')
+    expect(out).toContain('generate .github/workflows/workflow-drive.yml')
     expect(out).toContain('BFFLESS_API_KEY')
   })
 
@@ -216,6 +226,7 @@ describe('runInit', () => {
     expect(out).toMatch(/\(dry run\) rename .*proxy-rules\/hello.*proxy-rules\/studio/)
     expect(out).toContain('(dry run) generate .github/workflows/deploy-studio.yml')
     expect(out).toContain('(dry run) generate .github/workflows/preview-studio.yml')
+    expect(out).toContain('(dry run) generate .github/workflows/workflow-drive.yml')
   })
 
   test('missing --project exits 2 when workflow generation would happen, and writes nothing', () => {
@@ -350,6 +361,7 @@ describe('runInit', () => {
     )
     expect(first).toBe(0)
     writeFileSync(join(cwd, '.github/workflows/deploy-studio.yml'), 'hand-edited\n')
+    writeFileSync(join(cwd, '.github/workflows/workflow-drive.yml'), 'hand-edited-drive\n')
 
     const src2 = monorepoSource()
     const lines: string[] = []
@@ -361,7 +373,9 @@ describe('runInit', () => {
     )
     expect(second).toBe(0)
     expect(readFileSync(join(cwd, '.github/workflows/deploy-studio.yml'), 'utf8')).toBe('hand-edited\n')
+    expect(readFileSync(join(cwd, '.github/workflows/workflow-drive.yml'), 'utf8')).toBe('hand-edited-drive\n')
     expect(lines.join('\n')).toContain('skip .github/workflows/deploy-studio.yml (already exists)')
+    expect(lines.join('\n')).toContain('skip .github/workflows/workflow-drive.yml (already exists)')
   })
 })
 

@@ -22,6 +22,7 @@ var __mcp = (() => {
   // src/mcp/reply.ts
   var reply_exports = {};
   __export(reply_exports, {
+    PENDING_WINDOW_MS: () => PENDING_WINDOW_MS,
     agentHostHint: () => agentHostHint,
     handler: () => handler,
     resourcesList: () => resourcesList,
@@ -167,7 +168,7 @@ var __mcp = (() => {
   var DESCRIPTIONS = {
     "workflow.list": "List the implementations published to this harness and their workflows, each with its `headlessSafe` mark (whether every interactive step declares what to do without a person).",
     "workflow.describe": "Describe one workflow before deciding a run can complete without a person: its inputs (types, required, defaults), its outputs, the job/step graph in dependency order, and each interactive step\u2019s `headless` declaration.",
-    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. Returns the run id and its first snapshot, and moves the page to the run.",
+    "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation\u2019s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.",
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src).",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
     "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
@@ -175,7 +176,7 @@ var __mcp = (() => {
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.",
     "workflow.cancel": "Cancel the run. Server-side pipeline jobs already enqueued keep running.",
-    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease) so this surface drives it from here \u2014 how an agent adopts a run another tab or host abandoned."
+    "workflow.resume": "Take over a `running` run whose driver went away (an expired lease). On the harness page this surface drives it from here. Over the MCP endpoint it dispatches the implementation\u2019s headless driver to resume the run \u2014 how a run answered here continues without a person on the page."
   };
   var SCHEMAS = {
     "workflow.list": LIST_SCHEMA,
@@ -290,6 +291,8 @@ var __mcp = (() => {
   function snapshotText(snapshot) {
     if (snapshot.status === "invalid")
       return "No run was started";
+    if (snapshot.status === "pending")
+      return `Run ${snapshot.runId} is pending \u2014 dispatched, not started yet`;
     return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`;
   }
 
@@ -1265,18 +1268,18 @@ ${indent}${text.slice(fold + 1, end2)}`;
   }
   function consumeMoreIndentedLines(text, i, indent) {
     let end = i;
-    let start = i + 1;
-    let ch = text[start];
+    let start2 = i + 1;
+    let ch = text[start2];
     while (ch === " " || ch === "	") {
-      if (i < start + indent) {
+      if (i < start2 + indent) {
         ch = text[++i];
       } else {
         do {
           ch = text[++i];
         } while (ch && ch !== "\n");
         end = i;
-        start = i + 1;
-        ch = text[start];
+        start2 = i + 1;
+        ch = text[start2];
       }
     }
     return end;
@@ -1296,12 +1299,12 @@ ${indent}${text.slice(fold + 1, end2)}`;
     const strLen = str3.length;
     if (strLen <= limit)
       return false;
-    for (let i = 0, start = 0; i < strLen; ++i) {
+    for (let i = 0, start2 = 0; i < strLen; ++i) {
       if (str3[i] === "\n") {
-        if (i - start > limit)
+        if (i - start2 > limit)
           return true;
-        start = i + 1;
-        if (strLen - start <= limit)
+        start2 = i + 1;
+        if (strLen - start2 <= limit)
           return false;
       }
     }
@@ -1315,19 +1318,19 @@ ${indent}${text.slice(fold + 1, end2)}`;
     const minMultiLineLength = ctx.options.doubleQuotedMinMultiLineLength;
     const indent = ctx.indent || (containsDocumentMarker(value) ? "  " : "");
     let str3 = "";
-    let start = 0;
+    let start2 = 0;
     for (let i = 0, ch = json[i]; ch; ch = json[++i]) {
       if (ch === " " && json[i + 1] === "\\" && json[i + 2] === "n") {
-        str3 += json.slice(start, i) + "\\ ";
+        str3 += json.slice(start2, i) + "\\ ";
         i += 1;
-        start = i;
+        start2 = i;
         ch = "\\";
       }
       if (ch === "\\")
         switch (json[i + 1]) {
           case "u":
             {
-              str3 += json.slice(start, i);
+              str3 += json.slice(start2, i);
               const code = json.substr(i + 2, 4);
               switch (code) {
                 case "0000":
@@ -1361,14 +1364,14 @@ ${indent}${text.slice(fold + 1, end2)}`;
                     str3 += json.substr(i, 6);
               }
               i += 5;
-              start = i + 1;
+              start2 = i + 1;
             }
             break;
           case "n":
             if (implicitKey || json[i + 2] === '"' || json.length < minMultiLineLength) {
               i += 1;
             } else {
-              str3 += json.slice(start, i) + "\n\n";
+              str3 += json.slice(start2, i) + "\n\n";
               while (json[i + 2] === "\\" && json[i + 3] === "n" && json[i + 4] !== '"') {
                 str3 += "\n";
                 i += 2;
@@ -1377,14 +1380,14 @@ ${indent}${text.slice(fold + 1, end2)}`;
               if (json[i + 2] === " ")
                 str3 += "\\";
               i += 1;
-              start = i + 1;
+              start2 = i + 1;
             }
             break;
           default:
             i += 1;
         }
     }
-    str3 = start ? str3 + json.slice(start) : json;
+    str3 = start2 ? str3 + json.slice(start2) : json;
     return implicitKey ? str3 : foldFlowLines(str3, indent, FOLD_QUOTED, getFoldOptions(ctx, false));
   }
   function singleQuotedString(value, ctx) {
@@ -1463,10 +1466,10 @@ ${indent}`) + "'";
       else
         break;
     }
-    let start = value.substring(0, startNlPos < startEnd ? startNlPos + 1 : startEnd);
-    if (start) {
-      value = value.substring(start.length);
-      start = start.replace(/\n+/g, `$&${indent}`);
+    let start2 = value.substring(0, startNlPos < startEnd ? startNlPos + 1 : startEnd);
+    if (start2) {
+      value = value.substring(start2.length);
+      start2 = start2.replace(/\n+/g, `$&${indent}`);
     }
     const indentSize = indent ? "2" : "1";
     let header = (startWithSpace ? indentSize : "") + chomp;
@@ -1484,14 +1487,14 @@ ${indent}`) + "'";
           literalFallback = true;
         };
       }
-      const body = foldFlowLines(`${start}${foldedValue}${end}`, indent, FOLD_BLOCK, foldOptions);
+      const body = foldFlowLines(`${start2}${foldedValue}${end}`, indent, FOLD_BLOCK, foldOptions);
       if (!literalFallback)
         return `>${header}
 ${indent}${body}`;
     }
     value = value.replace(/\n+/g, `$&${indent}`);
     return `|${header}
-${indent}${start}${value}${end}`;
+${indent}${start2}${value}${end}`;
   }
   function plainString(item, ctx, onComment, onChompKeep) {
     const { type, value } = item;
@@ -2045,23 +2048,23 @@ ${indent}${line}` : "\n";
       lines.push(str3);
       linesAtValue = lines.length;
     }
-    const { start, end } = flowChars;
+    const { start: start2, end } = flowChars;
     if (lines.length === 0) {
-      return start + end;
+      return start2 + end;
     } else {
       if (!reqNewline) {
         const len = lines.reduce((sum, line) => sum + line.length + 2, 2);
         reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
       }
       if (reqNewline) {
-        let str3 = start;
+        let str3 = start2;
         for (const line of lines)
           str3 += line ? `
 ${indentStep}${indent}${line}` : "\n";
         return `${str3}
 ${indent}${end}`;
       } else {
-        return `${start}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
+        return `${start2}${fcPadding}${lines.join(" ")}${fcPadding}${end}`;
       }
     }
   }
@@ -3569,7 +3572,7 @@ ${pointer}
     let newlineAfterProp = null;
     let comma = null;
     let found = null;
-    let start = null;
+    let start2 = null;
     for (const token of tokens) {
       if (reqSpace) {
         if (token.type !== "space" && token.type !== "newline" && token.type !== "comma")
@@ -3621,7 +3624,7 @@ ${pointer}
           if (token.source.endsWith(":"))
             onError(token.offset + token.source.length - 1, "BAD_ALIAS", "Anchor ending in : is ambiguous", true);
           anchor = token;
-          start ?? (start = token.offset);
+          start2 ?? (start2 = token.offset);
           atNewline = false;
           hasSpace = false;
           reqSpace = true;
@@ -3630,7 +3633,7 @@ ${pointer}
           if (tag)
             onError(token, "MULTIPLE_TAGS", "A node can have at most one tag");
           tag = token;
-          start ?? (start = token.offset);
+          start2 ?? (start2 = token.offset);
           atNewline = false;
           hasSpace = false;
           reqSpace = true;
@@ -3678,7 +3681,7 @@ ${pointer}
       tag,
       newlineAfterProp,
       end,
-      start: start ?? end
+      start: start2 ?? end
     };
   }
 
@@ -3748,8 +3751,8 @@ ${pointer}
     let offset = bm.offset;
     let commentEnd = null;
     for (const collItem of bm.items) {
-      const { start, key, sep, value } = collItem;
-      const keyProps = resolveProps(start, {
+      const { start: start2, key, sep, value } = collItem;
+      const keyProps = resolveProps(start2, {
         indicator: "explicit-key-ind",
         next: key ?? sep?.[0],
         offset,
@@ -3776,14 +3779,14 @@ ${pointer}
           continue;
         }
         if (keyProps.newlineAfterProp || containsNewline(key)) {
-          onError(key ?? start[start.length - 1], "MULTILINE_IMPLICIT_KEY", "Implicit keys need to be on a single line");
+          onError(key ?? start2[start2.length - 1], "MULTILINE_IMPLICIT_KEY", "Implicit keys need to be on a single line");
         }
       } else if (keyProps.found?.indent !== bm.indent) {
         onError(offset, "BAD_INDENT", startColMsg);
       }
       ctx.atKey = true;
       const keyStart = keyProps.end;
-      const keyNode = key ? composeNode2(ctx, key, keyProps, onError) : composeEmptyNode2(ctx, keyStart, start, null, keyProps, onError);
+      const keyNode = key ? composeNode2(ctx, key, keyProps, onError) : composeEmptyNode2(ctx, keyStart, start2, null, keyProps, onError);
       if (ctx.schema.compat)
         flowIndentCheck(bm.indent, key, onError);
       ctx.atKey = false;
@@ -3844,8 +3847,8 @@ ${pointer}
       ctx.atKey = false;
     let offset = bs.offset;
     let commentEnd = null;
-    for (const { start, value } of bs.items) {
-      const props = resolveProps(start, {
+    for (const { start: start2, value } of bs.items) {
+      const props = resolveProps(start2, {
         indicator: "seq-item-ind",
         next: value,
         offset,
@@ -3866,7 +3869,7 @@ ${pointer}
           continue;
         }
       }
-      const node = value ? composeNode2(ctx, value, props, onError) : composeEmptyNode2(ctx, props.end, start, null, props, onError);
+      const node = value ? composeNode2(ctx, value, props, onError) : composeEmptyNode2(ctx, props.end, start2, null, props, onError);
       if (ctx.schema.compat)
         flowIndentCheck(bs.indent, value, onError);
       offset = node.range[2];
@@ -3930,8 +3933,8 @@ ${pointer}
     let offset = fc.offset + fc.start.source.length;
     for (let i = 0; i < fc.items.length; ++i) {
       const collItem = fc.items[i];
-      const { start, key, sep, value } = collItem;
-      const props = resolveProps(start, {
+      const { start: start2, key, sep, value } = collItem;
+      const props = resolveProps(start2, {
         flow: fcName,
         indicator: "explicit-key-ind",
         next: key ?? sep?.[0],
@@ -3971,7 +3974,7 @@ ${pointer}
           onError(props.start, "MISSING_CHAR", `Missing , between ${fcName} items`);
         if (props.comment) {
           let prevItemComment = "";
-          loop: for (const st of start) {
+          loop: for (const st of start2) {
             switch (st.type) {
               case "comma":
               case "space":
@@ -4004,7 +4007,7 @@ ${pointer}
       } else {
         ctx.atKey = true;
         const keyStart = props.end;
-        const keyNode = key ? composeNode2(ctx, key, props, onError) : composeEmptyNode2(ctx, keyStart, start, null, props, onError);
+        const keyNode = key ? composeNode2(ctx, key, props, onError) : composeEmptyNode2(ctx, keyStart, start2, null, props, onError);
         if (isBlock(key))
           onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
         ctx.atKey = false;
@@ -4147,10 +4150,10 @@ ${pointer}
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/compose/resolve-block-scalar.js
   function resolveBlockScalar(ctx, scalar, onError) {
-    const start = scalar.offset;
+    const start2 = scalar.offset;
     const header = parseBlockScalarHeader(scalar, ctx.options.strict, onError);
     if (!header)
-      return { value: "", type: null, comment: "", range: [start, start, start] };
+      return { value: "", type: null, comment: "", range: [start2, start2, start2] };
     const type = header.mode === ">" ? Scalar.BLOCK_FOLDED : Scalar.BLOCK_LITERAL;
     const lines = scalar.source ? splitLines(scalar.source) : [];
     let chompStart = lines.length;
@@ -4163,10 +4166,10 @@ ${pointer}
     }
     if (chompStart === 0) {
       const value2 = header.chomp === "+" && lines.length > 0 ? "\n".repeat(Math.max(1, lines.length - 1)) : "";
-      let end2 = start + header.length;
+      let end2 = start2 + header.length;
       if (scalar.source)
         end2 += scalar.source.length;
-      return { value: value2, type, comment: header.comment, range: [start, end2, end2] };
+      return { value: value2, type, comment: header.comment, range: [start2, end2, end2] };
     }
     let trimIndent = scalar.indent + header.indent;
     let offset = scalar.offset + header.length;
@@ -4247,8 +4250,8 @@ ${pointer}
       default:
         value += "\n";
     }
-    const end = start + header.length + scalar.source.length;
-    return { value, type, comment: header.comment, range: [start, end, end] };
+    const end = start2 + header.length + scalar.source.length;
+    return { value, type, comment: header.comment, range: [start2, end, end] };
   }
   function parseBlockScalarHeader({ offset, props }, strict, onError) {
     if (props[0].type !== "block-scalar-header") {
@@ -4722,7 +4725,7 @@ ${pointer}
   }
 
   // ../../node_modules/.pnpm/yaml@2.9.0/node_modules/yaml/browser/dist/compose/compose-doc.js
-  function composeDoc(options, directives, { offset, start, value, end }, onError) {
+  function composeDoc(options, directives, { offset, start: start2, value, end }, onError) {
     const opts = Object.assign({ _directives: directives }, options);
     const doc = new Document(void 0, opts);
     const ctx = {
@@ -4732,7 +4735,7 @@ ${pointer}
       options: doc.options,
       schema: doc.schema
     };
-    const props = resolveProps(start, {
+    const props = resolveProps(start2, {
       indicator: "doc-start",
       next: value ?? end?.[0],
       offset,
@@ -4745,7 +4748,7 @@ ${pointer}
       if (value && (value.type === "block-map" || value.type === "block-seq") && !props.hasNewline)
         onError(props.end, "MISSING_CHAR", "Block collection cannot start on same line with directives-end marker");
     }
-    doc.contents = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, start, null, props, onError);
+    doc.contents = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, start2, null, props, onError);
     const contentEnd = doc.contents.range[2];
     const re = resolveEnd(end, contentEnd, false, onError);
     if (re.comment)
@@ -5669,8 +5672,8 @@ ${end.comment}` : end.comment;
           return { line: low + 1, col: 1 };
         if (low === 0)
           return { line: 0, col: offset };
-        const start = this.lineStarts[low - 1];
-        return { line: low, col: offset - start + 1 };
+        const start2 = this.lineStarts[low - 1];
+        return { line: low, col: offset - start2 + 1 };
       };
     }
   };
@@ -6039,7 +6042,7 @@ ${end.comment}` : end.comment;
     *scalar(scalar) {
       if (this.type === "map-value-ind") {
         const prev = getPrevProps(this.peek(2));
-        const start = getFirstKeyStartProps(prev);
+        const start2 = getFirstKeyStartProps(prev);
         let sep;
         if (scalar.end) {
           sep = scalar.end;
@@ -6051,7 +6054,7 @@ ${end.comment}` : end.comment;
           type: "block-map",
           offset: scalar.offset,
           indent: scalar.indent,
-          items: [{ start, key: scalar, sep }]
+          items: [{ start: start2, key: scalar, sep }]
         };
         this.onKeyLine = true;
         this.stack[this.stack.length - 1] = map2;
@@ -6126,7 +6129,7 @@ ${end.comment}` : end.comment;
       if (this.indent >= map2.indent) {
         const atMapIndent = !this.onKeyLine && this.indent === map2.indent;
         const atNextItem = atMapIndent && (it.sep || it.explicitKey) && this.type !== "seq-item-ind";
-        let start = [];
+        let start2 = [];
         if (atNextItem && it.sep && !it.value) {
           const nl = [];
           for (let i = 0; i < it.sep.length; ++i) {
@@ -6146,14 +6149,14 @@ ${end.comment}` : end.comment;
             }
           }
           if (nl.length >= 2)
-            start = it.sep.splice(nl[1]);
+            start2 = it.sep.splice(nl[1]);
         }
         switch (this.type) {
           case "anchor":
           case "tag":
             if (atNextItem || it.value) {
-              start.push(this.sourceToken);
-              map2.items.push({ start });
+              start2.push(this.sourceToken);
+              map2.items.push({ start: start2 });
               this.onKeyLine = true;
             } else if (it.sep) {
               it.sep.push(this.sourceToken);
@@ -6166,8 +6169,8 @@ ${end.comment}` : end.comment;
               it.start.push(this.sourceToken);
               it.explicitKey = true;
             } else if (atNextItem || it.value) {
-              start.push(this.sourceToken);
-              map2.items.push({ start, explicitKey: true });
+              start2.push(this.sourceToken);
+              map2.items.push({ start: start2, explicitKey: true });
             } else {
               this.stack.push({
                 type: "block-map",
@@ -6184,12 +6187,12 @@ ${end.comment}` : end.comment;
                 if (includesToken(it.start, "newline")) {
                   Object.assign(it, { key: null, sep: [this.sourceToken] });
                 } else {
-                  const start2 = getFirstKeyStartProps(it.start);
+                  const start3 = getFirstKeyStartProps(it.start);
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key: null, sep: [this.sourceToken] }]
+                    items: [{ start: start3, key: null, sep: [this.sourceToken] }]
                   });
                 }
               } else if (it.value) {
@@ -6199,10 +6202,10 @@ ${end.comment}` : end.comment;
                   type: "block-map",
                   offset: this.offset,
                   indent: this.indent,
-                  items: [{ start, key: null, sep: [this.sourceToken] }]
+                  items: [{ start: start2, key: null, sep: [this.sourceToken] }]
                 });
               } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
-                const start2 = getFirstKeyStartProps(it.start);
+                const start3 = getFirstKeyStartProps(it.start);
                 const key = it.key;
                 const sep = it.sep;
                 sep.push(this.sourceToken);
@@ -6212,10 +6215,10 @@ ${end.comment}` : end.comment;
                   type: "block-map",
                   offset: this.offset,
                   indent: this.indent,
-                  items: [{ start: start2, key, sep }]
+                  items: [{ start: start3, key, sep }]
                 });
-              } else if (start.length > 0) {
-                it.sep = it.sep.concat(start, this.sourceToken);
+              } else if (start2.length > 0) {
+                it.sep = it.sep.concat(start2, this.sourceToken);
               } else {
                 it.sep.push(this.sourceToken);
               }
@@ -6223,7 +6226,7 @@ ${end.comment}` : end.comment;
               if (!it.sep) {
                 Object.assign(it, { key: null, sep: [this.sourceToken] });
               } else if (it.value || atNextItem) {
-                map2.items.push({ start, key: null, sep: [this.sourceToken] });
+                map2.items.push({ start: start2, key: null, sep: [this.sourceToken] });
               } else if (includesToken(it.sep, "map-value-ind")) {
                 this.stack.push({
                   type: "block-map",
@@ -6243,7 +6246,7 @@ ${end.comment}` : end.comment;
           case "double-quoted-scalar": {
             const fs = this.flowScalar(this.type);
             if (atNextItem || it.value) {
-              map2.items.push({ start, key: fs, sep: [] });
+              map2.items.push({ start: start2, key: fs, sep: [] });
               this.onKeyLine = true;
             } else if (it.sep) {
               this.stack.push(fs);
@@ -6267,7 +6270,7 @@ ${end.comment}` : end.comment;
                   return;
                 }
               } else if (atMapIndent) {
-                map2.items.push({ start });
+                map2.items.push({ start: start2 });
               }
               this.stack.push(bv);
               return;
@@ -6404,7 +6407,7 @@ ${end.comment}` : end.comment;
           yield* this.step();
         } else if (this.type === "map-value-ind" && parent.type !== "flow-collection") {
           const prev = getPrevProps(parent);
-          const start = getFirstKeyStartProps(prev);
+          const start2 = getFirstKeyStartProps(prev);
           fixFlowSeqItems(fc);
           const sep = fc.end.splice(1, fc.end.length);
           sep.push(this.sourceToken);
@@ -6412,7 +6415,7 @@ ${end.comment}` : end.comment;
             type: "block-map",
             offset: fc.offset,
             indent: fc.indent,
-            items: [{ start, key: fc, sep }]
+            items: [{ start: start2, key: fc, sep }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map2;
@@ -6471,35 +6474,35 @@ ${end.comment}` : end.comment;
         case "explicit-key-ind": {
           this.onKeyLine = true;
           const prev = getPrevProps(parent);
-          const start = getFirstKeyStartProps(prev);
-          start.push(this.sourceToken);
+          const start2 = getFirstKeyStartProps(prev);
+          start2.push(this.sourceToken);
           return {
             type: "block-map",
             offset: this.offset,
             indent: this.indent,
-            items: [{ start, explicitKey: true }]
+            items: [{ start: start2, explicitKey: true }]
           };
         }
         case "map-value-ind": {
           this.onKeyLine = true;
           const prev = getPrevProps(parent);
-          const start = getFirstKeyStartProps(prev);
+          const start2 = getFirstKeyStartProps(prev);
           return {
             type: "block-map",
             offset: this.offset,
             indent: this.indent,
-            items: [{ start, key: null, sep: [this.sourceToken] }]
+            items: [{ start: start2, key: null, sep: [this.sourceToken] }]
           };
         }
       }
       return null;
     }
-    atIndentedComment(start, indent) {
+    atIndentedComment(start2, indent) {
       if (this.type !== "comment")
         return false;
       if (this.indent <= indent)
         return false;
-      return start.every((st) => st.type === "newline" || st.type === "space");
+      return start2.every((st) => st.type === "newline" || st.type === "space");
     }
     *documentEnd(docEnd) {
       if (this.type !== "doc-mode") {
@@ -6792,6 +6795,14 @@ ${end.comment}` : end.comment;
     const base = file.split("/").pop() ?? file;
     return base.replace(/\.workflow\.ya?ml$/i, "").replace(/\.ya?ml$/i, "");
   }
+  var CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  var RUN_ID_PATTERN = /^run_[0-9A-HJKMNP-TV-Z]{26}$/;
+  function runIdTime(runId) {
+    if (!RUN_ID_PATTERN.test(runId)) return null;
+    let t = 0;
+    for (const ch of runId.slice(4, 14)) t = t * 32 + CROCKFORD.indexOf(ch);
+    return t;
+  }
 
   // src/mcp/refusals.ts
   var REFUSALS = {
@@ -6817,6 +6828,11 @@ ${end.comment}` : end.comment;
   function fieldsOf(row) {
     const fields = row.fields;
     return isPlainObject3(fields) && Object.keys(fields).length > 0 ? fields : row;
+  }
+  function stepUpdated(update) {
+    if (update === void 0 || update === null) return false;
+    if (isPlainObject3(update) && update.success === false) return false;
+    return true;
   }
   function runsWithWaiting(runRows, waitingRows) {
     const waiting = /* @__PURE__ */ new Map();
@@ -6854,7 +6870,8 @@ ${end.comment}` : end.comment;
   }
 
   // src/mcp/reply.ts
-  var NOT_SERVED = /* @__PURE__ */ new Set(["workflow.start", "workflow.cancel", "workflow.resume"]);
+  var NOT_SERVED = /* @__PURE__ */ new Set(["workflow.cancel"]);
+  var PENDING_WINDOW_MS = 10 * 6e4;
   var WRITE_TOOLS = /* @__PURE__ */ new Set(["workflow.submit", "workflow.annotate", "workflow.submitStep"]);
   var RUNS_DEFAULT = 20;
   var RUNS_MAX = 50;
@@ -6865,9 +6882,7 @@ ${end.comment}` : end.comment;
   function str2(value) {
     return typeof value === "string" && value !== "" ? value : void 0;
   }
-  function jsonBody(step) {
-    if (step?.ok !== true) return null;
-    const body = step.body;
+  function bodyObject(body) {
     if (isPlainObject4(body)) return body;
     if (typeof body === "string") {
       try {
@@ -6878,6 +6893,9 @@ ${end.comment}` : end.comment;
       }
     }
     return null;
+  }
+  function jsonBody(step) {
+    return step?.ok === true ? bodyObject(step.body) : null;
   }
   function refuse(key, message, extra = {}) {
     return errorResult(message, { errors: { [key]: message }, ...extra });
@@ -6973,7 +6991,7 @@ To let the person complete ${step.key} here, call workflow.submitStep { runId: "
   }
   function status(route, steps) {
     const resolved = resolveRun(route, steps);
-    if (!resolved.ok) return resolved.result;
+    if (!resolved.ok) return pendingOr(route, resolved.result);
     const snapshot = snapshotOf(resolved.run, resolved.stepRows);
     return textResult(snapshotText(snapshot) + agentHostHint(route.runId, snapshot), { ...snapshot });
   }
@@ -7017,11 +7035,6 @@ ${lines.join("\n")}`,
     const url = str2(steps.signed?.url);
     if (url === void 0) return refuse("path", `${route.signPath}: the sign rule returned no url`);
     return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN });
-  }
-  function stepUpdated(update) {
-    if (update === void 0 || update === null) return false;
-    if (isPlainObject4(update) && update.success === false) return false;
-    return true;
   }
   function declaredStep2(definition, job, stepId) {
     if (!isPlainObject4(definition) || !isPlainObject4(definition.jobs)) return void 0;
@@ -7100,6 +7113,78 @@ ${lines.join("\n")}`,
     if (answer.ok !== true) return pipelineError(plan.pipelineUrl, status2, answer.body);
     return pipelineResult(answer.body);
   }
+  function pendingSnapshot(runId) {
+    return { runId, status: "pending", currentSteps: [], outputs: {}, steps: {}, waitingOn: [] };
+  }
+  function pendingOr(route, refusal) {
+    const minted = runIdTime(route.runId);
+    if (minted === null || Math.abs(Date.now() - minted) > PENDING_WINDOW_MS) return refusal;
+    const snapshot = pendingSnapshot(route.runId);
+    return textResult(`${snapshotText(snapshot)}. Poll again.`, { ...snapshot });
+  }
+  function driveOutcome(steps, dispatched) {
+    const drive = steps.drive;
+    const status2 = typeof drive?.status === "number" ? drive.status : 0;
+    if (status2 === 202) return dispatched();
+    const body = bodyObject(drive?.body) ?? {};
+    if (status2 === 400) {
+      const code = typeof body.code === "string" ? body.code : "BAD_REQUEST";
+      const message = typeof body.message === "string" ? body.message : "the drive rule refused this dispatch";
+      return errorResult(`${code}: ${message}`, { errors: { drive: code } });
+    }
+    const said = status2 === 0 ? "did not answer" : `answered ${status2}`;
+    return errorResult(`DISPATCH_FAILED: the drive rule ${said} \u2014 nothing was dispatched; run it on the harness page instead`, {
+      errors: { drive: "DISPATCH_FAILED" }
+    });
+  }
+  function driveErrorKey(message) {
+    if (message === REFUSALS.noWorkflow) return "workflow";
+    return message.indexOf("NO_DRIVER") === 0 ? "tool" : "inputs";
+  }
+  function start(route, steps) {
+    if (route.impl === "") return refuse("impl", "`impl` is required");
+    if (route.workflow === "") return refuse("workflow", "`workflow` is required");
+    if (!route.isStart) return refuse("discovery", REFUSALS.discovery);
+    const plan = steps.plan;
+    if (!plan) return refuse("tool", "the plan step did not run");
+    if (plan.driveError !== "") return refuse(driveErrorKey(plan.driveError), plan.driveError);
+    const { runId } = plan;
+    return driveOutcome(
+      steps,
+      () => textResult(
+        `Dispatched run ${runId} of ${route.impl}/${route.workflow} to its driver; pending \u2014 the row appears when the job starts (about a minute). Poll workflow.status; when it reports waiting, complete the step here with workflow.submitStep.`,
+        { ...pendingSnapshot(runId), pending: true }
+      )
+    );
+  }
+  function resume(route, steps) {
+    const resolved = resolveRun(route, steps);
+    if (!resolved.ok) return resolved.result;
+    const plan = steps.plan;
+    if (!plan) return refuse("tool", "the plan step did not run");
+    if (plan.driveError !== "") return refuse("runId", plan.driveError);
+    const snapshot = snapshotOf(resolved.run, resolved.stepRows);
+    return driveOutcome(
+      steps,
+      () => textResult(
+        `Dispatched a driver to resume ${route.runId}; it takes the run over when the job starts (about a minute). Poll workflow.status; when it reports waiting, complete the step here with workflow.submitStep.`,
+        { ...snapshot, dispatched: true }
+      )
+    );
+  }
+  function withDriveNote(verdict, steps) {
+    if (steps.plan?.isDrive !== true) return verdict;
+    const drive = steps.drive;
+    const dispatched = drive?.status === 202;
+    const body = bodyObject(drive?.body) ?? {};
+    const code = typeof body.code === "string" ? body.code : "DISPATCH_FAILED";
+    const note = dispatched ? "; a driver was dispatched to continue the run" : code === "LEASE_LIVE" ? "; not dispatched: a page is driving this run" : `; not dispatched (${code}): resume it on the harness page`;
+    return {
+      ...verdict,
+      content: verdict.content.map((entry, i) => i === 0 ? { ...entry, text: `${entry.text}${note}` } : entry),
+      structuredContent: { ...verdict.structuredContent, dispatched }
+    };
+  }
   function notServed(tool) {
     const message = tool === "workflow.await" ? "workflow.await is not served by the MCP endpoint \u2014 a stateless POST cannot wait; poll workflow.status" : `${tool} is not served by the MCP endpoint: runs are driven on the harness page \u2014 by a person, or by an agent through the page\u2019s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.`;
     return refuse("tool", message);
@@ -7120,6 +7205,10 @@ ${lines.join("\n")}`,
         return runs(route, steps);
       case "workflow.sign":
         return sign(route, steps);
+      case "workflow.start":
+        return start(route, steps);
+      case "workflow.resume":
+        return resume(route, steps);
       case "workflow.await":
         return notServed(tool);
       default:
@@ -7134,7 +7223,7 @@ ${lines.join("\n")}`,
       if (steps.merge?.update === true && !stepUpdated(steps.update)) {
         return refuse("step", `${route.key}: the step row could not be written`);
       }
-      return verdict;
+      return tool === "workflow.submitStep" ? withDriveNote(verdict, steps) : verdict;
     }
     if (toolByName(tool)) return notServed(tool);
     return errorResult(`No such tool: ${tool}`, { errors: { tool: "No such tool" } });

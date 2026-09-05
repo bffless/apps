@@ -100,6 +100,24 @@ test('every failing workflow is reported, not just the first', () => {
   expect(new Set(r.findings.map((f) => f.file))).toEqual(new Set(['a.yaml', 'b.yaml']))
 })
 
+test('a driver repo is carried onto the index', () => {
+  const r = buildIndex({
+    ...BASE,
+    driver: { repo: 'acme/site' },
+    workflows: [{ file: 'hello.workflow.yaml', yaml: HELLO_YAML }],
+  })
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect(r.index.driver).toEqual({ repo: 'acme/site' })
+})
+
+test('no driver given, no driver key — the index omits what was never set', () => {
+  const r = buildIndex({ ...BASE, workflows: [{ file: 'hello.workflow.yaml', yaml: HELLO_YAML }] })
+  expect(r.ok).toBe(true)
+  if (!r.ok) return
+  expect(r.index).not.toHaveProperty('driver')
+})
+
 test('the rule set is threaded into the lint, so a missing rule fails the index', () => {
   const rules = {
     found: true as const,

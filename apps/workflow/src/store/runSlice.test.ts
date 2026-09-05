@@ -10,6 +10,7 @@ import {
   runEvent,
   runModeChanged,
   runOpened,
+  runParked,
   runPaused,
   runReplaced,
   runSlice,
@@ -70,6 +71,17 @@ describe('runSlice', () => {
 
     state = reducer(state, runModeChanged('live'))
     expect(state.mode).toBe('live')
+  })
+
+  it('parks the run without disturbing its state or meta', () => {
+    const live = reducer(opened(), runEvent(started))
+    const state = reducer(live, runParked())
+    expect(state.mode).toBe('parked')
+    // Parking is a fact about this *tab*: the run is still running, and the
+    // definition snapshot it is running is still the one it started with.
+    expect(state.state).toBe(live.state)
+    expect(state.meta).toBe(live.meta)
+    expect(state.state?.status).toBe('running')
   })
 
   it('records and clears a persistence pause', () => {

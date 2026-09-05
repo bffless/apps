@@ -81,6 +81,14 @@ export interface RunHeaderProps {
   yaml: string
   /** The replayed status; the row's own when the run could not be rebuilt. */
   status: RunStatus
+  /**
+   * What the *page* is doing with the run, when that is not simply its status
+   * (07 `wait=park`): a `parked` run's record still reads `running`. It shows
+   * on the `run-status` element's `data-state` — the same fact
+   * `window.__workflow.status` carries — while the pill itself keeps rendering
+   * the run's own status, which has not changed.
+   */
+  pageState?: 'parked' | 'busy' | null
   /** Every annotation of the run, run-level and per step. */
   annotations: Annotation[]
   /** `/<impl>/<workflow>` — the run's screens hang off it. */
@@ -135,6 +143,7 @@ export function RunHeader({
   unattended = false,
   yaml,
   status,
+  pageState = null,
   annotations,
   base,
   progress,
@@ -245,7 +254,7 @@ export function RunHeader({
       </div>
 
       <div className="run-bar">
-        <span className="run-bar-status" data-testid="run-status" data-state={status}>
+        <span className="run-bar-status" data-testid="run-status" data-state={pageState ?? status}>
           <StatusPill status={status} />
         </span>
         {onFollowChange && (

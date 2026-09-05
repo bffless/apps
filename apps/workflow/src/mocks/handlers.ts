@@ -229,6 +229,13 @@ const runRecord = [
   // is recorded"), so a client-supplied value must never be trusted.
   http.post('/api/workflow/runs', async ({ request }) => {
     const row = toRunRow(await body(request))
+    // The create rule's own backstop (07 `runId=`): the page checks first, but
+    // a race between that read and this insert — two dispatches racing the
+    // same pre-minted id — must still refuse rather than silently overwrite
+    // the first run's row.
+    if (db.runs.has(row.runId)) {
+      return HttpResponse.json({ code: 'RUN_EXISTS', error: 'a run with this id already exists' }, { status: 409 })
+    }
     const stored = { ...row, startedBy: mockUser().id, _id: nextId() }
     db.runs.set(stored.runId, stored)
     return HttpResponse.json(toRecord(stored))

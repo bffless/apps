@@ -114,6 +114,16 @@ A run driven by a headless browser (Playwright) rather than a person; the same h
 auto-started by URL, with interactive steps skipped, auto-submitted, or failing fast.
 _Avoid_: server-side run, CI run (as the concept), background run
 
+**Driven run**:
+A headless run the implementation's dispatched driver job drives; it parks at a step that needs
+a person and a fresh job resumes it after a server-side submit.
+_Avoid_: server-side run, background run
+
+**Park**:
+A driven run reaching an interactive step that declares no `headless:`: the row waits, the
+lease is cleared, the job ends. Not a failure.
+_Avoid_: pause, suspend
+
 **Driver**:
 `@bffless/workflow-headless`, the Playwright CLI that *performs* a headless run: it opens the
 start URL, follows `window.__workflow` and writes the run's artifacts down. It re-implements no

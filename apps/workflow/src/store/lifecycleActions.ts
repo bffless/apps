@@ -85,13 +85,19 @@ export function cancelRun(): AppThunk<Promise<void>> {
   }
 }
 
-function metaFrom(run: RunRow, def: Definition): RunMeta {
+/**
+ * `park` is not off the row and never could be (07 `wait=park`): it is how
+ * *this* tab was asked to behave, so the caller — the run page reading its own
+ * `?wait=park` — passes it in alongside the record's own facts.
+ */
+function metaFrom(run: RunRow, def: Definition, park?: boolean): RunMeta {
   return {
     def,
     yaml: run.yaml,
     workflowName: run.workflowName,
     ...(run.workflowVersion === undefined ? {} : { workflowVersion: run.workflowVersion }),
     ...(run.forkedFrom && run.forkJob ? { forkedFrom: { runId: run.forkedFrom, job: run.forkJob } } : {}),
+    ...(park ? { park: true } : {}),
   }
 }
 
@@ -124,7 +130,7 @@ export class LeaseTransportError extends Error {}
 
 /** The shared adopt-live-or-fall-back-readonly path behind `openRun`/`takeOver` (05 Resume). */
 async function adopt(
-  a: { runId: string; run: RunRow; steps: StepRow[] },
+  a: { runId: string; run: RunRow; steps: StepRow[]; park?: boolean },
   dispatch: (action: unknown) => unknown,
   getState: () => RootState,
   takeover: boolean,
@@ -143,7 +149,7 @@ async function adopt(
     }
 
     if (l.ok) {
-      dispatch(runOpened({ meta: metaFrom(a.run, def) }))
+      dispatch(runOpened({ meta: metaFrom(a.run, def, a.park) }))
       dispatch(runReplaced({ state, mode: 'live' }))
       return
     }
@@ -174,14 +180,26 @@ async function adopt(
  * restarts the heartbeat). Held by someone else → readonly, same as before
  * the attempt — the caller shows Take over.
  */
-export function openRun(a: { runId: string; run: RunRow; steps: StepRow[] }): AppThunk<Promise<void>> {
+export function openRun(a: {
+  runId: string
+  run: RunRow
+  steps: StepRow[]
+  /** `?wait=park` on the run page's own URL (07); carried onto the adopted `RunMeta`. */
+  park?: boolean
+}): AppThunk<Promise<void>> {
   return async (dispatch, getState) => {
     await adopt(a, dispatch, getState, false)
   }
 }
 
 /** Force the lease away from whoever holds it, then the same adopt-live path as `openRun`. */
-export function takeOver(a: { runId: string; run: RunRow; steps: StepRow[] }): AppThunk<Promise<void>> {
+export function takeOver(a: {
+  runId: string
+  run: RunRow
+  steps: StepRow[]
+  /** As `openRun`'s. */
+  park?: boolean
+}): AppThunk<Promise<void>> {
   return async (dispatch, getState) => {
     await adopt(a, dispatch, getState, true)
   }

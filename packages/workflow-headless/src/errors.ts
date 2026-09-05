@@ -22,6 +22,11 @@ export const EXIT = {
   /** The driver gave up waiting — the run may well still be going. */
   TIMEOUT: 4,
   /**
+   * `resume` found a live lease: another tab or job drives the run; nothing
+   * was done.
+   */
+  BUSY: 5,
+  /**
    * SIGINT — whenever the driver is interrupted, whether or not there was a
    * run to cancel. Before the run page exists there is nothing to click, so
    * the handler closes the browser and leaves with this; once the run is up it

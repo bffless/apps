@@ -24,7 +24,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { lintFile, resolveRuleSet, type Counts, type LintResult, type RuleSetContext } from '@bffless/workflow-lint'
-import { writeIndexBundle, type WriteResult } from './index-bundle.js'
+import { resolveDriverRepo, writeIndexBundle, type WriteResult } from './index-bundle.js'
 import { readVersion } from './version.js'
 import { parseAdd, runAdd } from './verbs/add.js'
 import { parseInit, runInit } from './verbs/init.js'
@@ -71,6 +71,8 @@ Options (publish):
   --rules <dir>           the implementation rule-set directory (default: .bffless/proxy-rules/<alias>)
   --name <display name>   display name shown on the Implementations screen (default: the alias)
   --description <text>    one line about the bundle, shown on the Implementations screen (default: none)
+  --driver-repo <owner/name>  the GitHub repo whose workflow-drive.yml a repository_dispatch
+                          reaches (ADR-0006); default: GITHUB_REPOSITORY when set, else omitted
   --dry-run               print the four resolved moves; write nothing, call no network
 
 The API key comes from BFFLESS_API_KEY only — never a flag.
@@ -110,6 +112,9 @@ Options (index):
   --description <text> one line about the bundle
   --version <v>        default: the nearest package.json above <workflows-dir>
   --commit <sha>       default: GITHUB_SHA (7 chars), else "unknown"
+  --driver-repo <owner/name>  the GitHub repo whose workflow-drive.yml a
+                       repository_dispatch reaches (ADR-0006); default:
+                       GITHUB_REPOSITORY when set, else omitted from the index
 
 Options (both):
   --rules <dir>        the implementation's proxy-rule set, so every relative
@@ -136,7 +141,7 @@ interface LintArgs extends RuleArgs {
   quiet: boolean
 }
 
-interface IndexArgs extends RuleArgs {
+export interface IndexArgs extends RuleArgs {
   verb: 'index'
   workflowsDir: string
   out: string
@@ -145,6 +150,8 @@ interface IndexArgs extends RuleArgs {
   description?: string
   version?: string
   commit?: string
+  /** ADR-0006: already resolved (flag or `GITHUB_REPOSITORY`) and validated — absent when neither is set. */
+  driverRepo?: string
 }
 
 /** Flags taking a value, keyed by the field they fill. */
@@ -154,7 +161,7 @@ const RULE_FLAGS: Record<string, keyof RuleArgs> = {
   '--path-prefix': 'pathPrefix',
 }
 
-const INDEX_FLAGS = ['--out', '--impl', '--name', '--description', '--version', '--commit'] as const
+const INDEX_FLAGS = ['--out', '--impl', '--name', '--description', '--version', '--commit', '--driver-repo'] as const
 
 function parseLint(rest: string[]): LintArgs | { error: string } {
   const args: LintArgs = { verb: 'lint', files: [], json: false, quiet: false }
@@ -173,7 +180,7 @@ function parseLint(rest: string[]): LintArgs | { error: string } {
   return args
 }
 
-function parseIndex(rest: string[]): IndexArgs | { error: string } {
+export function parseIndex(rest: string[]): IndexArgs | { error: string } {
   const values: Record<string, string> = {}
   const positional: string[] = []
   const ruleArgs: RuleArgs = {}
@@ -196,6 +203,9 @@ function parseIndex(rest: string[]): IndexArgs | { error: string } {
     if (values[flag] === undefined) return { error: `${flag} is required` }
   }
 
+  const driver = resolveDriverRepo(values['--driver-repo'])
+  if ('error' in driver) return { error: driver.error }
+
   return {
     verb: 'index',
     workflowsDir,
@@ -205,6 +215,7 @@ function parseIndex(rest: string[]): IndexArgs | { error: string } {
     description: values['--description'],
     version: values['--version'],
     commit: values['--commit'],
+    driverRepo: driver.repo,
     ...ruleArgs,
   }
 }

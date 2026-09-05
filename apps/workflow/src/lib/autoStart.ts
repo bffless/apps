@@ -91,6 +91,20 @@ export function decodeInputs(param: string | null | undefined): DecodedInputs {
   return { ok: true, values: parsed as Record<string, unknown> }
 }
 
+/** `run_` + a 26-char Crockford ULID — `lib/runner/ids.ts`'s own shape. */
+export const RUN_ID_PATTERN = /^run_[0-9A-HJKMNP-TV-Z]{26}$/
+
+/**
+ * The `runId` query parameter (07 `runId=`, ADR-0006): an id the caller minted
+ * before the browser existed, so it could hand it out first. Absent means
+ * "mint one"; present and malformed is a refusal, never a silent re-mint.
+ */
+export function parseRunIdParam(param: string | null): { ok: true; runId?: string } | { ok: false; error: string } {
+  if (param === null) return { ok: true }
+  if (!RUN_ID_PATTERN.test(param)) return { ok: false, error: '`runId` must be run_ followed by 26 Crockford-base32 characters' }
+  return { ok: true, runId: param }
+}
+
 /** "Unanswered" for `required` — `false` and `0` are answers (03's own rule). */
 export function blank(value: unknown, list: boolean): boolean {
   if (value === null || value === undefined || value === '') return true

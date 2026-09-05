@@ -52,6 +52,7 @@ export const RULE_SCOPES: Readonly<Record<string, Scope>> = {
   'workflow/run/lease/post': 'workflow:run',
   'workflow/run/delete/post': 'workflow:run',
   'workflow/run/fork/post': 'workflow:run',
+  'workflow/run/drive/post': 'workflow:run',
   'workflow/files/prepare/post': 'workflow:files',
   'workflow/files/register/post': 'workflow:files',
   'workflow/files/sign/post': 'workflow:files',

@@ -39,7 +39,13 @@ export interface WaitingStep {
 export interface RunSnapshot {
   /** `''` when a start was refused before a run existed (`status: 'invalid'`). */
   runId: string
-  status: RunStatus | 'invalid'
+  /**
+   * `invalid`: no run was started (a refused start).
+   * `pending`: dispatched over the endpoint, no row yet — ADR-0006. A driven
+   * run exists as an id before its job writes the first row (about a minute),
+   * and a caller that is told nothing at all would read that gap as failure.
+   */
+  status: RunStatus | 'invalid' | 'pending'
   /** Keys of the steps that are `running`, `polling` or `waiting` right now. */
   currentSteps: string[]
   /** The run's top-level outputs — File refs, never bytes. */
@@ -162,5 +168,8 @@ function describeWaiting(snapshot: RunSnapshot): string {
  */
 export function snapshotText(snapshot: RunSnapshot): string {
   if (snapshot.status === 'invalid') return 'No run was started'
+  // A pending run has nothing to report but its own existence: no steps have
+  // been written, so `waitingOn` would say "waiting on nothing" if it spoke.
+  if (snapshot.status === 'pending') return `Run ${snapshot.runId} is pending — dispatched, not started yet`
   return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`
 }

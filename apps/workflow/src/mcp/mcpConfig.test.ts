@@ -51,4 +51,11 @@ describe('the rendered mcp_handler config (D19 by construction)', () => {
     expect(toolScope('workflow.stepView')).toBe('workflow:read')
     expect(() => toolScope('video.slice')).toThrow()
   })
+
+  it('drives the three tools that dispatch: start after its index, resume after its rows, submitStep after its write (ADR-0006)', () => {
+    expect(TOOL_STEPS['workflow.start']).toEqual(['route', 'index', 'plan', 'drive', 'reply'])
+    expect(TOOL_STEPS['workflow.resume']).toEqual(['route', 'run', 'steps', 'plan', 'drive', 'reply'])
+    // `plan` runs AFTER `update` here: whether to dispatch is whether the write landed.
+    expect(TOOL_STEPS['workflow.submitStep']).toEqual(['route', 'run', 'steps', 'merge', 'update', 'plan', 'drive', 'reply'])
+  })
 })

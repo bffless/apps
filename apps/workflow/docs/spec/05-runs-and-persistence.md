@@ -106,6 +106,10 @@ A run stays `running` when its tab closes; nothing server-side notices. When som
    resumes polling. A per-step hint would buy nothing that the two shapes do not already give.
 4. The heartbeat restarts; `lease_owner` becomes this tab.
 
+A **parked** run (07 `wait=park`) is this same state on purpose: the driver cleared the lease
+itself. Its resume is the driver's `resume` verb or the page's `?resume=1`; nothing new goes on
+the row.
+
 Headless runs never resume (a failed CI step re-runs the workflow) — with one mechanical
 exception, an `island`, which the resume path re-mounts and which then submits itself again. 07
 *Resume* has the detail and the reason a `form` cannot do the same.

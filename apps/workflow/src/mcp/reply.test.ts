@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { HELLO_INDEX, INTERACTIVE_YAML, REVIEW_INPUTS, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
+import { HELLO_INDEX, HELLO_INDEX_WITH_DRIVER, INTERACTIVE_YAML, REVIEW_INPUTS, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
+import { RUN_ID_PATTERN, mintRunId } from './ids'
 import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
@@ -15,14 +16,20 @@ const resourcesReq: FnRequest = { body: undefined, headers: HEADERS, method: 'GE
 
 const http = (body: unknown, status = 200) => ({ ok: status < 400, status, body })
 
-/** Run the function steps the way a tool rule does — route, plan, merge, reply — over the fetched/queried outputs given. */
+/**
+ * Run the function steps the way a tool rule does — route, merge, plan, reply —
+ * over the fetched/queried outputs given. `plan` runs after `merge`/`update`
+ * because `workflow.submitStep`'s rule orders it there (its dispatch is
+ * decided by whether the write landed, ADR-0006); every other tool's plan
+ * reads nothing a write produced, so one order serves them all here.
+ */
 function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}) {
   const route = routeOf({ request: req, deployment: DEPLOYMENT })
   const steps: StepOutputs = { ...fetched, route }
-  steps.plan = planOf({ steps: { route, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps }, deployment: DEPLOYMENT })
   if (!fetched.merge) steps.merge = mergeOf({ steps: { route, run: steps.run, steps: steps.steps } })
+  steps.plan = planOf({ steps: { route, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps, update: steps.update }, deployment: DEPLOYMENT })
   const out = reply({ request: req, steps, deployment: DEPLOYMENT })
-  return { out, body: JSON.parse(out.json) as unknown }
+  return { out, body: JSON.parse(out.json) as unknown, steps }
 }
 const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>) =>
   run(req, fetched).body as { content: { text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
@@ -160,11 +167,12 @@ describe('workflow.sign', () => {
 
 describe('tools this build does not serve', () => {
   it('answers an honest error result, never a protocol error', () => {
-    for (const name of ['workflow.start', 'workflow.cancel', 'workflow.resume', 'workflow.await']) {
+    for (const name of ['workflow.cancel', 'workflow.await']) {
       const r = result(callOf(name, { runId: 'r' }))
       expect(r.isError, name).toBe(true)
       expect(r.structuredContent!.errors).toHaveProperty('tool')
     }
+    expect(text(result(callOf('workflow.cancel', { runId: 'r' })))).toContain('runs are driven on the harness page')
     expect(text(result(callOf('workflow.await', { runId: 'r', until: 'terminal' })))).toContain('poll workflow.status')
     expect(text(result(callOf('workflow.submit', { runId: 'r', step: 's', outputs: {} }), { run: [], steps: [] }))).toBe('No such run: r')
     expect(result(callOf('echo')).structuredContent!.errors).toEqual({ tool: 'No such tool' })
@@ -238,11 +246,161 @@ describe('workflow.stepView / workflow.pipeline / the write verdict', () => {
     })
   })
 
-  it('tells a text-only host how to open a form, and where runs are driven', () => {
+  it('tells a text-only host how to open a form', () => {
     const status = result(callOf('workflow.status', { runId: RUN_ID }), { run: [runRow()], steps: formStepRows() })
     expect(text(status)).toContain(`call workflow.submitStep { runId: "${RUN_ID}", step: "review/0/confirm", values: {} } — the step's form renders in this chat`)
-    const start = result(callOf('workflow.start', { impl: 'hello', workflow: 'interactive', inputs: {} }), {})
-    expect(start.isError).toBe(true)
-    expect(text(start)).toBe('workflow.start is not served by the MCP endpoint: runs are driven on the harness page — by a person, or by an agent through the page’s own workflow.* tools (WebMCP). Ask the person to do that on the harness page; then watch the run with workflow.status and complete its interactive steps here with workflow.submitStep.')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Driven runs (ADR-0006): the three tools that dispatch through the drive rule
+// ---------------------------------------------------------------------------
+
+const RECEIPT = { dispatched: true, runId: 'run_minted', repo: 'bffless/workflow-implementations', eventType: 'workflow-drive' }
+const dispatched = http(RECEIPT, 202)
+const refusedDrive = (code: string, message: string) => http({ code, message }, 400)
+
+describe('workflow.start over the endpoint', () => {
+  const index = http(HELLO_INDEX_WITH_DRIVER)
+  const start = (args: Record<string, unknown>, fetched: Omit<StepOutputs, 'route' | 'plan'>) => run(callOf('workflow.start', args), fetched)
+
+  it('mints the run id, dispatches the implementation’s driver, and answers pending', () => {
+    const { body, steps } = start({ impl: 'hello', workflow: 'driven', inputs: {} }, { index, drive: dispatched })
+    const r = body as { content: { text: string }[]; structuredContent: Record<string, unknown>; isError?: boolean }
+    expect(r.isError).toBeUndefined()
+    const runId = r.structuredContent.runId as string
+    expect(runId).toMatch(RUN_ID_PATTERN)
+    expect(text(r).startsWith(`Dispatched run ${runId}`)).toBe(true)
+    expect(text(r)).toContain('pending')
+    expect(r.structuredContent).toMatchObject({ runId, pending: true, status: 'pending', currentSteps: [], waitingOn: [] })
+    // What the drive rule was actually sent — one body, one id, the caller's own inputs.
+    expect(steps.plan!.driveBody).toEqual({ id: runId, mode: 'run', impl: 'hello', workflow: 'driven', inputs: {} })
+    expect(steps.plan!.isDrive).toBe(true)
+    expect(steps.plan!.driveUrl).toBe('https://h.example/api/workflow/run/drive')
+  })
+
+  it('refuses an implementation that publishes no driver, naming the page it can be started on', () => {
+    const r = start({ impl: 'hello', workflow: 'interactive', inputs: {} }, { index: http(HELLO_INDEX), drive: dispatched }).body as {
+      isError?: boolean
+      structuredContent: { errors: Record<string, string> }
+    }
+    expect(r.isError).toBe(true)
+    expect(r.structuredContent.errors.tool).toContain('NO_DRIVER')
+    expect(r.structuredContent.errors.tool).toContain('harness page')
+  })
+
+  it("refuses an unknown workflow, and an unreadable index, with the page's own refusal", () => {
+    expect(start({ impl: 'hello', workflow: 'nope', inputs: {} }, { index }).body).toMatchObject({ structuredContent: { errors: { workflow: REFUSALS.noWorkflow } } })
+    expect(start({ impl: 'hello', workflow: 'driven', inputs: {} }, { index: http('', 404) }).body).toMatchObject({
+      structuredContent: { errors: { workflow: REFUSALS.noWorkflow } },
+    })
+  })
+
+  it('requires impl, workflow and an object of inputs', () => {
+    expect(start({ workflow: 'driven' }, {}).body).toMatchObject({ structuredContent: { errors: { impl: '`impl` is required' } } })
+    expect(start({ impl: 'hello' }, {}).body).toMatchObject({ structuredContent: { errors: { workflow: '`workflow` is required' } } })
+    const r = start({ impl: 'hello', workflow: 'driven', inputs: 'nope' }, { index }).body as { structuredContent: { errors: Record<string, string> } }
+    expect(r.structuredContent.errors).toHaveProperty('inputs')
+  })
+
+  it("relays the drive rule's refusal by code, and calls anything else a failed dispatch", () => {
+    const refused = start({ impl: 'hello', workflow: 'driven', inputs: {} }, { index, drive: refusedDrive('LEASE_LIVE', 'this run is open in tab_1') }).body as {
+      isError?: boolean
+      content: { text: string }[]
+      structuredContent: { errors: Record<string, string> }
+    }
+    expect(refused.isError).toBe(true)
+    expect(refused.structuredContent.errors.drive).toBe('LEASE_LIVE')
+    expect(text(refused)).toContain('this run is open in tab_1')
+    const failed = start({ impl: 'hello', workflow: 'driven', inputs: {} }, { index, drive: http('boom', 500) }).body as {
+      content: { text: string }[]
+      structuredContent: { errors: Record<string, string> }
+    }
+    expect(failed.structuredContent.errors.drive).toBe('DISPATCH_FAILED')
+    expect(text(failed)).toContain('500')
+  })
+})
+
+describe('workflow.resume over the endpoint', () => {
+  const resume = (args: Record<string, unknown>, fetched: Omit<StepOutputs, 'route' | 'plan'>) => run(callOf('workflow.resume', args), fetched)
+
+  it('dispatches a driver to take the run over, and says so', () => {
+    const { body, steps } = resume({ runId: RUN_ID }, { run: [runRow()], steps: stepRows(), drive: dispatched })
+    const r = body as { content: { text: string }[]; structuredContent: Record<string, unknown>; isError?: boolean }
+    expect(r.isError).toBeUndefined()
+    expect(text(r).startsWith(`Dispatched a driver to resume ${RUN_ID}`)).toBe(true)
+    expect(steps.plan!.driveBody).toEqual({ id: RUN_ID, mode: 'resume' })
+    expect(r.structuredContent).toMatchObject({ runId: RUN_ID, dispatched: true })
+  })
+
+  it('refuses an unknown run, a run that is over, and a drive rule refusal', () => {
+    expect(text(resume({ runId: RUN_ID }, { run: [], steps: [] }).body as { content: { text: string }[] })).toBe(`No such run: ${RUN_ID}`)
+    const over = resume({ runId: RUN_ID }, { run: [runRow({ status: 'succeeded' })], steps: [] }).body as { isError?: boolean; content: { text: string }[] }
+    expect(over.isError).toBe(true)
+    expect(text(over)).toContain('succeeded')
+    const refused = resume({ runId: RUN_ID }, { run: [runRow()], steps: stepRows(), drive: refusedDrive('LEASE_LIVE', 'this run is open in tab_1') }).body as {
+      isError?: boolean
+      structuredContent: { errors: Record<string, string> }
+    }
+    expect(refused.isError).toBe(true)
+    expect(refused.structuredContent.errors.drive).toBe('LEASE_LIVE')
+  })
+})
+
+describe('workflow.submitStep re-dispatches after its write', () => {
+  const submit = (fetched: Omit<StepOutputs, 'route' | 'plan'>) =>
+    run(callOf('workflow.submitStep', { runId: RUN_ID, step: 'pick/0/choose', values: { line: 'Hello, world!', index: 0 } }), fetched).body as {
+      isError?: boolean
+      content: { text: string }[]
+      structuredContent: Record<string, unknown>
+    }
+  const rows = { run: [runRow()], steps: stepRows(), update: { id: 'rec_s4' } }
+
+  it('tells the model the run was picked up again, on the same verdict', () => {
+    const r = submit({ ...rows, drive: dispatched })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toBe(`Submitted pick/0/choose; Run ${RUN_ID} is running; a driver was dispatched to continue the run`)
+    expect(r.structuredContent.dispatched).toBe(true)
+  })
+
+  it('says so when the dispatch was refused, without turning the accepted write into an error', () => {
+    const r = submit({ ...rows, drive: refusedDrive('NO_DRIVER', 'this implementation publishes no driver repo — run it on the harness page instead') })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toBe(`Submitted pick/0/choose; Run ${RUN_ID} is running; not dispatched (NO_DRIVER): resume it on the harness page`)
+    expect(r.structuredContent.dispatched).toBe(false)
+  })
+
+  // `LEASE_LIVE` is the one refusal that is good news: a page holds the lease,
+  // so the submit landed on a run that is already being driven — and pointing
+  // the model at the harness page to "resume" it would be pointing it at the
+  // tab already doing the work.
+  it('does not send the model to the harness page when a page is already driving the run', () => {
+    const r = submit({ ...rows, drive: refusedDrive('LEASE_LIVE', 'this run is open in tab_1') })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toBe(`Submitted pick/0/choose; Run ${RUN_ID} is running; not dispatched: a page is driving this run`)
+    expect(r.structuredContent.dispatched).toBe(false)
+  })
+
+  it('dispatches nothing when no write landed: a refused submit, and the render path', () => {
+    const lost = run(callOf('workflow.submitStep', { runId: RUN_ID, step: 'pick/0/choose', values: { line: 'x', index: 0 } }), { run: [runRow()], steps: stepRows() })
+    expect(lost.steps.plan!.isDrive).toBe(false)
+    const opened = run(callOf('workflow.submitStep', { runId: RUN_ID, step: 'pick/0/choose', values: {} }), { run: [runRow()], steps: stepRows() })
+    expect(opened.steps.plan!.isDrive).toBe(false)
+    const r = opened.body as { content: { text: string }[]; structuredContent: Record<string, unknown> }
+    expect(text(r)).toContain('no values are needed from you')
+    expect(r.structuredContent).not.toHaveProperty('dispatched')
+  })
+})
+
+describe('workflow.status while a dispatched run has no row yet', () => {
+  it('answers the pending snapshot inside the window, and No such run outside it', () => {
+    const pending = mintRunId(Date.now() - 60_000)
+    const r = result(callOf('workflow.status', { runId: pending }), { run: [], steps: [] })
+    expect(r.isError).toBeUndefined()
+    expect(r.structuredContent).toEqual({ runId: pending, status: 'pending', currentSteps: [], outputs: {}, steps: {}, waitingOn: [] })
+    expect(text(r)).toContain('not started yet')
+    const stale = mintRunId(Date.now() - 11 * 60_000)
+    expect(text(result(callOf('workflow.status', { runId: stale }), { run: [], steps: [] }))).toBe(`No such run: ${stale}`)
+    expect(text(result(callOf('workflow.status', { runId: 'nope' }), { run: [], steps: [] }))).toBe('No such run: nope')
   })
 })

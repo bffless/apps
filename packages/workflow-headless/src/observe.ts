@@ -43,6 +43,17 @@ export interface WatchOptions {
 /** The statuses a run stops at. `invalid` is a *page* state and never appears here. */
 export const TERMINAL: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
 
+/**
+ * The statuses a *driver* stops following at: the run's own terminal three plus
+ * the two page states of a driven run (07 `wait=park`, `resume=1`).
+ *
+ * `parked` and `busy` are not run statuses — the row behind either still says
+ * `running` — but they are both facts about the page this driver is looking at,
+ * and in both cases the page has stopped driving. Following past them is a
+ * guaranteed timeout: nothing on that page will ever move again.
+ */
+export const SETTLED: ReadonlySet<string> = new Set([...TERMINAL, 'parked', 'busy'])
+
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export function formatTransition(t: Transition): string {
@@ -109,18 +120,29 @@ export async function waitForStart(page: PageLike, o: WatchOptions): Promise<Sna
 }
 
 /**
- * The run, followed to `succeeded` / `failed` / `cancelled`, logging each
- * status change exactly once. Steps are emitted before the run's own status so
- * the run's terminal line is always the last one in `steps.log`.
+ * The run, followed until `done`, logging each status change exactly once.
+ * Steps are emitted before the run's own status so the run's last line is
+ * always the run's own in `steps.log`.
+ *
+ * `seen` is per call, which matters to `followRun`: a driver that parks and
+ * later resumes calls this again on a freshly loaded page, and the second call
+ * re-states the board it finds. That is the intent — the log then shows what
+ * was true when the run was picked back up, rather than silently skipping
+ * every step that had already moved before the resume.
  */
-export async function waitForTerminal(page: PageLike, o: WatchOptions): Promise<Snapshot> {
+function waitUntil(
+  page: PageLike,
+  o: WatchOptions,
+  what: string,
+  done: (snapshot: Snapshot) => boolean,
+): Promise<Snapshot> {
   const seen = new Map<string, string>()
 
   return poll(
     page,
     o,
-    'the run to reach a terminal status',
-    (s) => TERMINAL.has(s.status),
+    what,
+    done,
     (s, at) => {
       if (!o.onTransition) return
       for (const key of Object.keys(s.steps).sort()) {
@@ -136,4 +158,18 @@ export async function waitForTerminal(page: PageLike, o: WatchOptions): Promise<
       }
     },
   )
+}
+
+/** The run, followed to `succeeded` / `failed` / `cancelled`. */
+export async function waitForTerminal(page: PageLike, o: WatchOptions): Promise<Snapshot> {
+  return waitUntil(page, o, 'the run to reach a terminal status', (s) => TERMINAL.has(s.status))
+}
+
+/**
+ * The run, followed until the *driver* is done with it: terminal, or a page
+ * that has stopped driving (`parked`, `busy`). What `--wait park` and `resume`
+ * wait on; `--wait fail` still waits for the run's own end.
+ */
+export async function waitForSettled(page: PageLike, o: WatchOptions): Promise<Snapshot> {
+  return waitUntil(page, o, 'the run to settle', (s) => SETTLED.has(s.status))
 }

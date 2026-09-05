@@ -61,10 +61,10 @@ import { definitionOf } from '../lib/runDefinition'
 import { loadWorkflow } from '../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../lib/runner/graph'
 import { replayRun } from '../lib/runner/replay'
-import { publishWorkflowGlobal, snapshotOf } from '../lib/workflowGlobal'
+import { publishWorkflowGlobal, snapshotOf, withPageState } from '../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
 import type { Annotation, RunState, StepKey, StepState } from '../lib/runner/types'
-import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { useAppDispatch, useAppSelector, useAppStore } from '../store/hooks'
 import { LeaseTransportError, cancelRun, forkRun, openRun, takeOver } from '../store/lifecycleActions'
 import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
 import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
@@ -293,6 +293,10 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
 export function RunPage() {
   const { impl, workflow, runId } = useParams()
   const dispatch = useAppDispatch()
+  // Read (never subscribed to): the `?resume=1` effect below asks the slice
+  // what an adoption it just awaited actually did — a question no selector can
+  // answer, since the answer is only true of one instant.
+  const store = useAppStore()
   const navigate = useNavigate()
 
   // The selection *is* the URL (08, decided 2026-08-26): `?step=<key>` opens
@@ -514,6 +518,50 @@ export function RunPage() {
   const forking = useRef(false)
   const [forkFailed, setForkFailed] = useState<{ runId: string; message: string } | null>(null)
 
+  // The resume half of the page contract (07 `resume=1`, ADR-0006): a driver
+  // that parked a run comes back to it with a plain page load, and there is
+  // nobody in a headless browser to click *Resume*. So the URL says it: the
+  // page takes the lease itself, exactly as the banner's button would, and —
+  // when the run was parked by a driver that means to keep driving it —
+  // carries `?wait=park` onto the adopted `RunMeta`, so the resumed run parks
+  // again at the next step that declares no `headless:` instead of failing
+  // there (the park is how *this tab* was asked to behave, never a fact off
+  // the row; `lifecycleActions.ts`'s `metaFrom`).
+  //
+  // Once only (`resumed`): the guard is a ref rather than state because it
+  // must take effect within the same commit the attempt starts in — a second
+  // render before the adoption resolves would otherwise fire a second lease
+  // request. A terminal run adopts nothing at all: there is nothing left to
+  // drive, so `resume=1` on one is simply the record, at its own status.
+  //
+  // The outcome is read off the store *after* the dispatch resolves, never
+  // from a value captured when the effect ran: `adopt()` reports a refusal by
+  // dispatching `runReplaced({ mode: 'readonly' })` (or, for the run this tab
+  // already drives elsewhere, by declining to dispatch at all), so the slice
+  // is the only place that knows which of the two happened — the same fact,
+  // and the same reasoning, as `ResumeBanner`'s `lost`.
+  const autoResume = searchParams.get('resume') === '1'
+  const resumePark = searchParams.get('wait') === 'park'
+  const resumed = useRef(false)
+  const [resumeOutcome, setResumeOutcome] = useState<'busy' | null>(null)
+  useEffect(() => {
+    if (!autoResume || resumed.current || isLive || !run || run.status !== 'running' || !runId) return
+    resumed.current = true
+    void dispatch(openRun({ runId, run, steps, park: resumePark }))
+      .then(() => {
+        const adopted = store.getState().run
+        if (!(adopted.mode === 'live' && adopted.state?.runId === runId)) setResumeOutcome('busy')
+      })
+      // A lease request that never got an answer (`LeaseTransportError`) is
+      // not the same fact as "held elsewhere", and this page has no honest
+      // way to say which run is where after it — so the global keeps
+      // reporting the record's own status and the banner, still on screen,
+      // offers the retry that does report the failure properly. Swallowed
+      // rather than left to reject: an unhandled rejection here would be the
+      // one thing a driver's console noise could hide a real fault behind.
+      .catch(() => {})
+  }, [autoResume, isLive, run, steps, runId, resumePark, dispatch, store])
+
   // The observe half of the page contract (07/D12): `window.__workflow` is
   // what a headless driver polls to follow the run it started. Published from
   // whichever state this page is rendering — live slice or replayed record,
@@ -521,10 +569,38 @@ export function RunPage() {
   // to?") is the same one this page answers, and a second source of truth for
   // it would be one more thing to keep in step. Cleared when the page goes:
   // a snapshot of a run nobody is showing any more is worse than none.
+  //
+  // What the *page* is doing sits on top of the record's own status (07
+  // `wait=park`): a parked run's row still says `running`, and only this tab
+  // knows it has stopped driving it, so the driver would otherwise poll a
+  // `running` run forever.
+  //
+  // `busy` is the other half (`?resume=1`, just below): a resume this page
+  // could not carry out because the lease is held elsewhere.
+  const parkedHere = sliceMode === 'parked' && sliceState?.runId === runId
+  const pageState: 'parked' | 'busy' | null = parkedHere
+    ? 'parked'
+    : // `busy` is a fact about an adoption that lost, so it may only be
+      // published while this tab is still not driving the run. A person who
+      // takes the run over in this very tab afterwards makes it stale
+      // instantly — gating on `isLive` is the whole reset (no second effect,
+      // no state to clear): the moment the slice says live, the global goes
+      // back to reporting the run's own status.
+      resumeOutcome === 'busy' && !isLive
+      ? 'busy'
+      : null
+  // A parked tab is no longer `live`, so `state` below falls through to the
+  // *record* — which this tab never fetched while it was driving (the live path
+  // passes `skipToken`). Publishing off that would take the global away for as
+  // long as the fetch takes, and leave it away entirely if the fetch fails,
+  // which is the one moment a driver is watching hardest. So while this tab is
+  // the one that parked this run, publish from the state it still holds: the
+  // park is a fact about the slice, and the slice is right here.
+  const publishedState = parkedHere ? sliceState : state
   useEffect(() => {
-    publishWorkflowGlobal(state ? snapshotOf(state) : null)
+    publishWorkflowGlobal(publishedState ? withPageState(snapshotOf(publishedState), pageState) : null)
     return () => publishWorkflowGlobal(null)
-  }, [state])
+  }, [publishedState, pageState])
 
   // A `waiting` step opens as its own pane the moment the run reaches it —
   // first by topo order (08: "the pane is the form") — as long as nothing
@@ -824,6 +900,7 @@ export function RunPage() {
           unattended={isLive ? sliceState!.unattended : (run!.unattended ?? false)}
           yaml={isLive ? sliceMeta!.yaml : run!.yaml}
           status={shownStatus!}
+          pageState={pageState}
           annotations={annotations}
           base={base}
           progress={state ? stepProgress(state) : undefined}

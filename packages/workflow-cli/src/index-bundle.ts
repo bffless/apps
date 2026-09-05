@@ -25,6 +25,8 @@ export interface BundleArgs {
   description?: string
   version?: string
   commit?: string
+  /** ADR-0006: already resolved (flag or `GITHUB_REPOSITORY`) and validated by the caller's parser. */
+  driverRepo?: string
 }
 
 /** The `buildIndex` result once a failing lint has already returned. */
@@ -88,6 +90,25 @@ function defaultCommit(): string {
   return process.env.GITHUB_SHA?.slice(0, 7) ?? 'unknown'
 }
 
+/** `--driver-repo`'s shape: GitHub's `owner/name` — no slash or whitespace in either half. */
+const DRIVER_REPO_RE = /^[^/\s]+\/[^/\s]+$/
+
+/**
+ * `--driver-repo`'s resolved value, shared by `index` and `publish`'s
+ * parsers (cli.ts's `parseIndex`, publish.ts's `parsePublish`): the explicit
+ * flag when given, else CI's `GITHUB_REPOSITORY` (unset outside CI, so a
+ * local run simply omits `driver`). A malformed value — explicit or
+ * defaulted — is a usage error: naming (or inheriting) a repo and shipping
+ * an index without checking its shape would hand the harness a
+ * `repository_dispatch` target no one actually asked for.
+ */
+export function resolveDriverRepo(explicit: string | undefined): { repo?: string } | { error: string } {
+  const value = explicit ?? process.env.GITHUB_REPOSITORY
+  if (value === undefined) return {}
+  if (!DRIVER_REPO_RE.test(value)) return { error: `--driver-repo must look like owner/name, got "${value}"` }
+  return { repo: value }
+}
+
 /**
  * Everything that touches disk beyond the up-front directory/rules checks:
  * reading the workflow YAMLs, running `buildIndex`, and — only on success —
@@ -108,6 +129,7 @@ export function writeIndexBundle(parsed: BundleArgs, rules: RuleSetContext): Wri
     islands: bundleFiles(parsed.out, 'islands', /\.html$/),
     scripts: bundleFiles(parsed.out, 'scripts', /\.m?js$/),
     rules,
+    driver: parsed.driverRepo ? { repo: parsed.driverRepo } : undefined,
   })
 
   // Nothing is written for a failing lint: a half-staged bundle whose index

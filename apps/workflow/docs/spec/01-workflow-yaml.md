@@ -33,8 +33,9 @@ outputs:                                  # optional headline outputs of the run
 
 Only `on.manual` exists in v1 (mirrors `workflow_dispatch`). Its `inputs` map declares the
 kickoff form; each entry is an *input definition* (02). A workflow with no inputs still has a
-Start button. `on.schedule` / `on.webhook` are out of scope: the runner is a browser (07 covers
-unattended runs).
+Start button. `on.schedule` / `on.webhook` are later: a `schedule:` block or a second
+`repository_dispatch` type on the implementation's `workflow-drive.yml`, dispatching
+`mode: run` (ADR-0006). The runner stays a browser either way (07 covers unattended runs).
 
 ## Jobs
 
@@ -183,7 +184,10 @@ Durations (`poll.every`, `poll.timeout`, `retry.delay`): `500ms`, `3s`, `10m`, `
 
 `env`, `defaults`, `concurrency` groups, `secrets` context (secrets never reach the browser),
 `permissions`, reusable workflows (`uses: ./x.yaml`), `matrix.include/exclude`, `services`,
-`container`, `on.schedule`, `on.webhook`.
+`container`.
+
+`on.schedule` and `on.webhook` are not in v1 either, but they are **later (ADR-0006)** rather
+than out of scope — see §Triggers.
 
 ## Worked examples
 

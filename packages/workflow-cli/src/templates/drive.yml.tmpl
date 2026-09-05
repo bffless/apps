@@ -1,0 +1,56 @@
+name: Workflow drive
+
+# The harness dispatches this (ADR-0006, spec 07 §Driven runs): a `repository_dispatch`
+# with `client_payload: { mode: run|resume, run_id, harness_url, workflow?, inputs? }`
+# sent by the harness's `POST /api/workflow/run/drive` rule through CE's github_api
+# handler. `run` starts a workflow headless with --wait park; `resume` picks a parked
+# run back up. Both exit 0 on a park — the run is waiting on a person, not failed.
+on:
+  repository_dispatch:
+    types: [workflow-drive]
+
+concurrency: { group: "drive-${{ github.event.client_payload.run_id }}", cancel-in-progress: false }
+
+permissions: { contents: read }
+
+jobs:
+  drive:
+    runs-on: ubuntu-latest
+    # Two legs of `--timeout 60m` plus grace: one job can park and be resumed in
+    # the same run (--wait park returns, then the resume leg follows again), and
+    # the runner's own kill must not be how that normally ends. Being killed is
+    # recoverable — the lease lapses after 60 s and the run stays adoptable —
+    # but it loses the leg's exit code, so the ceiling sits above both legs.
+    timeout-minutes: 130
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install -g @bffless/workflow-headless@^1.2
+      - run: npx --yes playwright@1.61 install chromium --with-deps
+      # Through the environment, never interpolated into `run:` — a JSON body is shell source otherwise.
+      - name: Write the kickoff inputs
+        env:
+          WORKFLOW_INPUTS: ${{ toJSON(github.event.client_payload.inputs) }}
+        run: printf '%s' "$WORKFLOW_INPUTS" > inputs.json
+      - name: Drive
+        env:
+          MODE: ${{ github.event.client_payload.mode }}
+          RUN_ID: ${{ github.event.client_payload.run_id }}
+          HARNESS_URL: ${{ github.event.client_payload.harness_url }}
+          TARGET: ${{ github.event.client_payload.workflow }}
+          # The member the harness relays a login for (required today; apps#588 will let the
+          # app token alone sign in). Repo secrets, never dispatch payload.
+          WORKFLOW_EMAIL: ${{ secrets.WORKFLOW_EMAIL }}
+          WORKFLOW_PASSWORD: ${{ secrets.WORKFLOW_PASSWORD }}
+          # An app token (Settings → App Tokens on the harness's admin; spec 10 D23) — sent as
+          # Bearer on every /api/workflow/* call the driver makes; optional until apps#588.
+          WORKFLOW_APP_TOKEN: ${{ secrets.WORKFLOW_APP_TOKEN }}
+        run: |
+          if [ "$MODE" = "run" ]; then
+            workflow-headless run "$HARNESS_URL" "$TARGET" --inputs inputs.json --run-id "$RUN_ID" --wait park --out output --timeout 60m
+          else
+            workflow-headless resume "$HARNESS_URL" "$RUN_ID" --out output --timeout 60m
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "workflow-drive-${{ github.event.client_payload.run_id }}", path: output/, if-no-files-found: warn }

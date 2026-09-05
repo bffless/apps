@@ -77,6 +77,56 @@ describe('parseArgs — run', () => {
       parseArgs(['run', 'http://h', 'hello/interactive', '--inputs', inputsFile, '--turbo']),
     ).toThrow(UsageError)
   })
+
+  test('run: --wait park, --run-id and --grace', () => {
+    const c = parseArgs([
+      'run',
+      'https://h.test',
+      'hello/demo',
+      '--inputs',
+      'i.json',
+      '--wait',
+      'park',
+      '--run-id',
+      'run_01J8ZK3N4Q5R6S7T8V9WXYZABC',
+      '--grace',
+      '2m',
+    ])
+    expect(c).toMatchObject({
+      command: 'run',
+      wait: 'park',
+      runId: 'run_01J8ZK3N4Q5R6S7T8V9WXYZABC',
+      graceMs: 120_000,
+    })
+    expect(parseArgs(['run', 'https://h.test', 'hello/demo', '--inputs', 'i.json'])).toMatchObject({
+      wait: 'fail',
+      graceMs: 5 * 60_000,
+    })
+    expect(() =>
+      parseArgs(['run', 'https://h.test', 'hello/demo', '--inputs', 'i.json', '--wait', 'sometimes']),
+    ).toThrow(/--wait: expected fail or park/)
+    expect(() =>
+      parseArgs(['run', 'https://h.test', 'hello/demo', '--inputs', 'i.json', '--run-id', 'nope']),
+    ).toThrow(/--run-id/)
+  })
+})
+
+describe('parseArgs — resume', () => {
+  test('resume: harness and run id, the shared options', () => {
+    expect(
+      parseArgs(['resume', 'https://h.test', 'run_01J8ZK3N4Q5R6S7T8V9WXYZABC', '--out', 'o', '--timeout', '10m']),
+    ).toEqual({
+      command: 'resume',
+      harnessUrl: 'https://h.test',
+      runId: 'run_01J8ZK3N4Q5R6S7T8V9WXYZABC',
+      out: 'o',
+      timeoutMs: 600_000,
+      graceMs: 300_000,
+      mocks: false,
+      headed: false,
+    })
+    expect(() => parseArgs(['resume', 'https://h.test'])).toThrow(/a run id is required/)
+  })
 })
 
 describe('parseArgs — runs', () => {
