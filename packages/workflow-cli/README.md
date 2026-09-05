@@ -146,7 +146,12 @@ workflow index <workflows-dir> --out <dir> --impl <alias> --name <display> [opti
 
 Same flags and the same exit-code contract as `@bffless/workflow-lint`'s own
 `workflow` CLI — see [its README](../workflow-lint/README.md#cli) for the
-full flag reference.
+full flag reference. `index` here also accepts one flag `workflow-lint`'s own
+CLI doesn't have:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--driver-repo <owner/name>` | `GITHUB_REPOSITORY` when set, else omitted | ADR-0006: the GitHub repo whose `workflow-drive.yml` a `repository_dispatch` reaches; written onto the index as `driver.repo` |
 
 ### `publish` — index, prepare, sync, deploy, attach
 
@@ -195,6 +200,7 @@ Options:
 | `--rules <dir>` | `.bffless/proxy-rules/<alias>` | The implementation rule-set directory |
 | `--name <display name>` | the alias | Display name shown on the Implementations screen (move 1's `index.json`) |
 | `--description <text>` | none | One line about the bundle, shown on the Implementations screen (move 1's `index.json`) |
+| `--driver-repo <owner/name>` | `GITHUB_REPOSITORY` when set, else omitted | ADR-0006: the GitHub repo whose `workflow-drive.yml` a `repository_dispatch` reaches; passed through to move 1's `index.json` as `driver.repo` |
 | `--dry-run` | off | Print the four resolved moves; write nothing, call no network |
 
 ## Both packages ship a `workflow` bin

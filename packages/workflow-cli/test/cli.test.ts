@@ -10,7 +10,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { afterEach, beforeAll, describe, expect, test } from 'vitest'
+import { parseIndex } from '../src/cli.js'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
@@ -93,5 +94,54 @@ describe('workflow index', () => {
     // A raw Node stack trace ("at ... (file:line:col)") means the exception
     // escaped the try/catch instead of being turned into the documented error.
     expect(r.stderr).not.toMatch(/\bat .*:\d+:\d+/)
+  })
+})
+
+describe('parseIndex — --driver-repo (ADR-0006)', () => {
+  const REQUIRED = ['src', '--out', 'out', '--impl', 'hello', '--name', 'Hello']
+  const ORIGINAL_GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY
+
+  afterEach(() => {
+    if (ORIGINAL_GITHUB_REPOSITORY === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = ORIGINAL_GITHUB_REPOSITORY
+  })
+
+  test('an explicit --driver-repo is carried onto driverRepo', () => {
+    delete process.env.GITHUB_REPOSITORY
+    const r = parseIndex([...REQUIRED, '--driver-repo', 'acme/site'])
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBe('acme/site')
+  })
+
+  test('GITHUB_REPOSITORY is the default when no flag is given', () => {
+    process.env.GITHUB_REPOSITORY = 'acme/site'
+    const r = parseIndex(REQUIRED)
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBe('acme/site')
+  })
+
+  test('an explicit flag wins over GITHUB_REPOSITORY', () => {
+    process.env.GITHUB_REPOSITORY = 'env/repo'
+    const r = parseIndex([...REQUIRED, '--driver-repo', 'flag/repo'])
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBe('flag/repo')
+  })
+
+  test('neither flag nor GITHUB_REPOSITORY leaves driverRepo absent', () => {
+    delete process.env.GITHUB_REPOSITORY
+    const r = parseIndex(REQUIRED)
+    expect('error' in r).toBe(false)
+    expect((r as { driverRepo?: string }).driverRepo).toBeUndefined()
+  })
+
+  test('a malformed explicit --driver-repo is a usage error', () => {
+    const r = parseIndex([...REQUIRED, '--driver-repo', 'not-a-repo'])
+    expect(r).toEqual({ error: '--driver-repo must look like owner/name, got "not-a-repo"' })
+  })
+
+  test('a malformed GITHUB_REPOSITORY default is also a usage error', () => {
+    process.env.GITHUB_REPOSITORY = 'not-a-repo'
+    const r = parseIndex(REQUIRED)
+    expect(r).toEqual({ error: '--driver-repo must look like owner/name, got "not-a-repo"' })
   })
 })

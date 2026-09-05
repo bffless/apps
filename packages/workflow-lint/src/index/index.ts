@@ -48,6 +48,11 @@ export interface IndexJson {
   workflows: IndexWorkflowEntry[]
   islands: string[]
   scripts: string[]
+  /**
+   * ADR-0006: the GitHub repo whose `workflow-drive.yml` a `repository_dispatch`
+   * reaches; filled by the publish step from `github.repository`.
+   */
+  driver?: { repo: string }
 }
 
 /** A lint finding, tagged with the workflow it came from. */
@@ -70,6 +75,8 @@ export interface BuildIndexArgs {
   scripts: string[]
   /** The implementation's own rule set, so every relative `with.path` is checked (06). */
   rules: RuleSetContext
+  /** ADR-0006: the driver repo a `repository_dispatch` reaches; passed straight through to the index. */
+  driver?: { repo: string }
 }
 
 export type BuildIndexResult =
@@ -122,6 +129,7 @@ export function buildIndex(args: BuildIndexArgs): BuildIndexResult {
       workflows: entries,
       islands: args.islands,
       scripts: args.scripts,
+      ...(args.driver ? { driver: args.driver } : {}),
     },
   }
 }
