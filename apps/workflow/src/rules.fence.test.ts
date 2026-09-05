@@ -12,7 +12,11 @@ const KNOWN = new Set(['data_query', 'data_create', 'data_update', 'data_delete'
   // routes (a function_handler cannot fetch; spec 10 D22, Phase 2 plan Decision 5).
   'http_request',
   // CE's mcp.handler.ts — the MCP endpoint is one step of it from Phase 3 story 8 (spec 10, D22 GA).
-  'mcp_handler'])
+  'mcp_handler',
+  // CE's github-api.handler.ts — how `run/drive` reaches an implementation's
+  // workflow-drive.yml (repository_dispatch through the PROJECT's GitHub
+  // integration, ADR-0006). The only step of the harness that leaves CE.
+  'github_api'])
 
 function ruleFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -30,7 +34,7 @@ function ruleFiles(dir: string): string[] {
 const SURFACE: Record<string, string[]> = {
   workflow: [
     '/runs/post/', '/runs/get/', '/run/get/', '/run/update/post/', '/run-step/post/',
-    '/run/lease/post/', '/run/delete/post/', '/run/fork/post/', '/whoami/get/',
+    '/run/lease/post/', '/run/delete/post/', '/run/fork/post/', '/run/drive/post/', '/whoami/get/',
     '/files/prepare/post/', '/files/register/post/', '/files/sign/post/',
     '/uploads/workflows/[...path]/',
     '/api/auth/',
@@ -143,6 +147,21 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     const scope = ruleScopeOf(key)
     expect(scope, `${file}: ${key} has no entry in RULE_SCOPES`).toBeDefined()
     expect(auth!.config?.requiredScopes, `${file} must declare requiredScopes [${scope}]`).toEqual([scope])
+  })
+
+  // A `code:` is resolved by the CLI against the rule's own directory, and a
+  // rule six levels deep needs six `../` to reach `mcp-fn/` — one too few is a
+  // sync-time "code file not found", far from the test that exercised the
+  // bundle. Every function step names a file that is actually there.
+  it.each(files)('%s points every function step at a file that exists', (file) => {
+    const doc = parse(readFileSync(file, 'utf8'))
+    if (doc.targetUrl !== 'pipeline') return
+    for (const step of [...(doc.pipeline.steps ?? []), ...(doc.pipeline.postSteps ?? [])]) {
+      if (step.handler !== 'function_handler') continue
+      expect(typeof step.code, `${file}: ${step.id} has no code`).toBe('string')
+      const resolved = join(file, '..', step.code)
+      expect(statSync(resolved).isFile(), `${file}: ${step.id} → ${step.code}`).toBe(true)
+    }
   })
 
   it('ships its schemas', () => {

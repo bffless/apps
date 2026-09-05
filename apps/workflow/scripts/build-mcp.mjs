@@ -74,8 +74,13 @@ export function sourceRev() {
   return hash.digest('hex').slice(0, 8)
 }
 
-/** One entry per function step shared by the tool rules, plus the RFC 9728 document (`wellKnown`, one rule). */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'wellKnown']
+/**
+ * One entry per function step shared by the tool rules, plus the RFC 9728
+ * document (`wellKnown`, one rule) and the `run/drive` rule's two steps
+ * (`drivePlan`/`driveGate`, ADR-0006) — a hand-written rule, but its functions
+ * are built and held fresh here like every other.
+ */
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'wellKnown', 'drivePlan', 'driveGate']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 

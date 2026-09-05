@@ -116,7 +116,8 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function header(headers: FnRequest['headers'], name: string): string {
+/** One request header, first value, trimmed — `''` when absent. Shared with `drivePlan` (ADR-0006), which derives the same origin this does. */
+export function header(headers: FnRequest['headers'], name: string): string {
   const value = headers?.[name] ?? headers?.[name.toLowerCase()]
   const first = Array.isArray(value) ? value[0] : value
   return typeof first === 'string' ? first.split(',')[0].trim() : ''
@@ -162,9 +163,13 @@ export function kindOfPath(path: string): { kind: RouteKind; tool: string } {
  * forwarders, the bundle) exactly as the edge would, minus the edge. A bare
  * path (a preview host, a dev proxy) carries no prefix and the public origin
  * is used instead.
+ *
+ * `marker` is the rule's own public path — everything before it is the prefix.
+ * It defaults to the MCP endpoint's, which is every caller here; the `drive`
+ * rule (ADR-0006) passes its own, since it lives outside `mcp*`.
  */
-export function siblingBaseOf(path: string, appOrigin: string): string {
-  const at = path.indexOf(MCP_PATH)
+export function siblingBaseOf(path: string, appOrigin: string, marker: string = MCP_PATH): string {
+  const at = path.indexOf(marker)
   const prefix = at > 0 ? path.slice(0, at) : ''
   if (prefix.startsWith('/public/')) return `${CE_BACKEND}${prefix}`
   return appOrigin
