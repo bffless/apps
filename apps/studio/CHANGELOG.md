@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/bffless/apps/compare/studio-v1.14.0...studio-v1.15.0) (2026-09-05)
+
+
+### Features
+
+* **studio:** keep ffmpeg executor and timings on video job results, and surface them in the headless runner ([#606](https://github.com/bffless/apps/issues/606)) ([1cf4dee](https://github.com/bffless/apps/commit/1cf4dee091441fa349fc3d59f81f0b0dc89b9265))
+
 ## [1.14.0](https://github.com/bffless/apps/compare/studio-v1.13.0...studio-v1.14.0) (2026-08-29)
 
 
