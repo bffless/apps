@@ -175,7 +175,12 @@ export async function resumeRun(o: ResumeOptions, deps: RunDeps): Promise<RunRep
     return {
       runId: o.runId,
       status: followed.status,
-      url,
+      // The run page, not the URL this driver opened: `?resume=1&wait=park` is
+      // how *this* leg drove the run, and a person handed it would adopt the
+      // lease by merely clicking the link. It is also the same `url` the
+      // terminal-record path above reports, so a report reads the same either
+      // way.
+      url: runUrl,
       outputs: done.outputs,
       ...(followed.parkedOn.length > 0 ? { parkedOn: followed.parkedOn } : {}),
       artifacts: done.artifacts,
