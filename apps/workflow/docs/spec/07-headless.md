@@ -87,10 +87,11 @@ all, so a driver **polls for `runId` to appear** rather than reading the global 
 navigation lands. `invalid`, `parked` and `busy` are **page** states, not run statuses: no row
 ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
 
-And stable `data-testid`s: `run-status[data-state=…]`, `step[data-key][data-state]`,
-`run-outputs`, and on the kickoff page `kickoff-auto` / `kickoff-invalid` (plus, inside the
-hello bundle's own poster island, `island-sign-error`). `data-testid`s are a **contract**
-(Studio rule): the driver depends on them, a UI change that breaks one breaks headless.
+And stable `data-testid`s: `run-status[data-state=…]` (now also `parked` and `busy`, the page
+states of a driven run), `step[data-key][data-state]`, `run-outputs`, and on the kickoff page
+`kickoff-auto` / `kickoff-invalid` (plus, inside the hello bundle's own poster island,
+`island-sign-error`). `data-testid`s are a **contract** (Studio rule): the driver depends on
+them, a UI change that breaks one breaks headless.
 
 **Islands, unattended:** the pane is the only thing that mounts an island (Decision 11), and in
 a headless run nobody clicks a chip — so the run page opens the oldest `running`/`waiting`
