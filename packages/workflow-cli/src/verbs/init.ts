@@ -334,6 +334,7 @@ function findDirectoryMerges(destDir: string, copiedFiles: string[]): DirMerge[]
 const TEMPLATES_DIR = fileURLToPath(new URL('../templates/', import.meta.url))
 const DEPLOY_TMPL = readFileSync(join(TEMPLATES_DIR, 'deploy.yml.tmpl'), 'utf8')
 const PREVIEW_TMPL = readFileSync(join(TEMPLATES_DIR, 'preview.yml.tmpl'), 'utf8')
+const DRIVE_TMPL = readFileSync(join(TEMPLATES_DIR, 'drive.yml.tmpl'), 'utf8')
 
 function render(tmpl: string, vars: Record<string, string>): string {
   return tmpl.replace(/__([A-Z_]+)__/g, (_match, key: string) => {
@@ -370,7 +371,15 @@ interface GeneratedFile {
   content: string
 }
 
-/** Renders `deploy-<alias>.yml`/`preview-<alias>.yml` for `cwd` (the destination repo root) — absolute + repo-relative paths, not yet written. */
+/**
+ * Renders `deploy-<alias>.yml`/`preview-<alias>.yml` for `cwd` (the
+ * destination repo root) — absolute + repo-relative paths, not yet written.
+ * Also appends `workflow-drive.yml` (Task 9, apps#598): the repo-wide
+ * receiver for the harness's `repository_dispatch` (`run`/`resume` a
+ * workflow headless). It carries no `__X__` placeholders — one file per
+ * repo, not per alias — so `render` is a no-op on it, same as any other
+ * template would be if it happened to contain none.
+ */
 function buildGeneratedFiles(cwd: string, alias: string, destRel: string, project: string, harnessAlias: string): GeneratedFile[] {
   const paths = computeGeneratedPaths(destRel, alias)
   const name = alias.charAt(0).toUpperCase() + alias.slice(1)
@@ -391,6 +400,7 @@ function buildGeneratedFiles(cwd: string, alias: string, destRel: string, projec
   return [
     { rel: `.github/workflows/deploy-${alias}.yml`, tmpl: DEPLOY_TMPL },
     { rel: `.github/workflows/preview-${alias}.yml`, tmpl: PREVIEW_TMPL },
+    { rel: '.github/workflows/workflow-drive.yml', tmpl: DRIVE_TMPL },
   ].map(({ rel, tmpl }) => ({ relFile: rel, file: join(cwd, rel), content: render(tmpl, vars) }))
 }
 

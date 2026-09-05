@@ -71,14 +71,26 @@ populated destination, which matters most for `--dest .` landing a package
 inside an existing host repo.
 
 On top of the copy, `init` generates the host repo's `deploy-<alias>.yml` /
-`preview-<alias>.yml` GitHub Actions workflows (skipped only when a
-repo-root package is copied into a repo-root destination — forking a whole
-single-implementation repo verbatim, whose own top-level CI travels with
-it). Generating them requires `--project <owner/name>`, the BFFless project
-this implementation deploys to (often not the same as the GitHub repo it
-lives in) — a required flag exactly when generation would happen. Existing
-hand-edited workflow files at those paths are never clobbered; they're
-reported as skipped.
+`preview-<alias>.yml` GitHub Actions workflows, plus a third, repo-wide
+`.github/workflows/workflow-drive.yml` — the receiver for the harness's
+driven-run `repository_dispatch` (event `workflow-drive`), which runs
+`@bffless/workflow-headless run --wait park` or `resume` depending on the
+dispatch's `mode`. Unlike the other two, it carries no `<alias>` in its
+name or contents — one copy per repo, generated (or skipped) alongside
+them. All three are skipped only when a repo-root package is copied into a
+repo-root destination — forking a whole single-implementation repo
+verbatim, whose own top-level CI travels with it. Generating them requires
+`--project <owner/name>`, the BFFless project this implementation deploys
+to (often not the same as the GitHub repo it lives in) — a required flag
+exactly when generation would happen. Existing hand-edited workflow files
+at those paths are never clobbered; they're reported as skipped.
+
+`workflow-drive.yml` needs three repo secrets: `WORKFLOW_APP_TOKEN` (an app
+token from Settings → App Tokens on the harness's admin, sent as `Bearer` on
+every `/api/workflow/*` call the driver makes) and `WORKFLOW_EMAIL` /
+`WORKFLOW_PASSWORD` (the member the harness relays a login for — still
+required today because the `run` verb signs in through the admin relay;
+`WORKFLOW_APP_TOKEN` alone will suffice once apps#588 lands).
 
 Options:
 
