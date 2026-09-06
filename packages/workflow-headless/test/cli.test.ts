@@ -176,3 +176,79 @@ describe('exit codes', () => {
     expect(h.err.join('\n')).toContain('driver error: Error: chromium is not installed')
   })
 })
+
+/**
+ * apps#588: the three verbs sign in from `WORKFLOW_APP_TOKEN` alone when it is
+ * set, and fall back to `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` only when it is
+ * not. Driven through `runCli` because the environment → options plumbing is
+ * exactly what went wrong before: `run` read the token and then dropped it.
+ */
+describe('the login the environment selects', () => {
+  const EXCHANGE = 'https://admin.test/api/auth/session/from-app-token'
+  const liveArgv = (...extra: string[]) => ['run', 'https://harness.test', 'hello/demo', '--inputs', inputsFile, ...extra]
+  const withEnv = (options: FakeOptions, env: Record<string, string>) => {
+    const h = withBrowser(options)
+    return { ...h, io: { ...h.io, env: env as NodeJS.ProcessEnv } }
+  }
+
+  test('run: a token alone signs in through the exchange and is the Bearer on the record read', async () => {
+    const h = withEnv(ended('succeeded'), { WORKFLOW_APP_TOKEN: 'bfat_x' })
+    expect(await runCli(liveArgv(), h.io)).toBe(EXIT.OK)
+    expect(h.page.posts).toEqual([{ url: EXCHANGE, headers: { Authorization: 'Bearer bfat_x' } }])
+    expect(h.page.clicks).not.toContain('button[type="submit"]')
+    expect(h.page.requests.find((r) => r.key === '/api/workflow/run?id=run_1')?.headers).toMatchObject({ Authorization: 'Bearer bfat_x' })
+  })
+
+  test('run: email and password alone still sign in through the relay', async () => {
+    const h = withEnv(ended('succeeded'), { WORKFLOW_EMAIL: 'a@b.c', WORKFLOW_PASSWORD: 'x' })
+    expect(await runCli(liveArgv(), h.io)).toBe(EXIT.OK)
+    expect(h.page.posts).toEqual([])
+    expect(h.page.gotos.some((u) => u.includes('/login?redirect='))).toBe(true)
+    expect(h.page.requests.find((r) => r.key === '/api/workflow/run?id=run_1')?.headers).not.toHaveProperty('Authorization')
+  })
+
+  test('run: neither is a usage error naming the token first', async () => {
+    const h = withEnv(ended('succeeded'), {})
+    expect(await runCli(liveArgv(), h.io)).toBe(EXIT.USAGE)
+    expect(h.err.join('\n')).toMatch(/WORKFLOW_APP_TOKEN.*WORKFLOW_EMAIL/)
+  })
+
+  test('run: a token without auth:session is exit 2 and says how to mint one', async () => {
+    const h = withEnv(
+      { ...ended('succeeded'), exchange: { status: 403, text: '{"code":"insufficient_scope","missingScopes":["auth:session"]}' } },
+      { WORKFLOW_APP_TOKEN: 'bfat_x' },
+    )
+    expect(await runCli(liveArgv(), h.io)).toBe(EXIT.USAGE)
+    expect(h.err.join('\n')).toContain('insufficient_scope')
+    expect(h.err.join('\n')).toContain('auth:session')
+  })
+
+  test('resume: a token alone', async () => {
+    const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
+    const h = withEnv({ globals: [{ runId, status: 'succeeded' }], routes: helloRoutes('succeeded', runId) }, { WORKFLOW_APP_TOKEN: 'bfat_x' })
+    expect(await runCli(['resume', 'https://harness.test', runId], h.io)).toBe(EXIT.OK)
+    expect(h.page.posts).toEqual([{ url: EXCHANGE, headers: { Authorization: 'Bearer bfat_x' } }])
+    expect(h.page.clicks).not.toContain('button[type="submit"]')
+  })
+
+  test('runs: a token alone, and the Bearer on the list read', async () => {
+    const h = withEnv(
+      { globals: [], routes: { '/api/workflow/runs?impl=hello&workflow=demo': { status: 200, text: '{"runs":[]}' } } },
+      { WORKFLOW_APP_TOKEN: 'bfat_x' },
+    )
+    expect(await runCli(['runs', 'https://harness.test', 'hello/demo', '--last', '3'], h.io)).toBe(EXIT.OK)
+    expect(h.page.posts).toEqual([{ url: EXCHANGE, headers: { Authorization: 'Bearer bfat_x' } }])
+    expect(h.page.clicks).not.toContain('button[type="submit"]')
+    expect(h.page.requests[0]?.headers).toMatchObject({ Authorization: 'Bearer bfat_x' })
+  })
+
+  test('runs: email and password alone go through the relay', async () => {
+    const h = withEnv(
+      { globals: [], routes: { '/api/workflow/runs?impl=hello&workflow=demo': { status: 200, text: '{"runs":[]}' } } },
+      { WORKFLOW_EMAIL: 'a@b.c', WORKFLOW_PASSWORD: 'x' },
+    )
+    expect(await runCli(['runs', 'https://harness.test', 'hello/demo'], h.io)).toBe(EXIT.OK)
+    expect(h.page.posts).toEqual([])
+    expect(h.page.gotos.some((u) => u.includes('/login?redirect='))).toBe(true)
+  })
+})

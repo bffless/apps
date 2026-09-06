@@ -8,7 +8,12 @@ export function adminKey(env: NodeJS.ProcessEnv): string | undefined {
   return env.ADMIN_API_KEY || undefined
 }
 
-/** A person's app token for the MCP walks (`bfat_…`); absent, the walk mints its own through the signed-in browser. */
+/**
+ * A person's app token (`bfat_…`) for the MCP and driven walks; absent, the
+ * walk mints its own through the signed-in browser. Minted with
+ * `auth:session` (apps#588) it is also the walk's login — `driven` and `mcp`
+ * run from it alone, with no `credentials`.
+ */
 export function appToken(env: NodeJS.ProcessEnv): string | undefined {
   return env.WORKFLOW_APP_TOKEN || undefined
 }

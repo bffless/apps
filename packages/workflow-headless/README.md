@@ -63,16 +63,26 @@ bad harness url into an hour of waiting.
 
 ### Environment
 
+One of the first two is required unless `--mocks`; the token wins when both are set.
+
 | variable | |
 |---|---|
-| `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` | the member login the harness relays. Required unless `--mocks` |
+| `WORKFLOW_APP_TOKEN` | **the whole login.** An app token (`bfat_…`, Settings → App Tokens on the harness's admin) minted with the scopes `workflow:read workflow:run workflow:files auth:session`. The driver signs the browser in from it through CE's session exchange (`POST admin.<domain>/api/auth/session/from-app-token`, CE ≥ 0.4.50 — apps#588) and sends it as `Authorization: Bearer` on every `/api/workflow/*` call it makes: it *is* the member, narrowed to its scopes (spec 10, D23). Wins over `WORKFLOW_TOKEN` |
+| `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` | the fallback: a member login through the harness's admin relay, used only when no app token is set (and the only path against a CE without the exchange) |
 | `WORKFLOW_TOKEN` | optional, sent as `X-API-Key` on `/api/workflow/*` reads |
-| `WORKFLOW_APP_TOKEN` | optional, an app token (`bfat_…`, Settings → App Tokens) sent as `Authorization: Bearer` on every `/api/workflow/*` call the driver makes — it *is* the member, narrowed to its scopes (spec 10, D23); wins over `WORKFLOW_TOKEN` |
 
-The credential is a **session cookie**, obtained by signing in through the
-harness's admin login relay exactly as a person does. An API key cannot mint a
-session, and two of the harness's relays forward the caller's cookies, so
-`WORKFLOW_TOKEN` is an extra on top of the session — never a replacement for it. `WORKFLOW_APP_TOKEN` covers the driver's own reads *and* writes, but the browser still signs in through the relay: a token cannot mint a SuperTokens session, and a private deployment's page load carries no header.
+The credential the harness page honours is a **session cookie** — a private
+deployment's document load carries no header, and two of the harness's relays
+forward the caller's cookies. `WORKFLOW_APP_TOKEN` gets one without a form: the
+exchange runs through the browser context's request client, so the cookies CE
+sets land where the page's own `fetch` reads them, and the harness opens signed
+in. `auth:session` is the scope that gate checks; a token without it is refused
+with exit `2` — `app token login refused (403 insufficient_scope): the token
+must be minted with the auth:session scope` — and so is a token for another
+project (`token_project_mismatch`), a revoked or expired one (`401`), and a
+harness whose CE predates the exchange (`404`, with a hint to fall back to
+email/password). An API key cannot mint a session at all, so `WORKFLOW_TOKEN`
+is an extra on top of the session — never a replacement for it.
 
 ## Artifacts (`--out`)
 
@@ -198,7 +208,8 @@ worked examples for anyone wiring this up elsewhere:
   purpose: a run there writes a real row, uploads to the deployment's storage and calls whatever
   pipelines the workflow calls. It takes `workflow`, `inputs`, `harness_url` and
   `timeout_minutes` (digits only), passes `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` from repo
-  secrets, uploads `output/` as an artifact and summarises the run id and status. Note that
+  secrets (a `WORKFLOW_APP_TOKEN` secret minted with `auth:session` would do alone — see
+  *Environment*), uploads `output/` as an artifact and summarises the run id and status. Note that
   cancelling the job sends `SIGTERM`, which is **exit 2 with the run left `running`** (see
   *Signals*) — hence `cancel-in-progress: false`.
 - **`apps/workflow/e2e/headless.spec.ts`** — the end-to-end proof of this package, with no
@@ -206,6 +217,11 @@ worked examples for anyone wiring this up elsewhere:
   in `--mocks` mode and reads the artifacts back off disk. It fails, rather than skipping, when
   `dist/cli.js` is missing — so `pnpm --filter @bffless/workflow-headless build` comes before
   `test:e2e` in CI.
+
+The driver job an implementation repo runs for a **driven run** (`workflow-drive.yml`, written
+by [`@bffless/workflow init`](../workflow-cli/README.md)) carries one secret, `WORKFLOW_APP_TOKEN`
+— an app token minted with `workflow:read workflow:run workflow:files auth:session` — and no
+password: the token signs the browser in and authorises every call the driver makes.
 
 There is deliberately no `bffless/run-workflow` GitHub Action yet; a dispatch workflow calling
 the CLI is all a single repo needs.
@@ -217,7 +233,8 @@ import { launchBrowser, runWorkflow } from '@bffless/workflow-headless'
 
 const browser = await launchBrowser()
 const report = await runWorkflow(
-  { harnessUrl, impl: 'hello', workflow: 'interactive', inputs: {}, timeoutMs: 1_800_000, mocks: false, credentials },
+  // `appToken` alone signs in; `credentials: { email, password }` is the relay fallback.
+  { harnessUrl, impl: 'hello', workflow: 'interactive', inputs: {}, timeoutMs: 1_800_000, mocks: false, appToken },
   { browser, log: console.log },
 )
 await browser.close()

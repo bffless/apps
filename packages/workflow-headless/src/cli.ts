@@ -16,17 +16,17 @@ import {
   parseArgs,
   UsageError,
   USAGE,
+  type LoginFromEnv,
   type ResumeCommand,
   type RunCommand,
   type RunsCommand,
 } from './args.js'
 import { launchBrowser } from './browser.js'
 import { DriverError, EXIT, type ExitCode } from './errors.js'
-import { loginViaRelay } from './login.js'
 import type { BrowserLike } from './page.js'
 import { resumeRun } from './resume.js'
 import { formatRunsTable, listRuns } from './runs.js'
-import { runWorkflow, type RunReport } from './run.js'
+import { openHarness, runWorkflow, type RunReport } from './run.js'
 
 /** Shared with the catch-all so a Ctrl-C's own fallout is not reported as a fault. */
 interface Interrupt {
@@ -87,9 +87,22 @@ function announce(report: RunReport, io: CliIo): void {
   for (const path of report.artifacts.written) io.out(`wrote ${path}`)
 }
 
+/**
+ * The login the environment offers, or nothing in `--mocks` mode — where the
+ * app token, if any, is still handed to `pageApi` as before, but no login runs.
+ */
+const loginFor = (command: { mocks: boolean }, io: CliIo): LoginFromEnv =>
+  command.mocks ? {} : credentialsFromEnv(io.env)
+
+/** The token and key for `pageApi`, straight from the environment (`--mocks` included). */
+const apiTokens = (io: CliIo) => ({
+  ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}),
+  ...(io.env.WORKFLOW_APP_TOKEN ? { appToken: io.env.WORKFLOW_APP_TOKEN } : {}),
+})
+
 async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
   const inputs = loadInputs(command.inputsFile)
-  const credentials = command.mocks ? undefined : credentialsFromEnv(io.env)
+  const login = loginFor(command, io)
   const browser = await (io.launch ?? launchBrowser)({ headed: command.headed })
 
   let sigint = false
@@ -113,9 +126,8 @@ async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<
         ...(command.runId === undefined ? {} : { runId: command.runId }),
         graceMs: command.graceMs,
         mocks: command.mocks,
-        ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}),
-        ...(io.env.WORKFLOW_APP_TOKEN ? { appToken: io.env.WORKFLOW_APP_TOKEN } : {}),
-        ...(credentials ? { credentials } : {}),
+        ...apiTokens(io),
+        ...(login.credentials ? { credentials: login.credentials } : {}),
       },
       {
         browser,
@@ -153,7 +165,7 @@ async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<
  * next `resume` picks it up.
  */
 async function doResume(command: ResumeCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
-  const credentials = command.mocks ? undefined : credentialsFromEnv(io.env)
+  const login = loginFor(command, io)
   const browser = await (io.launch ?? launchBrowser)({ headed: command.headed })
   io.onSigint?.(() => closeAndExit(browser, io, 'SIGINT — closing the browser', state))
 
@@ -166,9 +178,8 @@ async function doResume(command: ResumeCommand, io: CliIo, state: Interrupt): Pr
         timeoutMs: command.timeoutMs,
         graceMs: command.graceMs,
         mocks: command.mocks,
-        ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}),
-        ...(io.env.WORKFLOW_APP_TOKEN ? { appToken: io.env.WORKFLOW_APP_TOKEN } : {}),
-        ...(credentials ? { credentials } : {}),
+        ...apiTokens(io),
+        ...(login.credentials ? { credentials: login.credentials } : {}),
       },
       { browser, log: io.out, warn: io.err },
     )
@@ -181,7 +192,7 @@ async function doResume(command: ResumeCommand, io: CliIo, state: Interrupt): Pr
 }
 
 async function doRuns(command: RunsCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
-  const credentials = command.mocks ? undefined : credentialsFromEnv(io.env)
+  const login = loginFor(command, io)
   const browser = await (io.launch ?? launchBrowser)({})
   // `runs` never has a run page, so this is its only SIGINT handling — without
   // it the whole command is a window where Ctrl-C orphans a Chromium.
@@ -189,14 +200,19 @@ async function doRuns(command: RunsCommand, io: CliIo, state: Interrupt): Promis
   const base = command.harnessUrl
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    if (credentials) await loginViaRelay(page, base, credentials)
-    else await page.goto(`${base}/?mocks=on`, { waitUntil: 'networkidle' })
-
-    const api = pageApi(page, {
+    // The same door as `run` and `resume` — token first, relay second, `--mocks`
+    // neither — with no artifacts to write on a refusal (`runs` has no `--out`).
+    await openHarness({
+      page,
       base,
-      ...(io.env.WORKFLOW_TOKEN ? { token: io.env.WORKFLOW_TOKEN } : {}),
-      ...(io.env.WORKFLOW_APP_TOKEN ? { appToken: io.env.WORKFLOW_APP_TOKEN } : {}),
+      mocks: command.mocks,
+      ...(login.appToken ? { appToken: login.appToken } : {}),
+      ...(login.credentials ? { credentials: login.credentials } : {}),
+      shot: async () => {},
+      writeLogs: async () => {},
     })
+
+    const api = pageApi(page, { base, ...apiTokens(io) })
     io.out(formatRunsTable(await listRuns(api, command.impl, command.workflow, command.last)))
     return EXIT.OK
   } finally {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { loginUrl } from '@bffless/workflow-headless'
-import { adminOriginOf, mintAppToken, type RequestLike } from '../src/token.js'
+import { adminOriginOf, mintAppToken, WALK_SCOPES, type RequestLike } from '../src/token.js'
 
 describe('adminOriginOf', () => {
   it('is the harness\'s own adminOrigin rule (parity with loginUrl)', () => {
@@ -47,5 +47,11 @@ describe('mintAppToken', () => {
       },
     }
     await expect(mintAppToken(request, 'https://h.example', 'o/r', ['a:b'], 'x')).rejects.toThrow(/403 not a member/)
+  })
+})
+
+describe('WALK_SCOPES', () => {
+  it("carries the three workflow scopes and auth:session, so a walk's token is a complete WORKFLOW_APP_TOKEN (apps#588)", () => {
+    expect([...WALK_SCOPES]).toEqual(['workflow:read', 'workflow:run', 'workflow:files', 'auth:session'])
   })
 })

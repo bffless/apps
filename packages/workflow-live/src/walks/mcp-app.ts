@@ -16,7 +16,7 @@ import { STEP_VIEW_URI_PATTERN, cspOf, stepViewUriOf, type ListedTool } from '..
 import { openMcp } from '../mcp-client.js'
 import { FORM_STEP, ISLAND_STEP, parkHelloRun } from '../park.js'
 import { openSession, type Session } from '../session.js'
-import { mintAppToken, type MintedToken } from '../token.js'
+import { mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
@@ -73,7 +73,7 @@ export const mcpApp: Walk = async ({ args, env, report }) => {
     const repository = String((project.body as { repository?: string } | null)?.repository ?? '')
     let token = appToken(env)
     if (!token) {
-      const t = await mintAppToken(s.request, args.harness, repository, ['workflow:read', 'workflow:run', 'workflow:files'], `workflow-live mcp-app ${new Date().toISOString()}`)
+      const t = await mintAppToken(s.request, args.harness, repository, [...WALK_SCOPES], `workflow-live mcp-app ${new Date().toISOString()}`)
       minted.push(t)
       token = t.token
     }

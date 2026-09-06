@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classify, redactUrl } from '../src/session.js'
+import { classify, redactUrl, sessionLogin } from '../src/session.js'
 
 describe('classify', () => {
   it('spots a successful register', () => {
@@ -40,5 +40,19 @@ describe('redactUrl', () => {
   })
   it('does not touch a fragment', () => {
     expect(redactUrl('https://w/x?sig=abc#frag')).toBe('https://w/x?sig=…#frag')
+  })
+})
+
+describe('sessionLogin', () => {
+  const creds = { email: 'a@b.c', password: 'x' }
+  it('prefers the app token, as the driver does (apps#588)', () => {
+    expect(sessionLogin('bfat_x', creds)).toEqual({ appToken: 'bfat_x' })
+    expect(sessionLogin('bfat_x', undefined)).toEqual({ appToken: 'bfat_x' })
+  })
+  it('falls back to the member credentials', () => {
+    expect(sessionLogin(undefined, creds)).toEqual({ credentials: creds })
+  })
+  it('is undefined with neither — the walk blocks', () => {
+    expect(sessionLogin(undefined, undefined)).toBeUndefined()
   })
 })

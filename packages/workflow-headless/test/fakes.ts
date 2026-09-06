@@ -34,6 +34,11 @@ export interface FakeOptions {
   login?: 'ok' | 'stuck'
   /** What the page reports as `document.title | innerText` for the login diagnostic. */
   pageText?: string
+  /**
+   * What `page.request.post` answers the app-token exchange with. The
+   * default is CE's 200 — the user object `signin` returns.
+   */
+  exchange?: { status: number; text?: string }
 }
 
 export interface FakePage extends PageLike {
@@ -41,6 +46,10 @@ export interface FakePage extends PageLike {
   clicks: string[]
   screenshots: string[]
   fetched: string[]
+  /** Every in-page fetch with the headers it carried, in order — what `fetched` keys. */
+  requests: Array<{ key: string; method: string; headers: Record<string, string> }>
+  /** What went through the context's request client (the app-token exchange). */
+  posts: Array<{ url: string; headers: Record<string, string> | undefined }>
   globalReads: number
 }
 
@@ -78,7 +87,17 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     clicks: [] as string[],
     screenshots: [] as string[],
     fetched: [] as string[],
+    requests: [] as FakePage['requests'],
+    posts: [] as FakePage['posts'],
     globalReads: 0,
+
+    request: {
+      async post(url: string, options?: { headers?: Record<string, string> }) {
+        page.posts.push({ url, headers: options?.headers })
+        const answer = o.exchange ?? { status: 200, text: JSON.stringify({ id: 'member-1' }) }
+        return { status: () => answer.status, text: async () => answer.text ?? '' }
+      },
+    },
 
     async goto(url: string) {
       page.gotos.push(url)
@@ -105,10 +124,11 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
         o.onGlobalRead?.(page.globalReads)
         return o.globals[Math.min(page.globalReads - 1, o.globals.length - 1)]
       }
-      const request = arg as { url: string }
+      const request = arg as { url: string; method: string; headers: Record<string, string> }
       const parsed = new URL(request.url)
       const key = `${parsed.pathname}${parsed.search}`
       page.fetched.push(key)
+      page.requests.push({ key, method: request.method, headers: request.headers })
       const answers = o.routes?.[key]
       const nth = (page.fetched.filter((k) => k === key).length) - 1
       const route = Array.isArray(answers)
@@ -122,7 +142,8 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
       }
     },
 
-    url: () => (o.login === 'stuck' ? 'https://admin.test/login' : 'https://harness.test/'),
+    // Nowhere until the first navigation — how a refused exchange is told apart from a stuck relay form.
+    url: () => (page.gotos.length === 0 ? 'about:blank' : o.login === 'stuck' ? 'https://admin.test/login' : 'https://harness.test/'),
     async fill() {},
     async click(selector: string) {
       page.clicks.push(selector)

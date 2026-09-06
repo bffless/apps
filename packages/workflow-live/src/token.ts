@@ -36,6 +36,16 @@ export function adminOriginOf(harness: string): string {
 
 export const DEFAULT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
+/**
+ * The scopes a walk mints its token with: the three `workflow:*` scopes the
+ * endpoint's tools check (spec 10, D23), plus `auth:session` (apps#588) — the
+ * CE-owned scope that lets the same token sign a browser in through CE's
+ * session exchange, so a token minted here is also a complete
+ * `WORKFLOW_APP_TOKEN` for `workflow-headless` and for the `driven` / `mcp`
+ * walks run token-only.
+ */
+export const WALK_SCOPES = ['workflow:read', 'workflow:run', 'workflow:files', 'auth:session'] as const
+
 export async function mintAppToken(
   request: RequestLike,
   harness: string,

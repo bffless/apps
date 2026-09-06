@@ -9,7 +9,9 @@
  * the walk signs in through the relay first, mints two app tokens through
  * that browser context (all three scopes; read-only), and carries the first
  * as `Authorization: Bearer` on every MCP message. A person's
- * `WORKFLOW_APP_TOKEN` skips the mint. The Story 6 round trip parks a
+ * `WORKFLOW_APP_TOKEN` skips the mint — and, minted with `auth:session`,
+ * signs the browser in by itself (apps#588), so the walk runs token-only.
+ * The Story 6 round trip parks a
  * `hello/interactive` run **through the page tools** (the member's browser,
  * closed afterwards so the lease lapses), then completes its island from
  * outside: `stepView` → `pipeline` → `annotate` → `submit` → the record.
@@ -25,8 +27,8 @@ import { adminKey, appToken, credentials } from '../env.js'
 import { STEP_VIEW_URI_PATTERN, cspOf, originOf, stepViewUriOf, toolParity, type ListedTool } from '../mcp-checks.js'
 import { openMcp, rawGet, rawPost } from '../mcp-client.js'
 import { ISLAND_STEP as STEP, parkHelloRun } from '../park.js'
-import { openSession, type Session } from '../session.js'
-import { mintAppToken, type MintedToken } from '../token.js'
+import { openSession, sessionLogin, type Session } from '../session.js'
+import { mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const APP_ONLY = ['workflow.submit', 'workflow.annotate', 'workflow.pipeline', 'workflow.stepView']
@@ -59,8 +61,9 @@ export const mcp: Walk = async ({ args, env, report }) => {
     let token = appToken(env)
     let readOnly: MintedToken | undefined
     if (!token || !args.run) {
-      if (!creds) return report.block('WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing (needed to mint an app token and to park a run)')
-      browser = await openSession({ base: args.harness, out: args.out, credentials: creds })
+      const login = sessionLogin(token, creds)
+      if (!login) return report.block('WORKFLOW_APP_TOKEN (minted with auth:session) or WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing (needed to park a run, and without a token to mint one)')
+      browser = await openSession({ base: args.harness, out: args.out, ...login })
       const who = await browser.api.json('/api/workflow/whoami')
       memberId = String((who.body as { id?: string } | null)?.id ?? '')
       const project = await browser.api.json('/api/workflow/project')
@@ -68,7 +71,7 @@ export const mcp: Walk = async ({ args, env, report }) => {
       if (repository === '') return report.block('GET /api/workflow/project answered no repository — cannot bind a token')
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
       if (!token) {
-        const all = await mintAppToken(browser.request, args.harness, repository, ['workflow:read', 'workflow:run', 'workflow:files'], `workflow-live mcp ${stamp}`)
+        const all = await mintAppToken(browser.request, args.harness, repository, [...WALK_SCOPES], `workflow-live mcp ${stamp}`)
         minted.push(all)
         token = all.token
         say(`minted app token ${all.id} (all scopes) for ${repository}`)

@@ -38,6 +38,8 @@ the person's tab is already an engine); `workflow_dispatch` (not what CE's handl
 gains `resume` and exit 5; `index.json` gains `driver`; `@bffless/workflow init` writes
 `workflow-drive.yml`; the catalog's `start`/`resume` words change; `on.schedule`/`on.webhook`
 are now a `schedule:` block or a second dispatch type on that file (01 §Triggers); the GitHub
-integration and the driver job's three secrets — `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` (the
-`run` verb still signs in through the admin relay) plus `WORKFLOW_APP_TOKEN`, optional until
-the app-token-only session lands (apps#588) — are provisioned per instance by a person.
+integration and the driver job's one secret — `WORKFLOW_APP_TOKEN`, an app token minted with
+`workflow:read workflow:run workflow:files auth:session`, which signs the browser in through
+CE's session exchange and authorises every call the driver makes (apps#588; it replaced the
+`WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` pair the job carried until then) — are provisioned per
+instance by a person.

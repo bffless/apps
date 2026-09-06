@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
-import { parseArgs, parseDuration, loadInputs, UsageError, USAGE } from '../src/args.js'
+import { credentialsFromEnv, parseArgs, parseDuration, loadInputs, UsageError, USAGE } from '../src/args.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'wfh-args-'))
 const inputsFile = join(dir, 'inputs.json')
@@ -204,5 +204,34 @@ describe('loadInputs', () => {
     const broken = join(dir, 'broken.json')
     writeFileSync(broken, '{oops')
     expect(() => loadInputs(broken)).toThrow(UsageError)
+  })
+})
+
+describe('credentialsFromEnv', () => {
+  /** apps#588: the token is a whole login; the relay pair is the fallback. */
+  test('a token alone is enough', () => {
+    expect(credentialsFromEnv({ WORKFLOW_APP_TOKEN: 'bfat_x' })).toEqual({ appToken: 'bfat_x' })
+  })
+
+  test('email and password alone are the relay login', () => {
+    expect(credentialsFromEnv({ WORKFLOW_EMAIL: 'a@b.c', WORKFLOW_PASSWORD: 'x' })).toEqual({
+      credentials: { email: 'a@b.c', password: 'x' },
+    })
+  })
+
+  test('both are handed on — the driver prefers the token', () => {
+    expect(credentialsFromEnv({ WORKFLOW_APP_TOKEN: 'bfat_x', WORKFLOW_EMAIL: 'a@b.c', WORKFLOW_PASSWORD: 'x' })).toEqual({
+      appToken: 'bfat_x',
+      credentials: { email: 'a@b.c', password: 'x' },
+    })
+  })
+
+  test('half a relay pair and no token is the usage error, naming the token first', () => {
+    expect(() => credentialsFromEnv({ WORKFLOW_EMAIL: 'a@b.c' })).toThrow(UsageError)
+    expect(() => credentialsFromEnv({})).toThrow(/WORKFLOW_APP_TOKEN.*WORKFLOW_EMAIL.*WORKFLOW_PASSWORD.*--mocks/)
+  })
+
+  test('an empty token does not count', () => {
+    expect(() => credentialsFromEnv({ WORKFLOW_APP_TOKEN: '' })).toThrow(UsageError)
   })
 })

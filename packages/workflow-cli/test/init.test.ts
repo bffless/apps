@@ -187,8 +187,11 @@ describe('runInit', () => {
     expect(drive).toContain('repository_dispatch')
     expect(drive).toContain('types: [workflow-drive]')
     expect(drive).toContain('workflow-headless')
+    // One secret (apps#588): the app token signs in and authorises every call — no password pair.
     expect(drive).toContain('WORKFLOW_APP_TOKEN')
-    expect(drive).toContain('WORKFLOW_EMAIL')
+    expect(drive).toContain('auth:session')
+    expect(drive).not.toContain('WORKFLOW_EMAIL')
+    expect(drive).not.toContain('WORKFLOW_PASSWORD')
     expect(drive).not.toMatch(/__[A-Z_]+__/)
 
     // The source tree is untouched.
