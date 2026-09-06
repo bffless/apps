@@ -81,12 +81,13 @@ jobs:
           HARNESS_URL: ${{ inputs.harness_url }}
           TARGET: ${{ inputs.workflow }}
           DRIVER_TIMEOUT: ${{ inputs.timeout_minutes }}
-          # The member the harness relays a login for. Both already exist on
-          # this repo (workflow-ci@bffless.app); the driver cannot use an API
-          # key instead — an API key cannot mint a SuperTokens session, and two
-          # of the harness's relays forward the caller's cookies.
-          WORKFLOW_EMAIL: ${{ secrets.WORKFLOW_EMAIL }}
-          WORKFLOW_PASSWORD: ${{ secrets.WORKFLOW_PASSWORD }}
+          # The one credential (#588, CE ≥ 0.4.50): an app token for the member the
+          # run is attributed to (workflow-ci), minted with the scopes
+          # workflow:read workflow:run workflow:files auth:session. The driver exchanges
+          # it for a session at the admin origin — no email/password. An API key would
+          # not do: it cannot mint a SuperTokens session, and two of the harness's
+          # relays forward the caller's cookies.
+          WORKFLOW_APP_TOKEN: ${{ secrets.WORKFLOW_APP_TOKEN }}
         run: |
           node packages/workflow-headless/dist/cli.js run "$HARNESS_URL" "$TARGET" \
             --inputs inputs.json --out output --timeout "${DRIVER_TIMEOUT}m"
