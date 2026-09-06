@@ -1,7 +1,10 @@
 # `bffless/apps` PR checklist
 
 The house rules a PR against this monorepo is judged by. `apps-implement` writes
-against this file; a human reviewer reads it. It covers the surfaces that are
+against this file; `apps-pr-review` (`.claude/agents/apps-pr-review.md`, run on every
+PR by `.github/workflows/pr-review.yml`) and human reviewers read it. Extending this
+file changes what CI reviews for — no workflow edit needed. To add an entry, copy the
+template at the bottom. It covers the surfaces that are
 expensive to get wrong here — the ones that reach a live BFFless instance, a
 published package, or a release tag. Ordinary code quality is not in scope.
 
@@ -93,3 +96,15 @@ deliberate act, not a side effect.
 Match the surrounding style (Vitest per app). Paste real command output with real
 counts in the PR body — not "passed". If something fails and you cannot fix it
 honestly, say so. Never `.skip`, weaken or delete a test to reach green.
+
+---
+
+## Entry template
+
+```
+### <short name>
+**Surface:** <files or subsystem>
+**Check:** <what to look for in a diff>
+**Why:** <the consequence if missed>
+**Learned from:** <PR / issue / date>
+```
