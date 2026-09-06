@@ -15,7 +15,27 @@ export interface ConsoleMessageLike {
   text(): string
 }
 
+/** The slice of Playwright's `APIResponse` a login needs. */
+export interface ResponseLike {
+  status(): number
+  text(): Promise<string>
+}
+
+/**
+ * The slice of Playwright's `APIRequestContext` the driver uses — `page.request`.
+ * It shares the browser context's cookie jar, which is the one property that
+ * matters: a `Set-Cookie` on its response is a cookie the page's own `fetch`
+ * sends from then on. Everything *else* the driver does stays an in-page
+ * `fetch` (see `api.ts`) — this is only for the call that has to happen
+ * before there is a signed-in page to fetch from.
+ */
+export interface RequestLike {
+  post(url: string, options?: { headers?: Record<string, string> }): Promise<ResponseLike>
+}
+
 export interface PageLike {
+  /** The context's request client; `loginViaAppToken` is its only caller. */
+  request: RequestLike
   goto(
     url: string,
     options?: { waitUntil?: 'commit' | 'domcontentloaded' | 'load' | 'networkidle'; timeout?: number },

@@ -64,9 +64,18 @@ Options (resume):
 A run that has already ended is reported at its own status without being
 opened; a run another tab or job holds the lease on is left alone (exit 5).
 
-Environment:
-  WORKFLOW_EMAIL / WORKFLOW_PASSWORD   the member login the harness relays
-                                       (required unless --mocks)
+Environment (one of the first two is required unless --mocks):
+  WORKFLOW_APP_TOKEN                   an app token (bfat_…, Settings → App
+                                       Tokens) minted with auth:session plus
+                                       workflow:read workflow:run workflow:files.
+                                       The driver signs the browser in from it
+                                       through CE's session exchange (no email,
+                                       no password; CE ≥ 0.4.50) and sends it
+                                       as Authorization: Bearer on every
+                                       /api/workflow/* call. Preferred when set
+  WORKFLOW_EMAIL / WORKFLOW_PASSWORD   the fallback: a member login through
+                                       the harness's admin relay, used only
+                                       when no app token is set
   WORKFLOW_TOKEN                       optional X-API-Key, added to GETs of
                                        /api/workflow/* only — never to a write,
                                        because a CE API key is role \`user\`
@@ -326,12 +335,34 @@ export function loadInputs(path: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-/** The login the harness relay needs, from the environment (Decision 13). */
-export function credentialsFromEnv(env: NodeJS.ProcessEnv): { email: string; password: string } {
+/**
+ * What the environment offers as a login. Either half is a whole login on its
+ * own; with both, the driver prefers the token (`openHarness`).
+ */
+export interface LoginFromEnv {
+  /** `WORKFLOW_APP_TOKEN`: exchanged for the session through CE, and the Bearer on every harness call. */
+  appToken?: string
+  /** `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD`: the relay login (Decision 13), the fallback. */
+  credentials?: { email: string; password: string }
+}
+
+/**
+ * The login from the environment: an app token (apps#588) or the member
+ * login the harness relay needs (Decision 13). A usage error when there is
+ * neither — half a relay pair does not count, and neither does an empty token.
+ */
+export function credentialsFromEnv(env: NodeJS.ProcessEnv): LoginFromEnv {
+  const appToken = env.WORKFLOW_APP_TOKEN
   const email = env.WORKFLOW_EMAIL
   const password = env.WORKFLOW_PASSWORD
-  if (!email || !password) {
-    throw new UsageError('WORKFLOW_EMAIL and WORKFLOW_PASSWORD are required (or pass --mocks)')
+  const credentials = email && password ? { email, password } : undefined
+  if (!appToken && !credentials) {
+    throw new UsageError(
+      'WORKFLOW_APP_TOKEN (an app token minted with auth:session) or WORKFLOW_EMAIL and WORKFLOW_PASSWORD are required (or pass --mocks)',
+    )
   }
-  return { email, password }
+  return {
+    ...(appToken ? { appToken } : {}),
+    ...(credentials ? { credentials } : {}),
+  }
 }

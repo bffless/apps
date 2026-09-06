@@ -200,12 +200,22 @@ workflow-headless resume <harness-url> <run-id>
                          [--out ./artifacts] [--timeout 60m] [--grace 5m] [--mocks] [--headed]
 ```
 
-**Auth is a member login through the admin relay** (Decision 13) — `WORKFLOW_EMAIL` /
-`WORKFLOW_PASSWORD`, required unless `--mocks`. The driver opens the harness, is bounced to the
-relay's `/login`, fills the two fields and waits for the URL to come back to the harness origin,
-exactly as a person does. There is deliberately no `--token` flag to match `WORKFLOW_TOKEN`: a
-credential on a command line lands in process listings and CI logs, so the environment is the
-only way in.
+**Auth is a session cookie, and an app token is enough to get one** (apps#588, amending
+Decision 13). With `WORKFLOW_APP_TOKEN` set — an app token minted with `workflow:read
+workflow:run workflow:files auth:session` — the driver signs the browser in through CE's
+session exchange, `POST admin.<domain>/api/auth/session/from-app-token` with the token as
+`Authorization: Bearer` (bffless/ce#752, CE ≥ 0.4.50): the call goes through the browser
+context's request client so the cookies CE sets land where the page's `fetch` reads them, and
+the harness opens signed in. `auth:session` is the scope that gate checks; a token without it
+is exit `2` naming `insufficient_scope`, as are a token for another project
+(`token_project_mismatch`), a revoked or expired one (`401`) and a CE without the exchange
+(`404`). The same token is the Bearer on every `/api/workflow/*` call the driver makes. The
+**member login through the admin relay** (Decision 13) — `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD`
+— is the fallback, used only when no token is set: the driver opens the harness, is bounced to
+the relay's `/login`, fills the two fields and waits for the URL to come back to the harness
+origin, exactly as a person does. One of the two is required unless `--mocks`. There is
+deliberately no `--token` flag to match either: a credential on a command line lands in process
+listings and CI logs, so the environment is the only way in.
 
 > This replaces an earlier claim in this file that the driver injects `X-API-Key` on every
 > request via route interception and needs no session exchange. That is **wrong** and was never
@@ -298,10 +308,11 @@ Three things exist, and a fourth does not.
   `repository_dispatch` `types: [workflow-drive]` and reads `client_payload`
   (`mode`, `run_id`, `harness_url`, and for `mode: run` a `workflow` and `inputs`), running
   `workflow-headless run --wait park --run-id …` or `workflow-headless resume …`. It carries
-  three secrets: `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` — the `run` verb still signs in through
-  the admin relay — plus `WORKFLOW_APP_TOKEN`, optional until the app-token-only session lands
-  (apps#588). The dispatch itself is authorised by the project's CE GitHub integration (Project
-  Settings → Integrations), not by a repo secret.
+  **one secret**, `WORKFLOW_APP_TOKEN` — an app token minted with `workflow:read workflow:run
+  workflow:files auth:session` — which signs the browser in through CE's session exchange and
+  authorises every call the driver makes (apps#588); no member email or password. The dispatch
+  itself is authorised by the project's CE GitHub integration (Project Settings → Integrations),
+  not by a repo secret.
 - **There is no `bffless/run-workflow` GitHub Action.** Earlier drafts of this file promised one —
   a thin `with`-inputs wrapper around the CLI. It was not built: the repo-local dispatch workflow
   is the right shape for a single monorepo, and the Action is a follow-up for the day a second

@@ -352,3 +352,72 @@ describe('runWorkflow — a record that seals after the page does', () => {
     expect(written.run.status).toBe('running')
   })
 })
+
+describe('runWorkflow — which login', () => {
+  const EXCHANGE = 'https://admin.test/api/auth/session/from-app-token'
+  const live = (over: Record<string, unknown>) => ({ ...options(5_000), mocks: false, ...over })
+  const quiet = (browser: import('../src/page.js').BrowserLike) => ({ browser, log: () => {}, warn: () => {} })
+
+  /**
+   * apps#588: an app token is a whole credential. With one set, the session
+   * comes from CE's exchange — no relay form, no password — and the same token
+   * rides every `/api/workflow/*` call as a Bearer. The Bearer half is the bug
+   * this pins: `cli.ts` used to spread `appToken` into a `RunOptions` that had
+   * no such field, so `run` alone silently sent none.
+   */
+  test('an app token signs in through the exchange and is the Bearer on every harness call', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    const report = await runWorkflow(live({ appToken: 'bfat_x' }), quiet(browser))
+    expect(report.status).toBe('succeeded')
+    expect(page.posts).toEqual([{ url: EXCHANGE, headers: { Authorization: 'Bearer bfat_x' } }])
+    expect(page.clicks).not.toContain('button[type="submit"]')
+    const record = page.requests.find((r) => r.key === '/api/workflow/run?id=run_1')
+    expect(record?.headers).toMatchObject({ Authorization: 'Bearer bfat_x' })
+  })
+
+  test('the token wins when email and password are set too — the relay form is never filled', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow(live({ appToken: 'bfat_x', credentials: { email: 'a@b.c', password: 'x' } }), quiet(browser))
+    expect(page.posts).toHaveLength(1)
+    expect(page.clicks).not.toContain('button[type="submit"]')
+  })
+
+  test('without a token the relay login is the fallback', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow(live({ credentials: { email: 'a@b.c', password: 'x' } }), quiet(browser))
+    expect(page.posts).toEqual([])
+    // The fake never lands on the relay's form, so the visit to it is the proof the relay path ran.
+    expect(page.gotos.some((u) => u.includes('/login?redirect='))).toBe(true)
+  })
+
+  test('with neither, and no --mocks, it is a usage fault that names both ways in', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    const error = await runWorkflow(live({}), quiet(browser)).then(
+      () => null,
+      (thrown: unknown) => thrown as { code: number; message: string },
+    )
+    expect(error?.code).toBe(EXIT.USAGE)
+    expect(error?.message).toContain('WORKFLOW_APP_TOKEN')
+    expect(error?.message).toContain('WORKFLOW_EMAIL')
+    expect(page.gotos).toEqual([])
+  })
+
+  test("a refused exchange is exit 2 with CE's code, and writes the failure artifacts", async () => {
+    const dir = out()
+    const { browser } = fakeBrowser({
+      globals: [{ runId: 'run_1', status: 'succeeded' }],
+      routes: helloRoutes('succeeded'),
+      exchange: { status: 403, text: JSON.stringify({ code: 'insufficient_scope', missingScopes: ['auth:session'] }) },
+    })
+    const error = await runWorkflow({ ...live({ appToken: 'bfat_x' }), out: dir }, quiet(browser)).then(
+      () => null,
+      (thrown: unknown) => thrown as { code: number; message: string },
+    )
+    expect(error?.code).toBe(EXIT.USAGE)
+    expect(error?.message).toContain('insufficient_scope')
+    expect(error?.message).toContain('auth:session')
+    // No "stuck at about:blank": nothing was navigated, so there is no page to describe.
+    expect(error?.message).not.toContain('about:blank')
+    expect(existsSync(join(dir, 'failed.png'))).toBe(true)
+  })
+})

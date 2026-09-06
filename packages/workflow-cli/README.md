@@ -85,12 +85,13 @@ to (often not the same as the GitHub repo it lives in) — a required flag
 exactly when generation would happen. Existing hand-edited workflow files
 at those paths are never clobbered; they're reported as skipped.
 
-`workflow-drive.yml` needs three repo secrets: `WORKFLOW_APP_TOKEN` (an app
-token from Settings → App Tokens on the harness's admin, sent as `Bearer` on
-every `/api/workflow/*` call the driver makes) and `WORKFLOW_EMAIL` /
-`WORKFLOW_PASSWORD` (the member the harness relays a login for — still
-required today because the `run` verb signs in through the admin relay;
-`WORKFLOW_APP_TOKEN` alone will suffice once apps#588 lands).
+`workflow-drive.yml` needs one repo secret: `WORKFLOW_APP_TOKEN`, an app
+token from Settings → App Tokens on the harness's admin, minted with the
+four scopes `workflow:read workflow:run workflow:files auth:session`. The
+driver signs the browser in from it through CE's session exchange
+(`auth:session` is the scope that gate checks; CE ≥ 0.4.50) and sends it as
+`Bearer` on every `/api/workflow/*` call it makes — no member email or
+password in the job (apps#588).
 
 Options:
 

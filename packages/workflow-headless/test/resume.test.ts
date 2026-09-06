@@ -143,3 +143,36 @@ describe('resumeRun', () => {
     ).rejects.toMatchObject({ code: EXIT.USAGE })
   })
 })
+
+describe('resumeRun — which login', () => {
+  const EXCHANGE = 'https://admin.test/api/auth/session/from-app-token'
+
+  test('an app token signs in through the exchange, never the relay form', async () => {
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: [record('running'), record('succeeded')] },
+      globals: [
+        { runId: RUN_ID, status: 'running' },
+        { runId: RUN_ID, status: 'succeeded' },
+      ],
+    })
+    const report = await resumeRun(options({ mocks: false, appToken: 'bfat_x' }), { browser, log: () => {} })
+    expect(report.status).toBe('succeeded')
+    expect(page.posts).toEqual([{ url: EXCHANGE, headers: { Authorization: 'Bearer bfat_x' } }])
+    expect(page.clicks).not.toContain('button[type="submit"]')
+    expect(page.requests.find((r) => r.key === RECORD)?.headers).toMatchObject({ Authorization: 'Bearer bfat_x' })
+  })
+
+  test('email and password alone still go through the relay', async () => {
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: [record('running'), record('succeeded')] },
+      globals: [
+        { runId: RUN_ID, status: 'running' },
+        { runId: RUN_ID, status: 'succeeded' },
+      ],
+    })
+    await resumeRun(options({ mocks: false, credentials: { email: 'a@b.c', password: 'x' } }), { browser, log: () => {} })
+    expect(page.posts).toEqual([])
+    // The fake never lands on the relay's form, so the visit to it is the proof the relay path ran.
+    expect(page.gotos.some((u) => u.includes('/login?redirect='))).toBe(true)
+  })
+})

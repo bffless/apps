@@ -31,7 +31,9 @@ export interface ResumeOptions {
   graceMs: number
   mocks: boolean
   token?: string
+  /** `WORKFLOW_APP_TOKEN`: the login (through CE's session exchange) and the Bearer on every harness call — see `RunOptions`. */
   appToken?: string
+  /** The relay login, used only without `appToken`. */
   credentials?: Credentials
 }
 
@@ -77,6 +79,7 @@ export async function resumeRun(o: ResumeOptions, deps: RunDeps): Promise<RunRep
       page,
       base,
       mocks: o.mocks,
+      ...(o.appToken ? { appToken: o.appToken } : {}),
       ...(o.credentials ? { credentials: o.credentials } : {}),
       shot,
       writeLogs,

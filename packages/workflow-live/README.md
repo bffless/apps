@@ -54,9 +54,13 @@ default `90m`).
 
 `WORKFLOW_EMAIL`/`WORKFLOW_PASSWORD`, or the `WORKFLOW_CI_EMAIL`/`WORKFLOW_CI_PASSWORD`
 aliases (the existing `~/.config/bffless/workflow-ci.env`) — missing either is a
-`BLOCKED` walk, not a failed check. `ADMIN_API_KEY` is optional and only used for the
-API-key 403 rows in `interactive`. `--dispatch` needs `gh auth status` to already be
-authenticated.
+`BLOCKED` walk, not a failed check. `WORKFLOW_APP_TOKEN` (an app token, `bfat_…`) skips
+the mint in the `mcp`, `mcp-app` and `driven` walks; minted with `auth:session` — the
+four scopes every walk mints, `workflow:read workflow:run workflow:files auth:session`
+— it is also the login, and `driven` and `mcp` run from it **alone**, with no
+email/password in the job (apps#588; the page-tools walks still need the member
+login). `ADMIN_API_KEY` is optional and only used for the API-key 403 rows in
+`interactive`. `--dispatch` needs `gh auth status` to already be authenticated.
 
 ## Exit codes
 

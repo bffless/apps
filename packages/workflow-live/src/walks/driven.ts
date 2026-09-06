@@ -20,13 +20,15 @@
  * relay, mint through that browser context, revoke at the end — because the
  * endpoint runs as the caller (D23 rung 2) and `driven.startedByTheToken`
  * asserts exactly that: the record's `startedBy` is the member the token
- * belongs to. `WORKFLOW_APP_TOKEN` skips the mint; the browser session stays
- * open either way, for `whoami` and for the run record.
+ * belongs to. `WORKFLOW_APP_TOKEN` skips the mint **and** the relay: a token
+ * minted with `auth:session` signs the browser session in by itself
+ * (apps#588), so the walk runs from the token alone — the Phase-3 gate. The
+ * browser session stays open either way, for `whoami` and for the run record.
  */
 import { appToken, credentials } from '../env.js'
 import { openMcp, type McpSession } from '../mcp-client.js'
-import { openSession, type Session } from '../session.js'
-import { mintAppToken, type MintedToken } from '../token.js'
+import { openSession, sessionLogin, type Session } from '../session.js'
+import { mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const IMPL = 'hello'
@@ -83,19 +85,19 @@ export const driven: Walk = async ({ args, env, report }) => {
   let browser: Session | null = null
   const minted: MintedToken[] = []
   try {
-    const creds = credentials(env)
-    if (!creds) return report.block('WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing (needed to mint an app token and to read whoami + the run record)')
-    browser = await openSession({ base: args.harness, out: args.out, credentials: creds })
+    let token = appToken(env)
+    const login = sessionLogin(token, credentials(env))
+    if (!login) return report.block('WORKFLOW_APP_TOKEN (minted with auth:session) or WORKFLOW_EMAIL/WORKFLOW_PASSWORD missing (needed to sign in for whoami + the run record, and without a token to mint one)')
+    browser = await openSession({ base: args.harness, out: args.out, ...login })
     const who = await browser.api.json('/api/workflow/whoami')
     const memberId = String((who.body as { id?: string } | null)?.id ?? '')
     if (memberId === '') return report.block('GET /api/workflow/whoami answered no id — cannot tell who the token belongs to')
-    let token = appToken(env)
     if (!token) {
       const project = await browser.api.json('/api/workflow/project')
       const repository = String((project.body as { repository?: string } | null)?.repository ?? '')
       if (repository === '') return report.block('GET /api/workflow/project answered no repository — cannot bind a token')
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const all = await mintAppToken(browser.request, args.harness, repository, ['workflow:read', 'workflow:run', 'workflow:files'], `workflow-live driven ${stamp}`)
+      const all = await mintAppToken(browser.request, args.harness, repository, [...WALK_SCOPES], `workflow-live driven ${stamp}`)
       minted.push(all)
       token = all.token
     }

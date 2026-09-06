@@ -19,7 +19,7 @@
  * SuperTokens 401s are expected and live only in `log`.
  */
 import { mkdir } from 'node:fs/promises'
-import { loginViaRelay, pageApi, type ApiLike, type FileRef } from '@bffless/workflow-headless'
+import { loginViaAppToken, loginViaRelay, pageApi, type ApiLike, type FileRef } from '@bffless/workflow-headless'
 import { chromium, type APIRequestContext, type Browser, type Page } from 'playwright'
 
 export interface Session {
@@ -40,10 +40,27 @@ export interface Session {
   close(): Promise<void>
 }
 
+/**
+ * How the session signs in — the driver's own two doors (apps#588): an app
+ * token minted with `auth:session`, exchanged for the session through CE
+ * (no form), or the member's email/password through the relay. The token
+ * wins when both are given, as it does in `workflow-headless`.
+ */
 export interface SessionOptions {
   base: string
   out: string
-  credentials: { email: string; password: string }
+  appToken?: string
+  credentials?: { email: string; password: string }
+}
+
+/**
+ * The `SessionOptions` login half from what a walk has: the token when set,
+ * else the credentials, else `undefined` — the walk's cue to `block`.
+ */
+export function sessionLogin(token: string | undefined, creds: { email: string; password: string } | undefined): Pick<SessionOptions, 'appToken' | 'credentials'> | undefined {
+  if (token) return { appToken: token }
+  if (creds) return { credentials: creds }
+  return undefined
 }
 
 export type Classified = { kind: 'register' } | { kind: 'delete' } | { kind: 'other' }
@@ -143,7 +160,9 @@ export async function openSession(o: SessionOptions): Promise<Session> {
     }
   })
   try {
-    await loginViaRelay(page, o.base, o.credentials)
+    if (o.appToken) await loginViaAppToken(page, o.base, o.appToken)
+    else if (o.credentials) await loginViaRelay(page, o.base, o.credentials)
+    else throw new Error('openSession: neither an app token nor credentials to sign in with')
   } catch (e) {
     await s.shot('login-failed')
     await browser.close().catch(() => undefined)

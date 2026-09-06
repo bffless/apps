@@ -17,7 +17,7 @@ import {
 } from './artifacts.js'
 import { fetchDefinition } from './discover.js'
 import { DriverError, EXIT } from './errors.js'
-import { loginViaRelay, type Credentials } from './login.js'
+import { loginViaAppToken, loginViaRelay, type Credentials } from './login.js'
 import {
   TERMINAL,
   waitForSettled,
@@ -49,6 +49,13 @@ export interface RunOptions {
   graceMs?: number
   mocks: boolean
   token?: string
+  /**
+   * `WORKFLOW_APP_TOKEN`: the browser signs in from it through CE's session
+   * exchange (apps#588), and it rides every `/api/workflow/*` call as a
+   * Bearer (`api.ts`). Wins over `credentials` when both are set.
+   */
+  appToken?: string
+  /** `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD`: the relay login, used only without `appToken`. */
   credentials?: Credentials
 }
 
@@ -178,10 +185,17 @@ export async function waitForSealedRecord(
  * expired password or a changed form — the page the browser is actually
  * sitting on — is captured here.
  */
+/**
+ * Open the harness signed in — the one place that decides *how*. An app token
+ * is the whole login when there is one (CE's session exchange, apps#588); the
+ * relay's email/password form is the fallback; `--mocks` needs neither. The
+ * three verbs all come through here so they cannot disagree.
+ */
 export async function openHarness(o: {
   page: PageLike
   base: string
   mocks: boolean
+  appToken?: string
   credentials?: Credentials
   shot: (name: string) => Promise<void>
   writeLogs: () => Promise<void>
@@ -192,14 +206,21 @@ export async function openHarness(o: {
     await o.page.goto(`${o.base}/?mocks=on`, { waitUntil: 'networkidle' })
     return
   }
-  if (!o.credentials) {
-    throw new DriverError('no credentials: set WORKFLOW_EMAIL / WORKFLOW_PASSWORD', EXIT.USAGE)
+  if (!o.appToken && !o.credentials) {
+    throw new DriverError(
+      'no login: set WORKFLOW_APP_TOKEN (an app token minted with auth:session) or WORKFLOW_EMAIL / WORKFLOW_PASSWORD',
+      EXIT.USAGE,
+    )
   }
   try {
-    await loginViaRelay(o.page, o.base, o.credentials)
+    if (o.appToken) await loginViaAppToken(o.page, o.base, o.appToken)
+    else await loginViaRelay(o.page, o.base, o.credentials!)
   } catch (error) {
     await o.shot('failed')
     await o.writeLogs()
+    // A refusal before any navigation — the exchange said no — has no page
+    // to describe; the message already names CE's code and the fix.
+    if (o.page.url() === 'about:blank') throw error
     // `evaluate` rather than a new seam method: the page's own title and
     // first line of text is what distinguishes a bot challenge ("Just a
     // moment…") from a refused credential or a changed form.
@@ -413,7 +434,11 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
   page.on('pageerror', (error: Error) => consoleLines.push(`pageerror: ${error.message}`))
 
   const transitions: Transition[] = []
-  const api = pageApi(page, { base, ...(o.token ? { token: o.token } : {}) })
+  const api = pageApi(page, {
+    base,
+    ...(o.token ? { token: o.token } : {}),
+    ...(o.appToken ? { appToken: o.appToken } : {}),
+  })
 
   const shot = async (name: string) => {
     if (!o.out) return
@@ -430,6 +455,7 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
       page,
       base,
       mocks: o.mocks,
+      ...(o.appToken ? { appToken: o.appToken } : {}),
       ...(o.credentials ? { credentials: o.credentials } : {}),
       shot,
       writeLogs,
