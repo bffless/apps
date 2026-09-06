@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/bffless/apps/compare/workflow-headless-v1.2.0...workflow-headless-v1.3.0) (2026-09-06)
+
+
+### Features
+
+* **workflow-headless:** sign in from an app token through CE's session exchange — no email/password in CI ([#588](https://github.com/bffless/apps/issues/588)) ([#622](https://github.com/bffless/apps/issues/622)) ([09e39eb](https://github.com/bffless/apps/commit/09e39eb22bba613c31ad2559ccf2754fa5aa313e))
+
 ## [1.2.0](https://github.com/bffless/apps/compare/workflow-headless-v1.1.0...workflow-headless-v1.2.0) (2026-09-05)
 
 
