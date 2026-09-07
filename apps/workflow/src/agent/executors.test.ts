@@ -4,7 +4,7 @@
  * a page tool answers from, and each is exercised here.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { TOOL_NAMES } from '@bffless/workflow-agent-tools'
+import { FILE_REF_HINT, TOOL_NAMES } from '@bffless/workflow-agent-tools'
 import { START_REFUSALS } from '../lib/autoStart'
 import { db, seedFinishedRun, seedWaitingRun } from '../mocks/db'
 import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
@@ -127,8 +127,8 @@ describe('workflow.status / workflow.outputs', () => {
     expect(structured.status).toBe('succeeded')
     expect(Object.keys(structured.outputs).length).toBeGreaterThan(0)
     expect(finished.content[0]!.text).toContain(`Run ${FIXTURE_RUN_ID} (succeeded) outputs:`)
-    // `poster` is a File ref, so the page words the door to its bytes as the MCP reply does (apps#627)
-    expect(finished.content[0]!.text).toContain('File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path')
+    // `poster` is a File ref, so the page says the same sentence the MCP reply does (apps#627)
+    expect(finished.content[0]!.text).toContain(FILE_REF_HINT)
   })
 
   it('refuses a run that does not exist', async () => {
