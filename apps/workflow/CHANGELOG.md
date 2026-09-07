@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/bffless/apps/compare/workflow-v1.5.1...workflow-v1.5.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **workflow:** serve OAuth discovery from CE's oauth_protected_resource handler ([#630](https://github.com/bffless/apps/issues/630)) ([1d58124](https://github.com/bffless/apps/commit/1d581246f5c28d3ae8fa348d190c0aae009d20f5))
+
 ## [1.5.1](https://github.com/bffless/apps/compare/workflow-v1.5.0...workflow-v1.5.1) (2026-09-07)
 
 
