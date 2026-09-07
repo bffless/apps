@@ -33,8 +33,8 @@ Pure TypeScript, zero dependencies, no DOM and no HTTP.
 | `workflow.await` | read | the snapshot once the run needs input or ends |
 | `workflow.runs` | read | past runs |
 | `workflow.submitStep` | run | completes a waiting `form` or `island` step |
-| `workflow.outputs` | read | the run's outputs (File refs, never bytes) |
-| `workflow.sign` | files | `{ url, expiresIn }` for a File ref's `path` |
+| `workflow.outputs` | read | the run's outputs — File refs, never bytes; pass a ref's `path` to `workflow.sign` for a fetchable URL (the ref's own `url` is the harness page's session-only path) |
+| `workflow.sign` | files | `{ url, expiresIn }` for a File ref's `path` — how a caller without the page's session (an island, an MCP caller) reads a run's files |
 | `workflow.cancel` | run | cancels the run |
 | `workflow.resume` | run | takes over an expired lease |
 

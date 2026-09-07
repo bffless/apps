@@ -17,6 +17,26 @@ describe('the catalog says what start and resume do on each surface (ADR-0006)',
   })
 })
 
+describe('the catalog points a caller holding a File ref at workflow.sign (apps#627)', () => {
+  const HINT = 'pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path'
+
+  it('outputs says the refs are never bytes and names the door to them', () => {
+    expect(toolByName('workflow.outputs')?.description).toBe(
+      'The run’s outputs — File refs (`{ path, name, contentType, size, url }`), never bytes. Pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.',
+    )
+  })
+
+  it('status, which also hands out refs, carries the same sentence', () => {
+    expect(toolByName('workflow.status')?.description).toContain(HINT)
+  })
+
+  it('sign says who it is for, so a caller that already holds a url reads it', () => {
+    expect(toolByName('workflow.sign')?.description).toBe(
+      'Exchange a File ref’s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media. This is how a caller without the harness page’s session — an island, an agent over the MCP endpoint — reads a run’s files; the ref’s own `url` is the page’s session-only path.',
+    )
+  })
+})
+
 describe('the catalog names both interactive step kinds for the agent-host panel', () => {
   it('submitStep tells a host-rendering agent to open an island or a form with values: {}', () => {
     const description = toolByName('workflow.submitStep')?.description ?? ''

@@ -126,8 +126,15 @@ describe('workflow.status / outputs', () => {
   it('answers outputs with the page’s sentence', () => {
     expect(text(result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() }))).toBe(`Run ${RUN_ID} is running and has no outputs yet`)
     const done = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', poster: { path: 'p' } } })], steps: [] })
-    expect(text(done)).toBe(`Run ${RUN_ID} (succeeded) outputs: line, poster`)
+    expect(text(done)).toBe(
+      `Run ${RUN_ID} (succeeded) outputs: line, poster\nFile refs, never bytes — pass a ref’s \`path\` to workflow.sign for a fetchable URL; the ref’s own \`url\` is the harness page’s session-only path.`,
+    )
     expect(done.structuredContent).toEqual({ runId: RUN_ID, status: 'succeeded', outputs: { line: 'x', poster: { path: 'p' } } })
+  })
+
+  it('names workflow.sign only when an output is a File ref (apps#627)', () => {
+    const plain = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x' } })], steps: [] })
+    expect(text(plain)).toBe(`Run ${RUN_ID} (succeeded) outputs: line`)
   })
 })
 

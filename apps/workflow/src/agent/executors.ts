@@ -64,9 +64,15 @@ const NOT_DRIVING = 'This page is not driving that run — workflow.resume it fi
 const TERMINAL: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
 const AWAIT_DEFAULT_MS = 120_000
 const AWAIT_MAX_MS = 600_000
+/** Appended to `workflow.outputs` when an output is a File ref (apps#627) — `src/mcp/reply.ts` words it the same. */
+const FILE_REF_HINT = '\nFile refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasFileRef(values: Record<string, unknown>): boolean {
+  return Object.values(values).some((value) => isPlainObject(value) && typeof value.path === 'string')
 }
 
 function stringArg(args: Args, key: string): string | undefined {
@@ -196,7 +202,7 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     const text =
       names.length === 0
         ? `Run ${runId} is ${runStatus} and has no outputs${runStatus === 'running' ? ' yet' : ''}`
-        : `Run ${runId} (${runStatus}) outputs: ${names.join(', ')}`
+        : `Run ${runId} (${runStatus}) outputs: ${names.join(', ')}${hasFileRef(values) ? FILE_REF_HINT : ''}`
     return textResult(text, { runId, status: runStatus, outputs: values })
   }
 

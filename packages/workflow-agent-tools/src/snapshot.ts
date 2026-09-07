@@ -48,7 +48,11 @@ export interface RunSnapshot {
   status: RunStatus | 'invalid' | 'pending'
   /** Keys of the steps that are `running`, `polling` or `waiting` right now. */
   currentSteps: string[]
-  /** The run's top-level outputs — File refs, never bytes. */
+  /**
+   * The run's top-level outputs — File refs, never bytes. Pass a ref's `path`
+   * to `workflow.sign` for a fetchable URL; the ref's own `url` is the harness
+   * page's session-only path (apps#627).
+   */
   outputs: Record<string, unknown>
   steps: Record<string, StepStatus>
   /** Only on `invalid`: why the start was refused, keyed as spec 07 keys them. */

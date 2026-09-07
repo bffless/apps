@@ -179,9 +179,11 @@ standalone UI can ship the same four with its own prefix):
   only, and that is also the `publicPath` `presigned_upload` mints — so the serve route is
   CE's, not a `/api/workflow/files/` one, and a File ref's `url` is `/api/uploads/` + `path`.)
 - `POST /api/workflow/files/sign` `{ path }` → `{ url, expiresIn }`, a **presigned GET**
-  (1 hour) for that object (`signed_url`). It exists for one caller: a sandboxed island, whose
-  opaque origin carries no cookie, so the serve route above 401s on it — the island asks the
-  host for a URL instead (`workflow.sign`, 04/Decision 6). `confine.fn.js` narrows what is
+  (1 hour) for that object (`signed_url`). It exists for the callers that hold no session: a
+  sandboxed island, whose opaque origin carries no cookie, and an agent over the MCP endpoint
+  (10), whose own fetch carries nothing — the serve route above turns both away (a 401, or a
+  redirect to login behind the visibility gate), so they exchange the ref's `path` for a URL
+  instead (`workflow.sign`, 04/Decision 6). `confine.fn.js` narrows what is
   signable to the harness prefix (an uploads-relative key under `workflows/`, no traversal);
   anything else is a 400, and Range behaviour on the signed URL is the storage backend's.
   **Both backends presign** — CE's `signed_url` calls the adapter's `getUrl`, and the local-FS
