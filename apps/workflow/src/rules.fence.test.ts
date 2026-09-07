@@ -109,7 +109,10 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       expect(auth, `${file} answers pre-credential discovery (spec 10, D23)`).toBeUndefined()
       expect(doc.pathPattern).toBe('/.well-known/oauth-protected-resource*')
       expect(doc.bypassVisibility, `${file} must stay reachable pre-credential`).toBe(true)
-      const steps: { handler: string; config?: { resource?: string } }[] = doc.pipeline.steps
+      const steps: {
+        handler: string
+        config?: { resource?: string; resourceName?: string; resourceDocumentation?: string }
+      }[] = doc.pipeline.steps
       expect(steps.map((s) => s.handler)).toEqual(['oauth_protected_resource'])
       expect(steps[0].config?.resource).toBe('/api/workflow/mcp')
       // These two strings are the only part of the document still authored in this
