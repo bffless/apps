@@ -75,12 +75,13 @@ export function sourceRev() {
 }
 
 /**
- * One entry per function step shared by the tool rules, plus the RFC 9728
- * document (`wellKnown`, one rule) and the `run/drive` rule's two steps
- * (`drivePlan`/`driveGate`, ADR-0006) — a hand-written rule, but its functions
- * are built and held fresh here like every other.
+ * One entry per function step shared by the tool rules, plus the `run/drive`
+ * rule's two steps (`drivePlan`/`driveGate`, ADR-0006) — a hand-written rule,
+ * but its functions are built and held fresh here like every other. The RFC
+ * 9728 document is not here: CE's `oauth_protected_resource` handler serves it
+ * with no function of ours.
  */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'wellKnown', 'drivePlan', 'driveGate']
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'drivePlan', 'driveGate']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 

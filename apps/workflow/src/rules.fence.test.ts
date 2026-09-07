@@ -13,6 +13,9 @@ const KNOWN = new Set(['data_query', 'data_create', 'data_update', 'data_delete'
   'http_request',
   // CE's mcp.handler.ts — the MCP endpoint is one step of it from Phase 3 story 8 (spec 10, D22 GA).
   'mcp_handler',
+  // CE's oauth-protected-resource.handler.ts — the RFC 9728 document, one step,
+  // derived from the request and this set's own mcp_handler (spec 10, D23 rung 3).
+  'oauth_protected_resource',
   // CE's github-api.handler.ts — how `run/drive` reaches an implementation's
   // workflow-drive.yml (repository_dispatch through the PROJECT's GitHub
   // integration, ADR-0006). The only step of the harness that leaves CE.
@@ -96,13 +99,16 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     const auth = validators.find((v) => v.type === 'auth_required')
     if (file.includes('/_custom/well-known/')) {
       // OAuth discovery happens before any credential exists (RFC 9728): the
-      // protected-resource document cannot sit behind a session, so the rule opts
-      // out of the deployment visibility gate (bypassVisibility, CE story 7) and
-      // carries no validator. Its one function is the shared `wellknown` bundle.
+      // protected-resource document cannot sit behind a session, so the rule
+      // carries no validator. CE's `oauth_protected_resource` handler is the
+      // whole answer — it derives the document from the request and the set's
+      // own `mcp_handler`, and being that rule's first step is what makes CE
+      // serve it despite deployment visibility (no `bypassVisibility` needed).
       expect(auth, `${file} answers pre-credential discovery (spec 10, D23)`).toBeUndefined()
       expect(doc.pathPattern).toBe('/.well-known/oauth-protected-resource*')
-      expect(doc.bypassVisibility).toBe(true)
-      expect(doc.pipeline.steps.find((s: { id: string }) => s.id === 'doc')?.code).toMatch(/mcp-fn\/wellKnown\.fn\.js$/)
+      const steps: { handler: string; config?: { resource?: string } }[] = doc.pipeline.steps
+      expect(steps.map((s) => s.handler)).toEqual(['oauth_protected_resource'])
+      expect(steps[0].config?.resource).toBe('/api/workflow/mcp')
       return
     }
     if (file.includes('/api/workflow/mcp/')) {
