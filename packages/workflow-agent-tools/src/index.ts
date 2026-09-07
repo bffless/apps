@@ -38,7 +38,9 @@ export {
 } from './results.js'
 export {
   ACTIVE_STEP_STATUSES,
+  FILE_REF_HINT,
   declaredList,
+  outputsText,
   snapshotFromRows,
   snapshotText,
   type RunRowLike,

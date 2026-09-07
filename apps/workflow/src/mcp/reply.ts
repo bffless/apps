@@ -9,6 +9,7 @@
  */
 import {
   errorResult,
+  outputsText,
   snapshotFromRows,
   snapshotText,
   textResult,
@@ -80,15 +81,9 @@ const WRITE_TOOLS = new Set(['workflow.submit', 'workflow.annotate', 'workflow.s
 const RUNS_DEFAULT = 20
 const RUNS_MAX = 50
 const SIGN_EXPIRES_IN = 3600
-/** Appended to `workflow.outputs` when an output is a File ref (apps#627) — worded as `src/agent/executors.ts` words it. */
-const FILE_REF_HINT = '\nFile refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasFileRef(values: Record<string, unknown>): boolean {
-  return Object.values(values).some((value) => isPlainObject(value) && typeof value.path === 'string')
 }
 
 function str(value: unknown): string | undefined {
@@ -256,12 +251,7 @@ function outputs(route: Route, steps: StepOutputs): CallToolResult {
   const resolved = resolveRun(route, steps)
   if (!resolved.ok) return resolved.result
   const { runId, status: runStatus, outputs: values } = snapshotOf(resolved.run, resolved.stepRows)
-  const names = Object.keys(values)
-  const text =
-    names.length === 0
-      ? `Run ${runId} is ${runStatus} and has no outputs${runStatus === 'running' ? ' yet' : ''}`
-      : `Run ${runId} (${runStatus}) outputs: ${names.join(', ')}${hasFileRef(values) ? FILE_REF_HINT : ''}`
-  return textResult(text, { runId, status: runStatus, outputs: values })
+  return textResult(outputsText({ runId, status: runStatus, outputs: values }), { runId, status: runStatus, outputs: values })
 }
 
 function runs(route: Route, steps: StepOutputs): CallToolResult {

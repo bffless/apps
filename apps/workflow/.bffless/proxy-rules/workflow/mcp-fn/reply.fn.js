@@ -295,6 +295,21 @@ var __mcp = (() => {
       return `Run ${snapshot.runId} is pending \u2014 dispatched, not started yet`;
     return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`;
   }
+  function isFileRefLike(value) {
+    return isPlainObject(value) && typeof value.path === "string" && typeof value.name === "string" && typeof value.url === "string";
+  }
+  function hasFileRef(outputs2) {
+    return Object.values(outputs2).some((value) => isFileRefLike(value) || Array.isArray(value) && value.some(isFileRefLike));
+  }
+  var FILE_REF_HINT = "File refs, never bytes \u2014 pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.";
+  function outputsText(snapshot) {
+    const names = Object.keys(snapshot.outputs);
+    if (names.length === 0)
+      return `Run ${snapshot.runId} is ${snapshot.status} and has no outputs${snapshot.status === "running" ? " yet" : ""}`;
+    const line = `Run ${snapshot.runId} (${snapshot.status}) outputs: ${names.join(", ")}`;
+    return hasFileRef(snapshot.outputs) ? `${line}
+${FILE_REF_HINT}` : line;
+  }
 
   // ../../packages/workflow-lint/dist/model/definition.js
   function toDefinition(data) {
@@ -6876,12 +6891,8 @@ ${end.comment}` : end.comment;
   var RUNS_DEFAULT = 20;
   var RUNS_MAX = 50;
   var SIGN_EXPIRES_IN = 3600;
-  var FILE_REF_HINT = "\nFile refs, never bytes \u2014 pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.";
   function isPlainObject4(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
-  }
-  function hasFileRef(values) {
-    return Object.values(values).some((value) => isPlainObject4(value) && typeof value.path === "string");
   }
   function str2(value) {
     return typeof value === "string" && value !== "" ? value : void 0;
@@ -7003,9 +7014,7 @@ To let the person complete ${step.key} here, call workflow.submitStep { runId: "
     const resolved = resolveRun(route, steps);
     if (!resolved.ok) return resolved.result;
     const { runId, status: runStatus, outputs: values } = snapshotOf(resolved.run, resolved.stepRows);
-    const names = Object.keys(values);
-    const text = names.length === 0 ? `Run ${runId} is ${runStatus} and has no outputs${runStatus === "running" ? " yet" : ""}` : `Run ${runId} (${runStatus}) outputs: ${names.join(", ")}${hasFileRef(values) ? FILE_REF_HINT : ""}`;
-    return textResult(text, { runId, status: runStatus, outputs: values });
+    return textResult(outputsText({ runId, status: runStatus, outputs: values }), { runId, status: runStatus, outputs: values });
   }
   function runs(route, steps) {
     if (!route.isRuns) return refuse("workflow", NEED_IMPL_WORKFLOW);

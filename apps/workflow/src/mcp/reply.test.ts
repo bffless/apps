@@ -125,16 +125,20 @@ describe('workflow.status / outputs', () => {
 
   it('answers outputs with the page’s sentence', () => {
     expect(text(result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() }))).toBe(`Run ${RUN_ID} is running and has no outputs yet`)
-    const done = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', poster: { path: 'p' } } })], steps: [] })
+    const poster = { path: 'workflows/hello/runs/r/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/poster.png' }
+    const done = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', poster } })], steps: [] })
     expect(text(done)).toBe(
       `Run ${RUN_ID} (succeeded) outputs: line, poster\nFile refs, never bytes — pass a ref’s \`path\` to workflow.sign for a fetchable URL; the ref’s own \`url\` is the harness page’s session-only path.`,
     )
-    expect(done.structuredContent).toEqual({ runId: RUN_ID, status: 'succeeded', outputs: { line: 'x', poster: { path: 'p' } } })
+    expect(done.structuredContent).toEqual({ runId: RUN_ID, status: 'succeeded', outputs: { line: 'x', poster } })
   })
 
-  it('names workflow.sign only when an output is a File ref (apps#627)', () => {
-    const plain = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x' } })], steps: [] })
-    expect(text(plain)).toBe(`Run ${RUN_ID} (succeeded) outputs: line`)
+  it('names workflow.sign for a file + list output, and only for files (apps#627)', () => {
+    const frame = { path: 'workflows/hello/runs/r/frame.png', name: 'frame.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/frame.png' }
+    const listed = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { frames: [frame, frame] } })], steps: [] })
+    expect(text(listed)).toContain('pass a ref’s `path` to workflow.sign')
+    const plain = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', route: { path: '/checkout', hits: 3 } } })], steps: [] })
+    expect(text(plain)).toBe(`Run ${RUN_ID} (succeeded) outputs: line, route`)
   })
 })
 
