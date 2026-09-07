@@ -11,6 +11,7 @@
  */
 import { writeFile } from 'node:fs/promises'
 import { callPageTool, waitForPageTools } from '@bffless/workflow-headless'
+import { SCOPES } from '@bffless/workflow-agent-tools'
 import { credentials } from '../env.js'
 import { openMcp, rawPost } from '../mcp-client.js'
 import { fetchJson, metadataUrlOf, pkcePair, postForm, waitForCallback, type AuthorizationServerMetadata, type ProtectedResourceDocument } from '../oauth-client.js'
@@ -49,10 +50,35 @@ export const oauth: Walk = async ({ args, env, report }) => {
     const prm = await fetchJson<ProtectedResourceDocument>(`${args.harness}/.well-known/oauth-protected-resource`)
     const issuer = prm.body?.authorization_servers?.[0] ?? ''
     const meta = issuer ? await fetchJson<AuthorizationServerMetadata>(metadataUrlOf(issuer)) : { status: 0, body: null, headers: new Headers() }
+    // CE derives the whole document now (`oauth_protected_resource`, CE >= 0.4.52),
+    // so this is the only durable check that its derivation still matches the
+    // catalog — it replaces the app-side `wellKnown.test.ts` that was deleted with
+    // the bundle. Compared as sets: CE unions the tools' `requiredScopes` in
+    // first-appearance order, which is the catalog's order today but is not a
+    // promise worth asserting.
+    const scopes = [...(prm.body?.scopes_supported ?? [])].sort()
+    const wanted = [...SCOPES].sort()
+    const scopesMatch = scopes.length === wanted.length && scopes.every((scope, i) => scope === wanted[i])
     report.expect(
       'D23.prmServed',
-      prm.status === 200 && prm.body?.resource === mcpUrl && meta.status === 200 && (meta.body?.code_challenge_methods_supported ?? []).includes('S256') && typeof meta.body?.registration_endpoint === 'string',
-      { prm: prm.status, resource: prm.body?.resource, issuer, metadata: meta.status, methods: meta.body?.code_challenge_methods_supported },
+      prm.status === 200 &&
+        prm.body?.resource === mcpUrl &&
+        issuer !== '' &&
+        scopesMatch &&
+        (prm.body?.bearer_methods_supported ?? []).includes('header') &&
+        meta.status === 200 &&
+        (meta.body?.code_challenge_methods_supported ?? []).includes('S256') &&
+        typeof meta.body?.registration_endpoint === 'string',
+      {
+        prm: prm.status,
+        resource: prm.body?.resource,
+        issuer,
+        scopes: prm.body?.scopes_supported,
+        expectedScopes: [...SCOPES],
+        bearerMethods: prm.body?.bearer_methods_supported,
+        metadata: meta.status,
+        methods: meta.body?.code_challenge_methods_supported,
+      },
     )
     if (!meta.body) return report.block(`no authorization-server metadata at ${issuer || '(no issuer)'}`)
     say(`issuer ${issuer}`)
