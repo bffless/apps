@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.1.0...workflow-agent-tools-v1.1.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **workflow:** file refs and the server instructions point MCP callers at workflow.sign ([#627](https://github.com/bffless/apps/issues/627)) ([#628](https://github.com/bffless/apps/issues/628)) ([2a36494](https://github.com/bffless/apps/commit/2a3649483340dc25208c4811adffe27151823519))
+
 ## [1.1.0](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.0.0...workflow-agent-tools-v1.1.0) (2026-09-05)
 
 
