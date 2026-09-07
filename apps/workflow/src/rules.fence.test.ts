@@ -102,10 +102,13 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       // protected-resource document cannot sit behind a session, so the rule
       // carries no validator. CE's `oauth_protected_resource` handler is the
       // whole answer — it derives the document from the request and the set's
-      // own `mcp_handler`, and being that rule's first step is what makes CE
-      // serve it despite deployment visibility (no `bypassVisibility` needed).
+      // own `mcp_handler`. CE's gate is an OR (`bypassVisibility ||
+      // servesProtectedResourceDocument`), and this harness runs on PRIVATE
+      // deployments, so we hold BOTH halves: the handler implies the bypass,
+      // and the flag stays set so no one can drop the reachability we rely on.
       expect(auth, `${file} answers pre-credential discovery (spec 10, D23)`).toBeUndefined()
       expect(doc.pathPattern).toBe('/.well-known/oauth-protected-resource*')
+      expect(doc.bypassVisibility, `${file} must stay reachable pre-credential`).toBe(true)
       const steps: { handler: string; config?: { resource?: string } }[] = doc.pipeline.steps
       expect(steps.map((s) => s.handler)).toEqual(['oauth_protected_resource'])
       expect(steps[0].config?.resource).toBe('/api/workflow/mcp')
