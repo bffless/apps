@@ -112,6 +112,12 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       const steps: { handler: string; config?: { resource?: string } }[] = doc.pipeline.steps
       expect(steps.map((s) => s.handler)).toEqual(['oauth_protected_resource'])
       expect(steps[0].config?.resource).toBe('/api/workflow/mcp')
+      // These two strings are the only part of the document still authored in this
+      // repo — CE derives everything else — so nothing but this holds them.
+      expect(steps[0].config?.resourceName).toBe('BFFless Workflow')
+      expect(steps[0].config?.resourceDocumentation).toBe(
+        'https://github.com/bffless/apps/blob/main/apps/workflow/docs/spec/10-agent-embedding.md',
+      )
       return
     }
     if (file.includes('/api/workflow/mcp/')) {

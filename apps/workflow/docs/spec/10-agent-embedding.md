@@ -285,6 +285,22 @@ app-agnostic:
   before it starts. Deployment visibility is all-or-nothing today, so this is a real CE
   design point, not configuration.
 
+**As built (2026-09-07): CE met both obligations, and went further than the second.**
+The gate honours `Authorization: Bearer <app-token>` as a session. For discovery, CE
+did not just add a per-rule opt-out — it added the whole document. The
+`oauth_protected_resource` handler (ce#760/#761, **CE ≥ 0.4.52**) serves RFC 9728
+server-side: `resource` from the request host, `authorization_servers` from CE's real
+issuer read in-process, `scopes_supported` derived from the `requiredScopes` on the
+tools' sibling rules. The gate exemption became an *implication* — a rule whose first
+enabled step is that handler at the well-known path is served regardless of visibility,
+so `bypassVisibility` is no longer required (we keep it as a redundant second half of
+CE's `||`, since no anonymous GET on a gated host has been run).
+
+Two consequences for this spec. **D23's derived-authorization-server assumption is
+retired**: the app no longer computes `admin.<host minus first label>`, so a
+custom-domain install is no longer a caveat. And the app ships **no discovery code** —
+`src/mcp/wellKnown.ts` and its bundle are deleted; the rule is one step.
+
 The iframe itself never holds a durable credential: the view acts through `tools/call`
 (the host attaches the server session), and the only bearer it ever sees is the same
 short-lived signed URL an island gets today (D6). WebMCP needs none of this ladder — the
