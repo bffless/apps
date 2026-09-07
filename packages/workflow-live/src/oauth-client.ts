@@ -64,6 +64,8 @@ export interface ProtectedResourceDocument {
   resource: string
   authorization_servers: string[]
   scopes_supported?: string[]
+  bearer_methods_supported?: string[]
+  resource_name?: string
 }
 
 export async function fetchJson<T>(url: string, init: RequestInit = {}): Promise<{ status: number; body: T | null; headers: Headers }> {

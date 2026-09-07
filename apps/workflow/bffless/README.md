@@ -511,13 +511,13 @@ answers 404.
 ### Connecting an MCP host (OAuth) — Phase 3 story 9
 
 From story 9 a chat host connects to the harness the way it connects to any OAuth-protected
-MCP server, on a **private** deployment too (CE ≥ the story-9 release, `bffless/deploy-proxy-rules`
-≥ the release that knows `bypassVisibility`):
+MCP server, on a **private** deployment too (**CE ≥ 0.4.52**, the release carrying the
+`oauth_protected_resource` handler — see the note below the walk):
 
 1. Add the connector with the URL `https://workflow.<domain>/api/workflow/mcp`. The host reads
    `https://workflow.<domain>/.well-known/oauth-protected-resource` (a rule of this set, served
-   despite deployment visibility), which names CE's authorization server on `admin.<domain>`
-   and the catalog's scopes; then CE's RFC 8414 document at
+   despite deployment visibility), which names **CE's own OAuth issuer** and the scopes derived
+   from the tools' sibling rules; then CE's RFC 8414 document at
    `https://admin.<domain>/.well-known/oauth-authorization-server`.
 2. The host registers itself (RFC 7591, no secret) and sends you to
    `https://admin.<domain>/api/oauth/authorize…` — the admin login if you are signed out, then
@@ -532,9 +532,30 @@ MCP server, on a **private** deployment too (CE ≥ the story-9 release, `bffles
 The `oauth` walk (`packages/workflow-live`) drives 1–4 headlessly against either host; the
 claude.ai flow itself is a person's step with screenshots (the Phase-3 gate). Two person-owned
 preconditions on j5s: the Cloudflare zone's AI-bot block stays off, and the member has a project
-role. Assumption recorded (Phase 3 plan, Decision 23): the authorization server is derived as
-`admin.<the host minus its first label>` — a custom-domain install would need CE to advertise
-its issuer (a filed follow-up).
+role.
+
+**That follow-up is closed (2026-09-07).** Decision 23 recorded an assumption: the
+authorization server was *derived* by the app as `admin.<the host minus its first label>`, so a
+custom-domain install would need CE to advertise its issuer instead. CE now does — the
+`oauth_protected_resource` handler (ce#760/#761, **CE ≥ 0.4.52**) builds the whole RFC 9728
+document server-side, reading the real issuer in-process (`OAuthService.issuer()`, which honours
+`OAUTH_ISSUER`/`ADMIN_DOMAIN`) and deriving `scopes_supported` from the `requiredScopes` on the
+`auth_required` validators of the tools' sibling rules. The app ships no discovery code at all:
+`src/mcp/wellKnown.ts` and its `mcp-fn/wellKnown.fn.js` bundle are gone, and
+`rules/_custom/well-known/get.rule.yaml` is one step. **A custom-domain install is no longer a
+caveat.**
+
+Two things the swap did *not* change, both checked live on 2026-09-07: the document is
+byte-identical (same issuer, same three scopes in the same order), and so are the response
+headers (`content-type: application/json; charset=utf-8`, `cache-control: public, max-age=300`
+— the handler sets both, matching the retired `response_handler`).
+
+`bypassVisibility: true` is **kept** on that rule. CE's gate is an OR
+(`bypassVisibility || servesProtectedResourceDocument`), so the handler alone would suffice and
+CE unit-tests exactly that on a private deployment — but the harness's real installs are private
+(`workflow.j5s.dev` = `requiredRole: authenticated`, `workflow.bffless.dev` = `requiredRole:
+admin`) and an anonymous GET against a visibility-gated host has never been run. Until it is, we
+hold both halves; `rules.fence.test.ts` asserts the flag so it cannot be dropped by accident.
 
 ### M5 Phase 3 — the endpoint on CE's `mcp_handler` (2026-09-03)
 

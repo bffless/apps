@@ -204,10 +204,16 @@ _Avoid_: "service identity" (the retired Phase-2 `WORKFLOW_MCP_KEY` secret), "AP
 to role `user`, bound to no person)
 
 **Protected-resource document**:
-The harness's `/.well-known/oauth-protected-resource` rule (RFC 9728), served despite
-deployment visibility: this host's MCP endpoint as the resource, CE's authorization server on
-`admin.<domain>`, the catalog's scopes. How a chat host finds the login from the app.
-_Avoid_: "OAuth discovery endpoint" (CE has none for apps), the Phase-2 404 rule (retired)
+The harness's `/.well-known/oauth-protected-resource` rule (RFC 9728), one step on CE's
+`oauth_protected_resource` handler: this host's MCP endpoint as the resource, CE's real OAuth
+issuer as the authorization server, and the scopes derived from the tool rules' own
+`requiredScopes`. How a chat host finds the login from the app. Served despite deployment
+visibility by CE's OR — `bypassVisibility || servesProtectedResourceDocument` — and the rule
+keeps `bypassVisibility: true` as the second half of that OR until an anonymous GET on a
+visibility-gated host is actually run; `rules.fence.test.ts` pins the flag, so do not drop it
+on the strength of the implication alone.
+_Avoid_: "OAuth discovery endpoint" (CE has none for apps), the Phase-2 404 rule (retired), the
+Phase-3 `wellKnown.fn.js` bundle (retired — CE serves the document now)
 
 **Consent**:
 The admin-side page (`/oauth/consent`) where a member grants a client a subset of the scopes it
