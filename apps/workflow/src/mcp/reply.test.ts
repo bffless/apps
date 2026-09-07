@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { FILE_REF_HINT, outputsText } from '@bffless/workflow-agent-tools'
+import { isFileRefLike } from '../lib/runner/fileRef'
 import { HELLO_INDEX, HELLO_INDEX_WITH_DRIVER, INTERACTIVE_YAML, REVIEW_INPUTS, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
 import { RUN_ID_PATTERN, mintRunId } from './ids'
 import { handler as mergeOf } from './merge'
@@ -125,9 +127,20 @@ describe('workflow.status / outputs', () => {
 
   it('answers outputs with the page’s sentence', () => {
     expect(text(result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() }))).toBe(`Run ${RUN_ID} is running and has no outputs yet`)
-    const done = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', poster: { path: 'p' } } })], steps: [] })
-    expect(text(done)).toBe(`Run ${RUN_ID} (succeeded) outputs: line, poster`)
-    expect(done.structuredContent).toEqual({ runId: RUN_ID, status: 'succeeded', outputs: { line: 'x', poster: { path: 'p' } } })
+    const poster = { path: 'workflows/hello/runs/r/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/poster.png' }
+    const done = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', poster } })], steps: [] })
+    expect(text(done)).toBe(
+      `Run ${RUN_ID} (succeeded) outputs: line, poster\nFile refs, never bytes — pass a ref’s \`path\` to workflow.sign for a fetchable URL; the ref’s own \`url\` is the harness page’s session-only path.`,
+    )
+    expect(done.structuredContent).toEqual({ runId: RUN_ID, status: 'succeeded', outputs: { line: 'x', poster } })
+  })
+
+  it('names workflow.sign for a file + list output, and only for files (apps#627)', () => {
+    const frame = { path: 'workflows/hello/runs/r/frame.png', name: 'frame.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/frame.png' }
+    const listed = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { frames: [frame, frame] } })], steps: [] })
+    expect(text(listed)).toContain('pass a ref’s `path` to workflow.sign')
+    const plain = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', route: { path: '/checkout', hits: 3 } } })], steps: [] })
+    expect(text(plain)).toBe(`Run ${RUN_ID} (succeeded) outputs: line, route`)
   })
 })
 
@@ -402,5 +415,26 @@ describe('workflow.status while a dispatched run has no row yet', () => {
     const stale = mintRunId(Date.now() - 11 * 60_000)
     expect(text(result(callOf('workflow.status', { runId: stale }), { run: [], steps: [] }))).toBe(`No such run: ${stale}`)
     expect(text(result(callOf('workflow.status', { runId: 'nope' }), { run: [], steps: [] }))).toBe('No such run: nope')
+  })
+})
+
+describe('the catalog package reads "File ref" exactly as lib/runner/fileRef does (apps#627)', () => {
+  // The package is pure and zero-dep, so it cannot import the app's guard; this
+  // is the test that notices if the two readings drift.
+  const ref = { path: 'workflows/hello/runs/r/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/poster.png' }
+  const candidates: Record<string, unknown> = {
+    ref,
+    refWithoutSize: { path: ref.path, name: ref.name, url: ref.url },
+    pathOnly: { path: '/checkout', hits: 3 },
+    pathAndName: { path: ref.path, name: ref.name },
+    string: 'x',
+    nothing: null,
+  }
+
+  it.each(Object.entries(candidates))('agrees on %s', (_label, value) => {
+    const hinted = outputsText({ runId: 'r', status: 'succeeded', outputs: { value } }).includes(FILE_REF_HINT)
+    expect(hinted).toBe(isFileRefLike(value))
+    const listed = outputsText({ runId: 'r', status: 'succeeded', outputs: { value: [value] } }).includes(FILE_REF_HINT)
+    expect(listed).toBe(isFileRefLike(value))
   })
 })

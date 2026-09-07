@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ACTIVE_STEP_STATUSES, snapshotFromRows, snapshotText } from '../src/snapshot.js'
+import { ACTIVE_STEP_STATUSES, FILE_REF_HINT, outputsText, snapshotFromRows, snapshotText } from '../src/snapshot.js'
 import type { RunRowLike, StepRowLike } from '../src/snapshot.js'
 
 /** Hello's `interactive` definition, trimmed to what the derivation reads. */
@@ -137,5 +137,34 @@ describe('snapshotText', () => {
     ).toBe(
       'Run r is running, waiting on pick/0/choose (island; outputs: line (string, required), index (number), notes (json)), review/0/confirm (form; fields: cover (choice, required), notes (markdown), tags (string[]))',
     )
+  })
+})
+
+describe('outputsText', () => {
+  const poster = { path: 'workflows/hello/runs/run_1/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/run_1/poster.png' }
+  const text = (outputs: Record<string, unknown>, status = 'succeeded' as const) => outputsText({ runId: 'run_1', status, outputs })
+
+  it('says a run has no outputs, and "yet" only while it runs', () => {
+    expect(text({}, 'running')).toBe('Run run_1 is running and has no outputs yet')
+    expect(text({})).toBe('Run run_1 is succeeded and has no outputs')
+  })
+
+  it('lists the output keys without the hint when none is a file', () => {
+    expect(text({ line: 'x', count: 3 })).toBe('Run run_1 (succeeded) outputs: line, count')
+  })
+
+  it('names workflow.sign when an output is a File ref (apps#627)', () => {
+    expect(text({ line: 'x', poster })).toBe(`Run run_1 (succeeded) outputs: line, poster\n${FILE_REF_HINT}`)
+    expect(FILE_REF_HINT).toBe('File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.')
+  })
+
+  it('looks inside a file + list output, the file-heaviest case', () => {
+    expect(text({ frames: [poster, { ...poster, name: 'frame-2.png' }] })).toBe(`Run run_1 (succeeded) outputs: frames\n${FILE_REF_HINT}`)
+    expect(text({ frames: [] })).toBe('Run run_1 (succeeded) outputs: frames')
+  })
+
+  it('does not mistake a JSON output with a path key for a file', () => {
+    expect(text({ route: { path: '/checkout', hits: 3 } })).toBe('Run run_1 (succeeded) outputs: route')
+    expect(text({ routes: [{ path: '/checkout' }] })).toBe('Run run_1 (succeeded) outputs: routes')
   })
 })

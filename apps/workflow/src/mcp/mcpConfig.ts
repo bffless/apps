@@ -14,8 +14,13 @@ import { RESOURCES_PATH, STEP_VIEW_RESOURCE_PATH, TOOLS_PATH } from './route'
 /** Re-exported so `scripts/build-mcp.mjs`'s `loadConfig()` (which bundles this module and imports it) sees it too. */
 export { stepViewUri } from './hostTools'
 
-/** The instructions `initialize` answers with — verbatim the prototype's. */
-export const INSTRUCTIONS = `The BFFless Workflow harness: ${CATALOG.length} workflow.* tools to list, describe and watch runs and complete a waiting interactive step (island or form). Pass runId to every run-scoped tool.`
+/**
+ * The instructions `initialize` answers with — the prototype's sentence plus the
+ * one that names the door to a run's files (apps#627): an MCP caller holds no
+ * session, so a File ref's `url` 302s to login for it and `workflow.sign` is how
+ * it gets bytes.
+ */
+export const INSTRUCTIONS = `The BFFless Workflow harness: ${CATALOG.length} workflow.* tools to list, describe and watch runs, complete a waiting interactive step (island or form), and read a run’s files. Pass runId to every run-scoped tool. Files come as File refs, never bytes — pass a ref’s \`path\` to workflow.sign for a fetchable URL; the ref’s own \`url\` is the harness page’s session-only path.`
 
 export const SERVER_NAME = 'bffless-workflow'
 

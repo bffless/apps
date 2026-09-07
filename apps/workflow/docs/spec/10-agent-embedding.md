@@ -42,8 +42,8 @@ slash-tolerant, exactly as island tool names are (04). Every result is an MCP
 | `workflow.await` | `{ runId?, until: 'waiting' \| 'terminal', timeoutMs? }` | resolves when the run needs input or ends — the polite alternative to busy-polling `status` |
 | `workflow.runs` | `{ workflow?, status?, limit? }` | past runs (`GET /api/workflow/runs`) |
 | `workflow.submitStep` | `{ runId?, step, values }` | completes a **waiting** interactive step; the step's kind picks the validator — a `form`'s evaluated fields or an `island`'s declared output map, the same checks a person's submit runs (02, 04) |
-| `workflow.outputs` | `{ runId? }` | the run's outputs — File refs, never bytes (02) |
-| `workflow.sign` | `{ runId?, path }` | `{ url, expiresIn }`, the same presigned GET islands get (04, D6) |
+| `workflow.outputs` | `{ runId? }` | the run's outputs — File refs, never bytes (02); pass a ref's `path` to `workflow.sign` for a fetchable URL — the ref's own `url` is the harness page's session-only path (06) |
+| `workflow.sign` | `{ runId?, path }` | `{ url, expiresIn }`, the same presigned GET islands get (04, D6) — the door to a run's files for any caller without the page's session, an MCP caller included |
 | `workflow.cancel` | `{ runId? }` | cancels the run |
 | `workflow.resume` | `{ runId }` | takes over an expired lease (05) — how an agent adopts a run another surface abandoned |
 

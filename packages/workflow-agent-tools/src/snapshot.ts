@@ -48,7 +48,11 @@ export interface RunSnapshot {
   status: RunStatus | 'invalid' | 'pending'
   /** Keys of the steps that are `running`, `polling` or `waiting` right now. */
   currentSteps: string[]
-  /** The run's top-level outputs — File refs, never bytes. */
+  /**
+   * The run's top-level outputs — File refs, never bytes. Pass a ref's `path`
+   * to `workflow.sign` for a fetchable URL; the ref's own `url` is the harness
+   * page's session-only path (apps#627).
+   */
   outputs: Record<string, unknown>
   steps: Record<string, StepStatus>
   /** Only on `invalid`: why the start was refused, keyed as spec 07 keys them. */
@@ -172,4 +176,40 @@ export function snapshotText(snapshot: RunSnapshot): string {
   // been written, so `waitingOn` would say "waiting on nothing" if it spoke.
   if (snapshot.status === 'pending') return `Run ${snapshot.runId} is pending — dispatched, not started yet`
   return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`
+}
+
+/**
+ * A File ref by the loose reading apps/workflow's `isFileRefLike` uses (spec
+ * 02): `path`, `name` and `url` all strings. `path` alone is not enough — a
+ * pipeline's JSON output can carry a `path` key and not be a file.
+ */
+function isFileRefLike(value: unknown): boolean {
+  return isPlainObject(value) && typeof value.path === 'string' && typeof value.name === 'string' && typeof value.url === 'string'
+}
+
+/** True when an output is a File ref, or a `file` + `list` array holding one (spec 02). */
+function hasFileRef(outputs: Record<string, unknown>): boolean {
+  return Object.values(outputs).some((value) => isFileRefLike(value) || (Array.isArray(value) && value.some(isFileRefLike)))
+}
+
+/**
+ * The sentence `workflow.outputs` adds when an output is a File ref (apps#627):
+ * a caller without the harness page's session — an agent over the MCP
+ * endpoint — cannot fetch a ref's `url`, and nothing else it reads after the
+ * call says which door to use. The descriptions in `catalog.ts` say the same.
+ */
+export const FILE_REF_HINT =
+  'File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.'
+
+/**
+ * The one sentence both adapters say about a run's outputs — "Run <id>
+ * (<status>) outputs: <keys>", plus `FILE_REF_HINT` when one of them is a File
+ * ref — so a model hears the same thing from the harness page and from the
+ * MCP endpoint (D19).
+ */
+export function outputsText(snapshot: Pick<RunSnapshot, 'runId' | 'status' | 'outputs'>): string {
+  const names = Object.keys(snapshot.outputs)
+  if (names.length === 0) return `Run ${snapshot.runId} is ${snapshot.status} and has no outputs${snapshot.status === 'running' ? ' yet' : ''}`
+  const line = `Run ${snapshot.runId} (${snapshot.status}) outputs: ${names.join(', ')}`
+  return hasFileRef(snapshot.outputs) ? `${line}\n${FILE_REF_HINT}` : line
 }

@@ -65,15 +65,16 @@ const DESCRIPTIONS: Readonly<Record<ToolName, string>> = {
   'workflow.start':
     'Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person’s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation’s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.',
   'workflow.status':
-    'The run snapshot: status, the steps in flight, every reached step’s status, the outputs so far, and `waitingOn` — for each waiting step what would satisfy it (its kind, its evaluated inputs, an island’s declared outputs and src).',
+    'The run snapshot: status, the steps in flight, every reached step’s status, the outputs so far, and `waitingOn` — for each waiting step what would satisfy it (its kind, its evaluated inputs, an island’s declared outputs and src). Outputs are File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.',
   'workflow.await':
     'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
   'workflow.runs': 'Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.',
   'workflow.submitStep':
     'Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person’s submit runs; a refusal names each bad value. In an agent host that renders this tool’s UI, call it with `values: {}` for an island or form step: the step’s own UI is shown and the person completes it there — do not invent values for them.',
-  'workflow.outputs': 'The run’s outputs — File refs (`{ path, name, contentType, size, url }`), never bytes.',
+  'workflow.outputs':
+    'The run’s outputs — File refs (`{ path, name, contentType, size, url }`), never bytes. Pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.',
   'workflow.sign':
-    'Exchange a File ref’s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media.',
+    'Exchange a File ref’s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media. This is how a caller without the harness page’s session — an island, an agent over the MCP endpoint — reads a run’s files; the ref’s own `url` is the page’s session-only path.',
   'workflow.cancel': 'Cancel the run. Server-side pipeline jobs already enqueued keep running.',
   'workflow.resume':
     'Take over a `running` run whose driver went away (an expired lease). On the harness page this surface drives it from here. Over the MCP endpoint it dispatches the implementation’s headless driver to resume the run — how a run answered here continues without a person on the page.',

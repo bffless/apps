@@ -7,6 +7,13 @@ export type StepStatus =
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type StepKey = string // `<job>/<index>/<step>`
 
+/**
+ * A stored run file, never its bytes. `url` is `/api/uploads/` + `path` — the
+ * harness page's session-only serve route (spec 06), which turns a caller with no
+ * session cookie away. Anything without the page's session — a sandboxed island,
+ * an agent over the MCP endpoint — passes `path` to `workflow.sign`
+ * (`POST /api/workflow/files/sign`) for a fetchable presigned URL (apps#627).
+ */
 export interface FileRef { path: string; name: string; contentType: string; size: number; url: string }
 export interface StepError { code: string; message: string; status?: number }
 /**

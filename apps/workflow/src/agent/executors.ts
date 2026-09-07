@@ -15,6 +15,7 @@
  */
 import {
   errorResult,
+  outputsText,
   snapshotFromRows,
   snapshotText,
   textResult,
@@ -192,12 +193,7 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     const resolved = await resolveSnapshot(deps, stringArg(args, 'runId'))
     if (!resolved.ok) return resolved.result
     const { runId, status: runStatus, outputs: values } = resolved.snapshot
-    const names = Object.keys(values)
-    const text =
-      names.length === 0
-        ? `Run ${runId} is ${runStatus} and has no outputs${runStatus === 'running' ? ' yet' : ''}`
-        : `Run ${runId} (${runStatus}) outputs: ${names.join(', ')}`
-    return textResult(text, { runId, status: runStatus, outputs: values })
+    return textResult(outputsText({ runId, status: runStatus, outputs: values }), { runId, status: runStatus, outputs: values })
   }
 
   const runs: Executor = async (args) => {
