@@ -18,10 +18,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { Provider } from 'react-redux'
 import { createMemoryRouter, createRoutesFromElements, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import { routes } from '../routes'
-import { seedFinishedRun } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
-import { resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
+import { routes } from '../../routes'
+import { seedFinishedRun } from '../../mocks/db'
+import { FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
+import { resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 
 afterEach(() => {
   resetHelloHarness()
@@ -55,7 +55,10 @@ describe('RunPage — selection is scoped to the run being viewed', () => {
     // A step is selected on Run A.
     fireEvent.click(chip(page, 'slow/0/start')!)
     expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
-    expect(chip(page, 'slow/0/start')).toHaveAttribute('aria-pressed', 'true')
+    // The chip's `aria-pressed` no longer applies — the selection is Run A's
+    // own URL now.
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
+    expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
 
     // Navigate to Run B — the same `RunPage` instance, only the `:runId`
     // param changes (no remount, no `key`).
@@ -99,10 +102,11 @@ describe('RunPage — hoveredValue is scoped to the run being viewed', () => {
     await within(page).findByTestId('run-status')
 
     // Hover an output value on Run A — scoped to the step pane itself, since
-    // `RunOutputs` below it renders its own `poster` label for the same value.
+    // the job-pane rendered alongside it (the interim job page) carries an
+    // Input | Output tablist of its own too.
     fireEvent.click(chip(page, 'slow/0/start')!)
-    fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
     const pane = within(page).getByTestId('step-pane')
+    fireEvent.click(within(pane).getByRole('tab', { name: 'Output' }))
     const wrapper = within(pane).getByText('poster').closest('.value')!
     fireEvent.mouseEnter(wrapper)
     expect(store.getState().ui.hoveredValue).not.toBeNull()

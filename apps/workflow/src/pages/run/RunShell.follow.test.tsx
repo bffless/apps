@@ -23,15 +23,15 @@ import {
   RouterProvider,
 } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import App from '../App'
-import type { Definition, StepKey } from '../lib/runner/types'
-import { stepKey } from '../lib/runner/types'
-import { server } from '../mocks/server'
-import { routes } from '../routes'
-import type { AppStore } from '../store'
-import { startRun } from '../store/runnerActions'
-import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
-import { islandStore, pumpUntil, resetIslandHarness } from '../test/islandHarness'
+import App from '../../App'
+import type { Definition, StepKey } from '../../lib/runner/types'
+import { stepKey } from '../../lib/runner/types'
+import { server } from '../../mocks/server'
+import { routes } from '../../routes'
+import type { AppStore } from '../../store'
+import { startRun } from '../../store/runnerActions'
+import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
+import { islandStore, pumpUntil, resetIslandHarness } from '../../test/islandHarness'
 
 /** A finished pipeline step of `hello`, there to be pinned on. */
 const START_KEY: StepKey = 'slow/0/start'
@@ -83,11 +83,21 @@ describe('RunPage — follow mode', () => {
 
   it('is pinned by a `?step=` deep link: the waiting form does not open over it, and the toggle reads off', async () => {
     const { store, runId } = await startHelloAtConfirmWaiting()
-    renderAt(store, `/hello/hello/runs/${runId}?step=${START_KEY}`)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/hello/hello/runs/${runId}?step=${START_KEY}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
     const page = screen.getByRole('main')
 
     await within(page).findByTestId('step-pane')
-    expect(chip(page, START_KEY)).toHaveAttribute('aria-pressed', 'true')
+    // The chip's `aria-pressed` no longer applies — the deep link's own URL
+    // is the pin now.
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/slow/0`)
+    expect(router.state.location.search).toBe(`?step=${encodeURIComponent(START_KEY)}`)
     expect(within(page).queryByRole('button', { name: 'Finish' })).not.toBeInTheDocument()
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
     expect(store.getState().ui.follow).toEqual({ runId, on: false })
@@ -99,6 +109,10 @@ describe('RunPage — follow mode', () => {
     const page = screen.getByRole('main')
     await within(page).findByRole('button', { name: 'Finish' })
 
+    // The auto-follow effect has already navigated to the waiting form's own
+    // job/step route, so the chip is the Summary's — back there on the
+    // step-pane's own "Run" crumb before the person can click it.
+    fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
     // The person picks a finished step: the form's pane gives way, and stays away.
     fireEvent.click(chip(page, START_KEY)!)
     expect(store.getState().ui.selectedStep).toBe(START_KEY)
@@ -122,7 +136,9 @@ describe('RunPage — follow mode', () => {
     await within(page).findByRole('button', { name: 'Finish' })
 
     // The job crumb climbs out of the form to its job — a person's move.
-    fireEvent.click(within(page).getByTestId('step-pane-back'))
+    // Scoped to the step-pane: the job-pane rendered alongside it carries an
+    // identically-testid'd "Run" crumb of its own.
+    fireEvent.click(within(within(page).getByTestId('step-pane')).getByTestId('step-pane-back'))
     expect(store.getState().ui.selectedStep).toBe('confirm')
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
     // …and the form is not re-opened over the job card.
@@ -251,7 +267,11 @@ describe('RunPage — unattended while pinned', () => {
     await waitFor(() => expect(host.mounts).toHaveLength(1))
     expect(within(page).getByTestId('step-pane')).toContainElement(screen.getByTestId('island-frame'))
 
-    // The person pins the finished Director step.
+    // The person pins the finished Director step. The auto-follow effect has
+    // already navigated to the loading scene's own job/step route, so the
+    // chip is the Summary's — back there on the step-pane's own "Run" crumb
+    // first.
+    fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
     fireEvent.click(chip(page, DIRECTOR_KEY)!)
     expect(store.getState().ui.selectedStep).toBe(DIRECTOR_KEY)
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
