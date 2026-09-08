@@ -57,14 +57,6 @@ export function stepLabel(step: Step): string {
   return typeof name === 'string' && name !== '' ? name : step.id
 }
 
-/** The chip's height in px, from the definition alone. */
-export function chipHeight(step: Step, mode: 'definition' | 'run'): number {
-  const base = CHIP.row
-  if (mode !== 'definition') return base
-  const outputs = declaredOutputs(step).length
-  return outputs === 0 ? base : base + outputs * CHIP.out + CHIP.outPad
-}
-
 /** Card geometry in px — mirrored by `.job-card` sizing in `index.css`; change both. */
 export const CARD = {
   /** The header strip: job name (+ fraction). */

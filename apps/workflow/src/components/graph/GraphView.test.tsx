@@ -86,8 +86,9 @@ describe('GraphView (definition mode)', () => {
     )
   })
 
-  it('lists a job’s declared outputs with their types in definition mode, and opens its declaration on click', () => {
-    renderDefinition()
+  it('lists a job’s declared outputs with their types in definition mode, and reports the clicked job', () => {
+    const onSelect = vi.fn()
+    renderDefinition({ onSelect, selectedJob: null })
 
     const slow = node('slow')
     expect(slow).toHaveTextContent('report')
@@ -98,7 +99,26 @@ describe('GraphView (definition mode)', () => {
 
     fireEvent.click(slow)
 
-    expect(screen.getByTestId('step-declaration')).toHaveTextContent('"needs": "greet"')
+    // The declaration is the job page's now (`WorkflowPage.test.tsx`): the
+    // graph names the job and shows nothing of it beside the canvas.
+    expect(onSelect).toHaveBeenCalledWith('slow', undefined)
+    expect(screen.queryByTestId('step-declaration')).not.toBeInTheDocument()
+    expect(document.querySelector('.graph-panel')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Input of A slow server job' }))
+    expect(onSelect).toHaveBeenCalledWith('slow', 'Input')
+  })
+
+  it('presses the node its owner has selected, and presses none where nothing tracks a selection', () => {
+    const { unmount } = renderDefinition({ selectedJob: 'slow' })
+
+    expect(node('slow')).toHaveAttribute('aria-pressed', 'true')
+    expect(node('greet')).toHaveAttribute('aria-pressed', 'false')
+
+    unmount()
+    // A graph with no owner to select for is not a toggle at all.
+    renderDefinition()
+    expect(node('slow')).not.toHaveAttribute('aria-pressed')
   })
 
   it('counts a job’s steps and notes what a matrix job fans out over', () => {

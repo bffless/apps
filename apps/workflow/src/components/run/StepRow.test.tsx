@@ -175,6 +175,51 @@ describe('StepRow — headless badge', () => {
   })
 })
 
+describe('StepRow — the declared body', () => {
+  const start = hello.jobs.slow!.steps[0]! // `with: { path, body }`, two declared outputs
+
+  it('reads the step’s declaration: its inputs and where they come from, what it promises, the raw block', () => {
+    renderRow({ row: declaredRow(start, 'slow'), mode: 'declared', open: true })
+
+    const body = screen.getByLabelText('Declaration')
+    // Every `with` entry is a value, with the upstream values its expressions
+    // read named the way the run-mode Input tab names them.
+    expect(within(body).getByText('path')).toBeInTheDocument()
+    expect(within(body).getByText('body')).toBeInTheDocument()
+    expect(within(body).getByText('from greet job output, inputs.photo')).toBeInTheDocument()
+    // `path: slow` reads nothing upstream, so it claims no origin.
+    expect(within(body).queryByText('from inputs.greeting')).not.toBeInTheDocument()
+
+    // What the step promises, with the declared types (`declaredOutputs`).
+    expect(within(body).getByText('report')).toBeInTheDocument()
+    expect(within(body).getByText('markdown')).toBeInTheDocument()
+    expect(within(body).getByText('poster')).toBeInTheDocument()
+    expect(within(body).getByText('file')).toBeInTheDocument()
+
+    // …and the declaration itself, behind its disclosure.
+    expect(within(body).getByText('Declaration').tagName).toBe('SUMMARY')
+    expect(within(body).getByTestId('step-declaration')).toHaveTextContent('"path": "slow"')
+  })
+
+  it('says so plainly for a step that declares neither inputs nor outputs', () => {
+    const bare: Step = { id: 'nothing', index: 0, uses: 'script', raw: { id: 'nothing', uses: 'script' } }
+    renderRow({ row: declaredRow(bare, 'slow'), mode: 'declared', open: true })
+
+    const body = screen.getByLabelText('Declaration')
+    expect(within(body).getByText('This step declares no inputs.')).toBeInTheDocument()
+    expect(within(body).getByText('This step declares no outputs.')).toBeInTheDocument()
+  })
+
+  it('closes on Esc inside the body, through the page’s own toggle', () => {
+    const onToggle = vi.fn()
+    renderRow({ row: declaredRow(start, 'slow'), mode: 'declared', open: true, onToggle })
+
+    fireEvent.keyDown(screen.getByLabelText('Declaration'), { key: 'Escape' })
+
+    expect(onToggle).toHaveBeenCalledWith('slow/0/start')
+  })
+})
+
 describe('StepRow — data-flow', () => {
   it('stamps data-flow only for a hover this row is the source or a target of', () => {
     const row = stepsOfJob(hello, finished, 'greet', 0)[0]! // greet/0/say declares `line`

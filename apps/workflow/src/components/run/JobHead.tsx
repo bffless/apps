@@ -2,6 +2,10 @@
  * The job page's head (spec 2026-09-08, phase 3): who this page is about, and
  * the two actions that belong to the job rather than to any one step.
  *
+ * The workflow page renders the same head in `definition` mode — the same job,
+ * before any run of it exists — where every line that reads an *attempt* is
+ * simply absent (see `mode` below).
+ *
  * Lifted out of the old `JobPane`'s `<header>` — the eyebrow crumb, the label,
  * the job key, the status pill, the matrix note and the fork button all read
  * the same as they did — with two changes the GitHub shape asks for: the
@@ -13,8 +17,8 @@
  * so `Run` here is the one climb out of a job (the rail's Summary row being
  * the other). It is only a button when the page hands it a `onRun` — the same
  * contract the fork button has always had, and for the same reason: a head
- * rendered without a page above it (a test, PR 5's definition view) must not
- * offer a move nothing can honour.
+ * rendered without a page above it (a test, the workflow page's definition
+ * head) must not offer a move nothing can honour.
  */
 import { formatDuration } from '../../lib/duration'
 import { jobDuration, jobStatus, itemTotal, stepsOfJob } from '../../lib/runner/jobs'
@@ -26,8 +30,19 @@ import type { YamlSource } from './YamlDrawer'
 
 export interface JobHeadProps {
   def: Definition
-  state: RunState
+  /** The folded run — `run` mode only; a definition head has no run to read. */
+  state?: RunState
   job: string
+  /**
+   * `run` is a job of a run (the status pill, the duration, the item, the
+   * crumb up to the Summary); `definition` is the same job before any run
+   * exists — the workflow page's head. Everything a definition cannot know is
+   * simply absent there rather than guessed: no pill (there is no attempt to
+   * report), no duration, no `Run ›` crumb (there is no run above it), and a
+   * matrix job is `matrix` without a count, because how many items it fans out
+   * into is a fact only a run has.
+   */
+  mode?: 'run' | 'definition'
   /** One item of a matrix job; absent on the collect view and on a plain job. */
   index?: number
   /**
@@ -43,56 +58,63 @@ export interface JobHeadProps {
   source?: YamlSource
 }
 
-export function JobHead({ def, state, job, index, onFork, onRun, source }: JobHeadProps) {
+export function JobHead({ def, state, job, index, mode = 'run', onFork, onRun, source }: JobHeadProps) {
   const decl = def.jobs[job]
   const label = decl ? jobLabel(decl) : job
-  const rows = stepsOfJob(def, state, job, index)
+  // Every line below the name is a fact about an *attempt*, so a definition
+  // head reads none of them — there is no state to read them from.
+  const run = mode === 'run' && state !== undefined
+  const rows = run ? stepsOfJob(def, state, job, index) : []
   const states = rows.flatMap((row) => (row.state ? [row.state] : []))
-  const duration = jobDuration(states)
-  const total = itemTotal(state, job)
+  const duration = run ? jobDuration(states) : undefined
+  const total = run ? itemTotal(state, job) : 1
   const note = decl ? matrixNote(decl) : null
   // Only a job that actually fanned out has *items*: an `/0` on a plain job's
   // URL is the one and only leg of it, and calling that "item 1 of 1" would
   // invent a level the workflow never declared.
-  const isItem = index !== undefined && decl?.matrix !== undefined
+  const isItem = run && index !== undefined && decl?.matrix !== undefined
   const item = isItem ? (state.expansions[job]?.items[index!] ?? {}) : undefined
   const kind = isItem
     ? 'item'
     : decl?.matrix
-      ? `matrix · ${total} ${total === 1 ? 'item' : 'items'}`
+      ? run
+        ? `matrix · ${total} ${total === 1 ? 'item' : 'items'}`
+        : 'matrix'
       : 'job'
 
   return (
     <header className="job-head" data-testid="job-head">
       <span className="job-head-title">
-        <nav className="job-eyebrow" aria-label="Where this sits">
-          {onRun ? (
-            <button type="button" className="pane-crumb" onClick={onRun}>
-              Run
-            </button>
-          ) : (
-            <span className="pane-crumb is-static">Run</span>
-          )}
-          <span className="pane-crumb-sep" aria-hidden="true">
-            ›
-          </span>
-          <span className="pane-crumb is-current" aria-current="location">
-            Job
-          </span>
-          {isItem && (
-            <>
-              <span className="pane-crumb-sep" aria-hidden="true">
-                ›
-              </span>
-              <span className="pane-crumb is-current">Item</span>
-            </>
-          )}
-        </nav>
+        {run && (
+          <nav className="job-eyebrow" aria-label="Where this sits">
+            {onRun ? (
+              <button type="button" className="pane-crumb" onClick={onRun}>
+                Run
+              </button>
+            ) : (
+              <span className="pane-crumb is-static">Run</span>
+            )}
+            <span className="pane-crumb-sep" aria-hidden="true">
+              ›
+            </span>
+            <span className="pane-crumb is-current" aria-current="location">
+              Job
+            </span>
+            {isItem && (
+              <>
+                <span className="pane-crumb-sep" aria-hidden="true">
+                  ›
+                </span>
+                <span className="pane-crumb is-current">Item</span>
+              </>
+            )}
+          </nav>
+        )}
         <h2 className="job-head-name">{label}</h2>
         <span className="pane-key">{job}</span>
       </span>
 
-      <StatusPill status={jobStatus(states)} />
+      {run && <StatusPill status={jobStatus(states)} />}
       {duration !== undefined && <span className="job-head-meta">{formatDuration(duration)}</span>}
       {note && <span className="job-head-note">{note}</span>}
       {isItem && (

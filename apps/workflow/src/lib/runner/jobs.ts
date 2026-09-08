@@ -47,6 +47,21 @@ export function itemTotal(state: RunState, job: string): number {
 
 export interface JobStepRow { key: StepKey; step: Step; index: number; state: StepState | undefined }
 
+/**
+ * The same rows, for a job nothing has run: the workflow page's declared list
+ * (spec §The workflow page). There is no fan-out before a run — a matrix job's
+ * items are a fact only a run has — so every row is the job's one and only
+ * leg, `/0`, carrying the step key a run of it would use.
+ */
+export function declaredStepsOfJob(def: Definition, job: string): JobStepRow[] {
+  return (def.jobs[job]?.steps ?? []).map((step) => ({
+    key: stepKey(job, 0, step.id),
+    step,
+    index: 0,
+    state: undefined,
+  }))
+}
+
 export function stepsOfJob(def: Definition, state: RunState, job: string, index?: number): JobStepRow[] {
   const decl = def.jobs[job]
   if (!decl) return []

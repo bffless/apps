@@ -16,7 +16,8 @@
  *
  * The whole node is one `<button>`: the job is the middle level of run › job ›
  * step, so it is one keyboard-reachable target with one selected state
- * (`aria-pressed`), and clicking it reports the job id to its owner. Its
+ * (`aria-pressed`, only where an owner tracks one), and clicking it reports
+ * the job id to its owner. Its
  * *content* is its accessible name — an `aria-label` here would override that
  * with the job's name alone and hide everything the node exists to say: the
  * status word, the duration, `N of M done`, the matrix note, the OUT rows.
@@ -46,6 +47,12 @@ export interface JobCardProps {
   row: number
   mode: 'definition' | 'run'
   state?: RunState
+  /**
+   * Whether this node is the one its owner has open. Absent — not `false` —
+   * when the owner tracks no selection at all: `aria-pressed` then stays off
+   * the node entirely, because a toggle that nothing can press should not
+   * report itself as unpressed (fix round 4).
+   */
   selected?: boolean
   /** `side` is set when the click came from an edge dot (08: "jump straight to one side"). */
   onPick: (job: string, side?: 'Input' | 'Output') => void
@@ -84,7 +91,7 @@ export function JobCard({ job, def, col, row, mode, state, selected, onPick, flo
       data-row={row}
       data-flow={jobFlow}
       data-state={mode === 'run' ? status : 'declared'}
-      aria-pressed={selected ?? false}
+      aria-pressed={selected}
       style={style}
       onClick={() => onPick(job.id)}
     >

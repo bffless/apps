@@ -19,13 +19,14 @@
  * what the edges carry.
  *
  * The graph draws **jobs**, one node each (spec 2026-09-08, Task 8): steps are
- * the job page's list now, so a click on the graph always names a job.
- * Definition mode owns its side panel (clicking a node shows the job's
- * declaration); run mode reports the click instead, because there the pane
- * belongs to the run page, which has the evaluated inputs and outputs to put
- * in it.
+ * the job page's list now, so a click on the graph always names a job. Both
+ * modes report that click the same way — `onSelect(job)` — and neither shows
+ * anything of the job itself: what a click opens belongs to the page under the
+ * graph, which is the run's job page in run mode and the job's declared rows
+ * on the workflow page (spec §The workflow page). The side panel definition
+ * mode used to own went with that change.
  */
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { dataFlowEdges, needsEdges, topoLayers } from '../../lib/runner/graph'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { useAppSelector } from '../../store/hooks'
@@ -59,7 +60,6 @@ export interface GraphViewProps {
 }
 
 export function GraphView({ def, mode, state, selectedJob, onSelect }: GraphViewProps) {
-  const [declared, setDeclared] = useState<{ job: string } | null>(null)
   const hoveredValue = useAppSelector((s) => s.ui.hoveredValue)
   // The edge list depends on the definition alone, so it is memoized on the
   // definition alone: folded into the `flow` memo it was rebuilt on every
@@ -96,15 +96,8 @@ export function GraphView({ def, mode, state, selectedJob, onSelect }: GraphView
   const height =
     PAD * 2 + rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(rows - 1, 0) * ROW_GAP
 
-  /**
-   * The one click the graph has: a job, from its node or one of its dots. In
-   * definition mode there is no run to open, so it opens the job's own
-   * declaration in the panel beside the graph (Decision 10).
-   */
-  const pickJob = (job: string, side?: PaneSide) => {
-    if (mode !== 'run') setDeclared({ job })
-    else onSelect?.(job, side)
-  }
+  /** The one click the graph has: a job, from its node or one of its dots. */
+  const pickJob = (job: string, side?: PaneSide) => onSelect?.(job, side)
 
   return (
     <div className="graph" data-mode={mode}>
@@ -163,7 +156,10 @@ export function GraphView({ def, mode, state, selectedJob, onSelect }: GraphView
                   row={row}
                   mode={mode}
                   state={state}
-                  selected={selectedJob === job}
+                  // Only a graph whose owner tracks a selection has a pressed
+                  // state at all: `undefined` leaves `aria-pressed` off the
+                  // node rather than claiming "not pressed" where nothing can be.
+                  selected={selectedJob === undefined ? undefined : selectedJob === job}
                   onPick={pickJob}
                   flow={flow}
                   style={{
@@ -214,21 +210,6 @@ export function GraphView({ def, mode, state, selectedJob, onSelect }: GraphView
             right dot · output
           </span>
         </p>
-      )}
-
-      {declared && (
-        <aside className="graph-panel" aria-label="Job declaration">
-          <header className="graph-panel-head">
-            <h3 className="graph-panel-title">{declared.job}</h3>
-            <button type="button" className="link-button" onClick={() => setDeclared(null)}>
-              Close
-            </button>
-          </header>
-          {/* `step-declaration` until PR 5 renames it: the e2e and live locators read it. */}
-          <pre className="declaration" data-testid="step-declaration">
-            {JSON.stringify(def.jobs[declared.job]?.raw ?? null, null, 2)}
-          </pre>
-        </aside>
       )}
     </div>
   )

@@ -45,7 +45,6 @@ import { formatDuration } from '../../lib/duration'
 import { stepImageMap } from '../../lib/imageMap'
 import { stepOutputDecl } from '../../lib/outputDecls'
 import { dataFlowEdges, refsIn } from '../../lib/runner/graph'
-import type { ValueRef } from '../../lib/runner/graph'
 import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
 import { useAppDispatch } from '../../store/hooks'
 import { valueHovered } from '../../store/uiSlice'
@@ -54,9 +53,9 @@ import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
-import type { ValueDecl } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
 import { inferDecl } from '../values/inferDecl'
+import { kindTag, originOf } from '../values/valueMeta'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
 import { ScriptStepCard } from './ScriptStepCard'
@@ -73,18 +72,6 @@ function parseKey(key: StepKey): { job: string; index: number; stepId: string } 
   if (job === undefined || index === undefined || rest.length === 0) return null
   const parsed = Number(index)
   return Number.isInteger(parsed) ? { job, index: parsed, stepId: rest.join('/') } : null
-}
-
-/** "from `<job>/<step>`" / "from `<job>` job output" / "from `inputs.<name>`" (08). */
-function originLabel(job: string, ref: ValueRef): string {
-  if (ref.context === 'inputs') return `inputs.${ref.name}`
-  if (ref.context === 'needs') return `${ref.name} job output`
-  return `${job}/${ref.name}`
-}
-
-function originOf(job: string, declared: unknown): string | undefined {
-  const labels = refsIn(declared).map((ref) => originLabel(job, ref))
-  return labels.length > 0 ? labels.join(', ') : undefined
 }
 
 /**
@@ -114,12 +101,6 @@ function destinationOf(def: Definition, step: StepState, output: string): string
     .map((edge) => `${edge.to.job}/${edge.to.step}`)
   const unique = [...new Set(targets)]
   return unique.length > 0 ? unique.join(', ') : undefined
-}
-
-/** The mono tag beside a value's name: its declared type, and its renderer when named. */
-function kindTag(decl: ValueDecl): string {
-  const base = `${decl.type}${decl.list ? ' · list' : ''}`
-  return typeof decl.render === 'string' ? `${base} · ${decl.render}` : base
 }
 
 // `origin` above is one joined string per entry — a pipeline step's `with`
