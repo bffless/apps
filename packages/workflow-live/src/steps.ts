@@ -31,7 +31,12 @@ export function parseStepKey(key: string): { job: string; index: string; stepId:
  */
 export async function openStep(page: Page, key: string) {
   const { job, index } = parseStepKey(key)
-  const row = page.locator(`[data-testid="step"][data-key="${key}"]`)
+  // `.first()` on every use of the row, not just the guarded one: `getAttribute`
+  // and `click` are strict, so a second element carrying the same key — a
+  // fullscreen overlay's copy, a workflow page's declared row behind a run —
+  // would throw a strict-mode violation instead of opening the step. The row
+  // the page means is always the first in document order.
+  const row = page.locator(`[data-testid="step"][data-key="${key}"]`).first()
   const alreadyOpen = (await row.count()) > 0 && (await row.getAttribute('aria-expanded').catch(() => null)) === 'true'
   if (!alreadyOpen) {
     const rail = page.locator('nav[aria-label="Run"]')
@@ -50,5 +55,5 @@ export async function openStep(page: Page, key: string) {
       await row.click()
     }
   }
-  await page.locator(`li:has([data-testid="step"][data-key="${key}"])`).getByTestId('step-pane').waitFor()
+  await page.locator(`li:has([data-testid="step"][data-key="${key}"])`).first().getByTestId('step-pane').waitFor()
 }

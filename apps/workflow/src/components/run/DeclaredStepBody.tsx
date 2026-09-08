@@ -54,7 +54,7 @@ export function DeclaredStepBody({ job, step, onClose }: DeclaredStepBodyProps) 
   }
 
   return (
-    <div className="step-body" aria-label="Declaration" onKeyDown={onKeyDown}>
+    <div className="step-body declared-body" aria-label="Declaration" onKeyDown={onKeyDown}>
       <h4 className="section-title">Inputs</h4>
       {inputs.length === 0 ? (
         <p className="note">This step declares no inputs.</p>

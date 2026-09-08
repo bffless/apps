@@ -5,9 +5,10 @@
  * The graph draws one node per job (Task 8), so every click on it is a job:
  * the step below it is picked on the job's own page.
  *
- * Interim — Phase 3 replaces the graph-plus-card with the job list. An old
- * `?step=` on this URL never reaches here: the shell redirects it, because
- * only the shell can do so without racing its own follow logic.
+ * The graph and the run card are the Summary's shape for good (Decision 8:
+ * only the job page traded its graph for the rail). An old `?step=` on this
+ * URL never reaches here: the shell redirects it, because only the shell can
+ * do so without racing its own follow logic.
  */
 import { GraphView } from '../../components/graph/GraphView'
 import { RunPane } from '../../components/run/RunPane'

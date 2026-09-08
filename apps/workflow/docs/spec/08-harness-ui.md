@@ -12,15 +12,25 @@ prototype's "Workflow Graph A" artboard.
 |---|---|
 | `/` | **Implementations** — every alias that answered discovery (06), with name, version, workflow count, preview badge, last run; invalid `index.json` shown with its error |
 | `/<impl>` | **Workflows** of one implementation — list with description, inputs count, jobs count, headless-safe, last run status |
-| `/<impl>/<workflow>` | **Workflow** — the graph (below) in *definition* mode + "Start a run" + recent runs |
+| `/<impl>/<workflow>` | **Workflow** — the graph (below) in *definition* mode, a picked job's **declared rows** under it + "Start a run" + recent runs |
 | `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it. `?from=<runId>` prefills it for Re-run; `?auto=1&inputs=<base64url(JSON)>` is the headless entry (07) — no form at all, a `kickoff-auto` notice while the run starts, or a `kickoff-invalid` list of the values it refused |
 | `/<impl>/<workflow>/runs` | **Past runs** — table: status (a running run parked on a step says "waiting on <step>" beside its pill, linked to that step), started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
-| `/<impl>/<workflow>/runs/<runId>` | **Summary** — the graph in *run* mode + the run's inputs, results, summary and annotations |
+| `/<impl>/<workflow>/runs/<runId>` | **Summary** — the jobs-only graph in *run* mode + the run card: its inputs, then its results, its annotations and a summary section per job. An old `?step=` here redirects (replace) to the step's job page |
 | `/<impl>/<workflow>/runs/<runId>/job/<job>` | **Job page** — the job head, the job's Input/Output disclosure, the step rows; `?step=<key>` names the row that is open. A matrix job with no index is the **collect view**: the collected outputs and one link per item |
 | `/<impl>/<workflow>/runs/<runId>/job/<job>/<index>` | **Matrix item** — the same page for one leg of a matrix job |
 | `/<impl>/<workflow>/file` | **View workflow file** — YAML with lint results (also linked from a run: the snapshot) |
 
-The left rail is the implementation → workflow tree; the header shows the project and user.
+Outside a run the left rail is the implementation → workflow tree. On **every run route** the
+**run rail** takes its place (`nav[aria-label="Run"]`) — one left column, never both: `←
+Workflow` back to the workflow (`rail-back`), **Summary** with the run's status glyph
+(`rail-summary`), the eyebrow `JOBS` and one row per job in scheduling order
+(`rail-job[data-job]`: glyph, label, duration), a matrix job as a group (`rail-matrix`) whose
+row carries `N of M` and a chevron over its items (`rail-job[data-job][data-index]`, each
+labelled `who: world` / `Item 3` as the item is), then `RUN DETAILS` — **Past runs** and
+**Workflow file** (the run's own snapshot). Every row is a link, so a click on one is a
+person's navigation and **pins** the selection. The current row is highlighted the way the
+implementation tree highlights the open workflow. The top bar shows the breadcrumb and the
+signed-in user.
 
 ## The graph
 
@@ -36,16 +46,21 @@ between jobs needs.
   running polling waiting succeeded failed skipped cancelled`), a mono duration, and — for a
   matrix job — `N of M done` in place of the status word. A matrix job also carries a `MATRIX ·
   <id>` eyebrow over the name and a note line with the strategy ("For each who · max 2 at
-  once"). The header shows elapsed, "7 of 14 done", Cancel, Resume/Take-over when applicable.
-  A job's status is the engine's result: a `continue-on-error` failure does not fail the job.
+  once"). The run bar above carries the run's own elapsed, "6 of 6 done" and Cancel (below).
+  A job's status is the **engine's** result (Task 17b), not the worst of its rows: a step that
+  failed under `continue-on-error` is absorbed — its own row still reads `failed`, but the job
+  it is in does not — and a job whose step is parked on a form or an island reads `waiting`.
+  The rail row, the node and the job head all print that one reading, so they cannot disagree.
 - **Definition mode** (`/<impl>/<workflow>`): the status line is instead the job's step count
-  (`N steps`), and the card adds one `OUT name · type` line per output the job declares.
-  Clicking a node opens the job's declaration (its raw block) in a side panel; run mode reports
-  the click to the run page instead, which has the evaluated inputs/outputs to show.
+  (`N steps`), and the node adds one `OUT name · type` line per output the job declares.
+  Clicking a node lists that job's **declared rows** under the graph (below); in run mode the
+  whole node is the job's handle onto its own page.
 - **Edges** = `needs` (structural) and **data-flow** edges derived from expressions
   (`needs.x.outputs.y`, `steps.x.outputs.y`), read at job granularity: hovering a payload chip
   highlights the job it came from (a solid ring) and every job that reads it (a dashed outline),
-  even though the chip itself lives in a step row's body, off the graph.
+  even though the chip itself lives in a step row's body, off the graph. The same hover marks
+  the **step rows** of the job page in front of the person (`data-flow` on the row head);
+  highlighting across pages is not attempted.
 - **Edge dots** are unchanged: the two dots on a node's edges are "jump straight to one side" —
   the left one opens the job on Input (what it waited on), the right one on Output (what it
   hands on).
@@ -60,7 +75,7 @@ no step card any more, so the page around an open step never goes away.
 1. **Job head** (`job-head`): the eyebrow `RUN › JOB` (`› ITEM` on a matrix leg) — `Run` is
    the one climb out of a job, the rail's Summary row being the other — the job's label, its
    id in mono, the status pill, the duration, the matrix note when there is one, and on a leg
-   `item i+1 of N`. On the right, the two actions that belong to the job rather than to any
+   `item i+1 of N · <item label>`. On the right, the two actions that belong to the job rather than to any
    one step: **Re-run from this job** (`job-fork`) and **YAML** on the job block. The fork is
    05's: a new run under the current definition, this job and everything downstream of it run
    again, every other job copied from this run — offered only on a terminal run this tab is
@@ -77,8 +92,9 @@ no step card any more, so the page around an open step never goes away.
 
 A **matrix collect view** (`/job/<matrix>`, no index) is the same page with `MATRIX · N ITEMS`
 as its kind, the *collected* outputs in the disclosure, and — instead of step rows — an
-**Items** list (`job-items`): one row per item (glyph, item label, `item i+1`, duration), each
-a link to that item's page. Deliberately no rows: 2 items × 3 steps is a list whose rows say
+**Items** list (`job-items`): one row per item (`job-item[data-index]`: glyph, item label,
+`item i+1`, and its duration once the leg is over, `N of M done` while it is not), each a link
+to that item's page. Deliberately no rows: 2 items × 3 steps is a list whose rows say
 nothing about which leg they belong to, and the item links are the answer to that question.
 
 ## Step rows
@@ -147,19 +163,53 @@ verbatim, names and all.
 - Rows do not fight the person: a row that is mid-interaction — a live island `running` or
   `waiting`, a form `waiting` — is never collapsed by the page.
 
+## The workflow page: declared rows
+
+`/<impl>/<workflow>` is the same shape before any run exists (2026-09-08 redesign, Task 17).
+Clicking a job on the definition graph lists that job's steps **under the graph**, as the same
+`job-page` / `job-head` / `job-steps` / `step` markup the run's job page draws — one reading of
+a workflow serving both screens — in their *declared* reading:
+
+- The head is the job's name, its id and its kind (`matrix` without a count: how many items it
+  fans out into is a fact only a run has). Nothing that reads an *attempt* is guessed at — no
+  status pill, no duration, no `Run ›` crumb, no fork, no YAML control.
+- A row's head carries the **kind glyph** in place of the status glyph, the step's id, its
+  `uses` word and its `headless: …` badge when it declares one; `data-state="declared"`.
+- The body is the declaration: **Inputs** — the declared `with`, entry by entry, through the
+  same renderers, an expression shown as the string it is (a promise about a value is not the
+  value); **Outputs** — the same `OUT name · type` lines the graph's node draws; and the raw
+  block behind a closed **Declaration** disclosure (`step-declaration`). The per-step side
+  panel the graph used to open went with them: a step's declaration belongs in the step's own
+  row, not beside the diagram.
+- Which rows are open is local and nothing else — there is no run to address, so no `?step=`
+  and no selection worth putting in a URL — and picking another job starts its list fresh.
+
 ## Run page sections
 
-1. Header: workflow name, run id, status pill, started by/at, elapsed/duration, annotation
-   badges (notice/warning/error counts), actions (Cancel · Resume · Re-run · Delete · View
-   workflow file). It is the run's, so it is the same on every page below.
-2. **Three pages under it, one level of the taxonomy at a time** (decided 2026-08-26; routed
-   2026-09-08): **run › job › step**, and the selection is the **route** — the Summary, `/job/<job>[/<index>]` (job), and `?step=<key>` on a job route (step). An old `?step=` on the Summary URL redirects (replace) to where it lives now.
+1. Header: workflow name, run id, started by/at, then the run bar — status pill, mono
+   progress ("6 of 6 done"), elapsed/duration, annotation badges (notice/warning/error
+   counts) and the **Follow run** toggle while the run is in flight. Its actions are Past
+   runs · View workflow file · Copy diagnostics · Attach to run · Re-run, plus Cancel while
+   this tab drives a running run and Delete where the person may. Resume and Take over are
+   the banners' (05), not the header's. It is the run's, so it is the same on every page
+   below.
+2. **Three screens under it, one per level of the taxonomy** (decided 2026-08-26; routed
+   2026-09-08): **run › job › step**, and the level is the **route** — the Summary, `/job/<job>[/<index>]` (job), and `?step=<key>` on a job route (step). An old `?step=` on the Summary URL redirects (replace) to where it lives now.
    - **Summary** (`/runs/<runId>`): the **graph** in run mode, the navigator — one node per
-     job — and under it the run's own values. *Input* is the kickoff form's values; *Output*
-     is the **results** (the workflow's declared `outputs`, each with renderer + Download),
-     then the **summary** (step summaries in job order — the GitHub job-summary page) and the
-     **annotations**, each linking into the graph. A live run returns here when it finishes.
+     job — and under it the run card, the run's own values. *Input* is the kickoff form's
+     values; *Output* is, in this order, the **results** (the workflow's declared `outputs`,
+     each with renderer + Download), the **Annotations** panel (`annotations`) and then one
+     **summary section per job** (`run-summary`). A live run returns here when it finishes.
      Step outputs are never listed at the run level.
+     - The **Annotations** panel is GitHub's: a disclosure headed by the run's counts
+       ("Annotations · 1 warning, 1 notice"), closed unless the run carries an `error`, listing
+       run-level annotations then each step's, each linking to the step it came from —
+       `/job/<job>/<i>?step=<key>`, which arrives with that row open.
+     - The **summary sections** are GitHub's per-job summary blocks: the step summaries a job
+       wrote, grouped under **"<job label> summary"** ("<job label> (<item label>) summary" for
+       a matrix leg) in scheduling order, each heading a link to that job's own page — a
+       matrix leg's, to the item's. A job that wrote none is omitted; none at all reads "No
+       step wrote a summary."
    - **Job page** (a graph node, an edge dot, a rail row): above.
    - **Step**: a row of the job page, expanded — above.
    The way up is the head's eyebrow (`Run`), the rail, and Esc. Esc **layers**: inside an
@@ -207,8 +257,8 @@ run's `waiting` step rows to each run record (`waitingOn`, joined at list time, 
 persisted); the step's name is the one the run page gives it (`name`, else its id), resolved
 from the definition snapshot the row already carries. Several steps can wait at once
 (parallel matrix items, independent jobs): the first in scheduling order is named and the
-rest counted, "waiting on review +2". The name links to `?step=<key>` on the run page, which
-arrives pinned there. A finished run never says it — its rows are a record, whatever status
+rest counted, "waiting on review +2". The name links to that step's own URL —
+`/job/<job>/<index>?step=<key>` — which arrives pinned there, its row open. A finished run never says it — its rows are a record, whatever status
 they were left in.
 
 ## Empty/error states (first-class, not afterthoughts)
@@ -224,10 +274,18 @@ they were left in.
 `data-testid`s: `run-status`, `run-follow`, `run-outputs`, `island-backstage`, `kickoff-form`,
 `kickoff-start`, `kickoff-auto`, `kickoff-invalid`, `implementations`, `workflow-list`; `data-state`
 as in 07. `step[data-key][data-state]` lives on the job page's step rows (spec 2026-09-08, phase
-3) — `job`, `job-head`, `job-io`, `job-steps`, `job-items` and `job-page` are that page's own
-testids, and `rail-summary` / `rail-job` / `rail-matrix` are the run rail's rows for reaching it. A
-driver waits on `window.__workflow.steps`, not the DOM, and reaches a step by URL
-(`/job/<job>/<index>?step=<key>`) rather than a click.
+3) and on the workflow page's declared rows (`data-state="declared"`, phase 5) — `job-page`,
+`job-head`, `job-io`, `job-steps`, `job-items`, `job-item[data-index]` are that page's own
+testids, `job[data-job][data-state]` is a graph node, and `rail-back` / `rail-summary` /
+`rail-job[data-job][data-index]` / `rail-matrix` are the run rail's rows for reaching it.
+
+A driver waits on `window.__workflow.steps`, never the DOM. **How it reaches a step depends on
+what the tab is**: one that only *observes* a run may load the step's own URL,
+`/job/<job>/<index>?step=<key>` — a fresh load simply re-hydrates it. The tab **driving** the
+run must not: a full navigation demotes it to an observer ("Another tab is driving this run.
+Take over…") and races the record it just wrote, so it navigates **in-page** the way a reader
+would — the rail's job (or matrix item) row, then the step's own row head, which expands in
+place (07 §contract; `packages/workflow-live`'s `openStep`).
 Every run page also publishes `window.__workflow` (07's page contract). Treated as a contract
 (Studio rule): rename in the driver only with a matching harness change.
 
