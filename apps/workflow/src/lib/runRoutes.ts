@@ -59,8 +59,15 @@ export function selectionFromRoute(
   params: { job?: string; index?: string },
   search: URLSearchParams,
 ): RunSelection {
-  if (params.job === undefined) return { kind: 'run' }
   const step = search.get(STEP_PARAM)
+  if (params.job === undefined) {
+    // No job on the route, but a `?step=` on it: an old Summary link. The
+    // shell redirects it to where that level lives now — and until it does,
+    // the selection is already the one the person asked for, so nothing
+    // (the follow logic least of all) treats the URL as a bare run view.
+    if (step === null || step === '') return { kind: 'run' }
+    return parseStepKey(step) ? { kind: 'step', key: step } : { kind: 'job', job: step }
+  }
   if (step !== null && parseStepKey(step)) return { kind: 'step', key: step }
   const index = params.index === undefined ? undefined : Number(params.index)
   return index !== undefined && Number.isInteger(index) && index >= 0

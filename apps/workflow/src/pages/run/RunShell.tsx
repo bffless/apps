@@ -50,7 +50,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
-import { Outlet, useLocation, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../../components/EmptyState'
 import { ErrorBoundary } from '../../components/ErrorBoundary'
 import { LoadError } from '../../components/LoadError'
@@ -67,7 +67,7 @@ import { loadWorkflow } from '../../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../../lib/runner/graph'
 import { replayRun } from '../../lib/runner/replay'
 import { parseStepKey } from '../../lib/runner/types'
-import { pathForSelection, selectionFromRoute, selectionKey } from '../../lib/runRoutes'
+import { pathForSelection, redirectFor, selectionFromRoute, selectionKey } from '../../lib/runRoutes'
 import { publishWorkflowGlobal, snapshotOf, withPageState } from '../../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../../lib/coerce'
 import type { Annotation, Definition, RunState, StepKey, StepState } from '../../lib/runner/types'
@@ -323,16 +323,19 @@ function Frame({
   yaml?: string
   children: ReactNode
 }) {
-  // Keying the boundary on the path makes navigation a reset, exactly as
-  // `Shell` does: a screen that threw is not still throwing on the next route.
-  const { pathname } = useLocation()
+  // Keyed on the **run**, not the path (`Shell` keys on the path): moving
+  // between the run's own levels must not remount what the shell exists to
+  // hold — the header, the providers, an island mounted backstage. A
+  // navigation to another run is still a reset, which is the point of the
+  // key; a screen that threw inside one run is climbed out of by leaving the
+  // run, exactly as a run that will not load at all is.
   return (
     <div className="shell">
       <TopBar />
       <div className="shell-body">
         <RunRail base={base} runId={runId} def={def} state={state} yaml={yaml} />
         <main className="content">
-          <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
+          <ErrorBoundary key={runId}>{children}</ErrorBoundary>
         </main>
       </div>
     </div>
@@ -517,6 +520,12 @@ export function RunShell() {
   // is a hook and cannot be called after them.
   const shown = isLive ? sliceState : run
   const base = `/${impl ?? shown?.impl}/${workflow ?? shown?.workflow}`
+  // An old Summary link (`/runs/:runId?step=<key>`) belongs on the job page
+  // now. The **shell** sends it there, not the Summary page: the selection is
+  // already read off that `?step=` above, so the arrival effect pins it and
+  // the auto-open effects leave it alone — where a redirect one level down
+  // would have raced them, on a running run, and lost.
+  const legacy = jobMatch === null ? redirectFor(base, runId ?? '', searchParams) : null
   const shownStatus = state?.status ?? run?.status
   // A run this tab started has no `startedBy` in the slice (only a *replayed*
   // one does — `replayRun` carries the row's), and it does not need one: the
@@ -1059,7 +1068,7 @@ export function RunShell() {
                     step is selected — that level's page in its place.
                     Never both, and which one is the route's answer now.
                   */}
-                  <Outlet />
+                  {legacy ? <Navigate to={legacy} replace /> : <Outlet />}
                   {backstage.length > 0 && (
                     <div className="island-backstage" data-testid="island-backstage" aria-hidden="true" inert>
                       {backstage.map((key) => (

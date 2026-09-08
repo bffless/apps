@@ -42,6 +42,12 @@ describe('paths', () => {
 describe('selectionFromRoute', () => {
   it('reads the three levels off the params and the query', () => {
     expect(selectionFromRoute({}, new URLSearchParams())).toEqual({ kind: 'run' })
+    // An old Summary link is read as the level it names, so the shell knows
+    // what it is redirecting before the redirect lands.
+    expect(selectionFromRoute({}, new URLSearchParams('step=greet%2F1%2Fsay'))).toEqual({
+      kind: 'step', key: 'greet/1/say',
+    })
+    expect(selectionFromRoute({}, new URLSearchParams('step=greet'))).toEqual({ kind: 'job', job: 'greet' })
     expect(selectionFromRoute({ job: 'greet' }, new URLSearchParams())).toEqual({ kind: 'job', job: 'greet' })
     expect(selectionFromRoute({ job: 'greet', index: '1' }, new URLSearchParams())).toEqual({ kind: 'job', job: 'greet', index: 1 })
     expect(selectionFromRoute({ job: 'greet', index: '1' }, new URLSearchParams('step=greet%2F1%2Fsay'))).toEqual({
@@ -51,6 +57,7 @@ describe('selectionFromRoute', () => {
   it('ignores a `step` that is not a step key, and a bad index', () => {
     expect(selectionFromRoute({ job: 'greet' }, new URLSearchParams('step=greet'))).toEqual({ kind: 'job', job: 'greet' })
     expect(selectionFromRoute({ job: 'greet', index: 'x' }, new URLSearchParams())).toEqual({ kind: 'job', job: 'greet' })
+    expect(selectionFromRoute({}, new URLSearchParams('step='))).toEqual({ kind: 'run' })
   })
   it('maps a selection back to the key the follow logic reads', () => {
     expect(selectionKey({ kind: 'run' })).toBeNull()
