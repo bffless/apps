@@ -14,7 +14,17 @@ import { makeStore } from '../../store'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 
-const chip = (key: string) => document.querySelector(`[data-key="${key}"]`) as HTMLElement | null
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+const node = (job: string) =>
+  document.querySelector(`[data-testid="job"][data-job="${job}"]`) as HTMLElement | null
+
+/** From the Summary: the step's job, then the step's own row on the job's trail. */
+function openStep(page: HTMLElement, key: string) {
+  fireEvent.click(node(key.split('/')[0]!)!)
+  fireEvent.click(
+    within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
+  )
+}
 
 async function openRun() {
   seedFinishedRun()
@@ -38,7 +48,7 @@ function markedLines(): number[] {
 describe('RunPage — YAML drawer', () => {
   it("shows a past run's step from the snapshot that ran, and closing restores the pane", async () => {
     const page = await openRun()
-    fireEvent.click(chip('flaky/0/after')!)
+    openStep(page, 'flaky/0/after')
     const pane = within(page).getByTestId('step-pane')
     fireEvent.click(within(pane).getByRole('tab', { name: 'Output' }))
     expect(within(pane).getByText('Attempt 1')).toBeInTheDocument()
@@ -64,10 +74,9 @@ describe('RunPage — YAML drawer', () => {
 
   it('marks the job block for a job selection', async () => {
     const page = await openRun()
-    fireEvent.click(chip('slow/0/start')!)
-    // Scoped to the step-pane: the interim job page renders it alongside the
-    // job-pane, and both carry a "Run"-labelled `step-pane-back` crumb.
-    fireEvent.click(within(within(page).getByTestId('step-pane')).getByTestId('step-pane-back'))
+    // The job node *is* the job selection now (Task 8) — one click, no step in
+    // between and no crumb to climb.
+    fireEvent.click(node('slow')!)
     const pane = within(page).getByTestId('job-pane')
 
     fireEvent.click(within(pane).getByRole('button', { name: 'YAML' }))

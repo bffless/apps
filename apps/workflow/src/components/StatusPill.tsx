@@ -10,20 +10,8 @@
  * carries an `aria-label`.
  */
 import type { RunStatus, StepStatus } from '../lib/runner/types'
-
-type Status = RunStatus | StepStatus | 'declared'
-
-const LABELS: Record<Status, string> = {
-  queued: 'Queued',
-  running: 'Running',
-  polling: 'Polling',
-  waiting: 'Waiting',
-  succeeded: 'Succeeded',
-  failed: 'Failed',
-  skipped: 'Skipped',
-  cancelled: 'Cancelled',
-  declared: 'Declared',
-}
+import { STATUS_LABEL } from './statusLabels'
+import type { Status } from './statusLabels'
 
 /** The mark inside the circle; the pulse and the rings are drawn by CSS. */
 const MARKS: Partial<Record<Status, string>> = {
@@ -40,7 +28,7 @@ export function StatusGlyph({ status, hidden = false }: { status: Status; hidden
       data-state={status}
       role={hidden ? undefined : 'img'}
       aria-hidden={hidden || undefined}
-      aria-label={hidden ? undefined : LABELS[status]}
+      aria-label={hidden ? undefined : STATUS_LABEL[status]}
     >
       {MARKS[status] ?? ''}
     </span>
@@ -51,7 +39,7 @@ export function StatusPill({ status }: { status: RunStatus | StepStatus }) {
   return (
     <span className="pill" data-state={status}>
       <StatusGlyph status={status} hidden />
-      {LABELS[status]}
+      {STATUS_LABEL[status]}
     </span>
   )
 }

@@ -27,11 +27,20 @@ afterEach(() => {
   resetHelloHarness()
 })
 
-function chip(page: HTMLElement, key: string): HTMLElement | null {
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+function node(page: HTMLElement, job: string): HTMLElement | null {
   return (
     within(page)
-      .getAllByTestId('step')
-      .find((el) => el.getAttribute('data-key') === key) ?? null
+      .getAllByTestId('job')
+      .find((el) => el.getAttribute('data-job') === job) ?? null
+  )
+}
+
+/** From the Summary: the step's job, then the step's own row on the job's trail. */
+function openStep(page: HTMLElement, key: string) {
+  fireEvent.click(node(page, key.split('/')[0]!)!)
+  fireEvent.click(
+    within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
   )
 }
 
@@ -52,11 +61,11 @@ describe('RunPage — selection is scoped to the run being viewed', () => {
     const page = screen.getByRole('main')
     await within(page).findByTestId('run-status')
 
-    // A step is selected on Run A.
-    fireEvent.click(chip(page, 'slow/0/start')!)
+    // A step is selected on Run A — its job's node, then its row on the trail.
+    openStep(page, 'slow/0/start')
     expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
-    // The chip's `aria-pressed` no longer applies — the selection is Run A's
-    // own URL now.
+    // No chip carries `aria-pressed` any more — the selection is Run A's own
+    // URL now.
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
     expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
 
@@ -104,7 +113,7 @@ describe('RunPage — hoveredValue is scoped to the run being viewed', () => {
     // Hover an output value on Run A — scoped to the step pane itself, since
     // the job-pane rendered alongside it (the interim job page) carries an
     // Input | Output tablist of its own too.
-    fireEvent.click(chip(page, 'slow/0/start')!)
+    openStep(page, 'slow/0/start')
     const pane = within(page).getByTestId('step-pane')
     fireEvent.click(within(pane).getByRole('tab', { name: 'Output' }))
     const wrapper = within(pane).getByText('poster').closest('.value')!

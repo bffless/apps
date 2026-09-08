@@ -1,9 +1,16 @@
 /**
- * The `headless` badge (07, M1 minor — Task 22): definition mode only, and
+ * The step chip's own declaration reading (07/03).
+ *
+ * The `headless` badge (M1 minor — Task 22) is definition mode only, and
  * spelled `headless: skip|auto` rather than the bare `headless` label, which
  * used to read like a status rather than a declaration. Run mode never shows
  * it at all — there it would be read as an attempt's status, not the step's
  * own contract.
+ *
+ * The declared-output rows are the second half: what a step promises is what
+ * `stepOutputNames` says it does, per kind (03), not merely a written-out
+ * `outputs` map. Both facts used to be read off the graph; since the graph
+ * draws jobs only (spec 2026-09-08, Task 8) the chip is where they are pinned.
  */
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -93,5 +100,38 @@ describe('StepChip — data-flow', () => {
       />,
     )
     expect(within(container).getByTestId('step')).toHaveAttribute('data-flow', 'target')
+  })
+})
+
+describe('StepChip — declared outputs (03)', () => {
+  it("shows a declared output's own name and type", () => {
+    render(<StepChip job="greet" index={0} step={say} mode="definition" onPick={vi.fn()} />)
+
+    expect(screen.getByText('line')).toBeInTheDocument()
+    expect(screen.getByText('string')).toBeInTheDocument()
+  })
+
+  it("shows a form's fields as its outputs, though it declares no `outputs` map", () => {
+    render(<StepChip job="confirm" index={0} step={review} mode="definition" onPick={vi.fn()} />)
+
+    expect(screen.getByText('approved')).toBeInTheDocument()
+    expect(screen.getByText('boolean')).toBeInTheDocument()
+    expect(screen.getByText('report')).toBeInTheDocument()
+    expect(screen.getByText('markdown')).toBeInTheDocument()
+  })
+
+  it('shows the `response` a pipeline step exposes with no outputs map at all', () => {
+    const boom = hello.jobs.flaky!.steps[0]!
+
+    render(<StepChip job="flaky" index={0} step={boom} mode="definition" onPick={vi.fn()} />)
+
+    expect(screen.getByText('response')).toBeInTheDocument()
+    expect(screen.getByText('json')).toBeInTheDocument()
+  })
+
+  it('shows no declared outputs in run mode: there the chip is about the attempt', () => {
+    render(<StepChip job="greet" index={0} step={say} mode="run" onPick={vi.fn()} />)
+
+    expect(screen.queryByText('line')).not.toBeInTheDocument()
   })
 })

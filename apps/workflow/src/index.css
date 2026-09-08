@@ -1586,9 +1586,9 @@ button {
 
 /* --------------------------------------------------------------------------
    The graph (08): derived layout — columns from topoLayers, rows from the
-   cards' own heights, edges drawn over the same arithmetic. Geometry is
-   mirrored in GraphView.tsx / JobCard.tsx (CARD) / StepChip.tsx (CHIP); the
-   pixel values below are those constants and must change with them.
+   nodes' own heights, edges drawn over the same arithmetic. One node per job
+   (Task 8). Geometry is mirrored in GraphView.tsx and geometry.ts (CARD /
+   CHIP); the pixel values below are those constants and must change with them.
    -------------------------------------------------------------------------- */
 
 .graph {
@@ -1681,15 +1681,22 @@ button {
   background-color: var(--dot-out);
 }
 
-/* A job card. `height` is set inline from `cardHeight`; everything inside has a
-   fixed row height so the two agree without a layout pass. */
+/* A job node — the graph's one clickable unit (Task 8). `height` is set inline
+   from `cardHeight`; everything inside has a fixed row height so the two agree
+   without a layout pass. It is a `<button>`: the job is the middle level of
+   run › job › step, so it is one keyboard target with one pressed state. */
 .job-card {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
   background-color: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-card);
+  cursor: pointer;
   transition: border-color var(--fast) var(--ease-out);
 }
 
@@ -1697,65 +1704,43 @@ button {
   border-color: oklch(0.5 0.012 265);
 }
 
-.job-card[data-selected] {
+/* Selected: the ink ring. */
+.job-card[aria-pressed='true'] {
   border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
 }
 
-/* Data-flow hover-highlight (08, M2 Task 22): a job card lights up as a whole
-   when the hovered value is one of its job-level `outputs` aliases, since no
-   single step declares it. */
+/* Data-flow hover-highlight (08, M2 Task 22), at job granularity (Task 8):
+   the node the hovered value comes off wears a solid ring, every node that
+   reads it a dashed outline. */
 .job-card[data-flow='source'] {
   border-color: var(--ink);
   box-shadow: 0 0 0 1px var(--ink);
 }
 
-/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note.
-   The name row is a button — the job is the middle level of run › job › step. */
+.job-card[data-flow='target'] {
+  outline: 1px dashed var(--ink);
+  outline-offset: 1px;
+}
+
+/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note. */
 .job-head {
   display: flex;
   flex: none;
   flex-direction: column;
+  justify-content: center;
+  height: 39px;
+  padding: 0 13px;
   background-color: var(--surface-dim);
   border-bottom: 1px solid var(--line);
 }
 
-.job-head-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  height: 39px;
-  padding: 0 13px;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition: background-color var(--fast) var(--ease-out);
-}
-
-.job-head-row:hover {
-  background-color: oklch(0.95 0.006 265);
-}
-
-.job-head-row[aria-pressed='true'] {
-  color: var(--paper);
-  background-color: var(--ink);
-}
-
-.job-head-row[aria-pressed='true'] .job-fraction {
-  color: var(--paper);
-  opacity: 0.7;
-}
-
-.job-head .job-note {
-  padding: 0 13px;
-}
-
-.job-card[data-selected-job] {
-  border-color: var(--ink);
+.job-eyebrow {
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .job-name {
@@ -1768,16 +1753,11 @@ button {
   text-overflow: ellipsis;
 }
 
-.job-fraction {
-  flex: none;
-  color: var(--ink-mute);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 .job-note {
+  flex: none;
   height: 20px;
-  margin: -4px 0 0;
+  margin: 0;
+  padding: 0 13px;
   line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
@@ -1785,29 +1765,47 @@ button {
   color: var(--ink-soft);
 }
 
-/* The matrix item selector row: 34px. CARD.select. Right padding keeps the
-   native chevron clear of the out-dot on the card's edge. */
-.job-items {
+/* The one status line: 42px. CARD.status. The glyph carries the state, the
+   word says it, the mono slot says how long it took. */
+.job-status {
+  display: flex;
   flex: none;
-  height: 34px;
-  margin: 0;
-  padding: 0 22px 0 10px;
-  color: var(--ink-2);
-  background-color: var(--surface);
-  border: 0;
-  border-bottom: 1px solid var(--hairline);
-  border-radius: 0;
+  align-items: center;
+  gap: 9px;
+  height: 42px;
+  padding: 0 13px;
+  font-size: 13px;
+}
+
+.job-status-word {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.job-meta {
+  flex: none;
+  color: var(--ink-mute);
   font-family: var(--font-mono);
   font-size: 11px;
 }
 
-.job-steps {
+/* Definition mode: one OUT line per declared job output. CARD.out / CHIP.outPad. */
+.job-outs {
   display: flex;
   flex: none;
   flex-direction: column;
+  padding: 0 13px 8px;
 }
 
-/* A step row: 42px inside a group card (CHIP.row), 60px as a single card (CHIP.single). */
+.job-outs .step-output {
+  height: 20px;
+}
+
+/* A step row: 42px (CHIP.row). Off the graph since Task 8 — the job page's
+   step list is what renders these now. */
 .step-chip {
   display: flex;
   flex: none;
@@ -1824,7 +1822,7 @@ button {
   transition: background-color var(--fast) var(--ease-out);
 }
 
-.job-steps > .step-chip:first-child {
+.step-chip:first-child {
   border-top: 0;
 }
 

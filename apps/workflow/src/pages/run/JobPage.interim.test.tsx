@@ -1,8 +1,10 @@
 /**
  * The step-pane's own content on the interim job page (08): a finished run's
- * step read back off the rendered DOM, reached from the Summary's chip —
- * where a value came from, its declared renderer, a waiting form's evaluated
- * `with`, and the attempt/pipeline/annotation detail on Output.
+ * step read back off the rendered DOM, reached the way a person reaches one
+ * now — the job's node on the Summary, then that step's row on the job page's
+ * trail (spec 2026-09-08, Task 8: the graph draws jobs, never steps) — where a
+ * value came from, its declared renderer, a waiting form's evaluated `with`,
+ * and the attempt/pipeline/annotation detail on Output.
  *
  * Split out of the old single-page `RunPage.test.tsx` (spec 2026-09-08): these
  * cases are about the *pane's* content, not the Summary's graph or run card —
@@ -32,7 +34,17 @@ function renderApp(path = RUN_PATH) {
   )
 }
 
-const chip = (key: string) => document.querySelector(`[data-key="${key}"]`) as HTMLElement | null
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+const node = (job: string) =>
+  document.querySelector(`[data-testid="job"][data-job="${job}"]`) as HTMLElement | null
+
+/** From the Summary: the step's job, then the step's own row on the job's trail. */
+function openStep(page: HTMLElement, key: string) {
+  fireEvent.click(node(key.split('/')[0]!)!)
+  fireEvent.click(
+    within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
+  )
+}
 
 /** The seeded run, rendered and settled, on the Summary route. */
 async function openRun() {
@@ -43,9 +55,9 @@ async function openRun() {
   return page
 }
 
-/** Select a step from the Summary's chip and switch its pane to one tab. */
+/** Select a step from the Summary, through its job, and switch its pane to one tab. */
 function openTab(page: HTMLElement, key: string, tab: string): HTMLElement {
-  fireEvent.click(chip(key)!)
+  openStep(page, key)
   // Scoped to the step-pane: the interim job page renders it alongside the
   // job-pane, and both carry an Input | Output tablist of their own.
   const pane = within(page).getByTestId('step-pane')
@@ -57,7 +69,7 @@ describe('JobPage — the step-pane (interim)', () => {
   it('labels a step input with where its value came from', async () => {
     const page = await openRun()
 
-    fireEvent.click(chip('greet/0/say')!)
+    openStep(page, 'greet/0/say')
     const pane = within(page).getByTestId('step-pane')
 
     expect(within(pane).getByText('echo')).toBeInTheDocument()

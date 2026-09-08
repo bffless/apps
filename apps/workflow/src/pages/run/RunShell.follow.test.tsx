@@ -50,11 +50,12 @@ afterEach(() => {
   resetIslandHarness()
 })
 
-function chip(page: HTMLElement, key: string): HTMLElement | null {
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+function node(page: HTMLElement, job: string): HTMLElement | null {
   return (
     within(page)
-      .getAllByTestId('step')
-      .find((el) => el.getAttribute('data-key') === key) ?? null
+      .getAllByTestId('job')
+      .find((el) => el.getAttribute('data-job') === job) ?? null
   )
 }
 
@@ -108,11 +109,11 @@ describe('RunPage — follow mode', () => {
     expect(store.getState().ui.follow).toEqual({ runId, on: false })
   })
 
-  it('pins on a chip click, and Follow brings the selection back to the step the run is at', async () => {
+  it('pins on a graph click, and Follow brings the selection back to the step the run is at', async () => {
     // `slow/0/start` in flight, nothing waiting yet and no island loading: a
     // following page has nothing for the claim/auto-open effect to move the
     // selection onto, so it stays on the Summary with the graph up — the one
-    // state from which a chip click, and only the chip click, does the
+    // state from which a click on the graph, and only that click, does the
     // pinning this case is about (a prior stop at the Run crumb would pin on
     // its own, per fix round 1).
     const { store, advance, runId } = await startHelloAtSlowPolling()
@@ -129,8 +130,15 @@ describe('RunPage — follow mode', () => {
     const toggle = within(page).getByTestId('run-follow')
     expect(toggle).toHaveAttribute('data-state', 'on')
 
-    // The person picks a finished step: a navigation, and it pins.
-    fireEvent.click(chip(page, 'greet/0/say')!)
+    // The person picks a finished job: a navigation, and it pins right there.
+    fireEvent.click(node(page, 'greet')!)
+    expect(store.getState().ui.selectedStep).toBe('greet')
+    expect(toggle).toHaveAttribute('data-state', 'off')
+
+    // …then its step, off the job's own trail.
+    fireEvent.click(
+      within(within(page).getByTestId('job-pane')).getByRole('button', { name: /greet\/0\/say/ }),
+    )
     expect(store.getState().ui.selectedStep).toBe('greet/0/say')
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/greet/0`)
     expect(router.state.location.search).toBe('?step=greet%2F0%2Fsay')

@@ -292,23 +292,34 @@ describe('RunPage — island fullscreen', () => {
 })
 
 describe('RunPage — a loading island claims the pane (while following)', () => {
-  /** The graph chip for a step key, the way a user would reach it. */
-  function chip(page: HTMLElement, key: string): HTMLElement | undefined {
+  /** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+  function node(page: HTMLElement, job: string): HTMLElement | undefined {
     return within(page)
-      .getAllByTestId('step')
-      .find((el) => el.getAttribute('data-key') === key)
+      .getAllByTestId('job')
+      .find((el) => el.getAttribute('data-job') === job)
+  }
+
+  /**
+   * A step, the way a user reaches one now: its job's node on the Summary,
+   * then that step's row on the job page's own trail.
+   */
+  function openStep(page: HTMLElement, key: string) {
+    fireEvent.click(node(page, key.split('/')[0]!)!)
+    fireEvent.click(
+      within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
+    )
   }
 
   /**
    * Back to the run's Summary, where the graph is: a selected step is its own
    * route now (spec 2026-09-08), so the pane's "Run" crumb is how a person
-   * gets from one step to the next. It pins, exactly as clicking a chip does.
+   * gets from one step to the next. It pins, exactly as a graph click does.
    */
   function toSummary(page: HTMLElement) {
     fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
   }
 
-  it('leaves a starting island to its chip once the user has pinned a step, and Follow brings it into the pane', async () => {
+  it('leaves a starting island where it is once the user has pinned a step, and Follow brings it into the pane', async () => {
     // Fix round 4, finding 1: only the pane mounts an island (Decision 11), so
     // an island whose pane never opens sits at `running` — no timeout, and no
     // affordance of its own. It used to claim the pane over the user's pick;
@@ -341,8 +352,8 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
 
     const page = screen.getByRole('main')
     // The user picks a pipeline step while the run is still in flight.
-    await waitFor(() => expect(chip(page, SAY_KEY)).toBeDefined())
-    fireEvent.click(chip(page, SAY_KEY)!)
+    await waitFor(() => expect(node(page, 'greet')).toBeDefined())
+    openStep(page, SAY_KEY)
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
     await flush()
@@ -375,17 +386,17 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
     )
 
     // A click away pins again; the abandoned pane leaves the step exactly as
-    // it was (apps#370), and the chip is the way back — a re-mount from the
-    // same handle.
+    // it was (apps#370), and its job on the graph is the way back — a re-mount
+    // from the same handle.
     toSummary(page)
-    fireEvent.click(chip(page, SAY_KEY)!)
+    openStep(page, SAY_KEY)
     await flush()
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
     expect(host.mounts).toHaveLength(1)
     expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting')
 
     toSummary(page)
-    fireEvent.click(chip(page, CHOOSE_KEY)!)
+    openStep(page, CHOOSE_KEY)
     await waitFor(() => expect(host.mounts).toHaveLength(2))
   })
 
@@ -490,8 +501,8 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
     )
 
     const page = screen.getByRole('main')
-    await waitFor(() => expect(chip(page, FORM_KEY)).toBeDefined())
-    fireEvent.click(chip(page, FORM_KEY)!)
+    await waitFor(() => expect(node(page, 'ask')).toBeDefined())
+    openStep(page, FORM_KEY)
     await flush()
 
     expect(store.getState().ui.selectedStep).toBe(FORM_KEY)

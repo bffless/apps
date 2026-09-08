@@ -3,10 +3,11 @@
  * replay engine, and every section of the page read back off the rendered DOM
  * rather than off the state that produced it.
  *
- * The fixture run has **6** step rows (R2) but the graph draws one chip per
- * *declared* step — a matrix job is one card whose chips show the item its
- * selector names (Task 14), so `greet/1/say` is the sixth row and is reached by
- * changing that selector, not by a sixth chip.
+ * The fixture run has **6** step rows (R2) but the graph draws no steps at all:
+ * one node per job (spec 2026-09-08, Task 8). A step is reached in two moves —
+ * its job's node on the Summary, then that step's row on the job page's trail —
+ * which is also how `greet/1/say`, the sixth row, is reached: it is one row of
+ * the matrix job's trail, not a chip on a card.
  *
  * Split out of the old single-page `RunPage.test.tsx` (spec 2026-09-08): the
  * Summary — its header, the run card, its outputs and annotations, delete,
@@ -52,7 +53,20 @@ function renderApp(path = RUN_PATH) {
   )
 }
 
-const chip = (key: string) => document.querySelector(`[data-key="${key}"]`) as HTMLElement | null
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+const node = (job: string) =>
+  document.querySelector(`[data-testid="job"][data-job="${job}"]`) as HTMLElement | null
+
+/**
+ * A step, the way a person reaches one now: its job's node on the Summary, then
+ * that step's row on the job page's own trail.
+ */
+function openStep(page: HTMLElement, key: string) {
+  fireEvent.click(node(key.split('/')[0]!)!)
+  fireEvent.click(
+    within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
+  )
+}
 
 /** The seeded run, rendered and settled. */
 async function openRun() {
@@ -83,7 +97,7 @@ async function openRunRouter(path = RUN_PATH) {
 }
 
 describe('RunPage', () => {
-  it('shows the run header, its status and a chip per declared step', async () => {
+  it('shows the run header, its status and one node per job', async () => {
     const page = await openRun()
 
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
@@ -95,15 +109,15 @@ describe('RunPage', () => {
     expect(within(head).getByText('user_fixture')).toBeInTheDocument()
     expect(within(page).getByText('12.5 s')).toBeInTheDocument()
 
-    expect(within(page).getAllByTestId('step')).toHaveLength(5)
-    expect(chip('greet/1/say')).toBeNull()
-    // Picking an item is a selection (JobCard's own contract — "reported on
-    // the one channel"), and a selection is a navigation now (08): it lands
-    // on that very step's pane, rather than merely lighting up its chip on a
-    // graph that stays put.
-    fireEvent.change(within(page).getByLabelText('Matrix item of greet'), {
-      target: { value: '1' },
-    })
+    // Four jobs, no steps: the graph is jobs only (Task 8), and the matrix job
+    // is one node carrying its own fan-out.
+    expect(within(page).getAllByTestId('job')).toHaveLength(4)
+    expect(within(page).queryAllByTestId('step')).toHaveLength(0)
+    expect(node('greet')).toHaveTextContent('2 of 2 done')
+    // Picking an item is a selection, and a selection is a navigation (08): the
+    // job's own trail lands on that very step's pane — including the sixth row,
+    // `greet/1/say`, which no card ever showed.
+    openStep(page, 'greet/1/say')
     const pane = await within(page).findByTestId('step-pane')
     expect(within(pane).getByText('greet/1/say', { selector: '.pane-key' })).toBeInTheDocument()
   })
@@ -200,15 +214,16 @@ describe('RunPage', () => {
   // A step's pane replaces the run card; Back climbs one level, the crumb's
   // "Run" climbs to the top, Esc and the pressed chip climb one level too.
   describe('the run, job and step cards take turns', () => {
-    it('replaces the run card with the step pane on a chip click; Back climbs to the job, then the run', async () => {
+    it('replaces the run card with the step pane on a job node then its step; Back climbs to the job, then the run', async () => {
       const { page, router } = await openRunRouter()
 
-      fireEvent.click(chip('slow/0/start')!)
+      openStep(page, 'slow/0/start')
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
       expect(within(page).queryByTestId('run-pane')).not.toBeInTheDocument()
       expect(within(page).queryByTestId('run-outputs')).not.toBeInTheDocument()
-      // The chip's own `aria-pressed` no longer applies — the selection *is*
-      // the route now, so the way this pins is a URL, not a DOM attribute.
+      // The node's own `aria-pressed` no longer applies at the step level — the
+      // selection *is* the route now, so the way this pins is a URL, not a DOM
+      // attribute.
       expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
       expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
 
@@ -230,31 +245,31 @@ describe('RunPage', () => {
 
     it("climbs straight to the run on the step pane's Run crumb", async () => {
       const page = await openRun()
-      fireEvent.click(chip('slow/0/start')!)
+      openStep(page, 'slow/0/start')
       fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
       expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
     })
 
-    it('climbs one level on Esc, and on the pressed chip clicked again', async () => {
+    it('climbs one level on Esc, and on the pressed step row clicked again', async () => {
       const page = await openRun()
 
-      fireEvent.click(chip('slow/0/start')!)
+      openStep(page, 'slow/0/start')
       fireEvent.keyDown(within(page).getByTestId('step-pane'), { key: 'Escape' })
       expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
       expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
 
-      // The chip that reopened this before is back on the Summary now — the
-      // job pane's own step trail is the way down to it from here.
+      // The graph has no step to click at all now — the job pane's own step
+      // trail is the only way down to it from here.
       fireEvent.click(within(within(page).getByTestId('job-pane')).getByRole('button', { name: /slow\/0\/start/ }))
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
       // The pressed step, clicked again (from the job pane's trail, still
-      // showing alongside it), climbs one level — the same toggle a chip gave.
+      // showing alongside it), climbs one level — the toggle a chip used to give.
       fireEvent.click(within(within(page).getByTestId('job-pane')).getByRole('button', { name: /slow\/0\/start/ }))
       expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
       expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
     })
 
-    it("opens the job card from a group card's header strip, with the job's evaluated outputs", async () => {
+    it("opens the job card from the job's own graph node, with the job's evaluated outputs", async () => {
       const { page, router } = await openRunRouter()
 
       fireEvent.click(within(page).getByRole('button', { name: 'Job Greet each name' }))
@@ -274,8 +289,8 @@ describe('RunPage', () => {
       // The trail lists every step of every item, each a way down.
       fireEvent.click(within(pane).getByRole('button', { name: /greet\/1\/say/ }))
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
-      // The chip's `aria-pressed` no longer applies off the Summary — the
-      // selected item is the route now.
+      // No chip carries `aria-pressed` off the Summary — the selected item is
+      // the route now.
       expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/greet/1`)
       expect(router.state.location.search).toBe('?step=greet%2F1%2Fsay')
     })
@@ -655,8 +670,8 @@ describe('RunPage', () => {
       let pane = await within(page).findByTestId('job-pane')
       expect(await within(pane).findByTestId('job-fork')).toBeInTheDocument()
 
-      // … so its absence on `slow`, opened from the graph card's strip, is the
-      // gate's answer. The strip is on the Summary now — back there first
+      // … so its absence on `slow`, opened from the graph's own node, is the
+      // gate's answer. The node is on the Summary now — back there first
       // (the job pane's own crumb is unambiguous: no step is selected here).
       fireEvent.click(within(page).getByTestId('step-pane-back'))
       fireEvent.click(within(page).getByRole('button', { name: 'Job A slow server job' }))
