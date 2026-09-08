@@ -1,8 +1,8 @@
 /**
- * `StepPane`'s body without the card head (Task 11) — the step row's expanded
+ * The step pane's body without the card head (Task 11) — the step row's expanded
  * content in the GitHub-shaped job page (phase 3). Same **Input | Output**
  * toggle (08), same audit trail folded into Output (decided 2026-08-26); the
- * controls that used to sit in `StepPane`'s `<header className="pane-head">`
+ * controls that used to sit in the old step pane's `<header className="pane-head">`
  * — tabs, Show raw, YAML, the status pill, the kind tag — now open a
  * `.step-toolbar` at the top of the body instead, with the crumbs/`h3`/step
  * key dropped (the row itself carries that identity now — Decision 4).
@@ -55,14 +55,16 @@ import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
-import { isFileRef, withFileRefValue } from '../values/fileRef'
+import { withFileRefValue } from '../values/fileRef'
+import { inferDecl } from '../values/inferDecl'
 import { FormStepPane } from './FormStepPane'
 import { IslandStepPane } from './IslandStepPane'
 import { ScriptStepCard } from './ScriptStepCard'
-import type { Tab } from './StepPane'
 import { YamlControl } from './YamlDrawer'
 import type { YamlSource } from './YamlDrawer'
 
+/** Which side of a value the body opens on — the pane's one toggle (08). */
+export type Tab = 'Input' | 'Output'
 const TABS: Tab[] = ['Input', 'Output']
 
 /** `greet/1/say` → its parts; a step id cannot contain `/`, so the split is exact. */
@@ -71,29 +73,6 @@ function parseKey(key: StepKey): { job: string; index: number; stepId: string } 
   if (job === undefined || index === undefined || rest.length === 0) return null
   const parsed = Number(index)
   return Number.isInteger(parsed) ? { job, index: parsed, stepId: rest.join('/') } : null
-}
-
-/**
- * What renderer a *recorded* value asks for when nothing declared one (02). A
- * list of one scalar kind is that kind's list (chips, or the compact number
- * list); a list of File refs is a file list; any other array is `json`, whose
- * viewer reads the array's *shape* — homogeneous rows as a table, and so on
- * (02 "Inferred shapes", apps#450) — before falling back to the tree.
- */
-function inferDecl(value: unknown): ValueDecl {
-  if (isFileRef(value)) return { type: 'file' }
-  if (Array.isArray(value)) {
-    const items = value.filter((item) => item !== null && item !== undefined)
-    if (items.length > 0 && items.every(isFileRef)) return { type: 'file', list: true }
-    if (items.length > 0 && items.every((item) => typeof item === 'string')) return { type: 'string', list: true }
-    if (items.length > 0 && items.every((item) => typeof item === 'number')) return { type: 'number', list: true }
-    if (items.length > 0 && items.every((item) => typeof item === 'boolean')) return { type: 'boolean', list: true }
-    return { type: 'json' }
-  }
-  if (value !== null && typeof value === 'object') return { type: 'json' }
-  if (typeof value === 'number') return { type: 'number' }
-  if (typeof value === 'boolean') return { type: 'boolean' }
-  return { type: 'string' }
 }
 
 /** "from `<job>/<step>`" / "from `<job>` job output" / "from `inputs.<name>`" (08). */
@@ -189,8 +168,8 @@ function OutputValues({
   const recorded = step.outputs ?? {}
   const names = (declared && stepOutputNames(declared)) ?? Object.keys(recorded)
   const dispatch = useAppDispatch()
-  // A hover this tab leaves mid-flight — the tab switched, another step got
-  // selected (StepPane is remounted with `key={selectedStep}`) — must not
+  // A hover this tab leaves mid-flight — the tab switched, the row collapsed
+  // (the body unmounts with it) — must not
   // outlive the pointer leaving the DOM node that set it: `onMouseLeave`
   // never fires for an element that was unmounted out from under the cursor.
   useEffect(
@@ -321,7 +300,7 @@ function Trail({
   scriptLog,
 }: {
   step: StepState
-  /** A script step's log card, live or recorded (apps#527) — `undefined` for every other step (see `StepPane`). */
+  /** A script step's log card, live or recorded (apps#527) — `undefined` for every other step (see `StepBody`). */
   scriptLog?: ReactNode
 }) {
   const raw = step.response?.last ?? step.response?.initial

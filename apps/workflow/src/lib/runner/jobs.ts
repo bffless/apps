@@ -16,6 +16,23 @@ export function jobStatus(steps: StepState[]): StepStatus {
   return 'queued'
 }
 
+/**
+ * A step that will not move again (05): its row is the whole story, so a
+ * caller can count it as done, print its duration rather than its status word,
+ * and stop watching it. `queued`/`running`/`polling`/`waiting` are the four
+ * that can still change.
+ */
+const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
+  'succeeded',
+  'failed',
+  'skipped',
+  'cancelled',
+])
+
+export function isTerminal(status: StepStatus): boolean {
+  return TERMINAL.has(status)
+}
+
 export function jobDuration(steps: StepState[]): number | undefined {
   const started = steps.filter((s) => s.startedAt !== undefined)
   if (started.length === 0 || started.some((s) => s.finishedAt === undefined)) return undefined

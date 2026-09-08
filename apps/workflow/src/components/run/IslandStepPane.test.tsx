@@ -41,7 +41,7 @@ import {
   startIslandRun,
 } from '../../test/islandHarness'
 import { IslandStepPane } from './IslandStepPane'
-import { StepPane } from './StepPane'
+import { StepBody } from './StepBody'
 
 beforeEach(() => {
   // The live path never reads this — a call means the page regressed.
@@ -166,14 +166,14 @@ describe('IslandStepPane', () => {
   })
 })
 
-describe('StepPane — island delegation', () => {
+describe('StepBody — island delegation', () => {
   it('delegates a live running/waiting island to the island pane, and falls back to tabs read-only', async () => {
     const { store, host } = await startIslandRun()
     const state = store.getState().run.state!
 
     const live = render(
       <Provider store={store}>
-        <StepPane def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live />
+        <StepBody def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live />
       </Provider>,
     )
     expect(screen.getByTestId('island-step')).toBeInTheDocument()
@@ -182,7 +182,7 @@ describe('StepPane — island delegation', () => {
 
     render(
       <Provider store={store}>
-        <StepPane def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live={false} />
+        <StepBody def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live={false} />
       </Provider>,
     )
     expect(screen.queryByTestId('island-step')).not.toBeInTheDocument()
@@ -230,8 +230,8 @@ describe('RunPage — island fullscreen', () => {
     expect(store.getState().ui.islandDisplay).toBe('fullscreen')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'fullscreen')
     expect(host.displayModes.at(-1)).toBe('fullscreen')
-    // The strip is up, and Expand is gone while expanded.
-    expect(within(page).queryAllByTestId('step')).toHaveLength(0)
+    // The strip is up in the graph's place, and Expand is gone while expanded.
+    expect(within(page).queryAllByTestId('job')).toHaveLength(0)
     expect(within(page).getByTestId('island-strip')).toBeInTheDocument()
     expect(within(page).queryByTestId('island-expand')).toBeNull()
     // The overlay is the SAME iframe — one mount, one element (edit state survives).
@@ -301,22 +301,25 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
 
   /**
    * A step, the way a user reaches one now: its job's node on the Summary,
-   * then that step's row on the job page's own trail.
+   * then that step's own row on the job page, which expands in place.
    */
   function openStep(page: HTMLElement, key: string) {
-    fireEvent.click(node(page, key.split('/')[0]!)!)
-    fireEvent.click(
-      within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
-    )
+    const [job, index] = key.split('/')
+    fireEvent.click(node(page, job!)!)
+    // A matrix job's node lands on its collect view; the item's link is the
+    // way to the leg that holds this step.
+    const items = within(page).queryByTestId('job-items')
+    if (items) fireEvent.click(items.querySelectorAll('a')[Number(index)]!)
+    fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement)
   }
 
   /**
-   * Back to the run's Summary, where the graph is: a selected step is its own
-   * route now (spec 2026-09-08), so the pane's "Run" crumb is how a person
-   * gets from one step to the next. It pins, exactly as a graph click does.
+   * Back to the run's Summary, where the graph is: a job is its own route now
+   * (spec 2026-09-08), so the job head's "Run" crumb is how a person gets from
+   * one step to the next. It pins, exactly as a graph click does.
    */
   function toSummary(page: HTMLElement) {
-    fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
+    fireEvent.click(within(within(page).getByTestId('job-head')).getByRole('button', { name: 'Run' }))
   }
 
   it('leaves a starting island where it is once the user has pinned a step, and Follow brings it into the pane', async () => {
@@ -433,7 +436,7 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
 
   it('never claims the pane on a read-only view — another tab drives that island', async () => {
     // A `running` island in a run this tab does not drive has no pane to open
-    // here (StepPane's `live` gate renders the tabs); moving the selection
+    // here (StepBody's `live` gate renders the tabs); moving the selection
     // onto it would only yank the reader around (review of apps#370). The
     // reader picks the finished form — a non-interactive selection, the one
     // shape that lets a live page claim.

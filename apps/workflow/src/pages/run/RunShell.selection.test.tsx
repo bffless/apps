@@ -36,12 +36,10 @@ function node(page: HTMLElement, job: string): HTMLElement | null {
   )
 }
 
-/** From the Summary: the step's job, then the step's own row on the job's trail. */
+/** From the Summary: the step's job node, then the step's own row on the job page. */
 function openStep(page: HTMLElement, key: string) {
   fireEvent.click(node(page, key.split('/')[0]!)!)
-  fireEvent.click(
-    within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
-  )
+  fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement)
 }
 
 describe('RunPage — selection is scoped to the run being viewed', () => {
@@ -110,9 +108,8 @@ describe('RunPage — hoveredValue is scoped to the run being viewed', () => {
     const page = screen.getByRole('main')
     await within(page).findByTestId('run-status')
 
-    // Hover an output value on Run A — scoped to the step pane itself, since
-    // the job-pane rendered alongside it (the interim job page) carries an
-    // Input | Output tablist of its own too.
+    // Hover an output value on Run A — scoped to the open row's body, since
+    // the job page's own disclosure carries an Input | Output tablist too.
     openStep(page, 'slow/0/start')
     const pane = within(page).getByTestId('step-pane')
     fireEvent.click(within(pane).getByRole('tab', { name: 'Output' }))

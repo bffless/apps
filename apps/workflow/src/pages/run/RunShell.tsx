@@ -422,10 +422,23 @@ export function RunShell() {
   // a run *this* tab started carries no `startedBy` of its own (see below).
   const { data: me } = useWhoamiQuery()
 
-  /** Up one level: a step's job, a job's run. A person's move, so it pins. */
+  /**
+   * Up one level: a step's job, a job's run. A person's move, so it pins.
+   *
+   * A step's job is the *item* it ran in, not the job as a whole: Esc out of
+   * `/job/greet/1?step=greet/1/say` belongs on `/job/greet/1`, the page the
+   * step was read on — `parseStepKey` carries the index that a bare
+   * `split('/')[0]` used to drop, which landed the reader on the collect view
+   * of a job they were three rows into.
+   */
   const back = () => {
     pin()
-    setStep(level === 'step' ? selectedStep!.split('/')[0]! : null, false)
+    if (level !== 'step') {
+      setStep(null, false)
+      return
+    }
+    const parts = parseStepKey(selectedStep!)
+    go(parts ? { kind: 'job', job: parts.job, index: parts.index } : { kind: 'run' }, false)
   }
   const toRun = () => {
     pin()
@@ -725,7 +738,7 @@ export function RunShell() {
       return
     }
     // Only the tab driving the run has a pane to claim: read-only renders the
-    // tabs for a `running` island (StepPane's `live` gate), so moving the
+    // tabs for a `running` island (StepBody's `live` gate), so moving the
     // selection there would just yank the reader around.
     if (!isLive) return
     if (selectedStepState && isLoadingIsland(selectedStepState)) {

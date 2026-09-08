@@ -135,14 +135,17 @@ describe('RunPage — follow mode', () => {
     expect(store.getState().ui.selectedStep).toBe('greet')
     expect(toggle).toHaveAttribute('data-state', 'off')
 
-    // …then its step, off the job's own trail.
-    fireEvent.click(
-      within(within(page).getByTestId('job-pane')).getByRole('button', { name: /greet\/0\/say/ }),
-    )
+    // …then its item, then its step's own row on the job page.
+    fireEvent.click(within(page).getByTestId('job-items').querySelectorAll('a')[0]!)
+    fireEvent.click(page.querySelector('[data-testid="step"][data-key="greet/0/say"]') as HTMLElement)
     expect(store.getState().ui.selectedStep).toBe('greet/0/say')
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/greet/0`)
     expect(router.state.location.search).toBe('?step=greet%2F0%2Fsay')
-    expect(within(page).getByTestId('step-pane')).toHaveTextContent('greet/0/say')
+    expect(page.querySelector('[data-testid="step"][data-key="greet/0/say"]')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
     expect(toggle).toHaveAttribute('data-state', 'off')
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(store.getState().ui.selectedStep).toBe('greet/0/say')
@@ -156,16 +159,14 @@ describe('RunPage — follow mode', () => {
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'on')
   })
 
-  it('pins on the pane’s crumbs, the way up a level', async () => {
+  it('pins on collapsing the open row, the way up a level', async () => {
     const { store, runId } = await startHelloAtConfirmWaiting()
     renderAt(store, `/hello/hello/runs/${runId}`)
     const page = screen.getByRole('main')
     await within(page).findByRole('button', { name: 'Finish' })
 
-    // The job crumb climbs out of the form to its job — a person's move.
-    // Scoped to the step-pane: the job-pane rendered alongside it carries an
-    // identically-testid'd "Run" crumb of its own.
-    fireEvent.click(within(within(page).getByTestId('step-pane')).getByTestId('step-pane-back'))
+    // Collapsing the row climbs out of the form to its job — a person's move.
+    fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${REVIEW_KEY}"]`) as HTMLElement)
     expect(store.getState().ui.selectedStep).toBe('confirm')
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
     // …and the form is not re-opened over the job card.
@@ -319,7 +320,11 @@ describe('RunPage — unattended while pinned', () => {
 
     const paneShowsScene1 = () => {
       const pane = within(page).getByTestId('step-pane')
-      expect(pane).toHaveTextContent(SCENE_KEYS[0]!)
+      // The open row is scene 1's own (Decision 4: the row carries the key).
+      expect(pane.closest('.step-row')!.querySelector('[data-testid="step"]')).toHaveAttribute(
+        'data-key',
+        SCENE_KEYS[0]!,
+      )
       expect(within(pane).queryByTestId('island-frame')).toBeNull()
       expect(store.getState().ui.selectedStep).toBe(SCENE_KEYS[0])
     }

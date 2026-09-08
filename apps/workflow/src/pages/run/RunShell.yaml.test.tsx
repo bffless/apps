@@ -18,12 +18,10 @@ const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 const node = (job: string) =>
   document.querySelector(`[data-testid="job"][data-job="${job}"]`) as HTMLElement | null
 
-/** From the Summary: the step's job, then the step's own row on the job's trail. */
+/** From the Summary: the step's job node, then the step's own row on the job page. */
 function openStep(page: HTMLElement, key: string) {
   fireEvent.click(node(key.split('/')[0]!)!)
-  fireEvent.click(
-    within(within(page).getByTestId('job-pane')).getByRole('button', { name: new RegExp(key) }),
-  )
+  fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement)
 }
 
 async function openRun() {
@@ -66,7 +64,12 @@ describe('RunPage — YAML drawer', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     const same = within(page).getByTestId('step-pane')
-    expect(within(same).getByText('flaky/0/after', { selector: '.pane-key' })).toBeInTheDocument()
+    // The row carries the step's identity now (Decision 4); the body it opened
+    // is still the same one, on the same side.
+    expect(page.querySelector('[data-testid="step"][data-key="flaky/0/after"]')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
     expect(within(same).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
     expect(within(same).getByText('Attempt 1')).toBeInTheDocument()
     expect(within(same).getByRole('button', { name: 'YAML' })).toHaveFocus()
@@ -77,12 +80,12 @@ describe('RunPage — YAML drawer', () => {
     // The job node *is* the job selection now (Task 8) — one click, no step in
     // between and no crumb to climb.
     fireEvent.click(node('slow')!)
-    const pane = within(page).getByTestId('job-pane')
+    const head = within(page).getByTestId('job-head')
 
-    fireEvent.click(within(pane).getByRole('button', { name: 'YAML' }))
+    fireEvent.click(within(head).getByRole('button', { name: 'YAML' }))
 
     expect(markedLines()).toEqual(Array.from({ length: 23 }, (_, i) => 36 + i))
     fireEvent.click(screen.getByTestId('yaml-drawer-close'))
-    expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+    expect(within(page).getByTestId('job-page')).toBeInTheDocument()
   })
 })

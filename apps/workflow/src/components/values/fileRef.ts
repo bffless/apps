@@ -1,7 +1,7 @@
 /**
  * The UI-side name for the File-ref guard: every component that has to decide
  * whether an `unknown` value is a File ref (ValueView's `file` dispatch,
- * StepPane, RunOutputs, RunsPage) imports this one, so they cannot drift
+ * StepBody, RunOutputs, RunsPage) imports this one, so they cannot drift
  * apart. It is a **re-export**, not a copy: the guard itself lives below the
  * purity fence (`lib/runner/fileRef`), because `lib/runner/**` may not import
  * from `components/` (spec 09) and the modules down there need the same rule —

@@ -1,5 +1,5 @@
 /**
- * The pane head's YAML drawer (08, apps#449): opens over the run page with
+ * The YAML drawer (08, apps#449): opens over the run page with
  * the selected block marked, says it is the run's snapshot, and closes —
  * Esc, scrim, button — without touching the pane it came from.
  *
@@ -16,31 +16,32 @@ import { replayRun } from '../../lib/runner/replay'
 import { FINISHED_RUN } from '../../mocks/fixtures/finishedRun'
 import { makeStore } from '../../store'
 import { HELLO_YAML, hello } from '../../test/helloHarness'
-import { JobPane } from './JobPane'
-import { StepPane } from './StepPane'
+import { JobHead } from './JobHead'
+import { StepBody } from './StepBody'
 import type { YamlSource } from './YamlDrawer'
 
 const SOURCE: YamlSource = { yaml: HELLO_YAML, workflowVersion: '0.0.0', fileHref: '/hello/hello/file' }
 const state = replayRun(FINISHED_RUN.run, FINISHED_RUN.steps, hello)
 
-/** `null` = a bare pane with no run source at all. */
+/** `null` = a bare body with no run source at all. */
 function renderStep(key: string, source: YamlSource | null = SOURCE) {
-  const onBack = vi.fn()
+  const onClose = vi.fn()
   render(
     <Provider store={makeStore()}>
       <MemoryRouter>
-        <StepPane def={hello} state={state} stepKey={key} live={false} onBack={onBack} source={source ?? undefined} />
+        <StepBody def={hello} state={state} stepKey={key} live={false} onClose={onClose} source={source ?? undefined} />
       </MemoryRouter>
     </Provider>,
   )
-  return { onBack }
+  // The drawer must not climb a level; the row's collapse is what would.
+  return { onBack: onClose }
 }
 
 function renderJob(job: string) {
   render(
     <Provider store={makeStore()}>
       <MemoryRouter>
-        <JobPane def={hello} state={state} job={job} onSelect={vi.fn()} onBack={vi.fn()} source={SOURCE} />
+        <JobHead def={hello} state={state} job={job} source={SOURCE} />
       </MemoryRouter>
     </Provider>,
   )
@@ -57,7 +58,7 @@ function markedLines(): number[] {
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
 describe('YamlDrawer', () => {
-  it("opens from the step pane head with the step's block marked, as yaml", () => {
+  it("opens from the step body's toolbar with the step's block marked, as yaml", () => {
     renderStep('flaky/0/after')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
@@ -92,7 +93,7 @@ describe('YamlDrawer', () => {
     expect(screen.getByTestId('yaml-drawer-snapshot')).toHaveTextContent('lines 21–23, 25–32')
   })
 
-  it('marks the whole job from the job pane', () => {
+  it('marks the whole job from the job head', () => {
     renderJob('slow')
     fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
 
@@ -142,7 +143,7 @@ describe('YamlDrawer', () => {
     expect(screen.getByTestId('yaml-drawer-snapshot')).toHaveTextContent(/^as run$/)
   })
 
-  it('offers no control when the pane has no run source', () => {
+  it('offers no control when the body has no run source', () => {
     renderStep('flaky/0/after', null)
     expect(screen.queryByRole('button', { name: 'YAML' })).not.toBeInTheDocument()
   })

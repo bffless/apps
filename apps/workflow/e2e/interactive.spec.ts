@@ -5,13 +5,17 @@ import { waitStepState } from './steps'
 
 /**
  * Open a step's row from wherever the run is currently selected: the rail's
- * job row, then that job's own step row in its pane (spec 2026-09-08) — the
- * same navigation a reader would make, not `openStep`'s full reload (the mock
- * backend is page memory; a reload loses the live run, not just its graph).
+ * job row, then that step's own row head on the job page, which expands in
+ * place (spec 2026-09-08, phase 3) — the same navigation a reader would make,
+ * not `openStep`'s full reload (the mock backend is page memory; a reload
+ * loses the live run, not just its graph).
  */
 async function openJobStep(page: Page, job: string, key: string) {
   await page.getByRole('navigation', { name: 'Run' }).locator(`[data-testid="rail-job"][data-job="${job}"]`).click()
-  await page.getByTestId('job-pane').locator('.job-pane-step', { hasText: key }).click()
+  const row = page.locator(`[data-testid="step"][data-key="${key}"]`)
+  await row.click()
+  await expect(row).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('step-pane')).toBeVisible()
 }
 
 /**
@@ -118,13 +122,13 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   await expect(status).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
 
-  // Pinned, so the finished run stays on the form's pane rather than
-  // returning to the run card (apps#452) — and a finished run offers no
-  // toggle. The crumb's "Run" is the way up.
+  // Pinned, so the finished run stays on the form's row rather than returning
+  // to the run card (apps#452) — and a finished run offers no toggle. The job
+  // head's "Run" crumb is the way up.
   const finishedPane = page.getByTestId('step-pane')
   await expect(finishedPane).toBeVisible()
   await expect(page.getByTestId('run-follow')).toHaveCount(0)
-  await finishedPane.getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
 
   const outputs = page.getByTestId('run-outputs')
   await expect(outputs).toContainText('line')
@@ -184,7 +188,7 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   // `ctx.log` (03: "shows in the step card") — the script step keeps the
   // ordinary Input | Output toggle, and its log card rides on Output. The
-  // step's pane *replaces* the run card (08): one level at a time.
+  // step's row expands on its job page, which replaces the run card (08).
   await openJobStep(page, 'card', 'card/0/draw')
   const pane = page.getByTestId('step-pane')
   await expect(page.getByTestId('run-pane')).toHaveCount(0)
@@ -193,11 +197,12 @@ test('interactive hello runs an island step end to end against the mock backend'
   // …and the run-level `poster` is the very file the step recorded, not another
   // one that happens to be named the same.
   await expect(pane.locator('.file-card-download').first()).toHaveAttribute('href', posterHref!)
-  // Back climbs one level, to the job card (run › job › step); the crumb's
-  // "Run" climbs to the top.
-  await pane.getByTestId('step-pane-back').click()
-  await expect(page.getByTestId('job-pane')).toBeVisible()
-  await page.getByTestId('job-pane').getByTestId('step-pane-back').click()
+  // Collapsing the row climbs one level, to the job page; the job head's
+  // "Run" crumb climbs to the top.
+  await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
+  await expect(page.getByTestId('job-page')).toBeVisible()
+  await expect(page.getByTestId('step-pane')).toHaveCount(0)
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run' }).click()
   await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // `ctx.annotate` became a persisted `step.annotated`, so it is in the
@@ -226,7 +231,7 @@ test('interactive hello runs an island step end to end against the mock backend'
   await openJobStep(page, 'card', 'card/0/draw')
   await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByTestId('step-pane')).toContainText('show all 12000 rows')
-  await page.getByTestId('step-pane').getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
   await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // ---------------------------------------------------------------------
@@ -253,7 +258,7 @@ test('interactive hello runs an island step end to end against the mock backend'
         `no ${render} renderer on ${key}'s Output`,
       ).toBeVisible()
     }
-    await stepPane.getByRole('button', { name: 'Run', exact: true }).click()
+    await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
   }
 
   // The tile was picked by path, but the form recorded the *ref* (02), and the
@@ -296,8 +301,9 @@ test('a recorded script run hydrates its {"$file"} payload on read', async ({ pa
   // A payload the fetch could not answer renders as this chip instead.
   await expect(page.getByTestId('payload-unavailable')).toHaveCount(0)
 
-  // The crumb's "Run" climbs to the run card, whose results carry the run-level poster.
-  await pane.getByRole('button', { name: 'Run', exact: true }).click()
+  // The job head's "Run" crumb climbs to the run card, whose results carry the
+  // run-level poster.
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
   const outputs = page.getByTestId('run-outputs')
   await expect(outputs).toBeVisible()
   await expect(outputs.locator('[data-output="poster"] .file-card-download')).toHaveAttribute(

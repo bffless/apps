@@ -11,8 +11,8 @@
  *
  * Steps are not on the graph at all any more — the job page's step list owns
  * them (Phase 3) — so `[data-testid="step"]` must never appear on it. What a
- * step chip used to prove about a declaration is proved by `StepChip.test.tsx`,
- * which still renders the chip the job page's row head will reuse.
+ * step chip used to prove about a declaration is proved by `StepRow.test.tsx`,
+ * which owns the row head that replaced it.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
