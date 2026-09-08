@@ -16,6 +16,11 @@ export type RunSelection =
 export const STEP_PARAM = 'step'
 export const TAB_PARAM = 'tab'
 
+/** `?step=` absent or blank reads as "nothing named" — shared by every reader below, `redirectFor` included. */
+function emptyStep(step: string | null): step is null | '' {
+  return step === null || step === ''
+}
+
 export function runPath(base: string, runId: string): string {
   return `${base}/runs/${runId}`
 }
@@ -65,7 +70,7 @@ export function selectionFromRoute(
     // shell redirects it to where that level lives now — and until it does,
     // the selection is already the one the person asked for, so nothing
     // (the follow logic least of all) treats the URL as a bare run view.
-    if (step === null || step === '') return { kind: 'run' }
+    if (emptyStep(step)) return { kind: 'run' }
     return parseStepKey(step) ? { kind: 'step', key: step } : { kind: 'job', job: step }
   }
   if (step !== null && parseStepKey(step)) return { kind: 'step', key: step }
@@ -84,7 +89,9 @@ export function selectionKey(selection: RunSelection): StepKey | string | null {
 /** An old `?step=` on the Summary URL → where it lives now; `null` when there is nothing to redirect. */
 export function redirectFor(base: string, runId: string, search: URLSearchParams): string | null {
   const step = search.get(STEP_PARAM)
-  if (step === null) return null
+  // An empty `?step=` (fix round 5, finding 3) is the same "nothing named" as
+  // no `step` at all — without this it built `…/job/` for a job that isn't there.
+  if (emptyStep(step)) return null
   const parts = parseStepKey(step)
   const selection: RunSelection = parts ? { kind: 'step', key: step } : { kind: 'job', job: step }
   return pathForSelection(base, runId, selection, search)

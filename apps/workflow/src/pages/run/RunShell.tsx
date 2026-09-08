@@ -314,6 +314,7 @@ function Frame({
   def = null,
   state = null,
   yaml,
+  pin,
   children,
 }: {
   base: string
@@ -321,6 +322,8 @@ function Frame({
   def?: Definition | null
   state?: RunState | null
   yaml?: string
+  /** A rail row's navigation is a person's move, exactly as a chip click is (fix round 5, finding 2). */
+  pin?: () => void
   children: ReactNode
 }) {
   // Keyed on the **run**, not the path (`Shell` keys on the path): moving
@@ -333,7 +336,7 @@ function Frame({
     <div className="shell">
       <TopBar />
       <div className="shell-body">
-        <RunRail base={base} runId={runId} def={def} state={state} yaml={yaml} />
+        <RunRail base={base} runId={runId} def={def} state={state} yaml={yaml} onNavigate={pin} />
         <main className="content">
           <ErrorBoundary key={runId}>{children}</ErrorBoundary>
         </main>
@@ -855,7 +858,7 @@ export function RunShell() {
   // that will not load is still a run you must be able to walk away from.
   if (!isLive && (isLoading || (isFetching && !data && !isError))) {
     return (
-      <Frame base={base} runId={runId ?? ''}>
+      <Frame base={base} runId={runId ?? ''} pin={pin}>
         <p className="note">Loading…</p>
       </Frame>
     )
@@ -865,7 +868,7 @@ export function RunShell() {
   // as "no such run" would invent a fact the server never gave us.
   if (!isLive && isError && !data) {
     return (
-      <Frame base={base} runId={runId ?? ''}>
+      <Frame base={base} runId={runId ?? ''} pin={pin}>
         <LoadError title="Couldn't load this run" error={error} onRetry={() => void refetch()} />
       </Frame>
     )
@@ -873,7 +876,7 @@ export function RunShell() {
 
   if (!isLive && !run) {
     return (
-      <Frame base={base} runId={runId ?? ''}>
+      <Frame base={base} runId={runId ?? ''} pin={pin}>
         <EmptyState title="No such run">
           <p>Nothing was recorded for {runId}. It may have been deleted, or never started.</p>
         </EmptyState>
@@ -983,7 +986,7 @@ export function RunShell() {
       : null
 
   return (
-    <Frame base={base} runId={shownRunId} def={def} state={state} yaml={yamlSource.yaml}>
+    <Frame base={base} runId={shownRunId} def={def} state={state} yaml={yamlSource.yaml} pin={pin}>
       {/* Stacked flat: the second provider only annotates the first's null. */}
       <ImplContext.Provider value={implForView}>
       <ImplWithheldContext.Provider value={implWithheld}>

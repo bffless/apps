@@ -51,4 +51,21 @@ describe('RunRail', () => {
     expect(current).toHaveAttribute('data-job', 'greet')
     expect(current).toHaveAttribute('data-index', '1')
   })
+
+  it('collapses the matrix group you are on (fix round 5, finding 4)', () => {
+    // `currentJob === job` defaults the group open on the job's own item route
+    // — the very case `toggle` used to be a no-op against, since `opened`
+    // never held it either way.
+    at(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/greet/1`)
+    const rail = screen.getByRole('navigation', { name: 'Run' })
+    const chevron = within(rail).getByRole('button', { name: /hide items/i })
+    fireEvent.click(chevron)
+    expect(chevron).toHaveAttribute('aria-expanded', 'false')
+    expect(within(rail).queryAllByTestId('rail-job').some((el) => el.hasAttribute('data-index'))).toBe(false)
+
+    fireEvent.click(within(rail).getByRole('button', { name: /show items/i }))
+    expect(within(rail).getByRole('button', { name: /hide items/i })).toHaveAttribute('aria-expanded', 'true')
+    const items = within(rail).getAllByTestId('rail-job').filter((el) => el.hasAttribute('data-index'))
+    expect(items).toHaveLength(2)
+  })
 })

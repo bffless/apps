@@ -78,4 +78,7 @@ describe('redirectFor', () => {
   it('does nothing without a `step`', () => {
     expect(redirectFor(BASE, RUN, new URLSearchParams('resume=1'))).toBeNull()
   })
+  it('does nothing with an empty `step` (fix round 5, finding 3: was sending `…/job/`)', () => {
+    expect(redirectFor(BASE, RUN, new URLSearchParams('step='))).toBeNull()
+  })
 })

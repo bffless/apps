@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import {
@@ -76,5 +76,33 @@ describe('RunShell', () => {
     expect(store.getState().ui.follow).toEqual({ runId, on: false })
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/slow/0`)
     expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
+  })
+
+  it('pins the run when the rail\'s Summary row is clicked, so follow does not fight it back to the waiting form (fix round 5, finding 2)', async () => {
+    server.use(http.get('/api/workflow/run', () => HttpResponse.json({ run: null, steps: [] })))
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/hello/hello/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    // Following opens the waiting form's pane on its own.
+    await within(page).findByTestId('form-step')
+
+    // A plain `NavLink` click is not, by itself, a person's move (fix round
+    // 1's `pageWrote` guard only pins on a non-null selection) — the rail's
+    // Summary row names none, so without its own `onNavigate` the auto-open
+    // effect above would see follow still on and write the waiting form
+    // straight back over it.
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Run' })).getByTestId('rail-summary'))
+
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}`)
+    expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+    expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
   })
 })
