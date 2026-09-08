@@ -33,11 +33,23 @@ workflow's `on.manual.inputs`. A workflow that takes none still needs a file
 containing `{}` — the harness refuses a start with no `inputs` parameter rather
 than silently running on defaults.
 
-A `file` input's value is a **local path**. The driver uploads it
-(`files/prepare` → `PUT` → `files/register`) and puts the registered File ref
-in the URL, because that is what the page validates: a whole
-`{ path, name, contentType, size, url }`, never a bare string. A `list: true`
-file input takes an array of paths.
+A `file` input's value is a **local path** or an **`https://` URL**. Either way the
+driver ends up with a registered File ref in the URL, because that is what the page
+validates: a whole `{ path, name, contentType, size, url }`, never a bare string.
+
+- A local path is read and uploaded through the page (`files/prepare` → `PUT` →
+  `files/register`).
+- A URL is **downloaded first**, streamed to the runner's temp dir, then PUT to the
+  bucket **from Node** with an explicit `Content-Length` (a presigned PUT refuses a
+  chunked body), and registered. The stored object is named from `Content-Disposition`
+  or, failing that, the last path segment of the URL you gave (`…/anatomy.mp4` →
+  `anatomy.mp4`), so the run and its outputs carry the recording's name. A non-2xx
+  download, a body over the files trio's 5 GB cap, or a URL under `--mocks` is a
+  driver-side fault (exit `2`) naming the input and the URL. This is how a run started
+  over the harness's MCP endpoint (`workflow.start`, ADR-0006) takes a recording: the
+  caller passes the URL, the dispatched job does the fetch.
+
+A `list: true` file input takes an array, mixing paths and URLs per entry.
 
 ### Options
 

@@ -63,7 +63,6 @@ export {
 } from './run.js'
 export { formatRunsTable, listRuns, toRunRows, type RunRow } from './runs.js'
 export {
-  contentTypeFor,
   nodeUploadDeps,
   toFileRef,
   uploadFileInputs,
@@ -73,6 +72,10 @@ export {
   type UploadContext,
   type UploadDeps,
 } from './upload.js'
+export { uploadFromUrl, type UploadOptions } from './upload.js'
+export { downloadToTemp, isHttpUrl, filenameFromDisposition, filenameFromUrl, contentTypeFromResponse, MAX_DOWNLOAD_BYTES, type Downloaded, type FetchLike } from './download.js'
+export { putFromDisk, type PutFromDisk } from './putFromDisk.js'
+export { contentTypeFor, extensionFor as mimeExtensionFor } from './mime.js'
 export {
   credentialsFromEnv,
   loadInputs,
