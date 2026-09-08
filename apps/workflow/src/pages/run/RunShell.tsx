@@ -426,7 +426,20 @@ export function RunShell() {
   // `follow` entry is already keyed by `runId`; this ref just has to stop
   // treating the new run's first location as a person's move).
   const seenRunLocation = useRef<string | undefined>(undefined)
+  // `main.tsx` wraps the app in `<StrictMode>`, which in dev re-invokes a
+  // fresh mount's effects a second time (run, "unmount", run again) with no
+  // render — and so no new `location` — in between (fix round 1, finding 3).
+  // Without this guard, that second call would see `seenRunLocation.current`
+  // already set by the first and read a bare Summary load as a later
+  // arrival, pinning it before the person has touched anything. Compared by
+  // the `location` object's own identity, not `.key` — a `POP` to an entry
+  // already visited reuses that entry's original `key`, but this only needs
+  // to catch two calls sharing literally the same location, which the
+  // double-invoke is.
+  const lastLocation = useRef<typeof location | null>(null)
   useEffect(() => {
+    if (lastLocation.current === location) return
+    lastLocation.current = location
     const current = location.pathname + location.search
     const own = pageWrote.current !== undefined && pageWrote.current === current
     pageWrote.current = undefined
@@ -751,7 +764,18 @@ export function RunShell() {
     if (claimed.current.runId !== state.runId) {
       claimed.current = { runId: state.runId, keys: new Set() }
     }
-    if (!follow) return
+    // `follow` above is this render's own closure. A pin the arrival effect
+    // dispatches from *earlier* in this same effect flush (fix round 1,
+    // finding 1 — a Back that lands on the run level) updates the store
+    // synchronously, but never that closure: this effect was scheduled by
+    // the same render, before the dispatch happened, so it still reads the
+    // stale value. Reading the store directly is the only way this effect
+    // sees a pin that landed a moment ago in the same commit — without it,
+    // the person's Back is un-pinned and the waiting step is written straight
+    // back over the place they just navigated to.
+    const liveFollow = store.getState().ui.follow
+    const followsNow = runId !== undefined && liveFollow?.runId === runId ? liveFollow.on : follow
+    if (!followsNow) return
     if (!selectedStep) {
       if (openStep) {
         if (isLoadingIsland(state.steps[openStep]!)) claimed.current.keys.add(openStep)

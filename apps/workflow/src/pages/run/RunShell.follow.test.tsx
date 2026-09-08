@@ -12,6 +12,7 @@
  * `GET /api/workflow/run` is stubbed to "nothing here" throughout: every run
  * below is driven by this tab, off the slice.
  */
+import { StrictMode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { http, HttpResponse } from 'msw'
@@ -282,9 +283,52 @@ describe('RunPage — pins on any navigation the shell did not make', () => {
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/confirm/0`)
   })
 
+  it('pins on the browser’s Back onto the Summary — the auto-open effect does not write the waiting step straight back over it (fix round 1, finding 1)', async () => {
+    const { page, router, runId, toggle } = await followingAtForm()
+    // A person's own Summary entry: a rail click, pushed (not the `replace`
+    // every page-driven write of `null` uses), so Back can land on it.
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Run' })).getByTestId('rail-summary'))
+    await act(async () => {
+      await router.navigate(`/hello/hello/runs/${runId}/job/slow/0`)
+    })
+    fireEvent.click(toggle()) // Follow on → replace to Summary → auto-open replaces with the form
+    await within(page).findByTestId('form-step')
+    await act(async () => {
+      await router.navigate(-1)
+    }) // Back lands on the person's own Summary entry
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}`)
+    expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+  })
+
   // "Esc on a job page with nothing open climbs to the Summary" is already
   // covered by JobPage.test.tsx's "goes up to the Summary when Esc is
   // pressed with no row open, and stops there" (Task 13) — not repeated here.
+})
+
+describe('RunPage — the arrival effect is StrictMode-safe (fix round 1, finding 3)', () => {
+  it('still follows a bare load under StrictMode’s dev double-invoke of mount effects', async () => {
+    // `main.tsx` wraps the app in `<StrictMode>`, which in dev re-invokes a
+    // fresh mount's effects a second time (run, "unmount", run again) with no
+    // render — and thus no new `location` — in between. Without a guard on
+    // the arrival effect, that second call sees its own first call's
+    // bookkeeping already done and treats a bare Summary load as a *later*
+    // arrival, pinning it before the person has touched anything.
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    render(
+      <StrictMode>
+        <Provider store={store}>
+          <MemoryRouter initialEntries={[`/hello/hello/runs/${runId}`]}>
+            <App />
+          </MemoryRouter>
+        </Provider>
+      </StrictMode>,
+    )
+    const page = screen.getByRole('main')
+
+    expect(await within(page).findByRole('button', { name: 'Finish' })).toBeInTheDocument()
+    expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'on')
+  })
 })
 
 // ---------------------------------------------------------------------------
