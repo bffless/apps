@@ -272,7 +272,13 @@ describe('RunPage', () => {
     it("opens the job card from the job's own graph node, with the job's evaluated outputs", async () => {
       const { page, router } = await openRunRouter()
 
-      fireEvent.click(within(page).getByRole('button', { name: 'Job Greet each name' }))
+      // The node carries no `aria-label`, so its accessible name is its own
+      // content — the job's label *and* what it says about the run. (A
+      // `{ name: /Greet each name/ }` role query would be ambiguous here: the
+      // job's two edge dots are named after it too.)
+      expect(node('greet')).toHaveAccessibleName(/Greet each name/)
+      expect(node('greet')).toHaveAccessibleName(/2 of 2 done/)
+      fireEvent.click(node('greet')!)
       const pane = within(page).getByTestId('job-pane')
       // The crumb ends on the job, the title repeats it: `Run › Greet each name`.
       expect(within(pane).getByRole('heading', { name: 'Greet each name' })).toBeInTheDocument()
@@ -674,7 +680,7 @@ describe('RunPage', () => {
       // gate's answer. The node is on the Summary now — back there first
       // (the job pane's own crumb is unambiguous: no step is selected here).
       fireEvent.click(within(page).getByTestId('step-pane-back'))
-      fireEvent.click(within(page).getByRole('button', { name: 'Job A slow server job' }))
+      fireEvent.click(node('slow')!)
       pane = within(page).getByTestId('job-pane')
       expect(within(pane).getByRole('heading', { name: 'A slow server job' })).toBeInTheDocument()
       expect(within(pane).queryByTestId('job-fork')).not.toBeInTheDocument()

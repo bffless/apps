@@ -16,7 +16,10 @@
  *
  * The whole node is one `<button>`: the job is the middle level of run › job ›
  * step, so it is one keyboard-reachable target with one selected state
- * (`aria-pressed`), and clicking it reports the job id to its owner.
+ * (`aria-pressed`), and clicking it reports the job id to its owner. Its
+ * *content* is its accessible name — an `aria-label` here would override that
+ * with the job's name alone and hide everything the node exists to say: the
+ * status word, the duration, `N of M done`, the matrix note, the OUT rows.
  */
 import type { CSSProperties } from 'react'
 import { formatDuration } from '../../lib/duration'
@@ -82,7 +85,6 @@ export function JobCard({ job, def, col, row, mode, state, selected, onPick, flo
       data-flow={jobFlow}
       data-state={mode === 'run' ? status : 'declared'}
       aria-pressed={selected ?? false}
-      aria-label={`Job ${jobLabel(job)}`}
       style={style}
       onClick={() => onPick(job.id)}
     >

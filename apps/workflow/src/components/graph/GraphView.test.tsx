@@ -93,6 +93,8 @@ describe('GraphView (definition mode)', () => {
     expect(slow).toHaveTextContent('report')
     expect(slow).toHaveTextContent('markdown')
     expect(slow).toHaveAttribute('data-state', 'declared')
+    // The OUT rows are part of the node's accessible name too (no `aria-label`).
+    expect(slow).toHaveAccessibleName(/report/)
 
     fireEvent.click(slow)
 
@@ -124,6 +126,11 @@ describe('GraphView (run mode)', () => {
     const slow = node('slow')
     expect(slow).toHaveTextContent('Succeeded')
     expect(slow).toHaveAttribute('data-state', 'succeeded')
+    // No `aria-label` override: the node's content *is* its accessible name, so
+    // everything it exists to say is said to a screen reader too.
+    expect(slow).toHaveAccessibleName(/A slow server job/)
+    expect(slow).toHaveAccessibleName(/Succeeded/)
+    expect(slow).toHaveAccessibleName(/7\.0 s/)
     // `slow/0/start` ran from +2 s to +9 s — the job's own span.
     expect(slow).toHaveTextContent('7.0 s')
     // `flaky/0/boom` failed under `continue-on-error`: the job still reads failed.
@@ -137,6 +144,8 @@ describe('GraphView (run mode)', () => {
     const greet = node('greet')
     expect(greet).toHaveTextContent('For each who · max 2 at once')
     expect(greet).toHaveTextContent('2 of 2 done')
+    expect(greet).toHaveAccessibleName(/For each who · max 2 at once/)
+    expect(greet).toHaveAccessibleName(/2 of 2 done/)
   })
 
   it('reports the clicked job to its owner, with the side an edge dot asked for', () => {

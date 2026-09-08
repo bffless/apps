@@ -1723,6 +1723,14 @@ button {
   outline-offset: 1px;
 }
 
+/* …and the focus ring outranks it: the dashed target outline is as specific as
+   the global `:focus-visible` rule, so a keyboard-focused node that happens to
+   be a hover target would otherwise lose its ring entirely. Same values. */
+.job-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 /* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note. */
 .job-head {
   display: flex;
