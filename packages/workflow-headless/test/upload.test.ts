@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import type { ApiLike } from '../src/api.js'
+import type { Downloaded } from '../src/download.js'
 import { DriverError, EXIT } from '../src/errors.js'
 import { contentTypeFor, toFileRef, uploadFileInputs } from '../src/upload.js'
 
@@ -222,6 +223,131 @@ describe('uploadFileInputs', () => {
       "the upload PUT failed before a response — usually the storage bucket's CORS allow-list",
     )
     expect((error as Error).message).toContain('Failed to fetch')
+  })
+})
+
+/** A fake download: no network, one temp-less "file" whose cleanup is observable. */
+function fakeDownload(over: Partial<Downloaded> = {}) {
+  const calls: Array<{ url: string; input: string }> = []
+  let cleaned = 0
+  const download = async (url: string, input: string): Promise<Downloaded> => {
+    calls.push({ url, input })
+    return {
+      path: '/tmp/fake/anatomy.mp4',
+      name: 'anatomy.mp4',
+      contentType: 'video/mp4',
+      size: 40_826_579,
+      cleanup: async () => { cleaned += 1 },
+      ...over,
+    }
+  }
+  return { download, calls, cleaned: () => cleaned }
+}
+
+describe('uploadFileInputs — URL values (spec 2026-09-08)', () => {
+  const URL_ = 'https://handoff.j5s.dev/api/uploads/content/test-public/anatomy.mp4'
+
+  test('a `file` input given an https:// URL is downloaded, PUT from disk, registered, and replaced by the ref', async () => {
+    const { api, calls, puts } = fakeApi()
+    const dl = fakeDownload()
+    const disk: Array<{ url: string; path: string; size: number; contentType: string }> = []
+    const values = await uploadFileInputs(
+      api,
+      ctx,
+      { recording: { type: 'file' }, direction: { type: 'string' } },
+      { recording: URL_, direction: 'see https://example.com/notes' },
+      {
+        ...deps,
+        download: dl.download,
+        putFromDisk: async (url, path, size, contentType) => { disk.push({ url, path, size, contentType }); return { status: 200 } },
+      },
+    )
+    expect(dl.calls).toEqual([{ url: URL_, input: 'recording' }])
+    expect(calls.map((c) => c.path)).toEqual(['/api/workflow/files/prepare', '/api/workflow/files/register'])
+    expect(calls[0]!.body).toEqual({
+      impl: 'hello', workflow: 'interactive', scope: 'inputs',
+      filename: 'anatomy.mp4', contentType: 'video/mp4', size: 40_826_579,
+    })
+    // The bucket PUT came from disk, never through the page.
+    expect(puts).toEqual([])
+    expect(disk).toEqual([{ url: 'https://bucket.test/workflows/hello/interactive/inputs/anatomy.mp4', path: '/tmp/fake/anatomy.mp4', size: 40_826_579, contentType: 'video/mp4' }])
+    expect(calls[1]!.body).toMatchObject({ storageKey: 'workflows/hello/interactive/inputs/anatomy.mp4', originalName: 'anatomy.mp4' })
+    expect(values.recording).toMatchObject({ path: 'workflows/hello/interactive/inputs/anatomy.mp4', name: 'anatomy.mp4' })
+    // A URL in a `string` input is text, untouched (D1: the declared type decides).
+    expect(values.direction).toBe('see https://example.com/notes')
+    expect(dl.cleaned()).toBe(1)
+  })
+
+  test('a `list: true` file input mixes URLs and local paths per entry', async () => {
+    const { api, puts } = fakeApi()
+    const dl = fakeDownload()
+    const values = await uploadFileInputs(
+      api, ctx,
+      { shots: { type: 'file', list: true } },
+      { shots: ['./a.png', URL_] },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(puts).toHaveLength(1) // only the local path went through the page
+    expect(dl.calls).toHaveLength(1)
+    expect((values.shots as Array<{ name: string }>).map((r) => r.name)).toEqual(['a.png', 'anatomy.mp4'])
+  })
+
+  test('a failed download surfaces as the DriverError it threw, and nothing is prepared', async () => {
+    const { api, calls } = fakeApi()
+    const download = async () => { throw new DriverError(`download of recording answered 404 for ${URL_}`, EXIT.USAGE) }
+    const error = await uploadFileInputs(api, ctx, { recording: { type: 'file' } }, { recording: URL_ }, { ...deps, download }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as Error).message).toBe(`download of recording answered 404 for ${URL_}`)
+    expect(calls).toEqual([])
+  })
+
+  test('a from-disk PUT that never got a response is a usage fault naming the URL, and the temp file is cleaned up', async () => {
+    const { api } = fakeApi()
+    const dl = fakeDownload()
+    const error = await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: URL_ },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 0, error: 'fetch failed: ECONNRESET' }) },
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toBe(`the upload PUT failed before a response (fetch failed: ECONNRESET) while uploading ${URL_}`)
+    expect(dl.cleaned()).toBe(1)
+  })
+
+  test('a non-2xx from-disk PUT is a usage fault naming the URL', async () => {
+    const { api } = fakeApi()
+    const dl = fakeDownload()
+    const error = await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: URL_ },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 403 }) },
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as Error).message).toBe(`the upload PUT answered 403 for ${URL_}`)
+  })
+
+  test('under --mocks a URL value is refused before any call', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    const error = await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: URL_ },
+      { ...deps, download: dl.download }, { mocks: true },
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toBe(`URL file inputs are not supported under --mocks; pass a local path (input recording: ${URL_})`)
+    expect(dl.calls).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  test('a local path still goes through the page PUT, exactly as before', async () => {
+    const { api, puts } = fakeApi()
+    let fromDisk = 0
+    await uploadFileInputs(api, ctx, { clip: { type: 'file' } }, { clip: './clip.png' }, {
+      ...deps,
+      putFromDisk: async () => { fromDisk += 1; return { status: 200 } },
+    })
+    expect(puts).toHaveLength(1)
+    expect(fromDisk).toBe(0)
   })
 })
 
