@@ -139,3 +139,12 @@ export type RunEvent =
   | { type: 'run.finished'; status: Exclude<RunStatus, 'running'>; outputs?: Record<string, unknown>; at: number }
 
 export const stepKey = (job: string, index: number, stepId: string): StepKey => `${job}/${index}/${stepId}`
+
+/** `greet/1/say` → its parts; a step id cannot contain `/`, so the split is exact. `null` for a bare job id or a bad index. */
+export function parseStepKey(key: StepKey): { job: string; index: number; stepId: string } | null {
+  const [job, index, ...rest] = key.split('/')
+  if (job === undefined || job === '' || index === undefined || rest.length === 0) return null
+  const parsed = Number(index)
+  const stepId = rest.join('/')
+  return Number.isInteger(parsed) && stepId !== '' ? { job, index: parsed, stepId } : null
+}
