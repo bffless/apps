@@ -19,13 +19,16 @@
  * *that item's element* of it, so the leg's own line is not buried in the
  * whole job's list.
  *
- * The disclosure is deliberately not a native uncontrolled `<details>`: the
- * page opens it on the side an edge dot asked for (`?tab=`), so its openness
- * is state the page can set. The summary's own click is intercepted and
- * turned into that same state change, which is also what makes it behave
- * identically in jsdom and in a browser.
+ * The disclosure is deliberately not a native uncontrolled `<details>`, and it
+ * owns neither its openness nor its side: `JobPage` holds both, next to the
+ * set of open step rows, because a row click is a *navigation* — it rewrites
+ * `?step=` and drops `?tab=` — and anything this component kept in its own
+ * `useState` would be thrown away with it. (It was: keying the element on the
+ * URL's `tab` and `index` remounted it on the first row click, snapping the
+ * disclosure shut and reverting it to Input.) The summary's own click is
+ * intercepted and reported up as `onToggle`, which is also what makes it
+ * behave identically in jsdom and in a browser.
  */
-import { useState } from 'react'
 import { outputImageMap } from '../../lib/imageMap'
 import { resolveOutput } from '../../lib/outputDecls'
 import { buildRunContexts } from '../../lib/runner/contexts'
@@ -71,15 +74,15 @@ export interface JobIoProps {
   index?: number
   /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
   impl?: string
-  /** Which side opens first — an edge dot's click says (08). */
-  initialTab?: Tab
-  /** Open on arrival — an edge dot asked for a side, so the side has to be showing. */
-  open?: boolean
+  /** Which side is showing — an edge dot's click says which one opens (08). */
+  tab: Tab
+  onTab: (tab: Tab) => void
+  /** Open — an edge dot asked for a side, so the side has to be showing. */
+  open: boolean
+  onToggle: () => void
 }
 
-export function JobIo({ def, state, job, index, impl, initialTab = 'Input', open: initialOpen = false }: JobIoProps) {
-  const [open, setOpen] = useState(initialOpen)
-  const [tab, setTab] = useState<Tab>(initialTab)
+export function JobIo({ def, state, job, index, impl, tab, onTab, open, onToggle }: JobIoProps) {
   const decl = def.jobs[job]
 
   // Evaluated the way `jobs.<job>.outputs` / `needs.<job>.outputs` read them.
@@ -95,9 +98,9 @@ export function JobIo({ def, state, job, index, impl, initialTab = 'Input', open
       <summary
         onClick={(event) => {
           // The page owns `open`, so the browser's own toggle is cancelled and
-          // re-made here — otherwise the DOM and the prop would disagree.
+          // re-made there — otherwise the DOM and the prop would disagree.
           event.preventDefault()
-          setOpen((was) => !was)
+          onToggle()
         }}
       >
         Job inputs and outputs
@@ -115,7 +118,7 @@ export function JobIo({ def, state, job, index, impl, initialTab = 'Input', open
                 aria-selected={tab === name}
                 aria-controls="job-io-panel"
                 id={`job-io-tab-${name}`}
-                onClick={() => setTab(name)}
+                onClick={() => onTab(name)}
               >
                 {name}
               </button>

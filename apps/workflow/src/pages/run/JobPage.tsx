@@ -26,6 +26,13 @@
  * yanked shut under them, and a form they were half-way through filling in
  * would lose its draft. Only the person's own toggle closes a row (Decision 7:
  * any number may be open at once).
+ *
+ * The job disclosure's own openness and side live here for the same reason.
+ * A row click is a navigation — it writes `?step=`, which always carries the
+ * item index, and drops `?tab=` — so anything derived from those two straight
+ * off the URL, or keyed on them, is discarded the first time a person expands
+ * a step. Read once from `?tab=` and held here, the disclosure survives it:
+ * the edge dot's requested side outlives the click that opened a row under it.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
@@ -57,6 +64,19 @@ export function JobPage() {
   const parsedIndex = indexParam === undefined ? undefined : Number(indexParam)
   const index =
     parsedIndex !== undefined && Number.isInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : undefined
+
+  // The job disclosure: opened by an edge dot's `?tab=`, or by the person, and
+  // then held here — never re-read off a URL a row click has already rewritten.
+  const [ioOpen, setIoOpen] = useState(tab !== undefined)
+  const [ioTab, setIoTab] = useState<'Input' | 'Output'>(tab ?? 'Input')
+  useEffect(() => {
+    if (tab === undefined) return
+    // `setState` may not be called synchronously in an effect body (react-hooks 7).
+    queueMicrotask(() => {
+      setIoOpen(true)
+      setIoTab(tab)
+    })
+  }, [tab])
 
   const hovered = useAppSelector((s) => s.ui.hoveredValue)
   const flow = useMemo(() => flowFor(ctx.def, hovered), [ctx.def, hovered])
@@ -135,15 +155,20 @@ export function JobPage() {
         source={ctx.yamlSource}
       />
 
+      {/* Keyed on the job alone: another job's values are another disclosure,
+          which starts from its own `?tab=`; another *item* of the same job is
+          not, and neither is opening a row. */}
       <JobIo
-        key={`${job}#${index ?? ''}#${tab ?? ''}`}
+        key={job}
         def={ctx.def}
         state={ctx.state}
         job={job}
         index={index}
         impl={ctx.impl}
-        initialTab={tab}
-        open={tab !== undefined}
+        tab={ioTab}
+        onTab={setIoTab}
+        open={ioOpen}
+        onToggle={() => setIoOpen((was) => !was)}
       />
 
       {collect ? (

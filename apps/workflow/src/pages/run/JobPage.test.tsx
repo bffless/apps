@@ -161,6 +161,41 @@ describe('JobPage — the job disclosure', () => {
     expect(within(page).getByTestId('job-io')).toHaveTextContent('report')
   })
 
+  // Fix round 1: a row click is a navigation — it writes `?step=` (which
+  // always carries the item index) and drops `?tab=`. Anything the disclosure
+  // derived from those, or was keyed on, went with it: the first expand
+  // snapped it shut and reverted it to Input.
+  it('keeps the side an edge dot asked for when a step row is expanded under it', async () => {
+    const { page, router } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+
+    expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
+    expect(within(page).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(rowFor(page, 'slow/0/start'))
+
+    // The route moved to the step — the item index arrives, `?tab=` does not …
+    expect(router.state.location.pathname).toBe(`${RUN_PATH}/job/slow/0`)
+    expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
+    // … and the disclosure is exactly as the person left it.
+    expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
+    expect(
+      within(within(page).getByTestId('job-io')).getByRole('tab', { name: 'Output' }),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(within(page).getByTestId('job-io')).toHaveTextContent('report')
+  })
+
+  it('stays open when a step row is expanded after the person opened it themselves', async () => {
+    const { page } = await openAt(`${RUN_PATH}/job/slow`)
+
+    fireEvent.click(within(page).getByText('Job inputs and outputs'))
+    expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
+
+    fireEvent.click(rowFor(page, 'slow/0/start'))
+
+    expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
+    expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
+  })
+
   it('is closed with nothing asked for, and opens on the summary', async () => {
     const { page } = await openAt(`${RUN_PATH}/job/slow`)
 
