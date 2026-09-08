@@ -10,7 +10,7 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   // workflow tree") also renders a same-named link once discovery populates it,
   // so an unscoped locator is ambiguous by design, not by app defect.
   await page.getByTestId('workflow-list').getByRole('link', { name: 'Hello workflow' }).click()
-  await expect(page.getByTestId('step').first()).toBeVisible()          // definition graph
+  await expect(page.getByTestId('job').first()).toBeVisible()           // definition graph
 
   await page.getByRole('link', { name: /start a run/i }).click()
   await expect(page.getByTestId('kickoff-form')).toBeVisible()

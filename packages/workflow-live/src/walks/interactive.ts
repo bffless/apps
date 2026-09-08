@@ -70,7 +70,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     report.expect('whoami.session', meStatus === 200 && !!me.id && me.email === creds.email && ['admin', 'user', 'member'].includes(me.role ?? ''), { status: meStatus, id: me.id, role: me.role, emailMatches: me.email === creds.email, shellMatches: shellWhoami.includes(creds.email), cacheControl: meRes.headers()['cache-control'] })
 
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
-    await page.getByTestId('step').first().waitFor()
+    await page.getByTestId('job').first().waitFor()
     await s.shot('03-definition')
     await page.getByRole('link', { name: /start a run/i }).click()
     await page.getByTestId('kickoff-form').waitFor()

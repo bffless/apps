@@ -30,7 +30,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     report.expect('D5.helloDiscoveredViaForwarder', /hello/i.test((await impls.textContent()) ?? '') && probes.some((l) => l.startsWith('200 ')), probes)
     await page.getByTestId('implementations').getByRole('link', { name: /^hello$/i }).click()
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
-    await page.getByTestId('step').first().waitFor()
+    await page.getByTestId('job').first().waitFor()
     await page.getByRole('link', { name: /start a run/i }).click()
     await page.getByTestId('kickoff-form').waitFor()
     await page.getByTestId('kickoff-start').click()

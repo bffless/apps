@@ -24,24 +24,30 @@ The left rail is the implementation → workflow tree; the header shows the proj
 
 ## The graph
 
-One view, two modes, same layout:
+One view, two modes, same layout — **one node per job** (2026-09-08 redesign, Task 8): a job's
+steps are the job page's list now, not the graph's, so a node says only what a person choosing
+between jobs needs.
 
-- **Nodes** = jobs; a matrix job renders as a **group card** ("For each video · 3 at once")
-  containing its steps as a vertical sequence; a plain job renders as its steps stacked under
-  the job name (a one-step job is one card). Node order/layout is derived from `needs`
-  (topological, left→right), not hand-placed.
+- **Nodes** = jobs, one each in both modes — a matrix job is still one node (no item selector on
+  the graph; items live in the run rail), never N. Node order/layout is derived from `needs`
+  (topological, left→right via `topoLayers`), not hand-placed; each node's height comes from the
+  definition alone (`cardHeight`), so the graph never grows or reflows as a run fans out.
+- **Run mode**: each node's status line carries the folded status glyph and word (`queued
+  running polling waiting succeeded failed skipped cancelled`), a mono duration, and — for a
+  matrix job — `N of M done` in place of the status word. A matrix job also carries a `MATRIX ·
+  <id>` eyebrow over the name and a note line with the strategy ("For each who · max 2 at
+  once"). The header shows elapsed, "7 of 14 done", Cancel, Resume/Take-over when applicable.
+- **Definition mode** (`/<impl>/<workflow>`): the status line is instead the job's step count
+  (`N steps`), and the card adds one `OUT name · type` line per output the job declares.
+  Clicking a node opens the job's declaration (its raw block) in a side panel; run mode reports
+  the click to the run page instead, which has the evaluated inputs/outputs to show.
 - **Edges** = `needs` (structural) and **data-flow** edges derived from expressions
-  (`needs.x.outputs.y`, `steps.x.outputs.y`): hovering a payload chip highlights where it came
-  from and where it goes (the prototype's "from … / goes to …" labels).
-- **Definition mode** (`/<impl>/<workflow>`): every card shows kind icon, name, declared
-  inputs/outputs (types), `headless` badge; clicking shows the step's declaration.
-- **Run mode**: cards carry status (`queued running polling waiting succeeded failed skipped
-  cancelled`), duration, attempt, and for matrix jobs a progress fraction ("7 of 9") with an
-  item selector; the header shows elapsed, "7 of 14 done", Cancel, Resume/Take-over when
-  applicable.
-- **Loop depth**: one level of group nesting is designed for; deeper matrices (a matrix job
-  whose `needs` a matrix job) render as sibling groups with the fan-out noted, not nested
-  boxes.
+  (`needs.x.outputs.y`, `steps.x.outputs.y`), read at job granularity: hovering a payload chip
+  highlights the job it came from (a solid ring) and every job that reads it (a dashed outline),
+  even though the chip itself lives on a step's pane, off the graph.
+- **Edge dots** are unchanged: the two dots on a node's edges are "jump straight to one side" —
+  the left one opens the job on Input (what it waited on), the right one on Output (what it
+  hands on).
 
 ## Step panes (run mode)
 
@@ -93,7 +99,7 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 2. The graph (run mode), the navigator.
 3. **One card under it, one level of the taxonomy at a time** (decided 2026-08-26): **run ›
    job › step**, three cards of one shape — eyebrow · name · key | **Input | Output** | pill |
-   kind — and the selection is the **route**: the Summary, `/job/<job>[/<index>]` (job), and `?step=<key>` on a job route (step); an old `?step=` on the Summary URL redirects (replace) to where it lives now.
+   kind — and the selection is the **route**: the Summary, `/job/<job>[/<index>]` (job), and `?step=<key>` on a job route (step); an old `?step=` on the Summary URL redirects (replace) to where it lives now. (phases 1–2 of the 2026-09-08 redesign render the job card and the step pane together on the job page; phase 3 replaces both with step rows)
    - **Run card** (nothing selected): *Input* is the kickoff form's values; *Output* is the
      **results** (the workflow's declared `outputs`, each with renderer + Download), then the
      **summary** (step summaries in job order — the GitHub job-summary page) and the
