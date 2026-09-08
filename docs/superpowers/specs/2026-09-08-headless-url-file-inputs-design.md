@@ -115,9 +115,9 @@ The stored object's name is what the run, the step cards and the zip are named a
 - **Filename**: the `Content-Disposition` `filename` (RFC 5987 `filename*` first) if present; otherwise
   the last path segment of **the URL the caller gave** — not the redirect target, which may be a hashed
   or signed storage key — percent-decoded, query string dropped; if that is empty (a URL ending in
-  `/`), `download` plus the extension implied by the content type. (The fixture below is a Handoff
-  share link that 302s to a five-minute GCS signed URL with no `Content-Disposition`; the caller's URL
-  ends in `anatomy.mp4`.)
+  `/`), `download` plus the extension implied by the content type. (A Handoff `/r/…?token=` share link,
+  for instance, 302s to a five-minute GCS signed URL with no `Content-Disposition`; the caller's URL is
+  the one that ends in the recording's name.)
 - **Content type**: the response `Content-Type` (media type only, parameters dropped) when it is not
   `application/octet-stream`; otherwise the extension map already in `upload.ts` (`contentTypeFor`);
   otherwise `application/octet-stream`.
@@ -206,10 +206,9 @@ session" section links to it. This spec's implementation plan covers the skill's
   count, so the streaming body is proven without a bucket.
 - **Live walk**: `packages/workflow-live` gains a `capture-url` walk (or the `headless` walk gains a
   URL variant) that starts `capture/capture` over the MCP endpoint against `workflow.j5s.dev` with a
-  recording URL — the committed default is the public Handoff share link
-  `https://handoff.j5s.dev/r/17fd1d06-619b-4511-838e-fa290c6c3a47/anatomy.mp4?token=c747b250-313b-4a97-a06c-824d61428b98`
-  (41 MB `video/mp4`, answers a 302 to a five-minute GCS signed URL), overridable with
-  `CAPTURE_FIXTURE_URL` — waits for
+  recording URL — the committed default is the public, tokenless Handoff content URL
+  `https://handoff.j5s.dev/api/uploads/content/test-public/anatomy.mp4` (41 MB `video/mp4`, answers
+  200 directly, no redirect, does not expire), overridable with `CAPTURE_FIXTURE_URL` — waits for
   `succeeded`, signs the bundle and asserts the zip contains `manifest.json` whose `source.name` is the
   recording's filename. Run with `apps-live-walk` after the
   driver release lands (the dispatched job installs `@bffless/workflow-headless@^1.2` fresh).
