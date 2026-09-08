@@ -1,6 +1,6 @@
 /**
  * Fix round 1, finding 2: `StepBody`'s `waiting`-form delegation to
- * `FormStepBody` must only fire for the run this tab is actually driving
+ * `FormStepPane` must only fire for the run this tab is actually driving
  * (`live`). A read-only replay of a waiting form step — another tab's
  * in-flight run, or a run this tab used to drive and has since navigated
  * away from — must fall back to the ordinary tabbed view instead: `runEvent`
@@ -97,7 +97,7 @@ describe('StepBody — live gates the waiting-form delegation', () => {
     expect(screen.getByText('Attempt 1')).toBeInTheDocument()
   })
 
-  it('still delegates to FormStepBody for the run this tab is driving (live)', async () => {
+  it('still delegates to FormStepPane for the run this tab is driving (live)', async () => {
     const { store } = await startHelloAtConfirmWaiting()
     const state = store.getState().run.state!
 
