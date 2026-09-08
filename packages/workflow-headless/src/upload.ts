@@ -9,9 +9,11 @@
  * PUT of the bytes, `files/register`.
  */
 import { readFile } from 'node:fs/promises'
-import { basename, extname } from 'node:path'
+import { basename } from 'node:path'
 import type { ApiLike } from './api.js'
 import { DriverError, EXIT } from './errors.js'
+import { contentTypeFor } from './mime.js'
+export { contentTypeFor } from './mime.js'
 
 export interface FileRef {
   path: string
@@ -35,34 +37,6 @@ export interface UploadDeps {
 
 /** The serve route a File ref's `url` points at — CE's `file_serve_handler` (06). */
 const SERVE_PREFIX = '/api/uploads/'
-
-const MIME: Record<string, string> = {
-  '.bin': 'application/octet-stream',
-  '.csv': 'text/csv',
-  '.gif': 'image/gif',
-  '.htm': 'text/html',
-  '.html': 'text/html',
-  '.jpeg': 'image/jpeg',
-  '.jpg': 'image/jpeg',
-  '.json': 'application/json',
-  '.md': 'text/markdown',
-  '.mp3': 'audio/mpeg',
-  '.mp4': 'video/mp4',
-  '.pdf': 'application/pdf',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.txt': 'text/plain',
-  '.wav': 'audio/wav',
-  '.webm': 'video/webm',
-  '.webp': 'image/webp',
-  '.yaml': 'application/yaml',
-  '.yml': 'application/yaml',
-  '.zip': 'application/zip',
-}
-
-export function contentTypeFor(path: string): string {
-  return MIME[extname(path).toLowerCase()] ?? 'application/octet-stream'
-}
 
 export const nodeUploadDeps: UploadDeps = {
   readFile: async (path) => new Uint8Array(await readFile(path)),
