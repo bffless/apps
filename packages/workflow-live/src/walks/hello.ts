@@ -44,7 +44,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     await island.getByTestId('line').first().click()
     await island.getByTestId('submit').click()
     await waitStepState(page, 'review/0/confirm', 'waiting', 120_000)
-    await openStep(page, runUrl, 'review/0/confirm')
+    await openStep(page, 'review/0/confirm')
     const form = page.getByTestId('form-step')
     await form.waitFor()
     await form.getByTestId('tile-picker').getByTestId('tile').first().click()
@@ -97,7 +97,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     })
     // Step 1d — Decision 4: the script ran in a sandboxed Worker (opaque origin)
     const d4 = await report.guard(['D4.scriptSandboxed'], async () => {
-      await openStep(page, runUrl, 'card/0/draw')
+      await openStep(page, 'card/0/draw')
       await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
       const scriptLog = (await page.getByTestId('script-log').textContent().catch(() => '')) ?? ''
       const originLine = scriptLog.match(/origin=(\S+)/)?.[1]

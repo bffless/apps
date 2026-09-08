@@ -9,19 +9,46 @@ export function waitStepState(page: Page, key: string, want: string, timeout: nu
   )
 }
 
+/** Split a step key `"<job>/<index>/<stepId>"` into its rail/row parts. */
+export function parseStepKey(key: string): { job: string; index: string; stepId: string } {
+  const [job, index, stepId] = key.split('/')
+  return { job: job ?? '', index: index ?? '0', stepId: stepId ?? '' }
+}
+
 /**
- * Open a step's row: navigate to its job page with `?step=` (spec 2026-09-08).
- * `runUrl` is the Summary URL. A full navigation is fine here — unlike the
- * in-repo e2e specs (whose mock backend lives in page memory, so a reload
- * would lose the live run), a live deployment's run is server-side state; a
- * fresh load just re-hydrates the same run at the step's own route.
+ * Open a step's row by navigating **in-page** (spec 2026-09-08) — never a
+ * `page.goto`. A page driving a run demotes itself to a mere observer on any
+ * full navigation ("Another tab is driving this run. Take over…"): the fresh
+ * load re-hydrates from the server record, which can still lag what the
+ * driving tab just did in-page (Task 16b — `openStep` used to `goto` the
+ * step's `?step=` URL, and against the live harness that raced the record:
+ * the reloaded page observed `card` still `running` and `review/0/confirm`
+ * still `queued`, and `form-step` never appeared). A tab that only
+ * *observes* a run may reach a step by loading its URL; the tab *driving*
+ * the run must click there, the way a reader would — the rail's job (or
+ * matrix item) row, then the step's own row head, which expands its pane in
+ * place.
  */
-export async function openStep(page: Page, runUrl: string, key: string) {
-  const [job, index] = key.split('/')
-  const url = new URL(runUrl)
-  url.pathname = `${url.pathname.replace(/\/$/, '')}/job/${encodeURIComponent(job!)}/${index}`
-  url.searchParams.set('step', key)
-  await page.goto(url.toString(), { waitUntil: 'networkidle' })
-  await page.locator(`[data-testid="step"][data-key="${key}"][aria-expanded="true"]`).waitFor()
-  await page.getByTestId('step-pane').waitFor()
+export async function openStep(page: Page, key: string) {
+  const { job, index } = parseStepKey(key)
+  const row = page.locator(`[data-testid="step"][data-key="${key}"]`)
+  const alreadyOpen = (await row.count()) > 0 && (await row.getAttribute('aria-expanded').catch(() => null)) === 'true'
+  if (!alreadyOpen) {
+    const rail = page.locator('nav[aria-label="Run"]')
+    const matrixGroup = rail.locator(`[data-testid="rail-matrix"][data-job="${job}"]`)
+    if (await matrixGroup.count()) {
+      const itemLink = matrixGroup.locator(`[data-testid="rail-job"][data-job="${job}"][data-index="${index}"]`)
+      if (!(await itemLink.isVisible().catch(() => false))) {
+        await matrixGroup.locator('button[aria-expanded="false"]').click()
+      }
+      await itemLink.click()
+    } else {
+      await rail.locator(`[data-testid="rail-job"][data-job="${job}"]:not([data-index])`).click()
+    }
+    await row.waitFor()
+    if ((await row.getAttribute('aria-expanded')) !== 'true') {
+      await row.click()
+    }
+  }
+  await page.locator(`li:has([data-testid="step"][data-key="${key}"])`).getByTestId('step-pane').waitFor()
 }

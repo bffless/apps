@@ -102,7 +102,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
 
     // --- Decision 14: the review form
     await waitStepState(page, 'review/0/confirm', 'waiting', 120_000)
-    await openStep(page, runUrl, 'review/0/confirm')
+    await openStep(page, 'review/0/confirm')
     const form = page.getByTestId('form-step')
     await form.waitFor()
     const tiles = form.getByTestId('tile-picker').getByTestId('tile')
@@ -178,7 +178,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     // own outputs), and the pane is Input | Output only since apps#384 folded the
     // third `Details` tab into Output. A script's live log and its hydrated
     // `{"$file"}` outputs both ride there, so one click reaches both.
-    await openStep(page, runUrl, 'card/0/draw')
+    await openStep(page, 'card/0/draw')
     await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
     const paneText = (await page.getByTestId('step-pane').textContent().catch(() => '')) ?? ''
     report.expect('run.bigHydrated', /\[12000\]|12000/.test(paneText), paneText.slice(0, 300))
@@ -192,7 +192,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     // own outputs are line/view/poster/poster_view/cover.
     const pane = page.getByTestId('step-pane')
     const openOutput = async (key: string) => {
-      await openStep(page, runUrl, key)
+      await openStep(page, key)
       await pane.getByRole('tab', { name: 'Output' }).click()
     }
     const renderers: Record<string, boolean | number> = {}
