@@ -206,8 +206,10 @@ session" section links to it. This spec's implementation plan covers the skill's
   count, so the streaming body is proven without a bucket.
 - **Live walk**: `packages/workflow-live` gains a `capture-url` walk (or the `headless` walk gains a
   URL variant) that starts `capture/capture` over the MCP endpoint against `workflow.j5s.dev` with a
-  recording URL read from the environment (`CAPTURE_FIXTURE_URL`; a Handoff `/r/…?token=` share link
-  is the intended fixture — the token is a credential, so it is never committed), waits for
+  recording URL — the committed default is the public Handoff share link
+  `https://handoff.j5s.dev/r/17fd1d06-619b-4511-838e-fa290c6c3a47/anatomy.mp4?token=c747b250-313b-4a97-a06c-824d61428b98`
+  (41 MB `video/mp4`, answers a 302 to a five-minute GCS signed URL), overridable with
+  `CAPTURE_FIXTURE_URL` — waits for
   `succeeded`, signs the bundle and asserts the zip contains `manifest.json` whose `source.name` is the
   recording's filename. Run with `apps-live-walk` after the
   driver release lands (the dispatched job installs `@bffless/workflow-headless@^1.2` fresh).
