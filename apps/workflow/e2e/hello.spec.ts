@@ -32,7 +32,9 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   await expect(outputs).toContainText('Hello, world!')                   // collected greet line
   // the flaky job's warning annotation surfaced (scoped: the same text is also
   // an output chip in run-outputs — the `after` step's own `note` output — so
-  // an unscoped locator is ambiguous by design, not by app defect):
+  // an unscoped locator is ambiguous by design, not by app defect). The panel
+  // is closed by default (no error-level annotation here), so open it first.
+  await page.getByTestId('annotations').locator('summary').click()
   await expect(page.getByTestId('annotations').getByText(/boom failed with TEAPOT/)).toBeVisible()
   // and the run appears under Past runs:
   await page.getByRole('link', { name: /past runs|runs/i }).first().click()

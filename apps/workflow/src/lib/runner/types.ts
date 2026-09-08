@@ -21,7 +21,7 @@ export interface StepError { code: string; message: string; status?: number }
  * (apps#526): a `run.annotation` carrying a `kind` replaces the run's previous
  * annotation of that kind instead of stacking (reducer.ts). `data` is the
  * machine half — an opaque payload the UI never renders inline
- * (`AnnotationList` shows `level`/`title`/`message` and ignores the rest);
+ * (`AnnotationsPanel` shows `level`/`title`/`message` and ignores the rest);
  * today's only kind is the run page's client diagnostics attachment.
  */
 export interface Annotation {

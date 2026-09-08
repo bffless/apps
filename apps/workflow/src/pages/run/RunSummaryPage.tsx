@@ -30,8 +30,8 @@ export function RunSummaryPage() {
         state={ctx.state}
         workflowName={ctx.workflowName}
         annotations={ctx.annotations}
+        base={ctx.base}
         impl={ctx.impl}
-        onJump={(key) => ctx.select({ kind: 'step', key })}
       />
     </>
   )

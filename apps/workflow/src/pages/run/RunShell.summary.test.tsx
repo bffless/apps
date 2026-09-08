@@ -352,10 +352,18 @@ describe('RunPage', () => {
     })
   })
 
-  it('concatenates the step summaries in job order', async () => {
+  it('groups the step summaries under their job, in scheduling order', async () => {
     const page = await openRun()
 
     const summary = within(page).getByTestId('run-summary')
+    // Only `greet`'s two items write a summary in the fixture — one entry
+    // (and heading) per item, each naming the job (and, being a matrix job,
+    // its item too).
+    const entries = within(summary).getAllByRole('article')
+    expect(entries.map((e) => within(e).getByRole('heading').textContent)).toEqual([
+      'Greet each name (who: world) summary',
+      'Greet each name (who: studio) summary',
+    ])
     expect(summary.textContent).toContain('Said')
     expect([...summary.querySelectorAll('strong')].map((el) => el.textContent)).toEqual([
       'Hello, world!',
@@ -367,13 +375,16 @@ describe('RunPage', () => {
     const { page, router } = await openRunRouter()
 
     const annotations = within(page).getByTestId('annotations')
+    // Closed by default (no error-level annotation on this run) — jsdom
+    // doesn't hide a closed `<details>`'s content from queries the way a
+    // real browser does, so its list is still reachable without opening it.
     expect(within(annotations).getByText('Job job_hello_1 took 1234 ms')).toBeInTheDocument()
     expect(within(annotations).getByText('boom failed with TEAPOT')).toBeInTheDocument()
 
-    fireEvent.click(within(annotations).getByRole('button', { name: 'slow/0/start' }))
+    fireEvent.click(within(annotations).getByRole('link', { name: 'slow/0/start' }))
 
-    // The chip's `aria-pressed` no longer applies off the Summary — the jump
-    // is a navigation to the step now.
+    // The link's own href, not a chip's `aria-pressed` — the jump is a
+    // navigation to the step now.
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
     expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
   })

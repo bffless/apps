@@ -2487,10 +2487,17 @@ button.pane-crumb:hover {
   border-top: 1px solid var(--hairline-faint);
 }
 
-/* The run card's trail: Summary, then Annotations. */
-.pane-trail > .run-summary + .annotations-section {
+/* The run card's trail: the Annotations panel, then a summary per job (08 §4/§5). */
+.pane-trail > .annotations-panel + .run-summary {
   padding-top: 16px;
   border-top: 1px solid var(--hairline);
+}
+
+.annotations-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  margin: 24px 0 10px;
 }
 
 .summary-entries {
@@ -2508,11 +2515,13 @@ button.pane-crumb:hover {
   border-top: 0;
 }
 
-.summary-step {
-  margin: 0 0 6px;
-  color: var(--ink-mute);
-  font-family: var(--font-mono);
-  font-size: 11px;
+.summary-entry h4 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.summary-entry h4 a:hover {
+  text-decoration: underline;
 }
 
 .summary-entry .markdown-view {

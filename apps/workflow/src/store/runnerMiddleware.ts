@@ -1682,7 +1682,7 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
           // this run worth recording, not a silent repair: a server-side job
           // may already be running for the initial request whose id the
           // record lost. The notice is stamped with the step so
-          // `AnnotationList` can jump to it like any other.
+          // `AnnotationsPanel` can jump to it like any other.
           const initial = step.response?.initial
           const fromScratch =
             step.status === 'polling' && (initial === undefined || isTruncatedStub(initial))

@@ -673,7 +673,7 @@ describe('openRun — a polling row whose recorded initial was truncated', () =>
       expect(store.getState().run.state!.annotations).toContainEqual(
         expect.objectContaining({
           level: 'notice',
-          // Review minor 3: stamped with the step, so `AnnotationList` can
+          // Review minor 3: stamped with the step, so `AnnotationsPanel` can
           // offer the same "from <step>" jump every other step annotation has.
           stepKey: SLOW_KEY,
           message: `step ${SLOW_KEY} resumed from scratch — its initial response was truncated in the record`,
