@@ -351,6 +351,133 @@ describe('uploadFileInputs — URL values (spec 2026-09-08)', () => {
   })
 })
 
+describe('uploadFileInputs — a URL wrapped in an object (Claude Desktop shape)', () => {
+  const URL_ = 'https://handoff.j5s.dev/api/uploads/content/test-public/anatomy.mp4'
+  const wrapped = (over: Record<string, unknown> = {}) => ({
+    contentType: 'video/mp4',
+    name: 'anatomy.mp4',
+    path: 'test-public/anatomy.mp4',
+    url: URL_,
+    ...over,
+  })
+
+  test('a wrapped URL object is downloaded, PUT from disk, registered, and replaced by the ref', async () => {
+    const { api, calls, puts } = fakeApi()
+    const dl = fakeDownload()
+    const values = await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped() },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(dl.calls).toEqual([{ url: URL_, input: 'recording' }])
+    expect(calls[0]!.body).toMatchObject({ filename: 'anatomy.mp4' })
+    expect(calls[1]!.body).toMatchObject({ originalName: 'anatomy.mp4' })
+    expect(values.recording).toMatchObject({ path: 'workflows/hello/interactive/inputs/anatomy.mp4', name: 'anatomy.mp4' })
+    expect(puts).toEqual([])
+  })
+
+  test('a wrapped URL object without a name uses the download\'s own name', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    const noName = wrapped()
+    delete (noName as { name?: string }).name
+    await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: noName },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(calls[0]!.body).toMatchObject({ filename: 'anatomy.mp4' }) // the download's own name (fakeDownload's default)
+  })
+
+  test('a wrapped URL object\'s name is sanitised — separators become `_`', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped({ name: '../evil.mp4' }) },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(calls[0]!.body).toMatchObject({ filename: '.._evil.mp4' })
+    expect(calls[1]!.body).toMatchObject({ originalName: '.._evil.mp4' })
+  })
+
+  test('a wrapped URL object\'s dot-name falls back to the download\'s own name', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped({ name: '..' }) },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(calls[0]!.body).toMatchObject({ filename: 'anatomy.mp4' })
+  })
+
+  test('a wrapped URL object\'s empty name falls back to the download\'s own name', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped({ name: '' }) },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(calls[0]!.body).toMatchObject({ filename: 'anatomy.mp4' })
+  })
+
+  test('a registered ref is untouched, even if it also carries an https:// url', async () => {
+    const { api, calls } = fakeApi()
+    const ref = { path: 'workflows/hello/interactive/inputs/clip.png', name: 'clip.png', contentType: 'image/png', size: 3, url: URL_ }
+    const values = await uploadFileInputs(api, ctx, { recording: { type: 'file' } }, { recording: ref }, deps)
+    expect(calls).toEqual([])
+    expect(values.recording).toBe(ref)
+  })
+
+  test('an object with neither a `workflows/` path nor an https:// url is untouched', async () => {
+    const { api, calls } = fakeApi()
+    const value = { path: 'somewhere/else.png', foo: 'bar' }
+    const values = await uploadFileInputs(api, ctx, { recording: { type: 'file' } }, { recording: value }, deps)
+    expect(calls).toEqual([])
+    expect(values.recording).toBe(value)
+  })
+
+  test('an http:// url in an object is untouched — https only', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    const value = { url: 'http://handoff.j5s.dev/anatomy.mp4', name: 'anatomy.mp4' }
+    const values = await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: value },
+      { ...deps, download: dl.download },
+    )
+    expect(calls).toEqual([])
+    expect(dl.calls).toEqual([])
+    expect(values.recording).toBe(value)
+  })
+
+  test('under --mocks a wrapped URL is refused with the same message a string URL gets', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload()
+    const error = await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped() },
+      { ...deps, download: dl.download }, { mocks: true },
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toBe(`URL file inputs are not supported under --mocks; pass a local path (input recording: ${URL_})`)
+    expect(dl.calls).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  test('a `list: true` file input mixes a string URL, a wrapped URL and a local path', async () => {
+    const { api, puts } = fakeApi()
+    const dl = fakeDownload()
+    const values = await uploadFileInputs(
+      api, ctx, { shots: { type: 'file', list: true } },
+      { shots: ['./a.png', URL_, wrapped({ name: 'poster.mp4' })] },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(puts).toHaveLength(1) // only the local path went through the page
+    expect(dl.calls).toEqual([
+      { url: URL_, input: 'shots' },
+      { url: URL_, input: 'shots' },
+    ])
+    expect((values.shots as Array<{ name: string }>).map((r) => r.name)).toEqual(['a.png', 'anatomy.mp4', 'poster.mp4'])
+  })
+})
+
 describe('toFileRef', () => {
   test('fills in the fields the register answer may leave out', () => {
     expect(toFileRef({ storagePath: 'workflows/a/b/poster.svg', size: 12 })).toEqual({

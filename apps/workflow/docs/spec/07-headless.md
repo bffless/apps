@@ -24,7 +24,9 @@ and interactive runs are the same code, the same rows, the same history.
   `2026-09-08-headless-url-file-inputs-design.md`): an `https://` value for a `file` input in
   `--inputs` — which is how `workflow.start` over the MCP endpoint passes a recording — is
   streamed to the runner's disk, PUT to the bucket from Node, and registered, so the page
-  still only ever sees a ref.
+  still only ever sees a ref. A URL wrapped in an object (`{ url: "https://…", name? }`)
+  is treated as that URL too; a registered File ref (a `path` under `workflows/`) is
+  passed through instead, even if it also carries a `url`.
 - The values are validated against `on.manual.inputs` by the very same function the kickoff
   form's own Start runs (`lib/autoStart.ts`), so a driver's inputs and a person's are never
   judged differently.

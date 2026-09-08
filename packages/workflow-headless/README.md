@@ -47,7 +47,9 @@ validates: a whole `{ path, name, contentType, size, url }`, never a bare string
   download, a body over the files trio's 5 GB cap, or a URL under `--mocks` is a
   driver-side fault (exit `2`) naming the input and the URL. This is how a run started
   over the harness's MCP endpoint (`workflow.start`, ADR-0006) takes a recording: the
-  caller passes the URL, the dispatched job does the fetch.
+  caller passes the URL, the dispatched job does the fetch. A URL wrapped in an object
+  (`{ url: "https://…", name? }`) is treated as that URL too — a registered File ref (a
+  `path` under `workflows/`) is passed through instead, even if it also carries a `url`.
 
 A `list: true` file input takes an array, mixing paths and URLs per entry.
 
