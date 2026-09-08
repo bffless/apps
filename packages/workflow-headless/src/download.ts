@@ -41,20 +41,23 @@ export function isHttpUrl(value: string): boolean {
 
 const noSeparators = (name: string) => name.replace(/[\\/]/g, '_')
 
+/** `''`, `.` or `..` — not a usable filename (the latter two would escape the temp dir via `join`). */
+const isDotName = (name: string) => name === '' || name === '.' || name === '..'
+
 export function filenameFromDisposition(header: string | null): string | undefined {
   if (!header) return undefined
   const star = /filename\*\s*=\s*(?:utf-8)''([^;]+)/i.exec(header)
   if (star?.[1]) {
     try {
-      const decoded = decodeURIComponent(star[1].trim())
-      if (decoded !== '') return noSeparators(decoded)
+      const decoded = noSeparators(decodeURIComponent(star[1].trim()))
+      if (!isDotName(decoded)) return decoded
     } catch {
       /* fall through to the plain form */
     }
   }
   const plain = /filename\s*=\s*(?:"([^"]*)"|([^;]+))/i.exec(header)
-  const name = (plain?.[1] ?? plain?.[2] ?? '').trim()
-  return name === '' ? undefined : noSeparators(name)
+  const name = noSeparators((plain?.[1] ?? plain?.[2] ?? '').trim())
+  return isDotName(name) ? undefined : name
 }
 
 export function filenameFromUrl(url: string, contentType: string): string {
@@ -71,7 +74,7 @@ export function filenameFromUrl(url: string, contentType: string): string {
     /* keep it encoded */
   }
   segment = noSeparators(segment)
-  return segment === '' ? `download${extensionFor(contentType)}` : segment
+  return isDotName(segment) ? `download${extensionFor(contentType)}` : segment
 }
 
 export function contentTypeFromResponse(header: string | null, name: string): string {
@@ -87,6 +90,7 @@ export async function downloadToTemp(
   input: string,
   fetchImpl: FetchLike = fetch,
   maxBytes: number = MAX_DOWNLOAD_BYTES,
+  tmpRoot: string = tmpdir(),
 ): Promise<Downloaded> {
   let res: Response
   try {
@@ -111,7 +115,12 @@ export async function downloadToTemp(
     filenameFromUrl(url, (headerType ?? '').split(';')[0]?.trim() ?? '')
   const contentType = contentTypeFromResponse(headerType, name)
 
-  const dir = await mkdtemp(join(tmpdir(), 'workflow-headless-'))
+  let dir: string
+  try {
+    dir = await mkdtemp(join(tmpRoot, 'workflow-headless-'))
+  } catch (e) {
+    throw new DriverError(`download of ${input} failed before a response (${detail(e)}) for ${url}`, EXIT.USAGE)
+  }
   const path = join(dir, name)
   const cleanup = () => rm(dir, { recursive: true, force: true })
 

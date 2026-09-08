@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
 import {
   contentTypeFromResponse,
@@ -39,6 +40,9 @@ describe('filenameFromDisposition', () => {
     expect(filenameFromDisposition('attachment')).toBeUndefined()
     expect(filenameFromDisposition('attachment; filename=""')).toBeUndefined()
   })
+  test('is undefined for a dot or dot-dot name — it must not escape the temp dir', () => {
+    expect(filenameFromDisposition('attachment; filename=".."')).toBeUndefined()
+  })
 })
 
 describe('filenameFromUrl', () => {
@@ -52,6 +56,10 @@ describe('filenameFromUrl', () => {
   })
   test('never contains a path separator', () => {
     expect(filenameFromUrl('https://h/a%2Fb.mp4', 'video/mp4')).toBe('a_b.mp4')
+  })
+  test('falls back to download + extension for a dot or dot-dot segment — it must not escape the temp dir', () => {
+    expect(filenameFromUrl('https://h/%2E%2E', 'video/mp4')).toBe('download.mp4')
+    expect(filenameFromUrl('https://h/a/.', 'video/mp4')).toBe('download.mp4')
   })
 })
 
@@ -126,5 +134,21 @@ describe('downloadToTemp', () => {
     expect(error).toBeInstanceOf(DriverError)
     expect((error as DriverError).code).toBe(EXIT.USAGE)
     expect((error as Error).message).toMatch(/over the 5 GB cap/)
+  })
+
+  test('a temp-dir fault (not a response fault) is a usage fault too', async () => {
+    const noSuchRoot = join('/nonexistent-workflow-headless-download-test', 'deeper')
+    const error = await downloadToTemp(
+      URL_,
+      'recording',
+      answering(200, new Uint8Array(3), { 'content-type': 'video/mp4' }),
+      MAX_DOWNLOAD_BYTES,
+      noSuchRoot,
+    ).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriverError)
+    expect((error as DriverError).code).toBe(EXIT.USAGE)
+    expect((error as Error).message).toMatch(
+      new RegExp(`^download of recording failed before a response \\(.+\\) for ${URL_.replace(/[.?]/g, '\\$&')}$`),
+    )
   })
 })
