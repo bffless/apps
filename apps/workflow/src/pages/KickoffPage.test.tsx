@@ -56,8 +56,12 @@ describe('KickoffPage', () => {
     // was exactly the race Task 18 closes: a `GET` issued this early can
     // land before the row's own `create`, and reporting that as "no such
     // run" would invent a fact the server never gave us.
-    expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'running')
-    expect(within(page).queryByText('No such run')).not.toBeInTheDocument()
+    //
+    // Queried off the document rather than `page`: the run is its own layout
+    // route (spec 2026-09-08), so the navigation replaces the Kickoff screen's
+    // `main` instead of rendering into it.
+    expect(await screen.findByTestId('run-status')).toHaveAttribute('data-state', 'running')
+    expect(screen.queryByText('No such run')).not.toBeInTheDocument()
   })
 
   it('reports the lint errors and offers no kickoff form when the workflow does not validate', async () => {
@@ -97,7 +101,8 @@ describe('KickoffPage — "Don\'t wait for me" (07)', () => {
 
     await waitFor(() => expect(db.runs.get(run.runId)).toBeDefined())
     expect(db.runs.get(run.runId)).toMatchObject({ unattended: true, headless: false })
-    expect(await within(page).findByTestId('run-unattended')).toBeInTheDocument()
+    // Off the document: the run's own layout route replaced the Kickoff `main`.
+    expect(await screen.findByTestId('run-unattended')).toBeInTheDocument()
   })
 
   it('starts an ordinary run when the toggle is left alone', async () => {
