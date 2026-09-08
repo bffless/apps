@@ -136,11 +136,10 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await Promise.all(s.pending)
     await s.shot('07-succeeded')
     // Our click on the confirm chip **pinned** the selection (apps#452), so the
-    // finished run stays on that step's pane — `run-outputs` renders on the run
-    // card only. Climb out the way the e2e spec does: the pane crumb's "Run".
-    const finishedPane = page.getByTestId('step-pane')
-    await finishedPane.waitFor({ timeout: 10_000 })
-    await finishedPane.getByRole('button', { name: 'Run', exact: true }).click()
+    // finished run stays on that step's row — `run-outputs` renders on the
+    // Summary. The redesign has no crumb on the step body to climb through;
+    // reach the Summary via the run rail's own row (Task 16c).
+    await page.getByRole('navigation', { name: 'Run' }).getByTestId('rail-summary').click()
     const outputs = page.getByTestId('run-outputs')
     await outputs.waitFor({ timeout: 30_000 })
     const outText = (await outputs.textContent()) ?? ''
