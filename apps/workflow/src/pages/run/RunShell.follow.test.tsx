@@ -69,6 +69,23 @@ function renderAt(store: AppStore, url: string) {
   )
 }
 
+/** `hello` held at its waiting form, rendered through the router, following (the form's row is open on `confirm/0`). */
+async function followingAtForm() {
+  const { store, runId } = await startHelloAtConfirmWaiting()
+  const router = createMemoryRouter(createRoutesFromElements(routes), {
+    initialEntries: [`/hello/hello/runs/${runId}`],
+  })
+  render(
+    <Provider store={store}>
+      <RouterProvider router={router} />
+    </Provider>,
+  )
+  const page = screen.getByRole('main')
+  await within(page).findByTestId('form-step')
+  const toggle = () => within(page).getByTestId('run-follow')
+  return { page, router, runId, toggle }
+}
+
 // ---------------------------------------------------------------------------
 // Mode transitions, on `hello` held at its waiting form
 // ---------------------------------------------------------------------------
@@ -225,6 +242,49 @@ describe('RunPage — follow mode', () => {
     await waitFor(() => expect(store.getState().ui.selectedStep).toBeNull())
     expect(within(page).queryByTestId('run-follow')).not.toBeInTheDocument()
   })
+})
+
+// ---------------------------------------------------------------------------
+// Task 14: pin on any navigation the shell did not make, including one that
+// lands back on the Summary — the one arrival the old `pageWrote` guard
+// (keyed on the selection key, not the path) waved through unconditionally.
+// ---------------------------------------------------------------------------
+
+describe('RunPage — pins on any navigation the shell did not make', () => {
+  it('pins on a rail click', async () => {
+    const { toggle } = await followingAtForm()
+    expect(toggle()).toHaveAttribute('data-state', 'on')
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Run' })).getByTestId('rail-summary'))
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+    expect(screen.getByTestId('run-pane')).toBeInTheDocument() // and nothing moves it back
+  })
+
+  it('pins on the browser’s Back', async () => {
+    const { page, router, runId, toggle } = await followingAtForm()
+    await act(async () => {
+      await router.navigate(`/hello/hello/runs/${runId}/job/slow/0`)
+    }) // a person's move: pins
+    fireEvent.click(toggle()) // follow on again → Summary, then the form row
+    await within(page).findByTestId('form-step')
+    expect(toggle()).toHaveAttribute('data-state', 'on')
+    await act(async () => {
+      await router.navigate(-1)
+    }) // Back: a person's move
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+  })
+
+  it('Follow on returns to the Summary, then the waiting step reopens by itself', async () => {
+    const { page, router, runId, toggle } = await followingAtForm()
+    fireEvent.click(within(page).getByTestId('step')) // collapse the form row: pins
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+    fireEvent.click(toggle())
+    await within(page).findByTestId('form-step')
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/confirm/0`)
+  })
+
+  // "Esc on a job page with nothing open climbs to the Summary" is already
+  // covered by JobPage.test.tsx's "goes up to the Summary when Esc is
+  // pressed with no row open, and stops there" (Task 13) — not repeated here.
 })
 
 // ---------------------------------------------------------------------------

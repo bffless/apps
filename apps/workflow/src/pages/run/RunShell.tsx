@@ -402,22 +402,45 @@ export function RunShell() {
     if (runId !== undefined) dispatch(followChanged({ runId, on: false }))
   }
 
-  // Every selection the *page* makes goes through `write`, which remembers the
-  // key so the effect below can tell it from one the person made — a `?step=`
-  // typed into the address bar, or stepped Back to — which pins, exactly as a
-  // click would. A `null` never pins: Back out to the run level is not a
-  // choice of step, and following resumes from there.
-  const pageWrote = useRef<StepKey | string | null | undefined>(undefined)
+  // Every selection the *page* makes goes through `write`, which records the
+  // exact path it is about to navigate to (`pathname + search`) so the
+  // arrival effect below can tell that location from one a person arrived at
+  // some other way — a graph click, a `?step=` typed into the address bar,
+  // the browser's Back/Forward, or a rail row (whose own `onNavigate` already
+  // pins directly, `Frame`'s `pin` prop). Comparing the *path*, not the
+  // selection key, is what lets an arrival back on the run level pin too: a
+  // page-written `null` (Follow's own `write(null, true)`, the finished-run
+  // return) records that exact Summary path and so is waved through, while a
+  // person's Back to the very same Summary URL — which `write` never saw
+  // coming — was not recorded and pins.
+  const pageWrote = useRef<string | undefined>(undefined)
   const write = (key: StepKey | string | null, replace: boolean) => {
-    pageWrote.current = key
+    pageWrote.current = pathForSelection(base, runId ?? '', toSelection(key), new URLSearchParams(location.search))
     setStep(key, replace)
   }
+  // The one run-route location this run has been seen at so far. The very
+  // first location for a run has nothing to compare against, so it pins only
+  // when the URL itself already carries a selection (a `?step=` deep link, or
+  // a job route) and stays following on a bare Summary load — the existing
+  // behaviour. A navigation to a *different* run resets this (the store's
+  // `follow` entry is already keyed by `runId`; this ref just has to stop
+  // treating the new run's first location as a person's move).
+  const seenRunLocation = useRef<string | undefined>(undefined)
   useEffect(() => {
-    const own = pageWrote.current !== undefined && pageWrote.current === selectedStep
+    const current = location.pathname + location.search
+    const own = pageWrote.current !== undefined && pageWrote.current === current
     pageWrote.current = undefined
-    if (own || selectedStep === null || runId === undefined) return
+    const firstForRun = seenRunLocation.current !== runId
+    seenRunLocation.current = runId
+    if (own || runId === undefined) return
+    if (firstForRun && selectedStep === null) return
     dispatch(followChanged({ runId, on: false }))
-  }, [selectedStep, runId, dispatch])
+    // Keyed on `location` itself, not its `pathname`/`search` strings: two
+    // history entries can carry the identical path (the claim effect writes
+    // the same waiting step back after a round trip through the Summary) and
+    // still be a real Back between them — comparing the strings for equality
+    // in the dependency list would make React skip this effect exactly then.
+  }, [location, runId, dispatch, selectedStep])
 
   // Who we are: the owner half of Delete's gate lives in `useRunDelete`, but
   // a run *this* tab started carries no `startedBy` of its own (see below).
