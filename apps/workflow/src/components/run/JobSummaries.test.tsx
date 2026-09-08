@@ -44,16 +44,34 @@ describe('JobSummaries', () => {
     expect(entries[1]).toHaveTextContent('Hello, studio!')
   })
 
-  it('links a non-matrix job heading to the job with no item index', () => {
-    renderSummaries()
+  it('links a non-matrix job heading to the job with no item index, and no item label', () => {
+    // `greet` (the only job with a summary in the unmodified fixture) is a
+    // matrix job, so that case alone never exercises the non-matrix branch of
+    // `JobSummaries`' `href`/label logic. `slow` is a plain job — give its one
+    // step a summary to reach it.
+    const stateWithSlowSummary: RunState = {
+      ...state,
+      steps: {
+        ...state.steps,
+        'slow/0/start': { ...state.steps['slow/0/start']!, summary: 'Slow **done**' },
+      },
+    }
+    renderSummaries({ state: stateWithSlowSummary })
 
     const entries = screen.getAllByRole('article')
-    // `greet` is the only job with a summary in the fixture; its first item
-    // (`who: world`) still carries `/job/greet/0`, not a bare `/job/greet`.
-    expect(within(entries[0]!).getByRole('link')).toHaveAttribute(
+    const slowEntry = entries.find((e) => e.getAttribute('data-job') === 'slow')!
+    expect(slowEntry).toBeInTheDocument()
+    // `itemTotal` for a non-matrix job is always 1, so its one entry's own
+    // `data-index` is `0` — never absent, and never anything a matrix item's
+    // index could be confused with.
+    expect(slowEntry).toHaveAttribute('data-index', '0')
+    expect(within(slowEntry).getByRole('link')).toHaveAttribute(
       'href',
-      `/hello/hello/runs/${FIXTURE_RUN_ID}/job/greet/0`,
+      `/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow`,
     )
+    // No matrix item label — a plain job's heading names only the job.
+    expect(within(slowEntry).getByRole('heading')).toHaveTextContent('A slow server job summary')
+    expect(slowEntry).toHaveTextContent('done')
   })
 
   it('shows the note when no step anywhere wrote a summary', () => {

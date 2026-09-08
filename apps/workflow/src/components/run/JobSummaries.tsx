@@ -24,7 +24,6 @@ export interface JobSummariesProps {
 interface Entry {
   job: string
   index: number
-  matrix: boolean
   label: string
   href: string
   summaries: string[]
@@ -48,7 +47,6 @@ function summaryEntries(def: Definition, state: RunState, base: string, runId: s
       entries.push({
         job,
         index,
-        matrix,
         label,
         href: matrix ? jobPath(base, runId, job, index) : jobPath(base, runId, job),
         summaries,
