@@ -472,6 +472,7 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
       definition?.inputs ?? {},
       o.inputs,
       deps.uploadDeps ?? nodeUploadDeps,
+      { mocks: o.mocks },
     )
 
     const url = startUrl(o, encodeInputs(values))
