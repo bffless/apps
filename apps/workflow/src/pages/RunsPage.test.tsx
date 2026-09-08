@@ -106,7 +106,7 @@ describe('RunsPage', () => {
       expect(note).toHaveTextContent(/^waiting on review$/)
       expect(within(note).getByRole('link', { name: 'review' })).toHaveAttribute(
         'href',
-        `/hello/hello/runs/${WAITING_RUN_ID}?step=${WAITING_STEP_KEY}`,
+        `/hello/hello/runs/${WAITING_RUN_ID}/job/confirm/0?step=confirm%2F0%2Freview`,
       )
     })
 
@@ -126,7 +126,7 @@ describe('RunsPage', () => {
       expect(note).toHaveTextContent(/^waiting on after \+1$/)
       expect(within(note).getByRole('link', { name: 'after' })).toHaveAttribute(
         'href',
-        `/hello/hello/runs/${WAITING_RUN_ID}?step=${key}`,
+        `/hello/hello/runs/${WAITING_RUN_ID}/job/flaky/0?step=flaky%2F0%2Fafter`,
       )
       expect(note.querySelector('.run-waiting-more')).toHaveAttribute('title', 'review')
     })
