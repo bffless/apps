@@ -300,7 +300,12 @@ function Trail({
   scriptLog,
 }: {
   step: StepState
-  /** A script step's log card, live or recorded (apps#527) — `undefined` for every other step (see `StepBody`). */
+  /**
+   * A script step's log card, live or recorded (apps#527) — `undefined` for
+   * every other step. It is built by the body below rather than in here
+   * because *where* the log sits is the row's business, not the trail's: the
+   * trail only knows it comes after the summary and annotations.
+   */
   scriptLog?: ReactNode
 }) {
   const raw = step.response?.last ?? step.response?.initial

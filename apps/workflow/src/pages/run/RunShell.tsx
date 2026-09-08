@@ -55,6 +55,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { ErrorBoundary } from '../../components/ErrorBoundary'
 import { LoadError } from '../../components/LoadError'
 import { TopBar } from '../../components/TopBar'
+import { jobLabel, stepLabel } from '../../components/graph/geometry'
 import { PausedBanner } from '../../components/run/PausedBanner'
 import { RunHeader } from '../../components/run/RunHeader'
 import { RunRail } from '../../components/run/RunRail'
@@ -780,8 +781,23 @@ export function RunShell() {
   // user picked another step, the page changed run — puts the page back inline
   // rather than leaving a fixed overlay over a step with no island in it.
   const islandDisplay = useAppSelector((s) => s.ui.islandDisplay)
+  // The overlay is fixed over the open island's **row**, so it only holds
+  // while that row is on the job page the route is showing (spec §The run
+  // shell). A `?step=` naming another job's step is a redirect in flight —
+  // `JobPage` sends it to that job's page — and fixing an overlay over a page
+  // about to be replaced would leave the mode without a row under it.
+  const openParts = level === 'step' && selectedStep ? parseStepKey(selectedStep) : null
+  const rowOnThisPage =
+    openParts !== null &&
+    jobMatch?.params.job === openParts.job &&
+    // No `:index` on the route is the job's one and only leg, which is how
+    // `JobPage` reads it (`index ?? 0`).
+    (jobMatch.params.index === undefined
+      ? openParts.index === 0
+      : Number(jobMatch.params.index) === openParts.index)
   const islandOpen =
     isLive &&
+    rowOnThisPage &&
     selectedStepState?.kind === 'island' &&
     (selectedStepState.status === 'running' || selectedStepState.status === 'waiting')
   const fullscreen = islandDisplay === 'fullscreen' && islandOpen
@@ -961,6 +977,14 @@ export function RunShell() {
       : false
   const implForView = isLive ? sliceState!.impl : rowImplTrusted ? run!.impl : null
   const implWithheld = !isLive && implForView === null
+  // The fullscreen strip names the row it is fixed over, in the words the job
+  // page uses: the job's label, then the step's — never the raw key, which the
+  // strip prints beside them anyway.
+  const stripJob = openParts ? (def!.jobs[openParts.job] ?? null) : null
+  const stripJobLabel = stripJob ? jobLabel(stripJob) : (openParts?.job ?? '')
+  const stripStep = stripJob?.steps.find((candidate) => candidate.id === openParts!.stepId)
+  const stripStepLabel = stripStep ? stepLabel(stripStep) : (openParts?.stepId ?? '')
+
   // What the run's pages read (`useRunContext`): everything the shell has
   // already worked out about the run on screen, plus the two navigations that
   // are the shell's to make. Absent — and only then — when the row has no
@@ -1056,10 +1080,36 @@ export function RunShell() {
                     // the island's — the store flips, and the new mode flows back
                     // down to the bridge through `IslandFrame`.
                     <div className="island-strip" data-testid="island-strip">
-                      <span className="island-strip-title">
-                        <span className="island-strip-crumb">Run › {selectedStep!.split('/')[0]}</span>
+                      <div className="island-strip-title">
+                        {/* `Run › <job> › <step>`, the two levels above the
+                            island each a way up — the same climb the job
+                            head's eyebrow offers, and a person's move, so
+                            both pin (they go through `toRun` / `select`). */}
+                        <nav className="island-strip-crumb" aria-label="Where this sits">
+                          <button type="button" className="pane-crumb" onClick={toRun}>
+                            Run
+                          </button>
+                          <span className="pane-crumb-sep" aria-hidden="true">
+                            ›
+                          </span>
+                          <button
+                            type="button"
+                            className="pane-crumb"
+                            onClick={() =>
+                              select({ kind: 'job', job: openParts!.job, index: openParts!.index })
+                            }
+                          >
+                            {stripJobLabel}
+                          </button>
+                          <span className="pane-crumb-sep" aria-hidden="true">
+                            ›
+                          </span>
+                          <span className="pane-crumb is-current" aria-current="location">
+                            {stripStepLabel}
+                          </span>
+                        </nav>
                         <span className="island-strip-key">{selectedStep}</span>
-                      </span>
+                      </div>
                       <button
                         type="button"
                         data-testid="island-exit-fullscreen"

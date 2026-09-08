@@ -66,18 +66,36 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   ink ring (`box-shadow: inset 0 0 0 1px`) over an ink border. Data-flow hover, at job
   granularity (Task 8): a solid ring on the source job, a dashed outline on every job that reads
   the value; `:focus-visible` draws its own 2px ring, outranking both.
-- **The pane under the graph** — one level of the taxonomy at a time: **run › job › step**.
-  The **run card** (`.run-pane`: `RUN` · workflow name · run id | Input/Output | pill |
-  `WORKFLOW`), the **job card** (`.job-pane`: `RUN · JOB` · job name · id | Input/Output |
-  **Re-run from this job** when the run can be forked there | pill | `JOB` / `MATRIX · N ITEMS`,
-  trail = its steps) and the **step pane** (`.step-pane`: crumb
-  `Run › <job>` · step · key | Input/Output | pill | kind) share one shape: header row with the
-  `.segmented` toggle (selected = ink), a body of values, then a `.pane-trail`. Every card's
-  head opens with `.pane-crumbs` — `Run › <job> › <step> · item n of N`, the shell crumb's own
-  shape (mono 11.5px), every segment above the current one a way up; Esc and the pressed
-  chip/strip climb one level. The selection is the URL (`?step=`). On the graph, every card's
-  header strip is a button (pressed = ink fill) onto the job card; the edge dots open the job on
-  Input / Output.
+- **The job page** — one level of the taxonomy at a time: **run › job › step**, and the level
+  is the route. The Summary keeps the **run card** (`.run-pane`: `RUN` · workflow name · run id
+  | Input/Output | pill | `WORKFLOW`) under the graph. A job is its own page (`.job-page`, a
+  16px column):
+  - **Job head** (`.job-page > .job-head`: a wrapping row on `--surface` in a card border) —
+    `.job-eyebrow` `RUN › JOB` (mono 11px, uppercase, every segment above the current one a
+    `.pane-crumb` way up), the job's name 600, its id in `.pane-key` mono, the pill, the mono
+    duration, the matrix note, then `.job-head-actions` on the right: **Re-run from this job**
+    when the run can be forked there, and **YAML**.
+  - **Job inputs and outputs** (`.job-io`) — the job card's body folded into a `<details>`: a
+    12×20 `summary`, then the `.job-io-toolbar` (the `.segmented` Input/Output toggle, selected
+    = ink, plus Show raw) over a body of values.
+  - **Step rows** (`.step-list` / `.step-row`) — one card-bordered list, hairline between rows.
+    The head is a full-width button (glyph · label + mono id · kind word · `attempt n` ·
+    right-aligned mono duration · chevron), tinted by `data-state` and ringed by
+    `data-flow`; open, it goes ink-on-`--surface-dim` and the `.step-row-body` unfolds beneath
+    it — the step pane without its card head: a `.step-toolbar` (Input/Output, Show raw, YAML,
+    pill, kind), the values, then a `.pane-trail`. The row itself is the step's identity, so
+    the body carries no crumb, name or key.
+  - A waiting `form` or a live `island` **is** the row's body (`.form-step-pane` /
+    `.island-step-pane`). An island that declared `display: fullscreen` offers `.island-expand`;
+    the overlay is the shell's — `.island-fullscreen` fixes the run canvas over the viewport at
+    `--z-overlay` and puts the `.island-strip` in the content's place, its crumb reading
+    `Run › <job> › <step>` (the first two a way up) over the step's key in mono, with **Exit
+    fullscreen** `Esc` on the right. Every box from the canvas down to the iframe grows, so the
+    island fills the screen without being remounted.
+  - Esc layers: inside an open row's body it collapses that row, on a job page with nothing
+    open it goes up to the Summary, and on the Summary it does nothing. On the graph, a node's
+    header strip is a button (pressed = ink fill) onto the job page; the edge dots open it on
+    Input / Output.
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
   `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
   striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image
@@ -94,9 +112,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   30×28. Under 900px the rail stacks above the content and the breadcrumb
   wraps to its own line.
 - Page head: title + sub on the left, `.page-actions` on the right, 1px rule beneath.
-- Run page: head → one-line run bar (pill · mono progress/elapsed · badges) → graph panel →
-  legend → the run card *or* the selected step's pane (full width, below the graph). The run
-  card's Output holds the results, then the trail (summary, annotations).
+- Run pages: head → one-line run bar (pill · mono progress/elapsed · badges) → the page. The
+  **Summary** is the graph panel → legend → the run card, whose Output holds the results, then
+  the trail (summary, annotations). A **job page** is the job head → the job inputs/outputs
+  disclosure → the step rows, full width, no graph.
 - Lists max out at 1080px; forms at 760px; prose at 70ch.
 
 ## Motion

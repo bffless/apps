@@ -1731,13 +1731,18 @@ button {
   outline-offset: 2px;
 }
 
-/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note. */
+/* The graph node's header strip: 40px name row (+ 20px matrix line) — `CARD.strip` /
+   `CARD.note`, which `geometry.ts` adds up to lay the graph out. Everything is
+   `box-sizing: border-box`, so the 40px is the whole strip, its 1px
+   `border-bottom` included; a 39px height here made every node one pixel
+   shorter than the layout it is drawn into. (The job *page*'s head is another
+   element with the same class — see `.job-page > .job-head` below.) */
 .job-head {
   display: flex;
   flex: none;
   flex-direction: column;
   justify-content: center;
-  height: 39px;
+  height: 40px;
   padding: 0 13px;
   background-color: var(--surface-dim);
   border-bottom: 1px solid var(--line);
@@ -3083,7 +3088,15 @@ button.pane-crumb:hover {
   min-width: 0;
 }
 
+/* `Run › <job> › <step>` — the two links up and the step that holds the page,
+   laid out as one line. The crumbs themselves are `.pane-crumb`s, which
+   inherit their type from here, so the strip reads like the job head's own
+   eyebrow at the strip's size. */
 .island-strip-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
   color: var(--ink);
   font-size: 13px;
   font-weight: 600;
@@ -3110,9 +3123,14 @@ button.pane-crumb:hover {
   font-size: 12px;
 }
 
+/* The overlay's growth chain, top to bottom: every box between the fixed
+   `.run-canvas` and the island's own iframe has to grow, or the frame is left
+   at its inline height with the page's background under it. The list is the
+   link the row hangs off — a `<ul>` between the job page and the open `<li>`. */
 .island-fullscreen .step-pane,
 .island-fullscreen .step-body,
 .island-fullscreen .job-page,
+.island-fullscreen .step-list,
 .island-fullscreen .step-row[data-open],
 .island-fullscreen .step-row[data-open] > .step-row-body,
 .island-fullscreen .island-step,

@@ -435,6 +435,25 @@ describe('JobPage — Re-run from this job', () => {
  * the *item*, not the job as a whole. `RunShell.back()` used to drop the index.
  */
 describe('JobPage — the way up keeps a matrix item', () => {
+  it('goes up to the Summary when Esc is pressed with no row open, and stops there', async () => {
+    // Controller ruling 2 (spec §Follow or pinned): Esc layers — inside an
+    // expanded row body it collapses that row; with nothing expanded on a job
+    // page it is the crumb's Back to the Summary; on the Summary, nothing.
+    const { page, router } = await openAt(`${RUN_PATH}/job/greet/1?step=greet%2F1%2Fsay`)
+
+    await waitFor(() => expect(within(page).getByTestId('step-pane')).toBeInTheDocument())
+    fireEvent.keyDown(within(page).getByTestId('step-pane'), { key: 'Escape' })
+    expect(router.state.location.pathname).toBe(`${RUN_PATH}/job/greet/1`)
+
+    // Nothing expanded now: the next Esc climbs out of the job page.
+    fireEvent.keyDown(rowFor(page, 'greet/1/say'), { key: 'Escape' })
+    await waitFor(() => expect(router.state.location.pathname).toBe(RUN_PATH))
+    expect(within(page).getByTestId('run-outputs')).toBeInTheDocument()
+    // …and the Summary is the top: Esc there moves nothing.
+    fireEvent.keyDown(page, { key: 'Escape' })
+    expect(router.state.location.pathname).toBe(RUN_PATH)
+  })
+
   it('climbs from a matrix item’s step to that item’s page, not the collect view', async () => {
     const { page, router } = await openAt(`${RUN_PATH}/job/greet/1?step=greet%2F1%2Fsay`)
 
