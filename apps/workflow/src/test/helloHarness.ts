@@ -140,6 +140,38 @@ export async function startHelloAtConfirmWaiting(
   return { store, advance, runId }
 }
 
+/**
+ * Starts `hello` and pumps the virtual clock only until `slow/0/start` is
+ * in flight (`running`, or `polling` its retry) — before anything is
+ * `waiting` and before any island has started loading. A page rendered here
+ * while following stays on the Summary: there is nothing yet for the
+ * claim/auto-open effect to move the selection onto.
+ */
+export async function startHelloAtSlowPolling(
+  values: Record<string, unknown> = { greeting: 'Hello', names: ['world', 'studio'], photo: null, shout: false },
+): Promise<{ store: AppStore; advance: (ms: number) => Promise<void>; runId: string }> {
+  const { store, advance } = trackedHelloStore()
+  store.dispatch(
+    startRun({
+      impl: 'hello',
+      workflow: 'hello',
+      def: hello,
+      yaml: helloYaml,
+      workflowName: 'Hello workflow',
+      values,
+    }),
+  )
+
+  await pumpUntil(
+    advance,
+    () => ['running', 'polling'].includes(store.getState().run.state?.steps['slow/0/start']?.status ?? ''),
+    { maxSteps: 400 },
+  )
+
+  const runId = store.getState().run.state!.runId
+  return { store, advance, runId }
+}
+
 /** Call from `afterEach`: closes every store this module tracked and clears the module-level runner singletons (Task 17: controllers/heartbeats/write-queues are global, not per-store). */
 export function resetHelloHarness(): void {
   for (const store of trackedStores) store.dispatch(runClosed())
