@@ -11,14 +11,16 @@ project.
 ## Agent skills
 
 This repo publishes agent skills for the apps as the `bffless-apps` collection
-(currently: `handoff-api` — drive a Handoff deployment's API as an agent).
-Install into your own project either way:
+(currently: `handoff-api` — drive a Handoff deployment's API as an agent; and
+`capture-recording` — hand the Workflow harness a recording URL over MCP and
+read back the Capture bundle). Install into your own project either way:
 
-    npx skills add bffless/apps --skill handoff-api   # skills CLI (any harness)
+    npx skills add bffless/apps --skill handoff-api          # skills CLI (any harness)
+    npx skills add bffless/apps --skill capture-recording
 
 (plain `npx skills add bffless/apps` installs every skill in this repo,
 including the repo-private `install-app` skill, which isn't meant for
-consumers — scope the install with `--skill handoff-api`)
+consumers — scope the install with `--skill <name>`)
 
 or in Claude Code, add this repo as a plugin marketplace and install the
 `bffless-apps` plugin:
@@ -28,7 +30,8 @@ or in Claude Code, add this repo as a plugin marketplace and install the
 
 Canonical skill sources live under `plugins/bffless-apps/skills/`; the skills
 CLI serves consumers from the generated `.agents/skills/` mirror
-(`pnpm skills:sync`). Only *published* skills (currently `handoff-api`) get
+(`pnpm skills:sync`). Only *published* skills (currently `handoff-api` and
+`capture-recording`) get
 mirrored into both `.claude/skills/` and `.agents/skills/` this way —
 authored, repo-private skills like `install-app` stay canonical in
 `.claude/skills/` and are mirrored only into `.agents/skills/`.
