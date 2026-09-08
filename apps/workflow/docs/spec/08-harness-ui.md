@@ -37,6 +37,7 @@ between jobs needs.
   matrix job — `N of M done` in place of the status word. A matrix job also carries a `MATRIX ·
   <id>` eyebrow over the name and a note line with the strategy ("For each who · max 2 at
   once"). The header shows elapsed, "7 of 14 done", Cancel, Resume/Take-over when applicable.
+  A job's status is the engine's result: a `continue-on-error` failure does not fail the job.
 - **Definition mode** (`/<impl>/<workflow>`): the status line is instead the job's step count
   (`N steps`), and the card adds one `OUT name · type` line per output the job declares.
   Clicking a node opens the job's declaration (its raw block) in a side panel; run mode reports

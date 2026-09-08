@@ -32,6 +32,14 @@ describe('RunRail', () => {
     expect(within(rail).getByTestId('rail-back')).toHaveAttribute('href', '/hello/hello')
   })
 
+  // Task 17b: a job's status is the engine's result, not the worst of its steps.
+  it('reads the flaky job as succeeded — its only failure was absorbed by continue-on-error', () => {
+    at(`/hello/hello/runs/${FIXTURE_RUN_ID}`)
+    const rail = screen.getByRole('navigation', { name: 'Run' })
+    const flaky = within(rail).getAllByTestId('rail-job').find((el) => el.getAttribute('data-job') === 'flaky')!
+    expect(flaky.querySelector('.glyph')).toHaveAttribute('data-state', 'succeeded')
+  })
+
   it('shows a matrix job as a group with its fraction, collapsed until opened or current', () => {
     at(`/hello/hello/runs/${FIXTURE_RUN_ID}`)
     const rail = screen.getByRole('navigation', { name: 'Run' })

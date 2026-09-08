@@ -64,7 +64,7 @@ export interface JobCardProps {
 export function JobCard({ job, def, col, row, mode, state, selected, onPick, flow, style }: JobCardProps) {
   const rows = state ? stepsOfJob(def, state, job.id) : []
   const states = rows.flatMap((r) => (r.state ? [r.state] : []))
-  const status = jobStatus(states)
+  const status = state ? jobStatus(def, state, job.id) : 'queued'
   const duration = jobDuration(states)
   const isMatrix = job.matrix !== undefined
   const total = state ? itemTotal(state, job.id) : 1

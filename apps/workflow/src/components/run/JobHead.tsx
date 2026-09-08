@@ -114,7 +114,7 @@ export function JobHead({ def, state, job, index, mode = 'run', onFork, onRun, s
         <span className="pane-key">{job}</span>
       </span>
 
-      {run && <StatusPill status={jobStatus(states)} />}
+      {run && <StatusPill status={jobStatus(def, state, job, index)} />}
       {duration !== undefined && <span className="job-head-meta">{formatDuration(duration)}</span>}
       {note && <span className="job-head-note">{note}</span>}
       {isItem && (

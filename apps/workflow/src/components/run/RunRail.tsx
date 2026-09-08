@@ -72,7 +72,7 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                 return (
                   <li key={job}>
                     <NavLink className="rail-row rail-job" data-testid="rail-job" data-job={job} to={jobPath(base, runId, job)} end onClick={onNavigate}>
-                      <StatusGlyph status={jobStatus(states)} />
+                      <StatusGlyph status={jobStatus(def, state, job)} />
                       <span className="rail-row-name">{jobLabel(decl)}</span>
                       {duration !== undefined && <span className="rail-row-meta">{formatDuration(duration)}</span>}
                     </NavLink>
@@ -88,7 +88,7 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                 <li key={job}>
                   <div className="rail-matrix" data-testid="rail-matrix" data-job={job}>
                     <NavLink className="rail-row rail-job" data-testid="rail-job" data-job={job} to={jobPath(base, runId, job)} end onClick={onNavigate}>
-                      <StatusGlyph status={jobStatus(states)} />
+                      <StatusGlyph status={jobStatus(def, state, job)} />
                       <span className="rail-row-name">{jobLabel(decl)}</span>
                       <span className="rail-row-meta">{done} of {total}</span>
                     </NavLink>
@@ -100,11 +100,10 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                     <ul className="rail-items">
                       {Array.from({ length: total }, (_, i) => {
                         const item = state.expansions[job]?.items[i] ?? {}
-                        const itemStates = stepsOfJob(def, state, job, i).flatMap((r) => (r.state ? [r.state] : []))
                         return (
                           <li key={i}>
                             <NavLink className="rail-row rail-job rail-item" data-testid="rail-job" data-job={job} data-index={i} to={jobPath(base, runId, job, i)} end onClick={onNavigate}>
-                              <StatusGlyph status={jobStatus(itemStates)} />
+                              <StatusGlyph status={jobStatus(def, state, job, i)} />
                               <span className="rail-row-name">{itemLabel(item, i)}</span>
                             </NavLink>
                           </li>

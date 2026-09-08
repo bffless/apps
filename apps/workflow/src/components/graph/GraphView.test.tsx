@@ -153,8 +153,9 @@ describe('GraphView (run mode)', () => {
     expect(slow).toHaveAccessibleName(/7\.0 s/)
     // `slow/0/start` ran from +2 s to +9 s — the job's own span.
     expect(slow).toHaveTextContent('7.0 s')
-    // `flaky/0/boom` failed under `continue-on-error`: the job still reads failed.
-    expect(node('flaky')).toHaveAttribute('data-state', 'failed')
+    // `flaky/0/boom` failed under `continue-on-error`: the job reads the engine's
+    // result — succeeded — not the worst of its steps (Task 17b).
+    expect(node('flaky')).toHaveAttribute('data-state', 'succeeded')
     expect(document.querySelectorAll('[data-testid="step"]')).toHaveLength(0)
   })
 
