@@ -67,9 +67,12 @@ difference is who fetches them.
 | value | today | after |
 | --- | --- | --- |
 | an object | left alone (already a ref) | unchanged |
-| a string | a local path → `uploadOne` | **a string matching `^https?://` → download to temp → `uploadOne`**; any other string → local path, unchanged |
+| a string | a local path → `uploadOne` | **a string matching `^https://` → download to temp → `uploadOne`**; any other string → local path, unchanged |
 | a `list: true` array | per entry as above | per entry as above |
 | an input whose declared type is not `file` | untouched | untouched |
+
+Plain `http://` is refused: a recording fetched in cleartext is a surprise nobody asked for, and every
+place the feature is described says `https://`.
 
 The interpretation is keyed on the **declared type**, never on what the value looks like: a
 `type: string` input holding a web address (Capture's `direction` could) passes through verbatim. For
@@ -192,6 +195,14 @@ Home: `bffless/skills` (`plugins/bffless/skills/capture-recording/SKILL.md`), th
 that reaches both Claude Code and other hosts; the `capture` README's "Reading a run from a Claude
 session" section links to it. This spec's implementation plan covers the skill's text; the
 `bffless/skills` release is its own PR.
+
+### D8 — Security note
+
+The runner fetches whatever URL a caller holding `workflow:run` passes — by design, since the caller
+could already upload any bytes through the kickoff form — and the fetched bytes are persisted in the
+project bucket under a caller-influenced (sanitised: separators stripped, `.`/`..` refused) name and
+are readable back through `workflow.sign`; the runner is a GitHub-hosted VM with no cloud metadata
+endpoint, and only `https://` is accepted.
 
 ## Testing
 

@@ -35,8 +35,9 @@ export interface Downloaded {
   cleanup(): Promise<void>
 }
 
+/** `https://` only (case-insensitive) — plain `http://` is refused (spec D1). */
 export function isHttpUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value)
+  return /^https:\/\//i.test(value)
 }
 
 const noSeparators = (name: string) => name.replace(/[\\/]/g, '_')
@@ -99,6 +100,7 @@ export async function downloadToTemp(
     throw new DriverError(`download of ${input} failed before a response (${detail(e)}) for ${url}`, EXIT.USAGE)
   }
   if (res.status < 200 || res.status >= 300) {
+    await res.body?.cancel().catch(() => undefined)
     throw new DriverError(`download of ${input} answered ${res.status} for ${url}`, EXIT.USAGE)
   }
   if (!res.body) {
@@ -107,7 +109,10 @@ export async function downloadToTemp(
   const overCap = (bytes: number) =>
     new DriverError(`download of ${input} is ${bytes} bytes, over the 5 GB cap, for ${url}`, EXIT.USAGE)
   const declared = Number(res.headers.get('content-length') ?? NaN)
-  if (Number.isFinite(declared) && declared > maxBytes) throw overCap(declared)
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body.cancel().catch(() => undefined)
+    throw overCap(declared)
+  }
 
   const headerType = res.headers.get('content-type')
   const name =
@@ -119,10 +124,11 @@ export async function downloadToTemp(
   try {
     dir = await mkdtemp(join(tmpRoot, 'workflow-headless-'))
   } catch (e) {
-    throw new DriverError(`download of ${input} failed before a response (${detail(e)}) for ${url}`, EXIT.USAGE)
+    throw new DriverError(`download of ${input} could not open a temp dir (${detail(e)}) for ${url}`, EXIT.USAGE)
   }
   const path = join(dir, name)
-  const cleanup = () => rm(dir, { recursive: true, force: true })
+  /** Never rejects — safe to call twice, and safe to await from a `finally`. */
+  const cleanup = () => rm(dir, { recursive: true, force: true }).catch(() => undefined)
 
   let seen = 0
   const counter = new Transform({

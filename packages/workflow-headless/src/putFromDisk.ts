@@ -34,7 +34,7 @@ export async function putFromDisk(
       body: Readable.toWeb(createReadStream(path)) as unknown as BodyInit,
       // Node's fetch requires this for a streaming request body.
       duplex: 'half',
-    } as RequestInit)
+    } as RequestInit & { duplex: 'half' })
     return { status: res.status }
   } catch (e) {
     const cause = (e as { cause?: unknown }).cause

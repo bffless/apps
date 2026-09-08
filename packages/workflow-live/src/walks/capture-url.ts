@@ -16,6 +16,12 @@
  * (the release carrying URL inputs) refuses the URL as a missing local
  * file, so the row never appears: that is `captureUrl.rowAppears` FAIL with
  * the hint below, not a block — it is the thing this walk exists to catch.
+ *
+ * The expected recording name is derived from the URL's last path segment,
+ * while the driver prefers `Content-Disposition` when the server sends one
+ * (spec D3) — a fixture host that answers a different disposition name would
+ * FAIL `captureUrl.manifestNamesTheRecording`; the committed fixture sends
+ * none.
  */
 import { strFromU8, unzipSync } from 'fflate'
 import { appToken, credentials } from '../env.js'
@@ -75,7 +81,12 @@ export const captureUrl: Walk = async ({ args, env, report }) => {
   let browser: Session | null = null
   const minted: MintedToken[] = []
   const fixtureUrl = env.CAPTURE_FIXTURE_URL || DEFAULT_FIXTURE_URL
-  const expectedName = decodeURIComponent(new URL(fixtureUrl).pathname.split('/').pop() ?? '')
+  let expectedName: string
+  try {
+    expectedName = decodeURIComponent(new URL(fixtureUrl).pathname.split('/').pop() ?? '')
+  } catch {
+    return report.block(`CAPTURE_FIXTURE_URL is not a valid URL: ${fixtureUrl}`)
+  }
   try {
     let token = appToken(env)
     const login = sessionLogin(token, credentials(env))
@@ -132,12 +143,17 @@ export const captureUrl: Walk = async ({ args, env, report }) => {
     const hasSignature = /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(signedUrl)
     report.expect('captureUrl.signIsPresigned', !signed.isError && /^https:\/\//.test(signedUrl) && !signedUrl.startsWith(args.harness) && hasSignature, { ...brief(signed), signedUrl: signedUrl.slice(0, 120), hasSignature })
     if (signedUrl === '') return
-    const res = await fetch(signedUrl)
-    if (!res.ok) {
-      report.expect('captureUrl.zipHasManifest', false, { fetchStatus: res.status })
-      return
-    }
-    checkCaptureZip(new Uint8Array(await res.arrayBuffer()), expectedName, report)
+    await report.guard(
+      ['captureUrl.zipHasManifest', 'captureUrl.manifestNamesTheRecording', 'captureUrl.zipHasTranscript'],
+      async () => {
+        const res = await fetch(signedUrl)
+        if (!res.ok) {
+          report.expect('captureUrl.zipHasManifest', false, { fetchStatus: res.status })
+          return
+        }
+        checkCaptureZip(new Uint8Array(await res.arrayBuffer()), expectedName, report)
+      },
+    )
   } finally {
     await mcp?.close()
     for (const t of minted) await t.revoke()

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
 import {
@@ -19,9 +20,10 @@ function answering(status: number, bytes: Uint8Array | null, headers: Record<str
 }
 
 describe('isHttpUrl', () => {
-  test('is true only for http(s) schemes', () => {
+  test('is true only for the https scheme, case-insensitively', () => {
     expect(isHttpUrl('https://x/y.mp4')).toBe(true)
-    expect(isHttpUrl('HTTP://x/y')).toBe(true)
+    expect(isHttpUrl('HTTPS://x/y')).toBe(true)
+    expect(isHttpUrl('http://x/y.mp4')).toBe(false)
     expect(isHttpUrl('./clip.mp4')).toBe(false)
     expect(isHttpUrl('/abs/clip.mp4')).toBe(false)
     expect(isHttpUrl('file:///x.mp4')).toBe(false)
@@ -86,6 +88,14 @@ describe('downloadToTemp', () => {
     expect(existsSync(got.path)).toBe(false)
   })
 
+  test('cleanup never rejects, even called twice on an already-removed dir', async () => {
+    const bytes = new TextEncoder().encode('twelve bytes')
+    const got = await downloadToTemp(URL_, 'recording', answering(200, bytes, { 'content-type': 'video/mp4' }))
+    await expect(got.cleanup()).resolves.toBeUndefined()
+    await expect(got.cleanup()).resolves.toBeUndefined()
+    expect(existsSync(got.path)).toBe(false)
+  })
+
   test('Content-Disposition wins over the URL for the name', async () => {
     const got = await downloadToTemp(URL_, 'recording', answering(200, new Uint8Array(3), {
       'content-disposition': 'attachment; filename="talk.mov"',
@@ -130,10 +140,12 @@ describe('downloadToTemp', () => {
       start(c) { c.enqueue(new Uint8Array(8)); c.enqueue(new Uint8Array(8)); c.close() },
     })
     const fetchImpl = async () => new Response(stream, { status: 200 })
-    const error = await downloadToTemp(URL_, 'recording', fetchImpl, 10).catch((e: unknown) => e)
+    const root = mkdtempSync(join(tmpdir(), 'workflow-headless-download-test-'))
+    const error = await downloadToTemp(URL_, 'recording', fetchImpl, 10, root).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(DriverError)
     expect((error as DriverError).code).toBe(EXIT.USAGE)
     expect((error as Error).message).toMatch(/over the 5 GB cap/)
+    expect(readdirSync(root).some((name) => name.startsWith('workflow-headless-'))).toBe(false)
   })
 
   test('a temp-dir fault (not a response fault) is a usage fault too', async () => {
@@ -148,7 +160,7 @@ describe('downloadToTemp', () => {
     expect(error).toBeInstanceOf(DriverError)
     expect((error as DriverError).code).toBe(EXIT.USAGE)
     expect((error as Error).message).toMatch(
-      new RegExp(`^download of recording failed before a response \\(.+\\) for ${URL_.replace(/[.?]/g, '\\$&')}$`),
+      new RegExp(`^download of recording could not open a temp dir \\(.+\\) for ${URL_.replace(/[.?]/g, '\\$&')}$`),
     )
   })
 })
