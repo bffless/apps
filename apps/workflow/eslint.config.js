@@ -34,18 +34,8 @@ export default defineConfig([
           // The relative groups are repeated one level deeper so the fence also
           // covers `lib/runner/adapters/*` — a pattern is matched against the
           // specifier as written, not against the resolved path.
-          // `geometry.ts` is the one named exception (spec 2026-09-08, jobs.ts):
-          // it exports pure formatting helpers with no React import of its own
-          // (kept under components/graph only so react-refresh/only-export-components
-          // stays happy on the component files) — `jobs.ts` reads `matrixItemLabel`
-          // from there so the graph card and the rail cannot disagree on an item's name.
-          // The `ignore` matcher can't un-restrict one leaf inside an already-excluded
-          // directory (gitignore semantics), so the fence on `components/graph/*` is
-          // reopened one level deeper, with everything but `geometry` re-closed.
           { group: ['react', 'react-*', '@reduxjs/*', 'react-redux', 'msw*',
-            '../../store/*', '../../components/*', '!../../components/graph',
-            '../../components/graph/*', '!../../components/graph/geometry',
-            '../../pages/*', '../../mocks/*',
+            '../../store/*', '../../components/*', '../../pages/*', '../../mocks/*',
             '../../islands/*', '../../scripts/*',
             '../../../store/*', '../../../components/*', '../../../pages/*', '../../../mocks/*',
             '../../../islands/*', '../../../scripts/*'],

@@ -23,11 +23,10 @@
  */
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
-import { itemLabel } from '../../lib/runner/jobs'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import type { GraphFlow } from './flow'
-import { jobLabel, matrixNote } from './geometry'
+import { itemLabel, jobLabel, matrixNote } from './geometry'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([

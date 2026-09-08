@@ -2,7 +2,6 @@
  * Pure job-level readings of a run (spec 2026-09-08): what the rail, the job
  * head and the graph node all print, in one place so they cannot disagree.
  */
-import { matrixItemLabel } from '../../components/graph/geometry'
 import type { Definition, RunState, Step, StepKey, StepState, StepStatus } from './types'
 import { stepKey } from './types'
 
@@ -27,12 +26,6 @@ export function jobDuration(steps: StepState[]): number | undefined {
 
 export function itemTotal(state: RunState, job: string): number {
   return state.expansions[job]?.total ?? 1
-}
-
-/** `who: world` — how one matrix item names itself (moved from `JobCard`). */
-export function itemLabel(item: Record<string, unknown>, index: number): string {
-  const bindings = Object.entries(item).map(([name, value]) => `${name}: ${matrixItemLabel(value, index)}`)
-  return bindings.length > 0 ? bindings.join(', ') : `Item ${index + 1}`
 }
 
 export interface JobStepRow { key: StepKey; step: Step; index: number; state: StepState | undefined }

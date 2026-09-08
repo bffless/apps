@@ -8,11 +8,11 @@ import { useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router-dom'
 import { formatDuration } from '../../lib/duration'
 import { jobOrder } from '../../lib/runner/graph'
-import { itemLabel, itemTotal, jobDuration, jobStatus, stepsOfJob } from '../../lib/runner/jobs'
+import { itemTotal, jobDuration, jobStatus, stepsOfJob } from '../../lib/runner/jobs'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { jobPath, runPath } from '../../lib/runRoutes'
 import { StatusGlyph } from '../StatusPill'
-import { jobLabel } from '../graph/geometry'
+import { itemLabel, jobLabel } from '../graph/geometry'
 
 export interface RunRailProps {
   base: string

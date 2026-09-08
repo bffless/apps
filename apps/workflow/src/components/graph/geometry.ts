@@ -116,6 +116,11 @@ export function matrixItemLabel(value: unknown, index: number): string {
   return `#${index + 1}`
 }
 
+/** `who: world` — one matrix item's full name, the rail and the job card's item selector share. */
+export function itemLabel(item: Record<string, unknown>, index: number): string {
+  const bindings = Object.entries(item).map(([name, value]) => `${name}: ${matrixItemLabel(value, index)}`)
+  return bindings.length > 0 ? bindings.join(', ') : `Item ${index + 1}`
+}
 
 /** Whether the item selector row shows: a run-mode matrix job that fanned out to more than one item. */
 function hasSelector(job: Job, mode: 'definition' | 'run', state?: RunState): boolean {
