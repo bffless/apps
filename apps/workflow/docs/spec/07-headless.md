@@ -96,12 +96,17 @@ navigation lands. `invalid`, `parked` and `busy` are **page** states, not run st
 ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
 
 And stable `data-testid`s: `run-status[data-state=…]` (now also `parked` and `busy`, the page
-states of a driven run), `step[data-key][data-state]` (on the job page's step rows since the
-2026-09-08 redesign; a driver waits on `window.__workflow.steps` and reaches a step by URL),
-`run-outputs`, and on the kickoff page
-`kickoff-auto` / `kickoff-invalid` (plus, inside the hello bundle's own poster island,
-`island-sign-error`). `data-testid`s are a **contract** (Studio rule): the driver depends on
-them, a UI change that breaks one breaks headless.
+states of a driven run), `step[data-key][data-state]` — on the job page's step rows since the
+2026-09-08 redesign, not the graph (the workflow page's own rows carry `data-state="declared"`,
+from phase 5 on). A driver never queries the DOM for a step's status — it waits on
+`window.__workflow.steps[key]` — and reaches a step by navigating to its own URL,
+`/job/<job>/<index>?step=<key>`, rather than clicking a chip. The row's body,
+`step-pane`, is what that navigation expands: `form-step`, `island-display` (wrapping
+`island-frame`), `script-log` and the Input/Output tabs all resolve inside it. `run-outputs`
+renders on the Summary only — a step's own outputs live on its `step-pane` instead. On the
+kickoff page, `kickoff-auto` / `kickoff-invalid` (plus, inside the hello bundle's own poster
+island, `island-sign-error`). `data-testid`s are a **contract** (Studio rule): the driver depends
+on them, a UI change that breaks one breaks headless.
 
 **Islands, unattended:** the pane is the only thing that mounts an island (Decision 11), and in
 a headless run nobody clicks a chip — so the run page opens the oldest `running`/`waiting`

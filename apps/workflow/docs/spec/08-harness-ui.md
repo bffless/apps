@@ -220,9 +220,13 @@ they were left in.
 
 ## Headless-visible contract
 
-`data-testid`s: `run-status`, `run-follow`, `step`, `run-outputs`, `island-backstage`,
-`kickoff-form`, `kickoff-start`, `kickoff-auto`, `kickoff-invalid`, `implementations`,
-`workflow-list`; `data-state` as in 07.
+`data-testid`s: `run-status`, `run-follow`, `run-outputs`, `island-backstage`, `kickoff-form`,
+`kickoff-start`, `kickoff-auto`, `kickoff-invalid`, `implementations`, `workflow-list`; `data-state`
+as in 07. `step[data-key][data-state]` lives on the job page's step rows (spec 2026-09-08, phase
+3) — `job`, `job-head`, `job-io`, `job-steps`, `job-items` and `job-page` are that page's own
+testids, and `rail-summary` / `rail-job` / `rail-matrix` are the run rail's rows for reaching it. A
+driver waits on `window.__workflow.steps`, not the DOM, and reaches a step by URL
+(`/job/<job>/<index>?step=<key>`) rather than a click.
 Every run page also publishes `window.__workflow` (07's page contract). Treated as a contract
 (Studio rule): rename in the driver only with a matching harness change.
 
