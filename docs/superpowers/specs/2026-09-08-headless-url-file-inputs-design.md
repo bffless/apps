@@ -113,8 +113,11 @@ The stored object's name is what the run, the step cards and the zip are named a
 (`<recording>.capture.zip`), so it must be the recording's name, not a random id:
 
 - **Filename**: the `Content-Disposition` `filename` (RFC 5987 `filename*` first) if present; otherwise
-  the last path segment of the URL, percent-decoded, query string dropped; if that is empty (a URL
-  ending in `/`), `download` plus the extension implied by the content type.
+  the last path segment of **the URL the caller gave** — not the redirect target, which may be a hashed
+  or signed storage key — percent-decoded, query string dropped; if that is empty (a URL ending in
+  `/`), `download` plus the extension implied by the content type. (The fixture below is a Handoff
+  share link that 302s to a five-minute GCS signed URL with no `Content-Disposition`; the caller's URL
+  ends in `anatomy.mp4`.)
 - **Content type**: the response `Content-Type` (media type only, parameters dropped) when it is not
   `application/octet-stream`; otherwise the extension map already in `upload.ts` (`contentTypeFor`);
   otherwise `application/octet-stream`.
@@ -203,8 +206,10 @@ session" section links to it. This spec's implementation plan covers the skill's
   count, so the streaming body is proven without a bucket.
 - **Live walk**: `packages/workflow-live` gains a `capture-url` walk (or the `headless` walk gains a
   URL variant) that starts `capture/capture` over the MCP endpoint against `workflow.j5s.dev` with a
-  small public recording URL, waits for `succeeded`, signs the bundle and asserts the zip contains
-  `manifest.json` whose `source.name` is the recording's filename. Run with `apps-live-walk` after the
+  recording URL read from the environment (`CAPTURE_FIXTURE_URL`; a Handoff `/r/…?token=` share link
+  is the intended fixture — the token is a credential, so it is never committed), waits for
+  `succeeded`, signs the bundle and asserts the zip contains `manifest.json` whose `source.name` is the
+  recording's filename. Run with `apps-live-walk` after the
   driver release lands (the dispatched job installs `@bffless/workflow-headless@^1.2` fresh).
 - **`bundle.test.ts`** in `apps/workflow` fails if the regenerated `mcp-fn` bundles are stale after the
   D6 text edit; `pnpm --filter workflow mcp:build` is part of the verify chain.
