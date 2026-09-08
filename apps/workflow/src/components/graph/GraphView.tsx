@@ -77,7 +77,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
     Math.max(
       ...layers.map((layer) => {
         const job = layer[row]
-        return job ? cardHeight(def.jobs[job]!, mode, state) : 0
+        return job ? cardHeight(def, job, mode) : 0
       }),
       1,
     ),
@@ -174,7 +174,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
                   style={{
                     gridColumn: col + 1,
                     gridRow: row + 1,
-                    height: cardHeight(def.jobs[job]!, mode, state),
+                    height: cardHeight(def, job, mode),
                     alignSelf: 'center',
                   }}
                 />
