@@ -407,6 +407,16 @@ describe('RunPage — headless island mounting', () => {
     expect(within(strip).getByRole('button', { name: 'Run' })).toBeInTheDocument()
     expect(within(strip).getByRole('button', { name: 'pick' })).toBeInTheDocument()
     expect(strip).toHaveTextContent('Pick the best line')
+    // The overlay holds the row's body and nothing else: the job head, the
+    // job's values and every sibling row are hidden while the canvas carries
+    // `island-fullscreen` (fix round 1, finding 3). The hiding is CSS —
+    // `.island-fullscreen .job-page > .job-head, .island-fullscreen .job-io,
+    // .island-fullscreen .step-row:not([data-open])` in `src/index.css` — and
+    // jsdom does not compute the stylesheet, so the class on the canvas is
+    // what this asserts; the elements are deliberately still mounted, so the
+    // row is not remounted when the overlay closes.
+    expect(within(page).getByTestId('job-head')).toBeInTheDocument()
+    expect(within(page).getByTestId('job-io')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'Escape' })
 

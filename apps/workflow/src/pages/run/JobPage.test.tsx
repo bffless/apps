@@ -454,6 +454,19 @@ describe('JobPage — the way up keeps a matrix item', () => {
     expect(router.state.location.pathname).toBe(RUN_PATH)
   })
 
+  it('hears Esc with focus on the body — a rail link or a typed URL leaves it there', async () => {
+    // Fix round 1, finding 2: the layer is a window listener, not a handler on
+    // the page's own section, so it works before the person has clicked
+    // anything on the page.
+    const { page, router } = await openAt(`${RUN_PATH}/job/slow/0`)
+    expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(document.body)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(RUN_PATH))
+  })
+
   it('climbs from a matrix item’s step to that item’s page, not the collect view', async () => {
     const { page, router } = await openAt(`${RUN_PATH}/job/greet/1?step=greet%2F1%2Fsay`)
 

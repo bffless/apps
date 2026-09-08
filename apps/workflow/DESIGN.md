@@ -90,8 +90,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
     the overlay is the shell's — `.island-fullscreen` fixes the run canvas over the viewport at
     `--z-overlay` and puts the `.island-strip` in the content's place, its crumb reading
     `Run › <job> › <step>` (the first two a way up) over the step's key in mono, with **Exit
-    fullscreen** `Esc` on the right. Every box from the canvas down to the iframe grows, so the
-    island fills the screen without being remounted.
+    fullscreen** `Esc` on the right. Under the strip the overlay holds that one row and nothing
+    else: the job head, the `.job-io` disclosure and every sibling row are hidden, and every box
+    from the canvas down to the iframe grows, so the island fills the screen. Nothing is
+    unmounted — the row and its iframe are the same elements on both sides of the mode.
   - Esc layers: inside an open row's body it collapses that row, on a job page with nothing
     open it goes up to the Summary, and on the Summary it does nothing. On the graph, a node's
     header strip is a button (pressed = ink fill) onto the job page; the edge dots open it on

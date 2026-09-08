@@ -980,7 +980,13 @@ export function RunShell() {
   // The fullscreen strip names the row it is fixed over, in the words the job
   // page uses: the job's label, then the step's — never the raw key, which the
   // strip prints beside them anyway.
-  const stripJob = openParts ? (def!.jobs[openParts.job] ?? null) : null
+  //
+  // `def` is genuinely nullable here: a run row whose definition snapshot
+  // cannot be rebuilt renders as `RawRows` below, and a `?step=` is parseable
+  // on that URL like any other (an old Summary link, say). So the labels fall
+  // back to the key's own parts rather than reading a definition that is not
+  // there — the strip they feed is never on screen in that state anyway.
+  const stripJob = openParts && def ? (def.jobs[openParts.job] ?? null) : null
   const stripJobLabel = stripJob ? jobLabel(stripJob) : (openParts?.job ?? '')
   const stripStep = stripJob?.steps.find((candidate) => candidate.id === openParts!.stepId)
   const stripStepLabel = stripStep ? stepLabel(stripStep) : (openParts?.stepId ?? '')

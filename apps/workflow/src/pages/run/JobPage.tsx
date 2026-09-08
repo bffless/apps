@@ -34,8 +34,7 @@
  * a step. Read once from `?tab=` and held here, the disclosure survives it:
  * the edge dot's requested side outlives the click that opened a row under it.
  */
-import { useEffect, useMemo, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { JobHead } from '../../components/run/JobHead'
 import { JobIo } from '../../components/run/JobIo'
@@ -116,17 +115,42 @@ export function JobPage() {
   /**
    * Esc layers (spec §Follow or pinned). Inside an expanded row's body it
    * collapses that row — `StepBody`'s own handler, which stops the event
-   * there, so this never sees it. What is left is Esc pressed on the page
-   * *around* the rows: with nothing expanded that is the crumb's Back, up to
-   * the Summary (a person's move, so `toRun` pins). With a row still open the
-   * page has a level below it and stays put; the Summary itself is the top
-   * and has no handler of its own.
+   * there. What is left is Esc pressed with the page as a whole in front of
+   * the person: with nothing expanded that is the crumb's Back, up to the
+   * Summary (a person's move, so `toRun` pins). With a row still open the page
+   * has a level below it and stays put; the Summary itself is the top and has
+   * no handler of its own.
+   *
+   * Listened for on the **window**, not on the page's section (fix round 1,
+   * finding 2): arriving by a rail link, a graph node (whose own element is
+   * unmounted by the navigation) or a typed URL leaves focus on
+   * `document.body`, which is outside the section — a section handler would
+   * make the layering true only after the person had clicked something. The
+   * layers still order correctly: `StepBody` stops the native event at React's
+   * root container, and `RunShell`'s fullscreen Esc and `YamlDrawer`'s both
+   * listen in the **capture** phase and stop there, so each of them wins
+   * before this bubble-phase listener is reached.
+   *
+   * `ctx` is rebuilt by the shell on every render, so the handler is read
+   * through a ref: the listener is registered once per change of "is any row
+   * open", never once per commit.
    */
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Escape' || open.size > 0) return
-    event.stopPropagation()
-    ctx.toRun()
-  }
+  const toRun = ctx.toRun
+  const toRunRef = useRef(toRun)
+  useEffect(() => {
+    toRunRef.current = toRun
+  }, [toRun])
+  const nothingOpen = open.size === 0
+  useEffect(() => {
+    if (!nothingOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      toRunRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [nothingOpen])
 
   // A `?step=` of another job belongs on that job's page (spec §Error states),
   // carrying every other query parameter with it (`?mocks=`, `?tab=`).
@@ -145,7 +169,7 @@ export function JobPage() {
 
   if (!decl) {
     return (
-      <section className="job-page" data-testid="job-page" data-job={job} onKeyDown={onKeyDown}>
+      <section className="job-page" data-testid="job-page" data-job={job}>
         <JobHead def={ctx.def} state={ctx.state} job={job} onRun={ctx.toRun} />
         <p className="note">This workflow declares no such job.</p>
       </section>
@@ -160,7 +184,7 @@ export function JobPage() {
   const collect = decl.matrix !== undefined && index === undefined
 
   return (
-    <section className="job-page" data-testid="job-page" data-job={job} onKeyDown={onKeyDown}>
+    <section className="job-page" data-testid="job-page" data-job={job}>
       <JobHead
         def={ctx.def}
         state={ctx.state}

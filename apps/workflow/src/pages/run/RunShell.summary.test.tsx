@@ -448,6 +448,25 @@ describe('RunPage', () => {
     expect(within(page).getByText(/read-only record/i)).toBeInTheDocument()
   })
 
+  it('still shows the record when a `?step=` names a step of a definition there is none of', async () => {
+    // Fix round 1, finding 1: everything the shell derives from a parsed
+    // `?step=` — the fullscreen strip's job and step labels — has to survive
+    // the one path where there is no definition to look them up in.
+    db.runs.set('run_bare', {
+      ...FINISHED_RUN.run,
+      runId: 'run_bare',
+      definition: null,
+      yaml: '',
+      _id: nextId(),
+    })
+
+    renderApp('/hello/hello/runs/run_bare?step=slow%2F0%2Fstart')
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
+    expect(within(page).getByText(/read-only record/i)).toBeInTheDocument()
+  })
+
   /**
    * The resume banner (05 leases): a running run this tab is not driving. The
    * lease decides the branch — held by a live tab offers *Take over*, expired

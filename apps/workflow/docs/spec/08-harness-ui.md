@@ -129,8 +129,10 @@ verbatim, names and all.
   inline; one that declared `display: fullscreen` offers **Expand**, which fixes that row's
   body over the viewport with the content column collapsed to a strip (`island-strip`) whose
   crumb reads `Run › <job> › <step>` — the first two segments the way up, and Esc or **Exit
-  fullscreen** the way back. The iframe is not remounted either way (04 "Display modes"), and
-  the overlay holds only while that row is on the job page in front of the person. There is
+  fullscreen** the way back. Under the strip is that row and nothing else: the job head, the
+  job's own values and the sibling rows give way for as long as the overlay holds. The iframe
+  is not remounted either way (04 "Display modes"), and the overlay holds only while that row
+  is on the job page in front of the person. There is
   no per-step accept control: the island's own Done is on screen, and skipping the hand-edit
   is decided at kickoff (07).
 - An island that drives itself (07: a `headless: auto` island on an unattended run, or a step
