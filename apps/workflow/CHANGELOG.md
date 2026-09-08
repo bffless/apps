@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/bffless/apps/compare/workflow-v1.5.2...workflow-v1.6.0) (2026-09-08)
+
+
+### Features
+
+* **workflow-headless:** a file input may be an https:// URL over the MCP endpoint ([#637](https://github.com/bffless/apps/issues/637)) ([00bfb61](https://github.com/bffless/apps/commit/00bfb611c84c0095c1992f93f90768a0bc420629))
+
 ## [1.5.2](https://github.com/bffless/apps/compare/workflow-v1.5.1...workflow-v1.5.2) (2026-09-07)
 
 

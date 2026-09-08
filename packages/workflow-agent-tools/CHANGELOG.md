@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.1.1...workflow-agent-tools-v1.2.0) (2026-09-08)
+
+
+### Features
+
+* **workflow-headless:** a file input may be an https:// URL over the MCP endpoint ([#637](https://github.com/bffless/apps/issues/637)) ([00bfb61](https://github.com/bffless/apps/commit/00bfb611c84c0095c1992f93f90768a0bc420629))
+
 ## [1.1.1](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.1.0...workflow-agent-tools-v1.1.1) (2026-09-07)
 
 
