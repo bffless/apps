@@ -70,7 +70,7 @@ var __mcp = (() => {
       workflow: WORKFLOW,
       inputs: {
         type: "object",
-        description: "Values for `on.manual.inputs`, keyed by input name. An omitted input takes its declared default; a `file` input is a whole File ref (`{ path, name, contentType, size, url }`), never a bare path or a URL. Pass `{}` for a workflow with no inputs.",
+        description: "Values for `on.manual.inputs`, keyed by input name. An omitted input takes its declared default; a `file` input is a whole File ref (`{ path, name, contentType, size, url }`); over the MCP endpoint it may also be an `https://` URL the dispatched driver downloads and registers before the run starts. Never a bare path. Pass `{}` for a workflow with no inputs.",
         additionalProperties: true
       }
     },
