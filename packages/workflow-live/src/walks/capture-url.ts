@@ -127,7 +127,10 @@ export const captureUrl: Walk = async ({ args, env, report }) => {
     if (!isFileRef(bundle)) return
     const signed = await call('workflow.sign', { runId, path: bundle.path })
     const signedUrl = String(structured(signed).url ?? '')
-    report.expect('captureUrl.signIsPresigned', !signed.isError && /^https:\/\//.test(signedUrl) && !signedUrl.startsWith(args.harness), { ...brief(signed), signedUrl: signedUrl.slice(0, 120) })
+    // Same signature-marker test as `hello.ts`'s `D6.viewerImgIsPresigned` and
+    // `page-tools.ts`'s `D6.signIsPresigned`, kept identical so the three never drift.
+    const hasSignature = /X-Goog-Signature=|X-Amz-Signature=|[?&]sig(nature)?=/.test(signedUrl)
+    report.expect('captureUrl.signIsPresigned', !signed.isError && /^https:\/\//.test(signedUrl) && !signedUrl.startsWith(args.harness) && hasSignature, { ...brief(signed), signedUrl: signedUrl.slice(0, 120), hasSignature })
     if (signedUrl === '') return
     const res = await fetch(signedUrl)
     if (!res.ok) {
