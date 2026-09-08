@@ -459,37 +459,26 @@ export function RunShell() {
   // a run *this* tab started carries no `startedBy` of its own (see below).
   const { data: me } = useWhoamiQuery()
 
-  /**
-   * Up one level: a step's job, a job's run. A person's move, so it pins.
-   *
-   * A step's job is the *item* it ran in, not the job as a whole: Esc out of
-   * `/job/greet/1?step=greet/1/say` belongs on `/job/greet/1`, the page the
-   * step was read on — `parseStepKey` carries the index that a bare
-   * `split('/')[0]` used to drop, which landed the reader on the collect view
-   * of a job they were three rows into.
-   */
-  const back = () => {
-    pin()
-    if (level !== 'step') {
-      setStep(null, false)
-      return
-    }
-    const parts = parseStepKey(selectedStep!)
-    go(parts ? { kind: 'job', job: parts.job, index: parts.index } : { kind: 'run' }, false)
-  }
   const toRun = () => {
     pin()
     setStep(null, false)
   }
-  /** A person's click: a history entry, so Back returns to where they were — and pinned from here on. */
+  /**
+   * A person's click: a history entry, so Back returns to where they were —
+   * and pinned from here on.
+   *
+   * Fix round 3, finding 4: this used to special-case a target equal to the
+   * current selection as "up one level" (`back()`, since retired) — a chip or
+   * a strip clicked again with no side asked for. No caller ever passes such
+   * a target: the Summary's graph only calls this while its own selection is
+   * `null` (a job is never "the same" as that), and `JobPage`'s row toggle
+   * closes a step by selecting its *job*, never the step itself again. The
+   * review could not construct a step-level path into it either, so the
+   * branch — and `back`/`ctx.back` with it — is gone; `JobPage.test.tsx`'s
+   * "closes the open row on Esc, and on the row head clicked again" still
+   * proves the same behaviour, through the row's own `toggle`.
+   */
   const select = (target: RunSelection, tab?: 'Input' | 'Output') => {
-    const key = selectionKey(target)
-    // The selected chip (or strip), clicked again with no side asked for, is
-    // the way up one level — the same toggle a pressed button suggests.
-    if (key === selectedStep && tab === undefined) {
-      back()
-      return
-    }
     pin()
     go(target, false, tab)
   }
@@ -838,9 +827,15 @@ export function RunShell() {
     openParts !== null &&
     jobMatch?.params.job === openParts.job &&
     // No `:index` on the route is the job's one and only leg, which is how
-    // `JobPage` reads it (`index ?? 0`).
+    // `JobPage` reads it (`index ?? 0`) — but only for a job with one leg to
+    // begin with. On a *matrix* job that same bare route is the collect view
+    // (spec §Error states, fix round 3, finding 3): `JobPage` renders it as
+    // the item list, no step rows at all, so a step naming item 0 is not "on
+    // this page" just because 0 is where a plain job's reading would land —
+    // treating it that way left the island neither in a row nor backstage,
+    // stuck at `running` with nobody driving it.
     (jobMatch.params.index === undefined
-      ? openParts.index === 0
+      ? openParts.index === 0 && def?.jobs[openParts.job]?.matrix === undefined
       : Number(jobMatch.params.index) === openParts.index)
   const islandOpen =
     isLive &&
@@ -1059,12 +1054,34 @@ export function RunShell() {
           selection,
           selectedStep,
           select,
-          back,
           toRun,
+          openIslandKey,
           forkable,
           fork,
         }
       : null
+
+  // Fix round 3, finding 1: keys the outlet on the job route so `JobPage`
+  // remounts fresh — its `open`/`ioOpen`/`ioTab` seeded straight from the new
+  // URL, rather than an instance still holding another job's (or another
+  // item's) disclosure — whenever the person moves to a different job, or a
+  // different item of the same matrix job.
+  //
+  // A **plain** job keys on the job alone, index and all: opening a row on it
+  // moves `?step=` onto `/job/<job>/0` (every step key carries an index, even
+  // on a job with only one leg), and remounting on that change would slam the
+  // very row the person just opened shut again.
+  //
+  // A **matrix** job's item pages have no such row to lose: its collect view
+  // (no `:index`) is deliberately rowless (`JobPage`'s own reading), so
+  // nothing on it can ever add one — the only way its `:index` changes is a
+  // navigation to a different item (or back to the collect view), which is
+  // exactly the case that must reset. So it keys on `${job}/${index}` and
+  // remounts cleanly between items, matching finding 1's cases (a) and (b).
+  const outletJob = jobMatch?.params.job
+  const outletMatrix = outletJob !== undefined && def?.jobs[outletJob]?.matrix !== undefined
+  const outletKey =
+    outletJob === undefined ? 'run' : outletMatrix ? `${outletJob}/${jobMatch?.params.index ?? ''}` : outletJob
 
   return (
     <Frame base={base} runId={shownRunId} def={def} state={state} yaml={yamlSource.yaml} pin={pin}>
@@ -1178,7 +1195,7 @@ export function RunShell() {
                     step is selected — that level's page in its place.
                     Never both, and which one is the route's answer now.
                   */}
-                  {legacy ? <Navigate to={legacy} replace /> : <Outlet />}
+                  {legacy ? <Navigate to={legacy} replace /> : <Outlet key={outletKey} />}
                   {backstage.length > 0 && (
                     <div className="island-backstage" data-testid="island-backstage" aria-hidden="true" inert>
                       {backstage.map((key) => (

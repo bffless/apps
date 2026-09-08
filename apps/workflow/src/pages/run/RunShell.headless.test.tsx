@@ -240,6 +240,50 @@ const FULLSCREEN_ISLAND_DEF = toDefinition({
 
 const CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
 
+/**
+ * The same fullscreen island, preceded by a plain one in the same job — so
+ * the follow logic's own sequential auto-open (`note` running, then `choose`
+ * once `note` finishes) leaves *two* rows open on `pick`'s page, exactly as a
+ * person reading a multi-step job would (fix round 3, finding 2).
+ */
+const FULLSCREEN_TWO_STEP_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    pick: {
+      steps: [
+        islandStep('note'),
+        {
+          id: 'choose',
+          name: 'Pick the best line',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', display: 'fullscreen', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+    },
+  },
+}) as Definition
+
+const NOTE_KEY: StepKey = stepKey('pick', 0, 'note')
+
+/**
+ * A matrix job whose one step is an island — for fix round 3, finding 3: the
+ * collect view (`/job/pick`, no `:index`) renders no step rows at all, so a
+ * `?step=` naming item 0's step must not be read as "on this page" the way it
+ * would be for a plain job's bare route.
+ */
+const MATRIX_ISLAND_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    pick: {
+      strategy: { matrix: { who: ['a', 'b'] }, 'max-parallel': 1 },
+      steps: [islandStep('choose')],
+    },
+  },
+}) as Definition
+
+const MATRIX_CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
+
 type Driving = { headless?: boolean; unattended?: boolean }
 
 async function startIslands(
@@ -426,6 +470,46 @@ describe('RunPage — headless island mounting', () => {
     expect(host.mounts).toHaveLength(1)
   })
 
+  it('marks only the open island’s row `data-fullscreen`, leaving a second open row hidden (fix round 3, finding 2)', async () => {
+    // `note` runs and finishes first, auto-opening its row; `choose` then
+    // takes the pane in its turn — Decision 7 never closes `note`'s row on
+    // that move, so both are open together by the time Expand is clicked.
+    const { store, host, runId } = await startIslands({}, FULLSCREEN_TWO_STEP_DEF, NOTE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[NOTE_KEY].status).toBe('waiting'))
+    host.allDeps[0]!.onSubmit({ choice: 'x' })
+    // `choose`'s own mount, once the middleware launches it.
+    await waitFor(() => expect(host.mounts).toHaveLength(2))
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'))
+    // Both rows are still open — `note`'s from its own turn in the pane,
+    // `choose`'s from this one — Decision 7 never closed the first on the move.
+    expect(within(page).getAllByTestId('step-pane')).toHaveLength(2)
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Expand' }))
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeTruthy()
+
+    const noteRow = page.querySelector(`[data-testid="step"][data-key="${NOTE_KEY}"]`)!.closest('li')!
+    const chooseRow = page.querySelector(`[data-testid="step"][data-key="${CHOOSE_KEY}"]`)!.closest('li')!
+    expect(chooseRow).toHaveAttribute('data-fullscreen')
+    expect(noteRow).not.toHaveAttribute('data-fullscreen')
+    // Both rows stayed open — the marker, not `data-open`, is what the
+    // overlay's CSS now keys its "everything else" rule off.
+    expect(noteRow).toHaveAttribute('data-open')
+    expect(chooseRow).toHaveAttribute('data-open')
+  })
+
   it('leaves the overlay when the strip’s crumb climbs out of the row', async () => {
     const { store, host, runId } = await startIslands({}, FULLSCREEN_ISLAND_DEF, CHOOSE_KEY)
     const router = createMemoryRouter(createRoutesFromElements(routes), {
@@ -452,5 +536,48 @@ describe('RunPage — headless island mounting', () => {
     expect(router.state.location.search).toBe('')
     expect(store.getState().ui.islandDisplay).toBe('inline')
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
+  })
+})
+
+/**
+ * Fix round 3, finding 3: `rowOnThisPage` used to read "no `:index` on the
+ * route" as item 0's leg — true for a plain job, but a *matrix* job's bare
+ * route is the collect view, which renders no step rows at all. A `?step=`
+ * naming item 0's step on that URL left the island neither in a row (there is
+ * none) nor backstage (it looked, wrongly, like the pane already had it) —
+ * stuck at `running` with nobody driving it.
+ */
+describe('RunPage — a matrix job’s collect view never claims an island', () => {
+  it('sends item 0’s island backstage rather than treating the collect view as its row', async () => {
+    const { store, host, runId } = await startIslands({ unattended: true }, MATRIX_ISLAND_DEF, MATRIX_CHOOSE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    expect(router.state.location.pathname).toBe(`/test/island/runs/${runId}/job/pick/0`)
+
+    // A `?step=` naming item 0's step, but on the collect route (no
+    // `:index`) — the shape `rowOnThisPage`'s bug read as "item 0's page".
+    await act(async () => {
+      await router.navigate(`/test/island/runs/${runId}/job/pick?step=${encodeURIComponent(MATRIX_CHOOSE_KEY)}`)
+    })
+
+    // The collect view, rowless — nothing on the job page itself can show
+    // the island (it is not absent from `page` outright: the backstage div
+    // asserted below renders inside the same `.run-canvas`).
+    const jobPage = within(page).getByTestId('job-page')
+    expect(within(jobPage).getByTestId('job-items')).toBeInTheDocument()
+    expect(within(jobPage).queryByTestId('step-pane')).not.toBeInTheDocument()
+    expect(within(jobPage).queryByTestId('island-frame')).not.toBeInTheDocument()
+
+    const backstage = await screen.findByTestId('island-backstage')
+    expect(within(backstage).getByTestId('island-frame')).toBeInTheDocument()
+    expect(host.mounts.at(-1)!.headless).toBe(true)
   })
 })
