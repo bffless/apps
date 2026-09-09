@@ -15,13 +15,19 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
-import { MemoryRouter } from 'react-router-dom'
+import {
+  MemoryRouter,
+  RouterProvider,
+  createMemoryRouter,
+  createRoutesFromElements,
+} from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from '../../App'
 import { server } from '../../mocks/server'
+import { routes } from '../../routes'
 import type { AppStore } from '../../store'
 import { runPaused } from '../../store/runSlice'
-import { resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
+import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 
 let getRunCalls = 0
 
@@ -102,6 +108,43 @@ describe('RunPage — live', () => {
       expect(node(page, 'confirm')).toHaveAttribute('data-state', 'succeeded')
     })
     expect(getRunCalls).toBe(0)
+  })
+
+  it('opens the waiting form’s row on its job page while following, and the form is the row body', async () => {
+    // Phase 3's shape (spec §Step rows): following does not open a pane beside
+    // a graph any more — it navigates to the step's *job page* and expands the
+    // one row `?step=` names, whose body **is** the form.
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/hello/hello/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    await within(page).findByTestId('form-step')
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/confirm/0`)
+    expect(router.state.location.search).toBe(`?step=${encodeURIComponent(REVIEW_KEY)}`)
+
+    // `confirm` has one step, so the job page has one row — and it is open.
+    const row = within(page).getByTestId('step')
+    expect(row).toHaveAttribute('data-key', REVIEW_KEY)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      within(within(page).getByTestId('step-pane')).getByTestId('form-step'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Finish' }))
+
+    await waitFor(() =>
+      expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded'),
+    )
+    // Following: a finished run returns to the Summary.
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}`)
+    expect(await within(page).findByTestId('run-outputs')).toBeInTheDocument()
   })
 
   describe('the persistence-pause banner (05, apps#375)', () => {

@@ -1,5 +1,5 @@
 /**
- * Fix round 1, finding 2: `StepPane`'s `waiting`-form delegation to
+ * Fix round 1, finding 2: `StepBody`'s `waiting`-form delegation to
  * `FormStepPane` must only fire for the run this tab is actually driving
  * (`live`). A read-only replay of a waiting form step — another tab's
  * in-flight run, or a run this tab used to drive and has since navigated
@@ -20,7 +20,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StepPane } from './StepPane'
+import { StepBody } from './StepBody'
 import { resetShowRaw } from '../values/rawPreference'
 import { hello, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 import { server } from '../../mocks/server'
@@ -78,14 +78,14 @@ function readonlyConfirmWaiting(): RunState {
   }
 }
 
-describe('StepPane — live gates the waiting-form delegation', () => {
+describe('StepBody — live gates the waiting-form delegation', () => {
   it('falls back to the tabbed view for a read-only replay, even while a same-keyed run is live in this store', async () => {
     // A genuinely live run occupies the store's run slice throughout.
     const { store } = await startHelloAtConfirmWaiting()
 
     render(
       <Provider store={store}>
-        <StepPane def={hello} state={readonlyConfirmWaiting()} stepKey={REVIEW_KEY} live={false} />
+        <StepBody def={hello} state={readonlyConfirmWaiting()} stepKey={REVIEW_KEY} live={false} />
       </Provider>,
     )
 
@@ -103,7 +103,7 @@ describe('StepPane — live gates the waiting-form delegation', () => {
 
     render(
       <Provider store={store}>
-        <StepPane def={hello} state={state} stepKey={REVIEW_KEY} live />
+        <StepBody def={hello} state={state} stepKey={REVIEW_KEY} live />
       </Provider>,
     )
 
@@ -129,7 +129,7 @@ describe('StepPane — live gates the waiting-form delegation', () => {
  * step is read-only here on purpose: the Input tab is the ordinary tabbed
  * view, not the live form.
  */
-describe('StepPane — Input tab previews an image File ref (apps#437)', () => {
+describe('StepBody — Input tab previews an image File ref (apps#437)', () => {
   it('draws the image beside its name for an image/* ref in the step inputs', () => {
     const photo = {
       path: 'workflows/hello/hello/inputs/1/me.jpg',
@@ -148,7 +148,7 @@ describe('StepPane — Input tab previews an image File ref (apps#437)', () => {
 
     const { container } = render(
       <Provider store={makeStore()}>
-        <StepPane def={hello} state={state} stepKey={key} live={false} />
+        <StepBody def={hello} state={state} stepKey={key} live={false} />
       </Provider>,
     )
 
@@ -178,7 +178,7 @@ describe('StepPane — Input tab previews an image File ref (apps#437)', () => {
 
     const { container } = render(
       <Provider store={makeStore()}>
-        <StepPane def={hello} state={state} stepKey={key} live={false} />
+        <StepBody def={hello} state={state} stepKey={key} live={false} />
       </Provider>,
     )
 
@@ -192,7 +192,7 @@ describe('StepPane — Input tab previews an image File ref (apps#437)', () => {
   })
 })
 
-describe('StepPane — Output tab renders every named renderer', () => {
+describe('StepBody — Output tab renders every named renderer', () => {
   it('shows all five renderer wrappers for the rendered-run fixture step', () => {
     server.use(
       http.get('/w/hello/islands/line-viewer.html', () =>
@@ -205,7 +205,7 @@ describe('StepPane — Output tab renders every named renderer', () => {
 
     render(
       <Provider store={makeStore()}>
-        <StepPane def={def} state={state} stepKey="show/0/render" live={false} impl="hello" />
+        <StepBody def={def} state={state} stepKey="show/0/render" live={false} impl="hello" />
       </Provider>,
     )
 
@@ -229,7 +229,7 @@ describe('StepPane — Output tab renders every named renderer', () => {
 
     render(
       <Provider store={makeStore()}>
-        <StepPane def={def} state={state} stepKey="show/0/render" live={false} />
+        <StepBody def={def} state={state} stepKey="show/0/render" live={false} />
       </Provider>,
     )
 
@@ -246,7 +246,7 @@ describe('StepPane — Output tab renders every named renderer', () => {
  * hovering it dispatches exactly what a downstream reader's `needs`/`steps`
  * ref would match.
  */
-describe('StepPane — Output tab hover dispatches the value under the pointer', () => {
+describe('StepBody — Output tab hover dispatches the value under the pointer', () => {
   it("hovering an output sets ui.hoveredValue to this step's own identity, and clears on leave", () => {
     const def = toDefinition(FINISHED_RUN.run.definition)
     const state = replayRun(FINISHED_RUN.run, FINISHED_RUN.steps, def)
@@ -254,7 +254,7 @@ describe('StepPane — Output tab hover dispatches the value under the pointer',
 
     render(
       <Provider store={store}>
-        <StepPane def={def} state={state} stepKey="greet/0/say" live={false} />
+        <StepBody def={def} state={state} stepKey="greet/0/say" live={false} />
       </Provider>,
     )
 
@@ -269,7 +269,7 @@ describe('StepPane — Output tab hover dispatches the value under the pointer',
   })
 
   // Final review, finding 1: a hover left mid-flight when the Output tab goes
-  // away (switching tabs, or — via `StepPane`'s `key={selectedStep}` — picking
+  // away (switching tabs, or — via `StepBody`'s `key={selectedStep}` — picking
   // a different step) must not survive the unmount. `onMouseLeave` never
   // fires for a DOM node that was removed out from under the cursor, so the
   // cleanup has to be the unmount itself, not the pointer.
@@ -280,7 +280,7 @@ describe('StepPane — Output tab hover dispatches the value under the pointer',
 
     render(
       <Provider store={store}>
-        <StepPane def={def} state={state} stepKey="greet/0/say" live={false} />
+        <StepBody def={def} state={state} stepKey="greet/0/say" live={false} />
       </Provider>,
     )
 
@@ -301,11 +301,11 @@ describe('StepPane — Output tab hover dispatches the value under the pointer',
  * paths to the harness's own serve route — so a finished (or replayed) run's
  * Output tab shows the frames the island showed while the step was waiting.
  */
-describe('StepPane — Output tab draws a markdown output through its images map (apps#446)', () => {
+describe('StepBody — Output tab draws a markdown output through its images map (apps#446)', () => {
   function outputTab(key: string) {
     const utils = render(
       <Provider store={makeStore()}>
-        <StepPane def={FRAMES_DEF} state={framesRun()} stepKey={key} live={false} />
+        <StepBody def={FRAMES_DEF} state={framesRun()} stepKey={key} live={false} />
       </Provider>,
     )
     fireEvent.click(screen.getByRole('tab', { name: 'Output' }))
@@ -338,7 +338,7 @@ describe('StepPane — Output tab draws a markdown output through its images map
 // `times`, a storage path under `outPrefix` — reads as a compact list and a
 // basename chip inside the tree, and the pane's Show raw flips the whole pane
 // back to nodes and leaves.
-describe('StepPane — Input tab draws shaped values, and Show raw flips them (apps#450)', () => {
+describe('StepBody — Input tab draws shaped values, and Show raw flips them (apps#450)', () => {
   afterEach(() => {
     resetShowRaw()
   })
@@ -356,7 +356,7 @@ describe('StepPane — Input tab draws shaped values, and Show raw flips them (a
 
     const { container } = render(
       <Provider store={makeStore()}>
-        <StepPane def={hello} state={state} stepKey={key} live={false} />
+        <StepBody def={hello} state={state} stepKey={key} live={false} />
       </Provider>,
     )
 
@@ -386,7 +386,7 @@ describe('StepPane — Input tab draws shaped values, and Show raw flips them (a
  * the Output tab's Details stats — and only then. The link goes to the admin
  * host's per-log API surface, derived from `window.location` (adminOrigin).
  */
-describe('StepPane — Details links the CE execution log (apps#528)', () => {
+describe('StepBody — Details links the CE execution log (apps#528)', () => {
   function slowStartState(over: Partial<StepState>): RunState {
     return {
       runId: 'run_LOGGED',
@@ -414,7 +414,7 @@ describe('StepPane — Details links the CE execution log (apps#528)', () => {
   function renderPane(state: RunState) {
     render(
       <Provider store={makeStore()}>
-        <StepPane
+        <StepBody
           def={hello}
           state={state}
           stepKey={stepKey('slow', 0, 'start')}

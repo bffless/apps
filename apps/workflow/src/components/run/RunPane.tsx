@@ -27,7 +27,7 @@ import { AnnotationsPanel } from './AnnotationsPanel'
 import { JobSummaries } from './JobSummaries'
 import { PaneCrumbs } from './PaneCrumbs'
 import { RunOutputs } from './RunOutputs'
-import type { Tab } from './StepPane'
+import type { Tab } from './StepBody'
 
 const TABS: Tab[] = ['Input', 'Output']
 

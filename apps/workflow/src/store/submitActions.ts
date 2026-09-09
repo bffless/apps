@@ -14,7 +14,7 @@
  *
  * Whether this tab is *driving* the run is the caller's question, as it was
  * when the pane dispatched the event itself: the pane only renders a form on
- * the live path (`StepPane`'s gate), and the agent executor checks the slice's
+ * the live path (`StepBody`'s gate), and the agent executor checks the slice's
  * mode before it gets here.
  */
 import { completeFormStep } from '../lib/runner/adapters/form'

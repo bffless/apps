@@ -6,7 +6,7 @@
  * Redux. When the step ends, the capped tail is persisted on the row and
  * comes back through step state as `recorded` — the card's fallback whenever
  * the live store holds nothing. What matters here is that the card renders
- * the right source, and that `StepPane` puts it on a script step's Output tab
+ * the right source, and that `StepBody` puts it on a script step's Output tab
  * live *and* on a read-back run.
  */
 import { render, screen, act } from '@testing-library/react'
@@ -14,7 +14,7 @@ import { Provider } from 'react-redux'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ScriptStepCard } from './ScriptStepCard'
-import { StepPane } from './StepPane'
+import { StepBody } from './StepBody'
 import { makeStore } from '../../store'
 import { appendScriptLog, clearAllScriptLogs } from '../../scripts/logStore'
 import type { Definition, RunState, StepKey, StepState } from '../../lib/runner/types'
@@ -140,13 +140,13 @@ describe('ScriptStepCard', () => {
   })
 })
 
-describe('StepPane — the Output tab carries the log for a script step', () => {
+describe('StepBody — the Output tab carries the log for a script step', () => {
   it('shows the card while the script runs and after it finished', async () => {
     appendScriptLog(RUN, KEY, 'frame 1')
     const store = makeStore()
     const { rerender } = render(
       <Provider store={store}>
-        <StepPane def={def} state={runState()} stepKey={KEY} live={true} />
+        <StepBody def={def} state={runState()} stepKey={KEY} live={true} />
       </Provider>,
     )
 
@@ -163,7 +163,7 @@ describe('StepPane — the Output tab carries the log for a script step', () => 
     // A finished script keeps its lines until the runner resets.
     rerender(
       <Provider store={store}>
-        <StepPane
+        <StepBody
           def={def}
           state={runState({ status: 'succeeded', outputs: { count: 2 } })}
           stepKey={KEY}
@@ -179,7 +179,7 @@ describe('StepPane — the Output tab carries the log for a script step', () => 
     // so the card falls back to the `log` the row carried into step state.
     render(
       <Provider store={makeStore()}>
-        <StepPane
+        <StepBody
           def={def}
           state={runState({ status: 'succeeded', outputs: { count: 2 }, log: ['recorded frame'] })}
           stepKey={KEY}
@@ -198,7 +198,7 @@ describe('StepPane — the Output tab carries the log for a script step', () => 
   it('says so on a replayed step from before the column existed', async () => {
     render(
       <Provider store={makeStore()}>
-        <StepPane
+        <StepBody
           def={def}
           state={runState({ status: 'succeeded', outputs: { count: 2 } })}
           stepKey={KEY}

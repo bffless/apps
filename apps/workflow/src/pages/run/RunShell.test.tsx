@@ -47,7 +47,7 @@ describe('RunShell', () => {
     renderAt(`/hello/hello/runs/${FIXTURE_RUN_ID}?step=slow%2F0%2Fstart`)
     const page = screen.getByRole('main')
     await within(page).findByTestId('step-pane')
-    expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+    expect(within(page).getByTestId('job-page')).toBeInTheDocument()
     expect(within(page).queryByTestId('run-pane')).not.toBeInTheDocument()
   })
 
@@ -69,7 +69,11 @@ describe('RunShell', () => {
     const page = screen.getByRole('main')
 
     const pane = await within(page).findByTestId('step-pane')
-    expect(within(pane).getByText('slow/0/start')).toBeInTheDocument()
+    // The row the body belongs to is the one the link named (Decision 4).
+    expect(pane.closest('.step-row')!.querySelector('[data-testid="step"]')).toHaveAttribute(
+      'data-key',
+      'slow/0/start',
+    )
     // The waiting form did not take the pane, and the toggle says so.
     expect(within(page).queryByRole('button', { name: 'Finish' })).not.toBeInTheDocument()
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')

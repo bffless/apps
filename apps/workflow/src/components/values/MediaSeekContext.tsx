@@ -4,7 +4,7 @@
  * segment button calls `seek(start)`, and the first player registered under
  * the same `MediaSeekProvider` jumps there. "First registered" rather than
  * "nearest in the DOM" is deliberate — a provider is scoped to one step's
- * pane or one run/job's output block (`StepPane`'s Output tab, each
+ * row body or one run/job's output block (`StepBody`'s Output tab, each
  * `RunOutputs` scope), so there is normally at most one player in scope
  * anyway; the ordering only matters when there happen to be several, and
  * registration order is the simplest rule that needs no DOM measurement.

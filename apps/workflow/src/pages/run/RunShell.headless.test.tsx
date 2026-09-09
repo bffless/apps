@@ -216,9 +216,37 @@ const TWO_AUTO_ACCEPT_ISLANDS_DEF = toDefinition({
 const X_KEY: StepKey = stepKey('a', 0, 'x')
 const Y_KEY: StepKey = stepKey('a', 0, 'y')
 
+/**
+ * One island that declares `display: fullscreen` (04), in a job called `pick`
+ * so its row's key is the `pick/0/choose` a driver reads — the shape the
+ * fullscreen strip has to name.
+ */
+const FULLSCREEN_ISLAND_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    pick: {
+      steps: [
+        {
+          id: 'choose',
+          name: 'Pick the best line',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', display: 'fullscreen', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+    },
+  },
+}) as Definition
+
+const CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
+
 type Driving = { headless?: boolean; unattended?: boolean }
 
-async function startTwoIslands(driving: Driving, def: Definition = TWO_ISLANDS_DEF) {
+async function startIslands(
+  driving: Driving,
+  def: Definition = TWO_ISLANDS_DEF,
+  first: StepKey = X_KEY,
+) {
   const { store, advance, host } = islandStore()
   store.dispatch(
     startRun({
@@ -231,9 +259,11 @@ async function startTwoIslands(driving: Driving, def: Definition = TWO_ISLANDS_D
       ...driving,
     }),
   )
-  await pumpUntil(advance, () => store.getState().run.state?.steps[X_KEY]?.status === 'running')
+  await pumpUntil(advance, () => store.getState().run.state?.steps[first]?.status === 'running')
   return { store, advance, host, runId: store.getState().run.state!.runId }
 }
+
+const startTwoIslands = (driving: Driving, def?: Definition) => startIslands(driving, def)
 
 describe('RunPage — headless island mounting', () => {
   beforeEach(() => {
@@ -343,5 +373,84 @@ describe('RunPage — headless island mounting', () => {
 
     await waitFor(() => expect(screen.getByTestId('island-frame')).toBeInTheDocument())
     expect(store.getState().ui.selectedStep).toBe(X_KEY)
+  })
+
+  it('Expand overlays the open island row and the strip names the step; Esc exits', async () => {
+    // The island opens **in its row** on the job page (phase 3), and Expand
+    // fixes that row's body over the viewport with the strip in the content
+    // column's place — the strip's crumb naming the two levels above it and
+    // the row's own step key.
+    const { store, host, runId } = await startIslands({}, FULLSCREEN_ISLAND_DEF, CHOOSE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    // Following claims the loading island: its row on `pick`'s page, expanded.
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    expect(router.state.location.pathname).toBe(`/test/island/runs/${runId}/job/pick/0`)
+    expect(within(page).getByTestId('step')).toHaveAttribute('data-key', CHOOSE_KEY)
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'))
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Expand' }))
+
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeTruthy()
+    const strip = within(page).getByTestId('island-strip')
+    expect(strip).toHaveTextContent(CHOOSE_KEY)
+    // `Run › <job label> › <step label>`, the first two a way up.
+    expect(within(strip).getByRole('button', { name: 'Run' })).toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'pick' })).toBeInTheDocument()
+    expect(strip).toHaveTextContent('Pick the best line')
+    // The overlay holds the row's body and nothing else: the job head, the
+    // job's values and every sibling row are hidden while the canvas carries
+    // `island-fullscreen` (fix round 1, finding 3). The hiding is CSS —
+    // `.island-fullscreen .job-page > .job-head, .island-fullscreen .job-io,
+    // .island-fullscreen .step-row:not([data-open])` in `src/index.css` — and
+    // jsdom does not compute the stylesheet, so the class on the canvas is
+    // what this asserts; the elements are deliberately still mounted, so the
+    // row is not remounted when the overlay closes.
+    expect(within(page).getByTestId('job-head')).toBeInTheDocument()
+    expect(within(page).getByTestId('job-io')).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeNull()
+    // Same frame, still mounted: leaving the overlay is a mode change, not a remount.
+    expect(within(page).getByTestId('island-display')).toBeInTheDocument()
+    expect(host.mounts).toHaveLength(1)
+  })
+
+  it('leaves the overlay when the strip’s crumb climbs out of the row', async () => {
+    const { store, host, runId } = await startIslands({}, FULLSCREEN_ISLAND_DEF, CHOOSE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'))
+    fireEvent.click(within(page).getByRole('button', { name: 'Expand' }))
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeTruthy()
+
+    // The job crumb is a person's move: it pins, and the overlay goes with the
+    // row it was fixed over.
+    fireEvent.click(within(within(page).getByTestId('island-strip')).getByRole('button', { name: 'pick' }))
+
+    await waitFor(() => expect(document.querySelector('.run-canvas.island-fullscreen')).toBeNull())
+    expect(router.state.location.pathname).toBe(`/test/island/runs/${runId}/job/pick/0`)
+    expect(router.state.location.search).toBe('')
+    expect(store.getState().ui.islandDisplay).toBe('inline')
+    expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
   })
 })

@@ -96,7 +96,9 @@ navigation lands. `invalid`, `parked` and `busy` are **page** states, not run st
 ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
 
 And stable `data-testid`s: `run-status[data-state=…]` (now also `parked` and `busy`, the page
-states of a driven run), `step[data-key][data-state]`, `run-outputs`, and on the kickoff page
+states of a driven run), `step[data-key][data-state]` (on the job page's step rows since the
+2026-09-08 redesign; a driver waits on `window.__workflow.steps` and reaches a step by URL),
+`run-outputs`, and on the kickoff page
 `kickoff-auto` / `kickoff-invalid` (plus, inside the hello bundle's own poster island,
 `island-sign-error`). `data-testid`s are a **contract** (Studio rule): the driver depends on
 them, a UI change that breaks one breaks headless.

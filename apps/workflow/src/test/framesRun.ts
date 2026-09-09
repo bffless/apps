@@ -4,7 +4,7 @@
  * frames, an island step whose markdown `post` declares that map as its
  * `images`, and a script step that re-homes the images onto zip-relative
  * paths and maps *those* off its own `srcs` output. Shared by the image-map,
- * StepPane and RunOutputs suites.
+ * StepBody and RunOutputs suites.
  */
 import { loadWorkflow } from '../lib/runner/definition'
 import type { Definition, RunState } from '../lib/runner/types'

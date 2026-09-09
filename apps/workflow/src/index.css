@@ -1731,13 +1731,18 @@ button {
   outline-offset: 2px;
 }
 
-/* The header strip: 40px name row (+ 20px matrix line). CARD.strip / CARD.note. */
+/* The graph node's header strip: 40px name row (+ 20px matrix line) — `CARD.strip` /
+   `CARD.note`, which `geometry.ts` adds up to lay the graph out. Everything is
+   `box-sizing: border-box`, so the 40px is the whole strip, its 1px
+   `border-bottom` included; a 39px height here made every node one pixel
+   shorter than the layout it is drawn into. (The job *page*'s head is another
+   element with the same class — see `.job-page > .job-head` below.) */
 .job-head {
   display: flex;
   flex: none;
   flex-direction: column;
   justify-content: center;
-  height: 39px;
+  height: 40px;
   padding: 0 13px;
   background-color: var(--surface-dim);
   border-bottom: 1px solid var(--line);
@@ -1812,80 +1817,235 @@ button {
   height: 20px;
 }
 
-/* A step row: 42px (CHIP.row). Off the graph since Task 8 — the job page's
-   step list is what renders these now. */
-.step-chip {
+/* The job page (spec 2026-09-08, phase 3): a head, the job's own values
+   behind a disclosure, and the steps as rows that expand in place. */
+.job-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 0 20px;
+}
+
+/* Scoped to the page: the graph's job card has a `.job-head` strip of its own
+   (and a `.job-eyebrow` in it), and the two must not bleed into each other. */
+.job-page > .job-head {
   display: flex;
   flex: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px 18px;
+  height: auto;
+  padding: 14px 20px;
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.job-head-title {
+  display: flex;
+  flex: 1;
   flex-direction: column;
-  width: 100%;
-  padding: 0;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  background-color: transparent;
-  border: 0;
-  border-top: 1px solid var(--hairline);
-  cursor: pointer;
-  transition: background-color var(--fast) var(--ease-out);
+  gap: 2px;
+  min-width: 0;
 }
 
-.step-chip:first-child {
-  border-top: 0;
+/* The way up, in the crumb shape the pane heads use. */
+.job-page .job-eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.step-chip:hover {
-  background-color: var(--paper);
-}
-
-.step-chip[aria-pressed='true'] {
-  background-color: var(--surface-dim);
-  box-shadow: inset 0 0 0 1px var(--ink);
-}
-
-/* The running row's warm wash, as in the prototype. */
-.step-chip[data-state='running'],
-.step-chip[data-state='polling'],
-.step-chip[data-state='waiting'] {
-  background-color: var(--surface-tint);
-}
-
-.step-chip[data-state='running'] .step-title,
-.step-chip[data-state='running'] .step-id,
-.step-chip[data-state='waiting'] .step-title,
-.step-chip[data-state='waiting'] .step-id {
+.job-head-name {
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
 }
 
-/* Not yet reached: quieter ink, as the prototype's pending cards. */
-.step-chip[data-state='queued'],
-.step-chip[data-state='skipped'] {
-  color: var(--ink-faint);
+.job-head-meta {
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
 }
 
-.step-chip[data-state='queued'] .step-meta,
-.step-chip[data-state='skipped'] .step-meta {
-  color: var(--ink-faint);
+.job-head-note,
+.job-head-item {
+  color: var(--ink-mute);
+  font-size: 12px;
 }
 
-/* Data-flow hover-highlight (08, M2 Task 22): solid ring on the value's
-   declaring chip, dashed on every chip that reads it. */
-.step-chip[data-flow='source'] {
-  box-shadow: inset 0 0 0 1.5px var(--ink);
+.job-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
 }
 
-.step-chip[data-flow='target'] {
-  outline: 1.5px dashed var(--ink);
-  outline-offset: -3px;
+/* The job's own inputs and outputs, collapsed: the steps get the page. */
+.job-io {
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.job-io > summary {
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.job-io-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.step-list,
+.item-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
 }
 
 .step-row {
   display: flex;
+  flex-direction: column;
+}
+
+.step-row + .step-row,
+.item-row + .item-row {
+  border-top: 1px solid var(--hairline);
+}
+
+/* A step row's head: 42px (CHIP.row), the same line the graph's chip drew. */
+.step-row-head,
+.item-row-link {
+  display: flex;
   flex: none;
   align-items: center;
   gap: 10px;
-  height: 42px;
+  width: 100%;
+  min-height: 42px;
   padding: 0 13px 0 12px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  background-color: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+.step-row-head:hover,
+.item-row-link:hover {
+  background-color: var(--paper);
+}
+
+.step-row-head:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.step-row-head:disabled:hover {
+  background-color: transparent;
+}
+
+.step-row[data-open] > .step-row-head {
+  background-color: var(--surface-dim);
+}
+
+.step-row-body {
+  border-top: 1px solid var(--hairline);
+}
+
+/* The controls that used to sit in the step pane's head (Task 11). */
+.step-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.step-chevron {
+  margin-left: 4px;
+  color: var(--ink-mute);
+}
+
+.step-kind-word {
+  flex: none;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* The running row's warm wash, as in the prototype. */
+.step-row-head[data-state='running'],
+.step-row-head[data-state='polling'],
+.step-row-head[data-state='waiting'] {
+  background-color: var(--surface-tint);
+}
+
+.step-row-head[data-state='running'] .step-title,
+.step-row-head[data-state='running'] .step-id,
+.step-row-head[data-state='waiting'] .step-title,
+.step-row-head[data-state='waiting'] .step-id {
+  font-weight: 600;
+}
+
+/* Not yet reached: quieter ink, as the prototype's pending cards. */
+.step-row-head[data-state='queued'],
+.step-row-head[data-state='skipped'] {
+  color: var(--ink-faint);
+}
+
+.step-row-head[data-state='queued'] .step-meta,
+.step-row-head[data-state='skipped'] .step-meta {
+  color: var(--ink-faint);
+}
+
+/* Data-flow hover-highlight (08, M2 Task 22): solid ring on the value's
+   declaring row, dashed on every row that reads it. */
+.step-row-head[data-flow='source'] {
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+.step-row-head[data-flow='target'] {
+  outline: 1.5px dashed var(--ink);
+  outline-offset: -3px;
+}
+
+/* …and the focus ring outranks it, exactly as it does on the job card: the
+   dashed target outline is more specific than the global `:focus-visible`, so
+   a keyboard-focused row that happens to be a hover target would otherwise
+   lose its ring entirely. Same values. */
+.step-row-head:focus-visible,
+.item-row-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
 }
 
 .step-kind {
@@ -1927,7 +2087,8 @@ button {
   font-size: 11px;
 }
 
-.step-chip .badge {
+.step-row-head .badge,
+.item-row-link .badge {
   flex: none;
 }
 
@@ -1939,14 +2100,8 @@ button {
   white-space: nowrap;
 }
 
-/* Definition mode: the outputs a step promises, one 20px line each (CHIP.out),
-   with 8px under the last (CHIP.outPad). */
-.step-outputs {
-  display: flex;
-  flex-direction: column;
-  padding: 0 13px 8px 37px;
-}
-
+/* One declared OUT line, 20px each (CHIP.out) — the job card's `job-outs`
+   block is the only place these are drawn since the step chip retired. */
 .step-output {
   display: flex;
   align-items: center;
@@ -2193,10 +2348,9 @@ button {
   flex: none;
 }
 
-/* The pane under the graph (08): one level of the taxonomy at a time — the
-   run's own card, or the selected step's in its place. Both share this
-   shape: a header row (eyebrow + name + key, the Input | Output toggle,
-   status, kind) and the body. */
+/* The pane under the graph (08): the run's own card. Its shape — a header row
+   (eyebrow + name + key, the Input | Output toggle, status, kind) and the body
+   — is shared by the form and island panes a step row expands into. */
 .step-pane {
   margin: 0 0 20px;
   overflow: hidden;
@@ -2227,6 +2381,10 @@ button {
   color: var(--ink-mute);
   font: inherit;
   letter-spacing: inherit;
+  /* A `<button>` does not inherit these from the UA stylesheet, and the job
+     head's eyebrow is uppercased — without it the one crumb that *is* a
+     button reads in a different case from the ones beside it. */
+  text-transform: inherit;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -2253,55 +2411,6 @@ button.pane-crumb:hover {
   margin-left: 6px;
   color: var(--ink-mute);
 }
-
-/* The job card's trail: its steps, each a way down. */
-.job-pane-steps {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.job-pane-step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 8px;
-  margin: 0 -8px;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--hairline-faint);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  transition: background-color var(--fast) var(--ease-out);
-}
-
-.job-pane-steps > li:first-child .job-pane-step {
-  border-top: 0;
-}
-
-.job-pane-step:hover {
-  background-color: var(--surface-dim);
-}
-
-.job-pane-step-label {
-  display: flex;
-  flex: 1;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.job-pane-step-label .step-id {
-  color: var(--ink-mute);
-  font-size: 11px;
-}
-
 
 .pane-head {
   display: flex;
@@ -2979,7 +3088,15 @@ button.pane-crumb:hover {
   min-width: 0;
 }
 
+/* `Run › <job> › <step>` — the two links up and the step that holds the page,
+   laid out as one line. The crumbs themselves are `.pane-crumb`s, which
+   inherit their type from here, so the strip reads like the job head's own
+   eyebrow at the strip's size. */
 .island-strip-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
   color: var(--ink);
   font-size: 13px;
   font-weight: 600;
@@ -3006,7 +3123,16 @@ button.pane-crumb:hover {
   font-size: 12px;
 }
 
+/* The overlay's growth chain, top to bottom: every box between the fixed
+   `.run-canvas` and the island's own iframe has to grow, or the frame is left
+   at its inline height with the page's background under it. The list is the
+   link the row hangs off — a `<ul>` between the job page and the open `<li>`. */
 .island-fullscreen .step-pane,
+.island-fullscreen .step-body,
+.island-fullscreen .job-page,
+.island-fullscreen .step-list,
+.island-fullscreen .step-row[data-open],
+.island-fullscreen .step-row[data-open] > .step-row-body,
 .island-fullscreen .island-step,
 .island-fullscreen .island-display {
   display: flex;
@@ -3014,6 +3140,18 @@ button.pane-crumb:hover {
   flex-direction: column;
   min-height: 0;
   margin: 0;
+}
+
+/* …and everything beside the row it is fixed over gives way (08: "the content
+   column collapses to the strip and the overlay holds the open island's row
+   body"). The strip's crumb is the way up now, so the job head is not needed;
+   the job's values and the sibling rows are a page the person is not on. The
+   open row's own **head** stays: it is the step's identity and the only live
+   status glyph and duration on screen, and it is how the row is collapsed. */
+.island-fullscreen .job-page > .job-head,
+.island-fullscreen .job-io,
+.island-fullscreen .step-row:not([data-open]) {
+  display: none;
 }
 
 .island-step .pane-summary,

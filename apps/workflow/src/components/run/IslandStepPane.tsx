@@ -2,7 +2,7 @@
  * The island step's pane (03 `island` step, 08: "the pane is the island").
  *
  * The counterpart of `FormStepPane`, and the same rule applies: it is only ever
- * rendered for the run **this tab is driving** (`StepPane`'s `live` gate),
+ * rendered for the run **this tab is driving** (`StepBody`'s `live` gate),
  * because everything an island can do — submit, annotate — lands on whatever
  * run the global `runSlice` currently holds.
  *
@@ -23,8 +23,9 @@
  *
  * The pane always opens **inline** (04, apps#432). An island that declared
  * `display: fullscreen` gets an **Expand** control here — the overlay is the
- * page's (`RunPage` fixes the canvas over the viewport and swaps the graph for
- * a strip), and the `<iframe>` is the same element either way: nothing here
+ * shell's (`RunShell` fixes the run canvas over the viewport and puts the
+ * `island-strip`, whose crumb reads `Run › <job> › <step>`, in the content's
+ * place), and the `<iframe>` is the same element either way: nothing here
  * remounts on the mode change, so the island's edit state survives it.
  */
 import { IslandFrame } from '../../islands/IslandFrame'

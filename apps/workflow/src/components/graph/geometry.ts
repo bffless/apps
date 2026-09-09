@@ -3,7 +3,7 @@
  * function of the definition (and, in run mode, the fan-out), so `GraphView`
  * can place cards, draw connectors and pin the edge dots without a layout
  * pass — which is also why the graph renders identically in jsdom. The pixel
- * constants are mirrored by `.job-card` / `.step-chip` sizing in `index.css`;
+ *  constants are mirrored by `.job-card` / `.step-row-head` sizing in `index.css`;
  * change both.
  *
  * Kept apart from the components so each component file exports only
@@ -14,7 +14,7 @@ import type { Definition, Job, Step } from '../../lib/runner/types'
 import { resolveOutput } from '../../lib/outputDecls'
 import { isFileRef } from '../values/fileRef'
 
-/** Row geometry in px — mirrored by `.step-chip` sizing in `index.css`; change both. */
+/** Row geometry in px — mirrored by `.step-row-head` sizing in `index.css`; change both. */
 export const CHIP = {
   /** A step row inside a multi-step (or matrix) card. */
   row: 42,
