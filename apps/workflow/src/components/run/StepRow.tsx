@@ -22,11 +22,12 @@ import { formatDuration } from '../../lib/duration'
 import { headlessMode } from '../../lib/runner/headless'
 import { isTerminal } from '../../lib/runner/jobs'
 import type { JobStepRow } from '../../lib/runner/jobs'
-import type { Definition, RunState, Step, StepKey, StepKind, StepStatus } from '../../lib/runner/types'
+import type { Definition, RunState, StepKey, StepKind, StepStatus } from '../../lib/runner/types'
 import { parseStepKey } from '../../lib/runner/types'
 import { StatusGlyph } from '../StatusPill'
 import type { GraphFlow } from '../graph/flow'
 import { stepLabel } from '../graph/geometry'
+import { DeclaredStepBody } from './DeclaredStepBody'
 import { StepBody } from './StepBody'
 import type { Tab } from './StepBody'
 import { stepBodyId, stepRowId } from './stepRowId'
@@ -40,32 +41,26 @@ const KIND_ICON: Record<StepKind, string> = {
   script: '⌘',
 }
 
-/**
- * PR 5's declared-mode body (the step's own declaration, read off the
- * workflow file rather than off a run). Until then the raw block is an honest
- * placeholder — every fact it will show is already in there. `def`/`job`
- * dropped (fix round 3, nit): PR 5's real body will re-add whichever of them
- * it actually reads.
- */
-export function DeclaredStepBody({ step }: { step: Step }) {
-  return <pre className="declaration">{JSON.stringify(step.raw, null, 2)}</pre>
-}
-
 export interface StepRowProps {
   def: Definition
-  state: RunState
+  /**
+   * The folded run this row is an attempt of — run mode only. A declared row
+   * (the workflow page) has no run behind it at all, which is the whole of
+   * what `declared` means; its body reads the definition instead.
+   */
+  state?: RunState
   row: JobStepRow
   open: boolean
   onToggle: (key: StepKey) => void
-  /** This run is the one this tab is driving — handed straight to `StepBody`'s form/island gate. */
-  live: boolean
+  /** This run is the one this tab is driving — handed straight to `StepBody`'s form/island gate. Run mode only. */
+  live?: boolean
   /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
   impl?: string
   /** The run's YAML snapshot, for the body's **YAML** drawer (apps#449). */
   source?: YamlSource
   /** Which side the body opens on — an edge dot's click says (08). */
   initialTab?: Tab
-  /** `run` reads the attempt; `declared` reads the declaration (PR 5). */
+  /** `run` reads the attempt; `declared` reads the declaration (the workflow page). */
   mode?: 'run' | 'declared'
   /** The value under the pointer (08): the head lights up if this step declares it or reads it. */
   flow?: GraphFlow
@@ -86,7 +81,7 @@ export function StepRow({
   row,
   open,
   onToggle,
-  live,
+  live = false,
   impl,
   source,
   initialTab,
@@ -169,7 +164,9 @@ export function StepRow({
 
       {open && (
         <div id={bodyId} className="step-row-body">
-          {run ? (
+          {/* `state` is run mode's by definition — the job page always has one,
+              and a declared row never does (the props say so). */}
+          {run && state ? (
             <StepBody
               def={def}
               state={state}
@@ -181,7 +178,7 @@ export function StepRow({
               onClose={() => onToggle(key)}
             />
           ) : (
-            <DeclaredStepBody step={step} />
+            <DeclaredStepBody job={parts?.job ?? ''} step={step} onClose={() => onToggle(key)} />
           )}
         </div>
       )}

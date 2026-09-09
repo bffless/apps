@@ -3,7 +3,7 @@
  *
  * Three things travel together and only make sense together: whether the
  * button may be shown at all, whether a deletion is in flight, and what the
- * server said when it refused. They were inlined in `RunPage.tsx` — the page
+ * server said when it refused. They were inlined in `RunShell.tsx` — the page
  * that also owns the URL selection, the live/replayed split and three levels of
  * pane — so they are lifted here, where they can be read in one screenful
  * (apps#382).

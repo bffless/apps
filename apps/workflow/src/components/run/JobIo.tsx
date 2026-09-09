@@ -40,15 +40,10 @@ import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
 import { inferDecl } from '../values/inferDecl'
+import { kindTag } from '../values/valueMeta'
 import type { Tab } from './StepBody'
 
 const TABS: Tab[] = ['Input', 'Output']
-
-/** The mono tag beside a value's name: its declared type, and its renderer when named. */
-function kindTag(decl: ValueDecl): string {
-  const base = `${decl.type}${decl.list ? ' · list' : ''}`
-  return typeof decl.render === 'string' ? `${base} · ${decl.render}` : base
-}
 
 /** One element of a collected list is that list's type without the list. */
 function elementDecl(decl: ValueDecl): ValueDecl {

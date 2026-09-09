@@ -10,11 +10,18 @@ describe('parseStepKey', () => {
 })
 
 /**
- * A minimal Playwright-`Locator`-shaped fake: each `.locator()`/`.getByTestId()`
- * call extends a selector path, and `count`/`getAttribute`/`isVisible` are
- * looked up by that path's joined key from the scenario's fixtures — so a
- * test locks down *which* selectors `openStep` visits and in what order
- * (`log`), without a real browser.
+ * A minimal Playwright-`Locator`-shaped fake: each
+ * `.locator()`/`.getByTestId()`/`.first()` call extends a selector path, and
+ * `count`/`getAttribute`/`isVisible` are looked up by that path's joined key
+ * from the scenario's fixtures — so a test locks down *which* selectors
+ * `openStep` visits and in what order (`log`), without a real browser.
+ *
+ * `.first()` extends the path like any other step, which is what makes it
+ * assertable: the row fixtures below are keyed under `… > first()`, so a
+ * `getAttribute` or `click` that reached the row without narrowing it would
+ * read an empty path and fail the scenario rather than passing quietly. A
+ * bare `[data-testid="step"][data-key=…]` is strict in Playwright and would
+ * throw on a second match.
  */
 function fakePage(fixtures: { counts?: Record<string, number>; attrs?: Record<string, Record<string, string>>; visible?: Record<string, boolean> }) {
   const log: string[] = []
@@ -22,6 +29,7 @@ function fakePage(fixtures: { counts?: Record<string, number>; attrs?: Record<st
   const makeLocator = (path: string[]): unknown => ({
     locator: (sel: string) => makeLocator([...path, sel]),
     getByTestId: (id: string) => makeLocator([...path, `testid:${id}`]),
+    first: () => makeLocator([...path, 'first()']),
     count: async () => fixtures.counts?.[key(path)] ?? 0,
     getAttribute: async (name: string) => fixtures.attrs?.[key(path)]?.[name] ?? null,
     isVisible: async () => fixtures.visible?.[key(path)] ?? false,
@@ -32,10 +40,10 @@ function fakePage(fixtures: { counts?: Record<string, number>; attrs?: Record<st
   return { page: page as unknown as Page, log }
 }
 
-const ROW = '[data-testid="step"][data-key="review/0/confirm"]'
+const ROW = '[data-testid="step"][data-key="review/0/confirm"] > first()'
 const RAIL = 'nav[aria-label="Run"]'
 const PLAIN_LINK = '[data-testid="rail-job"][data-job="review"]:not([data-index])'
-const PANE = 'li:has([data-testid="step"][data-key="review/0/confirm"])'
+const PANE = 'li:has([data-testid="step"][data-key="review/0/confirm"]) > first()'
 
 describe('openStep', () => {
   it('skips the rail entirely when the row is already open', async () => {
@@ -62,12 +70,29 @@ describe('openStep', () => {
     expect(log).toEqual([`click:${RAIL} > ${PLAIN_LINK}`, `waitFor:${ROW}`, `click:${ROW}`, `waitFor:${PANE} > testid:step-pane`])
   })
 
+  /**
+   * Two rows can carry one key (a fullscreen overlay's copy, a declared row
+   * behind a run): Playwright's `getAttribute`/`click` are strict and would
+   * throw on the second. The fixtures here answer only under the narrowed
+   * path — the un-narrowed one claims the row is already open — so a helper
+   * that read the row without `.first()` would skip the rail and the click.
+   */
+  it('narrows the row with .first() before reading or clicking it', async () => {
+    const UNNARROWED = '[data-testid="step"][data-key="review/0/confirm"]'
+    const { page, log } = fakePage({
+      counts: { [ROW]: 0, [UNNARROWED]: 2 },
+      attrs: { [ROW]: { 'aria-expanded': 'false' }, [UNNARROWED]: { 'aria-expanded': 'true' } },
+    })
+    await openStep(page, 'review/0/confirm')
+    expect(log).toEqual([`click:${RAIL} > ${PLAIN_LINK}`, `waitFor:${ROW}`, `click:${ROW}`, `waitFor:${PANE} > testid:step-pane`])
+  })
+
   it('expands a collapsed matrix group before clicking a hidden item link', async () => {
     const matrixGroup = `${RAIL} > [data-testid="rail-matrix"][data-job="card"]`
     const itemLink = `${matrixGroup} > [data-testid="rail-job"][data-job="card"][data-index="2"]`
     const chevron = `${matrixGroup} > button[aria-expanded="false"]`
-    const row = '[data-testid="step"][data-key="card/2/draw"]'
-    const pane = 'li:has([data-testid="step"][data-key="card/2/draw"])'
+    const row = '[data-testid="step"][data-key="card/2/draw"] > first()'
+    const pane = 'li:has([data-testid="step"][data-key="card/2/draw"]) > first()'
     const { page, log } = fakePage({
       counts: { [row]: 0, [matrixGroup]: 1 },
       visible: { [itemLink]: false },
@@ -80,8 +105,8 @@ describe('openStep', () => {
   it('clicks a matrix item link directly when it is already visible', async () => {
     const matrixGroup = `${RAIL} > [data-testid="rail-matrix"][data-job="card"]`
     const itemLink = `${matrixGroup} > [data-testid="rail-job"][data-job="card"][data-index="0"]`
-    const row = '[data-testid="step"][data-key="card/0/draw"]'
-    const pane = 'li:has([data-testid="step"][data-key="card/0/draw"])'
+    const row = '[data-testid="step"][data-key="card/0/draw"] > first()'
+    const pane = 'li:has([data-testid="step"][data-key="card/0/draw"]) > first()'
     const { page, log } = fakePage({
       counts: { [row]: 0, [matrixGroup]: 1 },
       visible: { [itemLink]: true },

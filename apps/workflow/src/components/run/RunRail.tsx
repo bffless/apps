@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router-dom'
 import { formatDuration } from '../../lib/duration'
 import { jobOrder } from '../../lib/runner/graph'
-import { itemTotal, jobDuration, jobStatus, stepsOfJob } from '../../lib/runner/jobs'
+import { itemTotal, itemsDone, jobDuration, jobStatus, stepsOfJob } from '../../lib/runner/jobs'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { jobPath, runPath } from '../../lib/runRoutes'
 import { StatusGlyph } from '../StatusPill'
@@ -72,7 +72,7 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                 return (
                   <li key={job}>
                     <NavLink className="rail-row rail-job" data-testid="rail-job" data-job={job} to={jobPath(base, runId, job)} end onClick={onNavigate}>
-                      <StatusGlyph status={jobStatus(states)} />
+                      <StatusGlyph status={jobStatus(def, state, job)} />
                       <span className="rail-row-name">{jobLabel(decl)}</span>
                       {duration !== undefined && <span className="rail-row-meta">{formatDuration(duration)}</span>}
                     </NavLink>
@@ -80,15 +80,13 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                 )
               }
               const total = itemTotal(state, job)
-              const done = Array.from({ length: total }).filter((_, i) =>
-                stepsOfJob(def, state, job, i).every((r) => r.state && ['succeeded', 'failed', 'skipped', 'cancelled'].includes(r.state.status)),
-              ).length
+              const done = itemsDone(def, state, job)
               const open = isOpen(job)
               return (
                 <li key={job}>
                   <div className="rail-matrix" data-testid="rail-matrix" data-job={job}>
                     <NavLink className="rail-row rail-job" data-testid="rail-job" data-job={job} to={jobPath(base, runId, job)} end onClick={onNavigate}>
-                      <StatusGlyph status={jobStatus(states)} />
+                      <StatusGlyph status={jobStatus(def, state, job)} />
                       <span className="rail-row-name">{jobLabel(decl)}</span>
                       <span className="rail-row-meta">{done} of {total}</span>
                     </NavLink>
@@ -100,11 +98,10 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                     <ul className="rail-items">
                       {Array.from({ length: total }, (_, i) => {
                         const item = state.expansions[job]?.items[i] ?? {}
-                        const itemStates = stepsOfJob(def, state, job, i).flatMap((r) => (r.state ? [r.state] : []))
                         return (
                           <li key={i}>
                             <NavLink className="rail-row rail-job rail-item" data-testid="rail-job" data-job={job} data-index={i} to={jobPath(base, runId, job, i)} end onClick={onNavigate}>
-                              <StatusGlyph status={jobStatus(itemStates)} />
+                              <StatusGlyph status={jobStatus(def, state, job, i)} />
                               <span className="rail-row-name">{itemLabel(item, i)}</span>
                             </NavLink>
                           </li>

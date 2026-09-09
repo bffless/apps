@@ -16,7 +16,8 @@
  *
  * The whole node is one `<button>`: the job is the middle level of run › job ›
  * step, so it is one keyboard-reachable target with one selected state
- * (`aria-pressed`), and clicking it reports the job id to its owner. Its
+ * (`aria-pressed`, only where an owner tracks one), and clicking it reports
+ * the job id to its owner. Its
  * *content* is its accessible name — an `aria-label` here would override that
  * with the job's name alone and hide everything the node exists to say: the
  * status word, the duration, `N of M done`, the matrix note, the OUT rows.
@@ -24,19 +25,12 @@
 import type { CSSProperties } from 'react'
 import { formatDuration } from '../../lib/duration'
 import { pluralize } from '../../lib/plural'
-import { jobDuration, jobStatus, itemTotal, stepsOfJob } from '../../lib/runner/jobs'
-import type { Definition, Job, RunState, StepStatus } from '../../lib/runner/types'
+import { jobDuration, jobStatus, itemTotal, itemsDone, stepsOfJob } from '../../lib/runner/jobs'
+import type { Definition, Job, RunState } from '../../lib/runner/types'
 import { StatusGlyph } from '../StatusPill'
 import { STATUS_LABEL } from '../statusLabels'
 import type { GraphFlow } from './flow'
 import { declaredJobOutputs, jobLabel, matrixNote } from './geometry'
-
-const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
-  'succeeded',
-  'failed',
-  'skipped',
-  'cancelled',
-])
 
 export interface JobCardProps {
   job: Job
@@ -46,6 +40,12 @@ export interface JobCardProps {
   row: number
   mode: 'definition' | 'run'
   state?: RunState
+  /**
+   * Whether this node is the one its owner has open. Absent — not `false` —
+   * when the owner tracks no selection at all: `aria-pressed` then stays off
+   * the node entirely, because a toggle that nothing can press should not
+   * report itself as unpressed (fix round 4).
+   */
   selected?: boolean
   /** `side` is set when the click came from an edge dot (08: "jump straight to one side"). */
   onPick: (job: string, side?: 'Input' | 'Output') => void
@@ -57,15 +57,13 @@ export interface JobCardProps {
 export function JobCard({ job, def, col, row, mode, state, selected, onPick, flow, style }: JobCardProps) {
   const rows = state ? stepsOfJob(def, state, job.id) : []
   const states = rows.flatMap((r) => (r.state ? [r.state] : []))
-  const status = jobStatus(states)
+  const status = state ? jobStatus(def, state, job.id) : 'queued'
   const duration = jobDuration(states)
   const isMatrix = job.matrix !== undefined
   const total = state ? itemTotal(state, job.id) : 1
-  const done = state
-    ? Array.from({ length: total }).filter((_, i) =>
-        stepsOfJob(def, state, job.id, i).every((r) => r.state && TERMINAL.has(r.state.status)),
-      ).length
-    : 0
+  // The rail prints the same fraction beside the same job, so both read it from
+  // `itemsDone` — a second private terminal-status set here is how the two drift.
+  const done = state ? itemsDone(def, state, job.id) : 0
   const jobFlow = flow?.sourceJobs.has(job.id)
     ? 'source'
     : flow?.targetJobs.has(job.id)
@@ -84,7 +82,7 @@ export function JobCard({ job, def, col, row, mode, state, selected, onPick, flo
       data-row={row}
       data-flow={jobFlow}
       data-state={mode === 'run' ? status : 'declared'}
-      aria-pressed={selected ?? false}
+      aria-pressed={selected}
       style={style}
       onClick={() => onPick(job.id)}
     >

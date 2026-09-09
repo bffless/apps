@@ -1,7 +1,10 @@
 /**
- * The run itself, as the outermost step (08): the card that shows under the
- * graph while no step is selected, in exactly the step pane's shape — the
- * same head, the same **Input | Output** toggle, the same value treatment.
+ * The run itself, as the outermost step (08): the **Summary**'s card, under the
+ * graph, in exactly the step pane's shape — the same head, the same
+ * **Input | Output** toggle, the same value treatment. It is not a "nothing is
+ * selected" state any more: a selected step is its own route now (spec
+ * 2026-09-08), so this card is simply what the run level of run › job › step
+ * shows, and it is on screen for as long as the Summary is.
  *
  * **Input** is what the run was started with: the kickoff form's values, each
  * through the renderer its `on.manual.inputs` declaration resolves to, so a

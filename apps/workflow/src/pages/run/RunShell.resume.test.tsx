@@ -91,7 +91,7 @@ function renderRun(runId: string, query = '') {
   return store
 }
 
-describe('RunPage — `?resume=1`', () => {
+describe('RunShell — `?resume=1`', () => {
   it('adopts a free lease without anyone clicking Resume', async () => {
     seedRunning('run_resume_free', { leaseOwner: null, leaseUntil: null })
 

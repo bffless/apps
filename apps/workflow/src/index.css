@@ -544,7 +544,6 @@ button {
 .rows,
 .graph-scroll,
 .step-pane,
-.graph-panel,
 .empty {
   background-color: var(--surface);
   border: 1px solid var(--line);
@@ -2100,8 +2099,27 @@ button {
   white-space: nowrap;
 }
 
-/* One declared OUT line, 20px each (CHIP.out) — the job card's `job-outs`
-   block is the only place these are drawn since the step chip retired. */
+/* A declared row's body carries the run body's inset itself: it has no
+   `.step-toolbar` / `.pane-body` to supply one, so without this its headings
+   and values sit flush against the row's border (Task 18's visual pass). */
+.declared-body {
+  padding: 0 20px 24px;
+}
+
+/* A declared step's own OUT lines, in its expanded row's body. */
+.step-outs {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The raw declaration under them, closed — the same rhythm `.section-title`
+   gives the two headings above it. */
+.declaration-details {
+  margin-top: 20px;
+}
+
+/* One declared OUT line, 20px each (CHIP.out) — drawn by the job card's
+   `job-outs` block and by a declared step row's Outputs (`DeclaredStepBody`). */
 .step-output {
   display: flex;
   align-items: center;
@@ -2117,6 +2135,7 @@ button {
   letter-spacing: 0.08em;
 }
 
+
 .out-name {
   flex: 1;
   color: var(--ink);
@@ -2130,18 +2149,7 @@ button {
   font-size: 10.5px;
 }
 
-/* Definition mode's declaration panel, below the canvas. */
-.graph-panel {
-  padding: 16px 20px 20px;
-}
-
-.graph-panel-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
+/* The pane/panel title, shared by every card head that names its subject. */
 .graph-panel-title {
   margin: 0;
   font-size: 15.5px;
@@ -2573,7 +2581,8 @@ button.pane-crumb:hover {
   color: var(--ink-2);
 }
 
-.raw-response > summary {
+.raw-response > summary,
+.declaration-details > summary {
   cursor: pointer;
   color: var(--ink-mute);
   font-family: var(--font-mono);
@@ -2581,7 +2590,8 @@ button.pane-crumb:hover {
   letter-spacing: 0.04em;
 }
 
-.raw-response > summary:hover {
+.raw-response > summary:hover,
+.declaration-details > summary:hover {
   color: var(--ink);
 }
 

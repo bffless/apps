@@ -14,19 +14,13 @@ import { RUN_SCOPE, resolveOutput } from '../../lib/outputDecls'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ValueView } from '../values/ValueView'
-import type { ValueDecl } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
+import { kindTag } from '../values/valueMeta'
 
 /** Declaration order first, then anything the run recorded but never declared. */
 function outputNames(declared: string[], recorded: Record<string, unknown>): string[] {
   const extra = Object.keys(recorded).filter((name) => !declared.includes(name))
   return [...declared, ...extra]
-}
-
-/** The mono tag beside a value's name: its declared type, and its renderer when named. */
-function kindTag(decl: ValueDecl): string {
-  const base = `${decl.type}${decl.list ? ' · list' : ''}`
-  return typeof decl.render === 'string' ? `${base} · ${decl.render}` : base
 }
 
 export function RunOutputs({

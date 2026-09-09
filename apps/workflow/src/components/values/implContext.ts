@@ -3,7 +3,7 @@
  *
  * Almost every viewer needs nothing but the value; `render: island` needs one
  * more fact — the bundle its island file lives in — and that fact is known at
- * the *page* level (`RunPage` reads it off the run), not at the value. Passing
+ * the *page* level (`RunShell` reads it off the run), not at the value. Passing
  * it through every intermediate component that renders a `ValueView` would put
  * an `impl` prop on components that have no other use for one, so it rides a
  * context instead. `null` is a legitimate answer (a value rendered outside any
@@ -25,7 +25,7 @@ export function useImpl(): string | null {
  * or discovery has not answered yet). The two nulls draw differently: absent
  * gets the ordinary "renderer: island (no implementation)" badge, withheld
  * gets a one-line note saying the island was withheld on purpose. Only
- * `RunPage` sets this; everywhere else the default `false` keeps the old
+ * `RunShell` sets this; everywhere else the default `false` keeps the old
  * badge.
  */
 export const ImplWithheldContext = createContext<boolean>(false)

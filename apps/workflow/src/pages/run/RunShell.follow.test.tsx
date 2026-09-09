@@ -91,7 +91,7 @@ async function followingAtForm() {
 // Mode transitions, on `hello` held at its waiting form
 // ---------------------------------------------------------------------------
 
-describe('RunPage — follow mode', () => {
+describe('RunShell — follow mode', () => {
   it('follows on a fresh load with no `?step=`: the waiting form opens, and the toggle reads on', async () => {
     const { store, runId } = await startHelloAtConfirmWaiting()
     renderAt(store, `/hello/hello/runs/${runId}`)
@@ -251,7 +251,7 @@ describe('RunPage — follow mode', () => {
 // (keyed on the selection key, not the path) waved through unconditionally.
 // ---------------------------------------------------------------------------
 
-describe('RunPage — pins on any navigation the shell did not make', () => {
+describe('RunShell — pins on any navigation the shell did not make', () => {
   it('pins on a rail click', async () => {
     const { toggle } = await followingAtForm()
     expect(toggle()).toHaveAttribute('data-state', 'on')
@@ -306,7 +306,7 @@ describe('RunPage — pins on any navigation the shell did not make', () => {
   // pressed with no row open, and stops there" (Task 13) — not repeated here.
 })
 
-describe('RunPage — the arrival effect is StrictMode-safe (fix round 1, finding 3)', () => {
+describe('RunShell — the arrival effect is StrictMode-safe (fix round 1, finding 3)', () => {
   it('still follows a bare load under StrictMode’s dev double-invoke of mount effects', async () => {
     // `main.tsx` wraps the app in `<StrictMode>`, which in dev re-invokes a
     // fresh mount's effects a second time (run, "unmount", run again) with no
@@ -370,7 +370,7 @@ const SCENES_DEF = toDefinition({
 const DIRECTOR_KEY: StepKey = stepKey('director', 0, 'brief')
 const SCENE_KEYS: StepKey[] = ['scene1', 'scene2', 'scene3'].map((id) => stepKey('scenes', 0, id))
 
-describe('RunPage — unattended while pinned', () => {
+describe('RunShell — unattended while pinned', () => {
   it('pins on the header’s Follow toggle, in place — the backstage still finishes while pinned on the loaded scene', async () => {
     // Fix round 1: Director's own `waiting` window (a `headless: auto` form)
     // is not reachable from here at all — the same microtask that dispatches

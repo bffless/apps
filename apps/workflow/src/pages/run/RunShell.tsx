@@ -1190,10 +1190,11 @@ export function RunShell() {
                     </div>
                   )}
                   {/*
-                    One level of the taxonomy at a time (08, decided
-                    2026-08-26): the run's own card, or — while a job or a
-                    step is selected — that level's page in its place.
-                    Never both, and which one is the route's answer now.
+                    The route's page: the Summary (the graph and the run card)
+                    or a job page (its head, its values and its step rows),
+                    whichever the URL names — never both. Everything around it
+                    is the run's and stays mounted across the move, which is
+                    the whole reason the run routes hang off this layout.
                   */}
                   {legacy ? <Navigate to={legacy} replace /> : <Outlet key={outletKey} />}
                   {backstage.length > 0 && (

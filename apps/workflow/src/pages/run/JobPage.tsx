@@ -226,7 +226,7 @@ export function JobPage() {
                   data-index={i}
                   to={jobPath(ctx.base, ctx.runId, job, i)}
                 >
-                  <StatusGlyph status={jobStatus(states)} />
+                  <StatusGlyph status={jobStatus(ctx.def, ctx.state, job, i)} />
                   <span className="step-label">
                     <span className="step-title">
                       {itemLabel(ctx.state.expansions[job]?.items[i] ?? {}, i)}

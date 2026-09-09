@@ -5,8 +5,8 @@
  * gap here — the harness had no endpoint for one, R8; Task 19's `whoami` rule
  * is it.)
  *
- * The breadcrumb is read off the path rather than from `useParams`, because a
- * layout route matches before its children and so sees none of their params.
+ * The bar itself is `TopBar`'s, breadcrumb included; this file is only the
+ * frame the three of them sit in.
  */
 import { Outlet, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from './ErrorBoundary'

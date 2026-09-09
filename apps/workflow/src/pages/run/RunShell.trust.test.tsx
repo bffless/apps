@@ -58,7 +58,7 @@ async function discoverySettled(store: ReturnType<typeof makeStore>) {
   return workflowApi.endpoints.discover.select()(store.getState()).data
 }
 
-describe('RunPage — run.impl trust boundary (read-only path)', () => {
+describe('RunShell — run.impl trust boundary (read-only path)', () => {
   it('withholds the island when the row names an alias discovery does not list', async () => {
     seedPlantedRun('evil')
 

@@ -35,9 +35,9 @@ goes away.
 | `job`, `index`, `step`, `kind` | denormalised for listing |
 | `status` | `queued \| running \| polling \| waiting \| succeeded \| failed \| skipped \| cancelled` |
 | `attempt` | retry counter, 1-based |
-| `inputs` | evaluated `with` (File refs, expressions resolved) — what the Input pane shows |
+| `inputs` | evaluated `with` (File refs, expressions resolved) — the step row's Input side |
 | `response` | pipeline: `{ initial, last }`; trimmed to 256 KB with a `truncated` flag |
-| `outputs` | validated, typed outputs — what the Output pane shows |
+| `outputs` | validated, typed outputs — the step row's Output side |
 | `error` | `{ code, message, status? }` |
 | `summary` | rendered markdown (template already evaluated) |
 | `annotations` | `[{ level, title?, message }]` |
@@ -122,16 +122,20 @@ terminal state, and stored on the step row. Islands and scripts can add to them 
 via `workflow.annotate` (04) / `ctx.annotate` (03) — appended to the same columns. Run-level
 annotations (cancel notice, headless fail-fast) live on `workflow_runs.annotations`.
 
-The run page shows: a badge count per level in the header, each step's summary in its card,
-and a **Run summary** section concatenating step summaries in job order (GitHub's job summary
-page). Summaries are markdown; HTML is not interpreted (rich output → `render: island`, 02).
+The run page shows: a badge count per level in the run bar; each step's summary and its own
+annotations inside that step's expanded row (08); and, on the Summary, the two GitHub blocks —
+an **Annotations** panel (run-level annotations, then each step's, each linking to the step it
+came from) and then the step summaries **grouped per job**, one section per job that wrote any,
+each section's heading linking to that job's page (a matrix leg's, to the item's). Summaries are
+markdown; HTML is not interpreted (rich output → `render: island`, 02).
 
 ## Completion and outputs
 
 When no job can start and none is active: `succeeded` if all jobs succeeded or were skipped
 by `if`; `failed` if any job failed; `cancelled` if cancelled. Top-level `outputs` are
-evaluated and stored; the run page lists them first, then every job's outputs, each with its
-renderer and — for files — Download.
+evaluated and stored; the Summary lists them, each with its renderer and — for files —
+Download. A job's own outputs are derived, never stored, and are shown in one place: that
+job's page, behind the **Job inputs and outputs** disclosure (08).
 
 ## Retention & deletion
 
@@ -145,4 +149,4 @@ Owner or admin only. No automatic retention in v1 (a `keep: 30d` per workflow is
 Attestations (a signed digest of the record — the schema above is sufficient for adding it),
 live multi-viewer presence, run comparison/diff. (Run again from the kickoff form with the same
 inputs **is** v1: "Re-run" copies `inputs`; so is "Re-run from this job", a fork of a finished
-run from one job on — the job card, 08.)
+run from one job on — the job page's head, 08.)
