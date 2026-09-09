@@ -26,7 +26,29 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: npm install -g @bffless/workflow-headless@^1.2
-      - run: npx --yes playwright@1.61 install chromium --with-deps
+      # Ask the Playwright the driver actually loaded, never a range restated here:
+      # the driver resolves `playwright` for itself, so a literal in this file drifts
+      # the day a driver release moves — and browsers of a revision the driver refuses
+      # to run are worse than no cache at all. The resolved `version`, not the
+      # manifest specifier, so a driver that loosens its pin cannot poison the key.
+      - name: The Playwright version the driver loaded
+        id: pw
+        run: |
+          root="$(npm root -g)/@bffless/workflow-headless"
+          version="$(node -p "require(require.resolve('playwright/package.json', { paths: ['$root'] })).version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The headless shell only: the driver launches chromium with no `channel`, so
+      # Playwright >= 1.49 runs the shell and the full Chrome for Testing build would
+      # be downloaded and never started. The apt system-dependency install is gone
+      # too — every chromium library is already current on the runner image, and what
+      # apt adds beyond it is CJK/Thai font coverage that reaches nothing but the
+      # milestone screenshots. Restoring it is one flag. On a cache hit this step is
+      # a no-op; on a miss it fetches the shell.
+      - run: npx --yes playwright@${{ steps.pw.outputs.version }} install --only-shell chromium
       # Through the environment, never interpolated into `run:` — a JSON body is shell source otherwise.
       - name: Write the kickoff inputs
         env:

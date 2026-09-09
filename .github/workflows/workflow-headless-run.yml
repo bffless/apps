@@ -65,7 +65,25 @@ jobs:
         with: { node-version: '20', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bffless/workflow-headless build
-      - run: pnpm --filter @bffless/workflow-headless exec playwright install chromium --with-deps
+      # The version the workspace install actually resolved, not a hash of the
+      # lockfile: a lockfile key would bust the browser cache on every unrelated
+      # dependency bump, and a literal here would drift from the driver's pin.
+      - name: The Playwright version the driver loaded
+        id: pw
+        run: |
+          version="$(pnpm --filter @bffless/workflow-headless exec node -p "require('playwright/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # The headless shell only: browser.ts launches chromium with no `channel`, so
+      # Playwright >= 1.49 runs the shell and the full Chrome for Testing build would
+      # be downloaded and never started. The apt system-dependency install is gone too
+      # — the runner image already has every chromium library current, and apt only
+      # adds CJK/Thai fonts, which reach nothing but the milestone screenshots. A
+      # cache hit makes this a no-op.
+      - run: pnpm --filter @bffless/workflow-headless exec playwright install --only-shell chromium
 
       # Through the environment, not through the command line: a dispatch input
       # interpolated into a `run:` string is shell source, and a JSON body full
