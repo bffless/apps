@@ -16,7 +16,7 @@
  * uses) rather than `<MemoryRouter initialEntries>`: expanding a row *is* a
  * navigation now, so most cases have to read `router.state.location` back.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { RouterProvider, createMemoryRouter, createRoutesFromElements } from 'react-router-dom'
@@ -205,6 +205,45 @@ describe('JobPage — the job disclosure', () => {
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
     // `needs: greet` — what the job waited on.
     expect(within(page).getByTestId('job-io')).toHaveTextContent('greet')
+  })
+})
+
+/**
+ * Automated review of PR #635, finding 1: `open`, `ioOpen` and `ioTab` used
+ * to survive a job/item navigation — `routes.tsx` renders `<JobPage/>` for
+ * both job routes through the same un-keyed `<Outlet/>`, so one instance was
+ * reused across param changes. Fixed by keying the outlet on the job route
+ * (`RunShell`'s `outletKey`), so `JobPage` remounts — and its `?step=`/`?tab=`
+ * seeding runs fresh — on exactly these two moves.
+ */
+describe('JobPage — resets per job and per item (finding 1)', () => {
+  it('closes the open row when the route moves to a different item of the same matrix job', async () => {
+    const { page, router } = await openAt(`${RUN_PATH}/job/greet/0`)
+
+    fireEvent.click(rowFor(page, 'greet/0/say'))
+    expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
+
+    await act(async () => {
+      await router.navigate(`${RUN_PATH}/job/greet/1`)
+    })
+
+    expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
+    // Nothing open on the new page, so the window's Esc climbs straight to
+    // the Summary — the bug left `open` (and its listener) behind on `greet/0`.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(router.state.location.pathname).toBe(RUN_PATH))
+  })
+
+  it('closes the job disclosure when the route moves to a different job', async () => {
+    const { page, router } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+
+    expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
+
+    await act(async () => {
+      await router.navigate(`${RUN_PATH}/job/flaky`)
+    })
+
+    expect(within(page).getByTestId('job-io')).not.toHaveAttribute('open')
   })
 })
 

@@ -15,6 +15,7 @@ import { request as pwRequest } from 'playwright'
 import { waitForSealedRecord, type FileRef } from '@bffless/workflow-headless'
 import { openSession } from '../session.js'
 import { credentials, adminKey } from '../env.js'
+import { openStep, waitStepState } from '../steps.js'
 import type { Walk } from './index.js'
 
 const EXTRA_PNG = fileURLToPath(new URL('../../../../apps/workflow/e2e/fixtures/extra.png', import.meta.url))
@@ -25,14 +26,6 @@ export const interactive: Walk = async ({ args, env, report }) => {
   const s = await openSession({ base: args.harness, out: args.out, credentials: creds })
   try {
     const { page } = s
-
-    const stateOf = (key: string) => page.locator(`[data-testid="step"][data-key="${key}"]`).getAttribute('data-state')
-    const waitState = (key: string, want: string, timeout: number) =>
-      page.waitForFunction(
-        ([k, w]) => document.querySelector(`[data-testid="step"][data-key="${k}"]`)?.getAttribute('data-state') === w,
-        [key, want] as const,
-        { timeout },
-      )
 
     await s.shot('01-landing')
     const impls = page.getByTestId('implementations')
@@ -82,7 +75,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await s.shot('04-running')
 
     // --- Decision 9: the island step
-    await waitState('pick/0/choose', 'waiting', 120_000)
+    await waitStepState(page, 'pick/0/choose', 'waiting', 120_000)
     const stepFrame = page.locator('[data-testid="island-display"] [data-testid="island-frame"]').contentFrame()
     await stepFrame.getByTestId('words').filter({ hasText: '2 lines · 4 words' }).waitFor({ timeout: 30_000 })
     await s.shot('05-island')
@@ -93,7 +86,11 @@ export const interactive: Walk = async ({ args, env, report }) => {
     report.expect('D9.echoRoundTrip', /Hello, world!/.test(firstText), { firstText })
     await stepFrame.getByTestId('submit-nothing').click()
     await stepFrame.getByTestId('submit-error').filter({ hasText: 'This field is required' }).waitFor({ timeout: 10_000 })
-    report.expect('D9.rejectKeepsWaiting', (await stateOf('pick/0/choose')) === 'waiting', await stateOf('pick/0/choose'))
+    const rejectState = await page.evaluate(
+      (k) => (window as unknown as { __workflow?: { steps?: Record<string, string> } }).__workflow?.steps?.[k],
+      'pick/0/choose',
+    )
+    report.expect('D9.rejectKeepsWaiting', rejectState === 'waiting', rejectState)
 
     // --- Decision 7 (409): a still-running run refuses deletion
     const r409 = await s.api.json('/api/workflow/run/delete', { method: 'POST', body: { id: runId } })
@@ -104,8 +101,8 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await stepFrame.getByTestId('submit').click()
 
     // --- Decision 14: the review form
-    await waitState('review/0/confirm', 'waiting', 120_000)
-    await page.locator('[data-testid="step"][data-key="review/0/confirm"]').click()
+    await waitStepState(page, 'review/0/confirm', 'waiting', 120_000)
+    await openStep(page, 'review/0/confirm')
     const form = page.getByTestId('form-step')
     await form.waitFor()
     const tiles = form.getByTestId('tile-picker').getByTestId('tile')
@@ -139,11 +136,10 @@ export const interactive: Walk = async ({ args, env, report }) => {
     await Promise.all(s.pending)
     await s.shot('07-succeeded')
     // Our click on the confirm chip **pinned** the selection (apps#452), so the
-    // finished run stays on that step's pane — `run-outputs` renders on the run
-    // card only. Climb out the way the e2e spec does: the pane crumb's "Run".
-    const finishedPane = page.getByTestId('step-pane')
-    await finishedPane.waitFor({ timeout: 10_000 })
-    await finishedPane.getByRole('button', { name: 'Run', exact: true }).click()
+    // finished run stays on that step's row — `run-outputs` renders on the
+    // Summary. The redesign has no crumb on the step body to climb through;
+    // reach the Summary via the run rail's own row (Task 16c).
+    await page.getByRole('navigation', { name: 'Run' }).getByTestId('rail-summary').click()
     const outputs = page.getByTestId('run-outputs')
     await outputs.waitFor({ timeout: 30_000 })
     const outText = (await outputs.textContent()) ?? ''
@@ -181,7 +177,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     // own outputs), and the pane is Input | Output only since apps#384 folded the
     // third `Details` tab into Output. A script's live log and its hydrated
     // `{"$file"}` outputs both ride there, so one click reaches both.
-    await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
+    await openStep(page, 'card/0/draw')
     await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
     const paneText = (await page.getByTestId('step-pane').textContent().catch(() => '')) ?? ''
     report.expect('run.bigHydrated', /\[12000\]|12000/.test(paneText), paneText.slice(0, 300))
@@ -195,7 +191,7 @@ export const interactive: Walk = async ({ args, env, report }) => {
     // own outputs are line/view/poster/poster_view/cover.
     const pane = page.getByTestId('step-pane')
     const openOutput = async (key: string) => {
-      await page.locator(`[data-testid="step"][data-key="${key}"]`).click()
+      await openStep(page, key)
       await pane.getByRole('tab', { name: 'Output' }).click()
     }
     const renderers: Record<string, boolean | number> = {}

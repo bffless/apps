@@ -3131,8 +3131,8 @@ button.pane-crumb:hover {
 .island-fullscreen .step-body,
 .island-fullscreen .job-page,
 .island-fullscreen .step-list,
-.island-fullscreen .step-row[data-open],
-.island-fullscreen .step-row[data-open] > .step-row-body,
+.island-fullscreen .step-row[data-fullscreen],
+.island-fullscreen .step-row[data-fullscreen] > .step-row-body,
 .island-fullscreen .island-step,
 .island-fullscreen .island-display {
   display: flex;
@@ -3143,14 +3143,19 @@ button.pane-crumb:hover {
 }
 
 /* …and everything beside the row it is fixed over gives way (08: "the content
-   column collapses to the strip and the overlay holds the open island's row
-   body"). The strip's crumb is the way up now, so the job head is not needed;
-   the job's values and the sibling rows are a page the person is not on. The
-   open row's own **head** stays: it is the step's identity and the only live
-   status glyph and duration on screen, and it is how the row is collapsed. */
+   column collapses to the strip and the overlay holds the open island's row,
+   and nothing else"). The strip's crumb is the way up now, so the job head is
+   not needed; the job's values and every *other* row — open or not — are a
+   page the person is not on (fix round 3, finding 2: `:not([data-open])` used
+   to hide only closed rows, so a second row left open by an earlier auto-open
+   still shared the viewport). `[data-fullscreen]` names the one row the
+   overlay is actually fixed over — `RunShell`'s `openIslandKey`, carried down
+   through `RunContext` and set on the row by `StepRow` — so only it, and its
+   own **head**, stay: the step's identity and the only live status glyph and
+   duration on screen, and how the row is collapsed. */
 .island-fullscreen .job-page > .job-head,
 .island-fullscreen .job-io,
-.island-fullscreen .step-row:not([data-open]) {
+.island-fullscreen .step-row:not([data-fullscreen]) {
   display: none;
 }
 

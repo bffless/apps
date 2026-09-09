@@ -402,58 +402,83 @@ export function RunShell() {
     if (runId !== undefined) dispatch(followChanged({ runId, on: false }))
   }
 
-  // Every selection the *page* makes goes through `write`, which remembers the
-  // key so the effect below can tell it from one the person made — a `?step=`
-  // typed into the address bar, or stepped Back to — which pins, exactly as a
-  // click would. A `null` never pins: Back out to the run level is not a
-  // choice of step, and following resumes from there.
-  const pageWrote = useRef<StepKey | string | null | undefined>(undefined)
+  // Every selection the *page* makes goes through `write`, which records the
+  // exact path it is about to navigate to (`pathname + search`) so the
+  // arrival effect below can tell that location from one a person arrived at
+  // some other way — a graph click, a `?step=` typed into the address bar,
+  // the browser's Back/Forward, or a rail row (whose own `onNavigate` already
+  // pins directly, `Frame`'s `pin` prop). Comparing the *path*, not the
+  // selection key, is what lets an arrival back on the run level pin too: a
+  // page-written `null` (Follow's own `write(null, true)`, the finished-run
+  // return) records that exact Summary path and so is waved through, while a
+  // person's Back to the very same Summary URL — which `write` never saw
+  // coming — was not recorded and pins.
+  const pageWrote = useRef<string | undefined>(undefined)
   const write = (key: StepKey | string | null, replace: boolean) => {
-    pageWrote.current = key
+    pageWrote.current = pathForSelection(base, runId ?? '', toSelection(key), new URLSearchParams(location.search))
     setStep(key, replace)
   }
+  // The one run-route location this run has been seen at so far. The very
+  // first location for a run has nothing to compare against, so it pins only
+  // when the URL itself already carries a selection (a `?step=` deep link, or
+  // a job route) and stays following on a bare Summary load — the existing
+  // behaviour. A navigation to a *different* run resets this (the store's
+  // `follow` entry is already keyed by `runId`; this ref just has to stop
+  // treating the new run's first location as a person's move).
+  const seenRunLocation = useRef<string | undefined>(undefined)
+  // `main.tsx` wraps the app in `<StrictMode>`, which in dev re-invokes a
+  // fresh mount's effects a second time (run, "unmount", run again) with no
+  // render — and so no new `location` — in between (fix round 1, finding 3).
+  // Without this guard, that second call would see `seenRunLocation.current`
+  // already set by the first and read a bare Summary load as a later
+  // arrival, pinning it before the person has touched anything. Compared by
+  // the `location` object's own identity, not `.key` — a `POP` to an entry
+  // already visited reuses that entry's original `key`, but this only needs
+  // to catch two calls sharing literally the same location, which the
+  // double-invoke is.
+  const lastLocation = useRef<typeof location | null>(null)
   useEffect(() => {
-    const own = pageWrote.current !== undefined && pageWrote.current === selectedStep
+    if (lastLocation.current === location) return
+    lastLocation.current = location
+    const current = location.pathname + location.search
+    const own = pageWrote.current !== undefined && pageWrote.current === current
     pageWrote.current = undefined
-    if (own || selectedStep === null || runId === undefined) return
+    const firstForRun = seenRunLocation.current !== runId
+    seenRunLocation.current = runId
+    if (own || runId === undefined) return
+    if (firstForRun && selectedStep === null) return
     dispatch(followChanged({ runId, on: false }))
-  }, [selectedStep, runId, dispatch])
+    // Keyed on `location` itself, not its `pathname`/`search` strings: two
+    // history entries can carry the identical path (the claim effect writes
+    // the same waiting step back after a round trip through the Summary) and
+    // still be a real Back between them — comparing the strings for equality
+    // in the dependency list would make React skip this effect exactly then.
+  }, [location, runId, dispatch, selectedStep])
 
   // Who we are: the owner half of Delete's gate lives in `useRunDelete`, but
   // a run *this* tab started carries no `startedBy` of its own (see below).
   const { data: me } = useWhoamiQuery()
 
-  /**
-   * Up one level: a step's job, a job's run. A person's move, so it pins.
-   *
-   * A step's job is the *item* it ran in, not the job as a whole: Esc out of
-   * `/job/greet/1?step=greet/1/say` belongs on `/job/greet/1`, the page the
-   * step was read on — `parseStepKey` carries the index that a bare
-   * `split('/')[0]` used to drop, which landed the reader on the collect view
-   * of a job they were three rows into.
-   */
-  const back = () => {
-    pin()
-    if (level !== 'step') {
-      setStep(null, false)
-      return
-    }
-    const parts = parseStepKey(selectedStep!)
-    go(parts ? { kind: 'job', job: parts.job, index: parts.index } : { kind: 'run' }, false)
-  }
   const toRun = () => {
     pin()
     setStep(null, false)
   }
-  /** A person's click: a history entry, so Back returns to where they were — and pinned from here on. */
+  /**
+   * A person's click: a history entry, so Back returns to where they were —
+   * and pinned from here on.
+   *
+   * Fix round 3, finding 4: this used to special-case a target equal to the
+   * current selection as "up one level" (`back()`, since retired) — a chip or
+   * a strip clicked again with no side asked for. No caller ever passes such
+   * a target: the Summary's graph only calls this while its own selection is
+   * `null` (a job is never "the same" as that), and `JobPage`'s row toggle
+   * closes a step by selecting its *job*, never the step itself again. The
+   * review could not construct a step-level path into it either, so the
+   * branch — and `back`/`ctx.back` with it — is gone; `JobPage.test.tsx`'s
+   * "closes the open row on Esc, and on the row head clicked again" still
+   * proves the same behaviour, through the row's own `toggle`.
+   */
   const select = (target: RunSelection, tab?: 'Input' | 'Output') => {
-    const key = selectionKey(target)
-    // The selected chip (or strip), clicked again with no side asked for, is
-    // the way up one level — the same toggle a pressed button suggests.
-    if (key === selectedStep && tab === undefined) {
-      back()
-      return
-    }
     pin()
     go(target, false, tab)
   }
@@ -728,7 +753,18 @@ export function RunShell() {
     if (claimed.current.runId !== state.runId) {
       claimed.current = { runId: state.runId, keys: new Set() }
     }
-    if (!follow) return
+    // `follow` above is this render's own closure. A pin the arrival effect
+    // dispatches from *earlier* in this same effect flush (fix round 1,
+    // finding 1 — a Back that lands on the run level) updates the store
+    // synchronously, but never that closure: this effect was scheduled by
+    // the same render, before the dispatch happened, so it still reads the
+    // stale value. Reading the store directly is the only way this effect
+    // sees a pin that landed a moment ago in the same commit — without it,
+    // the person's Back is un-pinned and the waiting step is written straight
+    // back over the place they just navigated to.
+    const liveFollow = store.getState().ui.follow
+    const followsNow = runId !== undefined && liveFollow?.runId === runId ? liveFollow.on : follow
+    if (!followsNow) return
     if (!selectedStep) {
       if (openStep) {
         if (isLoadingIsland(state.steps[openStep]!)) claimed.current.keys.add(openStep)
@@ -791,9 +827,15 @@ export function RunShell() {
     openParts !== null &&
     jobMatch?.params.job === openParts.job &&
     // No `:index` on the route is the job's one and only leg, which is how
-    // `JobPage` reads it (`index ?? 0`).
+    // `JobPage` reads it (`index ?? 0`) — but only for a job with one leg to
+    // begin with. On a *matrix* job that same bare route is the collect view
+    // (spec §Error states, fix round 3, finding 3): `JobPage` renders it as
+    // the item list, no step rows at all, so a step naming item 0 is not "on
+    // this page" just because 0 is where a plain job's reading would land —
+    // treating it that way left the island neither in a row nor backstage,
+    // stuck at `running` with nobody driving it.
     (jobMatch.params.index === undefined
-      ? openParts.index === 0
+      ? openParts.index === 0 && def?.jobs[openParts.job]?.matrix === undefined
       : Number(jobMatch.params.index) === openParts.index)
   const islandOpen =
     isLive &&
@@ -1012,12 +1054,34 @@ export function RunShell() {
           selection,
           selectedStep,
           select,
-          back,
           toRun,
+          openIslandKey,
           forkable,
           fork,
         }
       : null
+
+  // Fix round 3, finding 1: keys the outlet on the job route so `JobPage`
+  // remounts fresh — its `open`/`ioOpen`/`ioTab` seeded straight from the new
+  // URL, rather than an instance still holding another job's (or another
+  // item's) disclosure — whenever the person moves to a different job, or a
+  // different item of the same matrix job.
+  //
+  // A **plain** job keys on the job alone, index and all: opening a row on it
+  // moves `?step=` onto `/job/<job>/0` (every step key carries an index, even
+  // on a job with only one leg), and remounting on that change would slam the
+  // very row the person just opened shut again.
+  //
+  // A **matrix** job's item pages have no such row to lose: its collect view
+  // (no `:index`) is deliberately rowless (`JobPage`'s own reading), so
+  // nothing on it can ever add one — the only way its `:index` changes is a
+  // navigation to a different item (or back to the collect view), which is
+  // exactly the case that must reset. So it keys on `${job}/${index}` and
+  // remounts cleanly between items, matching finding 1's cases (a) and (b).
+  const outletJob = jobMatch?.params.job
+  const outletMatrix = outletJob !== undefined && def?.jobs[outletJob]?.matrix !== undefined
+  const outletKey =
+    outletJob === undefined ? 'run' : outletMatrix ? `${outletJob}/${jobMatch?.params.index ?? ''}` : outletJob
 
   return (
     <Frame base={base} runId={shownRunId} def={def} state={state} yaml={yamlSource.yaml} pin={pin}>
@@ -1131,7 +1195,7 @@ export function RunShell() {
                     step is selected — that level's page in its place.
                     Never both, and which one is the route's answer now.
                   */}
-                  {legacy ? <Navigate to={legacy} replace /> : <Outlet />}
+                  {legacy ? <Navigate to={legacy} replace /> : <Outlet key={outletKey} />}
                   {backstage.length > 0 && (
                     <div className="island-backstage" data-testid="island-backstage" aria-hidden="true" inert>
                       {backstage.map((key) => (

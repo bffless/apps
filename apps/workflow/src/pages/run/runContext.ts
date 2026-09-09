@@ -33,9 +33,17 @@ export interface RunContextValue {
   selectedStep: StepKey | string | null
   /** A person's navigation to a selection: pushes, pins. */
   select: (selection: RunSelection, tab?: 'Input' | 'Output') => void
-  /** Up one level (Esc, crumbs): pushes, pins. */
-  back: () => void
   toRun: () => void
+  /**
+   * The step key of the island the fullscreen overlay is (or would be) fixed
+   * over — `RunShell`'s own `openIslandKey` (fix round 3, finding 2): `null`
+   * unless the selection really is a live island on the page being shown.
+   * `StepRow` marks that one row's `<li>` with `data-fullscreen`, which
+   * `.island-fullscreen .step-row:not([data-fullscreen])` in `index.css`
+   * hides everything but — a second open row no longer shares the overlay
+   * with it.
+   */
+  openIslandKey: StepKey | null
   forkable: (job: string) => boolean
   fork: (job: string) => Promise<void>
 }

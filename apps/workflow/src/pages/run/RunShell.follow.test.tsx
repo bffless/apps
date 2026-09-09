@@ -12,6 +12,7 @@
  * `GET /api/workflow/run` is stubbed to "nothing here" throughout: every run
  * below is driven by this tab, off the slice.
  */
+import { StrictMode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { http, HttpResponse } from 'msw'
@@ -67,6 +68,23 @@ function renderAt(store: AppStore, url: string) {
       </MemoryRouter>
     </Provider>,
   )
+}
+
+/** `hello` held at its waiting form, rendered through the router, following (the form's row is open on `confirm/0`). */
+async function followingAtForm() {
+  const { store, runId } = await startHelloAtConfirmWaiting()
+  const router = createMemoryRouter(createRoutesFromElements(routes), {
+    initialEntries: [`/hello/hello/runs/${runId}`],
+  })
+  render(
+    <Provider store={store}>
+      <RouterProvider router={router} />
+    </Provider>,
+  )
+  const page = screen.getByRole('main')
+  await within(page).findByTestId('form-step')
+  const toggle = () => within(page).getByTestId('run-follow')
+  return { page, router, runId, toggle }
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +242,92 @@ describe('RunPage — follow mode', () => {
     })
     await waitFor(() => expect(store.getState().ui.selectedStep).toBeNull())
     expect(within(page).queryByTestId('run-follow')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task 14: pin on any navigation the shell did not make, including one that
+// lands back on the Summary — the one arrival the old `pageWrote` guard
+// (keyed on the selection key, not the path) waved through unconditionally.
+// ---------------------------------------------------------------------------
+
+describe('RunPage — pins on any navigation the shell did not make', () => {
+  it('pins on a rail click', async () => {
+    const { toggle } = await followingAtForm()
+    expect(toggle()).toHaveAttribute('data-state', 'on')
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Run' })).getByTestId('rail-summary'))
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+    expect(screen.getByTestId('run-pane')).toBeInTheDocument() // and nothing moves it back
+  })
+
+  it('pins on the browser’s Back', async () => {
+    const { page, router, runId, toggle } = await followingAtForm()
+    await act(async () => {
+      await router.navigate(`/hello/hello/runs/${runId}/job/slow/0`)
+    }) // a person's move: pins
+    fireEvent.click(toggle()) // follow on again → Summary, then the form row
+    await within(page).findByTestId('form-step')
+    expect(toggle()).toHaveAttribute('data-state', 'on')
+    await act(async () => {
+      await router.navigate(-1)
+    }) // Back: a person's move
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+  })
+
+  it('Follow on returns to the Summary, then the waiting step reopens by itself', async () => {
+    const { page, router, runId, toggle } = await followingAtForm()
+    fireEvent.click(within(page).getByTestId('step')) // collapse the form row: pins
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+    fireEvent.click(toggle())
+    await within(page).findByTestId('form-step')
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/confirm/0`)
+  })
+
+  it('pins on the browser’s Back onto the Summary — the auto-open effect does not write the waiting step straight back over it (fix round 1, finding 1)', async () => {
+    const { page, router, runId, toggle } = await followingAtForm()
+    // A person's own Summary entry: a rail click, pushed (not the `replace`
+    // every page-driven write of `null` uses), so Back can land on it.
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Run' })).getByTestId('rail-summary'))
+    await act(async () => {
+      await router.navigate(`/hello/hello/runs/${runId}/job/slow/0`)
+    })
+    fireEvent.click(toggle()) // Follow on → replace to Summary → auto-open replaces with the form
+    await within(page).findByTestId('form-step')
+    await act(async () => {
+      await router.navigate(-1)
+    }) // Back lands on the person's own Summary entry
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}`)
+    expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
+    expect(toggle()).toHaveAttribute('data-state', 'off')
+  })
+
+  // "Esc on a job page with nothing open climbs to the Summary" is already
+  // covered by JobPage.test.tsx's "goes up to the Summary when Esc is
+  // pressed with no row open, and stops there" (Task 13) — not repeated here.
+})
+
+describe('RunPage — the arrival effect is StrictMode-safe (fix round 1, finding 3)', () => {
+  it('still follows a bare load under StrictMode’s dev double-invoke of mount effects', async () => {
+    // `main.tsx` wraps the app in `<StrictMode>`, which in dev re-invokes a
+    // fresh mount's effects a second time (run, "unmount", run again) with no
+    // render — and thus no new `location` — in between. Without a guard on
+    // the arrival effect, that second call sees its own first call's
+    // bookkeeping already done and treats a bare Summary load as a *later*
+    // arrival, pinning it before the person has touched anything.
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    render(
+      <StrictMode>
+        <Provider store={store}>
+          <MemoryRouter initialEntries={[`/hello/hello/runs/${runId}`]}>
+            <App />
+          </MemoryRouter>
+        </Provider>
+      </StrictMode>,
+    )
+    const page = screen.getByRole('main')
+
+    expect(await within(page).findByRole('button', { name: 'Finish' })).toBeInTheDocument()
+    expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'on')
   })
 })
 

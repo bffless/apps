@@ -256,6 +256,7 @@ export function JobPage() {
               source={ctx.yamlSource}
               initialTab={tab}
               flow={flow}
+              openIsland={ctx.openIslandKey === row.key}
             />
           ))}
         </ul>

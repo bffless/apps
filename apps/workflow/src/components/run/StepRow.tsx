@@ -43,9 +43,11 @@ const KIND_ICON: Record<StepKind, string> = {
 /**
  * PR 5's declared-mode body (the step's own declaration, read off the
  * workflow file rather than off a run). Until then the raw block is an honest
- * placeholder — every fact it will show is already in there.
+ * placeholder — every fact it will show is already in there. `def`/`job`
+ * dropped (fix round 3, nit): PR 5's real body will re-add whichever of them
+ * it actually reads.
  */
-export function DeclaredStepBody({ step }: { def: Definition; job: string; step: Step }) {
+export function DeclaredStepBody({ step }: { step: Step }) {
   return <pre className="declaration">{JSON.stringify(step.raw, null, 2)}</pre>
 }
 
@@ -67,6 +69,15 @@ export interface StepRowProps {
   mode?: 'run' | 'declared'
   /** The value under the pointer (08): the head lights up if this step declares it or reads it. */
   flow?: GraphFlow
+  /**
+   * This row is the one the fullscreen overlay is (or would be) fixed over —
+   * `RunShell`'s `openIslandKey`, compared against this row's own key by
+   * `JobPage` (fix round 3, finding 2). Marks the `<li>` with
+   * `data-fullscreen`, which `index.css` scopes the overlay's "everything but
+   * this row" rule to — without it, a second open row shared the viewport
+   * with the one the overlay actually names.
+   */
+  openIsland?: boolean
 }
 
 export function StepRow({
@@ -81,6 +92,7 @@ export function StepRow({
   initialTab,
   mode = 'run',
   flow,
+  openIsland,
 }: StepRowProps) {
   const { key, step, state: s } = row
   const run = mode === 'run'
@@ -116,7 +128,12 @@ export function StepRow({
   const bodyId = stepBodyId(key)
 
   return (
-    <li className="step-row" data-open={open || undefined} id={stepRowId(key)}>
+    <li
+      className="step-row"
+      data-open={open || undefined}
+      data-fullscreen={openIsland || undefined}
+      id={stepRowId(key)}
+    >
       <button
         type="button"
         className="step-row-head"
@@ -164,7 +181,7 @@ export function StepRow({
               onClose={() => onToggle(key)}
             />
           ) : (
-            <DeclaredStepBody def={def} job={parts?.job ?? ''} step={step} />
+            <DeclaredStepBody step={step} />
           )}
         </div>
       )}

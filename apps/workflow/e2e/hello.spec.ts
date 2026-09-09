@@ -33,8 +33,11 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   // the flaky job's warning annotation surfaced (scoped: the same text is also
   // an output chip in run-outputs — the `after` step's own `note` output — so
   // an unscoped locator is ambiguous by design, not by app defect). The panel
-  // is closed by default (no error-level annotation here), so open it first.
-  await page.getByTestId('annotations').locator('summary').click()
+  // opens itself when an error-level annotation lands, so only click when it
+  // is still closed — an unconditional click here would toggle it shut.
+  const annotations = page.getByTestId('annotations')
+  const alreadyOpen = await annotations.evaluate((el) => (el as HTMLDetailsElement).open)
+  if (!alreadyOpen) await annotations.locator('summary').click()
   await expect(page.getByTestId('annotations').getByText(/boom failed with TEAPOT/)).toBeVisible()
   // and the run appears under Past runs:
   await page.getByRole('link', { name: /past runs|runs/i }).first().click()
