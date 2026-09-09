@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.3.0...workflow-agent-tools-v1.3.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **workflow:** a pending run's status answer carries the endpoint's clock ([#655](https://github.com/bffless/apps/issues/655)) ([dbdae29](https://github.com/bffless/apps/commit/dbdae298b3927815a8a80d25e9916fd42224f317))
+
 ## [1.3.0](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.2.0...workflow-agent-tools-v1.3.0) (2026-09-09)
 
 
