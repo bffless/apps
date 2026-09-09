@@ -101,8 +101,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   - **Declared rows** (the workflow page) are the same `.step-list` / `.step-row`, read off
     the file: `.step-kind`'s glyph in the status glyph's place, the `headless: …` `.badge`,
     and a `.step-body.declared-body` — `Inputs`, `Outputs` as `.step-outs` `OUT` lines, and a
-    closed `.declaration-details`. It carries the run body's 22/20/24 inset itself, having no
-    `.step-toolbar` to supply one. Its `.job-head` prints the name, the id and the kind only.
+    closed `.declaration-details`. Having no `.step-toolbar` or `.pane-body` to supply the run
+    body's inset, it carries its own — `padding: 0 20px 24px`, the top left to
+    `.section-title`'s `margin: 24px 0 10px`, which already sets `Inputs` off from the row
+    head. Its `.job-head` prints the name, the id and the kind only.
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
   `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
   striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image
