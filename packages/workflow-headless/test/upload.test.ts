@@ -418,6 +418,34 @@ describe('uploadFileInputs — a URL wrapped in an object (Claude Desktop shape)
     expect(calls[0]!.body).toMatchObject({ filename: 'anatomy.mp4' })
   })
 
+  test('a wrapped URL object\'s name upgrades a generic download content type', async () => {
+    const { api, calls, puts } = fakeApi()
+    const dl = fakeDownload({ contentType: 'application/octet-stream', name: 'download' })
+    const disk: Array<{ contentType: string }> = []
+    await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped({ name: 'talk.mov' }) },
+      {
+        ...deps,
+        download: dl.download,
+        putFromDisk: async (_url, _path, _size, contentType) => { disk.push({ contentType }); return { status: 200 } },
+      },
+    )
+    expect(calls[0]!.body).toMatchObject({ filename: 'talk.mov', contentType: 'video/quicktime' })
+    expect(disk).toEqual([{ contentType: 'video/quicktime' }])
+    expect(calls[1]!.body).toMatchObject({ originalName: 'talk.mov' })
+    expect(puts).toEqual([])
+  })
+
+  test('a wrapped URL object\'s name does not override a specific download content type', async () => {
+    const { api, calls } = fakeApi()
+    const dl = fakeDownload({ contentType: 'video/mp4', name: 'download' })
+    await uploadFileInputs(
+      api, ctx, { recording: { type: 'file' } }, { recording: wrapped({ name: 'talk.mov' }) },
+      { ...deps, download: dl.download, putFromDisk: async () => ({ status: 200 }) },
+    )
+    expect(calls[0]!.body).toMatchObject({ filename: 'talk.mov', contentType: 'video/mp4' })
+  })
+
   test('a registered ref is untouched, even if it also carries an https:// url', async () => {
     const { api, calls } = fakeApi()
     const ref = { path: 'workflows/hello/interactive/inputs/clip.png', name: 'clip.png', contentType: 'image/png', size: 3, url: URL_ }
