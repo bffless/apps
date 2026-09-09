@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ACTIVE_STEP_STATUSES, FILE_REF_HINT, outputsText, snapshotFromRows, snapshotText } from '../src/snapshot.js'
+import { ACTIVE_STEP_STATUSES, FILE_REF_HINT, formatBytes, outputsText, snapshotFromRows, snapshotText } from '../src/snapshot.js'
 import type { RunRowLike, StepRowLike } from '../src/snapshot.js'
 
 /** Hello's `interactive` definition, trimmed to what the derivation reads. */
@@ -141,7 +141,7 @@ describe('snapshotText', () => {
 })
 
 describe('outputsText', () => {
-  const poster = { path: 'workflows/hello/runs/run_1/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/run_1/poster.png' }
+  const poster = { path: 'workflows/hello/runs/run_1/poster.png', name: 'poster.png', contentType: 'image/png', size: 1024, url: '/api/uploads/workflows/hello/runs/run_1/poster.png' }
   const text = (outputs: Record<string, unknown>, status = 'succeeded' as const) => outputsText({ runId: 'run_1', status, outputs })
 
   it('says a run has no outputs, and "yet" only while it runs', () => {
@@ -153,18 +153,64 @@ describe('outputsText', () => {
     expect(text({ line: 'x', count: 3 })).toBe('Run run_1 (succeeded) outputs: line, count')
   })
 
-  it('names workflow.sign when an output is a File ref (apps#627)', () => {
-    expect(text({ line: 'x', poster })).toBe(`Run run_1 (succeeded) outputs: line, poster\n${FILE_REF_HINT}`)
+  it('names workflow.sign and prints the ref line when an output is a File ref (apps#627)', () => {
+    expect(text({ line: 'x', poster })).toBe(
+      `Run run_1 (succeeded) outputs: line, poster\n- poster: poster.png (1.0 KB, image/png) — path: workflows/hello/runs/run_1/poster.png\n${FILE_REF_HINT}`,
+    )
     expect(FILE_REF_HINT).toBe('File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.')
   })
 
-  it('looks inside a file + list output, the file-heaviest case', () => {
-    expect(text({ frames: [poster, { ...poster, name: 'frame-2.png' }] })).toBe(`Run run_1 (succeeded) outputs: frames\n${FILE_REF_HINT}`)
+  it('never dumps a non-ref output’s value — only the names line', () => {
+    const words = Array.from({ length: 3 }, (_, i) => `word-${i}`)
+    expect(text({ words })).toBe('Run run_1 (succeeded) outputs: words')
+  })
+
+  it('prints one line per ref in a file + list output, in array order', () => {
+    const frame2 = { ...poster, name: 'frame-2.png', path: 'workflows/hello/runs/run_1/frame-2.png' }
+    expect(text({ frames: [poster, frame2] })).toBe(
+      [
+        'Run run_1 (succeeded) outputs: frames',
+        '- frames[0]: poster.png (1.0 KB, image/png) — path: workflows/hello/runs/run_1/poster.png',
+        '- frames[1]: frame-2.png (1.0 KB, image/png) — path: workflows/hello/runs/run_1/frame-2.png',
+        FILE_REF_HINT,
+      ].join('\n'),
+    )
     expect(text({ frames: [] })).toBe('Run run_1 (succeeded) outputs: frames')
+  })
+
+  it('skips non-ref entries in a mixed list, keeping each ref’s own index', () => {
+    expect(text({ sheets: ['not-a-ref', poster] })).toBe(
+      ['Run run_1 (succeeded) outputs: sheets', '- sheets[1]: poster.png (1.0 KB, image/png) — path: workflows/hello/runs/run_1/poster.png', FILE_REF_HINT].join('\n'),
+    )
+  })
+
+  it('omits whichever of size/contentType is missing from the parenthesis, or the parenthesis entirely', () => {
+    const { size, ...noSize } = poster
+    void size
+    expect(text({ f: noSize })).toBe(['Run run_1 (succeeded) outputs: f', '- f: poster.png (image/png) — path: workflows/hello/runs/run_1/poster.png', FILE_REF_HINT].join('\n'))
+
+    const { contentType, ...noType } = poster
+    void contentType
+    expect(text({ f: noType })).toBe(['Run run_1 (succeeded) outputs: f', '- f: poster.png (1.0 KB) — path: workflows/hello/runs/run_1/poster.png', FILE_REF_HINT].join('\n'))
+
+    const { size: _s, contentType: _c, ...bare } = poster
+    void _s
+    void _c
+    expect(text({ f: bare })).toBe(['Run run_1 (succeeded) outputs: f', '- f: poster.png — path: workflows/hello/runs/run_1/poster.png', FILE_REF_HINT].join('\n'))
   })
 
   it('does not mistake a JSON output with a path key for a file', () => {
     expect(text({ route: { path: '/checkout', hits: 3 } })).toBe('Run run_1 (succeeded) outputs: route')
     expect(text({ routes: [{ path: '/checkout' }] })).toBe('Run run_1 (succeeded) outputs: routes')
+  })
+})
+
+describe('formatBytes', () => {
+  it('renders bytes below 1 KB with no decimal, KB and up with one', () => {
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(1024)).toBe('1.0 KB')
+    expect(formatBytes(7215671)).toBe('6.9 MB')
+    expect(formatBytes(1.5 * 1024 * 1024 * 1024)).toBe('1.5 GB')
   })
 })
