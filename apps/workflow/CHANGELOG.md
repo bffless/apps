@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/bffless/apps/compare/workflow-v1.7.0...workflow-v1.8.0) (2026-09-09)
+
+
+### Features
+
+* **workflow:** the run page in GitHub's shape ([#632](https://github.com/bffless/apps/issues/632)) ([07c2341](https://github.com/bffless/apps/commit/07c2341683846f3f43441c263d1045a9b0d29895))
+
 ## [1.7.0](https://github.com/bffless/apps/compare/workflow-v1.6.0...workflow-v1.7.0) (2026-09-09)
 
 
