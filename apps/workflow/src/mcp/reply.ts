@@ -408,9 +408,17 @@ function pendingSnapshot(runId: string): RunSnapshot {
  */
 function pendingOr(route: Route, refusal: CallToolResult): CallToolResult {
   const minted = runIdTime(route.runId)
-  if (minted === null || Math.abs(Date.now() - minted) > PENDING_WINDOW_MS) return refusal
+  const now = Date.now()
+  if (minted === null || Math.abs(now - minted) > PENDING_WINDOW_MS) return refusal
   const snapshot = pendingSnapshot(route.runId)
-  return textResult(`${snapshotText(snapshot)}. Poll again.`, { ...snapshot })
+  // The endpoint holds the only clock in the exchange — an agent host has no
+  // sleep between tool calls, so without these two numbers the caller's only
+  // measure is its poll count, and a burst of polls fails a healthy run
+  // (apps#653). `Math.max` because the window test above is `Math.abs`: an id
+  // minted in the future (clock skew) still reads pending, and must not read
+  // as dispatched -3s ago.
+  const timing = { elapsedMs: Math.max(0, now - minted), pendingUntil: minted + PENDING_WINDOW_MS }
+  return textResult(`${snapshotText(snapshot, timing)}. Poll again.`, { ...snapshot, ...timing })
 }
 
 /** What the `drive` step's answer means: the receipt, the rule's own refusal by code, or a dispatch that did not happen. */

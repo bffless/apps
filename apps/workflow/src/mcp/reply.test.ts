@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FILE_REF_HINT, outputsText } from '@bffless/workflow-agent-tools'
 import { isFileRefLike } from '../lib/runner/fileRef'
 import { HELLO_INDEX, HELLO_INDEX_WITH_DRIVER, INTERACTIVE_YAML, REVIEW_INPUTS, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
-import { RUN_ID_PATTERN, mintRunId } from './ids'
+import { RUN_ID_PATTERN, mintRunId, runIdTime } from './ids'
 import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
@@ -413,15 +413,52 @@ describe('workflow.submitStep re-dispatches after its write', () => {
 })
 
 describe('workflow.status while a dispatched run has no row yet', () => {
+  // The clock is frozen because the answer now quotes it: the elapsed seconds
+  // and `pendingUntil` are the whole point of these assertions (apps#653), and
+  // the mint below is measured against the same instant the handler reads.
+  const NOW = Date.parse('2026-09-09T15:07:06.000Z')
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('answers the pending snapshot inside the window, and No such run outside it', () => {
-    const pending = mintRunId(Date.now() - 60_000)
+    const pending = mintRunId(NOW - 60_000)
     const r = result(callOf('workflow.status', { runId: pending }), { run: [], steps: [] })
     expect(r.isError).toBeUndefined()
-    expect(r.structuredContent).toEqual({ runId: pending, status: 'pending', currentSteps: [], outputs: {}, steps: {}, waitingOn: [] })
+    expect(r.structuredContent).toEqual({ runId: pending, status: 'pending', currentSteps: [], outputs: {}, steps: {}, waitingOn: [], elapsedMs: 60_000, pendingUntil: NOW - 60_000 + 10 * 60_000 })
     expect(text(r)).toContain('not started yet')
-    const stale = mintRunId(Date.now() - 11 * 60_000)
+    const stale = mintRunId(NOW - 11 * 60_000)
     expect(text(result(callOf('workflow.status', { runId: stale }), { run: [], steps: [] }))).toBe(`No such run: ${stale}`)
     expect(text(result(callOf('workflow.status', { runId: 'nope' }), { run: [], steps: [] }))).toBe('No such run: nope')
+  })
+
+  // An agent host has no clock and no sleep between tool calls, so the only
+  // quantity it can measure is its poll count — twelve polls inside 25s once
+  // failed a run that went on to succeed. The answer carries the endpoint's
+  // clock instead: how long it has been, how long the first row usually takes,
+  // and the instant this answer turns into the one that means failure.
+  it('names the elapsed seconds, the ~60s first row and the instant pending expires (apps#653)', () => {
+    const pending = mintRunId(NOW - 9_000)
+    const r = result(callOf('workflow.status', { runId: pending }), { run: [], steps: [] })
+    expect(text(r)).toBe(
+      `Run ${pending} is pending — dispatched 9s ago, not started yet. The first row usually appears about 60s in.` +
+        ` Pending until 2026-09-09T15:16:57Z, then \`No such run: ${pending}\` — that answer, not your poll count, is how a dispatch is failed. Poll again.`,
+    )
+    expect(r.structuredContent!.elapsedMs).toBe(9_000)
+    expect(r.structuredContent!.pendingUntil).toBe(runIdTime(pending)! + 10 * 60_000)
+  })
+
+  // The window test is `Math.abs`, so an id minted in the future still reads
+  // pending; it must not read as dispatched a negative number of seconds ago.
+  it('clamps a future-skewed id at 0s rather than counting backwards', () => {
+    const skewed = mintRunId(NOW + 30_000)
+    const r = result(callOf('workflow.status', { runId: skewed }), { run: [], steps: [] })
+    expect(text(r)).toContain('dispatched 0s ago')
+    expect(r.structuredContent!.elapsedMs).toBe(0)
   })
 })
 

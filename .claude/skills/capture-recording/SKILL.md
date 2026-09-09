@@ -30,10 +30,14 @@ and a **direction** — what they want a later session to do with the recording.
 2. **Start.** `workflow.start { impl: "capture", workflow: "capture", inputs: { recording: <url>, direction: <text>, language?, interval? } }`.
    The answer is `pending` with a `runId`. **Keep that id; it is the only id you use.** Never
    pick a run from `workflow.runs` by recency — two recordings run at once finish out of order.
-3. **Wait for the row.** Poll `workflow.status { runId }` every 15–20 s. For the first ~2 minutes
-   "no such run" is normal (a GitHub Actions cold start). If there is still no row after ~5
-   minutes, the dispatched driver refused the start — most often a URL that did not answer 2xx,
-   or one over 5 GB. Say so, name the URL, and stop.
+3. **Wait for the row.** Poll `workflow.status { runId }` and let its answer — never your own
+   count of polls — decide when to give up. While it says `pending` the dispatch is healthy: it
+   names how long ago the id was minted (`dispatched 9s ago`), that the first row usually appears
+   about 60 s in, and the instant it will stop saying pending. Keep polling. You have no clock
+   between tool calls, so a dozen polls in a few seconds measure nothing; a GitHub Actions cold
+   start is normally around a minute and the endpoint waits ten. Only `No such run: <id>` means
+   the dispatched driver never started — most often a URL that did not answer 2xx, or one over
+   5 GB. Say so, name the URL, and stop.
 4. **Follow the run.** Keep polling until `status` is `succeeded`, `failed` or `cancelled`. A
    4-minute recording takes 2–3 minutes; budget ~1 minute per minute of recording. On `failed`,
    report the failed step from the snapshot (`steps[*].status`, its `error`) — a transcript with

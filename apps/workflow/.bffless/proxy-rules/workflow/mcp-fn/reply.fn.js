@@ -288,11 +288,20 @@ var __mcp = (() => {
       return "";
     return `, waiting on ${snapshot.waitingOn.map(describeStep).join(", ")}`;
   }
-  function snapshotText(snapshot) {
+  function elapsedSeconds(elapsedMs) {
+    return `${Math.floor(Math.max(0, elapsedMs) / 1e3)}s`;
+  }
+  function instant(ms) {
+    return `${new Date(ms).toISOString().slice(0, 19)}Z`;
+  }
+  function snapshotText(snapshot, pending) {
     if (snapshot.status === "invalid")
       return "No run was started";
-    if (snapshot.status === "pending")
-      return `Run ${snapshot.runId} is pending \u2014 dispatched, not started yet`;
+    if (snapshot.status === "pending") {
+      if (pending === void 0)
+        return `Run ${snapshot.runId} is pending \u2014 dispatched, not started yet`;
+      return `Run ${snapshot.runId} is pending \u2014 dispatched ${elapsedSeconds(pending.elapsedMs)} ago, not started yet. The first row usually appears about 60s in. Pending until ${instant(pending.pendingUntil)}, then \`No such run: ${snapshot.runId}\` \u2014 that answer, not your poll count, is how a dispatch is failed`;
+    }
     return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`;
   }
   function isFileRefLike(value) {
@@ -7165,9 +7174,11 @@ ${lines.join("\n")}`,
   }
   function pendingOr(route, refusal) {
     const minted = runIdTime(route.runId);
-    if (minted === null || Math.abs(Date.now() - minted) > PENDING_WINDOW_MS) return refusal;
+    const now = Date.now();
+    if (minted === null || Math.abs(now - minted) > PENDING_WINDOW_MS) return refusal;
     const snapshot = pendingSnapshot(route.runId);
-    return textResult(`${snapshotText(snapshot)}. Poll again.`, { ...snapshot });
+    const timing = { elapsedMs: Math.max(0, now - minted), pendingUntil: minted + PENDING_WINDOW_MS };
+    return textResult(`${snapshotText(snapshot, timing)}. Poll again.`, { ...snapshot, ...timing });
   }
   function driveOutcome(steps, dispatched) {
     const drive = steps.drive;
