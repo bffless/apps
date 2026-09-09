@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/bffless/apps/compare/workflow-v1.6.0...workflow-v1.7.0) (2026-09-09)
+
+
+### Features
+
+* **workflow-headless:** a file input given a URL wrapped in an object is treated as that URL ([#640](https://github.com/bffless/apps/issues/640)) ([7a95aea](https://github.com/bffless/apps/commit/7a95aeaee29a62bfe6c5ad49a92419dc321ef89b))
+
 ## [1.6.0](https://github.com/bffless/apps/compare/workflow-v1.5.2...workflow-v1.6.0) (2026-09-08)
 
 
