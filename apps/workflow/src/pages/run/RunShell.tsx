@@ -63,6 +63,7 @@ import { ImplContext, ImplWithheldContext } from '../../components/values/implCo
 import { IslandFrame } from '../../islands/IslandFrame'
 import { useIslandFrameHost, useIslandHandle } from '../../islands/useIslandHandle'
 import { definitionOf } from '../../lib/runDefinition'
+import { collectAnnotations } from '../../lib/runner/annotations'
 import { loadWorkflow } from '../../lib/runner/definition'
 import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../../lib/runner/graph'
 import { replayRun } from '../../lib/runner/replay'
@@ -70,7 +71,7 @@ import { parseStepKey } from '../../lib/runner/types'
 import { pathForSelection, redirectFor, selectionFromRoute, selectionKey } from '../../lib/runRoutes'
 import { publishWorkflowGlobal, snapshotOf, withPageState } from '../../lib/workflowGlobal'
 import type { ServerRunRow, ServerStepRow } from '../../lib/coerce'
-import type { Annotation, Definition, RunState, StepKey, StepState } from '../../lib/runner/types'
+import type { Definition, RunState, StepKey, StepState } from '../../lib/runner/types'
 import type { RunSelection } from '../../lib/runRoutes'
 import { useAppDispatch, useAppSelector, useAppStore } from '../../store/hooks'
 import { LeaseTransportError, cancelRun, forkRun, openRun, takeOver } from '../../store/lifecycleActions'
@@ -89,16 +90,6 @@ const POLL_MS = 5_000
 
 /** A run that is no longer in flight. */
 const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
-
-/** Every annotation of the run, each step's stamped with the step it came from. */
-function collectAnnotations(state: RunState): Annotation[] {
-  return [
-    ...state.annotations,
-    ...Object.values(state.steps).flatMap((step) =>
-      step.annotations.map((annotation) => ({ ...annotation, stepKey: step.key })),
-    ),
-  ]
-}
 
 /**
  * An island whose pane has not opened yet: the pane owns the iframe, so a live

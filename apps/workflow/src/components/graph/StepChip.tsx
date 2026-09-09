@@ -1,4 +1,6 @@
 /**
+ * Only the row head (Task 13) uses this now — the graph draws jobs (Task 8).
+ *
  * One declared step, as the clickable unit of the graph (08) and the anchor of
  * the headless contract (07): `data-testid="step"`, the persisted step key, and
  * `data-state` — the step's status in run mode, `declared` before a run exists.

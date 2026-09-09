@@ -21,7 +21,7 @@ import App from '../../App'
 import { server } from '../../mocks/server'
 import type { AppStore } from '../../store'
 import { runPaused } from '../../store/runSlice'
-import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
+import { resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 
 let getRunCalls = 0
 
@@ -49,19 +49,19 @@ function renderLive(store: AppStore, runId: string) {
   )
 }
 
-function chip(page: HTMLElement, key: string): HTMLElement | null {
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+function node(page: HTMLElement, job: string): HTMLElement | null {
   return (
     within(page)
-      .getAllByTestId('step')
-      .find((el) => el.getAttribute('data-key') === key) ?? null
+      .getAllByTestId('job')
+      .find((el) => el.getAttribute('data-job') === job) ?? null
   )
 }
 
 /**
  * The step-pane's own `StatusPill` — the `data-state` contract holds there
- * too, and it is what a step's own pane (rather than its graph chip, gone
- * once the auto-follow effect has already opened the step's job/step route)
- * has to show it.
+ * too, and it is what a step's own pane (rather than the graph, which is the
+ * Summary's and draws jobs only) has to show it.
  */
 function stepPanePill(page: HTMLElement): HTMLElement {
   return within(page).getByTestId('step-pane').querySelector('.pill') as HTMLElement
@@ -84,9 +84,9 @@ describe('RunPage — live', () => {
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
 
     // A waiting form step is auto-selected — first by topo order — with no
-    // click on its chip. The auto-follow effect has already navigated to its
-    // job/step route (the graph, and the chip, are the Summary's now), so the
-    // `data-state` contract is read off the step-pane's own status pill.
+    // click at all. The auto-follow effect has already navigated to its
+    // job/step route (the graph is the Summary's now), so the `data-state`
+    // contract is read off the step-pane's own status pill.
     expect(stepPanePill(page)).toHaveAttribute('data-state', 'waiting')
     expect(within(page).getByLabelText(/^approved/)).toBeChecked()
     const submit = within(page).getByRole('button', { name: 'Finish' })
@@ -95,11 +95,11 @@ describe('RunPage — live', () => {
     fireEvent.click(submit)
 
     // A finished run, still following, returns to the Summary (08) — so by
-    // the time the header settles on `succeeded` the graph (and its chip) is
-    // back too.
+    // the time the header settles on `succeeded` the graph is back too, and
+    // the form's own job node carries the same `succeeded` the chip did.
     await waitFor(() => {
       expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
-      expect(chip(page, REVIEW_KEY)).toHaveAttribute('data-state', 'succeeded')
+      expect(node(page, 'confirm')).toHaveAttribute('data-state', 'succeeded')
     })
     expect(getRunCalls).toBe(0)
   })

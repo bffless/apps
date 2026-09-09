@@ -1,7 +1,14 @@
 /**
- * `flowFor` on its own (apps#382). `GraphView.test.tsx` proves the chips carry
- * the `data-flow` attribute this produces; here the question is which chips it
- * names, which is easier to pin on a fixture built for it than on `hello`.
+ * `flowFor` on its own (apps#382). `GraphView.test.tsx` proves the job nodes
+ * carry the `data-flow` attribute this produces; here the question is which
+ * jobs and steps it names, which is easier to pin on a fixture built for it
+ * than on `hello`.
+ *
+ * Two granularities, one answer (spec 2026-09-08, Task 8): the **job** sets are
+ * what the graph reads — one node per job now — and the **step** sets are what
+ * the job page's step rows read. So a hover names the source job whatever it
+ * names below it, and every edge that carries the value names both its target
+ * step and that step's job.
  *
  * The case that matters is a **job-level** hover: a job's `outputs` are aliases
  * evaluated at the job boundary, so nothing on the graph declares them
@@ -78,10 +85,11 @@ describe('flowFor — a job-level output', () => {
     expect(keys(flow.sourceSteps)).toEqual(['build::compile', 'build::sign'])
   })
 
-  it('marks the steps that read it downstream', () => {
+  it('marks the steps that read it downstream, and the jobs they belong to', () => {
     const flow = flowFor(build, { job: 'build', output: 'bundle' })
 
     expect(keys(flow.targetSteps)).toEqual(['ship::upload'])
+    expect(keys(flow.targetJobs)).toEqual(['ship'])
   })
 })
 
@@ -90,9 +98,13 @@ describe('flowFor — a step-level output', () => {
     const flow = flowFor(hello, { job: 'greet', step: 'say', output: 'line' })
 
     expect(keys(flow.sourceSteps)).toEqual(['greet::say'])
-    expect(keys(flow.sourceJobs)).toEqual([])
+    // The node the value came off is the source whatever level was hovered
+    // (Task 8): the graph draws jobs, so a step-level hover must still light
+    // the job that owns the step.
+    expect(keys(flow.sourceJobs)).toEqual(['greet'])
     // `greet/say` reads its own output back in its `summary`.
     expect(keys(flow.targetSteps)).toEqual(['greet::say'])
+    expect(keys(flow.targetJobs)).toEqual(['greet'])
   })
 })
 
@@ -103,5 +115,6 @@ describe('flowFor — nothing hovered', () => {
     expect(keys(flow.sourceSteps)).toEqual([])
     expect(keys(flow.sourceJobs)).toEqual([])
     expect(keys(flow.targetSteps)).toEqual([])
+    expect(keys(flow.targetJobs)).toEqual([])
   })
 })

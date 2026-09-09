@@ -53,15 +53,19 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   `.pill` = glyph + word. `data-state` is the headless contract; never restyle it away.
 - **Panel** `.panel` / `.cards` / `.rows` / `.step-pane` / `.graph-scroll`: white, 1px
   `--line`, 10px radius. Rows inside separate with `--hairline`, hover to `--paper`.
-- **Graph**: cards 260px wide, 8px radius, `--line-strong`; every job is one shape — a 40px
-  header strip, the job (`.job-head-row`, a button; pressed = ink fill) (+20px matrix line,
-  +34px item selector) over 42px step rows (`CHIP.row`: glyph · name · mono duration);
-  definition mode adds 20px `OUT name · type` lines to a step row. Geometry constants
-  live in `src/components/graph/geometry.ts` and must match the CSS. Connectors are straight
-  (`H`) on the same row, one cubic bend across rows. Edge dots: 15px, 2px white ring, in = grey,
-  out = ink. Selection: ink ring (`box-shadow: inset 0 0 0 1px`) + `--surface-dim`; the whole
-  card's border turns ink. Data-flow hover: solid inset ring on the source, dashed outline on
-  targets.
+- **Graph**: cards 260px wide, 8px radius, `--line-strong`; every job is one node (`.job-card`,
+  a button — the job is the middle level of run › job › step, so it is one keyboard target with
+  one pressed state, `aria-pressed`): a 40px header strip (job name, plus a `MATRIX · <id>`
+  eyebrow for a matrix job) with a 20px note line under it for the matrix's strategy, over a
+  42px status row — run mode's glyph, status word (or `N of M done` for a matrix job) and a mono
+  duration; definition mode's step count instead. Definition mode adds one 20px `OUT name ·
+  type` line per declared job output, plus 8px pad under the last one. Geometry constants live
+  in `src/components/graph/geometry.ts` and must match the CSS. Connectors are straight (`H`) on
+  the same row, one cubic bend across rows. Edge dots: 15px, 2px white ring, in = grey, out =
+  ink — the left one opens the job on Input, the right on Output. Selection: `aria-pressed`'s
+  ink ring (`box-shadow: inset 0 0 0 1px`) over an ink border. Data-flow hover, at job
+  granularity (Task 8): a solid ring on the source job, a dashed outline on every job that reads
+  the value; `:focus-visible` draws its own 2px ring, outranking both.
 - **The pane under the graph** — one level of the taxonomy at a time: **run › job › step**.
   The **run card** (`.run-pane`: `RUN` · workflow name · run id | Input/Output | pill |
   `WORKFLOW`), the **job card** (`.job-pane`: `RUN · JOB` · job name · id | Input/Output |

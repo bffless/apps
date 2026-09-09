@@ -10,7 +10,7 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   // workflow tree") also renders a same-named link once discovery populates it,
   // so an unscoped locator is ambiguous by design, not by app defect.
   await page.getByTestId('workflow-list').getByRole('link', { name: 'Hello workflow' }).click()
-  await expect(page.getByTestId('step').first()).toBeVisible()          // definition graph
+  await expect(page.getByTestId('job').first()).toBeVisible()           // definition graph
 
   await page.getByRole('link', { name: /start a run/i }).click()
   await expect(page.getByTestId('kickoff-form')).toBeVisible()
@@ -32,7 +32,9 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   await expect(outputs).toContainText('Hello, world!')                   // collected greet line
   // the flaky job's warning annotation surfaced (scoped: the same text is also
   // an output chip in run-outputs — the `after` step's own `note` output — so
-  // an unscoped locator is ambiguous by design, not by app defect):
+  // an unscoped locator is ambiguous by design, not by app defect). The panel
+  // is closed by default (no error-level annotation here), so open it first.
+  await page.getByTestId('annotations').locator('summary').click()
   await expect(page.getByTestId('annotations').getByText(/boom failed with TEAPOT/)).toBeVisible()
   // and the run appears under Past runs:
   await page.getByRole('link', { name: /past runs|runs/i }).first().click()
