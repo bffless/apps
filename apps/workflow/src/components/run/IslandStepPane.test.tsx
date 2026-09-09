@@ -215,12 +215,14 @@ describe('RunPage — island fullscreen', () => {
       expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
     )
 
-    // Inline first: the graph is there, the overlay is not, and Expand is offered.
+    // Inline first: no overlay, no strip, and Expand is offered. (The graph
+    // itself is the Summary's now — a selected step is its own route, spec
+    // 2026-09-08 — so the strip is what tells the two modes apart here.)
     await flush()
     expect(document.querySelector('.island-fullscreen')).toBeNull()
     expect(store.getState().ui.islandDisplay).toBe('inline')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'inline')
-    expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
+    expect(within(page).queryByTestId('island-strip')).toBeNull()
 
     fireEvent.click(within(page).getByTestId('island-expand'))
 
@@ -228,7 +230,7 @@ describe('RunPage — island fullscreen', () => {
     expect(store.getState().ui.islandDisplay).toBe('fullscreen')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'fullscreen')
     expect(host.displayModes.at(-1)).toBe('fullscreen')
-    // The graph gives way to the strip; Expand is gone while expanded.
+    // The strip is up, and Expand is gone while expanded.
     expect(within(page).queryAllByTestId('step')).toHaveLength(0)
     expect(within(page).getByTestId('island-strip')).toBeInTheDocument()
     expect(within(page).queryByTestId('island-expand')).toBeNull()
@@ -240,7 +242,7 @@ describe('RunPage — island fullscreen', () => {
 
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).toBeNull())
     expect(store.getState().ui.islandDisplay).toBe('inline')
-    expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
+    expect(within(page).queryByTestId('island-strip')).toBeNull()
     expect(host.mounts).toHaveLength(1)
     expect(within(page).getByTestId('island-frame')).toBe(frame)
     expect(host.teardowns).not.toContain('unmounted')
@@ -295,6 +297,15 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
     return within(page)
       .getAllByTestId('step')
       .find((el) => el.getAttribute('data-key') === key)
+  }
+
+  /**
+   * Back to the run's Summary, where the graph is: a selected step is its own
+   * route now (spec 2026-09-08), so the pane's "Run" crumb is how a person
+   * gets from one step to the next. It pins, exactly as clicking a chip does.
+   */
+  function toSummary(page: HTMLElement) {
+    fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
   }
 
   it('leaves a starting island to its chip once the user has pinned a step, and Follow brings it into the pane', async () => {
@@ -366,12 +377,14 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
     // A click away pins again; the abandoned pane leaves the step exactly as
     // it was (apps#370), and the chip is the way back — a re-mount from the
     // same handle.
+    toSummary(page)
     fireEvent.click(chip(page, SAY_KEY)!)
     await flush()
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
     expect(host.mounts).toHaveLength(1)
     expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting')
 
+    toSummary(page)
     fireEvent.click(chip(page, CHOOSE_KEY)!)
     await waitFor(() => expect(host.mounts).toHaveLength(2))
   })

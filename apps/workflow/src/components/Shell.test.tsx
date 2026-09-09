@@ -14,6 +14,7 @@ import App from '../App'
 import { MOCK_ADMIN, setMockUser } from '../mocks/db'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
+import { TopBar } from './TopBar'
 
 function renderApp(path = '/') {
   return render(
@@ -59,5 +60,27 @@ describe('Shell — the session user', () => {
     // The rail settles, so the header has had its chance to render a chip.
     await screen.findByRole('navigation', { name: 'Implementations' })
     expect(screen.queryByTestId('whoami')).not.toBeInTheDocument()
+  })
+})
+
+function at(path: string) {
+  return render(
+    <Provider store={makeStore()}>
+      <MemoryRouter initialEntries={[path]}>
+        <TopBar />
+      </MemoryRouter>
+    </Provider>,
+  )
+}
+
+describe('TopBar breadcrumb', () => {
+  it('reads a job route as the job and its item', () => {
+    at('/hello/hello/runs/run_1/job/greet/1')
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(crumbs).toHaveTextContent('Implementations')
+    expect(crumbs).toHaveTextContent('run_1')
+    expect(crumbs).toHaveTextContent('greet')
+    expect(crumbs).toHaveTextContent('item 2')
+    expect(crumbs).not.toHaveTextContent(/\bjob\b/)
   })
 })

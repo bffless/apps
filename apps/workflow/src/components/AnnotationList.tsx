@@ -3,8 +3,7 @@
  * then each step's, each linking back to the step it came from so the list is a
  * way *into* the graph rather than a dead end.
  *
- * The jump is a button, not a link: the selection is view state (09), not a
- * route, so there is no URL to give it.
+ * The jump navigates to the step's job page.
  */
 import type { Annotation, StepKey } from '../lib/runner/types'
 

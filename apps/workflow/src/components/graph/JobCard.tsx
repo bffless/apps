@@ -26,7 +26,7 @@ import type { CSSProperties } from 'react'
 import type { Job, RunState, Step, StepKey, StepStatus } from '../../lib/runner/types'
 import { stepKey } from '../../lib/runner/types'
 import type { GraphFlow } from './flow'
-import { jobLabel, matrixItemLabel, matrixNote } from './geometry'
+import { itemLabel, jobLabel, matrixNote } from './geometry'
 import { StepChip } from './StepChip'
 
 const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
@@ -42,12 +42,6 @@ function parseKey(key: StepKey): { job: string; index: number; stepId: string } 
   if (job === undefined || index === undefined || rest.length === 0) return null
   const parsed = Number(index)
   return Number.isInteger(parsed) ? { job, index: parsed, stepId: rest.join('/') } : null
-}
-
-/** `who: world` — how one matrix item names itself in the selector. */
-function itemLabel(item: Record<string, unknown>, index: number): string {
-  const bindings = Object.entries(item).map(([name, value]) => `${name}: ${matrixItemLabel(value, index)}`)
-  return bindings.length > 0 ? bindings.join(', ') : `Item ${index + 1}`
 }
 
 export interface JobCardProps {

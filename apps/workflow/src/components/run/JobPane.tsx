@@ -27,8 +27,8 @@ import { outputImageMap } from '../../lib/imageMap'
 import { resolveOutput } from '../../lib/outputDecls'
 import { buildRunContexts } from '../../lib/runner/contexts'
 import { dataFlowEdges } from '../../lib/runner/graph'
-import type { Definition, RunState, Step, StepKey, StepState } from '../../lib/runner/types'
-import { stepKey } from '../../lib/runner/types'
+import { jobStatus, stepsOfJob } from '../../lib/runner/jobs'
+import type { Definition, RunState, StepKey } from '../../lib/runner/types'
 import { StatusGlyph, StatusPill } from '../StatusPill'
 import { jobLabel, matrixNote, stepLabel } from '../graph/geometry'
 import { RawToggle } from '../values/RawToggle'
@@ -55,18 +55,6 @@ function destinationOf(def: Definition, job: string, output: string): string | u
     .map((edge) => `${edge.to.job}/${edge.to.step}`)
   const unique = [...new Set(targets)]
   return unique.length > 0 ? unique.join(', ') : undefined
-}
-
-/** The job's status, as the pill reads it: the worst of its steps, `queued` before any ran. */
-function jobStatus(steps: StepState[]): StepState['status'] {
-  if (steps.some((s) => s.status === 'failed')) return 'failed'
-  if (steps.some((s) => s.status === 'cancelled')) return 'cancelled'
-  if (steps.some((s) => s.status === 'waiting')) return 'waiting'
-  if (steps.some((s) => s.status === 'running' || s.status === 'polling')) return 'running'
-  if (steps.length > 0 && steps.every((s) => s.status === 'succeeded' || s.status === 'skipped')) {
-    return steps.every((s) => s.status === 'skipped') ? 'skipped' : 'succeeded'
-  }
-  return 'queued'
 }
 
 export interface JobPaneProps {
@@ -120,14 +108,7 @@ export function JobPane({
   }
 
   const total = state.expansions[job]?.total ?? 1
-  const items = Array.from({ length: total }, (_, i) => i)
-  const rows: { key: StepKey; step: Step; index: number; state: StepState | undefined }[] = items.flatMap(
-    (index) =>
-      decl.steps.map((step) => {
-        const key = stepKey(job, index, step.id)
-        return { key, step, index, state: state.steps[key] }
-      }),
-  )
+  const rows = stepsOfJob(def, state, job)
   const status = jobStatus(rows.flatMap((row) => (row.state ? [row.state] : [])))
 
   // Evaluated the way `jobs.<job>.outputs` / `needs.<job>.outputs` read them.

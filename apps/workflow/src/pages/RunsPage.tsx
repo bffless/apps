@@ -27,6 +27,7 @@ import { formatDuration } from '../lib/duration'
 import { isFileRef } from '../components/values/fileRef'
 import { ANNOTATION_LEVELS } from '../lib/annotations'
 import { pluralize } from '../lib/plural'
+import { stepPath } from '../lib/runRoutes'
 import { waitingSteps } from '../lib/waitingOn'
 import type { ServerRunRow } from '../lib/coerce'
 import type { RunStatus } from '../lib/runner/types'
@@ -78,7 +79,7 @@ function WaitingOn({ run, base }: { run: ServerRunRow; base: string }) {
   return (
     <span className="run-waiting" data-testid="run-waiting">
       waiting on{' '}
-      <Link to={`${base}/runs/${run.runId}?step=${first.key}`} title={first.key}>
+      <Link to={stepPath(base, run.runId, first.key)} title={first.key}>
         {first.label}
       </Link>
       {more.length > 0 && (

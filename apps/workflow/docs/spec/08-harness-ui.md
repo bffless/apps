@@ -16,6 +16,8 @@ prototype's "Workflow Graph A" artboard.
 | `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it. `?from=<runId>` prefills it for Re-run; `?auto=1&inputs=<base64url(JSON)>` is the headless entry (07) — no form at all, a `kickoff-auto` notice while the run starts, or a `kickoff-invalid` list of the values it refused |
 | `/<impl>/<workflow>/runs` | **Past runs** — table: status (a running run parked on a step says "waiting on <step>" beside its pill, linked to that step), started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
 | `/<impl>/<workflow>/runs/<runId>` | **Run** — the graph in *run* mode + step panes + run summary + outputs |
+| `/<impl>/<workflow>/runs/<runId>/job/<job>` | **Job** — the job's Input | Output panes, the step trail, Re-run from this job |
+| `/<impl>/<workflow>/runs/<runId>/job/<job>/<index>` | **Matrix item** — a job index + `?step=<key>` to select a step pane |
 | `/<impl>/<workflow>/file` | **View workflow file** — YAML with lint results (also linked from a run: the snapshot) |
 
 The left rail is the implementation → workflow tree; the header shows the project and user.
@@ -91,8 +93,7 @@ pane under the graph with the prototype's **Input | Output** toggle and payload 
 2. The graph (run mode), the navigator.
 3. **One card under it, one level of the taxonomy at a time** (decided 2026-08-26): **run ›
    job › step**, three cards of one shape — eyebrow · name · key | **Input | Output** | pill |
-   kind — and the selection is the URL: `?step=` absent (run), a bare job id (job), or
-   `<job>/<index>/<step>` (step); linkable, and the browser's Back button climbs up a level.
+   kind — and the selection is the **route**: the Summary, `/job/<job>[/<index>]` (job), and `?step=<key>` on a job route (step); an old `?step=` on the Summary URL redirects (replace) to where it lives now.
    - **Run card** (nothing selected): *Input* is the kickoff form's values; *Output* is the
      **results** (the workflow's declared `outputs`, each with renderer + Download), then the
      **summary** (step summaries in job order — the GitHub job-summary page) and the

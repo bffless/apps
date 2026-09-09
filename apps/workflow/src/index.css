@@ -425,6 +425,25 @@ button {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
+/* The run rail (spec 2026-09-08): the same rows as the implementation tree,
+   one level of the run each. */
+.run-rail .rail-back { display: block; margin: 0 0 14px 8px; color: var(--ink-mute); font-family: var(--font-mono); font-size: 11.5px; text-decoration: none; }
+.run-rail .rail-back:hover { color: var(--ink); }
+.rail-jobs, .rail-items, .rail-details { margin: 0; padding: 0; list-style: none; }
+.rail-items { margin: 2px 0 6px; padding-left: 18px; }
+.rail-row { display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 5px 10px; color: var(--ink-soft); font-size: 13px; text-decoration: none; border-radius: var(--radius-control); transition: background-color var(--fast) var(--ease-out), color var(--fast) var(--ease-out); }
+.rail-row .glyph { flex: none; width: 11px; height: 11px; font-size: 7px; }
+.rail-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-row-meta { flex: none; color: var(--ink-mute); font-family: var(--font-mono); font-size: 11px; }
+.rail-row:hover { color: var(--ink); background-color: var(--surface-dim); }
+.rail-row.active { color: var(--ink); font-weight: 600; background-color: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.rail-summary { margin-bottom: 14px; }
+.rail-matrix { display: flex; align-items: center; }
+.rail-matrix .rail-row { flex: 1; }
+.rail-chevron { flex: none; width: 24px; height: 24px; padding: 0; color: var(--ink-mute); font: inherit; background: transparent; border: 0; border-radius: var(--radius-control); cursor: pointer; }
+.rail-chevron:hover { color: var(--ink); background-color: var(--surface-dim); }
+.run-rail .rail-eyebrow { margin-top: 18px; }
+
 .content {
   flex: 1;
   /* A flex item defaults to min-width:auto, so one wide child (the source view,

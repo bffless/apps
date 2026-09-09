@@ -7,10 +7,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
-import App from '../App'
-import { seedFinishedRun } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
-import { makeStore } from '../store'
+import App from '../../App'
+import { seedFinishedRun } from '../../mocks/db'
+import { FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
+import { makeStore } from '../../store'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 
@@ -65,7 +65,9 @@ describe('RunPage — YAML drawer', () => {
   it('marks the job block for a job selection', async () => {
     const page = await openRun()
     fireEvent.click(chip('slow/0/start')!)
-    fireEvent.click(within(page).getByTestId('step-pane-back'))
+    // Scoped to the step-pane: the interim job page renders it alongside the
+    // job-pane, and both carry a "Run"-labelled `step-pane-back` crumb.
+    fireEvent.click(within(within(page).getByTestId('step-pane')).getByTestId('step-pane-back'))
     const pane = within(page).getByTestId('job-pane')
 
     fireEvent.click(within(pane).getByRole('button', { name: 'YAML' }))

@@ -2,6 +2,12 @@
  * One run (08): the record, rebuilt — or, while this tab is the one driving
  * it, the live slice itself.
  *
+ * This is the run's **layout route** (spec 2026-09-08): it owns everything
+ * that is true of the whole run — the fetch or the live slice, the header, the
+ * banners, the follow logic, the backstage — and hands it to whichever of its
+ * pages the URL picked through `RunContext`. The Summary, a job and a step are
+ * three routes under it, not three branches of one render.
+ *
  * A finished run (or one someone else started, in another tab, a week ago) is
  * fetched as its row + step rows and folded through `replayRun`, the very
  * same engine Resume uses (05); nothing on that path is remembered from when
@@ -42,42 +48,44 @@
  * document, out of sight — rather than by taking the pane.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { EmptyState } from '../components/EmptyState'
-import { LoadError } from '../components/LoadError'
-import { GraphView } from '../components/graph/GraphView'
-import type { PaneSide } from '../components/graph/GraphView'
-import { PausedBanner } from '../components/run/PausedBanner'
-import { RunHeader } from '../components/run/RunHeader'
-import { JobPane } from '../components/run/JobPane'
-import { RunPane } from '../components/run/RunPane'
-import { StepPane } from '../components/run/StepPane'
-import { FileRefProvider } from '../components/values/FileRefProvider'
-import { ImplContext, ImplWithheldContext } from '../components/values/implContext'
-import { IslandFrame } from '../islands/IslandFrame'
-import { useIslandFrameHost, useIslandHandle } from '../islands/useIslandHandle'
-import { definitionOf } from '../lib/runDefinition'
-import { loadWorkflow } from '../lib/runner/definition'
-import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../lib/runner/graph'
-import { replayRun } from '../lib/runner/replay'
-import { publishWorkflowGlobal, snapshotOf, withPageState } from '../lib/workflowGlobal'
-import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
-import type { Annotation, RunState, StepKey, StepState } from '../lib/runner/types'
-import { useAppDispatch, useAppSelector, useAppStore } from '../store/hooks'
-import { LeaseTransportError, cancelRun, forkRun, openRun, takeOver } from '../store/lifecycleActions'
-import { getIslandHandle, subscribeIslandHandles } from '../store/islandLaunch'
-import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../store/uiSlice'
-import { useRunDelete } from '../store/useRunDelete'
-import { useRunDiagnostics } from '../store/useRunDiagnostics'
-import { useWorkflowListing } from '../store/useWorkflowListing'
-import { workflowApi, useDiscoverQuery, useGetRunQuery, useGetWorkflowYamlQuery, useWhoamiQuery } from '../store/workflowApi'
+import { Navigate, Outlet, useLocation, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { EmptyState } from '../../components/EmptyState'
+import { ErrorBoundary } from '../../components/ErrorBoundary'
+import { LoadError } from '../../components/LoadError'
+import { TopBar } from '../../components/TopBar'
+import { PausedBanner } from '../../components/run/PausedBanner'
+import { RunHeader } from '../../components/run/RunHeader'
+import { RunRail } from '../../components/run/RunRail'
+import { FileRefProvider } from '../../components/values/FileRefProvider'
+import { ImplContext, ImplWithheldContext } from '../../components/values/implContext'
+import { IslandFrame } from '../../islands/IslandFrame'
+import { useIslandFrameHost, useIslandHandle } from '../../islands/useIslandHandle'
+import { definitionOf } from '../../lib/runDefinition'
+import { loadWorkflow } from '../../lib/runner/definition'
+import { firstStepWhere, firstWaitingStep, forkTarget, stepProgress } from '../../lib/runner/graph'
+import { replayRun } from '../../lib/runner/replay'
+import { parseStepKey } from '../../lib/runner/types'
+import { pathForSelection, redirectFor, selectionFromRoute, selectionKey } from '../../lib/runRoutes'
+import { publishWorkflowGlobal, snapshotOf, withPageState } from '../../lib/workflowGlobal'
+import type { ServerRunRow, ServerStepRow } from '../../lib/coerce'
+import type { Annotation, Definition, RunState, StepKey, StepState } from '../../lib/runner/types'
+import type { RunSelection } from '../../lib/runRoutes'
+import { useAppDispatch, useAppSelector, useAppStore } from '../../store/hooks'
+import { LeaseTransportError, cancelRun, forkRun, openRun, takeOver } from '../../store/lifecycleActions'
+import { getIslandHandle, subscribeIslandHandles } from '../../store/islandLaunch'
+import { followChanged, islandDisplayChanged, stepSelected, valueHovered } from '../../store/uiSlice'
+import { useRunDelete } from '../../store/useRunDelete'
+import { useRunDiagnostics } from '../../store/useRunDiagnostics'
+import { useWorkflowListing } from '../../store/useWorkflowListing'
+import { workflowApi, useDiscoverQuery, useGetRunQuery, useGetWorkflowYamlQuery, useWhoamiQuery } from '../../store/workflowApi'
+import { RunContext } from './runContext'
+import type { RunContextValue } from './runContext'
 
 /** A run still in flight is a feed; a finished one is a record (05). */
 const POLL_MS = 5_000
 
-/** The query parameter that carries the selected step (08): `?step=<job>/<index>/<step>`. */
-const STEP_PARAM = 'step'
 
 /** A run that is no longer in flight. */
 const TERMINAL_RUN: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
@@ -290,7 +298,54 @@ function ResumeBanner({ run, steps }: { run: ServerRunRow; steps: ServerStepRow[
   )
 }
 
-export function RunPage() {
+/**
+ * The frame the run's own screens render inside: the same 56px top bar every
+ * screen has, with the implementation tree replaced by the run's rail (spec
+ * 2026-09-08, Decision 3).
+ *
+ * Every one of the shell's returns goes through it — the three degraded states
+ * below render *in place of* the outlet, so the rail's way back out of a run
+ * that failed to load is always there, and a run that arrives after its own
+ * "Loading…" swaps only what is inside `main`, never the frame around it.
+ */
+function Frame({
+  base,
+  runId,
+  def = null,
+  state = null,
+  yaml,
+  pin,
+  children,
+}: {
+  base: string
+  runId: string
+  def?: Definition | null
+  state?: RunState | null
+  yaml?: string
+  /** A rail row's navigation is a person's move, exactly as a chip click is (fix round 5, finding 2). */
+  pin?: () => void
+  children: ReactNode
+}) {
+  // Keyed on the **run**, not the path (`Shell` keys on the path): moving
+  // between the run's own levels must not remount what the shell exists to
+  // hold — the header, the providers, an island mounted backstage. A
+  // navigation to another run is still a reset, which is the point of the
+  // key; a screen that threw inside one run is climbed out of by leaving the
+  // run, exactly as a run that will not load at all is.
+  return (
+    <div className="shell">
+      <TopBar />
+      <div className="shell-body">
+        <RunRail base={base} runId={runId} def={def} state={state} yaml={yaml} onNavigate={pin} />
+        <main className="content">
+          <ErrorBoundary key={runId}>{children}</ErrorBoundary>
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export function RunShell() {
   const { impl, workflow, runId } = useParams()
   const dispatch = useAppDispatch()
   // Read (never subscribed to): the `?resume=1` effect below asks the slice
@@ -299,28 +354,40 @@ export function RunPage() {
   const store = useAppStore()
   const navigate = useNavigate()
 
-  // The selection *is* the URL (08, decided 2026-08-26): `?step=<key>` opens
-  // that step's pane in place of the run-level card, so a drilled-in view is
+  // The selection *is* the URL (08, decided 2026-08-26; spec 2026-09-08): the
+  // three levels are three routes — the Summary at `/runs/:runId`, a job at
+  // `/job/:job` (with `/:index` for one item of a matrix), and `?step=<key>` on
+  // a job page for the step whose pane is open — so a drilled-in view is
   // linkable and the browser's Back button climbs out of a step the way it
   // climbs out of a GitHub job page. It is also what scopes a selection to
   // the run being viewed — a navigation to another run is a different URL,
-  // with no `step` on it — which the process-global `ui.selectedStep` never
+  // with no selection on it — which the process-global `ui.selectedStep` never
   // was (fix round 1). Other query parameters (`?mocks=`) ride along untouched.
-  // Three levels share the one parameter (08: run › job › step): absent = the
-  // run card, a bare job id = that job's card, `job/index/step` = a step's pane.
-  const [searchParams, setSearchParams] = useSearchParams()
-  const selectedStep: StepKey | null = searchParams.get(STEP_PARAM)
-  const level: 'run' | 'job' | 'step' = selectedStep === null ? 'run' : selectedStep.includes('/') ? 'step' : 'job'
-  const setStep = (key: StepKey | null, replace: boolean) =>
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        if (key === null) next.delete(STEP_PARAM)
-        else next.set(STEP_PARAM, key)
-        return next
-      },
-      { replace },
-    )
+  //
+  // A layout route's `useParams` never carries its children's params (it
+  // matches before them), so the job — and a matrix item's index — is read off
+  // the child route's own pattern instead.
+  const jobMatch = useMatch('/:impl/:workflow/runs/:runId/job/:job/:index?')
+  const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const selection = selectionFromRoute(
+    { job: jobMatch?.params.job, index: jobMatch?.params.index },
+    searchParams,
+  )
+  const selectedStep: StepKey | string | null = selectionKey(selection)
+  const level: 'run' | 'job' | 'step' = selection.kind
+  // Every navigation this page makes goes through `go`: the selection is the
+  // URL, so moving the selection *is* a navigation. It closes over `base`,
+  // which is computed further down (it needs `shown`) — a closure rather than
+  // a ref, because a ref read during render is exactly what
+  // `react-hooks/refs` forbids, and `go` only ever runs after one.
+  const go = (target: RunSelection, replace: boolean, tab?: 'Input' | 'Output') =>
+    void navigate(pathForSelection(base, runId ?? '', target, new URLSearchParams(location.search), tab), {
+      replace,
+    })
+  const toSelection = (key: StepKey | string | null): RunSelection =>
+    key === null ? { kind: 'run' } : parseStepKey(key) ? { kind: 'step', key } : { kind: 'job', job: key }
+  const setStep = (key: StepKey | string | null, replace: boolean) => go(toSelection(key), replace)
 
   // Follow or pinned (apps#452). The store holds the answer *for this run*;
   // with none yet (a fresh page, or the page just moved to another run — it
@@ -348,8 +415,8 @@ export function RunPage() {
   // typed into the address bar, or stepped Back to — which pins, exactly as a
   // click would. A `null` never pins: Back out to the run level is not a
   // choice of step, and following resumes from there.
-  const pageWrote = useRef<StepKey | null | undefined>(undefined)
-  const write = (key: StepKey | null, replace: boolean) => {
+  const pageWrote = useRef<StepKey | string | null | undefined>(undefined)
+  const write = (key: StepKey | string | null, replace: boolean) => {
     pageWrote.current = key
     setStep(key, replace)
   }
@@ -364,11 +431,6 @@ export function RunPage() {
   // a run *this* tab started carries no `startedBy` of its own (see below).
   const { data: me } = useWhoamiQuery()
 
-  // Which side a graph edge dot asked the pane to open on (08: "jump straight
-  // to one side"). A chip click has no side and leaves the pane on Input. The
-  // counter makes a second click on the same dot re-open that side even when
-  // the selection did not change — the pane is keyed on it below.
-  const [side, setSide] = useState<{ key: string; side: PaneSide; n: number } | null>(null)
   /** Up one level: a step's job, a job's run. A person's move, so it pins. */
   const back = () => {
     pin()
@@ -379,16 +441,16 @@ export function RunPage() {
     setStep(null, false)
   }
   /** A person's click: a history entry, so Back returns to where they were — and pinned from here on. */
-  const select = (key: StepKey, requested?: PaneSide) => {
+  const select = (target: RunSelection, tab?: 'Input' | 'Output') => {
+    const key = selectionKey(target)
     // The selected chip (or strip), clicked again with no side asked for, is
     // the way up one level — the same toggle a pressed button suggests.
-    if (key === selectedStep && requested === undefined) {
+    if (key === selectedStep && tab === undefined) {
       back()
       return
     }
     pin()
-    setStep(key, false)
-    if (requested) setSide((prev) => ({ key, side: requested, n: (prev?.n ?? 0) + 1 }))
+    go(target, false, tab)
   }
   /** The header's toggle. Following again means catching up: from a clean selection, the page's own rules pick the step. */
   const onFollowChange = (on: boolean) => {
@@ -396,7 +458,6 @@ export function RunPage() {
     dispatch(followChanged({ runId, on }))
     if (on && selectedStep !== null) write(null, true)
   }
-  const paneSide = side && side.key === selectedStep ? side : null
 
   // `ui.selectedStep` is a read-model of the URL, never the other way round:
   // kept for whatever cannot reach the router (tests read it; the hover
@@ -462,6 +523,12 @@ export function RunPage() {
   // is a hook and cannot be called after them.
   const shown = isLive ? sliceState : run
   const base = `/${impl ?? shown?.impl}/${workflow ?? shown?.workflow}`
+  // An old Summary link (`/runs/:runId?step=<key>`) belongs on the job page
+  // now. The **shell** sends it there, not the Summary page: the selection is
+  // already read off that `?step=` above, so the arrival effect pins it and
+  // the auto-open effects leave it alone — where a redirect one level down
+  // would have raced them, on a running run, and lost.
+  const legacy = jobMatch === null ? redirectFor(base, runId ?? '', searchParams) : null
   const shownStatus = state?.status ?? run?.status
   // A run this tab started has no `startedBy` in the slice (only a *replayed*
   // one does — `replayRun` carries the row's), and it does not need one: the
@@ -787,21 +854,33 @@ export function RunPage() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [fullscreen, dispatch])
 
+  // Each of the three renders inside `Frame`, in place of the outlet: a run
+  // that will not load is still a run you must be able to walk away from.
   if (!isLive && (isLoading || (isFetching && !data && !isError))) {
-    return <p className="note">Loading…</p>
+    return (
+      <Frame base={base} runId={runId ?? ''} pin={pin}>
+        <p className="note">Loading…</p>
+      </Frame>
+    )
   }
 
   // A read that failed says nothing about whether the run exists — reporting it
   // as "no such run" would invent a fact the server never gave us.
   if (!isLive && isError && !data) {
-    return <LoadError title="Couldn't load this run" error={error} onRetry={() => void refetch()} />
+    return (
+      <Frame base={base} runId={runId ?? ''} pin={pin}>
+        <LoadError title="Couldn't load this run" error={error} onRetry={() => void refetch()} />
+      </Frame>
+    )
   }
 
   if (!isLive && !run) {
     return (
-      <EmptyState title="No such run">
-        <p>Nothing was recorded for {runId}. It may have been deleted, or never started.</p>
-      </EmptyState>
+      <Frame base={base} runId={runId ?? ''} pin={pin}>
+        <EmptyState title="No such run">
+          <p>Nothing was recorded for {runId}. It may have been deleted, or never started.</p>
+        </EmptyState>
+      </Frame>
     )
   }
 
@@ -878,146 +957,135 @@ export function RunPage() {
       : false
   const implForView = isLive ? sliceState!.impl : rowImplTrusted ? run!.impl : null
   const implWithheld = !isLive && implForView === null
+  // What the run's pages read (`useRunContext`): everything the shell has
+  // already worked out about the run on screen, plus the two navigations that
+  // are the shell's to make. Absent — and only then — when the row has no
+  // usable definition snapshot, which is the `RawRows` record below.
+  const ctx: RunContextValue | null =
+    state && def
+      ? {
+          base,
+          runId: shownRunId,
+          def,
+          state,
+          run: isLive ? null : run!,
+          steps,
+          isLive,
+          impl: implForView ?? undefined,
+          annotations,
+          yamlSource,
+          workflowName: isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow,
+          selection,
+          selectedStep,
+          select,
+          back,
+          toRun,
+          forkable,
+          fork,
+        }
+      : null
+
   return (
-    // Stacked flat: the second provider only annotates the first's null.
-    <ImplContext.Provider value={implForView}>
-    <ImplWithheldContext.Provider value={implWithheld}>
-      <section className="page">
-        <RunHeader
-          workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
-          runId={shownRunId}
-          startedBy={isLive ? undefined : run!.startedBy}
-          startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
-          forkedFrom={
-            isLive
-              ? sliceMeta!.forkedFrom
-              : run!.forkedFrom && run!.forkJob
-                ? { runId: run!.forkedFrom, job: run!.forkJob }
-                : undefined
-          }
-          finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
-          headless={isLive ? sliceState!.headless : run!.headless}
-          unattended={isLive ? sliceState!.unattended : (run!.unattended ?? false)}
-          yaml={isLive ? sliceMeta!.yaml : run!.yaml}
-          status={shownStatus!}
-          pageState={pageState}
-          annotations={annotations}
-          base={base}
-          progress={state ? stepProgress(state) : undefined}
-          diagnostics={diag.actions}
-          live={isLive}
-          onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
-          onDelete={del.onDelete}
-          deleting={del.deleting}
-          follow={follow}
-          onFollowChange={shownStatus === 'running' ? onFollowChange : undefined}
-        />
+    <Frame base={base} runId={shownRunId} def={def} state={state} yaml={yamlSource.yaml} pin={pin}>
+      {/* Stacked flat: the second provider only annotates the first's null. */}
+      <ImplContext.Provider value={implForView}>
+      <ImplWithheldContext.Provider value={implWithheld}>
+        <section className="page">
+          <RunHeader
+            workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
+            runId={shownRunId}
+            startedBy={isLive ? undefined : run!.startedBy}
+            startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
+            forkedFrom={
+              isLive
+                ? sliceMeta!.forkedFrom
+                : run!.forkedFrom && run!.forkJob
+                  ? { runId: run!.forkedFrom, job: run!.forkJob }
+                  : undefined
+            }
+            finishedAt={isLive ? (sliceState!.finishedAt ?? null) : (run!.finishedAt ?? null)}
+            headless={isLive ? sliceState!.headless : run!.headless}
+            unattended={isLive ? sliceState!.unattended : (run!.unattended ?? false)}
+            yaml={isLive ? sliceMeta!.yaml : run!.yaml}
+            status={shownStatus!}
+            pageState={pageState}
+            annotations={annotations}
+            base={base}
+            progress={state ? stepProgress(state) : undefined}
+            diagnostics={diag.actions}
+            live={isLive}
+            onCancel={isLive && state?.status === 'running' ? () => void dispatch(cancelRun()) : undefined}
+            onDelete={del.onDelete}
+            deleting={del.deleting}
+            follow={follow}
+            onFollowChange={shownStatus === 'running' ? onFollowChange : undefined}
+          />
 
-        {del.failed && (
-          <p className="note banner" role="alert" data-testid="run-delete-failed">
-            {del.failed}
-          </p>
-        )}
-        {diag.failed && (
-          <p className="note banner" role="alert" data-testid="run-diagnostics-failed">
-            {diag.failed}
-          </p>
-        )}
-        {forkFailed?.runId === shownRunId && (
-          <p className="note banner" role="alert" data-testid="run-fork-failed">
-            {forkFailed.message}
-          </p>
-        )}
+          {del.failed && (
+            <p className="note banner" role="alert" data-testid="run-delete-failed">
+              {del.failed}
+            </p>
+          )}
+          {diag.failed && (
+            <p className="note banner" role="alert" data-testid="run-diagnostics-failed">
+              {diag.failed}
+            </p>
+          )}
+          {forkFailed?.runId === shownRunId && (
+            <p className="note banner" role="alert" data-testid="run-fork-failed">
+              {forkFailed.message}
+            </p>
+          )}
 
-        {isLive && paused && <PausedBanner message={paused} />}
-        {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
+          {isLive && paused && <PausedBanner message={paused} />}
+          {!isLive && run!.status === 'running' && <ResumeBanner run={run!} steps={steps} />}
 
-        {!state || !def ? (
-          <RawRows run={run!} steps={steps} />
-        ) : (
-          <FileRefProvider state={state}>
-            <div className={fullscreen ? 'run-canvas island-fullscreen' : 'run-canvas'}>
-              {fullscreen ? (
-                // The page's half of `ui/request-display-mode`: the graph
-                // collapses to a strip, and leaving is the page's decision, not
-                // the island's — the store flips, and the new mode flows back
-                // down to the bridge through `IslandFrame`.
-                <div className="island-strip" data-testid="island-strip">
-                  <span className="island-strip-title">
-                    <span className="island-strip-crumb">Run › {selectedStep!.split('/')[0]}</span>
-                    <span className="island-strip-key">{selectedStep}</span>
-                  </span>
-                  <button
-                    type="button"
-                    data-testid="island-exit-fullscreen"
-                    onClick={() => dispatch(islandDisplayChanged('inline'))}
-                  >
-                    Exit fullscreen <kbd>Esc</kbd>
-                  </button>
+          {!state || !def ? (
+            <RawRows run={run!} steps={steps} />
+          ) : (
+            <FileRefProvider state={state}>
+              <RunContext.Provider value={ctx!}>
+                <div className={fullscreen ? 'run-canvas island-fullscreen' : 'run-canvas'}>
+                  {fullscreen && (
+                    // The page's half of `ui/request-display-mode`: the graph
+                    // collapses to a strip, and leaving is the page's decision, not
+                    // the island's — the store flips, and the new mode flows back
+                    // down to the bridge through `IslandFrame`.
+                    <div className="island-strip" data-testid="island-strip">
+                      <span className="island-strip-title">
+                        <span className="island-strip-crumb">Run › {selectedStep!.split('/')[0]}</span>
+                        <span className="island-strip-key">{selectedStep}</span>
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="island-exit-fullscreen"
+                        onClick={() => dispatch(islandDisplayChanged('inline'))}
+                      >
+                        Exit fullscreen <kbd>Esc</kbd>
+                      </button>
+                    </div>
+                  )}
+                  {/*
+                    One level of the taxonomy at a time (08, decided
+                    2026-08-26): the run's own card, or — while a job or a
+                    step is selected — that level's page in its place.
+                    Never both, and which one is the route's answer now.
+                  */}
+                  {legacy ? <Navigate to={legacy} replace /> : <Outlet />}
+                  {backstage.length > 0 && (
+                    <div className="island-backstage" data-testid="island-backstage" aria-hidden="true" inert>
+                      {backstage.map((key) => (
+                        <BackstageIsland key={key} runId={state.runId} stepKey={key} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <GraphView
-                  def={def}
-                  mode="run"
-                  state={state}
-                  selectedKey={selectedStep}
-                  onSelect={select}
-                />
-              )}
-              {/*
-                One level of the taxonomy at a time (08, decided 2026-08-26):
-                the run's own card, or — while a step is selected — that
-                step's pane in its place. Never both.
-              */}
-              {level === 'step' ? (
-                <StepPane
-                  key={`${selectedStep}#${paneSide?.n ?? 0}`}
-                  def={def}
-                  state={state}
-                  stepKey={selectedStep!}
-                  impl={implForView ?? undefined}
-                  live={isLive}
-                  initialTab={paneSide?.side}
-                  onBack={back}
-                  onRun={toRun}
-                  source={yamlSource}
-                />
-              ) : level === 'job' ? (
-                <JobPane
-                  key={`${selectedStep}#${paneSide?.n ?? 0}`}
-                  def={def}
-                  state={state}
-                  job={selectedStep!}
-                  impl={implForView ?? undefined}
-                  initialTab={paneSide?.side}
-                  onSelect={(key) => select(key)}
-                  onBack={toRun}
-                  onFork={forkable(selectedStep!) ? () => void fork(selectedStep!) : undefined}
-                  source={yamlSource}
-                />
-              ) : (
-                <RunPane
-                  key={state.runId}
-                  def={def}
-                  state={state}
-                  workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
-                  annotations={annotations}
-                  impl={implForView ?? undefined}
-                  onJump={(key) => select(key)}
-                />
-              )}
-              {backstage.length > 0 && (
-                <div className="island-backstage" data-testid="island-backstage" aria-hidden="true" inert>
-                  {backstage.map((key) => (
-                    <BackstageIsland key={key} runId={state.runId} stepKey={key} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </FileRefProvider>
-        )}
-      </section>
-    </ImplWithheldContext.Provider>
-    </ImplContext.Provider>
+              </RunContext.Provider>
+            </FileRefProvider>
+          )}
+        </section>
+      </ImplWithheldContext.Provider>
+      </ImplContext.Provider>
+    </Frame>
   )
 }

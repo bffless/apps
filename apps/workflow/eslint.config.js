@@ -27,6 +27,7 @@ export default defineConfig([
   },
   {
     files: ['src/lib/runner/**/*.ts'],
+    ignores: ['src/lib/runner/**/*.test.ts'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [

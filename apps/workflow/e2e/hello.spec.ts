@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { waitStepState } from './steps'
 
 test('hello workflow runs end to end against the mock backend', async ({ page }) => {
   await page.goto('/?mocks=on')
@@ -18,9 +19,10 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   const status = page.getByTestId('run-status')
   await expect(status).toHaveAttribute('data-state', 'running')
   // greet succeeds, slow retries (mock BUSY) then polls to done, flaky fails-then-recovers,
-  // confirm waits on the form:
-  const review = page.locator('[data-testid="step"][data-key="confirm/0/review"]')
-  await expect(review).toHaveAttribute('data-state', 'waiting', { timeout: 60_000 })
+  // confirm waits on the form. The wait is off the page contract (07), not the
+  // Summary's graph chip: the moment the step waits, following auto-navigates
+  // (replace) to its job page and the chip is gone (spec 2026-09-08).
+  await waitStepState(page, 'confirm/0/review', 'waiting', 60_000)
   await page.getByRole('button', { name: 'Finish' }).click()             // the form step's submit label
 
   await expect(status).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
