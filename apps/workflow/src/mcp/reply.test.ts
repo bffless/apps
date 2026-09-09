@@ -130,7 +130,7 @@ describe('workflow.status / outputs', () => {
     const poster = { path: 'workflows/hello/runs/r/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/poster.png' }
     const done = result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow({ status: 'succeeded', outputs: { line: 'x', poster } })], steps: [] })
     expect(text(done)).toBe(
-      `Run ${RUN_ID} (succeeded) outputs: line, poster\nFile refs, never bytes — pass a ref’s \`path\` to workflow.sign for a fetchable URL; the ref’s own \`url\` is the harness page’s session-only path.`,
+      `Run ${RUN_ID} (succeeded) outputs: line, poster\n- poster: poster.png (1 B, image/png) — path: workflows/hello/runs/r/poster.png\nFile refs, never bytes — pass a ref’s \`path\` to workflow.sign for a fetchable URL; the ref’s own \`url\` is the harness page’s session-only path.`,
     )
     expect(done.structuredContent).toEqual({ runId: RUN_ID, status: 'succeeded', outputs: { line: 'x', poster } })
   })
@@ -171,10 +171,17 @@ describe('workflow.runs', () => {
 describe('workflow.sign', () => {
   it('answers the presigned URL for a confined path and refuses the rest with the rule’s own message', () => {
     const r = result(callOf('workflow.sign', { path: 'workflows/hello/x.svg' }), { signed: { url: 'https://storage.googleapis.com/b/k?sig=1' } })
-    expect(text(r)).toBe('Signed workflows/hello/x.svg for 3600 s')
+    expect(text(r)).toBe('Signed workflows/hello/x.svg for 3600 s: https://storage.googleapis.com/b/k?sig=1')
+    expect(text(r)).toMatch(/: https:\/\/storage\.googleapis\.com\/b\/k\?sig=1$/)
     expect(r.structuredContent).toEqual({ path: 'workflows/hello/x.svg', url: 'https://storage.googleapis.com/b/k?sig=1', expiresIn: 3600 })
     expect(result(callOf('workflow.sign', { path: '../x' })).structuredContent!.errors).toEqual({ path: 'path must be an uploads-relative key under workflows/ with no traversal' })
     expect(result(callOf('workflow.sign', { path: 'workflows/x' }), {}).structuredContent!.errors).toHaveProperty('path')
+  })
+
+  it('appends the signed URL verbatim — a text-only host has no other way to read it (apps#627)', () => {
+    const url = 'https://storage.googleapis.com/b/k?sig=1&X-Goog-Expires=3600&x=a%2Fb'
+    const r = result(callOf('workflow.sign', { path: 'workflows/hello/x.svg' }), { signed: { url } })
+    expect(text(r)).toBe(`Signed workflows/hello/x.svg for 3600 s: ${url}`)
   })
 })
 

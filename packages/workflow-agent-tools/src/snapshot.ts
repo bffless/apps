@@ -183,13 +183,54 @@ export function snapshotText(snapshot: RunSnapshot): string {
  * 02): `path`, `name` and `url` all strings. `path` alone is not enough — a
  * pipeline's JSON output can carry a `path` key and not be a file.
  */
-function isFileRefLike(value: unknown): boolean {
+function isFileRefLike(value: unknown): value is Record<string, unknown> {
   return isPlainObject(value) && typeof value.path === 'string' && typeof value.name === 'string' && typeof value.url === 'string'
 }
 
-/** True when an output is a File ref, or a `file` + `list` array holding one (spec 02). */
-function hasFileRef(outputs: Record<string, unknown>): boolean {
-  return Object.values(outputs).some((value) => isFileRefLike(value) || (Array.isArray(value) && value.some(isFileRefLike)))
+/**
+ * A human-readable size — `B` under 1 KB (no decimal), `KB`/`MB`/`GB` above it
+ * (one decimal): `512` → `512 B`, `1024` → `1.0 KB`, `7215671` → `6.9 MB`.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(1)} ${units[unit]}`
+}
+
+/** `- <label>: <name> (<size>, <contentType>) — path: <path>`, either parenthetical part omitted when the ref lacks it. */
+function refLine(label: string, ref: Record<string, unknown>): string {
+  const parts: string[] = []
+  if (typeof ref.size === 'number') parts.push(formatBytes(ref.size))
+  if (typeof ref.contentType === 'string') parts.push(ref.contentType)
+  const paren = parts.length > 0 ? ` (${parts.join(', ')})` : ''
+  return `- ${label}: ${String(ref.name)}${paren} — path: ${String(ref.path)}`
+}
+
+/**
+ * One line per File ref in `outputs` — a bare ref as `<key>`, a ref inside a
+ * `list` output as `<key>[<i>]` (non-ref entries skipped) — in `Object.keys`
+ * / array order. Never touches a non-ref output's value (apps#627: a `words`
+ * array can be thousands of entries).
+ */
+function fileRefLines(outputs: Record<string, unknown>): string[] {
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(outputs)) {
+    if (isFileRefLike(value)) {
+      lines.push(refLine(key, value))
+      continue
+    }
+    if (!Array.isArray(value)) continue
+    value.forEach((entry, i) => {
+      if (isFileRefLike(entry)) lines.push(refLine(`${key}[${i}]`, entry))
+    })
+  }
+  return lines
 }
 
 /**
@@ -203,13 +244,16 @@ export const FILE_REF_HINT =
 
 /**
  * The one sentence both adapters say about a run's outputs — "Run <id>
- * (<status>) outputs: <keys>", plus `FILE_REF_HINT` when one of them is a File
- * ref — so a model hears the same thing from the harness page and from the
- * MCP endpoint (D19).
+ * (<status>) outputs: <keys>", one line per File ref (name, size, type, path;
+ * a `words`-shaped output never gets its value dumped) and `FILE_REF_HINT`
+ * when any output is a ref — so a text-only host (Claude.ai/Desktop, which
+ * sees only this text, not `structuredContent`) has everything it needs to
+ * exchange a ref for a URL (apps#627, apps#630/apps#631 desktop reports).
  */
 export function outputsText(snapshot: Pick<RunSnapshot, 'runId' | 'status' | 'outputs'>): string {
   const names = Object.keys(snapshot.outputs)
   if (names.length === 0) return `Run ${snapshot.runId} is ${snapshot.status} and has no outputs${snapshot.status === 'running' ? ' yet' : ''}`
   const line = `Run ${snapshot.runId} (${snapshot.status}) outputs: ${names.join(', ')}`
-  return hasFileRef(snapshot.outputs) ? `${line}\n${FILE_REF_HINT}` : line
+  const refLines = fileRefLines(snapshot.outputs)
+  return refLines.length === 0 ? line : [line, ...refLines, FILE_REF_HINT].join('\n')
 }

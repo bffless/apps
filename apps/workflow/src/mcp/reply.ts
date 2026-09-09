@@ -292,7 +292,7 @@ function sign(route: Route, steps: StepOutputs): CallToolResult {
   if (!route.isSign) return refuse('path', NOT_CONFINED)
   const url = str(steps.signed?.url)
   if (url === undefined) return refuse('path', `${route.signPath}: the sign rule returned no url`)
-  return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN })
+  return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s: ${url}`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN })
 }
 
 /** The declared step (raw) of a step row in the run's definition snapshot, or `undefined`. */

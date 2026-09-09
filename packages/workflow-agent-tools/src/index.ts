@@ -40,6 +40,7 @@ export {
   ACTIVE_STEP_STATUSES,
   FILE_REF_HINT,
   declaredList,
+  formatBytes,
   outputsText,
   snapshotFromRows,
   snapshotText,

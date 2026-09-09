@@ -386,7 +386,7 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     if (path === undefined) return missing('path')
     try {
       const signed = await (deps.sign ?? signFile(httpJsonWithReauth))(path)
-      return textResult(`Signed ${path} for ${signed.expiresIn} s`, { path, url: signed.url, expiresIn: signed.expiresIn })
+      return textResult(`Signed ${path} for ${signed.expiresIn} s: ${signed.url}`, { path, url: signed.url, expiresIn: signed.expiresIn })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return errorResult(message, { errors: { path: message } })
