@@ -52,7 +52,7 @@ test('interactive hello runs an island step end to end against the mock backend'
   // Summary's graph before the chip could ever reach `waiting`.
   await waitStepState(page, 'pick/0/choose', 'waiting', 60_000)
 
-  // `island-frame` is not unique on RunPage: the `render: island` viewer for
+  // `island-frame` is not unique on a run route: the `render: island` viewer for
   // the run's `view` output also renders one, from first paint. Scope to the
   // step's own pane display.
   const stepFrame = page
@@ -87,7 +87,7 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   await waitStepState(page, 'review/0/confirm', 'waiting', 60_000)
   // The pane auto-opens only when nothing else is selected, and the island
-  // step still is (RunPage's "never fight a selection back over") — so the
+  // step still is (RunShell's "never fight a selection back over") — so the
   // way to the form is the same navigation a reader would make: the rail's
   // "review" row, then that job's own step row. Not `openStep` (a full
   // navigation): this run is still live, and the mock backend is page memory
