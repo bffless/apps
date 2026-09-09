@@ -36,6 +36,15 @@ jobs:
         run: |
           root="$(npm root -g)/@bffless/workflow-headless"
           version="$(node -p "require(require.resolve('playwright/package.json', { paths: ['$root'] })).version")"
+          # Fail closed on anything that is not a version. A blank-but-successful
+          # resolve would install `playwright@`, which npm reads as *latest* — a
+          # browser revision the pinned driver refuses to launch — and would then
+          # store it under the key `playwright-Linux-`, poisoning the cache for
+          # every later run in this repo.
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Could not resolve the driver's Playwright version (got '$version')" >&2; exit 1 ;;
+          esac
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
