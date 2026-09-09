@@ -5,7 +5,7 @@
  *
  * `MediaSeekContext.test.tsx` covers the registry itself; this file covers the
  * thing the registry exists for — that `RunOutputs`' run-scope provider and
- * `StepPane`'s Output-tab provider actually put a transcript and a player in
+ * `StepBody`'s Output-tab provider actually put a transcript and a player in
  * one scope, with a real `ValueView` dispatch in between. The renderer fixture
  * (`mocks/fixtures/renderedRun.ts`) has a transcript but no video, so this
  * suite carries its own two-output run instead of growing the shared one.
@@ -16,7 +16,7 @@ import { Provider } from 'react-redux'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { describe, expect, it } from 'vitest'
 import { RunOutputs } from './RunOutputs'
-import { StepPane } from './StepPane'
+import { StepBody } from './StepBody'
 import { FileCard } from '../values/FileCard'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { TranscriptView } from '../values/renderers/TranscriptView'
@@ -144,7 +144,7 @@ describe('transcript → FileCard seek', () => {
     const { def, state } = replayed()
     const { container } = render(
       <Provider store={makeStore()}>
-        <StepPane def={def} state={state} stepKey="show/0/play" live={false} />
+        <StepBody def={def} state={state} stepKey="show/0/play" live={false} />
       </Provider>,
     )
 

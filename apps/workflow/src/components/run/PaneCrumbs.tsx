@@ -1,11 +1,16 @@
 /**
- * Where the card under the graph sits in the taxonomy (08: run › job › step),
- * as a breadcrumb in its head — the same shape as the shell's own, so a person
- * reads their position the same way at both levels of the page. Every segment
- * above the current one is a way up: the nearest is the "Back" the tests and
- * Esc use (`step-pane-back`), the first is the run.
+ * Where a card sits in the taxonomy (08: run › job › step), as a breadcrumb in
+ * its head — the same shape as the shell's own, so a person reads their
+ * position the same way at every level of the page. Every segment above the
+ * current one is a way up; the first is the run.
  *
- * Selection is the URL's `?step=` (RunPage), so each click is a history entry.
+ * Since phase 3 the run card and the form/island panes are the only callers,
+ * and all three pass an empty `trail` — the job head carries the one climb out
+ * of a job now, and a step is a row on that page rather than a card of its own.
+ * The trail (and its `step-pane-back` handle) is kept for a caller that has
+ * levels above it to offer.
+ *
+ * Selection is the URL (spec 2026-09-08), so each click is a history entry.
  */
 export interface Crumb {
   label: string

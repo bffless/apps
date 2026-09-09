@@ -1,8 +1,14 @@
 /**
- * Which graph chips light up for the value under the pointer (08: hovering a
- * payload chip highlights where it came from and where it goes). Pure, on top
- * of `dataFlowEdges` — `GraphView` only wires this to the store's
+ * What lights up for the value under the pointer (08: hovering a payload chip
+ * highlights where it came from and where it goes). Pure, on top of
+ * `dataFlowEdges` — `GraphView` only wires this to the store's
  * `ui.hoveredValue`.
+ *
+ * The answer is given at both granularities, because two screens read it: the
+ * graph draws one node per job (spec 2026-09-08, Task 8) and reads the **job**
+ * sets; the job page's step rows read the **step** sets. So the source job is
+ * always named — whatever level the hover itself named — and every edge that
+ * carries the value names its target step *and* that step's job.
  */
 import { dataFlowEdges, jobOutputSteps } from '../../lib/runner/graph'
 import type { DataFlowEdge } from '../../lib/runner/graph'
@@ -20,11 +26,18 @@ export interface GraphFlow {
   sourceSteps: ReadonlySet<string>
   /** `${job}::${step}` keys whose chip reads the hovered value. */
   targetSteps: ReadonlySet<string>
-  /** Job ids whose card is itself the hovered value's source (job-level output, no one declaring step). */
+  /** Job ids the hovered value comes off — the hovered job itself, always. */
   sourceJobs: ReadonlySet<string>
+  /** Job ids that read the hovered value: every matching edge's `to.job`. */
+  targetJobs: ReadonlySet<string>
 }
 
-const NONE: GraphFlow = { sourceSteps: new Set(), targetSteps: new Set(), sourceJobs: new Set() }
+const NONE: GraphFlow = {
+  sourceSteps: new Set(),
+  targetSteps: new Set(),
+  sourceJobs: new Set(),
+  targetJobs: new Set(),
+}
 
 /**
  * A hover naming a step is that one chip. A hover naming only a job is the job
@@ -45,13 +58,13 @@ export function flowFor(
   if (!hovered) return NONE
 
   const sourceSteps = new Set<string>()
-  const sourceJobs = new Set<string>()
+  const sourceJobs = new Set<string>([hovered.job])
   const targetSteps = new Set<string>()
+  const targetJobs = new Set<string>()
 
   if (hovered.step !== undefined) {
     sourceSteps.add(`${hovered.job}::${hovered.step}`)
   } else {
-    sourceJobs.add(hovered.job)
     for (const step of jobOutputSteps(def, hovered.job, hovered.output)) {
       sourceSteps.add(`${hovered.job}::${step}`)
     }
@@ -62,8 +75,11 @@ export function flowFor(
       edge.from.job === hovered.job &&
       edge.from.output === hovered.output &&
       (edge.from.step ?? null) === (hovered.step ?? null)
-    if (sameSource) targetSteps.add(`${edge.to.job}::${edge.to.step}`)
+    if (sameSource) {
+      targetSteps.add(`${edge.to.job}::${edge.to.step}`)
+      targetJobs.add(edge.to.job)
+    }
   }
 
-  return { sourceSteps, sourceJobs, targetSteps }
+  return { sourceSteps, sourceJobs, targetSteps, targetJobs }
 }

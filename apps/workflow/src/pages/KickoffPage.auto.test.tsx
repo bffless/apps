@@ -54,9 +54,11 @@ describe('KickoffPage — ?auto=1', () => {
   it('starts a headless run from `?inputs=`, with no Start click and no form', async () => {
     // `e30` is `{}`: every input takes its declared default, exactly as an
     // untouched form would (hello's `greeting` is `required` *and* defaulted).
-    const { page, store } = renderApp('/hello/hello/run?auto=1&inputs=e30')
+    const { store } = renderApp('/hello/hello/run?auto=1&inputs=e30')
 
-    expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'running')
+    // Off the document, not the Kickoff screen's `main`: the run is its own layout route (spec
+    // 2026-09-08), so it replaces the Kickoff screen's `main`.
+    expect(await screen.findByTestId('run-status')).toHaveAttribute('data-state', 'running')
 
     const run = store.getState().run.state
     expect(run?.headless).toBe(true)
@@ -64,16 +66,16 @@ describe('KickoffPage — ?auto=1', () => {
     expect(run?.workflow).toBe('hello')
     expect(run?.inputs).toEqual({ greeting: 'Hello', names: ['world'], photo: null, shout: false })
 
-    expect(within(page).queryByTestId('kickoff-form')).not.toBeInTheDocument()
-    expect(within(page).queryByTestId('kickoff-invalid')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kickoff-form')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kickoff-invalid')).not.toBeInTheDocument()
   })
 
   it('takes the supplied values over the declared defaults', async () => {
-    const { page, store } = renderApp(
+    const { store } = renderApp(
       `/hello/hello/run?auto=1&inputs=${encode({ greeting: 'Hi', shout: true })}`,
     )
 
-    await within(page).findByTestId('run-status')
+    await screen.findByTestId('run-status')
     expect(store.getState().run.state?.inputs).toEqual({
       greeting: 'Hi',
       names: ['world'],
@@ -83,9 +85,9 @@ describe('KickoffPage — ?auto=1', () => {
   })
 
   it('publishes the live run on `window.__workflow` once it is running', async () => {
-    const { page } = renderApp('/hello/hello/run?auto=1&inputs=e30')
+    renderApp('/hello/hello/run?auto=1&inputs=e30')
 
-    await within(page).findByTestId('run-status')
+    await screen.findByTestId('run-status')
     await waitFor(() => expect(window.__workflow?.status).toBe('running'))
     expect(window.__workflow?.runId).toMatch(/^run_/)
   })

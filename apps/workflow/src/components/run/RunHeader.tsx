@@ -116,7 +116,7 @@ export interface RunHeaderProps {
   /**
    * Present, and rendered as the Delete button, only when the page has decided
    * this run may be deleted (terminal, and owned by this user or an admin —
-   * `RunPage.tsx`). Unlike Cancel this is **not** a live-only action: a record
+   * `RunShell.tsx`). Unlike Cancel this is **not** a live-only action: a record
    * is deletable long after the tab that drove it is gone.
    */
   onDelete?: () => void

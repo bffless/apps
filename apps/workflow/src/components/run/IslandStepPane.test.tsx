@@ -5,7 +5,7 @@
  * also the only place the middleware's handle can actually be mounted: these
  * tests prove the pane finds its handle by run + step key, hands the real
  * iframe to it, and reflects the display mode the store holds — plus the
- * `RunPage` half, where fullscreen collapses the graph to a strip.
+ * `RunShell` half, where fullscreen collapses the graph to a strip.
  */
 import { StrictMode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -41,7 +41,7 @@ import {
   startIslandRun,
 } from '../../test/islandHarness'
 import { IslandStepPane } from './IslandStepPane'
-import { StepPane } from './StepPane'
+import { StepBody } from './StepBody'
 
 beforeEach(() => {
   // The live path never reads this — a call means the page regressed.
@@ -54,7 +54,7 @@ afterEach(() => {
 
 /**
  * `IslandStepPane` takes the run state as a prop, so a bare `render` would
- * freeze it at the state of the moment — exactly what `RunPage` never does.
+ * freeze it at the state of the moment — exactly what `RunShell` never does.
  * This mirrors the page: the state comes off the slice on every render.
  */
 function LivePane() {
@@ -166,14 +166,14 @@ describe('IslandStepPane', () => {
   })
 })
 
-describe('StepPane — island delegation', () => {
+describe('StepBody — island delegation', () => {
   it('delegates a live running/waiting island to the island pane, and falls back to tabs read-only', async () => {
     const { store, host } = await startIslandRun()
     const state = store.getState().run.state!
 
     const live = render(
       <Provider store={store}>
-        <StepPane def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live />
+        <StepBody def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live />
       </Provider>,
     )
     expect(screen.getByTestId('island-step')).toBeInTheDocument()
@@ -182,7 +182,7 @@ describe('StepPane — island delegation', () => {
 
     render(
       <Provider store={store}>
-        <StepPane def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live={false} />
+        <StepBody def={ISLAND_DEF} state={state} stepKey={ISLAND_KEY} live={false} />
       </Provider>,
     )
     expect(screen.queryByTestId('island-step')).not.toBeInTheDocument()
@@ -190,7 +190,7 @@ describe('StepPane — island delegation', () => {
   })
 })
 
-describe('RunPage — island fullscreen', () => {
+describe('RunShell — island fullscreen', () => {
   it('opens a declared fullscreen island inline, expands to the overlay on request, and exits without remounting', async () => {
     // apps#432: `display: fullscreen` is the island's preferred *enlarged*
     // mode, offered as Expand — never its first mount. Nothing here dispatches
@@ -215,12 +215,14 @@ describe('RunPage — island fullscreen', () => {
       expect(store.getState().run.state!.steps[ISLAND_KEY].status).toBe('waiting'),
     )
 
-    // Inline first: the graph is there, the overlay is not, and Expand is offered.
+    // Inline first: no overlay, no strip, and Expand is offered. (The graph
+    // itself is the Summary's now — a selected step is its own route, spec
+    // 2026-09-08 — so the strip is what tells the two modes apart here.)
     await flush()
     expect(document.querySelector('.island-fullscreen')).toBeNull()
     expect(store.getState().ui.islandDisplay).toBe('inline')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'inline')
-    expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
+    expect(within(page).queryByTestId('island-strip')).toBeNull()
 
     fireEvent.click(within(page).getByTestId('island-expand'))
 
@@ -228,8 +230,14 @@ describe('RunPage — island fullscreen', () => {
     expect(store.getState().ui.islandDisplay).toBe('fullscreen')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'fullscreen')
     expect(host.displayModes.at(-1)).toBe('fullscreen')
-    // The graph gives way to the strip; Expand is gone while expanded.
-    expect(within(page).queryAllByTestId('step')).toHaveLength(0)
+    // The overlay is really up, and over this row: the run canvas carries
+    // `island-fullscreen` and the row itself is marked `data-fullscreen` — the
+    // pair `index.css` scopes "hide the job head, the job-io and every sibling
+    // row" to. (The old check here counted graph nodes, which a job page never
+    // renders in the first place, so it held whatever the overlay did.)
+    expect(document.querySelector('.run-canvas.island-fullscreen')).not.toBeNull()
+    expect(within(page).getByTestId('step').closest('li.step-row')).toHaveAttribute('data-fullscreen')
+    // The strip is up, and Expand is gone while expanded.
     expect(within(page).getByTestId('island-strip')).toBeInTheDocument()
     expect(within(page).queryByTestId('island-expand')).toBeNull()
     // The overlay is the SAME iframe — one mount, one element (edit state survives).
@@ -240,7 +248,7 @@ describe('RunPage — island fullscreen', () => {
 
     await waitFor(() => expect(document.querySelector('.island-fullscreen')).toBeNull())
     expect(store.getState().ui.islandDisplay).toBe('inline')
-    expect(within(page).getAllByTestId('step').length).toBeGreaterThan(0)
+    expect(within(page).queryByTestId('island-strip')).toBeNull()
     expect(host.mounts).toHaveLength(1)
     expect(within(page).getByTestId('island-frame')).toBe(frame)
     expect(host.teardowns).not.toContain('unmounted')
@@ -289,15 +297,38 @@ describe('RunPage — island fullscreen', () => {
   })
 })
 
-describe('RunPage — a loading island claims the pane (while following)', () => {
-  /** The graph chip for a step key, the way a user would reach it. */
-  function chip(page: HTMLElement, key: string): HTMLElement | undefined {
+describe('RunShell — a loading island claims the pane (while following)', () => {
+  /** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+  function node(page: HTMLElement, job: string): HTMLElement | undefined {
     return within(page)
-      .getAllByTestId('step')
-      .find((el) => el.getAttribute('data-key') === key)
+      .getAllByTestId('job')
+      .find((el) => el.getAttribute('data-job') === job)
   }
 
-  it('leaves a starting island to its chip once the user has pinned a step, and Follow brings it into the pane', async () => {
+  /**
+   * A step, the way a user reaches one now: its job's node on the Summary,
+   * then that step's own row on the job page, which expands in place.
+   */
+  function openStep(page: HTMLElement, key: string) {
+    const [job, index] = key.split('/')
+    fireEvent.click(node(page, job!)!)
+    // A matrix job's node lands on its collect view; the item's link is the
+    // way to the leg that holds this step.
+    const items = within(page).queryByTestId('job-items')
+    if (items) fireEvent.click(items.querySelectorAll('a')[Number(index)]!)
+    fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement)
+  }
+
+  /**
+   * Back to the run's Summary, where the graph is: a job is its own route now
+   * (spec 2026-09-08), so the job head's "Run" crumb is how a person gets from
+   * one step to the next. It pins, exactly as a graph click does.
+   */
+  function toSummary(page: HTMLElement) {
+    fireEvent.click(within(within(page).getByTestId('job-head')).getByRole('button', { name: 'Run' }))
+  }
+
+  it('leaves a starting island where it is once the user has pinned a step, and Follow brings it into the pane', async () => {
     // Fix round 4, finding 1: only the pane mounts an island (Decision 11), so
     // an island whose pane never opens sits at `running` — no timeout, and no
     // affordance of its own. It used to claim the pane over the user's pick;
@@ -330,8 +361,8 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
 
     const page = screen.getByRole('main')
     // The user picks a pipeline step while the run is still in flight.
-    await waitFor(() => expect(chip(page, SAY_KEY)).toBeDefined())
-    fireEvent.click(chip(page, SAY_KEY)!)
+    await waitFor(() => expect(node(page, 'greet')).toBeDefined())
+    openStep(page, SAY_KEY)
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
     expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
     await flush()
@@ -364,15 +395,17 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
     )
 
     // A click away pins again; the abandoned pane leaves the step exactly as
-    // it was (apps#370), and the chip is the way back — a re-mount from the
-    // same handle.
-    fireEvent.click(chip(page, SAY_KEY)!)
+    // it was (apps#370), and its job on the graph is the way back — a re-mount
+    // from the same handle.
+    toSummary(page)
+    openStep(page, SAY_KEY)
     await flush()
     expect(store.getState().ui.selectedStep).toBe(SAY_KEY)
     expect(host.mounts).toHaveLength(1)
     expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting')
 
-    fireEvent.click(chip(page, CHOOSE_KEY)!)
+    toSummary(page)
+    openStep(page, CHOOSE_KEY)
     await waitFor(() => expect(host.mounts).toHaveLength(2))
   })
 
@@ -409,7 +442,7 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
 
   it('never claims the pane on a read-only view — another tab drives that island', async () => {
     // A `running` island in a run this tab does not drive has no pane to open
-    // here (StepPane's `live` gate renders the tabs); moving the selection
+    // here (StepBody's `live` gate renders the tabs); moving the selection
     // onto it would only yank the reader around (review of apps#370). The
     // reader picks the finished form — a non-interactive selection, the one
     // shape that lets a live page claim.
@@ -477,8 +510,8 @@ describe('RunPage — a loading island claims the pane (while following)', () =>
     )
 
     const page = screen.getByRole('main')
-    await waitFor(() => expect(chip(page, FORM_KEY)).toBeDefined())
-    fireEvent.click(chip(page, FORM_KEY)!)
+    await waitFor(() => expect(node(page, 'ask')).toBeDefined())
+    openStep(page, FORM_KEY)
     await flush()
 
     expect(store.getState().ui.selectedStep).toBe(FORM_KEY)

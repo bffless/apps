@@ -4,6 +4,7 @@
  */
 import { openSession } from '../session.js'
 import { credentials } from '../env.js'
+import { waitStepState } from '../steps.js'
 import type { Walk } from './index.js'
 
 export const m1: Walk = async ({ args, env, report }) => {
@@ -18,13 +19,13 @@ export const m1: Walk = async ({ args, env, report }) => {
     report.expect('discovery.listsHello', /hello/i.test((await impls.textContent()) ?? ''), await impls.textContent())
     await page.getByTestId('implementations').getByRole('link', { name: /^hello$/i }).click()
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Hello workflow' }).click()
-    await page.getByTestId('step').first().waitFor()
+    await page.getByTestId('job').first().waitFor()
     await page.getByRole('link', { name: /start a run/i }).click()
     await page.getByTestId('kickoff-form').waitFor()
     await page.getByTestId('kickoff-start').click()
     await page.getByTestId('run-status').waitFor()
     report.run(page.url().split('/').pop() ?? '')
-    await page.waitForFunction(() => document.querySelector('[data-testid="step"][data-key="confirm/0/review"]')?.getAttribute('data-state') === 'waiting', null, { timeout: 120_000 })
+    await waitStepState(page, 'confirm/0/review', 'waiting', 120_000)
     await page.getByTestId('form-step').waitFor({ timeout: 30_000 })
     await s.shot('05-waiting-form')
     await page.getByRole('button', { name: 'Finish' }).click()

@@ -1,7 +1,10 @@
 /**
- * The run itself, as the outermost step (08): the card that shows under the
- * graph while no step is selected, in exactly the step pane's shape — the
- * same head, the same **Input | Output** toggle, the same value treatment.
+ * The run itself, as the outermost step (08): the **Summary**'s card, under the
+ * graph, in exactly the step pane's shape — the same head, the same
+ * **Input | Output** toggle, the same value treatment. It is not a "nothing is
+ * selected" state any more: a selected step is its own route now (spec
+ * 2026-09-08), so this card is simply what the run level of run › job › step
+ * shows, and it is on screen for as long as the Summary is.
  *
  * **Input** is what the run was started with: the kickoff form's values, each
  * through the renderer its `on.manual.inputs` declaration resolves to, so a
@@ -10,24 +13,24 @@
  *
  * **Output** is what the run produced: the workflow's declared `outputs`
  * (`RunOutputs`, the run-level half only — a step's outputs are that step's
- * own pane), then the trail: every step's `summary` in job order and the
- * run's annotations, each linking back into the graph.
+ * own pane), then the Summary's own trail — the Annotations panel, then a
+ * summary per job — the same order GitHub's run summary page uses.
  *
  * The run bar in the header already carries the status, progress and elapsed
  * time, so this card does not repeat them; its head names the workflow and
  * the run, and the eyebrow says which level of the taxonomy this is.
  */
 import { useState } from 'react'
-import { AnnotationList } from '../AnnotationList'
 import { StatusPill } from '../StatusPill'
 import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
 import type { ValueDecl } from '../values/ValueView'
-import type { Annotation, Definition, RunState, StepKey } from '../../lib/runner/types'
+import type { Annotation, Definition, RunState } from '../../lib/runner/types'
+import { AnnotationsPanel } from './AnnotationsPanel'
+import { JobSummaries } from './JobSummaries'
 import { PaneCrumbs } from './PaneCrumbs'
 import { RunOutputs } from './RunOutputs'
-import { RunSummary } from './RunSummary'
-import type { Tab } from './StepPane'
+import type { Tab } from './StepBody'
 
 const TABS: Tab[] = ['Input', 'Output']
 
@@ -51,10 +54,10 @@ export interface RunPaneProps {
   workflowName: string
   /** Every annotation of the run, run-level and per step (the page collects them). */
   annotations: Annotation[]
+  /** `/<impl>/<workflow>` — every link the Summary's trail makes hangs off it. */
+  base: string
   /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
   impl?: string
-  /** An annotation's jump: select the step it came from. */
-  onJump: (key: StepKey) => void
   /** Which side opens first; Output by default — the results are what the page is for. */
   initialTab?: Tab
 }
@@ -64,8 +67,8 @@ export function RunPane({
   state,
   workflowName,
   annotations,
+  base,
   impl,
-  onJump,
   initialTab = 'Output',
 }: RunPaneProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
@@ -129,8 +132,8 @@ export function RunPane({
           <>
             <RunOutputs def={def} state={state} impl={impl} />
             <div className="pane-trail">
-              <RunSummary def={def} state={state} />
-              <AnnotationList annotations={annotations} onJump={onJump} />
+              <AnnotationsPanel annotations={annotations} base={base} runId={state.runId} />
+              <JobSummaries def={def} state={state} base={base} runId={state.runId} />
             </div>
           </>
         )}

@@ -1,5 +1,22 @@
 import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { waitStepState } from './steps'
+
+/**
+ * Open a step's row from wherever the run is currently selected: the rail's
+ * job row, then that step's own row head on the job page, which expands in
+ * place (spec 2026-09-08, phase 3) — the same navigation a reader would make,
+ * not `openStep`'s full reload (the mock backend is page memory; a reload
+ * loses the live run, not just its graph).
+ */
+async function openJobStep(page: Page, job: string, key: string) {
+  await page.getByRole('navigation', { name: 'Run' }).locator(`[data-testid="rail-job"][data-job="${job}"]`).click()
+  const row = page.locator(`[data-testid="step"][data-key="${key}"]`)
+  await row.click()
+  await expect(row).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('step-pane')).toBeVisible()
+}
 
 /**
  * The bytes the `review` form's mid-run `file` field uploads: a 1×1 PNG, small
@@ -18,7 +35,7 @@ test('interactive hello runs an island step end to end against the mock backend'
   // live under the same `hello` implementation, so an unscoped locator would
   // be ambiguous once the left rail also picks up the same-named link.
   await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
-  await expect(page.getByTestId('step').first()).toBeVisible() // definition graph
+  await expect(page.getByTestId('job').first()).toBeVisible() // definition graph
 
   await page.getByRole('link', { name: /start a run/i }).click()
   await expect(page.getByTestId('kickoff-form')).toBeVisible()
@@ -29,11 +46,13 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   // greet fans out over the matrix, analyze runs, then the island step opens
   // its pane and cannot reach `waiting` until the pane (and thus the iframe)
-  // has rendered — never assert `running` here (task-7-report).
-  const chooseStep = page.locator('[data-testid="step"][data-key="pick/0/choose"]')
-  await expect(chooseStep).toHaveAttribute('data-state', 'waiting', { timeout: 60_000 })
+  // has rendered — never assert `running` here (task-7-report). The wait is
+  // off the page contract (07): a loading island claims the pane and
+  // following auto-navigates (replace) to its job page, unmounting the
+  // Summary's graph before the chip could ever reach `waiting`.
+  await waitStepState(page, 'pick/0/choose', 'waiting', 60_000)
 
-  // `island-frame` is not unique on RunPage: the `render: island` viewer for
+  // `island-frame` is not unique on a run route: the `render: island` viewer for
   // the run's `view` output also renders one, from first paint. Scope to the
   // step's own pane display.
   const stepFrame = page
@@ -54,7 +73,9 @@ test('interactive hello runs an island step end to end against the mock backend'
   // validation and the step stays `waiting`, not `failed`.
   await stepFrame.getByTestId('submit-nothing').click()
   await expect(stepFrame.getByTestId('submit-error')).toContainText('This field is required')
-  await expect(chooseStep).toHaveAttribute('data-state', 'waiting')
+  // Still on the "pick" job page (the page contract, not the Summary's chip —
+  // it is unmounted here).
+  await waitStepState(page, 'pick/0/choose', 'waiting', 5_000)
 
   await stepFrame.getByTestId('submit').click()
 
@@ -64,13 +85,16 @@ test('interactive hello runs an island step end to end against the mock backend'
   // the assertions below (everything past this point is unchanged).
   // ---------------------------------------------------------------------
 
-  const confirmStep = page.locator('[data-testid="step"][data-key="review/0/confirm"]')
-  await expect(confirmStep).toHaveAttribute('data-state', 'waiting', { timeout: 60_000 })
+  await waitStepState(page, 'review/0/confirm', 'waiting', 60_000)
   // The pane auto-opens only when nothing else is selected, and the island
-  // step still is (RunPage's "never fight a selection back over") — so the
-  // way to the form is the same click a reader would make. A reader's click
-  // **pins** the selection (apps#452): the run bar's Follow toggle reads off.
-  await confirmStep.click()
+  // step still is (RunShell's "never fight a selection back over") — so the
+  // way to the form is the same navigation a reader would make: the rail's
+  // "review" row, then that job's own step row. Not `openStep` (a full
+  // navigation): this run is still live, and the mock backend is page memory
+  // (below, "Navigating away and back") — a hard reload here would lose it,
+  // not just its Summary graph. A reader's navigation still **pins** the
+  // selection (apps#452): the run bar's Follow toggle reads off.
+  await openJobStep(page, 'review', 'review/0/confirm')
   const form = page.getByTestId('form-step')
   await expect(form).toBeVisible()
   await expect(page.getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
@@ -98,13 +122,13 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   await expect(status).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
 
-  // Pinned, so the finished run stays on the form's pane rather than
-  // returning to the run card (apps#452) — and a finished run offers no
-  // toggle. The crumb's "Run" is the way up.
+  // Pinned, so the finished run stays on the form's row rather than returning
+  // to the run card (apps#452) — and a finished run offers no toggle. The job
+  // head's "Run" crumb is the way up.
   const finishedPane = page.getByTestId('step-pane')
   await expect(finishedPane).toBeVisible()
   await expect(page.getByTestId('run-follow')).toHaveCount(0)
-  await finishedPane.getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
 
   const outputs = page.getByTestId('run-outputs')
   await expect(outputs).toContainText('line')
@@ -146,8 +170,10 @@ test('interactive hello runs an island step end to end against the mock backend'
   // poster Blob and offloaded its oversized `big` output.
   // ---------------------------------------------------------------------
 
-  const drawStep = page.locator('[data-testid="step"][data-key="card/0/draw"]')
-  await expect(drawStep).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
+  // Back on the Summary (the finished form's crumb returned us here) — the
+  // graph draws no step of its own any more, so the page contract is still
+  // the one source of truth every other wait in this spec reads.
+  await waitStepState(page, 'card/0/draw', 'succeeded', 30_000)
 
   // Decision 4: the module ran in a Worker spawned inside a hidden
   // opaque-origin sandbox, and the frame goes with the Worker the moment the
@@ -162,8 +188,8 @@ test('interactive hello runs an island step end to end against the mock backend'
 
   // `ctx.log` (03: "shows in the step card") — the script step keeps the
   // ordinary Input | Output toggle, and its log card rides on Output. The
-  // step's pane *replaces* the run card (08): one level at a time.
-  await drawStep.click()
+  // step's row expands on its job page, which replaces the run card (08).
+  await openJobStep(page, 'card', 'card/0/draw')
   const pane = page.getByTestId('step-pane')
   await expect(page.getByTestId('run-pane')).toHaveCount(0)
   await pane.getByRole('tab', { name: 'Output' }).click()
@@ -171,11 +197,12 @@ test('interactive hello runs an island step end to end against the mock backend'
   // …and the run-level `poster` is the very file the step recorded, not another
   // one that happens to be named the same.
   await expect(pane.locator('.file-card-download').first()).toHaveAttribute('href', posterHref!)
-  // Back climbs one level, to the job card (run › job › step); the crumb's
-  // "Run" climbs to the top.
-  await pane.getByTestId('step-pane-back').click()
-  await expect(page.getByTestId('job-pane')).toBeVisible()
-  await page.getByTestId('job-pane').getByTestId('step-pane-back').click()
+  // Collapsing the row climbs one level, to the job page; the job head's
+  // "Run" crumb climbs to the top.
+  await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
+  await expect(page.getByTestId('job-page')).toBeVisible()
+  await expect(page.getByTestId('step-pane')).toHaveCount(0)
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run' }).click()
   await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // `ctx.annotate` became a persisted `step.annotated`, so it is in the
@@ -185,11 +212,11 @@ test('interactive hello runs an island step end to end against the mock backend'
   // Navigating away and back rebuilds the page client-side (the mock db is page
   // memory — a reload would take the live run's rows with it). Both the file
   // ref and the big value are still there afterwards.
-  const runUrl = page.url()
-  const runId = runUrl.split('/').pop()!
+  const pageUrl = page.url()
+  const runId = pageUrl.split('/').pop()!
   await page.getByRole('link', { name: /past runs|runs/i }).first().click()
   await page.getByRole('link', { name: runId }).click()
-  await expect(page).toHaveURL(runUrl)
+  await expect(page).toHaveURL(pageUrl)
 
   const outputsAgain = page.getByTestId('run-outputs')
   await expect(outputsAgain.locator('[data-output="poster"] .file-card-download')).toHaveAttribute(
@@ -201,10 +228,10 @@ test('interactive hello runs an island step end to end against the mock backend'
   // table (02 "Inferred shapes") folded to its first 40. The array's own
   // length is what the fold reports, and only a value that is really there
   // has one.
-  await drawStep.click()
+  await openJobStep(page, 'card', 'card/0/draw')
   await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
   await expect(page.getByTestId('step-pane')).toContainText('show all 12000 rows')
-  await page.getByTestId('step-pane').getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
   await expect(page.getByTestId('run-pane')).toBeVisible()
 
   // ---------------------------------------------------------------------
@@ -222,7 +249,7 @@ test('interactive hello runs an island step end to end against the mock backend'
     ['analyze/0/run', ['transcript', 'chart', 'code']],
     ['card/0/draw', ['images']],
   ] as const) {
-    await page.locator(`[data-testid="step"][data-key="${key}"]`).click()
+    await openJobStep(page, key.split('/')[0]!, key)
     const stepPane = page.getByTestId('step-pane')
     await stepPane.getByRole('tab', { name: 'Output' }).click()
     for (const render of renders) {
@@ -231,7 +258,7 @@ test('interactive hello runs an island step end to end against the mock backend'
         `no ${render} renderer on ${key}'s Output`,
       ).toBeVisible()
     }
-    await stepPane.getByRole('button', { name: 'Run', exact: true }).click()
+    await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
   }
 
   // The tile was picked by path, but the form recorded the *ref* (02), and the
@@ -274,8 +301,9 @@ test('a recorded script run hydrates its {"$file"} payload on read', async ({ pa
   // A payload the fetch could not answer renders as this chip instead.
   await expect(page.getByTestId('payload-unavailable')).toHaveCount(0)
 
-  // The crumb's "Run" climbs to the run card, whose results carry the run-level poster.
-  await pane.getByRole('button', { name: 'Run', exact: true }).click()
+  // The job head's "Run" crumb climbs to the run card, whose results carry the
+  // run-level poster.
+  await page.getByTestId('job-head').getByRole('button', { name: 'Run', exact: true }).click()
   const outputs = page.getByTestId('run-outputs')
   await expect(outputs).toBeVisible()
   await expect(outputs.locator('[data-output="poster"] .file-card-download')).toHaveAttribute(

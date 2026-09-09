@@ -22,13 +22,13 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import App from '../App'
-import { publishWorkflowGlobal } from '../lib/workflowGlobal'
-import { db, nextId, stepRowKey } from '../mocks/db'
-import { WAITING_RUN, WAITING_STEP_KEY } from '../mocks/fixtures/waitingRun'
-import { FINISHED_RUN } from '../mocks/fixtures/finishedRun'
-import type { ServerRunRow } from '../lib/coerce'
-import { makeStore } from '../store'
+import App from '../../App'
+import { publishWorkflowGlobal } from '../../lib/workflowGlobal'
+import { db, nextId, stepRowKey } from '../../mocks/db'
+import { WAITING_RUN, WAITING_STEP_KEY } from '../../mocks/fixtures/waitingRun'
+import { FINISHED_RUN } from '../../mocks/fixtures/finishedRun'
+import type { ServerRunRow } from '../../lib/coerce'
+import { makeStore } from '../../store'
 
 afterEach(() => {
   publishWorkflowGlobal(null)
@@ -91,7 +91,7 @@ function renderRun(runId: string, query = '') {
   return store
 }
 
-describe('RunPage — `?resume=1`', () => {
+describe('RunShell — `?resume=1`', () => {
   it('adopts a free lease without anyone clicking Resume', async () => {
     seedRunning('run_resume_free', { leaseOwner: null, leaseUntil: null })
 

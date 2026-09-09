@@ -18,14 +18,17 @@
  * on) — the job is the middle level of run › job › step, and its outputs are
  * what the edges carry.
  *
- * Definition mode owns its side panel (clicking a chip shows the declaration);
- * run mode reports the click instead, because there the pane belongs to the run
- * page, which has the evaluated inputs and outputs to put in it.
+ * The graph draws **jobs**, one node each (spec 2026-09-08, Task 8): steps are
+ * the job page's list now, so a click on the graph always names a job. Both
+ * modes report that click the same way — `onSelect(job)` — and neither shows
+ * anything of the job itself: what a click opens belongs to the page under the
+ * graph, which is the run's job page in run mode and the job's declared rows
+ * on the workflow page (spec §The workflow page). The side panel definition
+ * mode used to own went with that change.
  */
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { dataFlowEdges, needsEdges, topoLayers } from '../../lib/runner/graph'
-import type { Definition, Job, RunState, Step, StepKey } from '../../lib/runner/types'
-import { stepKey } from '../../lib/runner/types'
+import type { Definition, RunState } from '../../lib/runner/types'
 import { useAppSelector } from '../../store/hooks'
 import { flowFor } from './flow'
 import { cardHeight, jobLabel } from './geometry'
@@ -45,19 +48,18 @@ export type PaneSide = 'Input' | 'Output'
 export interface GraphViewProps {
   def: Definition
   mode: 'definition' | 'run'
-  /** Required in run mode: the folded state every chip reads its status from. */
+  /** Required in run mode: the folded state every node reads its status from. */
   state?: RunState
-  selectedKey?: StepKey | null
+  /** The job the owner has open, if it is one of this graph's (08: run › job › step). */
+  selectedJob?: string | null
   /**
-   * `key` is a step key (`job/index/step`) from a chip, or a bare job id from
-   * the header strip / an edge dot / an OUT row; `side` is set when the click
-   * came from an edge dot or an OUT row (08: "jump straight to one side").
+   * The clicked job id — from its node or from one of its edge dots; `side` is
+   * set when the click came from a dot (08: "jump straight to one side").
    */
-  onSelect?: (key: StepKey | string, side?: PaneSide) => void
+  onSelect?: (job: string, side?: PaneSide) => void
 }
 
-export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphViewProps) {
-  const [declared, setDeclared] = useState<{ key: StepKey; step: Step } | null>(null)
+export function GraphView({ def, mode, state, selectedJob, onSelect }: GraphViewProps) {
   const hoveredValue = useAppSelector((s) => s.ui.hoveredValue)
   // The edge list depends on the definition alone, so it is memoized on the
   // definition alone: folded into the `flow` memo it was rebuilt on every
@@ -77,7 +79,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
     Math.max(
       ...layers.map((layer) => {
         const job = layer[row]
-        return job ? cardHeight(def.jobs[job]!, mode, state) : 0
+        return job ? cardHeight(def, job, mode) : 0
       }),
       1,
     ),
@@ -94,22 +96,8 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
   const height =
     PAD * 2 + rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(rows - 1, 0) * ROW_GAP
 
-  const pick = (key: StepKey, step: Step) => {
-    if (mode !== 'run') setDeclared({ key, step })
-    // A chip's click carries no side — the owner's pane opens as it likes.
-    else onSelect?.(key)
-  }
-
-  /** The job as the selection (strip, dots, OUT rows) — run mode only; definition mode has no job pane. */
-  const pickJob = (job: Job, side?: PaneSide) => {
-    if (mode !== 'run') {
-      const step = job.steps[0]
-      if (step) setDeclared({ key: stepKey(job.id, 0, step.id), step })
-      return
-    }
-    if (side === undefined) onSelect?.(job.id)
-    else onSelect?.(job.id, side)
-  }
+  /** The one click the graph has: a job, from its node or one of its dots. */
+  const pickJob = (job: string, side?: PaneSide) => onSelect?.(job, side)
 
   return (
     <div className="graph" data-mode={mode}>
@@ -163,18 +151,21 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
                 <JobCard
                   key={job}
                   job={def.jobs[job]!}
+                  def={def}
                   col={col}
                   row={row}
                   mode={mode}
                   state={state}
-                  selectedKey={selectedKey}
-                  onPick={pick}
-                  onPickJob={(id, side) => pickJob(def.jobs[id]!, side)}
+                  // Only a graph whose owner tracks a selection has a pressed
+                  // state at all: `undefined` leaves `aria-pressed` off the
+                  // node rather than claiming "not pressed" where nothing can be.
+                  selected={selectedJob === undefined ? undefined : selectedJob === job}
+                  onPick={pickJob}
                   flow={flow}
                   style={{
                     gridColumn: col + 1,
                     gridRow: row + 1,
-                    height: cardHeight(def.jobs[job]!, mode, state),
+                    height: cardHeight(def, job, mode),
                     alignSelf: 'center',
                   }}
                 />
@@ -200,7 +191,7 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
                     left: side === 'Input' ? columnLeft(col) - DOT / 2 : columnLeft(col) + COL_W - DOT / 2,
                     top: y,
                   }}
-                  onClick={() => pickJob(job, side)}
+                  onClick={() => pickJob(jobId, side)}
                 />
               ))
             }),
@@ -219,20 +210,6 @@ export function GraphView({ def, mode, state, selectedKey, onSelect }: GraphView
             right dot · output
           </span>
         </p>
-      )}
-
-      {declared && (
-        <aside className="graph-panel" aria-label="Step declaration">
-          <header className="graph-panel-head">
-            <h3 className="graph-panel-title">{declared.key}</h3>
-            <button type="button" className="link-button" onClick={() => setDeclared(null)}>
-              Close
-            </button>
-          </header>
-          <pre className="declaration" data-testid="step-declaration">
-            {JSON.stringify(declared.step.raw, null, 2)}
-          </pre>
-        </aside>
       )}
     </div>
   )

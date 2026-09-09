@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { waitStepState } from './steps'
 
 test('hello workflow runs end to end against the mock backend', async ({ page }) => {
   await page.goto('/?mocks=on')
@@ -9,7 +10,7 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   // workflow tree") also renders a same-named link once discovery populates it,
   // so an unscoped locator is ambiguous by design, not by app defect.
   await page.getByTestId('workflow-list').getByRole('link', { name: 'Hello workflow' }).click()
-  await expect(page.getByTestId('step').first()).toBeVisible()          // definition graph
+  await expect(page.getByTestId('job').first()).toBeVisible()           // definition graph
 
   await page.getByRole('link', { name: /start a run/i }).click()
   await expect(page.getByTestId('kickoff-form')).toBeVisible()
@@ -18,9 +19,10 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   const status = page.getByTestId('run-status')
   await expect(status).toHaveAttribute('data-state', 'running')
   // greet succeeds, slow retries (mock BUSY) then polls to done, flaky fails-then-recovers,
-  // confirm waits on the form:
-  const review = page.locator('[data-testid="step"][data-key="confirm/0/review"]')
-  await expect(review).toHaveAttribute('data-state', 'waiting', { timeout: 60_000 })
+  // confirm waits on the form. The wait is off the page contract (07), not the
+  // Summary's graph chip: the moment the step waits, following auto-navigates
+  // (replace) to its job page and the chip is gone (spec 2026-09-08).
+  await waitStepState(page, 'confirm/0/review', 'waiting', 60_000)
   await page.getByRole('button', { name: 'Finish' }).click()             // the form step's submit label
 
   await expect(status).toHaveAttribute('data-state', 'succeeded', { timeout: 30_000 })
@@ -30,7 +32,15 @@ test('hello workflow runs end to end against the mock backend', async ({ page })
   await expect(outputs).toContainText('Hello, world!')                   // collected greet line
   // the flaky job's warning annotation surfaced (scoped: the same text is also
   // an output chip in run-outputs — the `after` step's own `note` output — so
-  // an unscoped locator is ambiguous by design, not by app defect):
+  // an unscoped locator is ambiguous by design, not by app defect). The panel
+  // opens itself only when an *error*-level annotation lands, and this run's
+  // loudest is the flaky job's warning — so it must arrive closed, and the
+  // click below is what opens it. Asserted rather than branched on: a panel
+  // that came up open would mean the severity rule changed, which is a
+  // regression worth failing on, not a case to accommodate.
+  const annotations = page.getByTestId('annotations')
+  await expect(annotations).toHaveJSProperty('open', false)
+  await annotations.locator('summary').click()
   await expect(page.getByTestId('annotations').getByText(/boom failed with TEAPOT/)).toBeVisible()
   // and the run appears under Past runs:
   await page.getByRole('link', { name: /past runs|runs/i }).first().click()

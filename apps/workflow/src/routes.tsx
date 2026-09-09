@@ -10,19 +10,28 @@ import { Shell } from './components/Shell'
 import { FilePage } from './pages/FilePage'
 import { ImplementationsPage } from './pages/ImplementationsPage'
 import { KickoffPage } from './pages/KickoffPage'
-import { RunPage } from './pages/RunPage'
+import { JobPage } from './pages/run/JobPage'
+import { RunShell } from './pages/run/RunShell'
+import { RunSummaryPage } from './pages/run/RunSummaryPage'
 import { RunsPage } from './pages/RunsPage'
 import { WorkflowPage } from './pages/WorkflowPage'
 import { WorkflowsPage } from './pages/WorkflowsPage'
 
 export const routes = (
-  <Route element={<Shell />}>
-    <Route index element={<ImplementationsPage />} />
-    <Route path=":impl" element={<WorkflowsPage />} />
-    <Route path=":impl/:workflow" element={<WorkflowPage />} />
-    <Route path=":impl/:workflow/run" element={<KickoffPage />} />
-    <Route path=":impl/:workflow/runs" element={<RunsPage />} />
-    <Route path=":impl/:workflow/runs/:runId" element={<RunPage />} />
-    <Route path=":impl/:workflow/file" element={<FilePage />} />
-  </Route>
+  <>
+    <Route element={<Shell />}>
+      <Route index element={<ImplementationsPage />} />
+      <Route path=":impl" element={<WorkflowsPage />} />
+      <Route path=":impl/:workflow" element={<WorkflowPage />} />
+      <Route path=":impl/:workflow/run" element={<KickoffPage />} />
+      <Route path=":impl/:workflow/runs" element={<RunsPage />} />
+      <Route path=":impl/:workflow/file" element={<FilePage />} />
+    </Route>
+    {/* The run's own layout: the run rail replaces the implementation tree (spec Decision 3). */}
+    <Route path=":impl/:workflow/runs/:runId" element={<RunShell />}>
+      <Route index element={<RunSummaryPage />} />
+      <Route path="job/:job" element={<JobPage />} />
+      <Route path="job/:job/:index" element={<JobPage />} />
+    </Route>
+  </>
 )

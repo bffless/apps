@@ -3,7 +3,7 @@
  * runs already behind it — and, for a workflow that does not validate, the lint
  * report *without* a way to start one (08's "no Start" rule).
  */
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
@@ -50,6 +50,58 @@ describe('WorkflowPage', () => {
     expect(within(page).getByRole('link', { name: 'View workflow file' })).toHaveAttribute(
       'href',
       '/hello/hello/file',
+    )
+  })
+
+  /**
+   * Definition mode's own run › job › step (spec §The workflow page): the graph
+   * names a job, the job's declared steps are rows under it, and a row expands
+   * to what that step declares. `report` is asserted *inside* the job page: the
+   * graph node above says the same word for the job's own output, and the point
+   * here is that the row's OUT line says it for the step.
+   */
+  it('lists a job’s declared steps under the graph on a node click, and expands one to its declaration', async () => {
+    renderApp()
+
+    const page = screen.getByRole('main')
+    await within(page).findAllByTestId('job')
+    fireEvent.click(document.querySelector('[data-testid="job"][data-job="slow"]')!)
+
+    const jobPage = within(page).getByTestId('job-page')
+    expect(jobPage).toHaveAttribute('data-job', 'slow')
+    expect(within(jobPage).getByTestId('job-head')).toHaveTextContent('A slow server job')
+
+    const rows = within(jobPage).getAllByTestId('step')
+    expect(rows[0]).toHaveAttribute('data-state', 'declared')
+    expect(rows[0]).toHaveAttribute('data-key', 'slow/0/start')
+
+    fireEvent.click(rows[0]!)
+
+    expect(within(jobPage).getByTestId('step-declaration')).toHaveTextContent('"path": "slow"')
+    expect(within(jobPage).getByText('report')).toBeInTheDocument()
+  })
+
+  it('presses the graph node whose steps are listed, and lists nothing before the first click', async () => {
+    renderApp()
+
+    const page = screen.getByRole('main')
+    await within(page).findAllByTestId('job')
+    // The nodes are a group of toggles with nothing pressed yet, and no job
+    // page under the graph until one of them is.
+    for (const card of within(page).getAllByTestId('job')) {
+      expect(card).toHaveAttribute('aria-pressed', 'false')
+    }
+    expect(within(page).queryByTestId('job-page')).not.toBeInTheDocument()
+
+    fireEvent.click(document.querySelector('[data-testid="job"][data-job="slow"]')!)
+
+    expect(document.querySelector('[data-testid="job"][data-job="slow"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(document.querySelector('[data-testid="job"][data-job="greet"]')).toHaveAttribute(
+      'aria-pressed',
+      'false',
     )
   })
 

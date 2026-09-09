@@ -1,5 +1,5 @@
 /**
- * The refusal wording (apps#382). `RunPage.test.tsx` drives the hook end to
+ * The refusal wording (apps#382). `RunShell.test.tsx` drives the hook end to
  * end — offered, refused with a 403, refused with a 409 — through the page it
  * belongs to; what it never reaches is the 404 branch, because a run that is
  * already gone is not one the page can still be showing a Delete button for.

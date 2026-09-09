@@ -109,7 +109,7 @@ export function ChartView({ value, mapping }: { value: unknown; mapping: unknown
 
   // `seriesFor`/`chartMapping` build a fresh array/object literal on
   // *every* render, even when `value`/`mapping` are structurally unchanged —
-  // `RunPage` polls every 5s while a run is running, re-rendering with a
+  // `RunShell` polls every 5s while a run is running, re-rendering with a
   // new-but-equal outputs object each poll. Depending the effect on `series`/
   // `m` directly would tear down and rebuild uPlot on every one of those
   // polls; depending on their JSON content instead (a primitive, compared by

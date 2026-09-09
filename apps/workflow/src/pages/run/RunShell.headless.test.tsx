@@ -22,21 +22,21 @@ import {
   RouterProvider,
 } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import App from '../App'
-import { publishWorkflowGlobal } from '../lib/workflowGlobal'
-import { seedFinishedRun } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
-import { server } from '../mocks/server'
-import { routes } from '../routes'
-import { makeStore } from '../store'
-import { newRunId } from '../lib/runner/ids'
-import { startRun } from '../store/runnerActions'
-import { runEvent, runOpened } from '../store/runSlice'
-import { flush, pumpUntil as pumpClock, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting, trackedHelloStore } from '../test/helloHarness'
-import { islandStore, pumpUntil, resetIslandHarness } from '../test/islandHarness'
-import type { FakeIslandHost } from '../test/islandHarness'
-import type { Definition, StepKey } from '../lib/runner/types'
-import { stepKey } from '../lib/runner/types'
+import App from '../../App'
+import { publishWorkflowGlobal } from '../../lib/workflowGlobal'
+import { seedFinishedRun } from '../../mocks/db'
+import { FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
+import { server } from '../../mocks/server'
+import { routes } from '../../routes'
+import { makeStore } from '../../store'
+import { newRunId } from '../../lib/runner/ids'
+import { startRun } from '../../store/runnerActions'
+import { runEvent, runOpened } from '../../store/runSlice'
+import { flush, pumpUntil as pumpClock, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting, trackedHelloStore } from '../../test/helloHarness'
+import { islandStore, pumpUntil, resetIslandHarness } from '../../test/islandHarness'
+import type { FakeIslandHost } from '../../test/islandHarness'
+import type { Definition, StepKey } from '../../lib/runner/types'
+import { stepKey } from '../../lib/runner/types'
 
 afterEach(() => {
   resetHelloHarness()
@@ -48,7 +48,7 @@ afterEach(() => {
 // window.__workflow
 // ---------------------------------------------------------------------------
 
-describe('RunPage — window.__workflow', () => {
+describe('RunShell — window.__workflow', () => {
   beforeEach(() => {
     server.use(http.get('/api/workflow/run', () => HttpResponse.json({ run: null, steps: [] })))
   })
@@ -102,7 +102,7 @@ describe('RunPage — window.__workflow', () => {
   })
 })
 
-describe('RunPage — window.__workflow on a parked run (07 `wait=park`)', () => {
+describe('RunShell — window.__workflow on a parked run (07 `wait=park`)', () => {
   /**
    * Parking takes the lease, so the tab is no longer `live` and the page falls
    * through to the run **record** — which a tab that drove the run never
@@ -159,7 +159,7 @@ describe('RunPage — window.__workflow on a parked run (07 `wait=park`)', () =>
   })
 })
 
-describe('RunPage — window.__workflow on a replayed run', () => {
+describe('RunShell — window.__workflow on a replayed run', () => {
   it('publishes a finished run this tab never drove, off the replayed state', async () => {
     seedFinishedRun()
     const store = makeStore()
@@ -216,9 +216,81 @@ const TWO_AUTO_ACCEPT_ISLANDS_DEF = toDefinition({
 const X_KEY: StepKey = stepKey('a', 0, 'x')
 const Y_KEY: StepKey = stepKey('a', 0, 'y')
 
+/**
+ * One island that declares `display: fullscreen` (04), in a job called `pick`
+ * so its row's key is the `pick/0/choose` a driver reads — the shape the
+ * fullscreen strip has to name.
+ */
+const FULLSCREEN_ISLAND_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    pick: {
+      steps: [
+        {
+          id: 'choose',
+          name: 'Pick the best line',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', display: 'fullscreen', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+    },
+  },
+}) as Definition
+
+const CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
+
+/**
+ * The same fullscreen island, preceded by a plain one in the same job — so
+ * the follow logic's own sequential auto-open (`note` running, then `choose`
+ * once `note` finishes) leaves *two* rows open on `pick`'s page, exactly as a
+ * person reading a multi-step job would (fix round 3, finding 2).
+ */
+const FULLSCREEN_TWO_STEP_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    pick: {
+      steps: [
+        islandStep('note'),
+        {
+          id: 'choose',
+          name: 'Pick the best line',
+          uses: 'island',
+          with: { src: 'islands/pick.html', title: 'Pick one', display: 'fullscreen', mode: 'quick' },
+          outputs: { choice: { type: 'string' } },
+        },
+      ],
+    },
+  },
+}) as Definition
+
+const NOTE_KEY: StepKey = stepKey('pick', 0, 'note')
+
+/**
+ * A matrix job whose one step is an island — for fix round 3, finding 3: the
+ * collect view (`/job/pick`, no `:index`) renders no step rows at all, so a
+ * `?step=` naming item 0's step must not be read as "on this page" the way it
+ * would be for a plain job's bare route.
+ */
+const MATRIX_ISLAND_DEF = toDefinition({
+  name: 'Island',
+  jobs: {
+    pick: {
+      strategy: { matrix: { who: ['a', 'b'] }, 'max-parallel': 1 },
+      steps: [islandStep('choose')],
+    },
+  },
+}) as Definition
+
+const MATRIX_CHOOSE_KEY: StepKey = stepKey('pick', 0, 'choose')
+
 type Driving = { headless?: boolean; unattended?: boolean }
 
-async function startTwoIslands(driving: Driving, def: Definition = TWO_ISLANDS_DEF) {
+async function startIslands(
+  driving: Driving,
+  def: Definition = TWO_ISLANDS_DEF,
+  first: StepKey = X_KEY,
+) {
   const { store, advance, host } = islandStore()
   store.dispatch(
     startRun({
@@ -231,11 +303,13 @@ async function startTwoIslands(driving: Driving, def: Definition = TWO_ISLANDS_D
       ...driving,
     }),
   )
-  await pumpUntil(advance, () => store.getState().run.state?.steps[X_KEY]?.status === 'running')
+  await pumpUntil(advance, () => store.getState().run.state?.steps[first]?.status === 'running')
   return { store, advance, host, runId: store.getState().run.state!.runId }
 }
 
-describe('RunPage — headless island mounting', () => {
+const startTwoIslands = (driving: Driving, def?: Definition) => startIslands(driving, def)
+
+describe('RunShell — headless island mounting', () => {
   beforeEach(() => {
     server.use(http.get('/api/workflow/run', () => HttpResponse.json({ run: null, steps: [] })))
   })
@@ -343,5 +417,167 @@ describe('RunPage — headless island mounting', () => {
 
     await waitFor(() => expect(screen.getByTestId('island-frame')).toBeInTheDocument())
     expect(store.getState().ui.selectedStep).toBe(X_KEY)
+  })
+
+  it('Expand overlays the open island row and the strip names the step; Esc exits', async () => {
+    // The island opens **in its row** on the job page (phase 3), and Expand
+    // fixes that row's body over the viewport with the strip in the content
+    // column's place — the strip's crumb naming the two levels above it and
+    // the row's own step key.
+    const { store, host, runId } = await startIslands({}, FULLSCREEN_ISLAND_DEF, CHOOSE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    // Following claims the loading island: its row on `pick`'s page, expanded.
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    expect(router.state.location.pathname).toBe(`/test/island/runs/${runId}/job/pick/0`)
+    expect(within(page).getByTestId('step')).toHaveAttribute('data-key', CHOOSE_KEY)
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'))
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Expand' }))
+
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeTruthy()
+    const strip = within(page).getByTestId('island-strip')
+    expect(strip).toHaveTextContent(CHOOSE_KEY)
+    // `Run › <job label> › <step label>`, the first two a way up.
+    expect(within(strip).getByRole('button', { name: 'Run' })).toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'pick' })).toBeInTheDocument()
+    expect(strip).toHaveTextContent('Pick the best line')
+    // The overlay holds the row's body and nothing else: the job head, the
+    // job's values and every sibling row are hidden while the canvas carries
+    // `island-fullscreen` (fix round 1, finding 3). The hiding is CSS —
+    // `.island-fullscreen .job-page > .job-head, .island-fullscreen .job-io,
+    // .island-fullscreen .step-row:not([data-open])` in `src/index.css` — and
+    // jsdom does not compute the stylesheet, so the class on the canvas is
+    // what this asserts; the elements are deliberately still mounted, so the
+    // row is not remounted when the overlay closes.
+    expect(within(page).getByTestId('job-head')).toBeInTheDocument()
+    expect(within(page).getByTestId('job-io')).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeNull()
+    // Same frame, still mounted: leaving the overlay is a mode change, not a remount.
+    expect(within(page).getByTestId('island-display')).toBeInTheDocument()
+    expect(host.mounts).toHaveLength(1)
+  })
+
+  it('marks only the open island’s row `data-fullscreen`, leaving a second open row hidden (fix round 3, finding 2)', async () => {
+    // `note` runs and finishes first, auto-opening its row; `choose` then
+    // takes the pane in its turn — Decision 7 never closes `note`'s row on
+    // that move, so both are open together by the time Expand is clicked.
+    const { store, host, runId } = await startIslands({}, FULLSCREEN_TWO_STEP_DEF, NOTE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[NOTE_KEY].status).toBe('waiting'))
+    host.allDeps[0]!.onSubmit({ choice: 'x' })
+    // `choose`'s own mount, once the middleware launches it.
+    await waitFor(() => expect(host.mounts).toHaveLength(2))
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'))
+    // Both rows are still open — `note`'s from its own turn in the pane,
+    // `choose`'s from this one — Decision 7 never closed the first on the move.
+    expect(within(page).getAllByTestId('step-pane')).toHaveLength(2)
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Expand' }))
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeTruthy()
+
+    const noteRow = page.querySelector(`[data-testid="step"][data-key="${NOTE_KEY}"]`)!.closest('li')!
+    const chooseRow = page.querySelector(`[data-testid="step"][data-key="${CHOOSE_KEY}"]`)!.closest('li')!
+    expect(chooseRow).toHaveAttribute('data-fullscreen')
+    expect(noteRow).not.toHaveAttribute('data-fullscreen')
+    // Both rows stayed open — the marker, not `data-open`, is what the
+    // overlay's CSS now keys its "everything else" rule off.
+    expect(noteRow).toHaveAttribute('data-open')
+    expect(chooseRow).toHaveAttribute('data-open')
+  })
+
+  it('leaves the overlay when the strip’s crumb climbs out of the row', async () => {
+    const { store, host, runId } = await startIslands({}, FULLSCREEN_ISLAND_DEF, CHOOSE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    host.settle()
+    await waitFor(() => expect(store.getState().run.state!.steps[CHOOSE_KEY].status).toBe('waiting'))
+    fireEvent.click(within(page).getByRole('button', { name: 'Expand' }))
+    expect(document.querySelector('.run-canvas.island-fullscreen')).toBeTruthy()
+
+    // The job crumb is a person's move: it pins, and the overlay goes with the
+    // row it was fixed over.
+    fireEvent.click(within(within(page).getByTestId('island-strip')).getByRole('button', { name: 'pick' }))
+
+    await waitFor(() => expect(document.querySelector('.run-canvas.island-fullscreen')).toBeNull())
+    expect(router.state.location.pathname).toBe(`/test/island/runs/${runId}/job/pick/0`)
+    expect(router.state.location.search).toBe('')
+    expect(store.getState().ui.islandDisplay).toBe('inline')
+    expect(within(page).getByTestId('run-follow')).toHaveAttribute('data-state', 'off')
+  })
+})
+
+/**
+ * Fix round 3, finding 3: `rowOnThisPage` used to read "no `:index` on the
+ * route" as item 0's leg — true for a plain job, but a *matrix* job's bare
+ * route is the collect view, which renders no step rows at all. A `?step=`
+ * naming item 0's step on that URL left the island neither in a row (there is
+ * none) nor backstage (it looked, wrongly, like the pane already had it) —
+ * stuck at `running` with nobody driving it.
+ */
+describe('RunShell — a matrix job’s collect view never claims an island', () => {
+  it('sends item 0’s island backstage rather than treating the collect view as its row', async () => {
+    const { store, host, runId } = await startIslands({ unattended: true }, MATRIX_ISLAND_DEF, MATRIX_CHOOSE_KEY)
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/test/island/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(within(page).getByTestId('island-frame')).toBeInTheDocument())
+    expect(router.state.location.pathname).toBe(`/test/island/runs/${runId}/job/pick/0`)
+
+    // A `?step=` naming item 0's step, but on the collect route (no
+    // `:index`) — the shape `rowOnThisPage`'s bug read as "item 0's page".
+    await act(async () => {
+      await router.navigate(`/test/island/runs/${runId}/job/pick?step=${encodeURIComponent(MATRIX_CHOOSE_KEY)}`)
+    })
+
+    // The collect view, rowless — nothing on the job page itself can show
+    // the island (it is not absent from `page` outright: the backstage div
+    // asserted below renders inside the same `.run-canvas`).
+    const jobPage = within(page).getByTestId('job-page')
+    expect(within(jobPage).getByTestId('job-items')).toBeInTheDocument()
+    expect(within(jobPage).queryByTestId('step-pane')).not.toBeInTheDocument()
+    expect(within(jobPage).queryByTestId('island-frame')).not.toBeInTheDocument()
+
+    const backstage = await screen.findByTestId('island-backstage')
+    expect(within(backstage).getByTestId('island-frame')).toBeInTheDocument()
+    expect(host.mounts.at(-1)!.headless).toBe(true)
   })
 })

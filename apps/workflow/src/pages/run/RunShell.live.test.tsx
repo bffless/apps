@@ -15,13 +15,19 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
-import { MemoryRouter } from 'react-router-dom'
+import {
+  MemoryRouter,
+  RouterProvider,
+  createMemoryRouter,
+  createRoutesFromElements,
+} from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import App from '../App'
-import { server } from '../mocks/server'
-import type { AppStore } from '../store'
-import { runPaused } from '../store/runSlice'
-import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
+import App from '../../App'
+import { server } from '../../mocks/server'
+import { routes } from '../../routes'
+import type { AppStore } from '../../store'
+import { runPaused } from '../../store/runSlice'
+import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../../test/helloHarness'
 
 let getRunCalls = 0
 
@@ -49,15 +55,25 @@ function renderLive(store: AppStore, runId: string) {
   )
 }
 
-function chip(page: HTMLElement, key: string): HTMLElement | null {
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+function node(page: HTMLElement, job: string): HTMLElement | null {
   return (
     within(page)
-      .getAllByTestId('step')
-      .find((el) => el.getAttribute('data-key') === key) ?? null
+      .getAllByTestId('job')
+      .find((el) => el.getAttribute('data-job') === job) ?? null
   )
 }
 
-describe('RunPage — live', () => {
+/**
+ * The step-pane's own `StatusPill` — the `data-state` contract holds there
+ * too, and it is what a step's own pane (rather than the graph, which is the
+ * Summary's and draws jobs only) has to show it.
+ */
+function stepPanePill(page: HTMLElement): HTMLElement {
+  return within(page).getByTestId('step-pane').querySelector('.pill') as HTMLElement
+}
+
+describe('RunShell — live', () => {
   it('renders off the slice with no server read, auto-selects the waiting form, and finishes the run on submit', async () => {
     const { store, runId } = await startHelloAtConfirmWaiting()
     renderLive(store, runId)
@@ -74,19 +90,61 @@ describe('RunPage — live', () => {
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
 
     // A waiting form step is auto-selected — first by topo order — with no
-    // click on its chip.
-    expect(chip(page, REVIEW_KEY)).toHaveAttribute('data-state', 'waiting')
+    // click at all. The auto-follow effect has already navigated to its
+    // job/step route (the graph is the Summary's now), so the `data-state`
+    // contract is read off the step-pane's own status pill.
+    expect(stepPanePill(page)).toHaveAttribute('data-state', 'waiting')
     expect(within(page).getByLabelText(/^approved/)).toBeChecked()
     const submit = within(page).getByRole('button', { name: 'Finish' })
     expect(submit).toBeInTheDocument()
 
     fireEvent.click(submit)
 
+    // A finished run, still following, returns to the Summary (08) — so by
+    // the time the header settles on `succeeded` the graph is back too, and
+    // the form's own job node carries the same `succeeded` the chip did.
     await waitFor(() => {
       expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
+      expect(node(page, 'confirm')).toHaveAttribute('data-state', 'succeeded')
     })
-    expect(chip(page, REVIEW_KEY)).toHaveAttribute('data-state', 'succeeded')
     expect(getRunCalls).toBe(0)
+  })
+
+  it('opens the waiting form’s row on its job page while following, and the form is the row body', async () => {
+    // Phase 3's shape (spec §Step rows): following does not open a pane beside
+    // a graph any more — it navigates to the step's *job page* and expands the
+    // one row `?step=` names, whose body **is** the form.
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    const router = createMemoryRouter(createRoutesFromElements(routes), {
+      initialEntries: [`/hello/hello/runs/${runId}`],
+    })
+    render(
+      <Provider store={store}>
+        <RouterProvider router={router} />
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+
+    await within(page).findByTestId('form-step')
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}/job/confirm/0`)
+    expect(router.state.location.search).toBe(`?step=${encodeURIComponent(REVIEW_KEY)}`)
+
+    // `confirm` has one step, so the job page has one row — and it is open.
+    const row = within(page).getByTestId('step')
+    expect(row).toHaveAttribute('data-key', REVIEW_KEY)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      within(within(page).getByTestId('step-pane')).getByTestId('form-step'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Finish' }))
+
+    await waitFor(() =>
+      expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded'),
+    )
+    // Following: a finished run returns to the Summary.
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${runId}`)
+    expect(await within(page).findByTestId('run-outputs')).toBeInTheDocument()
   })
 
   describe('the persistence-pause banner (05, apps#375)', () => {
@@ -115,7 +173,7 @@ describe('RunPage — live', () => {
       expect(store.getState().run.mode).toBe('live')
       expect(store.getState().run.state?.runId).toBe(runId)
       expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
-      expect(chip(page, REVIEW_KEY)).toHaveAttribute('data-state', 'waiting')
+      expect(stepPanePill(page)).toHaveAttribute('data-state', 'waiting')
     })
   })
 })

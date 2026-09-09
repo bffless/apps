@@ -3,24 +3,43 @@
  * replay engine, and every section of the page read back off the rendered DOM
  * rather than off the state that produced it.
  *
- * The fixture run has **6** step rows (R2) but the graph draws one chip per
- * *declared* step — a matrix job is one card whose chips show the item its
- * selector names (Task 14), so `greet/1/say` is the sixth row and is reached by
- * changing that selector, not by a sixth chip.
+ * The fixture run has **6** step rows (R2) but the graph draws no steps at all:
+ * one node per job (spec 2026-09-08, Task 8). A step is reached in two moves —
+ * its job's node on the Summary, then that step's row on the job page, where it
+ * expands in place — which is also how `greet/1/say`, the sixth row, is
+ * reached: through the matrix job's item link, not a chip on a card.
+ *
+ * Split out of the old single-page `RunShell.test.tsx` (spec 2026-09-08): the
+ * Summary — its header, the run card, its outputs and annotations, delete,
+ * fork, and the degraded states — stays here; the step-pane's own content
+ * (input origins, renderers, a waiting form's `with`, attempt detail) moved to
+ * `JobPage.test.tsx`. Selecting anything is now a navigation (the
+ * Summary and a job/step are separate routes), so a case that used to prove a
+ * selection by a chip's `aria-pressed` now proves it by the URL instead
+ * (`createMemoryRouter` + `router.state.location`), and a case that clicked a
+ * second graph element after the first now returns to the Summary between
+ * the two clicks — the graph is the Summary's alone now.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import {
+  MemoryRouter,
+  RouterProvider,
+  createMemoryRouter,
+  createRoutesFromElements,
+  useLocation,
+} from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App from '../App'
-import { MOCK_ADMIN, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
-import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
-import { server } from '../mocks/server'
-import { makeStore } from '../store'
-import { runClosed } from '../store/runSlice'
-import { workflowApi } from '../store/workflowApi'
-import { fileUrl, type ServerRunRow } from '../lib/coerce'
+import App from '../../App'
+import { MOCK_ADMIN, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../../mocks/db'
+import { FINISHED_RUN, FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
+import { server } from '../../mocks/server'
+import { routes } from '../../routes'
+import { makeStore } from '../../store'
+import { runClosed } from '../../store/runSlice'
+import { workflowApi } from '../../store/workflowApi'
+import type { ServerRunRow } from '../../lib/coerce'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 
@@ -34,7 +53,27 @@ function renderApp(path = RUN_PATH) {
   )
 }
 
-const chip = (key: string) => document.querySelector(`[data-key="${key}"]`) as HTMLElement | null
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+const node = (job: string) =>
+  document.querySelector(`[data-testid="job"][data-job="${job}"]`) as HTMLElement | null
+
+/** One step's row head on the job page, by the key it carries (07). */
+function rowFor(page: HTMLElement, key: string): HTMLElement {
+  return page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement
+}
+
+/**
+ * A step, the way a person reaches one now: its job's node on the Summary, the
+ * item's own link when the job fanned out, then that step's row — which
+ * expands in place rather than replacing the page (Phase 3).
+ */
+function openStep(page: HTMLElement, key: string) {
+  const [job, index] = key.split('/')
+  fireEvent.click(node(job!)!)
+  const items = within(page).queryByTestId('job-items')
+  if (items) fireEvent.click(items.querySelectorAll('a')[Number(index)]!)
+  fireEvent.click(rowFor(page, key))
+}
 
 /** The seeded run, rendered and settled. */
 async function openRun() {
@@ -45,15 +84,27 @@ async function openRun() {
   return page
 }
 
-/** Select a step and switch its pane to one tab. */
-function openTab(page: HTMLElement, key: string, tab: string): HTMLElement {
-  fireEvent.click(chip(key)!)
-  fireEvent.click(within(page).getByRole('tab', { name: tab }))
-  return within(page).getByTestId('step-pane')
+/**
+ * The seeded run, rendered through an imperative `createMemoryRouter` rather
+ * than a fixed `<MemoryRouter initialEntries>` — for a case that used to
+ * prove a selection by a chip's `aria-pressed` and now proves it by the URL
+ * the selection actually is (08).
+ */
+async function openRunRouter(path = RUN_PATH) {
+  seedFinishedRun()
+  const router = createMemoryRouter(createRoutesFromElements(routes), { initialEntries: [path] })
+  render(
+    <Provider store={makeStore()}>
+      <RouterProvider router={router} />
+    </Provider>,
+  )
+  const page = screen.getByRole('main')
+  await within(page).findByTestId('run-status')
+  return { page, router }
 }
 
-describe('RunPage', () => {
-  it('shows the run header, its status and a chip per declared step', async () => {
+describe('RunShell', () => {
+  it('shows the run header, its status and one node per job', async () => {
     const page = await openRun()
 
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
@@ -65,12 +116,22 @@ describe('RunPage', () => {
     expect(within(head).getByText('user_fixture')).toBeInTheDocument()
     expect(within(page).getByText('12.5 s')).toBeInTheDocument()
 
-    expect(within(page).getAllByTestId('step')).toHaveLength(5)
-    expect(chip('greet/1/say')).toBeNull()
-    fireEvent.change(within(page).getByLabelText('Matrix item of greet'), {
-      target: { value: '1' },
-    })
-    expect(chip('greet/1/say')).toBeTruthy()
+    // Four jobs, no steps: the graph is jobs only (Task 8), and the matrix job
+    // is one node carrying its own fan-out.
+    expect(within(page).getAllByTestId('job')).toHaveLength(4)
+    expect(within(page).queryAllByTestId('step')).toHaveLength(0)
+    expect(node('greet')).toHaveTextContent('2 of 2 done')
+    // Picking an item is a selection, and a selection is a navigation (08): the
+    // job's own trail lands on that very step's pane — including the sixth row,
+    // `greet/1/say`, which no card ever showed.
+    openStep(page, 'greet/1/say')
+    expect(await within(page).findByTestId('step-pane')).toBeInTheDocument()
+    // The row itself carries the step's identity now (Decision 4): the open
+    // body sits inside the row whose `data-key` is that very step.
+    expect(rowFor(page, 'greet/1/say')).toHaveAttribute('aria-expanded', 'true')
+    expect(rowFor(page, 'greet/1/say').parentElement).toContainElement(
+      within(page).getByTestId('step-pane'),
+    )
   })
 
   it("links to the run's own snapshot of the workflow file, and to a re-run", async () => {
@@ -87,52 +148,6 @@ describe('RunPage', () => {
     // Phase 3 owns the write actions.
     expect(within(page).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
     expect(within(page).queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument()
-  })
-
-  it("labels a step input with where its value came from", async () => {
-    const page = await openRun()
-
-    fireEvent.click(chip('greet/0/say')!)
-    const pane = within(page).getByTestId('step-pane')
-
-    expect(within(pane).getByText('echo')).toBeInTheDocument()
-    expect(within(pane).getByText(/from inputs\.greeting/)).toBeInTheDocument()
-  })
-
-  it("renders a step's declared outputs with their own renderers", async () => {
-    const page = await openRun()
-    const pane = openTab(page, 'slow/0/start', 'Output')
-
-    expect(within(pane).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
-    expect(within(pane).getByText('Hello, world!')).toBeInTheDocument()
-
-    expect(within(pane).getByAltText('poster.png')).toBeInTheDocument()
-    expect(within(pane).getByRole('link', { name: 'Download' }).getAttribute('href')).toContain(
-      'download=1',
-    )
-  })
-
-  it("shows a form step's evaluated `with` on Input — title, fields with resolved defaults, submit", async () => {
-    const page = await openRun()
-    const pane = openTab(page, 'confirm/0/review', 'Input')
-
-    expect(within(pane).getByText('title')).toBeInTheDocument()
-    expect(within(pane).getByText('Does the report look right?')).toBeInTheDocument()
-    expect(within(pane).getByText('fields')).toBeInTheDocument()
-    // `default: ${{ needs.slow.outputs.report }}` was evaluated before the form was shown.
-    expect(within(pane).getByText(/Hello, world!/)).toBeInTheDocument()
-    expect(within(pane).getByText('submit')).toBeInTheDocument()
-  })
-
-  it('details the attempt, the pipeline path and the annotations of a step on Output', async () => {
-    const page = await openRun()
-    const pane = openTab(page, 'slow/0/start', 'Output')
-
-    expect(within(pane).getByText('Attempt 2')).toBeInTheDocument()
-    expect(within(pane).getByText('slow')).toBeInTheDocument()
-    expect(within(pane).getByText('Job job_hello_1 took 1234 ms')).toBeInTheDocument()
-    // The BUSY error of the attempt it retried is still on the row.
-    expect(within(pane).getByText(/BUSY/)).toBeInTheDocument()
   })
 
   it("lists the run's own outputs, and only those, on the run card's Output", async () => {
@@ -207,85 +222,121 @@ describe('RunPage', () => {
     expect(within(pane).getByText('studio')).toBeInTheDocument()
   })
 
-  // One level of the taxonomy at a time (08, 2026-08-26): run › job › step.
-  // A step's pane replaces the run card; Back climbs one level, the crumb's
-  // "Run" climbs to the top, Esc and the pressed chip climb one level too.
-  describe('the run, job and step cards take turns', () => {
-    it('replaces the run card with the step pane on a chip click; Back climbs to the job, then the run', async () => {
-      const page = await openRun()
+  // Two levels now (Phase 3): the Summary, and a job page whose step rows
+  // expand in place. A job replaces the run card; collapsing the open row is
+  // the way out of a step, and the job head's "Run" crumb the way out of a job.
+  describe('the run and job pages take turns', () => {
+    it('replaces the run card with the job page on a job node then its step row; collapsing climbs to the job, the crumb to the run', async () => {
+      const { page, router } = await openRunRouter()
 
-      fireEvent.click(chip('slow/0/start')!)
+      openStep(page, 'slow/0/start')
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
       expect(within(page).queryByTestId('run-pane')).not.toBeInTheDocument()
       expect(within(page).queryByTestId('run-outputs')).not.toBeInTheDocument()
+      // The node's own `aria-pressed` no longer applies at the step level — the
+      // selection *is* the route now, so the way this pins is a URL, not a DOM
+      // attribute.
+      expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
+      expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
 
-      fireEvent.click(within(page).getByTestId('step-pane-back'))
-      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+      // Collapsing the open row is the way up a level: the job page stays, and
+      // the URL keeps the item it was read on — only `?step=` goes (ruling 3).
+      fireEvent.click(rowFor(page, 'slow/0/start'))
+      expect(within(page).getByTestId('job-page')).toBeInTheDocument()
       expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
-      expect(chip('slow/0/start')).toHaveAttribute('aria-pressed', 'false')
+      expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
+      expect(router.state.location.search).toBe('')
 
-      fireEvent.click(within(page).getByTestId('step-pane-back'))
+      // The job head's own crumb climbs to the Summary.
+      fireEvent.click(within(within(page).getByTestId('job-head')).getByRole('button', { name: 'Run' }))
       expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
-      expect(within(page).queryByTestId('job-pane')).not.toBeInTheDocument()
+      expect(within(page).queryByTestId('job-page')).not.toBeInTheDocument()
+      expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}`)
     })
 
-    it("climbs straight to the run on the step pane's Run crumb", async () => {
+    it("climbs straight to the run on the job head's Run crumb", async () => {
       const page = await openRun()
-      fireEvent.click(chip('slow/0/start')!)
-      fireEvent.click(within(within(page).getByTestId('step-pane')).getByRole('button', { name: 'Run' }))
+      openStep(page, 'slow/0/start')
+      fireEvent.click(within(within(page).getByTestId('job-head')).getByRole('button', { name: 'Run' }))
       expect(within(page).getByTestId('run-pane')).toBeInTheDocument()
     })
 
-    it('climbs one level on Esc, and on the pressed chip clicked again', async () => {
+    it('closes the open row on Esc, and on the row head clicked again', async () => {
       const page = await openRun()
 
-      fireEvent.click(chip('slow/0/start')!)
+      openStep(page, 'slow/0/start')
       fireEvent.keyDown(within(page).getByTestId('step-pane'), { key: 'Escape' })
-      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+      expect(within(page).getByTestId('job-page')).toBeInTheDocument()
+      expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
 
-      fireEvent.click(chip('slow/0/start')!)
+      // The graph has no step to click at all now — the job page's own step
+      // rows are the only way down to one from here.
+      fireEvent.click(rowFor(page, 'slow/0/start'))
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
-      fireEvent.click(chip('slow/0/start')!)
-      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+      // The open row, clicked again, closes — the toggle a pressed chip used to give.
+      fireEvent.click(rowFor(page, 'slow/0/start'))
+      expect(within(page).getByTestId('job-page')).toBeInTheDocument()
+      expect(within(page).queryByTestId('step-pane')).not.toBeInTheDocument()
     })
 
-    it("opens the job card from a group card's header strip, with the job's evaluated outputs", async () => {
-      const page = await openRun()
+    it("opens the job card from the job's own graph node, with the job's evaluated outputs", async () => {
+      const { page, router } = await openRunRouter()
 
-      fireEvent.click(within(page).getByRole('button', { name: 'Job Greet each name' }))
-      const pane = within(page).getByTestId('job-pane')
-      // The crumb ends on the job, the title repeats it: `Run › Greet each name`.
-      expect(within(pane).getByRole('heading', { name: 'Greet each name' })).toBeInTheDocument()
-      expect(within(pane).getByRole('navigation', { name: /where this sits/i })).toHaveTextContent(
-        /^Run›Greet each name/,
+      // The node carries no `aria-label`, so its accessible name is its own
+      // content — the job's label *and* what it says about the run. (A
+      // `{ name: /Greet each name/ }` role query would be ambiguous here: the
+      // job's two edge dots are named after it too.)
+      expect(node('greet')).toHaveAccessibleName(/Greet each name/)
+      expect(node('greet')).toHaveAccessibleName(/2 of 2 done/)
+      fireEvent.click(node('greet')!)
+      const head = within(page).getByTestId('job-head')
+      // The crumb says which level this is; the title names the job.
+      expect(within(head).getByRole('heading', { name: 'Greet each name' })).toBeInTheDocument()
+      expect(within(head).getByRole('navigation', { name: /where this sits/i })).toHaveTextContent(
+        /^Run›Job$/,
       )
-      // `lines: ${{ steps.say.outputs.line }}` collects across the matrix (01).
-      expect(within(pane).getByText('lines')).toBeInTheDocument()
-      expect(within(pane).getByText('Hello, world!')).toBeInTheDocument()
-      expect(within(pane).getByText('Hello, studio!')).toBeInTheDocument()
-      // …and goes to the step that reads it.
-      expect(within(pane).getByText(/goes to slow\/start/)).toBeInTheDocument()
 
-      // The trail lists every step of every item, each a way down.
-      fireEvent.click(within(pane).getByRole('button', { name: /greet\/1\/say/ }))
+      // The job's own values are one disclosure down now (Phase 3).
+      fireEvent.click(within(page).getByText('Job inputs and outputs'))
+      fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
+      const io = within(page).getByTestId('job-io')
+      // `lines: ${{ steps.say.outputs.line }}` collects across the matrix (01).
+      expect(within(io).getByText('lines')).toBeInTheDocument()
+      expect(within(io).getByText('Hello, world!')).toBeInTheDocument()
+      expect(within(io).getByText('Hello, studio!')).toBeInTheDocument()
+      // …and goes to the step that reads it.
+      expect(within(io).getByText(/goes to slow\/start/)).toBeInTheDocument()
+
+      // The collect view lists every item, each a way down to its own leg.
+      fireEvent.click(within(page).getByTestId('job-items').querySelectorAll('a')[1]!)
+      fireEvent.click(rowFor(page, 'greet/1/say'))
       expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
-      expect(chip('greet/1/say')).toHaveAttribute('aria-pressed', 'true')
+      // No chip carries `aria-pressed` off the Summary — the selected item is
+      // the route now.
+      expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/greet/1`)
+      expect(router.state.location.search).toBe('?step=greet%2F1%2Fsay')
     })
 
     it('opens the job card on Output from the right dot, and on Input from the left dot', async () => {
       const page = await openRun()
 
       fireEvent.click(within(page).getByRole('button', { name: 'Output of A slow server job' }))
-      let pane = within(page).getByTestId('job-pane')
-      expect(within(pane).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
-      expect(within(pane).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
+      let io = within(page).getByTestId('job-io')
+      // An edge dot opens the disclosure on the side it asked for.
+      expect(io).toHaveAttribute('open')
+      expect(within(io).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
+      expect(within(io).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
 
+      // The second dot is on the graph too — back to the Summary for it, on
+      // the job head's own crumb.
+      fireEvent.click(within(within(page).getByTestId('job-head')).getByRole('button', { name: 'Run' }))
       fireEvent.click(within(page).getByRole('button', { name: 'Input of Confirm the report' }))
-      pane = within(page).getByTestId('job-pane')
-      expect(within(pane).getByRole('tab', { name: 'Input' })).toHaveAttribute('aria-selected', 'true')
+      io = within(page).getByTestId('job-io')
+      expect(io).toHaveAttribute('open')
+      expect(within(io).getByRole('tab', { name: 'Input' })).toHaveAttribute('aria-selected', 'true')
       // `needs: [slow, flaky]` — what the job waited on.
-      expect(within(pane).getByText('slow')).toBeInTheDocument()
-      expect(within(pane).getByText('flaky')).toBeInTheDocument()
+      expect(within(io).getByText('slow')).toBeInTheDocument()
+      expect(within(io).getByText('flaky')).toBeInTheDocument()
     })
 
     it('opens the job a bare `?step=<job>` deep link names', async () => {
@@ -293,25 +344,45 @@ describe('RunPage', () => {
       renderApp(`${RUN_PATH}?step=confirm`)
       const page = screen.getByRole('main')
       await within(page).findByTestId('run-status')
-      expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+      // The shell's own redirect (round 1) commits a render after `run-status`
+      // does — `find*` waits for it instead of racing it.
+      expect(await within(page).findByTestId('job-page')).toBeInTheDocument()
     })
 
     it('opens the step a `?step=` deep link names', async () => {
       seedFinishedRun()
-      renderApp(`${RUN_PATH}?step=flaky/0/boom`)
+      const router = createMemoryRouter(createRoutesFromElements(routes), {
+        initialEntries: [`${RUN_PATH}?step=flaky/0/boom`],
+      })
+      render(
+        <Provider store={makeStore()}>
+          <RouterProvider router={router} />
+        </Provider>,
+      )
       const page = screen.getByRole('main')
       await within(page).findByTestId('run-status')
 
-      expect(within(page).getByTestId('step-pane')).toBeInTheDocument()
-      expect(chip('flaky/0/boom')).toHaveAttribute('aria-pressed', 'true')
+      expect(await within(page).findByTestId('step-pane')).toBeInTheDocument()
+      // The chip's `aria-pressed` no longer applies — the redirect landed the
+      // URL on the step itself.
+      expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/flaky/0`)
+      expect(router.state.location.search).toBe('?step=flaky%2F0%2Fboom')
       expect(within(page).queryByTestId('run-pane')).not.toBeInTheDocument()
     })
   })
 
-  it('concatenates the step summaries in job order', async () => {
+  it('groups the step summaries under their job, in scheduling order', async () => {
     const page = await openRun()
 
     const summary = within(page).getByTestId('run-summary')
+    // Only `greet`'s two items write a summary in the fixture — one entry
+    // (and heading) per item, each naming the job (and, being a matrix job,
+    // its item too).
+    const entries = within(summary).getAllByRole('article')
+    expect(entries.map((e) => within(e).getByRole('heading').textContent)).toEqual([
+      'Greet each name (who: world) summary',
+      'Greet each name (who: studio) summary',
+    ])
     expect(summary.textContent).toContain('Said')
     expect([...summary.querySelectorAll('strong')].map((el) => el.textContent)).toEqual([
       'Hello, world!',
@@ -320,73 +391,21 @@ describe('RunPage', () => {
   })
 
   it('jumps to the step an annotation came from', async () => {
-    const page = await openRun()
+    const { page, router } = await openRunRouter()
 
     const annotations = within(page).getByTestId('annotations')
+    // Closed by default (no error-level annotation on this run) — jsdom
+    // doesn't hide a closed `<details>`'s content from queries the way a
+    // real browser does, so its list is still reachable without opening it.
     expect(within(annotations).getByText('Job job_hello_1 took 1234 ms')).toBeInTheDocument()
     expect(within(annotations).getByText('boom failed with TEAPOT')).toBeInTheDocument()
 
-    fireEvent.click(within(annotations).getByRole('button', { name: 'slow/0/start' }))
+    fireEvent.click(within(annotations).getByRole('link', { name: 'slow/0/start' }))
 
-    expect(chip('slow/0/start')).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  // Task 13: an output the writer offloaded is a `{"$file"}` pointer in the
-  // row; the page must show the *value*, because that is what the workflow
-  // author declared and what every renderer is written against.
-  describe('an offloaded {"$file"} output', () => {
-    const REPORT = '## Offloaded report\n\n- from the bucket\n'
-    const PATH = 'workflows/hello/hello/runs/run_offload/slow/0/start/report.json'
-
-    /** Rewrite `slow/0/start`'s `report` output as a pointer, with its JSON in the mock bucket. */
-    function offloadReport(): void {
-      seedFinishedRun()
-      const bytes = new TextEncoder().encode(JSON.stringify(REPORT))
-      db.files.set(PATH, { bytes, contentType: 'application/json' })
-      const key = stepRowKey(FIXTURE_RUN_ID, 'slow/0/start')
-      const step = db.steps.get(key)!
-      db.steps.set(key, {
-        ...step,
-        outputs: {
-          ...(step.outputs as Record<string, unknown>),
-          report: {
-            $file: {
-              path: PATH,
-              name: 'report.json',
-              contentType: 'application/json',
-              size: bytes.byteLength,
-              url: fileUrl(PATH),
-            },
-          },
-        },
-      })
-    }
-
-    it('renders the payload it points to, through the declared renderer', async () => {
-      offloadReport()
-      renderApp()
-      const page = screen.getByRole('main')
-      await within(page).findByTestId('run-status')
-
-      const pane = openTab(page, 'slow/0/start', 'Output')
-
-      expect(within(pane).getByRole('heading', { name: 'Offloaded report' })).toBeInTheDocument()
-      expect(within(pane).getByText('from the bucket')).toBeInTheDocument()
-    })
-
-    it('shows a payload-unavailable chip — not a crash — when the bytes cannot be read', async () => {
-      offloadReport()
-      server.use(http.get('/api/uploads/*', () => new HttpResponse(null, { status: 500 })))
-      renderApp()
-      const page = screen.getByRole('main')
-      await within(page).findByTestId('run-status')
-
-      const pane = openTab(page, 'slow/0/start', 'Output')
-
-      expect(within(pane).getByTestId('payload-unavailable')).toHaveTextContent(/payload unavailable/)
-      // The rest of the row still renders — one bad payload is not a bad page.
-      expect(within(pane).getByAltText('poster.png')).toBeInTheDocument()
-    })
+    // The link's own href, not a chip's `aria-pressed` — the jump is a
+    // navigation to the step now.
+    expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
+    expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
   })
 
   it('reports a run id nothing was recorded for', async () => {
@@ -426,6 +445,25 @@ describe('RunPage', () => {
     const page = screen.getByRole('main')
     expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
     expect(within(page).queryByTestId('job')).not.toBeInTheDocument()
+    expect(within(page).getByText(/read-only record/i)).toBeInTheDocument()
+  })
+
+  it('still shows the record when a `?step=` names a step of a definition there is none of', async () => {
+    // Fix round 1, finding 1: everything the shell derives from a parsed
+    // `?step=` — the fullscreen strip's job and step labels — has to survive
+    // the one path where there is no definition to look them up in.
+    db.runs.set('run_bare', {
+      ...FINISHED_RUN.run,
+      runId: 'run_bare',
+      definition: null,
+      yaml: '',
+      _id: nextId(),
+    })
+
+    renderApp('/hello/hello/runs/run_bare?step=slow%2F0%2Fstart')
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
     expect(within(page).getByText(/read-only record/i)).toBeInTheDocument()
   })
 
@@ -493,7 +531,7 @@ describe('RunPage', () => {
      * The observer's convergence path (2026-08-31,
      * run_01M1CPTN6P47DXQDEABE8K9H8Y): a page that loaded a run mid-seal —
      * the row still `running` under another tab's live lease — keeps polling
-     * (RunPage's 5 s `pollingInterval`), and the moment a poll reads the
+     * (RunShell's 5 s `pollingInterval`), and the moment a poll reads the
      * sealed row the banner goes, the pill flips and the outputs render.
      * The app was never the stuck half of that walk (the seal itself was);
      * this pins the half that must keep working.
@@ -669,9 +707,9 @@ describe('RunPage', () => {
       renderAt(`${RUN_PATH}?step=slow`)
       const page = screen.getByRole('main')
 
-      const pane = await within(page).findByTestId('job-pane')
+      const head = await within(page).findByTestId('job-head')
       // The current workflow arrives through discovery; the button waits for it.
-      expect(await within(pane).findByTestId('job-fork')).toHaveTextContent('Re-run from this job')
+      expect(await within(head).findByTestId('job-fork')).toHaveTextContent('Re-run from this job')
     })
 
     it('offers none on a job whose upstream failed, and still offers it on the job to pick instead', async () => {
@@ -684,14 +722,17 @@ describe('RunPage', () => {
       const page = screen.getByRole('main')
 
       // The button on `greet` is the proof the current workflow has loaded …
-      let pane = await within(page).findByTestId('job-pane')
-      expect(await within(pane).findByTestId('job-fork')).toBeInTheDocument()
+      let head = await within(page).findByTestId('job-head')
+      expect(await within(head).findByTestId('job-fork')).toBeInTheDocument()
 
-      // … so its absence on `slow`, opened from the graph card's strip, is the gate's answer.
-      fireEvent.click(within(page).getByRole('button', { name: 'Job A slow server job' }))
-      pane = within(page).getByTestId('job-pane')
-      expect(within(pane).getByRole('heading', { name: 'A slow server job' })).toBeInTheDocument()
-      expect(within(pane).queryByTestId('job-fork')).not.toBeInTheDocument()
+      // … so its absence on `slow`, opened from the graph's own node, is the
+      // gate's answer. The node is on the Summary now — back there first, on
+      // the job head's own crumb.
+      fireEvent.click(within(head).getByRole('button', { name: 'Run' }))
+      fireEvent.click(node('slow')!)
+      head = within(page).getByTestId('job-head')
+      expect(within(head).getByRole('heading', { name: 'A slow server job' })).toBeInTheDocument()
+      expect(within(head).queryByTestId('job-fork')).not.toBeInTheDocument()
     })
 
     it('offers none while the run is still running', async () => {
@@ -701,9 +742,9 @@ describe('RunPage', () => {
       const store = renderAt(`${RUN_PATH}?step=greet`)
       const page = screen.getByRole('main')
 
-      const pane = await within(page).findByTestId('job-pane')
+      const head = await within(page).findByTestId('job-head')
       await currentWorkflowLoaded(store)
-      expect(within(pane).queryByTestId('job-fork')).not.toBeInTheDocument()
+      expect(within(head).queryByTestId('job-fork')).not.toBeInTheDocument()
     })
 
     it('forks the run at the job with one call to the rule, and lands on the new run', async () => {
@@ -719,9 +760,9 @@ describe('RunPage', () => {
       const store = renderAt(`${RUN_PATH}?step=slow`)
       try {
         const page = screen.getByRole('main')
-        const pane = await within(page).findByTestId('job-pane')
+        const jobHead = await within(page).findByTestId('job-head')
 
-        fireEvent.click(await within(pane).findByTestId('job-fork'))
+        fireEvent.click(await within(jobHead).findByTestId('job-fork'))
 
         // The rule wrote a second run row, under a new id …
         await waitFor(() => expect(db.runs.size).toBe(2))
@@ -764,9 +805,9 @@ describe('RunPage', () => {
       )
       renderAt(`${RUN_PATH}?step=slow`)
       const page = screen.getByRole('main')
-      const pane = await within(page).findByTestId('job-pane')
+      const head = await within(page).findByTestId('job-head')
 
-      fireEvent.click(await within(pane).findByTestId('job-fork'))
+      fireEvent.click(await within(head).findByTestId('job-fork'))
 
       const failed = await within(page).findByTestId('run-fork-failed')
       expect(failed).toHaveTextContent('only the run owner or an admin can fork a run')

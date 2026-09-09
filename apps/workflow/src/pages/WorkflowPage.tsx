@@ -6,24 +6,77 @@
  * linter said and offers no Start, because "the workflow appears with the lint
  * error and no Start" is the only honest thing to show: a definition the engine
  * cannot load is one it must not be asked to run.
+ *
+ * Clicking a job on the graph lists that job's **declared steps** under it
+ * (spec 2026-09-08, §The workflow page): the same head and the same expanding
+ * rows the run's job page draws, reading the workflow file instead of a run.
+ * The per-step side panel the graph used to open went with them — a step's
+ * declaration belongs in the step's own row, not beside the diagram.
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { Link, useParams } from 'react-router-dom'
 import { DiscoveryError } from '../components/DiscoveryError'
 import { EmptyState } from '../components/EmptyState'
 import { StatusPill } from '../components/StatusPill'
 import { GraphView } from '../components/graph/GraphView'
+import { JobHead } from '../components/run/JobHead'
+import { StepRow } from '../components/run/StepRow'
 import { workflowId } from '../lib/coerce'
 import { loadWorkflow } from '../lib/runner/definition'
+import { declaredStepsOfJob } from '../lib/runner/jobs'
+import type { Definition, StepKey } from '../lib/runner/types'
 import { useWorkflowListing } from '../store/useWorkflowListing'
 import { useGetWorkflowYamlQuery, useListRunsQuery } from '../store/workflowApi'
 
 /** The most recent runs shown inline; the rest live on Past runs. */
 const RECENT = 5
 
+/**
+ * A job's declared steps, under the graph — the workflow page's own run › job
+ * › step (spec §The workflow page). The same head and the same rows the run's
+ * job page uses, in their declared reading: what the job *is*, before any run
+ * of it exists.
+ *
+ * `open` is local and nothing else: there is no `?step=` here (no run to
+ * address, so no selection worth putting in a URL), and the page is keyed on
+ * the job, so choosing another job starts it fresh rather than carrying one
+ * job's open row onto another. Esc is the row body's own — this page has no
+ * level above the graph to climb to.
+ */
+function DeclaredJob({ def, job }: { def: Definition; job: string }) {
+  const [open, setOpen] = useState<Set<StepKey>>(new Set())
+  const toggle = (key: StepKey) =>
+    setOpen((was) => {
+      const next = new Set(was)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+
+  return (
+    <section className="job-page" data-testid="job-page" data-job={job}>
+      <JobHead def={def} job={job} mode="definition" />
+      <ul className="step-list" data-testid="job-steps">
+        {declaredStepsOfJob(def, job).map((row) => (
+          <StepRow
+            key={row.key}
+            def={def}
+            row={row}
+            mode="declared"
+            open={open.has(row.key)}
+            onToggle={toggle}
+          />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export function WorkflowPage() {
   const { impl: alias } = useParams()
+  // The graph's click, and the whole of this page's selection state: a
+  // workflow has no run to address, so nothing here belongs in the URL.
+  const [selectedJob, setSelectedJob] = useState<string | null>(null)
   const { impl, listing, isLoading, isError, error } = useWorkflowListing()
 
   const target = impl && listing ? { impl: impl.alias, file: listing.file } : skipToken
@@ -107,7 +160,18 @@ export function WorkflowPage() {
         </div>
       )}
 
-      {loaded?.ok && loaded.def && <GraphView def={loaded.def} mode="definition" />}
+      {loaded?.ok && loaded.def && (
+        <GraphView
+          def={loaded.def}
+          mode="definition"
+          selectedJob={selectedJob}
+          onSelect={(job) => setSelectedJob(job)}
+        />
+      )}
+
+      {loaded?.ok && loaded.def && selectedJob !== null && loaded.def.jobs[selectedJob] && (
+        <DeclaredJob key={selectedJob} def={loaded.def} job={selectedJob} />
+      )}
 
       {runs && runs.length > 0 && (
         <section className="recent">

@@ -7,14 +7,22 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
-import App from '../App'
-import { seedFinishedRun } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
-import { makeStore } from '../store'
+import App from '../../App'
+import { seedFinishedRun } from '../../mocks/db'
+import { FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
+import { makeStore } from '../../store'
 
 const RUN_PATH = `/hello/hello/runs/${FIXTURE_RUN_ID}`
 
-const chip = (key: string) => document.querySelector(`[data-key="${key}"]`) as HTMLElement | null
+/** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
+const node = (job: string) =>
+  document.querySelector(`[data-testid="job"][data-job="${job}"]`) as HTMLElement | null
+
+/** From the Summary: the step's job node, then the step's own row on the job page. */
+function openStep(page: HTMLElement, key: string) {
+  fireEvent.click(node(key.split('/')[0]!)!)
+  fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement)
+}
 
 async function openRun() {
   seedFinishedRun()
@@ -35,10 +43,10 @@ function markedLines(): number[] {
   return lines.flatMap((line, i) => (line.getAttribute('data-marked') === 'true' ? [i + 1] : []))
 }
 
-describe('RunPage — YAML drawer', () => {
+describe('RunShell — YAML drawer', () => {
   it("shows a past run's step from the snapshot that ran, and closing restores the pane", async () => {
     const page = await openRun()
-    fireEvent.click(chip('flaky/0/after')!)
+    openStep(page, 'flaky/0/after')
     const pane = within(page).getByTestId('step-pane')
     fireEvent.click(within(pane).getByRole('tab', { name: 'Output' }))
     expect(within(pane).getByText('Attempt 1')).toBeInTheDocument()
@@ -56,7 +64,12 @@ describe('RunPage — YAML drawer', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     const same = within(page).getByTestId('step-pane')
-    expect(within(same).getByText('flaky/0/after', { selector: '.pane-key' })).toBeInTheDocument()
+    // The row carries the step's identity now (Decision 4); the body it opened
+    // is still the same one, on the same side.
+    expect(page.querySelector('[data-testid="step"][data-key="flaky/0/after"]')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
     expect(within(same).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
     expect(within(same).getByText('Attempt 1')).toBeInTheDocument()
     expect(within(same).getByRole('button', { name: 'YAML' })).toHaveFocus()
@@ -64,14 +77,15 @@ describe('RunPage — YAML drawer', () => {
 
   it('marks the job block for a job selection', async () => {
     const page = await openRun()
-    fireEvent.click(chip('slow/0/start')!)
-    fireEvent.click(within(page).getByTestId('step-pane-back'))
-    const pane = within(page).getByTestId('job-pane')
+    // The job node *is* the job selection now (Task 8) — one click, no step in
+    // between and no crumb to climb.
+    fireEvent.click(node('slow')!)
+    const head = within(page).getByTestId('job-head')
 
-    fireEvent.click(within(pane).getByRole('button', { name: 'YAML' }))
+    fireEvent.click(within(head).getByRole('button', { name: 'YAML' }))
 
     expect(markedLines()).toEqual(Array.from({ length: 23 }, (_, i) => 36 + i))
     fireEvent.click(screen.getByTestId('yaml-drawer-close'))
-    expect(within(page).getByTestId('job-pane')).toBeInTheDocument()
+    expect(within(page).getByTestId('job-page')).toBeInTheDocument()
   })
 })

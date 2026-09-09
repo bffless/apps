@@ -51,7 +51,7 @@ function stepOf(job: string, id: string): Step {
   return step
 }
 
-/** Submit `confirm/0/review` with its own defaults (approved, the pre-filled report) — same as `RunPage.live.test.tsx`'s "Finish" click, but at the store level. */
+/** Submit `confirm/0/review` with its own defaults (approved, the pre-filled report) — same as `RunShell.live.test.tsx`'s "Finish" click, but at the store level. */
 function submitReview(store: ReturnType<typeof trackedHelloStore>['store']): void {
   const state = store.getState().run.state!
   const step = stepOf('confirm', 'review')
@@ -623,7 +623,7 @@ describe('openRun — a resumed run whose succeeded step had a {"$file"} output'
     const { store, advance } = trackedHelloStore()
 
     // The read path is the only place hydration happens — `openRun` is handed
-    // whatever `getRun` produced, exactly as `RunPage.tsx` hands it over.
+    // whatever `getRun` produced, exactly as `RunShell.tsx` hands it over.
     const read = await store.dispatch(workflowApi.endpoints.getRun.initiate(runId))
     const record = read.data!
     expect(record.steps.find((s) => s.key === GREET0_KEY)?.outputs).toEqual({ line: 'Hello, world!' })
@@ -673,7 +673,7 @@ describe('openRun — a polling row whose recorded initial was truncated', () =>
       expect(store.getState().run.state!.annotations).toContainEqual(
         expect.objectContaining({
           level: 'notice',
-          // Review minor 3: stamped with the step, so `AnnotationList` can
+          // Review minor 3: stamped with the step, so `AnnotationsPanel` can
           // offer the same "from <step>" jump every other step annotation has.
           stepKey: SLOW_KEY,
           message: `step ${SLOW_KEY} resumed from scratch — its initial response was truncated in the record`,

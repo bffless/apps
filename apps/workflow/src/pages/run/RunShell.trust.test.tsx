@@ -16,17 +16,17 @@ import { http, HttpResponse } from 'msw'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
-import App from '../App'
-import { db, nextId, seedRenderedRun, stepRowKey } from '../mocks/db'
-import { RENDERED_RUN, RENDERED_RUN_ID } from '../mocks/fixtures/renderedRun'
-import { HELLO_INDEX } from '../mocks/handlers'
-import { server } from '../mocks/server'
-import { makeStore } from '../store'
-import { workflowApi } from '../store/workflowApi'
+import App from '../../App'
+import { db, nextId, seedRenderedRun, stepRowKey } from '../../mocks/db'
+import { RENDERED_RUN, RENDERED_RUN_ID } from '../../mocks/fixtures/renderedRun'
+import { HELLO_INDEX } from '../../mocks/handlers'
+import { server } from '../../mocks/server'
+import { makeStore } from '../../store'
+import { workflowApi } from '../../store/workflowApi'
 
 // jsdom has no canvas (`ChartView.test.tsx` explains why); the rendered run
 // declares a chart, and this test only cares that the *island* is withheld.
-vi.mock('uplot', async () => (await import('../test/uplotMock')).inertUPlot())
+vi.mock('uplot', async () => (await import('../../test/uplotMock')).inertUPlot())
 
 const WITHHELD_NOTE = 'island withheld: unknown implementation'
 
@@ -58,7 +58,7 @@ async function discoverySettled(store: ReturnType<typeof makeStore>) {
   return workflowApi.endpoints.discover.select()(store.getState()).data
 }
 
-describe('RunPage — run.impl trust boundary (read-only path)', () => {
+describe('RunShell — run.impl trust boundary (read-only path)', () => {
   it('withholds the island when the row names an alias discovery does not list', async () => {
     seedPlantedRun('evil')
 

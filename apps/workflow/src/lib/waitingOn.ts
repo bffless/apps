@@ -14,20 +14,12 @@ import type { ServerRunRow } from './coerce'
 import { definitionOf } from './runDefinition'
 import { jobOrder } from './runner/graph'
 import type { Definition, StepKey } from './runner/types'
+import { parseStepKey } from './runner/types'
 
 export interface WaitingStep {
   key: StepKey
   /** The step's `name` when it declares one, else its id — as the run page labels it. */
   label: string
-}
-
-/** `<job>/<index>/<step>` → its parts; `null` for a key that is not one. */
-function parseKey(key: StepKey): { job: string; index: number; stepId: string } | null {
-  const parts = key.split('/')
-  if (parts.length !== 3) return null
-  const index = Number(parts[1])
-  if (parts[0] === '' || parts[2] === '' || !Number.isInteger(index)) return null
-  return { job: parts[0], index, stepId: parts[2] }
 }
 
 /** Each (job, step) of the definition ranked in scheduling order. */
@@ -54,7 +46,7 @@ export function waitingSteps(run: ServerRunRow): WaitingStep[] {
   const rank = ranks(def)
 
   const entries = keys.map((key) => {
-    const parsed = parseKey(key)
+    const parsed = parseStepKey(key)
     const step = parsed ? def?.jobs[parsed.job]?.steps.find((s) => s.id === parsed.stepId) : undefined
     return {
       key,

@@ -12,10 +12,8 @@ import { writeFile } from 'node:fs/promises'
 import { waitForSealedRecord } from '@bffless/workflow-headless'
 import { openSession, redactUrl } from '../session.js'
 import { credentials } from '../env.js'
+import { openStep, waitStepState } from '../steps.js'
 import type { Walk } from './index.js'
-
-const waitState = (page: import('playwright').Page, key: string, want: string, timeout: number) =>
-  page.waitForFunction(([k, w]) => document.querySelector(`[data-testid="step"][data-key="${k}"]`)?.getAttribute('data-state') === w, [key, want], { timeout })
 
 export const hello: Walk = async ({ args, env, report }) => {
   const creds = credentials(env)
@@ -30,7 +28,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     report.expect('D5.helloDiscoveredViaForwarder', /hello/i.test((await impls.textContent()) ?? '') && probes.some((l) => l.startsWith('200 ')), probes)
     await page.getByTestId('implementations').getByRole('link', { name: /^hello$/i }).click()
     await page.getByTestId('workflow-list').getByRole('link', { name: 'Interactive hello' }).click()
-    await page.getByTestId('step').first().waitFor()
+    await page.getByTestId('job').first().waitFor()
     await page.getByRole('link', { name: /start a run/i }).click()
     await page.getByTestId('kickoff-form').waitFor()
     await page.getByTestId('kickoff-start').click()
@@ -40,13 +38,13 @@ export const hello: Walk = async ({ args, env, report }) => {
     report.run(runId)
     report.expect('D5.implIsHello', runUrl.includes('/hello/interactive/'), runUrl)
     // Step 1b — the island step, submitted
-    await waitState(page, 'pick/0/choose', 'waiting', 120_000)
+    await waitStepState(page, 'pick/0/choose', 'waiting', 120_000)
     const island = page.locator('[data-testid="island-display"] [data-testid="island-frame"]').contentFrame()
     await island.getByTestId('line').first().waitFor({ timeout: 30_000 })
     await island.getByTestId('line').first().click()
     await island.getByTestId('submit').click()
-    await waitState(page, 'review/0/confirm', 'waiting', 120_000)
-    await page.locator('[data-testid="step"][data-key="review/0/confirm"]').click()
+    await waitStepState(page, 'review/0/confirm', 'waiting', 120_000)
+    await openStep(page, 'review/0/confirm')
     const form = page.getByTestId('form-step')
     await form.waitFor()
     await form.getByTestId('tile-picker').getByTestId('tile').first().click()
@@ -99,7 +97,7 @@ export const hello: Walk = async ({ args, env, report }) => {
     })
     // Step 1d — Decision 4: the script ran in a sandboxed Worker (opaque origin)
     const d4 = await report.guard(['D4.scriptSandboxed'], async () => {
-      await page.locator('[data-testid="step"][data-key="card/0/draw"]').click()
+      await openStep(page, 'card/0/draw')
       await page.getByTestId('step-pane').getByRole('tab', { name: 'Output' }).click()
       const scriptLog = (await page.getByTestId('script-log').textContent().catch(() => '')) ?? ''
       const originLine = scriptLog.match(/origin=(\S+)/)?.[1]

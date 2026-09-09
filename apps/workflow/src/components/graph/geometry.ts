@@ -3,17 +3,18 @@
  * function of the definition (and, in run mode, the fan-out), so `GraphView`
  * can place cards, draw connectors and pin the edge dots without a layout
  * pass — which is also why the graph renders identically in jsdom. The pixel
- * constants are mirrored by `.job-card` / `.step-chip` sizing in `index.css`;
+ * constants are mirrored by `.job-card` / `.step-row-head` sizing in `index.css`;
  * change both.
  *
  * Kept apart from the components so each component file exports only
  * components (react-refresh/only-export-components).
  */
 import { stepOutputNames } from '@bffless/workflow-lint/definition'
-import type { Job, RunState, Step } from '../../lib/runner/types'
+import type { Definition, Job, Step } from '../../lib/runner/types'
+import { resolveOutput } from '../../lib/outputDecls'
 import { isFileRef } from '../values/fileRef'
 
-/** Row geometry in px — mirrored by `.step-chip` sizing in `index.css`; change both. */
+/** Row geometry in px — mirrored by `.step-row-head` sizing in `index.css`; change both. */
 export const CHIP = {
   /** A step row inside a multi-step (or matrix) card. */
   row: 42,
@@ -56,22 +57,16 @@ export function stepLabel(step: Step): string {
   return typeof name === 'string' && name !== '' ? name : step.id
 }
 
-/** The chip's height in px, from the definition alone. */
-export function chipHeight(step: Step, mode: 'definition' | 'run'): number {
-  const base = CHIP.row
-  if (mode !== 'definition') return base
-  const outputs = declaredOutputs(step).length
-  return outputs === 0 ? base : base + outputs * CHIP.out + CHIP.outPad
-}
-
 /** Card geometry in px — mirrored by `.job-card` sizing in `index.css`; change both. */
 export const CARD = {
   /** The header strip: job name (+ fraction). */
   strip: 40,
   /** The matrix line under the name. */
   note: 20,
-  /** The matrix item selector row. */
-  select: 34,
+  /** The run-mode status line. */
+  status: 42,
+  /** A definition-mode OUT line. */
+  out: 20,
   /** Top + bottom border. */
   border: 2,
 }
@@ -85,6 +80,16 @@ export function matrixNote(job: Job): string | null {
   if (vars.length === 0) return null
   const parallel = strategy?.['max-parallel']
   return `For each ${vars.join(', ')}${parallel ? ` · max ${parallel} at once` : ''}`
+}
+
+/** The job's declared outputs, as `[name, type]` pairs. */
+export function declaredJobOutputs(def: Definition, job: string): Array<[string, string]> {
+  const decl = def.jobs[job]
+  if (!decl) return []
+  return Object.keys(decl.outputs ?? {}).map((name) => {
+    const type = resolveOutput(def, { kind: 'job', job }, name).decl.type
+    return [name, typeof type === 'string' ? type : 'json']
+  })
 }
 
 /** The job's `name` when it declares one, else its id. */
@@ -116,24 +121,21 @@ export function matrixItemLabel(value: unknown, index: number): string {
   return `#${index + 1}`
 }
 
-
-/** Whether the item selector row shows: a run-mode matrix job that fanned out to more than one item. */
-function hasSelector(job: Job, mode: 'definition' | 'run', state?: RunState): boolean {
-  if (job.matrix === undefined || mode !== 'run') return false
-  const expansion = state?.expansions[job.id]
-  return (expansion?.total ?? expansion?.items?.length ?? 1) > 1
+/** `who: world` — one matrix item's full name, the rail and the job card's item selector share. */
+export function itemLabel(item: Record<string, unknown>, index: number): string {
+  const bindings = Object.entries(item).map(([name, value]) => `${name}: ${matrixItemLabel(value, index)}`)
+  return bindings.length > 0 ? bindings.join(', ') : `Item ${index + 1}`
 }
 
-/** The card's height in px, from the definition (and, in run mode, the fan-out) alone. */
-export function cardHeight(job: Job, mode: 'definition' | 'run', state?: RunState): number {
-  // Every job is one shape (2026-08-26 review): a header strip — the job —
-  // over one row per step, so a job and its steps never merge into one line.
-  const chips = job.steps.reduce((sum, step) => sum + chipHeight(step, mode), 0)
+/** The card's height in px, from the definition alone. */
+export function cardHeight(def: Definition, job: string, mode: 'definition' | 'run'): number {
+  const jobDecl = def.jobs[job]
+  if (!jobDecl) return 0
+  const outputs = declaredJobOutputs(def, job).length
   return (
     CARD.strip +
-    (matrixNote(job) ? CARD.note : 0) +
-    (hasSelector(job, mode, state) ? CARD.select : 0) +
-    chips +
+    (matrixNote(jobDecl) ? CARD.note : 0) +
+    (mode === 'run' ? CARD.status : CARD.status + outputs * CARD.out + (outputs ? CHIP.outPad : 0)) +
     CARD.border
   )
 }

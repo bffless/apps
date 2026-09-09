@@ -3,7 +3,7 @@
  * (05) — the Phase-3 counterpart of `finishedRun.ts`/`scriptRun.ts`, built to
  * prove one thing neither of those needs: that all five named renderers
  * (`transcript`, `chart`, `code`, `images`, `island`) reach the screen from a
- * *replayed* run, through `RunOutputs` and through `StepPane`'s Output tab,
+ * *replayed* run, through `RunOutputs` and through `StepBody`'s Output tab,
  * not just through `ValueView`'s own direct dispatch tests.
  *
  * Its definition is written inline here rather than loaded from a
