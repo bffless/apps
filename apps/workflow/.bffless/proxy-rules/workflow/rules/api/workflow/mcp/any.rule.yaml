@@ -62,7 +62,7 @@ pipeline:
                 workflow: *a2
                 inputs:
                   type: object
-                  description: Values for `on.manual.inputs`, keyed by input name. An omitted input takes its declared default; a `file` input is a whole File ref (`{ path, name, contentType, size, url }`), never a bare path or a URL. Pass `{}` for a workflow with no inputs.
+                  description: Values for `on.manual.inputs`, keyed by input name. An omitted input takes its declared default; a `file` input is a whole File ref (`{ path, name, contentType, size, url }`); over the MCP endpoint it may also be an `https://` URL the dispatched driver downloads and registers before the run starts — pass that URL as a plain string, never wrapped in an object. Never a bare path. Pass `{}` for a workflow with no inputs.
                   additionalProperties: true
               required:
                 - impl
@@ -166,7 +166,7 @@ pipeline:
               readOnlyHint: false
             _meta:
               ui:
-                resourceUri: ui://bffless/workflow/step-view.c324bcc9.html
+                resourceUri: ui://bffless/workflow/step-view.e7957c60.html
             rule:
               path: /api/workflow/mcp-tools/submitStep
               method: POST
@@ -316,7 +316,7 @@ pipeline:
               method: POST
         resources:
           static:
-            - uri: ui://bffless/workflow/step-view.c324bcc9.html
+            - uri: ui://bffless/workflow/step-view.e7957c60.html
               name: Workflow step view
               description: Mounts a waiting island or form step of a run (spec 10).
               rule:
