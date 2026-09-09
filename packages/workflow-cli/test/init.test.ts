@@ -193,6 +193,15 @@ describe('runInit', () => {
     expect(drive).not.toContain('WORKFLOW_EMAIL')
     expect(drive).not.toContain('WORKFLOW_PASSWORD')
     expect(drive).not.toMatch(/__[A-Z_]+__/)
+    // The browser install (apps#648): the headless shell behind a cache, with the
+    // version read from the driver at run time rather than pinned in the template.
+    expect(drive).toContain('--only-shell')
+    expect(drive).not.toContain('--with-deps')
+    expect(drive).toContain('~/.cache/ms-playwright')
+    expect(drive).toContain('actions/cache@v4')
+    // No Playwright version literal survives — a range here drifts from the pin
+    // the driver resolves for itself, and would key the cache on the wrong browser.
+    expect(drive).not.toMatch(/playwright@1\./)
 
     // The source tree is untouched.
     expect(readIdentity(join(src, 'workflows/hello'))).toEqual({ alias: 'hello', harness: 'workflow' })
