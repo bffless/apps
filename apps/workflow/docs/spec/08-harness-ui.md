@@ -170,9 +170,10 @@ Clicking a job on the definition graph lists that job's steps **under the graph*
 `job-page` / `job-head` / `job-steps` / `step` markup the run's job page draws — one reading of
 a workflow serving both screens — in their *declared* reading:
 
-- The head is the job's name, its id and its kind (`matrix` without a count: how many items it
-  fans out into is a fact only a run has). Nothing that reads an *attempt* is guessed at — no
-  status pill, no duration, no `Run ›` crumb, no fork, no YAML control.
+- The head is the job's name, its id, its kind (`matrix` without a count: how many items it
+  fans out into is a fact only a run has) and its matrix note — four things the *file* says.
+  Nothing that reads an *attempt* is guessed at — no status pill, no duration, no `Run ›`
+  crumb, no fork, no YAML control.
 - A row's head carries the **kind glyph** in place of the status glyph, the step's id, its
   `uses` word and its `headless: …` badge when it declares one; `data-state="declared"`.
 - The body is the declaration: **Inputs** — the declared `with`, entry by entry, through the
@@ -213,9 +214,13 @@ a workflow serving both screens — in their *declared* reading:
    - **Job page** (a graph node, an edge dot, a rail row): above.
    - **Step**: a row of the job page, expanded — above.
    The way up is the head's eyebrow (`Run`), the rail, and Esc. Esc **layers**: inside an
-   expanded row's body it collapses that row; on a job page with nothing expanded (the
-   collect view included) it goes up to the Summary; on the Summary there is nothing above,
-   so it does nothing.
+   expanded row's body it collapses that row — **except while a live form or island holds
+   it**, where the row is the person's to resolve and Esc is the body's (a fullscreen island
+   spends it on **Exit fullscreen**); on a job page with nothing expanded (the collect view
+   included) it goes up to the Summary; on the Summary there is nothing above, so it does
+   nothing. The layering is structural, not a special case: `StepBody` returns the
+   `FormStepPane`/`IslandStepPane` before it reaches its own `onKeyDown` wrapper, and the job
+   page's window listener is off while any row is open.
 3. **Follow or pinned.** The selection starts out **following** the run: the run's waiting
    step opens as its row — the shell navigates (`replace`) to `/job/<job>/<i>?step=<key>`, the
    row expands and the form or island mounts in it — a loading island claims it (once per

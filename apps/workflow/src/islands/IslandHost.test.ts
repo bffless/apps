@@ -460,7 +460,7 @@ describe('the host surface', () => {
 
   it('applies a mode set before the bridge connects through ui/initialize, with no unhandled rejection', async () => {
     // Fix round 4, finding 2: the pane registers a session synchronously, so
-    // `RunPage`'s `display: fullscreen` seed lands while the HTML fetch is
+    // `RunShell`'s `display: fullscreen` seed lands while the HTML fetch is
     // still in flight. Sending `host-context-changed` there would reject with
     // `Not connected` inside ext-apps, which discards the promise — an
     // unhandled rejection on every fullscreen island. The mode has to ride the

@@ -103,7 +103,7 @@ function metaFrom(run: RunRow, def: Definition, park?: boolean): RunMeta {
 
 /**
  * In-flight guard (fix round 1, finding 1): `openRun`/`takeOver` have no
- * disabled-while-pending affordance of their own (the caller — `RunPage.tsx`
+ * disabled-while-pending affordance of their own (the caller — `RunShell.tsx`
  * — adds one too, but a thunk shouldn't depend on its caller for
  * correctness). Without this, two adopt attempts fired close together for
  * the *same* run (a double click, or a stale click landing after a first
@@ -121,7 +121,7 @@ const adopting = new Set<string>()
  * Thrown by `adopt()` when the lease *request* itself fails — a network
  * error or a non-2xx answer from `runStore.lease` — as opposed to a normal
  * `{ ok: false }` response, which just means someone else genuinely holds
- * the lease (fix round 3, finding 3). `RunPage.tsx`'s `ResumeBanner` catches
+ * the lease (fix round 3, finding 3). `RunShell.tsx`'s `ResumeBanner` catches
  * this specifically so it can say "couldn't reach the server" instead of the
  * misleading "still held elsewhere," which is what an unhandled rejection
  * from here used to leave the UI implying.
@@ -174,7 +174,7 @@ async function adopt(
 }
 
 /**
- * The RunPage entry point for a `running` row this tab does not hold: try to
+ * The RunShell entry point for a `running` row this tab does not hold: try to
  * take the lease outright. Granted → adopt live (the middleware's own
  * `runReplaced` listener relaunches the run's non-terminal steps and
  * restarts the heartbeat). Held by someone else → readonly, same as before
@@ -309,7 +309,7 @@ export function forkRun(a: {
  * the run's storage prefix, its `workflow_files` rows, its step rows and the
  * run row, in that order, behind its own 404/409/403 gate.
  *
- * The gate is the *server's* — this thunk asks and reports. `RunPage.tsx` only
+ * The gate is the *server's* — this thunk asks and reports. `RunShell.tsx` only
  * offers the button when the answer is likely to be yes (a terminal run, owned
  * or admin), but a refusal is a normal outcome and is rethrown as the
  * `RunStoreError` it arrived as, status and all, so the page can say which of

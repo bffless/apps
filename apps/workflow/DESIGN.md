@@ -94,8 +94,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
     else: the job head, the `.job-io` disclosure and every sibling row are hidden, and every box
     from the canvas down to the iframe grows, so the island fills the screen. Nothing is
     unmounted — the row and its iframe are the same elements on both sides of the mode.
-  - Esc layers: inside an open row's body it collapses that row, on a job page with nothing
-    open it goes up to the Summary, and on the Summary it does nothing. The whole graph node
+  - Esc layers: inside an open row's body it collapses that row — unless a live form or island
+    holds it, where the row is the person's to resolve and Esc belongs to the body (fullscreen
+    spends it on **Exit fullscreen**); on a job page with nothing open it goes up to the
+    Summary, and on the Summary it does nothing. The whole graph node
     is the button onto the job page (pressed = ink ring, above); the edge dots open it on
     Input / Output.
   - **Declared rows** (the workflow page) are the same `.step-list` / `.step-row`, read off
@@ -104,7 +106,8 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
     closed `.declaration-details`. Having no `.step-toolbar` or `.pane-body` to supply the run
     body's inset, it carries its own — `padding: 0 20px 24px`, the top left to
     `.section-title`'s `margin: 24px 0 10px`, which already sets `Inputs` off from the row
-    head. Its `.job-head` prints the name, the id and the kind only.
+    head. Its `.job-head` prints four things and no more: the name, the id, the kind and the
+    matrix note.
 - **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
   `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
   striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image

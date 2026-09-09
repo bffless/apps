@@ -29,7 +29,13 @@ function crumbsAfterWorkflow(rest: string[]): string[] {
   return out
 }
 
-/** `/hello/hello/runs/run_1` → the crumbs above it, each linking to its screen. */
+/**
+ * `/hello/hello/runs/run_1` → the crumbs above it, each linking to its screen.
+ *
+ * Read off the *path*, not from `useParams`: the bar renders inside the layout
+ * route, which matches before its children and so sees none of their params —
+ * `runId`, `job` and the rest are simply not there to read.
+ */
 function Breadcrumb() {
   const [impl, workflow, ...rest] = useLocation().pathname.split('/').filter(Boolean)
 

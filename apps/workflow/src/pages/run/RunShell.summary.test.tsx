@@ -9,7 +9,7 @@
  * expands in place — which is also how `greet/1/say`, the sixth row, is
  * reached: through the matrix job's item link, not a chip on a card.
  *
- * Split out of the old single-page `RunPage.test.tsx` (spec 2026-09-08): the
+ * Split out of the old single-page `RunShell.test.tsx` (spec 2026-09-08): the
  * Summary — its header, the run card, its outputs and annotations, delete,
  * fork, and the degraded states — stays here; the step-pane's own content
  * (input origins, renderers, a waiting form's `with`, attempt detail) moved to
@@ -103,7 +103,7 @@ async function openRunRouter(path = RUN_PATH) {
   return { page, router }
 }
 
-describe('RunPage', () => {
+describe('RunShell', () => {
   it('shows the run header, its status and one node per job', async () => {
     const page = await openRun()
 
@@ -531,7 +531,7 @@ describe('RunPage', () => {
      * The observer's convergence path (2026-08-31,
      * run_01M1CPTN6P47DXQDEABE8K9H8Y): a page that loaded a run mid-seal —
      * the row still `running` under another tab's live lease — keeps polling
-     * (RunPage's 5 s `pollingInterval`), and the moment a poll reads the
+     * (RunShell's 5 s `pollingInterval`), and the moment a poll reads the
      * sealed row the banner goes, the pill flips and the outputs render.
      * The app was never the stuck half of that walk (the seal itself was);
      * this pins the half that must keep working.

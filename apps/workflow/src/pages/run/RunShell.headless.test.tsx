@@ -48,7 +48,7 @@ afterEach(() => {
 // window.__workflow
 // ---------------------------------------------------------------------------
 
-describe('RunPage — window.__workflow', () => {
+describe('RunShell — window.__workflow', () => {
   beforeEach(() => {
     server.use(http.get('/api/workflow/run', () => HttpResponse.json({ run: null, steps: [] })))
   })
@@ -102,7 +102,7 @@ describe('RunPage — window.__workflow', () => {
   })
 })
 
-describe('RunPage — window.__workflow on a parked run (07 `wait=park`)', () => {
+describe('RunShell — window.__workflow on a parked run (07 `wait=park`)', () => {
   /**
    * Parking takes the lease, so the tab is no longer `live` and the page falls
    * through to the run **record** — which a tab that drove the run never
@@ -159,7 +159,7 @@ describe('RunPage — window.__workflow on a parked run (07 `wait=park`)', () =>
   })
 })
 
-describe('RunPage — window.__workflow on a replayed run', () => {
+describe('RunShell — window.__workflow on a replayed run', () => {
   it('publishes a finished run this tab never drove, off the replayed state', async () => {
     seedFinishedRun()
     const store = makeStore()
@@ -309,7 +309,7 @@ async function startIslands(
 
 const startTwoIslands = (driving: Driving, def?: Definition) => startIslands(driving, def)
 
-describe('RunPage — headless island mounting', () => {
+describe('RunShell — headless island mounting', () => {
   beforeEach(() => {
     server.use(http.get('/api/workflow/run', () => HttpResponse.json({ run: null, steps: [] })))
   })
@@ -547,7 +547,7 @@ describe('RunPage — headless island mounting', () => {
  * none) nor backstage (it looked, wrongly, like the pane already had it) —
  * stuck at `running` with nobody driving it.
  */
-describe('RunPage — a matrix job’s collect view never claims an island', () => {
+describe('RunShell — a matrix job’s collect view never claims an island', () => {
   it('sends item 0’s island backstage rather than treating the collect view as its row', async () => {
     const { store, host, runId } = await startIslands({ unattended: true }, MATRIX_ISLAND_DEF, MATRIX_CHOOSE_KEY)
     const router = createMemoryRouter(createRoutesFromElements(routes), {

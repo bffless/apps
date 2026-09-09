@@ -31,11 +31,15 @@ export function parseStepKey(key: string): { job: string; index: string; stepId:
  */
 export async function openStep(page: Page, key: string) {
   const { job, index } = parseStepKey(key)
-  // `.first()` on every use of the row, not just the guarded one: `getAttribute`
-  // and `click` are strict, so a second element carrying the same key — a
-  // fullscreen overlay's copy, a workflow page's declared row behind a run —
-  // would throw a strict-mode violation instead of opening the step. The row
-  // the page means is always the first in document order.
+  // `.first()` on every use of the row, not just the guarded one — defensively,
+  // not because a second match is reachable today: `getAttribute` and `click`
+  // are strict, so any future shape that put two elements on one step key would
+  // fail the walk with a strict-mode violation rather than open the step. (The
+  // two candidates are not it. The fullscreen overlay does not clone the row —
+  // it fixes the run canvas over the viewport and keeps the *same* `<li>`,
+  // marked `data-fullscreen` — and the workflow page's declared rows live on
+  // `/<impl>/<workflow>`, which no run route renders.) The row the page means
+  // is always the first in document order.
   const row = page.locator(`[data-testid="step"][data-key="${key}"]`).first()
   const alreadyOpen = (await row.count()) > 0 && (await row.getAttribute('aria-expanded').catch(() => null)) === 'true'
   if (!alreadyOpen) {

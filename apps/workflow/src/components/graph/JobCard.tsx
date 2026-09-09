@@ -25,19 +25,12 @@
 import type { CSSProperties } from 'react'
 import { formatDuration } from '../../lib/duration'
 import { pluralize } from '../../lib/plural'
-import { jobDuration, jobStatus, itemTotal, stepsOfJob } from '../../lib/runner/jobs'
-import type { Definition, Job, RunState, StepStatus } from '../../lib/runner/types'
+import { jobDuration, jobStatus, itemTotal, itemsDone, stepsOfJob } from '../../lib/runner/jobs'
+import type { Definition, Job, RunState } from '../../lib/runner/types'
 import { StatusGlyph } from '../StatusPill'
 import { STATUS_LABEL } from '../statusLabels'
 import type { GraphFlow } from './flow'
 import { declaredJobOutputs, jobLabel, matrixNote } from './geometry'
-
-const TERMINAL: ReadonlySet<StepStatus> = new Set<StepStatus>([
-  'succeeded',
-  'failed',
-  'skipped',
-  'cancelled',
-])
 
 export interface JobCardProps {
   job: Job
@@ -68,11 +61,9 @@ export function JobCard({ job, def, col, row, mode, state, selected, onPick, flo
   const duration = jobDuration(states)
   const isMatrix = job.matrix !== undefined
   const total = state ? itemTotal(state, job.id) : 1
-  const done = state
-    ? Array.from({ length: total }).filter((_, i) =>
-        stepsOfJob(def, state, job.id, i).every((r) => r.state && TERMINAL.has(r.state.status)),
-      ).length
-    : 0
+  // The rail prints the same fraction beside the same job, so both read it from
+  // `itemsDone` — a second private terminal-status set here is how the two drift.
+  const done = state ? itemsDone(def, state, job.id) : 0
   const jobFlow = flow?.sourceJobs.has(job.id)
     ? 'source'
     : flow?.targetJobs.has(job.id)

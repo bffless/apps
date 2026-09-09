@@ -336,7 +336,7 @@ export interface StepBodyProps {
   def: Definition
   state: RunState
   stepKey: StepKey
-  /** This run is the one this tab is driving (`RunPage`'s own `isLive`) — gates the `FormStepPane` delegation below. */
+  /** This run is the one this tab is driving (`RunShell`'s own `isLive`) — gates the `FormStepPane` delegation below. */
   live: boolean
   /** Which side opens first — an edge dot's click says (08); a chip's click leaves it on Input. */
   initialTab?: Tab

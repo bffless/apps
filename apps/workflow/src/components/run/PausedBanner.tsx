@@ -6,7 +6,7 @@
  * signal was whatever annotation happened to be persisted.
  *
  * Retry is `lifecycleActions.retryRun`: re-read the record, adopt it again.
- * The pending/failed affordances follow `RunPage`'s `ResumeBanner` — one
+ * The pending/failed affordances follow `RunShell`'s `ResumeBanner` — one
  * attempt at a time, and a record that could not be read says so instead of
  * silently doing nothing.
  */

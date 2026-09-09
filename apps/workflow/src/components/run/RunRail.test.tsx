@@ -5,18 +5,28 @@ import { replayRun } from '../../lib/runner/replay'
 import { definitionOf } from '../../lib/runDefinition'
 import { toRunRow, toStepRow } from '../../lib/coerce'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
+import type { RunState } from '../../lib/runner/types'
 import { RunRail } from './RunRail'
 
 const run = toRunRow(FINISHED_RUN.run)
 const def = definitionOf(run)!
 const state = replayRun(run, FINISHED_RUN.steps.map(toStepRow), def)
 
-function at(path: string) {
+function at(path: string, on: RunState = state) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <RunRail base="/hello/hello" runId={FIXTURE_RUN_ID} def={def} state={state} yaml={run.yaml} />
+      <RunRail base="/hello/hello" runId={FIXTURE_RUN_ID} def={def} state={on} yaml={run.yaml} />
     </MemoryRouter>,
   )
+}
+
+/** The glyph the rail draws beside a job row. */
+function glyph(job: string): HTMLElement {
+  const rail = screen.getByRole('navigation', { name: 'Run' })
+  const row = within(rail)
+    .getAllByTestId('rail-job')
+    .find((el) => el.getAttribute('data-job') === job && !el.hasAttribute('data-index'))!
+  return row.querySelector('.glyph')!
 }
 
 describe('RunRail', () => {
@@ -35,9 +45,17 @@ describe('RunRail', () => {
   // Task 17b: a job's status is the engine's result, not the worst of its steps.
   it('reads the flaky job as succeeded — its only failure was absorbed by continue-on-error', () => {
     at(`/hello/hello/runs/${FIXTURE_RUN_ID}`)
-    const rail = screen.getByRole('navigation', { name: 'Run' })
-    const flaky = within(rail).getAllByTestId('rail-job').find((el) => el.getAttribute('data-job') === 'flaky')!
-    expect(flaky.querySelector('.glyph')).toHaveAttribute('data-state', 'succeeded')
+    expect(glyph('flaky')).toHaveAttribute('data-state', 'succeeded')
+  })
+
+  it('reads a cancelled run’s interrupted job as cancelled, not running for ever', () => {
+    // Cancel while `flaky/0/boom` was in flight: `boom` is cancelled and `after`
+    // never got a row, so the scheduler's own answer is still `running`.
+    const steps = { ...state.steps }
+    steps['flaky/0/boom'] = { ...steps['flaky/0/boom']!, status: 'cancelled' }
+    delete steps['flaky/0/after']
+    at(`/hello/hello/runs/${FIXTURE_RUN_ID}`, { ...state, steps, status: 'cancelled' })
+    expect(glyph('flaky')).toHaveAttribute('data-state', 'cancelled')
   })
 
   it('shows a matrix job as a group with its fraction, collapsed until opened or current', () => {

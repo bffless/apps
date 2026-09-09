@@ -3,9 +3,9 @@
  *
  * Delete is the one header action that destroys something, so it is gated
  * twice over: the page only passes `onDelete` when the *server* would allow it
- * (a terminal run, owned by this user or an admin — `RunPage.tsx`), and the
+ * (a terminal run, owned by this user or an admin — `RunShell.tsx`), and the
  * header itself never calls it without a confirm. This suite owns the second
- * gate; `RunPage.test.tsx` owns the first.
+ * gate; `RunShell.test.tsx` owns the first.
  *
  * The run-sub line's **forked from** entry (05 "Re-run from this job";
  * apps#491) is the same shape as Delete: the page passes `forkedFrom` off a

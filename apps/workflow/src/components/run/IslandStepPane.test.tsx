@@ -5,7 +5,7 @@
  * also the only place the middleware's handle can actually be mounted: these
  * tests prove the pane finds its handle by run + step key, hands the real
  * iframe to it, and reflects the display mode the store holds — plus the
- * `RunPage` half, where fullscreen collapses the graph to a strip.
+ * `RunShell` half, where fullscreen collapses the graph to a strip.
  */
 import { StrictMode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -54,7 +54,7 @@ afterEach(() => {
 
 /**
  * `IslandStepPane` takes the run state as a prop, so a bare `render` would
- * freeze it at the state of the moment — exactly what `RunPage` never does.
+ * freeze it at the state of the moment — exactly what `RunShell` never does.
  * This mirrors the page: the state comes off the slice on every render.
  */
 function LivePane() {
@@ -190,7 +190,7 @@ describe('StepBody — island delegation', () => {
   })
 })
 
-describe('RunPage — island fullscreen', () => {
+describe('RunShell — island fullscreen', () => {
   it('opens a declared fullscreen island inline, expands to the overlay on request, and exits without remounting', async () => {
     // apps#432: `display: fullscreen` is the island's preferred *enlarged*
     // mode, offered as Expand — never its first mount. Nothing here dispatches
@@ -230,8 +230,14 @@ describe('RunPage — island fullscreen', () => {
     expect(store.getState().ui.islandDisplay).toBe('fullscreen')
     expect(within(page).getByTestId('island-display')).toHaveAttribute('data-mode', 'fullscreen')
     expect(host.displayModes.at(-1)).toBe('fullscreen')
-    // The strip is up in the graph's place, and Expand is gone while expanded.
-    expect(within(page).queryAllByTestId('job')).toHaveLength(0)
+    // The overlay is really up, and over this row: the run canvas carries
+    // `island-fullscreen` and the row itself is marked `data-fullscreen` — the
+    // pair `index.css` scopes "hide the job head, the job-io and every sibling
+    // row" to. (The old check here counted graph nodes, which a job page never
+    // renders in the first place, so it held whatever the overlay did.)
+    expect(document.querySelector('.run-canvas.island-fullscreen')).not.toBeNull()
+    expect(within(page).getByTestId('step').closest('li.step-row')).toHaveAttribute('data-fullscreen')
+    // The strip is up, and Expand is gone while expanded.
     expect(within(page).getByTestId('island-strip')).toBeInTheDocument()
     expect(within(page).queryByTestId('island-expand')).toBeNull()
     // The overlay is the SAME iframe — one mount, one element (edit state survives).
@@ -291,7 +297,7 @@ describe('RunPage — island fullscreen', () => {
   })
 })
 
-describe('RunPage — a loading island claims the pane (while following)', () => {
+describe('RunShell — a loading island claims the pane (while following)', () => {
   /** One job's node on the Summary graph — the graph's only clickable unit (Task 8). */
   function node(page: HTMLElement, job: string): HTMLElement | undefined {
     return within(page)

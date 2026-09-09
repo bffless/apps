@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router-dom'
 import { formatDuration } from '../../lib/duration'
 import { jobOrder } from '../../lib/runner/graph'
-import { itemTotal, jobDuration, jobStatus, stepsOfJob } from '../../lib/runner/jobs'
+import { itemTotal, itemsDone, jobDuration, jobStatus, stepsOfJob } from '../../lib/runner/jobs'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { jobPath, runPath } from '../../lib/runRoutes'
 import { StatusGlyph } from '../StatusPill'
@@ -80,9 +80,7 @@ export function RunRail({ base, runId, def, state, yaml, onNavigate }: RunRailPr
                 )
               }
               const total = itemTotal(state, job)
-              const done = Array.from({ length: total }).filter((_, i) =>
-                stepsOfJob(def, state, job, i).every((r) => r.state && ['succeeded', 'failed', 'skipped', 'cancelled'].includes(r.state.status)),
-              ).length
+              const done = itemsDone(def, state, job)
               const open = isOpen(job)
               return (
                 <li key={job}>

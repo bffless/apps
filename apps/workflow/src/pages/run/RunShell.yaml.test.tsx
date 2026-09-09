@@ -43,7 +43,7 @@ function markedLines(): number[] {
   return lines.flatMap((line, i) => (line.getAttribute('data-marked') === 'true' ? [i + 1] : []))
 }
 
-describe('RunPage — YAML drawer', () => {
+describe('RunShell — YAML drawer', () => {
   it("shows a past run's step from the snapshot that ran, and closing restores the pane", async () => {
     const page = await openRun()
     openStep(page, 'flaky/0/after')

@@ -111,7 +111,7 @@ describe('ChartView', () => {
   })
 
   it('does not tear down and rebuild uPlot on a re-render with structurally-equal (new object) value/mapping', () => {
-    // Simulates `RunPage` polling every 5s while a run is running: each poll
+    // Simulates `RunShell` polling every 5s while a run is running: each poll
     // re-renders with a freshly-decoded outputs object that is a *new*
     // reference but the same data.
     const { rerender } = render(

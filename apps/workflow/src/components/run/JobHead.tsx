@@ -114,7 +114,15 @@ export function JobHead({ def, state, job, index, mode = 'run', onFork, onRun, s
         <span className="pane-key">{job}</span>
       </span>
 
-      {run && <StatusPill status={jobStatus(def, state, job, index)} />}
+      {/*
+        `isItem ? index : undefined` — a plain job's `/0` route is the job, not
+        "item 0" of it, so its pill must read the *engine's* result (which
+        absorbs a `continue-on-error` failure and a headless skip) rather than a
+        per-item fold over the same rows. Passing `index` here unconditionally
+        made `/job/confirm/0` print Skipped on a headless run while the rail,
+        the node and `/job/confirm` all printed Succeeded.
+      */}
+      {run && <StatusPill status={jobStatus(def, state, job, isItem ? index : undefined)} />}
       {duration !== undefined && <span className="job-head-meta">{formatDuration(duration)}</span>}
       {note && <span className="job-head-note">{note}</span>}
       {isItem && (

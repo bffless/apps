@@ -73,7 +73,7 @@ function stepPanePill(page: HTMLElement): HTMLElement {
   return within(page).getByTestId('step-pane').querySelector('.pill') as HTMLElement
 }
 
-describe('RunPage — live', () => {
+describe('RunShell — live', () => {
   it('renders off the slice with no server read, auto-selects the waiting form, and finishes the run on submit', async () => {
     const { store, runId } = await startHelloAtConfirmWaiting()
     renderLive(store, runId)

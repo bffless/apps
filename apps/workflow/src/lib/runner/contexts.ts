@@ -194,8 +194,13 @@ export function jobOutcome(def: Definition, state: RunState, job: string): Outco
  * work it did not do. Any of them: an `outputs` map at all is the marker, and a
  * bare `headless: skip` carries `{}`. Only a scheduler/`if:` skip leaves it
  * `undefined`.
+ *
+ * Exported because `jobs.ts` reads one matrix *item* the same way — `jobOutcome`
+ * has no per-item view — and a second spelling of "which skip produced
+ * something" would be a second source of truth for whether a headless run's job
+ * reads Skipped or Succeeded.
  */
-function skippedWithOutputs(s: StepState): boolean {
+export function skippedWithOutputs(s: StepState): boolean {
   return s.status === 'skipped' && s.outputs !== undefined
 }
 

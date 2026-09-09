@@ -1,7 +1,7 @@
 /**
  * Fix round 1, finding 1: `uiSlice.selectedStep` is process-global, step keys
  * repeat identically across runs of the same workflow (`<job>/<index>/
- * <step>`, no `runId` component), and `RunPage` never remounts across a
+ * <step>`, no `runId` component), and `RunShell` never remounts across a
  * run-to-run navigation (react-router keeps the same component instance for
  * a `:runId` param change — there is no `key` forcing a fresh one). Left
  * unhandled, a selection made on one run survives onto the next and blocks
@@ -12,7 +12,7 @@
  * `App` renders, `src/routes.tsx`) is used instead of `<MemoryRouter initialEntries>` because the
  * latter fixes its history at mount — it cannot simulate a real in-app
  * navigation the way `router.navigate(...)` can, and the whole point here is
- * that `RunPage` does *not* remount between the two runs.
+ * that `RunShell` does *not* remount between the two runs.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
@@ -42,7 +42,7 @@ function openStep(page: HTMLElement, key: string) {
   fireEvent.click(page.querySelector(`[data-testid="step"][data-key="${key}"]`) as HTMLElement)
 }
 
-describe('RunPage — selection is scoped to the run being viewed', () => {
+describe('RunShell — selection is scoped to the run being viewed', () => {
   it('resets a selection made on one run when navigating to another, so the new run’s own waiting step still auto-selects', async () => {
     seedFinishedRun() // Run A: finished, read-only.
     const { store, runId: runBId } = await startHelloAtConfirmWaiting() // Run B: live, confirm/0/review waiting.
@@ -67,7 +67,7 @@ describe('RunPage — selection is scoped to the run being viewed', () => {
     expect(router.state.location.pathname).toBe(`/hello/hello/runs/${FIXTURE_RUN_ID}/job/slow/0`)
     expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
 
-    // Navigate to Run B — the same `RunPage` instance, only the `:runId`
+    // Navigate to Run B — the same `RunShell` instance, only the `:runId`
     // param changes (no remount, no `key`).
     await act(async () => {
       await router.navigate(`/hello/hello/runs/${runBId}`)
@@ -91,7 +91,7 @@ describe('RunPage — selection is scoped to the run being viewed', () => {
  * a graph chip on the new run that never produced it. The existing `[runId]`
  * effect that clears `selectedStep` is where this rides along.
  */
-describe('RunPage — hoveredValue is scoped to the run being viewed', () => {
+describe('RunShell — hoveredValue is scoped to the run being viewed', () => {
   it('clears a hovered value from one run when navigating to another', async () => {
     seedFinishedRun() // Run A: finished, read-only.
     const { store, runId: runBId } = await startHelloAtConfirmWaiting() // Run B: live.
@@ -117,7 +117,7 @@ describe('RunPage — hoveredValue is scoped to the run being viewed', () => {
     fireEvent.mouseEnter(wrapper)
     expect(store.getState().ui.hoveredValue).not.toBeNull()
 
-    // Navigate to Run B — the same `RunPage` instance, only the `:runId`
+    // Navigate to Run B — the same `RunShell` instance, only the `:runId`
     // param changes (no remount, no `key`) — without ever firing `mouseleave`.
     await act(async () => {
       await router.navigate(`/hello/hello/runs/${runBId}`)
