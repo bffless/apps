@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, test } from 'vitest'
+import { parse as parseYaml } from 'yaml'
 import { readIdentity } from '../src/identity.js'
 import { type InitArgs, parseInit, runInit } from '../src/verbs/init.js'
 
@@ -202,6 +203,25 @@ describe('runInit', () => {
     // No Playwright version literal survives — a range here drifts from the pin
     // the driver resolves for itself, and would key the cache on the wrong browser.
     expect(drive).not.toMatch(/playwright@1\./)
+    // The point of the change is that one resolved version both keys the cache and
+    // is what gets installed. A constant key, or an install unrelated to the `pw`
+    // step, would satisfy the presence assertions above while defeating the change.
+    const driveDoc = parseYaml(drive) as {
+      jobs: Record<string, { steps: { id?: string; uses?: string; run?: string; with?: Record<string, string> }[] }>
+    }
+    const steps = driveDoc.jobs.drive.steps
+    const cacheStep = steps.find((s) => s.uses?.startsWith('actions/cache@'))
+    expect(cacheStep?.with?.path).toBe('~/.cache/ms-playwright')
+    expect(cacheStep?.with?.key).toContain('steps.pw.outputs.version')
+    // The version-resolution step the key and the install both name — and its guard.
+    // Without the guard a blank-but-successful resolve installs `playwright@`, which
+    // npm reads as *latest*, then caches it under `playwright-Linux-`; that is the
+    // regression these two lines exist to catch.
+    const pw = steps.find((s) => s.id === 'pw')
+    expect(pw?.run).toMatch(/case "\$version" in/)
+    expect(pw?.run).toContain('exit 1')
+    const install = steps.find((s) => s.run?.includes('--only-shell'))
+    expect(install?.run).toContain('playwright@${{ steps.pw.outputs.version }}')
 
     // The source tree is untouched.
     expect(readIdentity(join(src, 'workflows/hello'))).toEqual({ alias: 'hello', harness: 'workflow' })
