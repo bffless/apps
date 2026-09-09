@@ -72,8 +72,14 @@ jobs:
         id: pw
         run: |
           version="$(pnpm --filter @bffless/workflow-headless exec node -p "require('playwright/package.json').version")"
-          # Fail closed: a blank-but-successful resolve would install `playwright@`,
-          # which npm reads as *latest*, and would key the cache on `playwright-Linux-`.
+          # Only the last line: the install below is not version-pinned, so anything
+          # pnpm might print ahead of the version would otherwise fail the guard and
+          # kill a dispatched live run at step 3.
+          version="${version##*$'\n'}"
+          # Fail closed. Unlike the generated drive.yml this file's install does not
+          # interpolate the version — it is the cache *key* that carries it, so a
+          # blank resolve would key on `playwright-Linux-`: a wasted, misleading entry
+          # rather than a wrong browser. Cheap to refuse outright.
           case "$version" in
             [0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "Could not resolve the driver's Playwright version (got '$version')" >&2; exit 1 ;;

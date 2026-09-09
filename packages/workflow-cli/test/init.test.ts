@@ -213,14 +213,15 @@ describe('runInit', () => {
     const cacheStep = steps.find((s) => s.uses?.startsWith('actions/cache@'))
     expect(cacheStep?.with?.path).toBe('~/.cache/ms-playwright')
     expect(cacheStep?.with?.key).toContain('steps.pw.outputs.version')
-    // The version-resolution step the key and the install both name.
-    expect(steps.some((s) => s.id === 'pw')).toBe(true)
+    // The version-resolution step the key and the install both name — and its guard.
+    // Without the guard a blank-but-successful resolve installs `playwright@`, which
+    // npm reads as *latest*, then caches it under `playwright-Linux-`; that is the
+    // regression these two lines exist to catch.
+    const pw = steps.find((s) => s.id === 'pw')
+    expect(pw?.run).toMatch(/case "\$version" in/)
+    expect(pw?.run).toContain('exit 1')
     const install = steps.find((s) => s.run?.includes('--only-shell'))
     expect(install?.run).toContain('playwright@${{ steps.pw.outputs.version }}')
-    // Parsing at all is half the assertion: nothing in this repo's CI ever runs or
-    // parses the generated file, so a YAML break in the template would otherwise
-    // surface first in a downstream repo, on a live driven run.
-    expect(steps.length).toBeGreaterThan(0)
 
     // The source tree is untouched.
     expect(readIdentity(join(src, 'workflows/hello'))).toEqual({ alias: 'hello', harness: 'workflow' })
