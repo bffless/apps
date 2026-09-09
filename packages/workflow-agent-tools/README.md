@@ -18,7 +18,7 @@ Pure TypeScript, zero dependencies, no DOM and no HTTP.
 | `SCOPES`, `TOOL_SCOPES`, `scopeOf` | the tool → scope map (D23): `workflow:read` · `workflow:run` · `workflow:files` |
 | `RULE_SCOPES`, `ruleScopeOf` | the harness rule → scope map: what each `/api/workflow/*` rule declares as `requiredScopes`, held equal by the app's fence test |
 | `textResult`, `errorResult`, `isErrorResult`, `CallToolResult` | MCP-shaped results: prose in `content[0].text`, data in `structuredContent`; refusals are `isError` with a spec-07-keyed `errors` map |
-| `RunSnapshot`, `WaitingStep`, `snapshotFromRows`, `snapshotText`, `declaredList` | the run snapshot — `window.__workflow` (07) plus `waitingOn` — its derivation from a run row + step rows, and the one sentence both adapters say about it |
+| `RunSnapshot`, `WaitingStep`, `snapshotFromRows`, `snapshotText`, `PendingTiming`, `declaredList` | the run snapshot — `window.__workflow` (07) plus `waitingOn` — its derivation from a run row + step rows, and the one sentence both adapters say about it. `snapshotText` takes an optional `PendingTiming { elapsedMs, pendingUntil }`: a `pending` run has no rows to speak of, so the surface holding the clock passes it in and the sentence names how long it has been and when `pending` expires |
 | `WorkflowDescription` | what `workflow.describe` answers |
 | `ToolArgs` and the per-tool `*Args` types | the arguments each executor receives |
 

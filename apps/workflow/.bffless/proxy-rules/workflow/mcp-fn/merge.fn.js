@@ -297,11 +297,20 @@ var __mcp = (() => {
       return "";
     return `, waiting on ${snapshot.waitingOn.map(describeStep).join(", ")}`;
   }
-  function snapshotText(snapshot) {
+  function elapsedSeconds(elapsedMs) {
+    return `${Math.floor(Math.max(0, elapsedMs) / 1e3)}s`;
+  }
+  function instant(ms) {
+    return `${new Date(ms).toISOString().slice(0, 19)}Z`;
+  }
+  function snapshotText(snapshot, pending) {
     if (snapshot.status === "invalid")
       return "No run was started";
-    if (snapshot.status === "pending")
-      return `Run ${snapshot.runId} is pending \u2014 dispatched, not started yet`;
+    if (snapshot.status === "pending") {
+      if (pending === void 0)
+        return `Run ${snapshot.runId} is pending \u2014 dispatched, not started yet`;
+      return `Run ${snapshot.runId} is pending \u2014 dispatched ${elapsedSeconds(pending.elapsedMs)} ago, not started yet. The first row usually appears about 60s in. Pending until ${instant(pending.pendingUntil)}, then \`No such run: ${snapshot.runId}\` \u2014 that answer, not your poll count, is how a dispatch is failed`;
+    }
     return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`;
   }
 

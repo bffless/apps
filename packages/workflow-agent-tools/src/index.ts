@@ -44,6 +44,7 @@ export {
   outputsText,
   snapshotFromRows,
   snapshotText,
+  type PendingTiming,
   type RunRowLike,
   type RunSnapshot,
   type RunStatus,

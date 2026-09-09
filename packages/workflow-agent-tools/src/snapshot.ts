@@ -166,15 +166,49 @@ function describeWaiting(snapshot: RunSnapshot): string {
 }
 
 /**
+ * What the endpoint knows about a run it is still calling `pending` and the
+ * caller cannot: how long ago the id was minted, and the instant the answer
+ * becomes `No such run` (apps#653). An agent host has no clock and no sleep
+ * between tool calls, so a pending answer naming neither leaves the caller
+ * counting polls — twelve inside 25s once read as failure on a healthy run.
+ */
+export interface PendingTiming {
+  /** Milliseconds since the run id was minted. A negative value (clock skew) reads as 0. */
+  elapsedMs: number
+  /** The ms instant after which the id stops reading `pending` and reads `No such run`. */
+  pendingUntil: number
+}
+
+/** Whole seconds, never negative — `9s`, `312s`: seconds throughout the window, so two answers subtract. */
+function elapsedSeconds(elapsedMs: number): string {
+  return `${Math.floor(Math.max(0, elapsedMs) / 1000)}s`
+}
+
+/** An instant to the second a later answer can be compared against: `2026-09-09T15:16:57Z`. */
+function instant(ms: number): string {
+  return `${new Date(ms).toISOString().slice(0, 19)}Z`
+}
+
+/**
  * The one sentence both adapters say about a snapshot — "Run <id> is
  * <status>, waiting on <key> (<kind>)" — so a model hears the same thing from
- * the harness page and from the MCP endpoint (D19).
+ * the harness page and from the MCP endpoint (D19). `pending` alone takes a
+ * second argument, because only the endpoint mints a pending snapshot and only
+ * it holds the clock that sentence needs; the page adapter never reaches it.
  */
-export function snapshotText(snapshot: RunSnapshot): string {
+export function snapshotText(snapshot: RunSnapshot, pending?: PendingTiming): string {
   if (snapshot.status === 'invalid') return 'No run was started'
   // A pending run has nothing to report but its own existence: no steps have
   // been written, so `waitingOn` would say "waiting on nothing" if it spoke.
-  if (snapshot.status === 'pending') return `Run ${snapshot.runId} is pending — dispatched, not started yet`
+  // What it can report, given the endpoint's clock, is how long it has been.
+  if (snapshot.status === 'pending') {
+    if (pending === undefined) return `Run ${snapshot.runId} is pending — dispatched, not started yet`
+    return (
+      `Run ${snapshot.runId} is pending — dispatched ${elapsedSeconds(pending.elapsedMs)} ago, not started yet.` +
+      ` The first row usually appears about 60s in. Pending until ${instant(pending.pendingUntil)}, then` +
+      ` \`No such run: ${snapshot.runId}\` — that answer, not your poll count, is how a dispatch is failed`
+    )
+  }
   return `Run ${snapshot.runId} is ${snapshot.status}${describeWaiting(snapshot)}`
 }
 

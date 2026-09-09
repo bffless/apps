@@ -122,6 +122,7 @@ describe('snapshotText', () => {
       }),
     ).toBe('Run r is running, waiting on pick/0/choose (island), review/0/confirm (form)')
     expect(snapshotText({ runId: '', status: 'invalid', currentSteps: [], outputs: {}, steps: {}, waitingOn: [], errors: { inputs: 'x' } })).toBe('No run was started')
+    expect(snapshotText({ runId: 'r', status: 'pending', currentSteps: [], outputs: {}, steps: {}, waitingOn: [] })).toBe('Run r is pending — dispatched, not started yet')
     expect(
       snapshotText({
         runId: 'r',
@@ -212,5 +213,25 @@ describe('formatBytes', () => {
     expect(formatBytes(1024)).toBe('1.0 KB')
     expect(formatBytes(7215671)).toBe('6.9 MB')
     expect(formatBytes(1.5 * 1024 * 1024 * 1024)).toBe('1.5 GB')
+  })
+})
+
+// Only the MCP endpoint mints a pending snapshot, and only it holds a clock —
+// so the timing rides in as a second argument rather than a rival sentence
+// composed beside this one (D19: one catalog, two adapters). apps#653.
+describe('snapshotText with the endpoint\'s pending timing', () => {
+  const pending = { runId: 'r', status: 'pending', currentSteps: [], outputs: {}, steps: {}, waitingOn: [] } as const
+
+  it('names the elapsed seconds, the ~60s first row and when pending expires', () => {
+    expect(snapshotText(pending, { elapsedMs: 9_400, pendingUntil: Date.parse('2026-09-09T15:16:57.000Z') })).toBe(
+      'Run r is pending — dispatched 9s ago, not started yet. The first row usually appears about 60s in.' +
+        ' Pending until 2026-09-09T15:16:57Z, then `No such run: r` — that answer, not your poll count, is how a dispatch is failed',
+    )
+  })
+
+  it('stays in seconds past a minute, and never counts backwards', () => {
+    const until = Date.parse('2026-09-09T15:16:57.000Z')
+    expect(snapshotText(pending, { elapsedMs: 312_000, pendingUntil: until })).toContain('dispatched 312s ago')
+    expect(snapshotText(pending, { elapsedMs: -5_000, pendingUntil: until })).toContain('dispatched 0s ago')
   })
 })
