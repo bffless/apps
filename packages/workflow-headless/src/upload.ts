@@ -10,12 +10,16 @@
  *
  * A `file` input's value may also be an `https://` URL (spec 2026-09-08): the
  * driver downloads it first, then PUTs the bytes from disk rather than
- * through the page.
+ * through the page. The URL may also arrive **wrapped in an object** —
+ * `{ url, name? }`, not a registered ref — because a tool-calling model given
+ * the whole-ref shape in `workflow.start`'s description may wrap a URL in one
+ * rather than pass it as a plain string; the driver treats it the same as the
+ * bare URL, optionally renaming the stored object from the wrapper's `name`.
  */
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type { ApiLike } from './api.js'
-import { downloadToTemp, isHttpUrl, type Downloaded } from './download.js'
+import { downloadToTemp, isHttpUrl, safeFilename, type Downloaded } from './download.js'
 import { DriverError, EXIT } from './errors.js'
 import { contentTypeFor } from './mime.js'
 import { putFromDisk, type PutFromDisk } from './putFromDisk.js'
@@ -187,25 +191,38 @@ export async function uploadOne(
   return registerUpload(api, ctx, scope, storageKey, filename, localPath)
 }
 
-/** One `https://` URL → a registered File ref: download to disk, PUT from disk, register (D2). */
+/**
+ * One `https://` URL → a registered File ref: download to disk, PUT from
+ * disk, register (D2). `opts.name` — a wrapped-URL object's own `name`
+ * (below) — overrides `got.name` for `files/prepare`'s `filename` and
+ * `files/register`'s `originalName`, sanitised the same way the download
+ * module names a file itself; a dot/empty override falls back to `got.name`.
+ * The content type stays what the download determined, unless the override
+ * name's extension maps to a known type and the download's own type was the
+ * generic `application/octet-stream`.
+ */
 export async function uploadFromUrl(
   api: ApiLike,
   ctx: UploadContext,
   input: string,
   url: string,
   deps: UploadDeps,
+  opts: { name?: string } = {},
 ): Promise<FileRef> {
   const download = deps.download ?? defaultDownload
   const put = deps.putFromDisk ?? defaultPutFromDisk
   const got = await download(url, input)
   try {
+    const name = (opts.name ? safeFilename(opts.name) : undefined) ?? got.name
+    const contentType =
+      name !== got.name && got.contentType === 'application/octet-stream' ? contentTypeFor(name) : got.contentType
     const { uploadUrl, storageKey, scope } = await prepareUpload(
       api,
       ctx,
-      { filename: got.name, contentType: got.contentType, size: got.size },
+      { filename: name, contentType, size: got.size },
       url,
     )
-    const result = await put(uploadUrl, got.path, got.size, got.contentType)
+    const result = await put(uploadUrl, got.path, got.size, contentType)
     if (result.status === 0) {
       throw new DriverError(
         `the upload PUT failed before a response (${result.error ?? 'no detail'}) while uploading ${url}`,
@@ -215,15 +232,31 @@ export async function uploadFromUrl(
     if (result.status < 200 || result.status >= 300) {
       throw new DriverError(`the upload PUT answered ${result.status} for ${url}`, EXIT.USAGE)
     }
-    return await registerUpload(api, ctx, scope, storageKey, got.name, url)
+    return await registerUpload(api, ctx, scope, storageKey, name, url)
   } finally {
     await got.cleanup()
   }
 }
 
-/** Already a ref? Then the caller did the upload itself — leave it alone. */
-function isRef(value: unknown): boolean {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+/** `files/register`'s own shape (06) — a `path` under `workflows/`. Passed through even if it also carries a `url`. */
+function isRegisteredRef(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const path = (value as Record<string, unknown>).path
+  return typeof path === 'string' && path.startsWith('workflows/')
+}
+
+/**
+ * An object that is NOT a registered ref but names an `https://` url — the
+ * shape a tool-calling model produces when it wraps a URL rather than passing
+ * it as a plain string. `undefined` for anything else (a bare object, a
+ * `http://` url, a non-string `url`).
+ */
+function wrappedUrl(value: unknown): { url: string; name?: string } | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const r = value as Record<string, unknown>
+  const url = str(r.url)
+  if (!url || !isHttpUrl(url)) return undefined
+  return { url, name: str(r.name) }
 }
 
 /**
@@ -242,15 +275,26 @@ export async function uploadFileInputs(
 ): Promise<Record<string, unknown>> {
   const values: Record<string, unknown> = { ...supplied }
 
-  const one = async (name: string, value: string): Promise<FileRef> => {
-    if (!isHttpUrl(value)) return uploadOne(api, ctx, value, deps)
+  const viaUrl = async (name: string, url: string, overrideName?: string): Promise<FileRef> => {
     if (opts.mocks) {
       throw new DriverError(
-        `URL file inputs are not supported under --mocks; pass a local path (input ${name}: ${value})`,
+        `URL file inputs are not supported under --mocks; pass a local path (input ${name}: ${url})`,
         EXIT.USAGE,
       )
     }
-    return uploadFromUrl(api, ctx, name, value, deps)
+    return uploadFromUrl(api, ctx, name, url, deps, overrideName !== undefined ? { name: overrideName } : undefined)
+  }
+
+  const one = async (name: string, value: string): Promise<FileRef> => {
+    if (!isHttpUrl(value)) return uploadOne(api, ctx, value, deps)
+    return viaUrl(name, value)
+  }
+
+  /** A non-string entry: a registered ref and anything unrecognised pass through; a wrapped URL is uploaded. */
+  const orPassthrough = async (name: string, entry: unknown): Promise<unknown> => {
+    if (isRegisteredRef(entry)) return entry
+    const wrapped = wrappedUrl(entry)
+    return wrapped ? viaUrl(name, wrapped.url, wrapped.name) : entry
   }
 
   for (const [name, decl] of Object.entries(decls)) {
@@ -261,7 +305,7 @@ export async function uploadFileInputs(
     if (decl.list === true && Array.isArray(value)) {
       const refs: unknown[] = []
       for (const entry of value) {
-        refs.push(typeof entry === 'string' ? await one(name, entry) : entry)
+        refs.push(typeof entry === 'string' ? await one(name, entry) : await orPassthrough(name, entry))
       }
       values[name] = refs
       continue
@@ -270,7 +314,7 @@ export async function uploadFileInputs(
       values[name] = await one(name, value)
       continue
     }
-    if (isRef(value)) continue
+    values[name] = await orPassthrough(name, value)
   }
 
   return values

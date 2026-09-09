@@ -45,20 +45,30 @@ const noSeparators = (name: string) => name.replace(/[\\/]/g, '_')
 /** `''`, `.` or `..` — not a usable filename (the latter two would escape the temp dir via `join`). */
 const isDotName = (name: string) => name === '' || name === '.' || name === '..'
 
+/**
+ * A name from anywhere untrusted — a response header, a URL segment, a
+ * wrapped-URL object's `name` (`upload.ts`) — made safe: separators become
+ * `_`, and a resulting `''`/`.`/`..` (which would escape the temp dir via
+ * `join`, or name nothing) answers `undefined` so the caller can fall back.
+ */
+export function safeFilename(name: string): string | undefined {
+  const safe = noSeparators(name)
+  return isDotName(safe) ? undefined : safe
+}
+
 export function filenameFromDisposition(header: string | null): string | undefined {
   if (!header) return undefined
   const star = /filename\*\s*=\s*(?:utf-8)''([^;]+)/i.exec(header)
   if (star?.[1]) {
     try {
-      const decoded = noSeparators(decodeURIComponent(star[1].trim()))
-      if (!isDotName(decoded)) return decoded
+      const decoded = safeFilename(decodeURIComponent(star[1].trim()))
+      if (decoded) return decoded
     } catch {
       /* fall through to the plain form */
     }
   }
   const plain = /filename\s*=\s*(?:"([^"]*)"|([^;]+))/i.exec(header)
-  const name = noSeparators((plain?.[1] ?? plain?.[2] ?? '').trim())
-  return isDotName(name) ? undefined : name
+  return safeFilename((plain?.[1] ?? plain?.[2] ?? '').trim())
 }
 
 export function filenameFromUrl(url: string, contentType: string): string {
@@ -74,8 +84,7 @@ export function filenameFromUrl(url: string, contentType: string): string {
   } catch {
     /* keep it encoded */
   }
-  segment = noSeparators(segment)
-  return isDotName(segment) ? `download${extensionFor(contentType)}` : segment
+  return safeFilename(segment) ?? `download${extensionFor(contentType)}`
 }
 
 export function contentTypeFromResponse(header: string | null, name: string): string {

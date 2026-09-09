@@ -8,6 +8,7 @@ import {
   filenameFromDisposition,
   filenameFromUrl,
   isHttpUrl,
+  safeFilename,
   MAX_DOWNLOAD_BYTES,
 } from '../src/download.js'
 import { DriverError, EXIT } from '../src/errors.js'
@@ -28,6 +29,21 @@ describe('isHttpUrl', () => {
     expect(isHttpUrl('/abs/clip.mp4')).toBe(false)
     expect(isHttpUrl('file:///x.mp4')).toBe(false)
     expect(isHttpUrl('ftp://x/y')).toBe(false)
+  })
+})
+
+describe('safeFilename', () => {
+  test('replaces path separators with `_`', () => {
+    expect(safeFilename('../evil.mp4')).toBe('.._evil.mp4')
+    expect(safeFilename('a/b\\c.mp4')).toBe('a_b_c.mp4')
+  })
+  test('is undefined for `\'\'`, `.` or `..` — even after separators are stripped', () => {
+    expect(safeFilename('')).toBeUndefined()
+    expect(safeFilename('.')).toBeUndefined()
+    expect(safeFilename('..')).toBeUndefined()
+  })
+  test('leaves an ordinary name untouched', () => {
+    expect(safeFilename('anatomy.mp4')).toBe('anatomy.mp4')
   })
 })
 
