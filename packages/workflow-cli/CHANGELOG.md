@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/bffless/apps/compare/workflow-cli-v1.3.0...workflow-cli-v1.3.1) (2026-09-09)
+
+
+### Performance Improvements
+
+* **workflow-cli:** cache the Playwright browser and install only the headless shell ([#650](https://github.com/bffless/apps/issues/650)) ([e7d4a03](https://github.com/bffless/apps/commit/e7d4a03943441c8f9c7be9896d14017f688c3228)), closes [#648](https://github.com/bffless/apps/issues/648)
+
 ## [1.3.0](https://github.com/bffless/apps/compare/workflow-cli-v1.2.0...workflow-cli-v1.3.0) (2026-09-06)
 
 
