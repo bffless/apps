@@ -14,9 +14,9 @@ import type { AppStore } from '../store'
 import { REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting } from '../test/helloHarness'
 import { createExecutors } from './executors'
 
-function executorsFor(store: AppStore, pathname = '/') {
+function executorsFor(store: AppStore, pathname = '/', sign?: (path: string) => Promise<{ url: string; expiresIn: number }>) {
   const navigated: string[] = []
-  const exec = createExecutors({ store, navigate: (to) => navigated.push(to), location: () => ({ pathname }) })
+  const exec = createExecutors({ store, navigate: (to) => navigated.push(to), location: () => ({ pathname }), sign })
   return { exec, navigated }
 }
 
@@ -136,6 +136,17 @@ describe('workflow.status / workflow.outputs', () => {
     const result = await exec['workflow.status']({ runId: 'run_nope' })
     expect(result.isError).toBe(true)
     expect(result.structuredContent!.errors).toEqual({ runId: 'No such run' })
+  })
+})
+
+describe('workflow.sign', () => {
+  it('appends the signed URL to the text — a text-only host has no other way to read it (apps#627)', async () => {
+    const url = 'https://storage.googleapis.com/b/k?sig=1&x=a%2Fb'
+    const { exec } = executorsFor(makeStore(), '/', async () => ({ url, expiresIn: 3600 }))
+    const result = await exec['workflow.sign']({ path: 'workflows/hello/x.svg' })
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]!.text).toBe(`Signed workflows/hello/x.svg for 3600 s: ${url}`)
+    expect(result.structuredContent).toEqual({ path: 'workflows/hello/x.svg', url, expiresIn: 3600 })
   })
 })
 

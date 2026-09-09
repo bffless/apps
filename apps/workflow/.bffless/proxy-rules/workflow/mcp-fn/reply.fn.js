@@ -298,8 +298,42 @@ var __mcp = (() => {
   function isFileRefLike(value) {
     return isPlainObject(value) && typeof value.path === "string" && typeof value.name === "string" && typeof value.url === "string";
   }
-  function hasFileRef(outputs2) {
-    return Object.values(outputs2).some((value) => isFileRefLike(value) || Array.isArray(value) && value.some(isFileRefLike));
+  function formatBytes(bytes) {
+    if (bytes < 1024)
+      return `${bytes} B`;
+    const units = ["KB", "MB", "GB"];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return `${value.toFixed(1)} ${units[unit]}`;
+  }
+  function refLine(label, ref) {
+    const parts = [];
+    if (typeof ref.size === "number")
+      parts.push(formatBytes(ref.size));
+    if (typeof ref.contentType === "string")
+      parts.push(ref.contentType);
+    const paren = parts.length > 0 ? ` (${parts.join(", ")})` : "";
+    return `- ${label}: ${String(ref.name)}${paren} \u2014 path: ${String(ref.path)}`;
+  }
+  function fileRefLines(outputs2) {
+    const lines = [];
+    for (const [key, value] of Object.entries(outputs2)) {
+      if (isFileRefLike(value)) {
+        lines.push(refLine(key, value));
+        continue;
+      }
+      if (!Array.isArray(value))
+        continue;
+      value.forEach((entry, i) => {
+        if (isFileRefLike(entry))
+          lines.push(refLine(`${key}[${i}]`, entry));
+      });
+    }
+    return lines;
   }
   var FILE_REF_HINT = "File refs, never bytes \u2014 pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.";
   function outputsText(snapshot) {
@@ -307,8 +341,8 @@ var __mcp = (() => {
     if (names.length === 0)
       return `Run ${snapshot.runId} is ${snapshot.status} and has no outputs${snapshot.status === "running" ? " yet" : ""}`;
     const line = `Run ${snapshot.runId} (${snapshot.status}) outputs: ${names.join(", ")}`;
-    return hasFileRef(snapshot.outputs) ? `${line}
-${FILE_REF_HINT}` : line;
+    const refLines = fileRefLines(snapshot.outputs);
+    return refLines.length === 0 ? line : [line, ...refLines, FILE_REF_HINT].join("\n");
   }
 
   // ../../packages/workflow-lint/dist/model/definition.js
@@ -7047,7 +7081,7 @@ ${lines.join("\n")}`,
     if (!route.isSign) return refuse("path", NOT_CONFINED);
     const url = str2(steps.signed?.url);
     if (url === void 0) return refuse("path", `${route.signPath}: the sign rule returned no url`);
-    return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN });
+    return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s: ${url}`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN });
   }
   function declaredStep2(definition, job, stepId) {
     if (!isPlainObject4(definition) || !isPlainObject4(definition.jobs)) return void 0;
