@@ -178,6 +178,23 @@ describe('JobPage — the job disclosure', () => {
   })
 
   /**
+   * 2026-09-10 review: *"job output should follow the same white card
+   * background… all this stuff feels like it's just floating on no
+   * background."* The heading is the one thing the review left on the page, so
+   * the card has to hold the values and start below the title.
+   */
+  it('puts the outputs in a card and leaves only the heading on the page', async () => {
+    const { page } = await openAt(`${RUN_PATH}/job/slow`)
+
+    const out = within(page).getByTestId('job-output')
+    const card = out.querySelector('.job-output-card')
+    expect(card).not.toBeNull()
+    expect(card).toContainElement(within(out).getByTestId('values-expand-all'))
+    for (const row of within(out).getAllByTestId('value-row')) expect(card).toContainElement(row)
+    expect(card).not.toContainElement(within(out).getByText('Job output'))
+  })
+
+  /**
    * Spec 08 promises an out-dot lands on the value it was clicked for. Asserted
    * on the rows' `open`, not on their text: jsdom reads a closed `<details>`'s
    * content perfectly well, so a text assertion here would pass with

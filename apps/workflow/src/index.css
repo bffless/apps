@@ -2450,6 +2450,28 @@ button {
   margin: 8px 0 6px;
 }
 
+/* Its values in a card, like the job head, the inputs fold and the step list
+   above them: below the steps, this section was the one block on the job page
+   whose contents lay straight on `--paper` (2026-09-10 review). The heading is
+   the exception the review named — a title may sit on the page, its content may
+   not. Padding matches `.job-io`'s summary/toolbar rhythm so the "N outputs ·
+   Expand all" bar lines up with the fold above it. */
+.job-output-card {
+  display: flex;
+  flex-direction: column;
+  /* The 4px the section itself used to put between the bar and the values —
+     the card changes the ground under them, not their rhythm. */
+  gap: 4px;
+  padding: 12px 20px 14px;
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.job-output-card > .note {
+  margin: 0;
+}
+
 /* The workflow file's source, in a white panel on the paper page — the same
    figure/ground the step YAML drawer already had (a `--paper` `.code-view`
    inset in a `--surface` sheet), and the reason that screen read as designed

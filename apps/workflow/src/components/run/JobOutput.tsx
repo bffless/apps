@@ -17,6 +17,15 @@
  * is the one place a person can see them as values. On one item, each
  * collected list shows *that item's element* of it, so the leg's own line is
  * not buried in the whole job's list.
+ *
+ * The values sit in a white card, like every other block on the page (2026-09-10
+ * review): *"job output should follow the same white card background… all this
+ * stuff feels like it's just floating on no background."* Moving the section
+ * below the steps had left it the one place on the job page where content lay
+ * straight on `--paper` — the job head, the inputs disclosure and the step list
+ * are all `--surface`. Only the `.section-title` stays on the page, which is the
+ * rule the review stated for it: *"I don't think anything should live directly
+ * on top of this unless it's like a heading."*
  */
 import { outputImageMap } from '../../lib/imageMap'
 import { resolveOutput } from '../../lib/outputDecls'
@@ -88,40 +97,42 @@ export function JobOutput({ def, state, job, index, impl, initialOpen = false }:
   return (
     <section className="job-output" data-testid="job-output">
       <h2 className="section-title">Job output</h2>
-      {rows.length === 0 ? (
-        <p className="note">
-          This job declares no outputs of its own — its steps' outputs are on each step.
-        </p>
-      ) : (
-        <>
-          <ExpandAll
-            total={rows.length}
-            foldable={rows.filter((row) => isBulky(row.decl, row.value)).length}
-            unit="output"
-            open={bulk.open}
-            onToggle={toggle}
-          />
-          <ValuesOpenProvider value={bulk}>
-            <div className="pane-values">
-              {rows.map(({ name, value, resolved, decl: d }) => {
-                return (
-                  <ValueView
-                    key={name}
-                    label={name}
-                    tag={kindTag(d)}
-                    decl={d}
-                    value={value}
-                    impl={impl}
-                    images={outputImageMap(def, state, d, resolved.site)}
-                    destination={destinationOf(def, job, name)}
-                    collapsible
-                  />
-                )
-              })}
-            </div>
-          </ValuesOpenProvider>
-        </>
-      )}
+      <div className="job-output-card">
+        {rows.length === 0 ? (
+          <p className="note">
+            This job declares no outputs of its own — its steps' outputs are on each step.
+          </p>
+        ) : (
+          <>
+            <ExpandAll
+              total={rows.length}
+              foldable={rows.filter((row) => isBulky(row.decl, row.value)).length}
+              unit="output"
+              open={bulk.open}
+              onToggle={toggle}
+            />
+            <ValuesOpenProvider value={bulk}>
+              <div className="pane-values">
+                {rows.map(({ name, value, resolved, decl: d }) => {
+                  return (
+                    <ValueView
+                      key={name}
+                      label={name}
+                      tag={kindTag(d)}
+                      decl={d}
+                      value={value}
+                      impl={impl}
+                      images={outputImageMap(def, state, d, resolved.site)}
+                      destination={destinationOf(def, job, name)}
+                      collapsible
+                    />
+                  )
+                })}
+              </div>
+            </ValuesOpenProvider>
+          </>
+        )}
+      </div>
     </section>
   )
 }

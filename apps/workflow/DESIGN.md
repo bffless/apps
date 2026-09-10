@@ -80,8 +80,11 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
     `summary`, then the `.job-io-toolbar` (Show raw) over a body of value rows. The
     Input/Output `.segmented` toggle went with the outputs (2026-09-09 review).
   - **Job output** (`.job-output`) — the job's own outputs, a `.section-title` over a
-    `.values-bar` and value rows, **after** the step rows: a job's result comes after the work
-    that produced it. Reached by an out-dot's `?tab=Output`, which opens its rows.
+    `.job-output-card` (`--surface`, card border, 12/20/14 pad) holding the `.values-bar` and
+    the value rows, **after** the step rows: a job's result comes after the work that produced
+    it. Reached by an out-dot's `?tab=Output`, which opens its rows. The title sits on
+    `--paper`; its contents never do (2026-09-10 review) — on this page only a heading is
+    allowed to touch the page.
   - **Step rows** (`.step-list` / `.step-row`) — one card-bordered list, hairline between rows.
     The head is a full-width button (glyph · label + mono id · kind word · `attempt n` ·
     right-aligned mono duration · chevron), tinted by `data-state` and ringed by
