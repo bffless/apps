@@ -1132,15 +1132,20 @@ button {
   white-space: nowrap;
 }
 
-/* A closed row is its summary and nothing else.
+/* A closed row is its summary and nothing else — but only just.
    `<details>` hides its own contents with `content-visibility: hidden`, which
-   skips what is *inside* the box but still lays the box out — its padding, and
-   the intrinsic size of any replaced element (an `<img>`, a `<video>`) in it.
-   A closed file row was 23px taller than a closed markdown row for exactly
-   that reason. `display: none` is unambiguous: the body stays in the DOM (so
-   the page is still searchable and the tests still read it) and contributes no
-   height at all. */
-.value-row:not([open]) > .value-row-body {
+   skips what is *inside* the box while still laying the box out: its padding
+   (scoped to `[open]` below) and the intrinsic size of any replaced element in
+   it. That is why a closed *file* row was 23px taller than a closed markdown
+   row. So the leak is closed at its source — the replaced elements — rather
+   than by hiding the whole body.
+
+   `display: none` on the body would be simpler and was the first fix, but it
+   opts the row out of the browser's find-in-page: Chrome searches a closed
+   `<details>` and auto-expands the one it matched in, which is exactly the
+   affordance a page of folded values needs, and a `display: none` subtree is
+   not searched at all. */
+.value-row:not([open]) > .value-row-body :is(img, video, audio, canvas, object, iframe, svg) {
   display: none;
 }
 

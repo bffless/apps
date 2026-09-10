@@ -9,17 +9,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The one suite that *asserts* on uPlot rather than merely tolerating it, so
 // it keeps its own spying stub instead of `src/test/uplotMock.ts`'s inert one.
-const { uPlotCtor, barsFactory, destroySpy } = vi.hoisted(() => ({
+const { uPlotCtor, barsFactory, destroySpy, setSizeSpy } = vi.hoisted(() => ({
   uPlotCtor: vi.fn(),
   barsFactory: vi.fn(() => 'bars-paths-builder'),
   destroySpy: vi.fn(),
+  setSizeSpy: vi.fn(),
 }))
 
 vi.mock('uplot', () => {
   class MockUPlot {
     static paths = { bars: barsFactory }
+    // uPlot exposes the width it was built at; `ChartView` reads it to avoid
+    // re-sizing to a width the plot already has.
+    width = 0
     constructor(...args: unknown[]) {
+      const [opts] = args as [{ width: number }]
+      this.width = opts.width
       uPlotCtor(...args)
+    }
+    setSize(size: { width: number; height: number }) {
+      this.width = size.width
+      setSizeSpy(size)
     }
     destroy() {
       destroySpy()
@@ -27,6 +37,25 @@ vi.mock('uplot', () => {
   }
   return { default: MockUPlot }
 })
+
+/**
+ * jsdom has no `ResizeObserver`. This one hands the test the callback so it can
+ * fire it, which is the only way to reach `ChartView`'s re-measure path.
+ */
+function stubResizeObserver(): { fire: () => void } {
+  const callbacks: (() => void)[] = []
+  class Stub {
+    constructor(cb: () => void) {
+      callbacks.push(cb)
+    }
+    observe() {}
+    disconnect() {}
+  }
+  vi.stubGlobal('ResizeObserver', Stub)
+  return {
+    fire: () => callbacks.forEach((cb) => cb()),
+  }
+}
 
 import { ChartView, chartSeries } from './ChartView'
 
@@ -74,6 +103,57 @@ describe('chartSeries', () => {
     expect(
       chartSeries([{ line: 'a', chars: 'not-a-number' }], { x: 'line', y: 'chars' }),
     ).toBeNull()
+  })
+})
+
+describe('ChartView — the width it is built at', () => {
+  beforeEach(() => {
+    uPlotCtor.mockClear()
+    setSizeSpy.mockClear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /**
+   * 2026-09-09 review, round 2: a chart mounts inside a value row that is
+   * *closed*, so its container measures 0 and uPlot is built at the 480px
+   * fallback. uPlot never re-measures on its own, so without this the chart
+   * stayed 480px wide in a pane twice that — and jsdom could not see it,
+   * because `clientWidth` is 0 there either way.
+   */
+  it('re-sizes to its container once the container has a width', () => {
+    const resize = stubResizeObserver()
+    const { container } = render(
+      <ChartView value={TABLE_VALUE} mapping={{ x: 'line', y: 'chars' }} />,
+    )
+
+    // Built blind: hidden inside a closed row, the fallback is all there is.
+    expect(uPlotCtor.mock.calls[0]![0]).toMatchObject({ width: 480, height: 220 })
+    expect(setSizeSpy).not.toHaveBeenCalled()
+
+    // The row opens and the container finally has a width.
+    const el = container.querySelector('.renderer-chart') as HTMLElement
+    Object.defineProperty(el, 'clientWidth', { value: 1030, configurable: true })
+    resize.fire()
+
+    expect(setSizeSpy).toHaveBeenCalledWith({ width: 1030, height: 220 })
+  })
+
+  it('does not re-size to a width it already has', () => {
+    const resize = stubResizeObserver()
+    const { container } = render(
+      <ChartView value={TABLE_VALUE} mapping={{ x: 'line', y: 'chars' }} />,
+    )
+    const el = container.querySelector('.renderer-chart') as HTMLElement
+
+    // Still hidden: 0 is not a width, and 480 is what it was built at.
+    resize.fire()
+    Object.defineProperty(el, 'clientWidth', { value: 480, configurable: true })
+    resize.fire()
+
+    expect(setSizeSpy).not.toHaveBeenCalled()
   })
 })
 
