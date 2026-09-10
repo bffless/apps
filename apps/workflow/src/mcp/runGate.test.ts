@@ -254,19 +254,28 @@ describe('hasGrant', () => {
 })
 
 describe('admittedRun', () => {
-  const steps = (ok: unknown) => ({ run: [record()], ...(ok === undefined ? {} : { runGate: { ok } }) })
+  /** `steps` as the pipeline holds it: the query's rows, and whatever the gate answered. */
+  const steps = (gate?: unknown) => ({ run: [record()], ...(gate === undefined ? {} : { runGate: gate }) })
 
-  it('answers the row the gate admitted', () => {
-    expect(admittedRun(steps(true))).toMatchObject({ runId: 'run_1', startedBy: OWNER })
+  it('answers the gate’s own admitted row, not one re-read from the query', () => {
+    const fields = gateRun({ run: [record()], user: { id: OWNER } }).run
+    expect(admittedRun(steps({ ok: true, door: 'owner', run: fields }))).toBe(fields)
   })
 
-  it('answers undefined when the gate refused, said nothing, or there is no row', () => {
-    expect(admittedRun(steps(false))).toBeUndefined()
+  it('answers undefined on the runless door, whatever `steps.run` still holds', () => {
+    // The gate said ok without opening a door onto a run; a helper that
+    // re-derived the row from `steps.run` would admit an ungated one here.
+    expect(admittedRun(steps({ ok: true, door: 'runless', run: null }))).toBeUndefined()
+  })
+
+  it('answers undefined when the gate refused, said nothing, or admitted nothing', () => {
+    expect(admittedRun(steps({ ok: false, door: '', run: null }))).toBeUndefined()
     expect(admittedRun(steps(undefined))).toBeUndefined()
     expect(admittedRun({ run: [], runGate: { ok: true } })).toBeUndefined()
     expect(admittedRun(undefined)).toBeUndefined()
     expect(admittedRun({ runGate: { ok: true } })).toBeUndefined()
     expect(admittedRun({ run: 'garbage', runGate: 'garbage' })).toBeUndefined()
+    expect(admittedRun({ run: [record()], runGate: { ok: true, run: 'garbage' } })).toBeUndefined()
   })
 })
 

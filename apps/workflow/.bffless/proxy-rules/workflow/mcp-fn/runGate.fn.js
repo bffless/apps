@@ -135,8 +135,7 @@ var __mcp = (() => {
     if (!isPlainObject2(steps)) return void 0;
     const gate = steps.runGate;
     if (!isPlainObject2(gate) || gate.ok !== true) return void 0;
-    const row = rows(steps.run)[0];
-    return row ? fieldsOf(row) : void 0;
+    return isPlainObject2(gate.run) ? gate.run : void 0;
   }
   function handler(data) {
     const steps = isPlainObject2(data) && isPlainObject2(data.steps) ? data.steps : {};

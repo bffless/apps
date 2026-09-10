@@ -209,17 +209,21 @@ export function gateRun(input: {
 }
 
 /**
- * The run a later bundle in the same rule may read: `steps.run`'s row iff this
- * gate admitted it. A step gated on `steps.runGate.ok` cannot run otherwise —
- * but a bundle that reads the row itself should not have to take the rule's
- * word for it, and `undefined` is the shape its callers already handle.
+ * The run a later bundle in the same rule may read: the row **this gate
+ * admitted**, and nothing else. `undefined` is the shape its callers already
+ * handle.
+ *
+ * It returns `steps.runGate.run` rather than re-reading `steps.run`, so it is
+ * structurally incapable of handing back a row no door opened: on the
+ * `runless` door the gate says `ok` with `run: null` while `steps.run` may
+ * still hold rows, and a helper that re-derived the row from the query would
+ * quietly admit one there.
  */
 export function admittedRun(steps: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!isPlainObject(steps)) return undefined
   const gate = steps.runGate
   if (!isPlainObject(gate) || gate.ok !== true) return undefined
-  const row = rows(steps.run)[0]
-  return row ? fieldsOf(row) : undefined
+  return isPlainObject(gate.run) ? gate.run : undefined
 }
 
 /**
