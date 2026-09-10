@@ -31,7 +31,7 @@ const FN_PATH = join(
   'shape.fn.js',
 )
 
-type Handler = (ctx: { steps: { query: unknown; waiting: unknown } }) => Record<string, unknown>[]
+type Handler = (ctx: { steps: { mine: unknown; waiting: unknown } }) => Record<string, unknown>[]
 
 function loadFnHandler(): Handler {
   const src = readFileSync(FN_PATH, 'utf8')
@@ -52,7 +52,7 @@ describe('runs shape.fn.js', () => {
   it('joins each run its own waiting keys, sorted, and `[]` to a run waiting on nothing', () => {
     const out = handler({
       steps: {
-        query: [run('run_a'), run('run_b'), run('run_c', { status: 'succeeded' })],
+        mine: [run('run_a'), run('run_b'), run('run_c', { status: 'succeeded' })],
         waiting: [step('run_b', 'greet/1/say'), step('run_a', 'confirm/0/review'), step('run_b', 'greet/0/say')],
       },
     })
@@ -70,7 +70,7 @@ describe('runs shape.fn.js', () => {
   it('ignores waiting steps of runs outside the page, and rows without a runId or key', () => {
     const out = handler({
       steps: {
-        query: [run('run_a')],
+        mine: [run('run_a')],
         waiting: [step('run_zzz', 'confirm/0/review'), { id: 'x' }, { runId: 'run_a' }, null, step('run_a', 'k/0/s')],
       },
     })
@@ -85,15 +85,15 @@ describe('runs shape.fn.js', () => {
     ['a `rows` envelope', (rows: unknown[]) => ({ rows })],
   ])('reads both queries from %s', (_desc, wrap) => {
     const out = handler({
-      steps: { query: wrap([run('run_a')]), waiting: wrap([step('run_a', 'confirm/0/review')]) },
+      steps: { mine: wrap([run('run_a')]), waiting: wrap([step('run_a', 'confirm/0/review')]) },
     })
 
     expect(out.map((r) => r.waitingOn)).toEqual([['confirm/0/review']])
   })
 
   it('answers an empty page as an empty list, whatever the waiting query held', () => {
-    expect(handler({ steps: { query: [], waiting: [step('run_a', 'k/0/s')] } })).toEqual([])
-    expect(handler({ steps: { query: undefined, waiting: undefined } })).toEqual([])
+    expect(handler({ steps: { mine: [], waiting: [step('run_a', 'k/0/s')] } })).toEqual([])
+    expect(handler({ steps: { mine: undefined, waiting: undefined } })).toEqual([])
   })
 
   // CE has kept a record's columns under `fields` in some versions; the join
@@ -101,7 +101,7 @@ describe('runs shape.fn.js', () => {
   it('puts the column under `fields` when that is where the record keeps its columns', () => {
     const out = handler({
       steps: {
-        query: [{ id: 'rec_1', fields: { runId: 'run_a', status: 'running' } }],
+        mine: [{ id: 'rec_1', fields: { runId: 'run_a', status: 'running' } }],
         waiting: [{ id: 'rec_2', fields: { runId: 'run_a', key: 'confirm/0/review', status: 'waiting' } }],
       },
     })
@@ -115,14 +115,16 @@ describe('runs shape.fn.js', () => {
     seedFinishedRun()
     seedWaitingRun()
 
-    const query = [...db.runs.values()].map(toRecord)
+    const mine = [...db.runs.values()].map(toRecord)
     const waiting = [...db.runs.keys()]
       .flatMap(stepsOf)
       .filter((row) => row.status === 'waiting')
       .map(toRecord)
-    const expected = handler({ steps: { query, waiting } })
+    const expected = handler({ steps: { mine, waiting } })
     expect(expected.find((r) => r.runId === WAITING_RUN_ID)?.waitingOn).toEqual([WAITING_STEP_KEY])
 
+    // No `?scope=all`: both fixtures are owned by the default mock user (Decision 12),
+    // so `mine` already includes everything this endpoint seeds.
     const res = await fetch('/api/workflow/runs?impl=hello&workflow=hello')
     expect(((await res.json()) as { records: unknown[] }).records).toEqual(expected)
   })

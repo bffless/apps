@@ -248,12 +248,28 @@ const runRecord = [
   // `shape.fn.js` has joined `waitingOn` onto each record (apps#473) — the keys
   // of the run's step rows in `waiting`; `runs.shape.fn.parity.test.ts` holds
   // the mock to the authored function.
+  //
+  // Scope (spec 11 §Listing, §D27): the caller's own runs by default;
+  // `?scope=all` (or `x-workflow-scope: all`) only for a project owner/admin,
+  // 403 otherwise — `scope.fn.parity.test.ts` holds this branch to the
+  // authored `scope.fn.js`.
   http.get('/api/workflow/runs', ({ request }) => {
     const url = new URL(request.url)
     const impl = url.searchParams.get('impl')
     const workflow = url.searchParams.get('workflow')
+    const asked = url.searchParams.get('scope') === 'all' || request.headers.get('x-workflow-scope') === 'all'
+    const role = String(mockUser().projectRole || '').toLowerCase()
+
+    if (asked && role !== 'owner' && role !== 'admin') {
+      return HttpResponse.json(
+        { ok: false, error: 'scope=all needs the project owner or admin role', code: 'SCOPE_FORBIDDEN' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } },
+      )
+    }
+
     const records = [...db.runs.values()]
       .filter((row) => (impl === null || row.impl === impl) && (workflow === null || row.workflow === workflow))
+      .filter((row) => asked || row.startedBy === mockUser().id)
       .map((row) => ({ ...toRecord(row), waitingOn: waitingKeysOf(row.runId) }))
     return HttpResponse.json({ records }, { headers: { 'Cache-Control': 'no-store' } })
   }),

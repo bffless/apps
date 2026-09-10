@@ -2,23 +2,58 @@ targetUrl: pipeline
 order: 11
 pipeline:
   name: List workflow runs
-  description: "Latest 50 workflow_runs rows for one (impl, workflow), each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit). Status filtering and sorting are client-side in M1 (Decision 6)."
+  description: "Latest 50 workflow_runs rows for one (impl, workflow) — the caller's own by default, `?scope=all` for a project owner/admin (D26/D27), 403 otherwise — each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit). Status filtering and sorting are client-side in M1 (Decision 6)."
   steps:
-    - id: query
-      name: query
+    - id: scope
+      name: scope
+      handler: function_handler
+      code: ./scope.fn.js
+    # response_handler's `status` must be a literal number (response.handler.ts
+    # validateConfig), so the 403 is its own step gated on its own flag — the
+    # same shape `run/delete/post/rule.yaml` uses for its refusals.
+    - id: refuse-403
+      name: refuse-403
+      handler: response_handler
+      config:
+        condition: steps.scope.forbidden
+        body: "{{{steps.scope.result}}}"
+        status: 403
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+    # A `data_query` filter is static YAML and `eq` has no wildcard, so "mine
+    # or everything" cannot be one query with a swapped filter value — spec 11
+    # §Listing. Exactly one of `mine`/`all` ever runs, and `shape.fn.js` reads
+    # whichever did.
+    - id: mine
+      name: mine
       handler: data_query
       config:
+        condition: steps.scope.isMine
+        schemaId: $schema:workflow_runs
+        limit: 50
+        filters:
+          impl: { op: eq, value: request.query.impl }
+          workflow: { op: eq, value: request.query.workflow }
+          startedBy: { op: eq, value: user.id }
+    - id: all
+      name: all
+      handler: data_query
+      config:
+        condition: steps.scope.isAll
         schemaId: $schema:workflow_runs
         limit: 50
         filters:
           impl: { op: eq, value: request.query.impl }
           workflow: { op: eq, value: request.query.workflow }
     # Step rows carry no impl/workflow, so this is every waiting step on the
-    # instance; shape.fn.js keeps the ones belonging to runs in the page.
+    # instance; shape.fn.js keeps the ones belonging to runs in the page — a
+    # page that is already scoped by `mine`/`all` above, so no step key can
+    # leak from a run the caller cannot see.
     - id: waiting
       name: waiting
       handler: data_query
       config:
+        condition: steps.scope.ok
         schemaId: $schema:workflow_run_steps
         limit: 1000
         filters:
@@ -27,10 +62,13 @@ pipeline:
       name: shape
       handler: function_handler
       code: ./shape.fn.js
+      config:
+        condition: steps.scope.ok
     - id: respond
       name: respond
       handler: response_handler
       config:
+        condition: steps.scope.ok
         body: "{{{steps.shape}}}"
         status: 200
         headers: { Cache-Control: no-store }
@@ -38,4 +76,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:read] }
-description: "List runs of one workflow (members see all runs, D14), each carrying `waitingOn` — the keys of its steps parked in `waiting`. no-store: run lists must never be stale."
+description: "List the caller's own runs by default; `?scope=all` for a project owner/admin (D26/D27), 403 otherwise, each carrying `waitingOn` — the keys of its steps parked in `waiting`. no-store: run lists must never be stale."
