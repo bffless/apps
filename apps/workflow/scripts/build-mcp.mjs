@@ -77,11 +77,12 @@ export function sourceRev() {
 /**
  * One entry per function step shared by the tool rules, plus the `run/drive`
  * rule's two steps (`drivePlan`/`driveGate`, ADR-0006) — a hand-written rule,
- * but its functions are built and held fresh here like every other. The RFC
- * 9728 document is not here: CE's `oauth_protected_resource` handler serves it
- * with no function of ours.
+ * but its functions are built and held fresh here like every other — plus
+ * `runGate`, the ownership gate every rule that names a run imports (spec 11,
+ * D26). The RFC 9728 document is not here: CE's `oauth_protected_resource`
+ * handler serves it with no function of ours.
  */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'drivePlan', 'driveGate']
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'drivePlan', 'driveGate', 'runGate']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 
