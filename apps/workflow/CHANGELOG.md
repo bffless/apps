@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/bffless/apps/compare/workflow-v1.8.1...workflow-v1.9.0) (2026-09-10)
+
+
+### Features
+
+* **workflow:** act on the 2026-09-09 UX review of the run screens ([#656](https://github.com/bffless/apps/issues/656)) ([3f9329a](https://github.com/bffless/apps/commit/3f9329ad2344ce7706446b22cb8db800dd27fc5c))
+
 ## [1.8.1](https://github.com/bffless/apps/compare/workflow-v1.8.0...workflow-v1.8.1) (2026-09-09)
 
 
