@@ -155,6 +155,15 @@ describe('toRunRow', () => {
     expect('waitingOn' in toRunRow({ ...flat, waitingOn: null })).toBe(false)
   })
 
+  // Spec 11 (D28/D26): a denormalised owner email is read like any other optional
+  // string, but `driveKey` — the driver's nonce — must never reach the client row.
+  it('reads `startedByEmail` when present, and never coerces `driveKey` onto the row', () => {
+    const row = toRunRow({ ...flat, startedByEmail: 'user@example.test', driveKey: 'nonce-abc' })
+    expect(row.startedByEmail).toBe('user@example.test')
+    expect('driveKey' in row).toBe(false)
+    expect('startedByEmail' in toRunRow(flat)).toBe(false)
+  })
+
   it('reads a flat record and keeps the server id at _id (R4)', () => {
     const row = toRunRow(flat)
     expect(row._id).toBe('rec_1')

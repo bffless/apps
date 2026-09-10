@@ -1,0 +1,12 @@
+# schemas/workflow_run_claims.schema.yaml — spec 11 §Attribution (D28). One row per dispatch
+# from the endpoint: who asked, and the nonce the driver must present to `runs/post`.
+# Consumed (deleted) by `runs/post`; a claim nobody consumes is inert (deferred: `queued`).
+name: workflow_run_claims
+fields:
+  - { name: runId, type: string, required: true }
+  - { name: impl, type: string, required: true }
+  - { name: workflow, type: string, required: true }
+  - { name: startedBy, type: string, required: true }
+  - { name: startedByEmail, type: string, required: false }
+  - { name: driveKey, type: string, required: true }
+  - { name: createdAt, type: number, required: true }

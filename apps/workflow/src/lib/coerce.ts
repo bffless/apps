@@ -334,6 +334,9 @@ export function toRunRow(raw: unknown): ServerRunRow {
     headless: bool(f.headless),
     unattended: bool(f.unattended),
     ...(optionalStr(f.startedBy) ? { startedBy: str(f.startedBy) } : {}),
+    ...(optionalStr(f.startedByEmail) ? { startedByEmail: str(f.startedByEmail) } : {}),
+    // driveKey (spec 11 D28) is the driver's nonce — never coerced onto the client
+    // row; the SPA must not carry it.
     startedAt: num(f.startedAt),
     finishedAt: optionalNum(f.finishedAt),
     leaseOwner: optionalStr(f.leaseOwner) ?? null,

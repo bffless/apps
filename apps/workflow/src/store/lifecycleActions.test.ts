@@ -13,7 +13,7 @@ import type { Step } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { RunStore } from '../lib/runStore'
-import { db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
+import { db, MOCK_MEMBER, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import {
@@ -288,8 +288,9 @@ describe('openRun — resume', () => {
 // ---------------------------------------------------------------------------
 
 describe('forkRun', () => {
-  const asOwner = () =>
-    setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+  // The fixture is owned by the mock's default member (Decision 12); `asOwner`
+  // is explicit about that rather than relying on `resetDb`'s default.
+  const asOwner = () => setMockUser(MOCK_MEMBER)
 
   it('forks the finished run at `slow`: upstream rows copied, only slow and confirm run, the parent untouched, no run row created by the runner', async () => {
     asOwner()
@@ -887,8 +888,9 @@ describe('openRun — a polling row with no recorded initial response', () => {
  * this tab was showing, and the caches that still hold the row.
  */
 describe('deleteRun', () => {
-  const asOwner = () =>
-    setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+  // The fixture is owned by the mock's default member (Decision 12); `asOwner`
+  // is explicit about that rather than relying on `resetDb`'s default.
+  const asOwner = () => setMockUser(MOCK_MEMBER)
 
   it('drops the record and refreshes the list the row was in', async () => {
     asOwner()

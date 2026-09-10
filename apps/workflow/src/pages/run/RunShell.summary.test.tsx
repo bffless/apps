@@ -32,7 +32,7 @@ import {
 } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../../App'
-import { MOCK_ADMIN, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../../mocks/db'
+import { MOCK_ADMIN, MOCK_MEMBER, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
 import { server } from '../../mocks/server'
 import { routes } from '../../routes'
@@ -113,7 +113,8 @@ describe('RunShell', () => {
     const head = page.querySelector('.run-head') as HTMLElement
     expect(within(head).getByText('Hello workflow')).toBeInTheDocument()
     expect(within(head).getByText(FIXTURE_RUN_ID)).toBeInTheDocument()
-    expect(within(head).getByText('user_fixture')).toBeInTheDocument()
+    // Decision 12: the fixture is owned by the mock's default member.
+    expect(within(head).getByText(MOCK_MEMBER.id)).toBeInTheDocument()
     expect(within(page).getByText('12.5 s')).toBeInTheDocument()
 
     // Four jobs, no steps: the graph is jobs only (Task 8), and the matrix job
@@ -566,9 +567,8 @@ describe('RunShell', () => {
    * and neither sees it while the run is still going.
    */
   describe('deleting a run', () => {
-    /** The mock session that started the fixture run. */
-    const asOwner = () =>
-      setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+    /** The mock session that started the fixture run — the default member (Decision 12). */
+    const asOwner = () => setMockUser(MOCK_MEMBER)
 
     afterEach(() => {
       vi.restoreAllMocks()
@@ -662,8 +662,8 @@ describe('RunShell', () => {
    * fork rule, and a navigation to the new run.
    */
   describe('forking a run ("Re-run from this job")', () => {
-    const asOwner = () =>
-      setMockUser({ id: 'user_fixture', email: 'fixture@example.test', role: 'user' })
+    // The fixture is owned by the mock's default member (Decision 12).
+    const asOwner = () => setMockUser(MOCK_MEMBER)
 
     /** Where the router is, read off the DOM: the fork's navigation is the assertion. */
     function Location() {

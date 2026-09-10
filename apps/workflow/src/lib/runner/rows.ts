@@ -63,6 +63,8 @@ export interface RunRow {
   /** "Don't wait for me" (07) — a person's choice, distinct from the driver's `headless`. Absent on older rows. */
   unattended?: boolean
   startedBy?: string
+  /** Denormalised owner email for lists (spec 11 D28/D26). Absent on older rows. */
+  startedByEmail?: string
   startedAt: number
   finishedAt?: number | null
   leaseOwner?: string | null

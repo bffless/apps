@@ -131,7 +131,10 @@ const run: RunRow = {
   inputs: {},
   status: 'succeeded',
   headless: false,
+  // Owned by the mock's default member (Decision 12); keep in sync with
+  // `MOCK_MEMBER` in `mocks/db.ts`.
   startedBy: 'user_mock',
+  startedByEmail: 'workflow-ci@example.test',
   startedAt: T0,
   finishedAt: at(2_000),
   leaseOwner: null,

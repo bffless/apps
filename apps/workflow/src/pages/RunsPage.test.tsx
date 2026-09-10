@@ -8,7 +8,7 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
-import { db, nextId, seedFinishedRun, seedWaitingRun, stepRowKey } from '../mocks/db'
+import { db, MOCK_MEMBER, nextId, seedFinishedRun, seedWaitingRun, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { WAITING_RUN_ID, WAITING_STEP_KEY } from '../mocks/fixtures/waitingRun'
 import { server } from '../mocks/server'
@@ -35,7 +35,9 @@ describe('RunsPage', () => {
     const row = await within(page).findByRole('row', { name: fixtureRow() })
 
     expect(within(row).getByText('Succeeded')).toHaveAttribute('data-state', 'succeeded')
-    expect(within(row).getByText('user_fixture')).toBeInTheDocument()
+    // Decision 12: fixtures are owned by the mock's default member. The SPA
+    // renders the owner id today; it flips to the email once B9 renders it.
+    expect(within(row).getByText(MOCK_MEMBER.id)).toBeInTheDocument()
     expect(within(row).getByText('12.5 s')).toBeInTheDocument()
     expect(within(row).getByText(/poster\.png/)).toBeInTheDocument()
 

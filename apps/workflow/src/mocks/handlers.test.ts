@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import {
   MOCK_ADMIN,
   MOCK_MEMBER,
+  MOCK_OTHER,
   MOCK_UPLOADS_ROOT,
   db,
   filesUnder,
@@ -148,7 +149,7 @@ describe('the run record surface', () => {
   })
 })
 
-/** The run whose rows the fixture seeds; `user_fixture` started it, not the default member. */
+/** The run whose rows the fixture seeds; read off the fixture rather than assumed (Decision 12: the mock's default member). */
 const OWNER = FINISHED_RUN.run.startedBy!
 const RUN_PREFIX = `workflows/hello/hello/runs/${RUN_ID}/`
 const INPUT_KEY = 'workflows/hello/hello/inputs/photo.png'
@@ -180,6 +181,9 @@ describe('run deletion (rows + file-prefix GC)', () => {
   })
 
   it('refuses a run another member started (403) and deletes nothing', async () => {
+    // The fixture is owned by the mock's default member (Decision 12) — a
+    // *different* identity is what makes this "another member", not the default.
+    setMockUser(MOCK_OTHER)
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
     expect(res.status).toBe(403)
@@ -373,13 +377,19 @@ describe('whoami', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
-    expect(await res.json()).toEqual(MOCK_MEMBER)
+    // Exactly the three fields `me.fn.js` picks (`whoami.fn.parity.test.ts`) —
+    // `projectRole` is a gate-only signal (spec 11), never part of this contract.
+    expect(await res.json()).toEqual({ id: MOCK_MEMBER.id, email: MOCK_MEMBER.email, role: MOCK_MEMBER.role })
   })
 
   it('answers the admin identity the mock switch selects (?as=admin)', async () => {
     setMockUser(MOCK_ADMIN)
 
-    expect(await (await fetch('/api/workflow/whoami')).json()).toEqual(MOCK_ADMIN)
+    expect(await (await fetch('/api/workflow/whoami')).json()).toEqual({
+      id: MOCK_ADMIN.id,
+      email: MOCK_ADMIN.email,
+      role: MOCK_ADMIN.role,
+    })
   })
 })
 

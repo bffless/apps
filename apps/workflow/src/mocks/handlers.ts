@@ -228,6 +228,9 @@ const runRecord = [
   // the body's — the real rule stamps it server-side (05 access: "started_by
   // is recorded"), so a client-supplied value must never be trusted.
   http.post('/api/workflow/runs', async ({ request }) => {
+    // `toRunRow` never coerces `driveKey` onto the row (spec 11 D28) — it is the
+    // driver's nonce, not something a kickoff body may set — so `row` already
+    // strips it whatever the client sent.
     const row = toRunRow(await body(request))
     // The create rule's own backstop (07 `runId=`): the page checks first, but
     // a race between that read and this insert — two dispatches racing the
@@ -236,7 +239,7 @@ const runRecord = [
     if (db.runs.has(row.runId)) {
       return HttpResponse.json({ code: 'RUN_EXISTS', error: 'a run with this id already exists' }, { status: 409 })
     }
-    const stored = { ...row, startedBy: mockUser().id, _id: nextId() }
+    const stored = { ...row, startedBy: mockUser().id, startedByEmail: mockUser().email, _id: nextId() }
     db.runs.set(stored.runId, stored)
     return HttpResponse.json(toRecord(stored))
   }),
@@ -559,7 +562,12 @@ const hello = [
 // ---------------------------------------------------------------------------
 
 const identity = [
-  http.get('/api/workflow/whoami', () => HttpResponse.json(mockUser(), { headers: NO_STORE })),
+  // Exactly the three fields `me.fn.js` picks (`whoami.fn.parity.test.ts`) —
+  // `projectRole` is a gate-only signal (spec 11), never part of this contract.
+  http.get('/api/workflow/whoami', () => {
+    const { id, email, role } = mockUser()
+    return HttpResponse.json({ id, email, role }, { headers: NO_STORE })
+  }),
 ]
 
 // ---------------------------------------------------------------------------

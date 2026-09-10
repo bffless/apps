@@ -46,7 +46,7 @@ const SURFACE: Record<string, string[]> = {
 
 /** Schemas each set ships, checked by name (`schemas/<name>.schema.yaml`). */
 const SCHEMAS: Record<string, string[]> = {
-  workflow: ['workflow_runs', 'workflow_run_steps', 'workflow_files'],
+  workflow: ['workflow_runs', 'workflow_run_steps', 'workflow_files', 'workflow_run_claims'],
 }
 
 /**
