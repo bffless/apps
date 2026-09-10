@@ -7,30 +7,37 @@
  * one click away — that was the shape of the old always-open pane, and losing
  * it entirely would trade one complaint for another.
  *
- * `count` is the number of values that actually **fold**, not the number of
- * values: a `form` step's inputs are typically three short strings, none of
- * which folds, and a bar reading "3 inputs · Expand all" over a pane where
- * pressing it changes nothing is worse than no bar. With none, there is none.
+ * Two numbers, one rule each. `total` is how many values the pane holds, and
+ * it is what the label says — the count answers "how big is this list?", so it
+ * has to count the list. `foldable` is how many of them actually fold, and it
+ * only decides whether the bar exists: a `form` step's inputs are typically
+ * three short strings, none of which folds, and a bar reading "3 inputs ·
+ * Expand all" over a pane where pressing it changes nothing is worse than no
+ * bar. Conflating the two made the bar say "2 outputs" over a list of five
+ * (round 4) — islands and one-line values are still outputs.
  */
 import { pluralize } from '../../lib/plural'
 
 export function ExpandAll({
-  count,
+  total,
+  foldable,
   unit,
   open,
   onToggle,
 }: {
-  /** How many values fold — see the note above; zero renders nothing. */
-  count: number
-  /** Singular; pluralised with the count ("output" → "3 outputs"). */
+  /** How many values the pane holds — the number the label prints. */
+  total: number
+  /** How many of them fold; zero renders nothing at all. */
+  foldable: number
+  /** Singular; pluralised with the total ("output" → "3 outputs"). */
   unit: string
   open: boolean
   onToggle: () => void
 }) {
-  if (count === 0) return null
+  if (foldable === 0) return null
   return (
     <div className="values-bar">
-      <span className="values-count">{pluralize(count, unit)}</span>
+      <span className="values-count">{pluralize(total, unit)}</span>
       <button
         type="button"
         className="values-expand"

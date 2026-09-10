@@ -77,7 +77,8 @@ export function JobIo({ def, state, job, index, open, onToggle }: JobIoProps) {
         </div>
         <div className="pane-body">
           <ExpandAll
-            count={
+            total={bindingNames.length + needs.length}
+            foldable={
               bindingNames.filter((name) => isBulky(inferDecl(bindings[name]), bindings[name])).length +
               needs.filter((need) => isBulky({ type: 'json' }, runCtx.jobs?.[need]?.outputs ?? null)).length
             }

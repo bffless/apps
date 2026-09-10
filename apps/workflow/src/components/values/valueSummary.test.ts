@@ -71,7 +71,8 @@ describe('isBulky', () => {
     expect(isBulky({ type: 'json' }, [1, 2, 3])).toBe(true)
     expect(isBulky({ type: 'json' }, { a: 1 })).toBe(true)
     expect(isBulky({ type: 'table' }, [])).toBe(true)
-    expect(isBulky({ type: 'markdown' }, '# hi')).toBe(true)
+    // Multi-line: a one-line markdown body is inline now, see below.
+    expect(isBulky({ type: 'markdown' }, '# hi\n\nand a body')).toBe(true)
     expect(isBulky({ type: 'string', list: true }, ['a'])).toBe(true)
     for (const render of ['transcript', 'images', 'chart', 'code']) {
       expect(isBulky({ type: 'json', render }, [])).toBe(true)
@@ -85,6 +86,18 @@ describe('isBulky', () => {
     expect(isBulky({ type: 'number' }, 2918.543)).toBe(false)
     expect(isBulky({ type: 'boolean' }, true)).toBe(false)
     expect(isBulky({ type: 'string' }, null)).toBe(false)
+  })
+
+  it('leaves a one-line value inline even when its renderer is a bulky one', () => {
+    // Round 4: the renderer test used to win, so a one-line `code` value
+    // printed its text on the closed row and again in the body.
+    expect(isBulky({ type: 'string', render: 'code' }, 'pnpm workflow:build')).toBe(false)
+    expect(isBulky({ type: 'markdown' }, 'Just the one line.')).toBe(false)
+    // …but the moment it is more than one line, it folds again.
+    expect(isBulky({ type: 'string', render: 'code' }, "const a = 1\nconst b = 2")).toBe(true)
+    expect(isBulky({ type: 'markdown' }, `# Title\n\nBody.`)).toBe(true)
+    // A non-string value is untouched by the one-line rule.
+    expect(isBulky({ type: 'json', render: 'transcript' }, [])).toBe(true)
   })
 
   it('folds a string once it stops being a one-liner', () => {

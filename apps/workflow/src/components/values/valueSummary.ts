@@ -86,6 +86,11 @@ export function isBulky(decl: ValueDecl, value: unknown): boolean {
   // An island is a live surface; a closed one is simply not there.
   if (decl.render === 'island') return false
   if (decl.list === true) return true
+  // A one-line string is printed whole on the closed row, so folding it would
+  // show the same text twice — and that holds however it is declared. A
+  // `render: code` snippet of one line, or a one-line `markdown` body, is
+  // still one line. Tested before the renderer and type rules for that reason.
+  if (typeof value === 'string' && value.length <= PREVIEW && !value.includes('\n')) return false
   if (typeof decl.render === 'string' && BULKY_RENDERERS.has(decl.render)) return true
   if (BULKY_TYPES.has(decl.type ?? '')) return true
   if (isFileRefLike(value)) return true

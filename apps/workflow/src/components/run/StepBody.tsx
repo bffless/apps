@@ -120,7 +120,8 @@ function InputTab({ job, step, declared }: { job: string; step: StepState; decla
   return (
     <>
       <ExpandAll
-        count={entries.filter(([, value]) => isBulky(inferDecl(value), value)).length}
+        total={entries.length}
+        foldable={entries.filter(([, value]) => isBulky(inferDecl(value), value)).length}
         unit="input"
         open={bulk.open}
         onToggle={toggle}
@@ -182,7 +183,8 @@ function OutputValues({
     // the player showing in the same step's Output tab (Task 15).
     <MediaSeekProvider>
       <ExpandAll
-        count={
+        total={names.length}
+        foldable={
           names.filter((name) => {
             const value =
               name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)

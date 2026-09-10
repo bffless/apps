@@ -49,7 +49,8 @@ export function RunOutputs({
         // shown among these same outputs (Task 15).
         <MediaSeekProvider>
           <ExpandAll
-            count={
+            total={topLevel.length}
+            foldable={
               topLevel.filter((name) =>
                 isBulky(withFileRefValue(resolveOutput(def, RUN_SCOPE, name).decl, recorded[name]), recorded[name]),
               ).length

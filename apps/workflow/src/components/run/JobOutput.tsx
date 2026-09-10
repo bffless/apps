@@ -95,7 +95,8 @@ export function JobOutput({ def, state, job, index, impl, initialOpen = false }:
       ) : (
         <>
           <ExpandAll
-            count={rows.filter((row) => isBulky(row.decl, row.value)).length}
+            total={rows.length}
+            foldable={rows.filter((row) => isBulky(row.decl, row.value)).length}
             unit="output"
             open={bulk.open}
             onToggle={toggle}

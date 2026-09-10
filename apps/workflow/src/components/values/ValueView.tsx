@@ -12,7 +12,7 @@
  * 02 "Inferred shapes", apps#450): homogeneous rows draw as a table, numbers
  * as a compact list, File refs as file cards, a storage path as its basename
  * — and inside the tree, node by node, the same. The tree is always one
- * click away: the `json` flip on the value, or the pane's **Show raw**.
+ * click away: the value's `Rendered | JSON` switch, or the pane's **Show raw**.
  *
  * `island` needs one fact no value carries: which implementation bundle its
  * `src` lives in. It comes from `ImplContext` (the page knows) or from an
@@ -210,7 +210,7 @@ function ValueBody({ decl, value, images }: { decl: ValueDecl; value: unknown; i
 
 /**
  * Whether the default viewer would show this value as something other than
- * the raw tree — so the `json` flip has a second side worth offering.
+ * the raw tree — so the `Rendered | JSON` switch has a second side worth offering.
  */
 function isDrawn(decl: ValueDecl, value: unknown): boolean {
   if (typeof decl.render === 'string' || DRAWN_TYPES.has(decl.type)) return true
