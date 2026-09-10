@@ -62,6 +62,7 @@ lists the project's aliases and probes `/w/<alias>/.bffless/workflows/index.json
 | Harness UI | [08-harness-ui.md](08-harness-ui.md) | Screens derived from the prototype: implementations, workflow graph, kickoff form, run page with Input/Output panes, past runs. |
 | State management | [09-state-management.md](09-state-management.md) | Redux Toolkit + RTK Query; the run engine as a pure event-sourced reducer (ADR-0003). |
 | Agent embedding | [10-agent-embedding.md](10-agent-embedding.md) | One agent tool catalog, two adapters: WebMCP page tools (`document.modelContext`) and an MCP Apps endpoint shipped as a rule (`POST /api/workflow/mcp`) serving islands + the step view as `ui://` resources; app-token/OAuth auth ladder (ADR-0005). |
+| Run ownership | [11-run-ownership.md](11-run-ownership.md) | Runs are user-driven: one owner, every surface defaults to "mine", an asked-for owner/admin escape, a drive nonce for the dispatched driver, and the boundary extended to run files (ADR-0007, supersedes D14). |
 | Examples | [`examples/`](examples/) | `hello.workflow.yaml` (M1 test implementation). The reference port, `studio.workflow.yaml`, ships with its implementation: [`workflows/workflow-studio/.bffless/workflows/studio.workflow.yaml` in `bffless/workflow-implementations`](https://github.com/bffless/workflow-implementations/blob/main/workflows/workflow-studio/.bffless/workflows/studio.workflow.yaml). |
 
 ## Milestones
@@ -129,7 +130,7 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
 | D11 | `on.manual` only; harness always in a browser; headless = Playwright | 07 |
 | D12 | Headless contract; `headless: skip\|auto` (none ⇒ fail fast) | 07 |
 | D13 | GitHub expression subset; `if`/`continue-on-error`/`timeout-minutes`/`fail-fast`/`max-parallel`; `retry` deviation | 01 |
-| D14 | Members-only; `/auth` reverse proxy preferred | 06 |
+| D14 | Members-only; `/auth` reverse proxy preferred; *all members see all runs* — **superseded by D26** (2026-09-10) | 06, 11 |
 | D15 | Names: `workflow` singular; `.bffless/workflows/` plural; `workflow-<impl>` repos | 06 |
 | D16 | Definition snapshot per run; previews are aliases | 05 |
 | D17 | Implementation paths are **relative** (`path: transcribe` → `/api/<alias>/transcribe`, `src: islands/x.html` → `/w/<alias>/…`), namespaced by **alias**, so previews (`studio-pr-12`) coexist on the harness alias; `publish-workflow` rewrites rule path prefixes per alias | 01, 06 |
@@ -141,6 +142,10 @@ Each shippable on j5s.dev (phase 1: regular repo; phase 2: catalog app).
 | D23 | Auth ladder: authless dev prototype (scratch public project) → CE user-bound scoped app tokens → OAuth 2.1 (access token = app token); `.well-known` ships as a rule, served despite deployment visibility; the visibility gate honors app tokens; per-rule `requiredScopes` enforced by `auth_required`, effective permission = member's ∩ token's | 10 |
 | D24 | In an agent host the app reports and takes one input: the step view (`ui://bffless/workflow/step-view.<rev>.html`) completes a waiting island or form through the endpoint's server-side submit; no run engine in a widget; runs are driven on the harness page (a person, or an agent via WebMCP) — **driven by a dispatched headless driver** when the implementation declares one (ADR-0006) (amended 2026-09-04; the run view of 2026-09-01 was not built) | 10, ADR-0005 |
 | D25 | Driven runs: no second engine — a headless run parks at an undeclared interactive step (`wait=park`), and the harness's `drive` rule re-dispatches the implementation's Playwright job (`repository_dispatch`) to resume it; the browser owns what it claimed | 07, 10, ADR-0006 |
+| D26 | Runs are user-driven: one owner (`startedBy`), every surface defaults to the caller's own runs; four doors — owner, drive nonce, all-scope, grant (stubbed); unreachable = 404, ownerless = all-scope only. Supersedes D14 | 11, ADR-0007 |
+| D27 | The owner/admin exemption is **asked for, never assumed** (`scope=all`), and is backed by a new CE `projectRole` on `PipelineUser` — not the global role | 11, ADR-0007 |
+| D28 | A dispatched run's ownership is claimed at `run/drive` in a `workflow_run_claims` row (`startedBy` + `driveKey`) and consumed by `runs/post`; the driver acts on the nonce, since app-token scopes do not survive the session exchange | 11, 07, ADR-0007 |
+| D29 | The boundary covers bytes as well as records: `files/sign` and the serve rule gate by the runId in the path; the per-workflow `inputs/` area stays member-wide (D18) | 11, 06, ADR-0007 |
 
 ## What this is not
 

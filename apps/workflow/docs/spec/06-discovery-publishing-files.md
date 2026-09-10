@@ -216,7 +216,11 @@ file's bytes read storage by path (Replicate/ffmpeg handlers already do).
 - Harness pipelines are `auth_required`; the user is a **project member** (any project role)
   signed in through the admin login relay. Wiring: reverse-proxy `/auth` → backend `/auth` as
   the other apps do; `/_bffless/auth/*` only for custom-domain installs.
-- All members see all runs; `started_by` is recorded; delete = owner or admin.
+- ~~All members see all runs~~ — **superseded by D26 (11)**: a run belongs to `started_by`, and
+  every surface defaults to the caller's own runs; a project owner/admin sees all runs only by
+  asking (`scope=all`). Delete stays owner-or-admin, now on the shared gate. The file rules
+  below are gated by the run in the path too (D29), except the per-workflow `inputs/` area,
+  which stays member-wide (D18).
 - Islands and scripts have no credentials of their own; every call goes through the harness
   (bridge / Worker same-origin fetch) under the user's session. The one exception is
   `workflow.sign`'s answer: a signed URL **is** a bearer credential the frame then holds — but a

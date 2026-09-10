@@ -1,9 +1,10 @@
 # 05 — Runs and persistence
 
 The runner is the browser; the **record** of a run is server-side, written through harness
-pipelines on every transition. That is what makes "Past runs" real, lets anyone on the
-project open a run somebody else started, and makes **Resume** possible after the driving tab
-goes away.
+pipelines on every transition. That is what makes "Past runs" real, lets a run be reopened
+long after the tab that drove it, and makes **Resume** possible after the driving tab goes
+away. *Who* may reopen one is 11: a run belongs to the person who started it (D26), so
+"anyone on the project can open a run somebody else started" — true under D14 — no longer is.
 
 ## Tables (harness rule set, BFFless Data Tables)
 
