@@ -75,6 +75,7 @@ jobs:
           # the scope that gate checks) and sends it as Bearer on every /api/workflow/* call
           # (spec 10 D23). A repo secret, never dispatch payload; no email or password needed.
           WORKFLOW_APP_TOKEN: ${{ secrets.WORKFLOW_APP_TOKEN }}
+          WORKFLOW_DRIVE_KEY: ${{ github.event.client_payload.drive_key }}
         run: |
           if [ "$MODE" = "run" ]; then
             workflow-headless run "$HARNESS_URL" "$TARGET" --inputs inputs.json --run-id "$RUN_ID" --wait park --out output --timeout 60m

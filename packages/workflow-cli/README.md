@@ -91,7 +91,10 @@ four scopes `workflow:read workflow:run workflow:files auth:session`. The
 driver signs the browser in from it through CE's session exchange
 (`auth:session` is the scope that gate checks; CE ≥ 0.4.50) and sends it as
 `Bearer` on every `/api/workflow/*` call it makes — no member email or
-password in the job (apps#588).
+password in the job (apps#588). The dispatch payload also carries
+`WORKFLOW_DRIVE_KEY`, an optional key the driver uses to sign requests when
+the harness requires one; harmless when absent (env is empty and installs
+no route).
 
 Options:
 

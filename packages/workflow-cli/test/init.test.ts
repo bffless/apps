@@ -193,6 +193,8 @@ describe('runInit', () => {
     expect(drive).toContain('auth:session')
     expect(drive).not.toContain('WORKFLOW_EMAIL')
     expect(drive).not.toContain('WORKFLOW_PASSWORD')
+    // The drive key from the harness's dispatch payload, passed to the driver.
+    expect(drive).toContain('WORKFLOW_DRIVE_KEY')
     expect(drive).not.toMatch(/__[A-Z_]+__/)
     // The browser install (apps#648): the headless shell behind a cache, with the
     // version read from the driver at run time rather than pinned in the template.
