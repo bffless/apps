@@ -321,9 +321,11 @@ describe('RunShell', () => {
       const page = await openRun()
 
       fireEvent.click(within(page).getByRole('button', { name: 'Output of A slow server job' }))
-      // The Output dot lands on the job's own outputs section, below the steps.
+      // The Output dot lands on the job's own outputs section, below the steps,
+      // with its rows already open — so there is nothing to press here, and
+      // pressing the bar would *collapse* them (`JobPage.test.tsx` pins that).
       const out = within(page).getByTestId('job-output')
-      fireEvent.click(within(out).getByTestId('values-expand-all'))
+      expect(within(out).getByTestId('values-expand-all')).toHaveTextContent('Collapse all')
       expect(within(out).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
 
       // The second dot is on the graph too — back to the Summary for it, on

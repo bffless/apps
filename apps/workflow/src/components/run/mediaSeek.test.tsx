@@ -142,9 +142,9 @@ describe('transcript → FileCard seek', () => {
 
   /**
    * Every value in a pane is a disclosure now (2026-09-09 review), and a
-   * closed row's body is `display: none` — not unmounted. So the `FileCard`
-   * inside it still registers with the provider and still takes the seek,
-   * which would move a player nobody can see. The row has to open.
+   * closed row's body is hidden by the `<details>` — not unmounted. So the
+   * `FileCard` inside it still registers with the provider and still takes the
+   * seek, which would move a player nobody can see. The row has to open.
    */
   it('opens the row holding the player, so the seek lands somewhere visible', () => {
     const { def, state } = replayed()

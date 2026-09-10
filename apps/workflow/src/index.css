@@ -1132,23 +1132,21 @@ button {
   white-space: nowrap;
 }
 
-/* A closed row is its summary and nothing else — but only just.
-   `<details>` hides its own contents with `content-visibility: hidden`, which
-   skips what is *inside* the box while still laying the box out: its padding
-   (scoped to `[open]` below) and the intrinsic size of any replaced element in
-   it. That is why a closed *file* row was 23px taller than a closed markdown
-   row. So the leak is closed at its source — the replaced elements — rather
-   than by hiding the whole body.
+/* Nothing here hides a closed row's body, and nothing needs to.
+   `<details>` lays its own contents out at zero size (`content-visibility:
+   hidden` on `::details-content`), so the body's padding and the intrinsic
+   size of any `<img>`/`<video>` in it cost the closed row nothing — measured
+   in Chromium: a closed file row and a closed markdown row are both 42-43px,
+   with and without help.
 
-   `display: none` on the body would be simpler and was the first fix, but it
-   opts the row out of the browser's find-in-page: Chrome searches a closed
-   `<details>` and auto-expands the one it matched in, which is exactly the
-   affordance a page of folded values needs, and a `display: none` subtree is
-   not searched at all. */
-.value-row:not([open]) > .value-row-body :is(img, video, audio, canvas, object, iframe, svg) {
-  display: none;
-}
-
+   Recorded because two "fixes" for that went in before the cause was found. A
+   closed *file* row really was 23px taller than a markdown one, but the 23px
+   was `padding-top: 22px` inherited from `.pane-values > .value + .value`,
+   which ties on specificity with the row rule below and won on order — not
+   the body leaking anything. `display: none` on the body appeared to fix it
+   and did not; it did opt the row out of Chrome's find-in-page, which
+   searches a closed `<details>` and auto-expands the match, and that is an
+   affordance a page of folded values wants. So: leave the body alone. */
 .value-row-body {
   display: flex;
   flex-direction: column;
@@ -2441,11 +2439,6 @@ button {
   color: var(--ink-mute);
 }
 
-/* The workflow file's source, in a white panel on the paper page — the same
-   figure/ground the step YAML drawer already had (a `--paper` `.code-view`
-   inset in a `--surface` sheet), and the reason that screen read as designed
-   while this one did not: here the code sat on `--paper` on a `--paper` page,
-   so nothing separated it from the background (2026-09-09 review). */
 /* The job's own result, below the steps that produced it (2026-09-09 review). */
 .job-output {
   display: flex;
@@ -2457,6 +2450,11 @@ button {
   margin: 8px 0 6px;
 }
 
+/* The workflow file's source, in a white panel on the paper page — the same
+   figure/ground the step YAML drawer already had (a `--paper` `.code-view`
+   inset in a `--surface` sheet), and the reason that screen read as designed
+   while this one did not: here the code sat on `--paper` on a `--paper` page,
+   so nothing separated it from the background (2026-09-09 review). */
 .file-source {
   max-width: 1080px;
   overflow: hidden;

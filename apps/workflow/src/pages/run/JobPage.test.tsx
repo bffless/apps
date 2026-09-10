@@ -164,11 +164,33 @@ describe('JobPage — the job disclosure', () => {
   })
 
   it("shows the job's outputs below the steps whether or not a dot asked for them", async () => {
-    const { page } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+    const { page } = await openAt(`${RUN_PATH}/job/slow`)
 
     expect(within(page).getByTestId('job-output')).toHaveTextContent('report')
     // Nothing was opened above: Output is not a side of the disclosure any more.
     expect(within(page).getByTestId('job-io')).not.toHaveAttribute('open')
+    // With no dot asking, the rows are closed like any other pane's.
+    const out = within(page).getByTestId('job-output')
+    expect(within(out).getAllByTestId('value-row').every((r) => !(r as HTMLDetailsElement).open)).toBe(
+      true,
+    )
+    expect(within(out).getByTestId('values-expand-all')).toHaveTextContent('Expand all')
+  })
+
+  /**
+   * Spec 08 promises an out-dot lands on the value it was clicked for. Asserted
+   * on the rows' `open`, not on their text: jsdom reads a closed `<details>`'s
+   * content perfectly well, so a text assertion here would pass with
+   * `initialOpen` deleted and the promise quietly broken.
+   */
+  it('arrives with the job output expanded when an out-dot asked for it', async () => {
+    const { page } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+
+    const out = within(page).getByTestId('job-output')
+    const rows = within(out).getAllByTestId('value-row') as HTMLDetailsElement[]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((row) => row.open)).toBe(true)
+    expect(within(out).getByTestId('values-expand-all')).toHaveTextContent('Collapse all')
   })
 
   // Fix round 1: a row click is a navigation — it writes `?step=` (which

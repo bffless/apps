@@ -118,8 +118,9 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
   `.value-row-head` = `.value-chevron` + label + `.value-brief` (what the value *is*:
   `video/mp4 · 268.7 MB`, `8,681 items`, `3 keys`, or the string on one line to 80 chars) +
   `.value-tag`; open, `.value-row-body` carries the origin chips, the `.value-raw` switch and
-  the body. Rows separate with a hairline and no gutter; a closed row's body is `display: none`
-  so it contributes no height. `valueSummary`/`isBulky` decide the text and whether a value
+  the body. Rows separate with a hairline and no gutter; a closed row's body needs no help to
+  cost nothing — `<details>` lays its own contents out at zero size — so it keeps its padding
+  and stays findable by find-in-page. `valueSummary`/`isBulky` decide the text and whether a value
   folds at all — an island never does, nor anything the closed row already prints in full.
   Above a list of rows, `.values-bar` = mono count + `.values-expand` (Expand all / Collapse
   all), and it renders nothing when none of the values fold.
