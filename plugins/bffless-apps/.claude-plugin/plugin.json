@@ -1,6 +1,6 @@
 {
   "name": "bffless-apps",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Agent skills for the BFFless give-away apps \u2014 currently: drive a Handoff deployment's API as an agent; run Capture on a recording URL over the Workflow harness MCP",
   "author": {
     "name": "BFFless"
