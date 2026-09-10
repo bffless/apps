@@ -88,6 +88,14 @@ export function FilePage() {
   if (yaml === undefined || !result) return <p className="note">Loading…</p>
 
   const lines = yaml.replace(/\n$/, '').split('\n')
+  // Only what is actually wrong: a clean file gets "No problems", not three zeroes.
+  const counts = [
+    [result.counts.errors, 'error'],
+    [result.counts.warnings, 'warning'],
+    [result.counts.notices, 'notice'],
+  ]
+    .filter(([n]) => (n as number) > 0)
+    .map(([n, unit]) => pluralize(n as number, unit as string))
 
   return (
     <section className="page">
@@ -100,12 +108,6 @@ export function FilePage() {
         </div>
       </div>
 
-      <ul className="meta lint-counts">
-        <li>{pluralize(result.counts.errors, 'error')}</li>
-        <li>{pluralize(result.counts.warnings, 'warning')}</li>
-        <li>{pluralize(result.counts.notices, 'notice')}</li>
-      </ul>
-
       {SEVERITIES.map((severity) => (
         <Findings
           key={severity}
@@ -114,17 +116,39 @@ export function FilePage() {
         />
       ))}
 
-      <pre className="source">
-        <code>
-          {lines.map((line, i) => (
-            <span className="source-line" key={i}>
-              <span className="source-no">{i + 1}</span>
-              <span className="source-text">{line}</span>
-              {'\n'}
-            </span>
-          ))}
-        </code>
-      </pre>
+      <div className="panel file-source">
+        {/*
+          The counts live on the panel's own strip rather than in a list above
+          it — three zeroes stacked over a clean file is noise, so a file with
+          nothing wrong says so once (2026-09-09 review).
+        */}
+        <div className="file-source-head" data-testid="file-source-head">
+          <span>{pluralize(lines.length, 'line')}</span>
+          {counts.length === 0 ? (
+            <>
+              <span className="sep">·</span>
+              <span>No problems</span>
+            </>
+          ) : (
+            counts.map((text) => (
+              <span key={text}>
+                <span className="sep">·</span> {text}
+              </span>
+            ))
+          )}
+        </div>
+        <pre className="source">
+          <code>
+            {lines.map((line, i) => (
+              <span className="source-line" key={i}>
+                <span className="source-no">{i + 1}</span>
+                <span className="source-text">{line}</span>
+                {'\n'}
+              </span>
+            ))}
+          </code>
+        </pre>
+      </div>
     </section>
   )
 }

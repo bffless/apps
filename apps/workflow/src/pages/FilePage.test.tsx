@@ -35,10 +35,29 @@ describe('FilePage', () => {
 
     const page = screen.getByRole('main')
     expect(await within(page).findByText('name: Hello workflow')).toBeInTheDocument()
-    expect(within(page).getByText('0 errors')).toBeInTheDocument()
-    expect(within(page).getByText('1 notice')).toBeInTheDocument()
+    // The panel strip names the size of the file and only what is wrong with
+    // it: a clean severity is not worth a line of its own (2026-09-09 review).
+    const head = within(page).getByTestId('file-source-head')
+    expect(head).toHaveTextContent('1 notice')
+    expect(head).not.toHaveTextContent('0 errors')
+    expect(head).not.toHaveTextContent('0 warnings')
+    expect(head.textContent).toMatch(/^\d+ lines/)
     expect(within(page).getByText('outputs-omitted')).toBeInTheDocument()
     expect(within(page).getByText('64:9')).toBeInTheDocument()
+  })
+
+  it('says so once when the linter finds nothing wrong', async () => {
+    const clean =
+      'spec: 1\nname: clean\non:\n  manual: {}\njobs:\n  only:\n    name: Only\n    steps:\n' +
+      '      - id: s\n        name: S\n        uses: pipeline\n        with: { path: noop }\n' +
+      '        outputs:\n          ok: { type: string, value: "${{ response.result.ok }}" }\n'
+    server.use(http.get(YAML_URL, () => HttpResponse.text(clean)))
+
+    renderApp('/hello/hello/file')
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText('name: clean')).toBeInTheDocument()
+    expect(within(page).getByTestId('file-source-head')).toHaveTextContent('No problems')
   })
 
   it('still renders a file the linter rejects', async () => {

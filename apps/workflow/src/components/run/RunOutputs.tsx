@@ -13,6 +13,8 @@ import { outputImageMap } from '../../lib/imageMap'
 import { RUN_SCOPE, resolveOutput } from '../../lib/outputDecls'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
+import { ExpandAll } from '../values/ExpandAll'
+import { ValuesOpenProvider, useValuesBulk } from '../values/valuesOpen'
 import { ValueView } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
 import { kindTag } from '../values/valueMeta'
@@ -35,6 +37,7 @@ export function RunOutputs({
 }) {
   const recorded = state.outputs ?? {}
   const topLevel = outputNames(Object.keys(def.outputs ?? {}), recorded)
+  const { bulk, toggle } = useValuesBulk()
 
   return (
     <section className="outputs" data-testid="run-outputs">
@@ -44,24 +47,28 @@ export function RunOutputs({
         // Scoped to the run's own outputs, so a transcript here seeks a player
         // shown among these same outputs (Task 15).
         <MediaSeekProvider>
-          <div className="output-group pane-values" data-scope="run">
-            {topLevel.map((name) => {
-              const resolved = resolveOutput(def, RUN_SCOPE, name)
-              const decl = withFileRefValue(resolved.decl, recorded[name])
-              return (
-                <div className="output" data-output={name} key={name}>
-                  <ValueView
-                    label={name}
-                    tag={kindTag(decl)}
-                    decl={decl}
-                    value={recorded[name] ?? null}
-                    impl={impl}
-                    images={outputImageMap(def, state, decl, resolved.site)}
-                  />
-                </div>
-              )
-            })}
-          </div>
+          <ExpandAll count={topLevel.length} unit="output" open={bulk.open} onToggle={toggle} />
+          <ValuesOpenProvider value={bulk}>
+            <div className="output-group pane-values" data-scope="run">
+              {topLevel.map((name) => {
+                const resolved = resolveOutput(def, RUN_SCOPE, name)
+                const decl = withFileRefValue(resolved.decl, recorded[name])
+                return (
+                  <div className="output" data-output={name} key={name}>
+                    <ValueView
+                      label={name}
+                      tag={kindTag(decl)}
+                      decl={decl}
+                      value={recorded[name] ?? null}
+                      impl={impl}
+                      images={outputImageMap(def, state, decl, resolved.site)}
+                      collapsible
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </ValuesOpenProvider>
         </MediaSeekProvider>
       )}
     </section>

@@ -63,6 +63,24 @@ export function formatNumber(n: number): string {
   return Number(fixed) === 0 ? n.toPrecision(2) : fixed
 }
 
+const SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
+
+/**
+ * A byte count a person can read. Lives here rather than in `FileCard` because
+ * a file's size is now shown in two places — the card, and the row of the
+ * collapsed value above it (`valueSummary`) — and the two must agree.
+ */
+export function humanSize(bytes: unknown): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  let n = bytes
+  let i = 0
+  while (n >= 1024 && i < SIZE_UNITS.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${i === 0 ? n : n.toFixed(1)} ${SIZE_UNITS[i]}`
+}
+
 /** `0:08.5`, `2:05.3`, `1:02:05.3` — a time in seconds as `m:ss.s`; a negative or non-finite one as a plain number. */
 export function formatSeconds(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return formatNumber(seconds)

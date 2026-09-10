@@ -36,19 +36,7 @@ import type { FileRef } from '../../lib/runner/types'
 import { formatDuration, mediaKind } from './media'
 import { MediaPreview } from './MediaPreview'
 import { useMediaSeek } from './MediaSeekContext'
-
-const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
-
-function humanSize(bytes: unknown): string {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '0 B'
-  let n = bytes
-  let i = 0
-  while (n >= 1024 && i < UNITS.length - 1) {
-    n /= 1024
-    i++
-  }
-  return `${i === 0 ? n : n.toFixed(1)} ${UNITS[i]}`
-}
+import { humanSize } from './shape'
 
 function Player({
   contentType,

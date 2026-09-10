@@ -296,12 +296,12 @@ describe('RunShell', () => {
         /^Run›Job$/,
       )
 
-      // The job's own values are one disclosure down now (Phase 3).
-      fireEvent.click(within(page).getByText('Job inputs and outputs'))
-      fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
-      const io = within(page).getByTestId('job-io')
+      // The job's outputs are their own section below the steps (2026-09-09).
+      const io = within(page).getByTestId('job-output')
       // `lines: ${{ steps.say.outputs.line }}` collects across the matrix (01).
       expect(within(io).getByText('lines')).toBeInTheDocument()
+      // The closed row says what it holds; the values are inside it.
+      fireEvent.click(within(io).getByTestId('values-expand-all'))
       expect(within(io).getByText('Hello, world!')).toBeInTheDocument()
       expect(within(io).getByText('Hello, studio!')).toBeInTheDocument()
       // …and goes to the step that reads it.
@@ -321,19 +321,18 @@ describe('RunShell', () => {
       const page = await openRun()
 
       fireEvent.click(within(page).getByRole('button', { name: 'Output of A slow server job' }))
-      let io = within(page).getByTestId('job-io')
-      // An edge dot opens the disclosure on the side it asked for.
-      expect(io).toHaveAttribute('open')
-      expect(within(io).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
-      expect(within(io).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
+      // The Output dot lands on the job's own outputs section, below the steps.
+      const out = within(page).getByTestId('job-output')
+      fireEvent.click(within(out).getByTestId('values-expand-all'))
+      expect(within(out).getByRole('heading', { name: 'Hello report' })).toBeInTheDocument()
 
       // The second dot is on the graph too — back to the Summary for it, on
       // the job head's own crumb.
       fireEvent.click(within(within(page).getByTestId('job-head')).getByRole('button', { name: 'Run' }))
       fireEvent.click(within(page).getByRole('button', { name: 'Input of Confirm the report' }))
-      io = within(page).getByTestId('job-io')
+      const io = within(page).getByTestId('job-io')
+      // The Input dot still opens the inputs disclosure.
       expect(io).toHaveAttribute('open')
-      expect(within(io).getByRole('tab', { name: 'Input' })).toHaveAttribute('aria-selected', 'true')
       // `needs: [slow, flaky]` — what the job waited on.
       expect(within(io).getByText('slow')).toBeInTheDocument()
       expect(within(io).getByText('flaky')).toBeInTheDocument()
