@@ -21,9 +21,14 @@ permissions:
   contents: read
   pull-requests: write
 
-# A new push supersedes an in-flight review of the same PR.
+# A new push supersedes an in-flight review of the same PR — but only among
+# automatic runs. A manual (`workflow_dispatch`) review gets its own group, so it runs
+# *alongside* the PR's automatic review instead of killing it: dispatching a review of
+# PR N used to cancel N's in-flight one and leave a failed `Agent review` check on the
+# PR, with nothing anywhere saying the failure was a cancellation. Two manual runs of
+# the same PR still supersede each other, which is what you want.
 concurrency:
-  group: pr-review-${{ github.event.pull_request.number || inputs.pr }}
+  group: pr-review-${{ github.event_name == 'workflow_dispatch' && 'manual-' || '' }}${{ github.event.pull_request.number || inputs.pr }}
   cancel-in-progress: true
 
 jobs:
