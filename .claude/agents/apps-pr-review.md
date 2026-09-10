@@ -35,7 +35,8 @@ correct — cite the decision.
 If you learn something during a review that belongs in the checklist — a trap that
 wasn't listed, a surface that turned out to be fragile — say so at the end of your
 report under "Checklist candidates", using the entry template at the bottom of that
-file. Do not edit the file yourself; propose the entry and let a human decide.
+file. Do not edit the file yourself; propose the entry and let a human decide. This is
+a **round-1** harvest: see Step 4 for why a repeat round proposes none.
 
 ## Step 2 — gather the PR
 
@@ -45,6 +46,19 @@ Read the PR without mutating anything:
 - `gh pr diff <n>`
 - `gh pr view <n> --comments`
 - `gh pr checks <n>`
+
+**Establish which round this is.** `gh pr view <n> --comments` includes your own
+earlier reports — they open with `## 🤖 Automated apps review`. None of them means this
+is **round 1**; one or more makes it a **repeat round**. The two are the same
+investigation and a different report: see the floor in Step 3 and the contract in
+Step 4.
+
+A repeat round still reads the **whole** diff, not only what changed since you last
+looked. On the PR that prompted this rule, two of the worst findings — a chart pinned
+to a fallback width, an error envelope described as a two-key object — were in code an
+earlier round had already passed over. A reviewer who only reads the increment inherits
+every miss it ever made. What a repeat round changes is what you *report*, never what
+you read.
 
 For context the diff doesn't show, read from the remote rather than the possibly-stale
 working tree: `git show origin/main:<path>`, `git ls-tree -r origin/main --name-only`.
@@ -108,20 +122,48 @@ Rules of engagement:
   `github-actions[bot]`): say so in one line and stop.
 - Silence is a valid review. If the PR is clean, say it's clean and stop.
 
+**On a repeat round, a severity floor applies.** Report only what would change whether
+this merges: a live-write risk (priority 1-2), or a correctness finding with a concrete
+failure scenario (priority 3). Everything below that — cleanup, duplication, naming,
+dead code, test-coverage gaps that pin nothing blocking, anything you would open with
+"low", "nit" or "worth considering" — is **withheld and counted**, not written out.
+
+- **Withheld is not hidden.** One line, with the surfaces, so the author can ask:
+  `4 non-blocking observations withheld (a dead CSS rule, naming in ValueView.tsx, two
+  test-coverage gaps)`. If they ask, give them in full.
+- **Confirming the last round's findings is part of the job**, and stays: say plainly
+  which landed and which did not. A fix claimed in a reply but absent from the tip is a
+  blocking finding whatever its size — the reply is the record of what was verified.
+- **Every round costs the author a push, a wait, and another round.** A finding that
+  would not change whether this merges has not earned that on a repeat round. Breadth
+  belongs in round 1; a repeat round exists to catch what the last one missed and to
+  confirm what it found, not to lengthen the list.
+
 ## Step 4 — report
 
 Emit GitHub-flavoured markdown suitable for posting directly as a PR comment:
 
+0. **Convergence** — **repeat rounds only**, and the first line of the report:
+   `Converged — no blocking findings` or `Not converged — 2 blocking`. The author has
+   no other signal for when to stop pushing; without one they will keep answering you
+   until you run out of things to say, which is not the same as the PR being ready.
 1. **Verdict** — one line: is this safe to merge?
 2. **What merging writes** — one line per app: the alias/rule sets this PR deploys
    to on merge, and anything it has *already* written by opening (reader `pr-<N>`
    sets). "Nothing live" is a valid answer; say it explicitly.
 3. **Findings** — most severe first. For each: `file:line`, what's wrong, and the
-   concrete failure scenario.
+   concrete failure scenario. On a repeat round the severity floor in Step 3 applies:
+   blocking only, with the withheld count on one line beneath them. `No blocking
+   findings` is a complete Findings section.
 4. **Release** — the title verdict (one line), and any `packages/*` consumers that
    need naming or bumping. Omit if clean.
-5. **Tests** — what's missing, specifically.
-6. **Checklist candidates** — new entries worth adding, in the template's format.
+5. **Tests** — what's missing, specifically. On a repeat round, only tests that would
+   pin a **blocking** finding; a coverage gap that blocks nothing is withheld with the
+   rest.
+6. **Checklist candidates** — **round 1 only.** New entries worth adding, in the
+   template's format. A repeat round proposes none: the checklist is a per-PR harvest,
+   and a fresh batch on every push is the surest way to turn a review into a treadmill.
+   If a later round genuinely earns one, hold it and name it in the withheld line.
 
 Be concise. The reader wants the review, not a transcript of your commands.
 
