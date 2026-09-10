@@ -18,6 +18,7 @@ import { ValuesOpenProvider, useValuesBulk } from '../values/valuesOpen'
 import { ValueView } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
 import { kindTag } from '../values/valueMeta'
+import { isBulky } from '../values/valueSummary'
 
 /** Declaration order first, then anything the run recorded but never declared. */
 function outputNames(declared: string[], recorded: Record<string, unknown>): string[] {
@@ -47,7 +48,16 @@ export function RunOutputs({
         // Scoped to the run's own outputs, so a transcript here seeks a player
         // shown among these same outputs (Task 15).
         <MediaSeekProvider>
-          <ExpandAll count={topLevel.length} unit="output" open={bulk.open} onToggle={toggle} />
+          <ExpandAll
+            count={
+              topLevel.filter((name) =>
+                isBulky(withFileRefValue(resolveOutput(def, RUN_SCOPE, name).decl, recorded[name]), recorded[name]),
+              ).length
+            }
+            unit="output"
+            open={bulk.open}
+            onToggle={toggle}
+          />
           <ValuesOpenProvider value={bulk}>
             <div className="output-group pane-values" data-scope="run">
               {topLevel.map((name) => {

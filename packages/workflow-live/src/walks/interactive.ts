@@ -193,6 +193,10 @@ export const interactive: Walk = async ({ args, env, report }) => {
     const openOutput = async (key: string) => {
       await openStep(page, key)
       await pane.getByRole('tab', { name: 'Output' }).click()
+      // Every value in a pane is a disclosure, closed by default (the
+      // 2026-09-09 UX review): a renderer is in the DOM but hidden until its
+      // row is open, so the driver opens them the way a person would.
+      await pane.getByTestId('values-expand-all').click().catch(() => {})
     }
     const renderers: Record<string, boolean | number> = {}
     await openOutput('analyze/0/run')

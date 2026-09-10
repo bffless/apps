@@ -6,6 +6,11 @@
  * question the closed list has to answer, and "show me everything" has to stay
  * one click away — that was the shape of the old always-open pane, and losing
  * it entirely would trade one complaint for another.
+ *
+ * `count` is the number of values that actually **fold**, not the number of
+ * values: a `form` step's inputs are typically three short strings, none of
+ * which folds, and a bar reading "3 inputs · Expand all" over a pane where
+ * pressing it changes nothing is worse than no bar. With none, there is none.
  */
 import { pluralize } from '../../lib/plural'
 
@@ -15,12 +20,14 @@ export function ExpandAll({
   open,
   onToggle,
 }: {
+  /** How many values fold — see the note above; zero renders nothing. */
   count: number
   /** Singular; pluralised with the count ("output" → "3 outputs"). */
   unit: string
   open: boolean
   onToggle: () => void
 }) {
+  if (count === 0) return null
   return (
     <div className="values-bar">
       <span className="values-count">{pluralize(count, unit)}</span>

@@ -11,7 +11,8 @@
  * The job's **outputs** used to be the other side of a toggle here; since the
  * 2026-09-09 UX review they are their own section *below* the steps
  * (`JobOutput`), because a job's result comes after the work that produced it.
- * There is no Input/Output switch left to own.
+ * There is no Input/Output switch left to own. **Show raw** stays: it is a
+ * preference over the values on screen, not a choice of which side to show.
  *
  * The disclosure is deliberately not a native uncontrolled `<details>`, and it
  * does not own its openness: `JobPage` holds it, next to the set of open step
@@ -26,6 +27,8 @@ import { buildRunContexts } from '../../lib/runner/contexts'
 import type { Definition, RunState } from '../../lib/runner/types'
 import { jobLabel } from '../graph/geometry'
 import { ExpandAll } from '../values/ExpandAll'
+import { RawToggle } from '../values/RawToggle'
+import { isBulky } from '../values/valueSummary'
 import { ValueView } from '../values/ValueView'
 import { ValuesOpenProvider, useValuesBulk } from '../values/valuesOpen'
 import { inferDecl } from '../values/inferDecl'
@@ -66,9 +69,18 @@ export function JobIo({ def, state, job, index, open, onToggle }: JobIoProps) {
       </summary>
 
       <div className="job-io-body">
+        {/* Every value on this side as the raw JSON its row holds (apps#450).
+            Spec 08 names it here; the Input/Output toggle beside it went with
+            the outputs, but this is a preference over the values, not a side. */}
+        <div className="job-io-toolbar">
+          <RawToggle />
+        </div>
         <div className="pane-body">
           <ExpandAll
-            count={bindingNames.length + needs.length}
+            count={
+              bindingNames.filter((name) => isBulky(inferDecl(bindings[name]), bindings[name])).length +
+              needs.filter((need) => isBulky({ type: 'json' }, runCtx.jobs?.[need]?.outputs ?? null)).length
+            }
             unit="input"
             open={bulk.open}
             onToggle={toggle}

@@ -62,6 +62,33 @@ describe('RunOutputs', () => {
     ).toBe(true)
   })
 
+  /**
+   * The reason `valuesOpen.ts` carries an epoch at all: a row opened by hand
+   * has to rejoin the group on the next bulk press, or "Collapse all" quietly
+   * means "collapse all except the ones you touched".
+   */
+  it('closes a hand-opened row on the next Collapse all', () => {
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+    const runScope = container.querySelector('.output-group[data-scope="run"]') as HTMLElement
+    const [first] = within(runScope).getAllByTestId('value-row') as HTMLDetailsElement[]
+
+    fireEvent.click(first!.querySelector('summary') as HTMLElement)
+    expect(first!.open).toBe(true)
+
+    // Expand all — everything opens, including the one already open.
+    fireEvent.click(screen.getByTestId('values-expand-all'))
+    expect(within(runScope).getAllByTestId('value-row').every((r) => (r as HTMLDetailsElement).open)).toBe(true)
+
+    // Collapse all — and the hand-opened one closes with the rest.
+    fireEvent.click(screen.getByTestId('values-expand-all'))
+    expect(within(runScope).getAllByTestId('value-row').every((r) => !(r as HTMLDetailsElement).open)).toBe(
+      true,
+    )
+  })
+
   it('never folds an island: a closed live surface is simply not there', () => {
     server.use(
       http.get('/w/hello/islands/line-viewer.html', () =>

@@ -2392,10 +2392,6 @@ button {
   margin-bottom: 8px;
 }
 
-.lint-counts {
-  margin: 0 0 14px;
-}
-
 .findings {
   display: flex;
   flex-direction: column;

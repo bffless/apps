@@ -29,6 +29,7 @@ import type { ValueDecl } from '../values/ValueView'
 import { ValuesOpenProvider, useValuesBulk } from '../values/valuesOpen'
 import { withFileRefValue } from '../values/fileRef'
 import { kindTag } from '../values/valueMeta'
+import { isBulky } from '../values/valueSummary'
 
 /** One element of a collected list is that list's type without the list. */
 function elementDecl(decl: ValueDecl): ValueDecl {
@@ -54,9 +55,11 @@ export interface JobOutputProps {
   index?: number
   /** Overrides `ImplContext` — only `render: island` outputs read it (`ValueView`). */
   impl?: string
+  /** Arrived at by an out-dot (`?tab=Output`): open the rows it was clicked for. */
+  initialOpen?: boolean
 }
 
-export function JobOutput({ def, state, job, index, impl }: JobOutputProps) {
+export function JobOutput({ def, state, job, index, impl, initialOpen = false }: JobOutputProps) {
   const decl = def.jobs[job]
   // Evaluated the way `jobs.<job>.outputs` / `needs.<job>.outputs` read them.
   const runCtx = buildRunContexts(def, state) as {
@@ -64,32 +67,42 @@ export function JobOutput({ def, state, job, index, impl }: JobOutputProps) {
   }
   const outputs = runCtx.jobs?.[job]?.outputs ?? null
   const outputNames = Object.keys(decl?.outputs ?? {})
-  const { bulk, toggle } = useValuesBulk()
+  const { bulk, toggle } = useValuesBulk(initialOpen)
+
+  // Resolved up front so the bar can count what actually folds, not how many
+  // outputs there are — see `ExpandAll`.
+  const rows = outputNames.map((name) => {
+    const collected = outputs?.[name] ?? null
+    // One item shows its own element of the collected list (spec §The job page).
+    const value =
+      index === undefined
+        ? collected
+        : Array.isArray(collected)
+          ? ((collected as unknown[])[index] ?? null)
+          : collected
+    const resolved = resolveOutput(def, { kind: 'job', job }, name)
+    const base = index === undefined ? resolved.decl : elementDecl(resolved.decl)
+    return { name, value, resolved, decl: withFileRefValue(base, value) }
+  })
 
   return (
     <section className="job-output" data-testid="job-output">
       <h2 className="section-title">Job output</h2>
-      {outputNames.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="note">
           This job declares no outputs of its own — its steps' outputs are on each step.
         </p>
       ) : (
         <>
-          <ExpandAll count={outputNames.length} unit="output" open={bulk.open} onToggle={toggle} />
+          <ExpandAll
+            count={rows.filter((row) => isBulky(row.decl, row.value)).length}
+            unit="output"
+            open={bulk.open}
+            onToggle={toggle}
+          />
           <ValuesOpenProvider value={bulk}>
             <div className="pane-values">
-              {outputNames.map((name) => {
-                const collected = outputs?.[name] ?? null
-                // One item shows its own element of the collected list (spec §The job page).
-                const value =
-                  index === undefined
-                    ? collected
-                    : Array.isArray(collected)
-                      ? ((collected as unknown[])[index] ?? null)
-                      : collected
-                const resolved = resolveOutput(def, { kind: 'job', job }, name)
-                const base = index === undefined ? resolved.decl : elementDecl(resolved.decl)
-                const d = withFileRefValue(base, value)
+              {rows.map(({ name, value, resolved, decl: d }) => {
                 return (
                   <ValueView
                     key={name}

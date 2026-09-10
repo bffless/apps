@@ -11,11 +11,17 @@
  * component file cannot export a non-component (react-refresh).
  */
 import { isFileRefLike } from '../../lib/runner/fileRef'
-import { formatNumber, humanSize } from './shape'
+import { humanSize } from './shape'
 import type { ValueDecl } from '../../lib/valueDecl'
 
 /** How much of a string a closed row shows before the ellipsis takes over. */
 const PREVIEW = 80
+
+/** `8681` -> `8,681`. A count on a row is read, not computed with, and
+    `shape.formatNumber` deliberately leaves data values ungrouped. */
+function grouped(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
 
 /** A file ref's own summary: its type and, when it has one, its size. */
 function fileSummary(value: { contentType?: unknown; size?: unknown }): string {
@@ -37,7 +43,7 @@ export function valueSummary(value: unknown): string | undefined {
   if (Array.isArray(value)) {
     // A list of files says how many files, not how many items.
     const files = value.length > 0 && value.every((item) => isFileRefLike(item))
-    return `${formatNumber(value.length)} ${files ? 'file' : 'item'}${value.length === 1 ? '' : 's'}`
+    return `${grouped(value.length)} ${files ? 'file' : 'item'}${value.length === 1 ? '' : 's'}`
   }
 
   // Deliberately not `shape.isScalar`: that one means "would fit in a table
@@ -56,7 +62,7 @@ export function valueSummary(value: unknown): string | undefined {
 
   if (typeof value === 'object') {
     const keys = Object.keys(value as object).length
-    return `${formatNumber(keys)} key${keys === 1 ? '' : 's'}`
+    return `${grouped(keys)} key${keys === 1 ? '' : 's'}`
   }
 
   return undefined
@@ -77,6 +83,8 @@ const BULKY_TYPES = new Set(['table', 'markdown'])
  */
 export function isBulky(decl: ValueDecl, value: unknown): boolean {
   if (value === null || value === undefined) return false
+  // An island is a live surface; a closed one is simply not there.
+  if (decl.render === 'island') return false
   if (decl.list === true) return true
   if (typeof decl.render === 'string' && BULKY_RENDERERS.has(decl.render)) return true
   if (BULKY_TYPES.has(decl.type ?? '')) return true

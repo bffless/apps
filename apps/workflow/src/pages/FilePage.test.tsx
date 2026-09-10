@@ -46,6 +46,22 @@ describe('FilePage', () => {
     expect(within(page).getByText('64:9')).toBeInTheDocument()
   })
 
+  it('separates two non-zero severities on the strip', async () => {
+    // `jobs: 42` is two schema errors; the notice rule needs a real step, so
+    // this is the errors-plus-nothing-else case with more than one count.
+    server.use(http.get(YAML_URL, () => HttpResponse.text('spec: 1\nname: broken\njobs: 42\n')))
+
+    renderApp('/hello/hello/file')
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText('name: broken')).toBeInTheDocument()
+    const head = within(page).getByTestId('file-source-head')
+    expect(head).toHaveTextContent('2 errors')
+    expect(head).not.toHaveTextContent('No problems')
+    // Each count is preceded by its own separator, so they never run together.
+    expect(head.textContent).toMatch(/lines\s*·\s*2 errors/)
+  })
+
   it('says so once when the linter finds nothing wrong', async () => {
     const clean =
       'spec: 1\nname: clean\non:\n  manual: {}\njobs:\n  only:\n    name: Only\n    steps:\n' +

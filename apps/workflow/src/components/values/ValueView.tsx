@@ -263,9 +263,9 @@ export function ValueView({
    * no way to reach the next value). The panes that list many values set this;
    * a value shown on its own does not.
    *
-   * Two values decline it however the pane asks: an `island`, which is a live
-   * surface a closed row would simply remove, and anything `isBulky` says the
-   * closed row already prints in full.
+   * `isBulky` decides which values actually fold: not an island (a live
+   * surface a closed row would simply remove), and not anything the closed row
+   * already prints in full.
    */
   collapsible?: boolean
 }) {
@@ -390,7 +390,7 @@ export function ValueView({
     </span>
   )
 
-  if (collapsible && !island && isBulky(decl, value)) {
+  if (collapsible && isBulky(decl, value)) {
     return (
       <details
         className="value value-row"

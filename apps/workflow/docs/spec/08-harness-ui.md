@@ -16,7 +16,7 @@ prototype's "Workflow Graph A" artboard.
 | `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it. `?from=<runId>` prefills it for Re-run; `?auto=1&inputs=<base64url(JSON)>` is the headless entry (07) — no form at all, a `kickoff-auto` notice while the run starts, or a `kickoff-invalid` list of the values it refused |
 | `/<impl>/<workflow>/runs` | **Past runs** — table: status (a running run parked on a step says "waiting on <step>" beside its pill, linked to that step), started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
 | `/<impl>/<workflow>/runs/<runId>` | **Summary** — the jobs-only graph in *run* mode + the run card: its inputs, then its results, its annotations and a summary section per job. An old `?step=` here redirects (replace) to the step's job page |
-| `/<impl>/<workflow>/runs/<runId>/job/<job>` | **Job page** — the job head, the job's Input/Output disclosure, the step rows; `?step=<key>` names the row that is open. A matrix job with no index is the **collect view**: the collected outputs and one link per item |
+| `/<impl>/<workflow>/runs/<runId>/job/<job>` | **Job page** — the job head, the job's inputs disclosure, the step rows, then the **Job output** section; `?step=<key>` names the row that is open. A matrix job with no index is the **collect view**: the collected outputs and one link per item |
 | `/<impl>/<workflow>/runs/<runId>/job/<job>/<index>` | **Matrix item** — the same page for one leg of a matrix job |
 | `/<impl>/<workflow>/file` | **View workflow file** — YAML with lint results (also linked from a run: the snapshot) |
 
@@ -61,9 +61,11 @@ between jobs needs.
   even though the chip itself lives in a step row's body, off the graph. The same hover marks
   the **step rows** of the job page in front of the person (`data-flow` on the row head);
   highlighting across pages is not attempted.
-- **Edge dots** are unchanged: the two dots on a node's edges are "jump straight to one side" —
-  the left one opens the job on Input (what it waited on), the right one on Output (what it
-  hands on).
+- **Edge dots** are unchanged in meaning: the two dots on a node's edges are "jump straight to
+  one side" — the left one opens the job on Input (what it waited on), the right one on Output
+  (what it hands on). Since the two sides became two places (above), `?tab=Input` opens the
+  inputs disclosure and `?tab=Output` scrolls to the **Job output** section with its values
+  already expanded — either way the dot lands on the thing it was clicked for.
 
 ## The job page
 
@@ -80,18 +82,21 @@ no step card any more, so the page around an open step never goes away.
    05's: a new run under the current definition, this job and everything downstream of it run
    again, every other job copied from this run — offered only on a terminal run this tab is
    not driving, and only for a job whose upstream all ended `success`/`skipped`.
-2. **Job inputs and outputs** (`job-io`): a collapsed disclosure holding the **Input |
-   Output** toggle and **Show raw**. *Input* is what the job waited on — each `needs` job's
-   evaluated outputs, and on a matrix leg its **matrix bindings** as the first entries;
-   *Output* is the job's own declared `outputs:` **evaluated** (aliases over step outputs; a
-   matrix job's collect into lists), with `goes to …` chips. Job outputs are derived, never
-   persisted (05) — this is the one place they are shown. An edge dot opens the page with the
-   disclosure already open on its side (`?tab=`), and it stays open underneath a row the
-   person then expands.
+2. **Job inputs** (`job-io`): a collapsed disclosure holding **Show raw**. What the job
+   waited on — each `needs` job's evaluated outputs, and on a matrix leg its **matrix
+   bindings** as the first entries. `?tab=Input` opens it, and it stays open underneath a row
+   the person then expands.
+
+   The job's **outputs** are no longer the other side of a toggle here: since the 2026-09-09
+   UX review they are their own **Job output** section (`job-output`) *below* the step rows,
+   because a job's result comes after the work that produced it. Its content is unchanged —
+   the job's own declared `outputs:` **evaluated** (aliases over step outputs; a matrix job's
+   collect into lists), with `goes to …` chips. Job outputs are derived, never persisted (05)
+   — this is still the one place they are shown.
 3. **Steps** (`job-steps`): the step rows, below.
 
 A **matrix collect view** (`/job/<matrix>`, no index) is the same page with `MATRIX · N ITEMS`
-as its kind, the *collected* outputs in the disclosure, and — instead of step rows — an
+as its kind, the *collected* outputs in the **Job output** section, and — instead of step rows — an
 **Items** list (`job-items`): one row per item (`job-item[data-index]`: glyph, item label,
 `item i+1`, and its duration once the leg is over, `N of M done` while it is not), each a link
 to that item's page. Deliberately no rows: 2 items × 3 steps is a list whose rows say
@@ -118,11 +123,20 @@ verbatim, names and all.
     person typed is its *Output*.
   - **Output** — each declared output with its renderer (02): table, transcript, markdown,
     file viewers with Download, JSON tree, `render: island` viewer; chips labelled "goes to
-    …". Every value that is *drawn* rather than printed carries a `json` flip to the raw value
-    the row holds (and back), so a chart or a table can always be read as its exact data; a
-    bare `json` value is read for its shape first (02 "Inferred shapes") and the tree is the
-    drill-in. **Show raw** flips every value on both sides to the raw tree, remembered per
-    browser. The audit trail rides here too (the separate Details tab was folded in on
+    …". Every value that is *drawn* rather than printed carries a `Rendered | JSON` switch —
+    two segments, the filled one the view on screen — so a chart or a table can always be read
+    as its exact data; a bare `json` value is read for its shape first (02 "Inferred shapes")
+    and the tree is the drill-in. **Show raw** flips every value on both sides to the raw tree,
+    remembered per browser.
+
+    Since the 2026-09-09 UX review every value with a body is a **row** (`value-row`), a
+    disclosure closed by default, whose closed line carries the name, what the value *is*
+    (`video/mp4 · 268.7 MB`, `8,681 items`) and its type — a pane is a list to scan rather than
+    a mile to scroll. A `values-expand-all` bar above the list opens or closes all of them, and
+    is absent when nothing in the pane folds. Two values never fold: an `island`, which is a
+    live surface a closed row would remove, and anything the closed line already prints whole.
+    A closed row's body is hidden, not unmounted, so a `transcript` seek into a player inside
+    one **opens that row** rather than moving a player nobody can see. The audit trail rides here too (the separate Details tab was folded in on
     2026-08-26): started / finished / took, attempt, kind, the pipeline path, the error
     (`code`, message; the raw response behind a disclosure), the step's `summary` rendered,
     its annotations, and a live script's log.

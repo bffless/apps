@@ -31,9 +31,15 @@ export function useBulkOpen(): BulkOpen {
   return useContext(ValuesOpenContext)
 }
 
-/** The pane side: the state to provide, and the handler for its Expand all. */
-export function useValuesBulk(): { bulk: BulkOpen; toggle: () => void } {
-  const [bulk, setBulk] = useState<BulkOpen>(BULK_CLOSED)
+/**
+ * The pane side: the state to provide, and the handler for its Expand all.
+ *
+ * `initialOpen` is for a pane arrived at by a link that named a value — an
+ * edge dot's `?tab=Output` means "show me this job's outputs", so landing on a
+ * list of closed rows would answer a question with a question.
+ */
+export function useValuesBulk(initialOpen = false): { bulk: BulkOpen; toggle: () => void } {
+  const [bulk, setBulk] = useState<BulkOpen>(initialOpen ? { epoch: 0, open: true } : BULK_CLOSED)
   return {
     bulk,
     toggle: () => setBulk((prev) => ({ epoch: prev.epoch + 1, open: !prev.open })),

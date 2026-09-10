@@ -79,7 +79,9 @@ export function JobPage() {
     // `setState` may not be called synchronously in an effect body (react-hooks 7).
     queueMicrotask(() => {
       if (tab === 'Input') setIoOpen(true)
-      // jsdom implements no scrolling; the optional call keeps the tests honest.
+      // jsdom implements no scrolling; the optional call keeps the tests
+      // honest. The section itself arrives already open (`initialOpen`), so
+      // the dot still lands on the value it was clicked for, as 08 promises.
       else outputRef.current?.scrollIntoView?.({ block: 'start' })
     })
   }, [tab])
@@ -267,7 +269,14 @@ export function JobPage() {
 
       {/* What the job produced, after the work that produced it (2026-09-09). */}
       <div ref={outputRef}>
-        <JobOutput def={ctx.def} state={ctx.state} job={job} index={index} impl={ctx.impl} />
+        <JobOutput
+          def={ctx.def}
+          state={ctx.state}
+          job={job}
+          index={index}
+          impl={ctx.impl}
+          initialOpen={tab === 'Output'}
+        />
       </div>
     </section>
   )

@@ -52,6 +52,7 @@ import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
 import { ExpandAll } from '../values/ExpandAll'
+import { isBulky } from '../values/valueSummary'
 import { ValuesOpenProvider, useValuesBulk } from '../values/valuesOpen'
 import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
@@ -118,7 +119,12 @@ function InputTab({ job, step, declared }: { job: string; step: StepState; decla
 
   return (
     <>
-      <ExpandAll count={entries.length} unit="input" open={bulk.open} onToggle={toggle} />
+      <ExpandAll
+        count={entries.filter(([, value]) => isBulky(inferDecl(value), value)).length}
+        unit="input"
+        open={bulk.open}
+        onToggle={toggle}
+      />
       <ValuesOpenProvider value={bulk}>
         <div className="pane-values">
           {entries.map(([name, value]) => {
@@ -175,7 +181,19 @@ function OutputValues({
     // Scoped to this one step, so a transcript's seek click always lands on
     // the player showing in the same step's Output tab (Task 15).
     <MediaSeekProvider>
-      <ExpandAll count={names.length} unit="output" open={bulk.open} onToggle={toggle} />
+      <ExpandAll
+        count={
+          names.filter((name) => {
+            const value =
+              name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
+            const d = declared ? stepOutputDecl(declared, name) : { type: 'json' }
+            return isBulky(withFileRefValue(d, value), value)
+          }).length
+        }
+        unit="output"
+        open={bulk.open}
+        onToggle={toggle}
+      />
       <ValuesOpenProvider value={bulk}>
         <div className="pane-values">
           {names.map((name) => {
