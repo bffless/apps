@@ -573,10 +573,13 @@ describe('inferred shapes and declared formats (02, apps#450)', () => {
     expect(cells[0]).toHaveAttribute('data-num')
     expect(container.querySelector('details')).toBeNull()
 
-    fireEvent.click(screen.getByTestId('value-raw'))
+    fireEvent.click(within(screen.getByTestId('value-raw')).getByRole('button', { name: 'JSON' }))
     expect(container.querySelector('table')).toBeNull()
     expect(container.querySelector('details summary')?.textContent).toBe('[2]')
-    expect(screen.getByTestId('value-raw')).toHaveTextContent('rendered')
+    // `data-view` names the view on screen, and the filled segment matches it.
+    expect(screen.getByTestId('value-raw')).toHaveAttribute('data-view', 'json')
+    expect(screen.getByRole('button', { name: 'JSON' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Rendered' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('draws an array of floats as a compact list with the count, and show all unfolds it', () => {
@@ -604,7 +607,7 @@ describe('inferred shapes and declared formats (02, apps#450)', () => {
     // `count` is still a leaf of the tree around it.
     expect(container.querySelector('.json-leaf')?.textContent).toBe('count: 4')
 
-    fireEvent.click(screen.getByTestId('value-raw'))
+    fireEvent.click(within(screen.getByTestId('value-raw')).getByRole('button', { name: 'JSON' }))
     expect(container.querySelector('.file-card')).toBeNull()
     expect(container.querySelectorAll('details').length).toBeGreaterThan(4)
   })
@@ -622,7 +625,7 @@ describe('inferred shapes and declared formats (02, apps#450)', () => {
       expect(writeText).toHaveBeenCalledWith(path)
       expect(await screen.findByText('copied')).toBeInTheDocument()
       // Raw shows the string the row holds.
-      fireEvent.click(screen.getByTestId('value-raw'))
+      fireEvent.click(within(screen.getByTestId('value-raw')).getByRole('button', { name: 'JSON' }))
       expect(screen.queryByTestId('value-path')).toBeNull()
       expect(screen.getByText(JSON.stringify(path))).toBeInTheDocument()
     } finally {
@@ -645,7 +648,7 @@ describe('inferred shapes and declared formats (02, apps#450)', () => {
     const { container } = render(<ValueView decl={{ type: 'number', format: 'seconds' }} value={125.34} label="at" />)
     expect(container.querySelector('.chip')?.textContent).toBe('2:05.3')
     expect(container.querySelector('.chip')).toHaveAttribute('title', '125.34')
-    fireEvent.click(screen.getByTestId('value-raw'))
+    fireEvent.click(within(screen.getByTestId('value-raw')).getByRole('button', { name: 'JSON' }))
     expect(container.querySelector('.json-value')?.textContent).toBe('125.34')
   })
 
@@ -708,9 +711,9 @@ describe('inferred shapes and declared formats (02, apps#450)', () => {
     const { container: table } = render(<ValueView decl={{ type: 'json' }} value={[{ start: 1, end: 2 }]} label="t" />)
     expect(table.querySelector('table')).toBeNull()
     const flip = within(table).getByTestId('value-raw')
-    expect(flip).toHaveTextContent('rendered')
-    fireEvent.click(flip)
+    expect(flip).toHaveAttribute('data-view', 'json')
+    fireEvent.click(within(flip).getByRole('button', { name: 'Rendered' }))
     expect(table.querySelector('table')).toBeTruthy()
-    expect(flip).toHaveTextContent('json')
+    expect(flip).toHaveAttribute('data-view', 'rendered')
   })
 })

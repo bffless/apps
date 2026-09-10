@@ -135,7 +135,7 @@ When no job can start and none is active: `succeeded` if all jobs succeeded or w
 by `if`; `failed` if any job failed; `cancelled` if cancelled. Top-level `outputs` are
 evaluated and stored; the Summary lists them, each with its renderer and — for files —
 Download. A job's own outputs are derived, never stored, and are shown in one place: that
-job's page, behind the **Job inputs and outputs** disclosure (08).
+job's page, in the **Job output** section below its step rows (08).
 
 ## Retention & deletion
 

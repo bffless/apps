@@ -12,7 +12,7 @@
  * 02 "Inferred shapes", apps#450): homogeneous rows draw as a table, numbers
  * as a compact list, File refs as file cards, a storage path as its basename
  * — and inside the tree, node by node, the same. The tree is always one
- * click away: the `json` flip on the value, or the pane's **Show raw**.
+ * click away: the value's `Rendered | JSON` switch, or the pane's **Show raw**.
  *
  * `island` needs one fact no value carries: which implementation bundle its
  * `src` lives in. It comes from `ImplContext` (the page knows) or from an
@@ -36,6 +36,8 @@ import { TableView } from './TableView'
 import { InlineList, PathChip, ShapeView } from './ShapeView'
 import { ShowAll } from './ShowAll'
 import { useShowRaw } from './rawPreference'
+import { useBulkOpen } from './valuesOpen'
+import { isBulky, valueSummary } from './valueSummary'
 import { LIST_ITEMS_PREVIEW, formatSeconds, hasShape, inferShape } from './shape'
 import { IslandView } from './renderers/IslandView'
 import { ImagesView } from './renderers/ImagesView'
@@ -208,7 +210,7 @@ function ValueBody({ decl, value, images }: { decl: ValueDecl; value: unknown; i
 
 /**
  * Whether the default viewer would show this value as something other than
- * the raw tree — so the `json` flip has a second side worth offering.
+ * the raw tree — so the `Rendered | JSON` switch has a second side worth offering.
  */
 function isDrawn(decl: ValueDecl, value: unknown): boolean {
   if (typeof decl.render === 'string' || DRAWN_TYPES.has(decl.type)) return true
@@ -229,6 +231,7 @@ export function ValueView({
   impl,
   images,
   onHover,
+  collapsible = false,
 }: {
   decl: ValueDecl
   value: unknown
@@ -253,6 +256,18 @@ export function ValueView({
    * parity is a follow-up, not required for M2.
    */
   onHover?: (hovering: boolean) => void
+  /**
+   * Draw the value as a **disclosure**, closed by default, with its name, a
+   * one-line `valueSummary` and its type tag on the closed row (2026-09-09 UX
+   * review: a pane of transcripts and image grids was a mile of scrolling with
+   * no way to reach the next value). The panes that list many values set this;
+   * a value shown on its own does not.
+   *
+   * `isBulky` decides which values actually fold: not an island (a live
+   * surface a closed row would simply remove), and not anything the closed row
+   * already prints in full.
+   */
+  collapsible?: boolean
 }) {
   // Unconditional: `impl ?? useImpl()` would short-circuit the hook away.
   const contextImpl = useImpl()
@@ -265,6 +280,11 @@ export function ValueView({
   const paneRaw = useShowRaw()
   const [ownRaw, setOwnRaw] = useState<boolean | null>(null)
   const raw = ownRaw ?? paneRaw
+  // The disclosure state, when the pane asked for one: this value's own choice
+  // holds until the next Expand all / Collapse all, then it rejoins the group.
+  const bulk = useBulkOpen()
+  const [ownOpen, setOwnOpen] = useState<{ epoch: number; open: boolean } | null>(null)
+  const open = ownOpen !== null && ownOpen.epoch === bulk.epoch ? ownOpen.open : bulk.open
   const bundle = impl ?? contextImpl
   const unavailable = isUnavailablePayload(value)
   const island = decl.render === 'island' && typeof decl.src === 'string' && bundle !== null
@@ -275,6 +295,8 @@ export function ValueView({
 
   const present = !unavailable && value !== null && value !== undefined
   const drawn = present && isDrawn(decl, value)
+  // What the closed row says the value is; `undefined` leaves name + tag alone.
+  const brief = valueSummary(value)
 
   let body
   if (present && raw && (drawn || ownRaw === null)) {
@@ -328,6 +350,84 @@ export function ValueView({
     )
   }
 
+  /*
+    Two segments, and the filled one is the view on screen — the same rule
+    Input/Output already follows.
+
+    This was one button whose *label* named where clicking would take you
+    ("json" while rendered) but whose *fill* reported the state it was in
+    (`aria-pressed={raw}`), so reading the JSON showed a black segment reading
+    "rendered": the opposite of what was on screen. Two mental models on one
+    control; the 2026-09-09 UX review caught it. `data-view` carries the same
+    fact for the headless driver, and `data-testid` keeps its name.
+  */
+  const rawSwitch = drawn && (
+    <span
+      className="value-raw"
+      role="group"
+      aria-label="View"
+      data-testid="value-raw"
+      data-view={raw ? 'json' : 'rendered'}
+    >
+      <button
+        type="button"
+        className="tab"
+        aria-pressed={!raw}
+        title="Show it as declared"
+        onClick={() => setOwnRaw(false)}
+      >
+        Rendered
+      </button>
+      <button
+        type="button"
+        className="tab"
+        aria-pressed={raw}
+        title="Show the raw JSON"
+        onClick={() => setOwnRaw(true)}
+      >
+        JSON
+      </button>
+    </span>
+  )
+
+  if (collapsible && isBulky(decl, value)) {
+    return (
+      <details
+        className="value value-row"
+        data-testid="value-row"
+        data-key={label}
+        open={open}
+        onToggle={(event) => setOwnOpen({ epoch: bulk.epoch, open: event.currentTarget.open })}
+        onMouseEnter={onHover && (() => onHover(true))}
+        onMouseLeave={onHover && (() => onHover(false))}
+      >
+        {/*
+          The closed row has to be enough to choose by: the name, what the value
+          *is* (`131.1 MB`, `8,681 items`), and its type. The raw/rendered switch
+          and the provenance chips belong to the open body — a view switch on a
+          value you cannot see says nothing, and an interactive control inside a
+          `<summary>` fights the disclosure for the same click.
+        */}
+        <summary className="value-row-head">
+          <span className="value-chevron" aria-hidden="true" />
+          {label && <span className="value-label">{label}</span>}
+          {brief && <span className="value-brief">{brief}</span>}
+          {tag && <span className="value-tag">{tag}</span>}
+        </summary>
+        <div className="value-row-body">
+          {(origin || destination || drawn) && (
+            <div className="value-toolbar">
+              {origin && <span className="chip value-origin">from {origin}</span>}
+              {destination && <span className="chip value-origin">goes to {destination}</span>}
+              {rawSwitch}
+            </div>
+          )}
+          {body}
+        </div>
+      </details>
+    )
+  }
+
   return (
     <div
       className="value"
@@ -340,18 +440,7 @@ export function ValueView({
           {origin && <span className="chip value-origin">from {origin}</span>}
           {destination && <span className="chip value-origin">goes to {destination}</span>}
           {tag && <span className="value-tag">{tag}</span>}
-          {drawn && (
-            <button
-              type="button"
-              className="value-raw"
-              data-testid="value-raw"
-              aria-pressed={raw}
-              title={raw ? 'Show it as declared' : 'Show the raw JSON'}
-              onClick={() => setOwnRaw(!raw)}
-            >
-              {raw ? 'rendered' : 'json'}
-            </button>
-          )}
+          {rawSwitch}
         </div>
       )}
       {body}

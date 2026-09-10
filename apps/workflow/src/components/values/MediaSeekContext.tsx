@@ -48,7 +48,21 @@ export function MediaSeekProvider({ children }: { children: ReactNode }) {
     seek(seconds) {
       const first = elements.current[0]
       if (!first) return false
+      // Since the 2026-09-09 review a player can sit inside a folded value
+      // row, and a closed row's body is hidden rather than unmounted — so the
+      // `FileCard` in it still registers here and would
+      // take a seek nobody can see. Open every closed `<details>` above the
+      // player — in practice its own row, since nothing else nests one, but
+      // the walk is to the root rather than to the provider, which this
+      // callback has no handle on. The rows are React-controlled, but
+      // setting `open` fires `toggle`, which is where they read it back, so
+      // the DOM and the state stay in step.
+      for (let node = first.parentElement; node; node = node.parentElement) {
+        if (node instanceof HTMLDetailsElement && !node.open) node.open = true
+      }
       first.currentTime = seconds
+      // `nearest` so an already-visible player does not jump the page.
+      first.scrollIntoView?.({ block: 'nearest' })
       return true
     },
   }))

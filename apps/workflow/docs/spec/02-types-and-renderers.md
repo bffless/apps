@@ -84,10 +84,13 @@ outputs:
 ### Raw, one click away
 
 Every value that is *drawn* rather than printed — a declared renderer, a table, markdown, a
-file, an inferred shape, a formatted number — carries a `json` flip to the raw JSON its row
-holds, and back. The run, job and step panes also carry a pane-level **Show raw** that makes
-every value on every tab the raw tree at once; it is one switch for the browser, remembered
-in local storage, and a value's own flip still overrides it either way.
+file, an inferred shape, a formatted number — carries a **`Rendered | JSON`** switch to the
+raw JSON its row holds, and back: two segments, and the filled one is always the view on
+screen (08). It was a single button labelled with the view it would take you *to* while
+filled by the state it was *in*, which said the opposite of what was showing, and the
+2026-09-09 UX review caught it. The run, job and step panes also carry a pane-level **Show
+raw** that makes every value on every tab the raw tree at once; it is one switch for the
+browser, remembered in local storage, and a value's own switch still overrides it either way.
 
 Every definition compiles to one JSON Schema; validation (kickoff form, `form` submit, island
 `workflow.submit`, script return, pipeline `outputs` coercion) is one function over that

@@ -38,6 +38,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { JobHead } from '../../components/run/JobHead'
 import { JobIo } from '../../components/run/JobIo'
+import { JobOutput } from '../../components/run/JobOutput'
 import { StepRow } from '../../components/run/StepRow'
 import { stepRowId } from '../../components/run/stepRowId'
 import { StatusGlyph } from '../../components/StatusPill'
@@ -67,14 +68,21 @@ export function JobPage() {
 
   // The job disclosure: opened by an edge dot's `?tab=`, or by the person, and
   // then held here — never re-read off a URL a row click has already rewritten.
-  const [ioOpen, setIoOpen] = useState(tab !== undefined)
-  const [ioTab, setIoTab] = useState<'Input' | 'Output'>(tab ?? 'Input')
+  //
+  // Since the 2026-09-09 review the two sides are two places — inputs in this
+  // disclosure, outputs in their own section below the steps — so an edge dot
+  // asking for `Output` has nothing to open: it scrolls there instead.
+  const [ioOpen, setIoOpen] = useState(tab === 'Input')
+  const outputRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (tab === undefined) return
     // `setState` may not be called synchronously in an effect body (react-hooks 7).
     queueMicrotask(() => {
-      setIoOpen(true)
-      setIoTab(tab)
+      if (tab === 'Input') setIoOpen(true)
+      // jsdom implements no scrolling; the optional call keeps the tests
+      // honest. The section itself arrives already open (`initialOpen`), so
+      // the dot still lands on the value it was clicked for, as 08 promises.
+      else outputRef.current?.scrollIntoView?.({ block: 'start' })
     })
   }, [tab])
 
@@ -195,7 +203,7 @@ export function JobPage() {
         source={ctx.yamlSource}
       />
 
-      {/* Keyed on the job alone: another job's values are another disclosure,
+      {/* Keyed on the job alone: another job's inputs are another disclosure,
           which starts from its own `?tab=`; another *item* of the same job is
           not, and neither is opening a row. */}
       <JobIo
@@ -204,9 +212,6 @@ export function JobPage() {
         state={ctx.state}
         job={job}
         index={index}
-        impl={ctx.impl}
-        tab={ioTab}
-        onTab={setIoTab}
         open={ioOpen}
         onToggle={() => setIoOpen((was) => !was)}
       />
@@ -261,6 +266,18 @@ export function JobPage() {
           ))}
         </ul>
       )}
+
+      {/* What the job produced, after the work that produced it (2026-09-09). */}
+      <div ref={outputRef}>
+        <JobOutput
+          def={ctx.def}
+          state={ctx.state}
+          job={job}
+          index={index}
+          impl={ctx.impl}
+          initialOpen={tab === 'Output'}
+        />
+      </div>
     </section>
   )
 }

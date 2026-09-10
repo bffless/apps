@@ -119,10 +119,10 @@ describe('JobPage — the matrix', () => {
     const { page } = await openAt(`${RUN_PATH}/job/greet`)
 
     expect(within(page).getByTestId('job-items').querySelectorAll('a')).toHaveLength(2)
-    fireEvent.click(within(page).getByText('Job inputs and outputs'))
-    fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
-    expect(within(page).getByTestId('job-io')).toHaveTextContent('Hello, studio!')
-    expect(within(page).getByTestId('job-io')).toHaveTextContent('Hello, world!')
+    // The job's collected outputs are their own section below (2026-09-09).
+    const out = within(page).getByTestId('job-output')
+    expect(out).toHaveTextContent('Hello, studio!')
+    expect(out).toHaveTextContent('Hello, world!')
     // No step rows at all: 2 items × 1 step says nothing about which leg is which.
     expect(within(page).queryByTestId('job-steps')).not.toBeInTheDocument()
   })
@@ -131,11 +131,11 @@ describe('JobPage — the matrix', () => {
     const { page } = await openAt(`${RUN_PATH}/job/greet/1`)
 
     expect(within(page).getByTestId('job-head')).toHaveTextContent('item 2 of 2')
-    fireEvent.click(within(page).getByText('Job inputs and outputs'))
+    fireEvent.click(within(page).getByText('Job inputs'))
     expect(within(page).getByTestId('job-io')).toHaveTextContent('who')
-    fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
-    expect(within(page).getByTestId('job-io')).toHaveTextContent('Hello, studio!')
-    expect(within(page).getByTestId('job-io')).not.toHaveTextContent('Hello, world!')
+    // This leg's element of each collected list, not the whole fan-out.
+    expect(within(page).getByTestId('job-output')).toHaveTextContent('Hello, studio!')
+    expect(within(page).getByTestId('job-output')).not.toHaveTextContent('Hello, world!')
     // The item's own leg, not the whole fan-out.
     expect(within(page).getAllByTestId('step').map((r) => r.getAttribute('data-key'))).toEqual([
       'greet/1/say',
@@ -153,23 +153,54 @@ describe('JobPage — the matrix', () => {
 })
 
 describe('JobPage — the job disclosure', () => {
-  it('opens the job disclosure on the side an edge dot asked for', async () => {
-    const { page } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+  // Since the 2026-09-09 review the two sides are two places: `?tab=Input`
+  // opens the inputs disclosure, and `?tab=Output` has nothing to open —
+  // the outputs are a section of their own, always showing, below the steps.
+  it('opens the inputs disclosure when an edge dot asks for Input', async () => {
+    const { page } = await openAt(`${RUN_PATH}/job/slow?tab=Input`)
 
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
-    expect(within(page).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
-    expect(within(page).getByTestId('job-io')).toHaveTextContent('report')
+    expect(within(page).getByTestId('job-io')).toHaveTextContent('greet')
+  })
+
+  it("shows the job's outputs below the steps whether or not a dot asked for them", async () => {
+    const { page } = await openAt(`${RUN_PATH}/job/slow`)
+
+    expect(within(page).getByTestId('job-output')).toHaveTextContent('report')
+    // Nothing was opened above: Output is not a side of the disclosure any more.
+    expect(within(page).getByTestId('job-io')).not.toHaveAttribute('open')
+    // With no dot asking, the rows are closed like any other pane's.
+    const out = within(page).getByTestId('job-output')
+    expect(within(out).getAllByTestId('value-row').every((r) => !(r as HTMLDetailsElement).open)).toBe(
+      true,
+    )
+    expect(within(out).getByTestId('values-expand-all')).toHaveTextContent('Expand all')
+  })
+
+  /**
+   * Spec 08 promises an out-dot lands on the value it was clicked for. Asserted
+   * on the rows' `open`, not on their text: jsdom reads a closed `<details>`'s
+   * content perfectly well, so a text assertion here would pass with
+   * `initialOpen` deleted and the promise quietly broken.
+   */
+  it('arrives with the job output expanded when an out-dot asked for it', async () => {
+    const { page } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+
+    const out = within(page).getByTestId('job-output')
+    const rows = within(out).getAllByTestId('value-row') as HTMLDetailsElement[]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((row) => row.open)).toBe(true)
+    expect(within(out).getByTestId('values-expand-all')).toHaveTextContent('Collapse all')
   })
 
   // Fix round 1: a row click is a navigation — it writes `?step=` (which
   // always carries the item index) and drops `?tab=`. Anything the disclosure
   // derived from those, or was keyed on, went with it: the first expand
   // snapped it shut and reverted it to Input.
-  it('keeps the side an edge dot asked for when a step row is expanded under it', async () => {
-    const { page, router } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+  it('keeps the disclosure an edge dot opened when a step row is expanded under it', async () => {
+    const { page, router } = await openAt(`${RUN_PATH}/job/slow?tab=Input`)
 
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
-    expect(within(page).getByRole('tab', { name: 'Output' })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.click(rowFor(page, 'slow/0/start'))
 
@@ -178,16 +209,13 @@ describe('JobPage — the job disclosure', () => {
     expect(router.state.location.search).toBe('?step=slow%2F0%2Fstart')
     // … and the disclosure is exactly as the person left it.
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
-    expect(
-      within(within(page).getByTestId('job-io')).getByRole('tab', { name: 'Output' }),
-    ).toHaveAttribute('aria-selected', 'true')
-    expect(within(page).getByTestId('job-io')).toHaveTextContent('report')
+    expect(within(page).getByTestId('job-io')).toHaveTextContent('greet')
   })
 
   it('stays open when a step row is expanded after the person opened it themselves', async () => {
     const { page } = await openAt(`${RUN_PATH}/job/slow`)
 
-    fireEvent.click(within(page).getByText('Job inputs and outputs'))
+    fireEvent.click(within(page).getByText('Job inputs'))
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
 
     fireEvent.click(rowFor(page, 'slow/0/start'))
@@ -201,7 +229,7 @@ describe('JobPage — the job disclosure', () => {
 
     const io = within(page).getByTestId('job-io')
     expect(io).not.toHaveAttribute('open')
-    fireEvent.click(within(page).getByText('Job inputs and outputs'))
+    fireEvent.click(within(page).getByText('Job inputs'))
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
     // `needs: greet` — what the job waited on.
     expect(within(page).getByTestId('job-io')).toHaveTextContent('greet')
@@ -235,7 +263,7 @@ describe('JobPage — resets per job and per item (finding 1)', () => {
   })
 
   it('closes the job disclosure when the route moves to a different job', async () => {
-    const { page, router } = await openAt(`${RUN_PATH}/job/slow?tab=Output`)
+    const { page, router } = await openAt(`${RUN_PATH}/job/slow?tab=Input`)
 
     expect(within(page).getByTestId('job-io')).toHaveAttribute('open')
 
@@ -459,12 +487,13 @@ describe('JobPage — Re-run from this job', () => {
     expect(db.runs.size).toBe(1)
   })
 
-  it('keeps the button on both sides of the disclosure — it is an action of the job, not of a tab', async () => {
+  it('keeps the button whether the inputs are open or shut — it is an action of the job', async () => {
     const { page } = await openAt(`${RUN_PATH}/job/slow?tab=Input`)
 
     const head = within(page).getByTestId('job-head')
     expect(await within(head).findByTestId('job-fork')).toBeInTheDocument()
-    fireEvent.click(within(page).getByRole('tab', { name: 'Output' }))
+    fireEvent.click(within(page).getByText('Job inputs'))
+    expect(within(page).getByTestId('job-io')).not.toHaveAttribute('open')
     expect(within(head).getByTestId('job-fork')).toBeInTheDocument()
   })
 })

@@ -18,6 +18,13 @@
   --surface-dim: oklch(0.968 0.006 265);
   --surface-tint: oklch(0.99 0.012 90); /* the running row's warm wash, prototype */
 
+  /* The rail's own column (2026-09-09 review): the rail read as unstyled
+     because it sat on `--paper` like the page, so its white `.rail-row.active`
+     pill had nothing to be raised off. A step deep enough to read as a panel
+     (1.11:1 off paper) and still clear AA for `--ink-mute` on it (5.03:1).
+     `--surface-dim` is only 0.7% off `--paper` and is invisible here. */
+  --rail: oklch(0.94 0.009 265);
+
   /* Lines: strong (cards), line (panels), hairline (rows), faint (table rows). */
   --line-strong: oklch(0.86 0.008 265);
   --line: oklch(0.88 0.008 265);
@@ -213,6 +220,12 @@ button {
   color: var(--bad-ink);
 }
 
+/* Delete is irreversible and sits immediately beside the primary action, so a
+   mis-aimed click is expensive. Extra air on both sides (2026-09-09 review). */
+.page-actions .danger {
+  margin: 0 6px;
+}
+
 .button.danger:hover:not(:disabled),
 .page-actions .danger:hover:not(:disabled) {
   border-color: var(--bad-ink);
@@ -330,6 +343,17 @@ button {
   display: flex;
   flex: 1;
   align-items: flex-start;
+  /* The rail's column is painted here, not on `.rail`: the rail is sticky and
+     only as tall as its own rows, so a background on it would end partway down
+     a long page. This paints the full 16rem column and its hairline for the
+     whole scroll length, at any content height. Switched off below 900px,
+     where the rail stacks and paints itself. */
+  background-image: linear-gradient(
+    to right,
+    var(--rail) 0 16rem,
+    var(--line) 16rem calc(16rem + 1px),
+    transparent calc(16rem + 1px)
+  );
 }
 
 .rail {
@@ -501,6 +525,18 @@ button {
 
 .run-sub .sep {
   color: var(--line-strong);
+}
+
+/* Each field wraps as a unit. Without this the flex line breaks *inside* a
+   token and a run id or a user's uuid comes apart mid-string across three
+   lines — these are the things a person copies (2026-09-09 review). */
+.run-sub > span {
+  white-space: nowrap;
+}
+
+/* The exception: this one is a sentence with a link in it, not an identifier. */
+.run-sub > [data-testid='run-forked-from'] {
+  white-space: normal;
 }
 
 .page-actions {
@@ -957,30 +993,181 @@ button {
   margin-left: auto;
 }
 
-/* The raw-JSON flip on a drawn value: a mono toggle at the head's right edge. */
+/* The raw/rendered switch on a drawn value: a mono two-segment control at the
+   head's right edge, where the filled segment is the view on screen — the same
+   rule `Input`/`Output` follows. It was a single button labelled with its
+   destination but filled by its state, which read backwards (2026-09-09). */
 .value-raw {
-  padding: 2px 8px;
-  color: var(--ink-mute);
-  background: transparent;
+  display: inline-flex;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
+}
+
+.value-raw .tab {
+  padding: 2px 9px;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 0;
   font: 500 10.5px var(--font-mono);
   letter-spacing: 0.04em;
+  line-height: 1.5;
   cursor: pointer;
   transition:
     color var(--fast) var(--ease-out),
-    border-color var(--fast) var(--ease-out);
+    background-color var(--fast) var(--ease-out);
 }
 
-.value-raw:hover {
+.value-raw .tab + .tab {
+  border-left: 1px solid var(--line);
+}
+
+.value-raw .tab:hover:not([aria-pressed='true']) {
   color: var(--ink);
-  border-color: var(--ink);
+  background-color: var(--surface-dim);
 }
 
-.value-raw[aria-pressed='true'] {
+.value-raw .tab[aria-pressed='true'] {
   color: var(--paper);
   background-color: var(--ink);
-  border-color: var(--ink);
+}
+
+/* --------------------------------------------------------------------------
+   A value as a row (2026-09-09 UX review)
+
+   A pane used to print every value in full, one under the other, so reaching
+   the second input of a step meant scrolling past the whole of the first — a
+   transcript, an image grid. Every value in a pane is now a disclosure closed
+   by default: the pane is a list you scan, and you open the one you want. The
+   closed row carries the name, what the value is, and its type.
+   -------------------------------------------------------------------------- */
+
+/* The count and the one bulk control, above the list. */
+.values-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 2px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.values-expand {
+  margin-left: auto;
+  padding: 4px 10px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font: 600 11.5px var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color var(--fast) var(--ease-out),
+    background-color var(--fast) var(--ease-out);
+}
+
+.values-expand:hover {
+  background-color: var(--surface-dim);
+  border-color: var(--line-strong);
+}
+
+.value-row {
+  display: block;
+  min-width: 0;
+}
+
+.value-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 2px;
+  list-style: none;
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease-out);
+}
+
+/* Safari draws its own marker; the chevron below is the one affordance. */
+.value-row-head::-webkit-details-marker {
+  display: none;
+}
+
+.value-row-head:hover {
+  background-color: var(--paper);
+}
+
+.value-row-head:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.value-chevron {
+  flex: none;
+  width: 10px;
+  color: var(--ink-mute);
+  transition: transform var(--fast) var(--ease-out);
+}
+
+.value-chevron::before {
+  content: '▸';
+}
+
+.value-row[open] > .value-row-head .value-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .value-chevron {
+    transition: none;
+  }
+}
+
+/* What the value *is*, so the row can be chosen without opening it. */
+.value-brief {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-mute);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Nothing here hides a closed row's body, and nothing needs to.
+   `<details>` lays its own contents out at zero size (`content-visibility:
+   hidden` on `::details-content`), so the body's padding and the intrinsic
+   size of any `<img>`/`<video>` in it cost the closed row nothing — measured
+   in Chromium: a closed file row and a closed markdown row are both 42-43px,
+   with and without help.
+
+   Recorded because two "fixes" for that went in before the cause was found. A
+   closed *file* row really was 23px taller than a markdown one, but the 23px
+   was `padding-top: 22px` inherited from `.pane-values > .value + .value`,
+   which ties on specificity with the row rule below and won on order — not
+   the body leaking anything. `display: none` on the body appeared to fix it
+   and did not; it did opt the row out of Chrome's find-in-page, which
+   searches a closed `<details>` and auto-expands the match, and that is an
+   affordance a page of folded values wants. So: leave the body alone. */
+.value-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 2px 18px 20px;
+  min-width: 0;
+}
+
+/* Provenance and the raw/rendered switch belong to the open body — see
+   `ValueView`: a view switch on a value you cannot see says nothing. */
+.value-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Left, with the body it controls — pushed right it sat alone against the far
+   edge of a wide pane, a control with nothing near it to be about. */
+.value-toolbar .value-raw {
+  margin-left: 0;
 }
 
 .value-empty {
@@ -1544,7 +1731,8 @@ button {
   display: inline-block;
   width: 2em;
   margin-right: 1em;
-  color: var(--ink-faint);
+  /* Read, not a de-emphasised state — see `.source-no`. */
+  color: var(--ink-mute);
   text-align: right;
   user-select: none;
 }
@@ -1868,6 +2056,17 @@ button {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+/* On the job's own page the job is the subject, so its name is the loudest
+   thing in the content column — the run's title above it is the masthead, and
+   at 16px/600 the job read as a caption under it: *"Jobs per video. What job
+   am I on? There's no title of the job. I've kind of gotten lost."*
+   (2026-09-09 review). The graph card's `.job-head-name` keeps its own size. */
+.job-page > .job-head .job-head-name {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .job-head-meta {
@@ -2196,10 +2395,6 @@ button {
   margin-bottom: 8px;
 }
 
-.lint-counts {
-  margin: 0 0 14px;
-}
-
 .findings {
   display: flex;
   flex-direction: column;
@@ -2244,6 +2439,48 @@ button {
   color: var(--ink-mute);
 }
 
+/* The job's own result, below the steps that produced it (2026-09-09 review). */
+.job-output {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.job-output .section-title {
+  margin: 8px 0 6px;
+}
+
+/* The workflow file's source, in a white panel on the paper page — the same
+   figure/ground the step YAML drawer already had (a `--paper` `.code-view`
+   inset in a `--surface` sheet), and the reason that screen read as designed
+   while this one did not: here the code sat on `--paper` on a `--paper` page,
+   so nothing separated it from the background (2026-09-09 review). */
+.file-source {
+  max-width: 1080px;
+  overflow: hidden;
+}
+
+.file-source-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  color: var(--ink-mute);
+  background-color: var(--surface-dim);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.file-source-head .sep {
+  color: var(--line-strong);
+}
+
+.file-source .source {
+  max-height: none;
+  margin: 16px;
+}
+
 .source {
   max-height: none;
   margin-top: 0;
@@ -2257,7 +2494,9 @@ button {
   display: inline-block;
   width: 3ch;
   margin-right: 2ch;
-  color: var(--ink-faint);
+  /* `--ink-faint` is for de-emphasised *states*; on paper it is 3.99:1, under
+     the AA floor PRODUCT.md commits to. Line numbers are read, so mute. */
+  color: var(--ink-mute);
   text-align: right;
   user-select: none;
 }
@@ -2503,6 +2742,21 @@ button.pane-crumb:hover {
 .pane-values > .value + .value {
   padding-top: 22px;
   border-top: 1px solid var(--hairline-faint);
+}
+
+/* Rows are a list, not a stack of blocks: the container's block spacing gives
+   way to hairlines the moment its values are rows. Declared *after* the two
+   rules above on purpose — the selectors tie on specificity, so order is what
+   decides, and a `.value-row` must not inherit the 22px block gutter. */
+.pane-values:has(> .value-row),
+.output-group:has(> .output > .value-row) {
+  gap: 0;
+}
+
+.pane-values > .value-row + .value-row,
+.output-group > .output:has(> .value-row) + .output:has(> .value-row) {
+  padding-top: 0;
+  border-top: 1px solid var(--hairline);
 }
 
 /* The audit trail's stat row (Details, folded into Output). */
@@ -3165,6 +3419,7 @@ button.pane-crumb:hover {
    duration on screen, and how the row is collapsed. */
 .island-fullscreen .job-page > .job-head,
 .island-fullscreen .job-io,
+.island-fullscreen .job-output,
 .island-fullscreen .step-row:not([data-fullscreen]) {
   display: none;
 }
@@ -3252,12 +3507,17 @@ button.pane-crumb:hover {
     width: 100%;
   }
 
+  .shell-body {
+    background-image: none;
+  }
+
   .rail {
     position: static;
     flex: none;
     width: 100%;
     max-height: none;
     padding: 16px;
+    background-color: var(--rail);
     border-bottom: 1px solid var(--line);
   }
 

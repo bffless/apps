@@ -18,6 +18,7 @@ Light only (`color-scheme: light`); dark mode is out of scope (08 "Not in v1").
 | `--surface` | `oklch(1 0 0)` | panels, cards, the top bar |
 | `--surface-dim` | `oklch(0.968 0.006 265)` | card header strips, table heads, selected rows |
 | `--surface-tint` | `oklch(0.99 0.012 90)` | the running step's warm wash (prototype) |
+| `--rail` | `oklch(0.94 0.009 265)` | the rail's own column (1.11:1 off paper) |
 | `--line-strong` / `--line` | `oklch(0.86 / 0.88 0.008 265)` | card / panel borders |
 | `--hairline` / `--hairline-faint` | `oklch(0.94 / 0.95 0.006 265)` | row separators |
 | `--edge` | `oklch(0.82 0.01 265)` | graph connectors (1.5px) |
@@ -75,9 +76,12 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
     `.pane-crumb` way up), the job's name 600, its id in `.pane-key` mono, the pill, the mono
     duration, the matrix note, then `.job-head-actions` on the right: **Re-run from this job**
     when the run can be forked there, and **YAML**.
-  - **Job inputs and outputs** (`.job-io`) — the job card's body folded into a `<details>`: a
-    12×20 `summary`, then the `.job-io-toolbar` (the `.segmented` Input/Output toggle, selected
-    = ink, plus Show raw) over a body of values.
+  - **Job inputs** (`.job-io`) — what the job waited on, folded into a `<details>`: a 12×20
+    `summary`, then the `.job-io-toolbar` (Show raw) over a body of value rows. The
+    Input/Output `.segmented` toggle went with the outputs (2026-09-09 review).
+  - **Job output** (`.job-output`) — the job's own outputs, a `.section-title` over a
+    `.values-bar` and value rows, **after** the step rows: a job's result comes after the work
+    that produced it. Reached by an out-dot's `?tab=Output`, which opens its rows.
   - **Step rows** (`.step-list` / `.step-row`) — one card-bordered list, hairline between rows.
     The head is a full-width button (glyph · label + mono id · kind word · `attempt n` ·
     right-aligned mono duration · chevron), tinted by `data-state` and ringed by
@@ -108,10 +112,24 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
     `.section-title`'s `margin: 24px 0 10px`, which already sets `Inputs` off from the row
     head. Its `.job-head` prints four things and no more: the name, the id, the kind and the
     matrix note.
-- **Value**: `.value-head` = label 600 13px + `.chip.value-origin` ("from …" / "goes to …") +
-  `.value-tag` (mono type · renderer, right-aligned); body per renderer — file row with the
-  striped 34×24 thumbnail slot, table with a mono uppercase head, transcript rows, 16:9 image
-  grid, markdown box, code box on paper, JSON tree with hairline guides.
+- **Value**: two shapes. On its own, `.value-head` = label 600 13px + `.chip.value-origin`
+  ("from …" / "goes to …") + `.value-tag` (mono type · renderer, right-aligned). In a pane that
+  lists several, a **row** (`.value-row`, a `<details>` closed by default — 2026-09-09 review):
+  `.value-row-head` = `.value-chevron` + label + `.value-brief` (what the value *is*:
+  `video/mp4 · 268.7 MB`, `8,681 items`, `3 keys`, or the string on one line to 80 chars) +
+  `.value-tag`; open, `.value-row-body` carries the origin chips, the `.value-raw` switch and
+  the body. Rows separate with a hairline and no gutter; a closed row's body needs no help to
+  cost nothing — `<details>` lays its own contents out at zero size — so it keeps its padding
+  and stays findable by find-in-page. `valueSummary`/`isBulky` decide the text and whether a value
+  folds at all — an island never does, nor anything the closed row already prints in full.
+  Above a list of rows, `.values-bar` = mono count + `.values-expand` (Expand all / Collapse
+  all), and it renders nothing when none of the values fold.
+  Body per renderer — file row with the striped 34×24 thumbnail slot, table with a mono
+  uppercase head, transcript rows, 16:9 image grid, markdown box, code box on paper, JSON tree
+  with hairline guides.
+- **The raw switch** (`.value-raw`): a mono two-segment control, `Rendered ∣ JSON`, where the
+  **filled segment is the view on screen** — the rule `Input`/`Output` follows. It was one
+  button labelled with its destination but filled by its state, which read backwards.
 - **Forms**: labels 600 13px, controls 1px `--line` 6px radius 10×12 padding, focus = ink
   border + 1px ring, file inputs dashed, tiles ring on check, submit = primary.
 - **Badges** `.badge`: mono 10.5px pill, severity tints the ink and border only.
@@ -119,7 +137,10 @@ Rule: nothing outside `.glyph`, `.badge[data-severity]`, `.step-error`, `.banner
 ## Layout
 
 - Shell: sticky 56px top bar (brand dot + name · mono breadcrumb · mono whoami), 16rem sticky
-  rail, content padded 30×28. Outside a run the rail is the implementation tree
+  rail on its own `--rail` column with a `--line` right edge, content padded 30×28. The column
+  is painted by a gradient on `.shell-body`, not a background on `.rail`: the rail is sticky
+  and only as tall as its rows, so a background on it would stop partway down a long page.
+  Under 900px it stacks and paints itself. Outside a run the rail is the implementation tree
   (`IMPLEMENTATIONS` eyebrow; each implementation a 600 group head, its workflows as 32px rows
   with the latest run's 11px glyph); inside one it is the **run rail** (`.run-rail`) in its
   place, never both — a mono `← Workflow`, then `.rail-row`s (11px glyph · name · mono meta,

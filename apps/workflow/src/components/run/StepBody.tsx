@@ -51,6 +51,9 @@ import { valueHovered } from '../../store/uiSlice'
 import { StatusPill } from '../StatusPill'
 import { MarkdownView } from '../values/MarkdownView'
 import { MediaSeekProvider } from '../values/MediaSeekContext'
+import { ExpandAll } from '../values/ExpandAll'
+import { isBulky } from '../values/valueSummary'
+import { ValuesOpenProvider, useValuesBulk } from '../values/valuesOpen'
 import { RawToggle } from '../values/RawToggle'
 import { ValueView } from '../values/ValueView'
 import { withFileRefValue } from '../values/fileRef'
@@ -111,24 +114,37 @@ function destinationOf(def: Definition, step: StepState, output: string): string
 // plumbing; the Output tab below is the hover source Task 22 wires up.
 function InputTab({ job, step, declared }: { job: string; step: StepState; declared?: Step }) {
   const entries = Object.entries(step.inputs ?? {})
+  const { bulk, toggle } = useValuesBulk()
   if (entries.length === 0) return <p className="note">This step evaluated no inputs.</p>
 
   return (
-    <div className="pane-values">
-      {entries.map(([name, value]) => {
-        const decl = inferDecl(value)
-        return (
-          <ValueView
-            key={name}
-            label={name}
-            tag={kindTag(decl)}
-            decl={decl}
-            value={value}
-            origin={originOf(job, declared?.raw?.with?.[name])}
-          />
-        )
-      })}
-    </div>
+    <>
+      <ExpandAll
+        total={entries.length}
+        foldable={entries.filter(([, value]) => isBulky(inferDecl(value), value)).length}
+        unit="input"
+        open={bulk.open}
+        onToggle={toggle}
+      />
+      <ValuesOpenProvider value={bulk}>
+        <div className="pane-values">
+          {entries.map(([name, value]) => {
+            const decl = inferDecl(value)
+            return (
+              <ValueView
+                key={name}
+                label={name}
+                tag={kindTag(decl)}
+                decl={decl}
+                value={value}
+                origin={originOf(job, declared?.raw?.with?.[name])}
+                collapsible
+              />
+            )
+          })}
+        </div>
+      </ValuesOpenProvider>
+    </>
   )
 }
 
@@ -149,6 +165,7 @@ function OutputValues({
   const recorded = step.outputs ?? {}
   const names = (declared && stepOutputNames(declared)) ?? Object.keys(recorded)
   const dispatch = useAppDispatch()
+  const { bulk, toggle } = useValuesBulk()
   // A hover this tab leaves mid-flight — the tab switched, the row collapsed
   // (the body unmounts with it) — must not
   // outlive the pointer leaving the DOM node that set it: `onMouseLeave`
@@ -165,36 +182,53 @@ function OutputValues({
     // Scoped to this one step, so a transcript's seek click always lands on
     // the player showing in the same step's Output tab (Task 15).
     <MediaSeekProvider>
-      <div className="pane-values">
-        {names.map((name) => {
-          // A pipeline step with no `outputs` map exposes the response itself (03).
-          const value =
-            name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
-          const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
-          const decl = withFileRefValue(declaredDecl, value)
-          return (
-            <ValueView
-              key={name}
-              label={name}
-              tag={kindTag(decl)}
-              decl={decl}
-              value={value}
-              impl={impl}
-              // A markdown output's `images` map (02), read off this run's
-              // persisted rows — so a replay draws the same frames (apps#446).
-              images={stepImageMap(def, state, step, decl)}
-              destination={destinationOf(def, step, name)}
-              // This step's own output is the value's declaring chip (08's
-              // data-flow highlight) — the graph lights up wherever else it's read.
-              onHover={(hovering) =>
-                dispatch(
-                  valueHovered(hovering ? { job: step.job, step: step.stepId, output: name } : null),
-                )
-              }
-            />
-          )
-        })}
-      </div>
+      <ExpandAll
+        total={names.length}
+        foldable={
+          names.filter((name) => {
+            const value =
+              name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
+            const d = declared ? stepOutputDecl(declared, name) : { type: 'json' }
+            return isBulky(withFileRefValue(d, value), value)
+          }).length
+        }
+        unit="output"
+        open={bulk.open}
+        onToggle={toggle}
+      />
+      <ValuesOpenProvider value={bulk}>
+        <div className="pane-values">
+          {names.map((name) => {
+            // A pipeline step with no `outputs` map exposes the response itself (03).
+            const value =
+              name in recorded ? recorded[name] : (step.response?.last ?? step.response?.initial ?? null)
+            const declaredDecl = declared ? stepOutputDecl(declared, name) : { type: 'json' }
+            const decl = withFileRefValue(declaredDecl, value)
+            return (
+              <ValueView
+                key={name}
+                label={name}
+                tag={kindTag(decl)}
+                decl={decl}
+                value={value}
+                impl={impl}
+                // A markdown output's `images` map (02), read off this run's
+                // persisted rows — so a replay draws the same frames (apps#446).
+                images={stepImageMap(def, state, step, decl)}
+                destination={destinationOf(def, step, name)}
+                collapsible
+                // This step's own output is the value's declaring chip (08's
+                // data-flow highlight) — the graph lights up wherever else it's read.
+                onHover={(hovering) =>
+                  dispatch(
+                    valueHovered(hovering ? { job: step.job, step: step.stepId, output: name } : null),
+                  )
+                }
+              />
+            )
+          })}
+        </div>
+      </ValuesOpenProvider>
     </MediaSeekProvider>
   )
 }

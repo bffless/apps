@@ -140,6 +140,31 @@ describe('transcript → FileCard seek', () => {
     expect(video.currentTime).toBe(65)
   })
 
+  /**
+   * Every value in a pane is a disclosure now (2026-09-09 review), and a
+   * closed row's body is hidden by the `<details>` — not unmounted. So the
+   * `FileCard` inside it still registers with the provider and still takes the
+   * seek, which would move a player nobody can see. The row has to open.
+   */
+  it('opens the row holding the player, so the seek lands somewhere visible', () => {
+    const { def, state } = replayed()
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+
+    const video = player(container)
+    const row = video.closest('[data-testid="value-row"]')
+    expect(row, 'the clip is not in a value row — this test has nothing to prove').not.toBeNull()
+    expect(row).not.toHaveAttribute('open')
+
+    // Only the transcript's row — opening every row would open the clip's too
+    // and prove nothing. This is the real shape: you open the thing you are
+    // reading, and the player it drives is still folded below it.
+    fireEvent.click(container.querySelector('[data-key="words"] summary') as HTMLElement)
+    fireEvent.click(screen.getByText('[1:05] Obi-Wan: General Kenobi'))
+
+    expect(video.currentTime).toBe(65)
+    expect(row).toHaveAttribute('open')
+  })
+
   it("moves the step's own player from the Output tab's transcript", () => {
     const { def, state } = replayed()
     const { container } = render(

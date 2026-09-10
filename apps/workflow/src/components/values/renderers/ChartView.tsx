@@ -175,7 +175,27 @@ export function ChartView({ value, mapping }: { value: unknown; mapping: unknown
     }
 
     const plot = new uPlot(opts, data, el)
-    return () => plot.destroy()
+
+    // A chart can mount inside a *closed* value row (2026-09-09 review), and a
+    // hidden element measures 0 — so the plot would be built at the 480px
+    // fallback above and stay there when the row opened, in a pane twice that
+    // wide. uPlot measures once and never again on its own, so the container
+    // is observed: one re-size covers the row opening, a window resize, and
+    // the rail stacking under 900px. Guarded because jsdom has no
+    // `ResizeObserver` unless a test provides one.
+    const observer =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            const width = el.clientWidth
+            if (width > 0 && width !== plot.width) plot.setSize({ width, height: opts.height })
+          })
+        : null
+    observer?.observe(el)
+
+    return () => {
+      observer?.disconnect()
+      plot.destroy()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `seriesKey`/`kind` are the content-equality stand-ins for `series`/`m` explained above; listing `series`/`m` themselves would defeat the whole point (they're new references every render).
   }, [seriesKey, kind])
 

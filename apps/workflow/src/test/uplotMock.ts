@@ -21,6 +21,10 @@
 export function inertUPlot(): { default: unknown } {
   class MockUPlot {
     static paths = { bars: () => undefined }
+    // `ChartView` re-sizes through a `ResizeObserver`; inert here, but the
+    // members have to exist for a suite that provides one.
+    width = 0
+    setSize() {}
     destroy() {}
   }
   return { default: MockUPlot }

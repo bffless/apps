@@ -252,6 +252,9 @@ test('interactive hello runs an island step end to end against the mock backend'
     await openJobStep(page, key.split('/')[0]!, key)
     const stepPane = page.getByTestId('step-pane')
     await stepPane.getByRole('tab', { name: 'Output' }).click()
+    // The values are disclosures now, closed by default (2026-09-09 review),
+    // so each renderer is in the DOM but hidden until its row is opened.
+    await stepPane.getByTestId('values-expand-all').click()
     for (const render of renders) {
       await expect(
         stepPane.locator(`[data-testid="renderer"][data-render="${render}"]`).first(),

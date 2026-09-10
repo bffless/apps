@@ -11,7 +11,7 @@
  * zero `.value-renderer-badge`s and zero `[data-testid="renderer"]`s.
  */
 import { http, HttpResponse } from 'msw'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { toDefinition } from '@bffless/workflow-lint/definition'
 import { describe, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
@@ -28,6 +28,102 @@ import { RunOutputs } from './RunOutputs'
 vi.mock('uplot', async () => (await import('../../test/uplotMock')).inertUPlot())
 
 describe('RunOutputs', () => {
+  /**
+   * 2026-09-09 UX review: "if I want to get to the next input, I have to
+   * scroll like a frickin' mile". Every output with a body is a disclosure,
+   * closed, so the pane is a list of names you can scan — and the closed row
+   * has to say what the value is without being opened.
+   */
+  it('lists outputs closed, each row naming what the value is, and Expand all opens them', () => {
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+    const runScope = container.querySelector('.output-group[data-scope="run"]') as HTMLElement
+
+    const rows = within(runScope).getAllByTestId('value-row')
+    expect(rows.length).toBeGreaterThan(0)
+    // Closed by default, and every closed row carries a name and a summary.
+    expect(rows.every((row) => !(row as HTMLDetailsElement).open)).toBe(true)
+    for (const row of rows) {
+      expect(row.querySelector('.value-label')?.textContent).toBeTruthy()
+      expect(row.querySelector('.value-brief')?.textContent).toBeTruthy()
+    }
+
+    fireEvent.click(screen.getByTestId('values-expand-all'))
+    expect(within(runScope).getAllByTestId('value-row').every((row) => (row as HTMLDetailsElement).open)).toBe(
+      true,
+    )
+
+    // ...and back, so a value opened by hand rejoins the group on the next press.
+    fireEvent.click(screen.getByTestId('values-expand-all'))
+    expect(
+      within(runScope).getAllByTestId('value-row').every((row) => !(row as HTMLDetailsElement).open),
+    ).toBe(true)
+  })
+
+  /**
+   * The reason `valuesOpen.ts` carries an epoch at all: a row opened by hand
+   * has to rejoin the group on the next bulk press, or "Collapse all" quietly
+   * means "collapse all except the ones you touched".
+   */
+  it('closes a hand-opened row on the next Collapse all', () => {
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+    const runScope = container.querySelector('.output-group[data-scope="run"]') as HTMLElement
+    const [first] = within(runScope).getAllByTestId('value-row') as HTMLDetailsElement[]
+
+    fireEvent.click(first!.querySelector('summary') as HTMLElement)
+    expect(first!.open).toBe(true)
+
+    // Expand all — everything opens, including the one already open.
+    fireEvent.click(screen.getByTestId('values-expand-all'))
+    expect(within(runScope).getAllByTestId('value-row').every((r) => (r as HTMLDetailsElement).open)).toBe(true)
+
+    // Collapse all — and the hand-opened one closes with the rest.
+    fireEvent.click(screen.getByTestId('values-expand-all'))
+    expect(within(runScope).getAllByTestId('value-row').every((r) => !(r as HTMLDetailsElement).open)).toBe(
+      true,
+    )
+  })
+
+  /**
+   * Round 4 broke this and nothing at the pane level would have caught it: the
+   * bar took the *foldable* count and printed it as the pane's size, so five
+   * outputs read as two. The component's own suite pins the two numbers in
+   * isolation; this pins them against a real pane.
+   */
+  it('labels the bar with every output, while only the foldable ones are rows', () => {
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+    const runScope = container.querySelector('.output-group[data-scope="run"]') as HTMLElement
+
+    const declared = Object.keys(def.outputs ?? {}).length
+    expect(declared).toBeGreaterThan(within(runScope).getAllByTestId('value-row').length)
+    expect(screen.getByTestId('values-expand-all').previousSibling).toHaveTextContent(
+      `${declared} outputs`,
+    )
+  })
+
+  it('never folds an island: a closed live surface is simply not there', () => {
+    server.use(
+      http.get('/w/hello/islands/line-viewer.html', () =>
+        HttpResponse.text('<!doctype html><p>viewer</p>'),
+      ),
+    )
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+    const runScope = container.querySelector('.output-group[data-scope="run"]') as HTMLElement
+    const island = within(runScope).getByTestId('island-frame')
+    expect(island.closest('[data-testid="value-row"]')).toBeNull()
+  })
+
   it('renders all five named renderers from a replayed run, with no ImplContext and no badge', () => {
     server.use(
       http.get('/w/hello/islands/line-viewer.html', () =>

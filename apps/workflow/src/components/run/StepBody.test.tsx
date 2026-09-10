@@ -367,7 +367,7 @@ describe('StepBody — Input tab draws shaped values, and Show raw flips them (a
     expect(screen.getByTestId('value-path')).toHaveAttribute('title', outPrefix)
     expect(screen.getByTestId('value-path').querySelector('.value-path-name')?.textContent).toBe('start')
     // The value-level flip is there: this `json` value holds shapes.
-    expect(screen.getByTestId('value-raw')).toHaveTextContent('json')
+    expect(screen.getByTestId('value-raw')).toHaveAttribute('data-view', 'rendered')
 
     const toggle = screen.getByTestId('pane-raw')
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
@@ -376,7 +376,7 @@ describe('StepBody — Input tab draws shaped values, and Show raw flips them (a
     expect(screen.queryByTestId('inline-list')).toBeNull()
     expect(screen.queryByTestId('value-path')).toBeNull()
     expect(container.querySelectorAll('.json-leaf').length).toBeGreaterThan(120)
-    expect(screen.getByTestId('value-raw')).toHaveTextContent('rendered')
+    expect(screen.getByTestId('value-raw')).toHaveAttribute('data-view', 'json')
     expect(window.localStorage.getItem('workflow:show-raw')).toBe('1')
   })
 })

@@ -193,6 +193,17 @@ export const interactive: Walk = async ({ args, env, report }) => {
     const openOutput = async (key: string) => {
       await openStep(page, key)
       await pane.getByRole('tab', { name: 'Output' }).click()
+      // Every value in a pane is a disclosure, closed by default (the
+      // 2026-09-09 UX review): a renderer is in the DOM but hidden until its
+      // row is open, so the driver opens them the way a person would.
+      //
+      // The bar is absent when nothing in the pane folds, and that is a normal
+      // pane, not a failure — but a bare `click().catch()` would spend a full
+      // actionability timeout discovering it and then hand the renderer checks
+      // below a failure with no explanation. Count first, and say so.
+      const bar = pane.getByTestId('values-expand-all')
+      if ((await bar.count()) > 0) await bar.click({ timeout: 5_000 })
+      else report.note(`${key}: no Expand all — nothing in this pane folds`)
     }
     const renderers: Record<string, boolean | number> = {}
     await openOutput('analyze/0/run')
