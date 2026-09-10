@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/bffless/apps/compare/workflow-v1.9.0...workflow-v1.9.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **workflow:** the job's output sits in a card, like everything else on the page ([#660](https://github.com/bffless/apps/issues/660)) ([f5fb672](https://github.com/bffless/apps/commit/f5fb6721502bc701fb6c7c2bba14066d5bb7f870))
+
 ## [1.9.0](https://github.com/bffless/apps/compare/workflow-v1.8.1...workflow-v1.9.0) (2026-09-10)
 
 
