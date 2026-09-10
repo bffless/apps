@@ -11,6 +11,7 @@
  * component file cannot export a non-component (react-refresh).
  */
 import { isFileRefLike } from '../../lib/runner/fileRef'
+import { isUnavailablePayload } from '../../lib/runner/payload'
 import { humanSize } from './shape'
 import type { ValueDecl } from '../../lib/valueDecl'
 
@@ -37,6 +38,11 @@ function fileSummary(value: { contentType?: unknown; size?: unknown }): string {
  */
 export function valueSummary(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined
+
+  // The offloaded-payload sentinel is an error envelope, not a value. Left to
+  // the object branch below it would read "2 keys", which describes the
+  // envelope and hides the fact that the bytes are gone.
+  if (isUnavailablePayload(value)) return 'payload unavailable'
 
   if (isFileRefLike(value)) return fileSummary(value) || undefined
 
@@ -83,6 +89,10 @@ const BULKY_TYPES = new Set(['table', 'markdown'])
  */
 export function isBulky(decl: ValueDecl, value: unknown): boolean {
   if (value === null || value === undefined) return false
+  // A payload whose bytes could not be read back is a chip saying so
+  // (`ValueView`'s `UnavailablePayload`). Folding it puts the one thing a
+  // person needs to see behind a click, so it stays on the page.
+  if (isUnavailablePayload(value)) return false
   // An island is a live surface; a closed one is simply not there.
   if (decl.render === 'island') return false
   if (decl.list === true) return true
@@ -94,9 +104,13 @@ export function isBulky(decl: ValueDecl, value: unknown): boolean {
   if (typeof decl.render === 'string' && BULKY_RENDERERS.has(decl.render)) return true
   if (BULKY_TYPES.has(decl.type ?? '')) return true
   if (isFileRefLike(value)) return true
-  if (Array.isArray(value)) return true
+  // Empty collections fold into an empty body — a click that reveals nothing,
+  // the same shape the `foldable === 0` gate on the bar exists to avoid. A
+  // declared renderer draws its own note for the empty case, and those are
+  // already through above.
+  if (Array.isArray(value)) return value.length > 0
   // A string earns a fold once it stops being a one-liner.
   if (typeof value === 'string') return value.length > PREVIEW || value.includes('\n')
   if (typeof value === 'number' || typeof value === 'boolean') return false
-  return typeof value === 'object'
+  return typeof value === 'object' && Object.keys(value as object).length > 0
 }

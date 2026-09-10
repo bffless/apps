@@ -105,6 +105,23 @@ describe('isBulky', () => {
     expect(isBulky({ type: 'string' }, 'two\nlines')).toBe(true)
   })
 
+  it('never folds an unavailable payload — the chip is the thing to read', () => {
+    // `lib/payloadFetch` leaves this sentinel when offloaded bytes cannot be
+    // read back. Folded, the closed row would read "2 keys" and describe the
+    // error envelope as a value (round 5).
+    const gone = { $file: fileRef({ contentType: 'application/json', size: 4096 }), $error: '404' }
+    expect(isBulky({ type: 'json' }, gone)).toBe(false)
+    expect(valueSummary(gone)).toBe('payload unavailable')
+  })
+
+  it('never folds an empty collection — the body would be empty too', () => {
+    // A `needs` job that declares no outputs evaluates to `{}` (round 5).
+    expect(isBulky({ type: 'json' }, {})).toBe(false)
+    expect(isBulky({ type: 'json' }, [])).toBe(false)
+    // …but a declared renderer draws its own empty-case note, so it still folds.
+    expect(isBulky({ type: 'json', render: 'transcript' }, [])).toBe(true)
+  })
+
   it('never folds an island — a closed live surface is simply not there', () => {
     expect(isBulky({ type: 'json', render: 'island', src: 'viewer.html' }, { a: 1 })).toBe(false)
     expect(isBulky({ type: 'file', render: 'island', src: 'viewer.html' }, fileRef())).toBe(false)

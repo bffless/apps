@@ -89,6 +89,26 @@ describe('RunOutputs', () => {
     )
   })
 
+  /**
+   * Round 4 broke this and nothing at the pane level would have caught it: the
+   * bar took the *foldable* count and printed it as the pane's size, so five
+   * outputs read as two. The component's own suite pins the two numbers in
+   * isolation; this pins them against a real pane.
+   */
+  it('labels the bar with every output, while only the foldable ones are rows', () => {
+    const def = toDefinition(RENDERED_RUN.run.definition)
+    const state = replayRun(RENDERED_RUN.run, RENDERED_RUN.steps, def)
+
+    const { container } = render(<RunOutputs def={def} state={state} impl={state.impl} />)
+    const runScope = container.querySelector('.output-group[data-scope="run"]') as HTMLElement
+
+    const declared = Object.keys(def.outputs ?? {}).length
+    expect(declared).toBeGreaterThan(within(runScope).getAllByTestId('value-row').length)
+    expect(screen.getByTestId('values-expand-all').previousSibling).toHaveTextContent(
+      `${declared} outputs`,
+    )
+  })
+
   it('never folds an island: a closed live surface is simply not there', () => {
     server.use(
       http.get('/w/hello/islands/line-viewer.html', () =>
