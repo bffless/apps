@@ -77,4 +77,18 @@ describe('listRuns', () => {
       'run_b',
     ])
   })
+
+  test('all=false (the default) asks for no scope; all=true appends &scope=all', async () => {
+    const urls: string[] = []
+    const api: ApiLike = { ...unusable, async json(url: string) {
+      urls.push(url)
+      return { status: 200, body: [] }
+    } }
+    await listRuns(api, 'hello', 'interactive', 10)
+    await listRuns(api, 'hello', 'interactive', 10, false)
+    await listRuns(api, 'hello', 'interactive', 10, true)
+    expect(urls[0]).not.toContain('scope=')
+    expect(urls[1]).not.toContain('scope=')
+    expect(urls[2]).toContain('&scope=all')
+  })
 })

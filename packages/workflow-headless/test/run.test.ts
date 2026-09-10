@@ -2,7 +2,9 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
+import { DRIVE_KEY_HEADER } from '../src/driveKey.js'
 import { EXIT } from '../src/errors.js'
+import type { RouteLike } from '../src/page.js'
 import { graceVerdict, runWorkflow } from '../src/run.js'
 import { fakeBrowser, helloRoutes, type Route } from './fakes.js'
 
@@ -419,5 +421,49 @@ describe('runWorkflow — which login', () => {
     // No "stuck at about:blank": nothing was navigated, so there is no page to describe.
     expect(error?.message).not.toContain('about:blank')
     expect(existsSync(join(dir, 'failed.png'))).toBe(true)
+  })
+})
+
+describe('runWorkflow — driveKey', () => {
+  /** A synthetic Playwright `route` callback, for calling the installed handler directly. */
+  const fakeRoute = (headers: Record<string, string>) => {
+    const calls: Array<{ headers?: Record<string, string> } | undefined> = []
+    const route: RouteLike = {
+      request: () => ({ headers: () => headers }),
+      continue: async (overrides) => {
+        calls.push(overrides)
+      },
+    }
+    return { route, calls }
+  }
+
+  test('with a driveKey, installs one route whose matcher accepts the harness API paths and rejects everything else', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow({ ...options(5_000), driveKey: 'dk_abc123' }, { browser, log: () => {}, warn: () => {} })
+
+    expect(page.routes).toHaveLength(1)
+    const { matcher } = page.routes[0]!
+    expect(matcher(new URL('https://harness.test/api/workflow/runs'))).toBe(true)
+    expect(matcher(new URL('https://harness.test/api/uploads/x'))).toBe(true)
+    expect(matcher(new URL('https://bucket.example/o'))).toBe(false)
+    expect(matcher(new URL('https://harness.test/w/hello/x'))).toBe(false)
+  })
+
+  test('the handler adds x-workflow-drive-key and preserves the request’s existing headers', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow({ ...options(5_000), driveKey: 'dk_abc123' }, { browser, log: () => {}, warn: () => {} })
+
+    const { handler } = page.routes[0]!
+    const { route, calls } = fakeRoute({ 'content-type': 'application/json' })
+    await handler(route)
+    expect(calls).toEqual([
+      { headers: { 'content-type': 'application/json', [DRIVE_KEY_HEADER]: 'dk_abc123' } },
+    ])
+  })
+
+  test('without a driveKey, no route is installed', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow(options(5_000), { browser, log: () => {}, warn: () => {} })
+    expect(page.routes).toEqual([])
   })
 })

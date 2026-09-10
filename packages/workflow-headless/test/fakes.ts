@@ -10,7 +10,7 @@
  */
 import { writeFileSync } from 'node:fs'
 import type { Snapshot } from '../src/observe.js'
-import type { BrowserLike, ConsoleMessageLike, PageLike } from '../src/page.js'
+import type { BrowserLike, ConsoleMessageLike, PageLike, RouteLike } from '../src/page.js'
 
 /** One canned answer to an in-page `fetch`, keyed by `pathname + search`. */
 export interface Route {
@@ -51,6 +51,8 @@ export interface FakePage extends PageLike {
   /** What went through the context's request client (the app-token exchange). */
   posts: Array<{ url: string; headers: Record<string, string> | undefined }>
   globalReads: number
+  /** Every `page.route(...)` install, in order — `driveKey.ts`'s only caller. */
+  routes: Array<{ matcher: (url: URL) => boolean; handler: (route: RouteLike) => Promise<void> }>
 }
 
 /** Discovery for `hello/demo`, plus the run record `run.json` is written from. */
@@ -90,6 +92,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     requests: [] as FakePage['requests'],
     posts: [] as FakePage['posts'],
     globalReads: 0,
+    routes: [] as FakePage['routes'],
 
     request: {
       async post(url: string, options?: { headers?: Record<string, string> }) {
@@ -161,6 +164,9 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     },
     on(event: string, handler: (value: never) => void) {
       if (event === 'console') consoleHandlers.push(handler as (m: ConsoleMessageLike) => void)
+    },
+    async route(matcher: (url: URL) => boolean, handler: (route: RouteLike) => Promise<void>) {
+      page.routes.push({ matcher, handler })
     },
     async close() {},
   } as unknown as FakePage

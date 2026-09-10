@@ -2,7 +2,15 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
-import { credentialsFromEnv, parseArgs, parseDuration, loadInputs, UsageError, USAGE } from '../src/args.js'
+import {
+  credentialsFromEnv,
+  driveKeyFromEnv,
+  parseArgs,
+  parseDuration,
+  loadInputs,
+  UsageError,
+  USAGE,
+} from '../src/args.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'wfh-args-'))
 const inputsFile = join(dir, 'inputs.json')
@@ -109,6 +117,21 @@ describe('parseArgs — run', () => {
       parseArgs(['run', 'https://h.test', 'hello/demo', '--inputs', 'i.json', '--run-id', 'nope']),
     ).toThrow(/--run-id/)
   })
+
+  test('run: --drive-key is carried onto the command, and absent by default', () => {
+    const c = parseArgs([
+      'run',
+      'https://h.test',
+      'hello/demo',
+      '--inputs',
+      'i.json',
+      '--drive-key',
+      'dk_abc123',
+    ])
+    expect(c).toMatchObject({ command: 'run', driveKey: 'dk_abc123' })
+    const withoutKey = parseArgs(['run', 'https://h.test', 'hello/demo', '--inputs', 'i.json'])
+    expect((withoutKey as { driveKey?: string }).driveKey).toBeUndefined()
+  })
 })
 
 describe('parseArgs — resume', () => {
@@ -127,6 +150,19 @@ describe('parseArgs — resume', () => {
     })
     expect(() => parseArgs(['resume', 'https://h.test'])).toThrow(/a run id is required/)
   })
+
+  test('resume: --drive-key is carried onto the command, and absent by default', () => {
+    const c = parseArgs([
+      'resume',
+      'https://h.test',
+      'run_01J8ZK3N4Q5R6S7T8V9WXYZABC',
+      '--drive-key',
+      'dk_abc123',
+    ])
+    expect(c).toMatchObject({ command: 'resume', driveKey: 'dk_abc123' })
+    const withoutKey = parseArgs(['resume', 'https://h.test', 'run_01J8ZK3N4Q5R6S7T8V9WXYZABC'])
+    expect((withoutKey as { driveKey?: string }).driveKey).toBeUndefined()
+  })
 })
 
 describe('parseArgs — runs', () => {
@@ -141,6 +177,11 @@ describe('parseArgs — runs', () => {
 
   test('--last defaults to 10', () => {
     expect(parseArgs(['runs', 'http://h', 'hello/interactive'])).toMatchObject({ last: 10 })
+  })
+
+  test('--all sets all: true; absent it is false', () => {
+    expect(parseArgs(['runs', 'http://h', 'hello/interactive', '--all'])).toMatchObject({ all: true })
+    expect(parseArgs(['runs', 'http://h', 'hello/interactive'])).toMatchObject({ all: false })
   })
 })
 
@@ -233,5 +274,16 @@ describe('credentialsFromEnv', () => {
 
   test('an empty token does not count', () => {
     expect(() => credentialsFromEnv({ WORKFLOW_APP_TOKEN: '' })).toThrow(UsageError)
+  })
+})
+
+describe('driveKeyFromEnv', () => {
+  test('WORKFLOW_DRIVE_KEY set is the drive key', () => {
+    expect(driveKeyFromEnv({ WORKFLOW_DRIVE_KEY: 'dk_abc123' })).toBe('dk_abc123')
+  })
+
+  test('unset, or empty, is undefined — never a usage error (this task is harmless without a key)', () => {
+    expect(driveKeyFromEnv({})).toBeUndefined()
+    expect(driveKeyFromEnv({ WORKFLOW_DRIVE_KEY: '' })).toBeUndefined()
   })
 })

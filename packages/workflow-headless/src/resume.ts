@@ -16,6 +16,7 @@
  */
 import { pageApi } from './api.js'
 import { writeConsoleLog, writeStepsLog } from './artifacts.js'
+import { installDriveKey } from './driveKey.js'
 import { DriverError, EXIT } from './errors.js'
 import type { Credentials } from './login.js'
 import { formatTransition, TERMINAL, waitForStart, type Transition } from './observe.js'
@@ -35,6 +36,8 @@ export interface ResumeOptions {
   appToken?: string
   /** The relay login, used only without `appToken`. */
   credentials?: Credentials
+  /** `WORKFLOW_DRIVE_KEY` / `--drive-key`: sent as `x-workflow-drive-key` on every request the page makes (`driveKey.ts`). Unset installs no route. */
+  driveKey?: string
 }
 
 /** The record fields `resume` cannot proceed without. */
@@ -52,6 +55,7 @@ export async function resumeRun(o: ResumeOptions, deps: RunDeps): Promise<RunRep
   const warn = deps.warn ?? deps.log
   const base = o.harnessUrl.replace(/\/+$/, '')
   const page: PageLike = await deps.browser.newPage({ viewport: { width: 1280, height: 900 } })
+  if (o.driveKey) await installDriveKey(page, o.driveKey)
 
   const consoleLines: string[] = []
   page.on('console', (message) => consoleLines.push(`${message.type()}: ${message.text()}`))

@@ -63,9 +63,11 @@ A `list: true` file input takes an array, mixing paths and URLs per entry.
 | `--wait <fail\|park>` | what to do at a step that needs a person (default `fail`); see *Driven runs* |
 | `--run-id <run_…>` | (`run`) the run's pre-minted id, so a `--wait park` run and its `resume` share one |
 | `--grace <5m>` | how long a parked run is watched for its answer before the job ends |
+| `--drive-key <key>` | (`run`, `resume`) sent as `x-workflow-drive-key` on every request the driven page makes; wins over `WORKFLOW_DRIVE_KEY` — see *Environment* |
 | `--mocks` | drive the dev harness's MSW mock backend, and skip the login (see the note below) |
 | `--headed` | show the browser |
 | `--last <n>` | (`runs`) how many past runs to list |
+| `--all` | (`runs`) list every run, not just this login's own (adds `&scope=all`) |
 
 `--timeout` bounds each **follow leg** — from a start or a `resume` to the next park or
 terminal status — not the job as a whole: a run that parks and is later resumed can take up
@@ -84,6 +86,7 @@ One of the first two is required unless `--mocks`; the token wins when both are 
 | `WORKFLOW_APP_TOKEN` | **the whole login.** An app token (`bfat_…`, Settings → App Tokens on the harness's admin) minted with the scopes `workflow:read workflow:run workflow:files auth:session`. The driver signs the browser in from it through CE's session exchange (`POST admin.<domain>/api/auth/session/from-app-token`, CE ≥ 0.4.50 — apps#588) and sends it as `Authorization: Bearer` on every `/api/workflow/*` call it makes: it *is* the member, narrowed to its scopes (spec 10, D23). Wins over `WORKFLOW_TOKEN` |
 | `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD` | the fallback: a member login through the harness's admin relay, used only when no app token is set (and the only path against a CE without the exchange) |
 | `WORKFLOW_TOKEN` | optional, sent as `X-API-Key` on `/api/workflow/*` reads |
+| `WORKFLOW_DRIVE_KEY` | optional fallback for `--drive-key`, set by `workflow-drive.yml` from `client_payload.drive_key` |
 
 The credential the harness page honours is a **session cookie** — a private
 deployment's document load carries no header, and two of the harness's relays

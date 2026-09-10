@@ -16,6 +16,7 @@ import {
   type DownloadResult,
 } from './artifacts.js'
 import { fetchDefinition } from './discover.js'
+import { installDriveKey } from './driveKey.js'
 import { DriverError, EXIT } from './errors.js'
 import { loginViaAppToken, loginViaRelay, type Credentials } from './login.js'
 import {
@@ -57,6 +58,8 @@ export interface RunOptions {
   appToken?: string
   /** `WORKFLOW_EMAIL` / `WORKFLOW_PASSWORD`: the relay login, used only without `appToken`. */
   credentials?: Credentials
+  /** `WORKFLOW_DRIVE_KEY` / `--drive-key`: sent as `x-workflow-drive-key` on every request the page makes (`driveKey.ts`). Unset installs no route. */
+  driveKey?: string
 }
 
 export interface RunDeps {
@@ -428,6 +431,7 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
   const warn = deps.warn ?? deps.log
   const base = o.harnessUrl.replace(/\/+$/, '')
   const page: PageLike = await deps.browser.newPage({ viewport: { width: 1280, height: 900 } })
+  if (o.driveKey) await installDriveKey(page, o.driveKey)
 
   const consoleLines: string[] = []
   page.on('console', (message) => consoleLines.push(`${message.type()}: ${message.text()}`))
