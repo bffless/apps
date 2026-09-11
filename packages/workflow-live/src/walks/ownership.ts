@@ -34,7 +34,9 @@
  * "record not found"). D27 (the exemption is asked for): `?scope=all`
  * without the project owner/admin role is a 403; a caller who holds the role
  * gets everyone's runs, asked for on both sides (B reading A's, and — if A
- * holds the role — A reading B's). D29 (files follow the run): a run path
+ * holds the role — A reading B's), and the same refusal over the MCP endpoint
+ * (`workflow.outputs` — never `workflow.status`, whose `pendingOr` window
+ * answers a 200 `pending` snapshot for a freshly minted id). D29 (files follow the run): a run path
  * under `runs/<id>/` is gated exactly like the record; the workflow-wide
  * `inputs/` area is not run-scoped (D18) and stays member-wide, so B can
  * sign into it.
@@ -243,12 +245,18 @@ export const ownership: Walk = async ({ args, env, report }) => {
       }
     }
 
-    await report.guard(['D26.mcpStatusIsNotFound'], async () => {
+    // `workflow.outputs`, not `workflow.status`: `reply.ts` routes an unresolved
+    // run through `pendingOr`, which answers a 200 `pending` snapshot for any id
+    // minted inside `PENDING_WINDOW_MS` (10 minutes) — and member A's run was
+    // minted minutes ago, so `status` would report "pending. Poll again", not the
+    // refusal. `outputs` shares the same `resolveRun` but returns its refusal
+    // directly with no pending path, so it is the tool that proves D26 over MCP.
+    await report.guard(['D26.mcpOutputsIsNotFound'], async () => {
       const bToken = secondAppToken(env) ?? (await mintFor(b!, args.harness, 'B', minted))
       const mcpB = await openMcp(args.harness, { token: bToken })
       try {
-        const status = (await mcpB.client.callTool({ name: 'workflow.status', arguments: { runId: runIdA } })) as ToolAnswer
-        report.expect('D26.mcpStatusIsNotFound', status.isError === true && errorsOf(status).runId === 'No such run', { ...brief(status), errors: errorsOf(status) })
+        const outputs = (await mcpB.client.callTool({ name: 'workflow.outputs', arguments: { runId: runIdA } })) as ToolAnswer
+        report.expect('D26.mcpOutputsIsNotFound', outputs.isError === true && errorsOf(outputs).runId === 'No such run', { ...brief(outputs), errors: errorsOf(outputs) })
       } finally {
         await mcpB.close()
       }

@@ -263,6 +263,8 @@ describe('run deletion (rows + file-prefix GC)', () => {
     ).json()
     await fetch(prepared.uploadUrl, { method: 'PUT', body: new Uint8Array([7, 7, 7]) })
     await json('/api/workflow/files/register', {
+      impl: 'hello',
+      workflow: 'hello',
       storageKey: prepared.storageKey,
       originalName: 'extra.bin',
     })

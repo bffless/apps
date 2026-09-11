@@ -257,10 +257,10 @@ var __mcp = (() => {
   function confinedSignPath(raw) {
     if (typeof raw !== "string") return "";
     const path = raw.replace(/^\/+/, "").replace(/^api\/uploads\//, "").split("?")[0];
-    const ok = path.startsWith("workflows/") && !path.includes("..") && !path.includes("//");
+    const ok = path.startsWith("workflows/") && !path.includes("..") && !path.includes("//") && !path.includes("/./");
     return ok ? path : "";
   }
-  var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/;
+  var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/i;
   function runIdOfSignPath(path) {
     const match = /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/i.exec(path);
     return match && RUN_ID_PATTERN.test(match[1]) ? match[1] : "";
@@ -310,6 +310,7 @@ var __mcp = (() => {
       isAliases: false,
       needsRun: false,
       isRuns: false,
+      listRuns: false,
       isMine: false,
       isAll: false,
       scopeForbidden: false,
@@ -363,6 +364,7 @@ var __mcp = (() => {
       route.scopeForbidden = asked && !isAllScopeRole(data.user?.projectRole);
       route.isAll = asked && !route.scopeForbidden;
       route.isMine = !asked;
+      route.listRuns = !route.scopeForbidden;
     }
     if (route.tool === "workflow.list") route.isList = true;
     if (route.tool === "workflow.describe" && route.impl !== "" && route.workflow !== "" && appOrigin !== "") route.isDescribe = true;

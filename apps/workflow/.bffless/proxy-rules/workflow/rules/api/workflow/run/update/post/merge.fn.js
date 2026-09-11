@@ -21,6 +21,5 @@ function handler({ steps, request }) {
   // door after the fact (runGate.ts's own TERMINAL_STATUSES check, mirrored).
   const TERMINAL = { succeeded: true, failed: true, cancelled: true }
   if (TERMINAL[fields.status]) fields.driveKey = ''
-  else if (typeof fields.driveKey !== 'string') fields.driveKey = ''
   return { found: !!row, missing: !row, recordId: row ? row.id : null, fields }
 }

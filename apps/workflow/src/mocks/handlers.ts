@@ -540,7 +540,7 @@ function storageKey(fields: Record<string, unknown>): string {
  * `run_...` — the shape a runId takes wherever the harness mints one (`nextId`'s `run`
  * prefix). Mirrors the real rules' `confine.fn.js`/`normalize.fn.js` locators (spec 11 D29).
  */
-const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
+const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/i
 
 /**
  * The runId in a `workflows/<impl>/<workflow>/runs/<runId>/…` path, or `''` for anything else
@@ -551,7 +551,10 @@ const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
  * The `runs` segment matches CASE-INSENSITIVELY (fix round 1): CE's file_serve_handler builds
  * the storage key from the same raw path with no case folding, so on a local-filesystem install
  * with a case-insensitive volume, `RUNS/run_X/…` and `runs/run_X/…` name the SAME stored
- * object — the gate must be at least as strict as that key equality.
+ * object — the gate must be at least as strict as that key equality. `RUN_ID_PATTERN` carries
+ * the same `i` (fix round 2) for the same reason one segment along: a miscased `RUN_X` that this
+ * did not capture read `runless` and was admitted member-wide; captured, it matches no run row,
+ * which is the fail-closed 404.
  */
 function runIdIn(path: string): string {
   const match = /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/i.exec(path)
@@ -577,7 +580,9 @@ function isSegment(v: unknown): v is string {
  */
 function confinePath(raw: string): { ok: boolean; path: string; hasRun: boolean; runId: string; runless: boolean } {
   const path = raw.replace(/^\/+/, '').replace(/^api\/uploads\//, '').split('?')[0]
-  const ok = path.startsWith('workflows/') && !path.includes('..') && !path.includes('//')
+  // `/./` is refused alongside `..` and `//` (fix round 2): a local-filesystem storage adapter
+  // normalises it away, so the two spellings name one object.
+  const ok = path.startsWith('workflows/') && !path.includes('..') && !path.includes('//') && !path.includes('/./')
   const runId = ok ? runIdIn(path) : ''
   const hasRun = runId !== ''
   return { ok, path, hasRun, runId, runless: ok && !hasRun }
@@ -609,7 +614,7 @@ const files = [
     const fields = await body(request)
     const identifiersOk = isSegment(fields.impl) && isSegment(fields.workflow)
     const scope = typeof fields.scope === 'string' ? fields.scope.replace(/^\/+|\/+$/g, '') : ''
-    const clean = scope !== '' && !scope.includes('..') && !scope.includes('//')
+    const clean = scope !== '' && !scope.includes('..') && !scope.includes('//') && !scope.includes('/./')
     const isInputs = clean && (scope === 'inputs' || scope.startsWith('inputs/'))
     const runId = clean ? runIdInScope(scope) : ''
 
@@ -655,13 +660,21 @@ const files = [
       .replace(/^api\/uploads\//, '')
     const key = raw.startsWith(MOCK_UPLOADS_ROOT) ? raw.slice(MOCK_UPLOADS_ROOT.length) : raw
 
-    if (!key.startsWith('workflows/') || key.includes('..') || key.includes('//')) {
+    // `impl`/`workflow` are checked here too (fix round 2): `register_upload`'s `subDir`
+    // templates `workflows/{{impl}}/{{workflow}}/{{scope}}` from the raw body exactly as
+    // `prepare`'s `presigned_upload` does, so `normalize.fn.js` mirrors prepare's `isSegment`.
+    const identifiersOk = isSegment(fields.impl) && isSegment(fields.workflow)
+    const pathOk =
+      key.startsWith('workflows/') && !key.includes('..') && !key.includes('//') && !key.includes('/./')
+    if (!identifiersOk || !pathOk) {
       return HttpResponse.json(
         {
           success: false,
           error: {
             code: 'BAD_PATH',
-            message: 'storageKey must be an uploads-relative path under workflows/ with no traversal',
+            message: identifiersOk
+              ? 'storageKey must be an uploads-relative path under workflows/ with no traversal'
+              : 'impl and workflow must each be a single path segment',
           },
         },
         { status: 400 },

@@ -75,8 +75,16 @@ export interface Route {
   isAliases: boolean
   /** Read the run row + its step rows (`steps.run`, `steps.steps`). */
   needsRun: boolean
-  /** `workflow.runs` with impl + workflow → `steps.waiting` (and one of the two run queries below). */
+  /** `workflow.runs` with impl + workflow. Says the CALL is a listing; it does not say the listing runs — see `listRuns`. */
   isRuns: boolean
+  /**
+   * `isRuns` AND the scope was not refused → `steps.waiting` (the step-row
+   * query the listing decorates its rows with). A forbidden `scope: "all"`
+   * runs neither run query, so the waiting query must not run either — it is
+   * work for a listing that `reply` answers with a 403 (fix round 2). A step
+   * `condition` is a single path, so this is a flag rather than an expression.
+   */
+  listRuns: boolean
   /**
    * `workflow.runs` listing the caller's OWN runs → `steps.runs` (the query
    * filtered on `startedBy: user.id`). The default: a filter cannot be
@@ -204,12 +212,21 @@ export function header(headers: FnRequest['headers'], name: string): string {
 export function confinedSignPath(raw: unknown): string {
   if (typeof raw !== 'string') return ''
   const path = raw.replace(/^\/+/, '').replace(/^api\/uploads\//, '').split('?')[0]
-  const ok = path.startsWith('workflows/') && !path.includes('..') && !path.includes('//')
+  // `/./` is refused alongside `..` and `//` (fix round 2): a local-filesystem storage
+  // adapter normalises it away, so `workflows/a/./runs/…` and `workflows/a/runs/…` name one
+  // object while only the second is the path the run was read off.
+  const ok = path.startsWith('workflows/') && !path.includes('..') && !path.includes('//') && !path.includes('/./')
   return ok ? path : ''
 }
 
-/** A run id as the page mints one (`lib/autoStart.ts`), restated here because a bundle imports nothing from the app. */
-const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
+/**
+ * A run id as the page mints one (`lib/autoStart.ts`), restated here because a bundle imports
+ * nothing from the app. Case-INSENSITIVE for the same reason the `runs` segment below is (fix
+ * round 2): a miscased id reaches the same stored object on a case-insensitive volume, so
+ * failing to capture it would read `runless` and admit the path member-wide. Captured verbatim,
+ * a miscased id simply matches no `runId eq` row — a 404, the fail-closed answer.
+ */
+const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/i
 
 /**
  * The run a confined sign path belongs to, or `''` — the same locator
@@ -293,6 +310,7 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment; u
     isAliases: false,
     needsRun: false,
     isRuns: false,
+    listRuns: false,
     isMine: false,
     isAll: false,
     scopeForbidden: false,
@@ -354,6 +372,9 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment; u
     route.scopeForbidden = asked && !isAllScopeRole(data.user?.projectRole)
     route.isAll = asked && !route.scopeForbidden
     route.isMine = !asked
+    // The listing really runs: neither run query runs when the scope is
+    // refused, so the `waiting` step-row query must not run either.
+    route.listRuns = !route.scopeForbidden
   }
   if (route.tool === 'workflow.list') route.isList = true
   if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '' && appOrigin !== '') route.isDescribe = true

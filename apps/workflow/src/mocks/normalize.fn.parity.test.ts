@@ -152,6 +152,9 @@ const CASES: {
   { desc: 'a bare other/ path', storageKey: 'other/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'directory traversal', storageKey: 'workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a double slash', storageKey: 'workflows//x', ok: false, hasRun: false, runId: '', runless: false },
+  // Fix round 2: a local-filesystem storage adapter normalises `/./` away, so
+  // the two spellings name one object — see `confine.fn.parity.test.ts`.
+  { desc: 'a /./ segment', storageKey: `workflows/hello/./runs/${RUN_ID}/x`, ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'an empty storageKey', storageKey: '', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a non-string storageKey', storageKey: undefined, ok: false, hasRun: false, runId: '', runless: false },
 ]
@@ -180,7 +183,9 @@ describe('normalize.fn.js parity with the mock re-implementation', () => {
   })
 
   it.each(CASES)('normalize.fn.js: $desc', ({ storageKey, ok, normalized, hasRun, runId, runless }) => {
-    const result = handler({ request: { body: { storageKey } }, deployment: DEPLOYMENT })
+    // `impl`/`workflow` are valid single segments throughout this table — the
+    // `IDENTIFIER_CASES` block below is what pins THEIR validation (fix round 2).
+    const result = handler({ request: { body: { impl: 'hello', workflow: 'hello', storageKey } }, deployment: DEPLOYMENT })
     expect(result.ok).toBe(ok)
     expect(result.notOk).toBe(!ok)
     expect(result.storageKey).toBe(ok ? `${FULL_PREFIX}${normalized}` : '')
@@ -241,6 +246,41 @@ describe('normalize.fn.js parity with the mock re-implementation', () => {
     expect((await fetch(`/api/uploads/${key}`)).status).toBe(200)
   })
 
+  /**
+   * Fix round 2: `register_upload`'s `subDir` templates
+   * `workflows/{{impl}}/{{workflow}}/{{scope}}` from the raw body, exactly as
+   * `files/prepare`'s `presigned_upload` does — so `normalize.fn.js` now
+   * mirrors prepare's `isSegment`. Both sides answer the 400 with the
+   * identifier message rather than the storageKey one, so a caller can tell
+   * which half of the body was refused.
+   */
+  const IDENTIFIER_CASES: { desc: string; fields: Record<string, unknown> }[] = [
+    { desc: 'a slash in workflow', fields: { workflow: 'x/runs/run_VICTIM/step' } },
+    { desc: 'a slash in impl', fields: { impl: 'x/runs' } },
+    { desc: 'traversal in workflow', fields: { workflow: '../other' } },
+    { desc: 'an empty workflow', fields: { workflow: '' } },
+    { desc: 'a missing impl', fields: { impl: undefined } },
+  ]
+  const IDENTIFIER_REFUSAL = 'impl and workflow must each be a single path segment'
+
+  it.each(IDENTIFIER_CASES)('normalize.fn.js: $desc → notOk', ({ fields }) => {
+    const result = handler({
+      request: { body: { impl: 'hello', workflow: 'hello', storageKey: REL, ...fields } },
+      deployment: DEPLOYMENT,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.notOk).toBe(true)
+    expect(result.storageKey).toBe('')
+    expect(result.error).toBe(IDENTIFIER_REFUSAL)
+  })
+
+  it.each(IDENTIFIER_CASES)('mock /api/workflow/files/register: $desc → 400', async ({ fields }) => {
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: REL, ...fields })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ success: false, error: { code: 'BAD_PATH', message: IDENTIFIER_REFUSAL } })
+    expect(db.fileRecords.size).toBe(0)
+  })
+
   it('a bare path and the prepare-minted key register the same object as the same row', async () => {
     const prepared = (await (
       await json('/api/workflow/files/prepare', {
@@ -254,11 +294,13 @@ describe('normalize.fn.js parity with the mock re-implementation', () => {
     await fetch(prepared.uploadUrl, { method: 'PUT', body: new Uint8Array([9, 9]) })
 
     const viaPrepared = await (
-      await json('/api/workflow/files/register', { storageKey: prepared.storageKey, originalName: 'audio.wav' })
+      await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: prepared.storageKey, originalName: 'audio.wav' })
     ).json()
     const rowViaPrepared = { ...db.fileRecords.get(REL) }
 
-    const viaBare = await (await json('/api/workflow/files/register', { storageKey: `${MOCK_UPLOADS_ROOT}${REL}` })).json()
+    const viaBare = await (
+      await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: `${MOCK_UPLOADS_ROOT}${REL}` })
+    ).json()
 
     expect(viaBare).toEqual(viaPrepared)
     expect(db.fileRecords.size).toBe(1)
@@ -285,7 +327,7 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     const key = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/clip.mp4`
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
-    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4' })
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'clip.mp4' })
     expect(res.status).toBe(200)
   })
 
@@ -294,7 +336,7 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     const key = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/clip.mp4`
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
-    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4' })
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'clip.mp4' })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })
@@ -304,8 +346,28 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     const key = 'workflows/hello/hello/inputs/u1/cat.png'
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
-    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'cat.png' })
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'cat.png' })
     expect(res.status).toBe(200)
+  })
+
+  it('refuses a miscased run id rather than reading it as runless — 404 (fix round 2)', async () => {
+    setMockUser(MOCK_OTHER)
+    const key = `workflows/hello/hello/runs/${RUN_ID.toUpperCase()}/f`
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'f' })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  it('normalize.fn.js captures a miscased run id rather than answering runless (fix round 2)', () => {
+    const result = loadFnHandler()({
+      request: { body: { impl: 'hello', workflow: 'hello', storageKey: `workflows/hello/hello/runs/${RUN_ID.toUpperCase()}/f` } },
+      deployment: DEPLOYMENT,
+    })
+    expect(result.hasRun).toBe(true)
+    expect(result.runId).toBe(RUN_ID.toUpperCase())
+    expect(result.runless).toBe(false)
   })
 
   it('refuses another member’s run even through an uppercase RUNS segment — 404 (fix round 1)', async () => {
@@ -313,7 +375,7 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     const key = `workflows/hello/hello/RUNS/${RUN_ID}/slow/0/start/clip.mp4`
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
-    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4' })
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'clip.mp4' })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })
@@ -323,7 +385,7 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     const key = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/clip.mp4`
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
-    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4', scope: 'all' })
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'clip.mp4', scope: 'all' })
     expect(res.status).toBe(200)
   })
 
@@ -332,7 +394,7 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     const key = `workflows/hello/hello/runs/${GHOST_ID}/x.png`
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
-    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'x.png' })
+    const res = await json('/api/workflow/files/register', { impl: 'hello', workflow: 'hello', storageKey: key, originalName: 'x.png' })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })

@@ -3,7 +3,9 @@
  * types the engine works with (09: real and mock go through one `toX()`), so
  * every shape CE has been observed to answer with is pinned here.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { writeScope } from './scope'
+import { downloadHref } from './url'
 import {
   fileUrl,
   toAliasList,
@@ -358,5 +360,38 @@ describe('toFileRef', () => {
     expect(fileUrl('workflows/hello/hello/runs/run_1/slow/0/start/poster.png')).toBe(
       '/api/uploads/workflows/hello/hello/runs/run_1/slow/0/start/poster.png',
     )
+  })
+})
+
+/**
+ * The widened ask has to reach the serve route too (spec 11 D27/D29), and an
+ * `<img src>`, a `<video>` and a download `href` are sinks the browser fetches
+ * itself — no header can ride on them. The gate reads `request.query.scope` as
+ * readily as the header (`mcp/runGate.ts`'s `scopeAsked`), so the ask goes on
+ * the query string, which is the one channel available here.
+ */
+describe('fileUrl and the all-scope ask (D27)', () => {
+  const PATH = 'workflows/hello/hello/runs/run_1/slow/0/start/poster.png'
+  const PLAIN = `/api/uploads/${PATH}`
+
+  afterEach(() => {
+    writeScope('mine')
+  })
+
+  it('carries no query while the viewer has not widened — the ask is never implicit', () => {
+    expect(fileUrl(PATH)).toBe(PLAIN)
+  })
+
+  it('carries scope=all while the viewer has widened', () => {
+    writeScope('all')
+
+    expect(fileUrl(PATH)).toBe(`${PLAIN}?scope=all`)
+  })
+
+  it('composes with the Download action, which appends to the query it finds', () => {
+    expect(downloadHref(fileUrl(PATH))).toBe(`${PLAIN}?download=1`)
+
+    writeScope('all')
+    expect(downloadHref(fileUrl(PATH))).toBe(`${PLAIN}?scope=all&download=1`)
   })
 })

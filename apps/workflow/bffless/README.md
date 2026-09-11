@@ -287,6 +287,16 @@ driveKey, createdAt }`, one row per dispatch from the MCP endpoint, consumed (de
 `runs/post`. It is a brand-new schema, so it syncs on an ordinary rules-as-code push with no
 `--adopt-fields` needed.
 
+**Step names are load-bearing.** `rules.fence.test.ts` classifies every rule of the set as
+GATED / FILTERED / NEITHER and then checks the *shape* of each: a GATED rule must have a
+`data_query` step whose id is **`run`** on `$schema:workflow_runs`, followed by a
+`function_handler` step whose id is **`runGate`** on `mcp-fn/runGate.fn.js`. The gate itself
+reads the same names — `handler()` raises `runless` off `steps.route`/`steps.confine`/
+`steps.normalize`, so the **`confine`** (files/sign, files/prepare, the serve route) and
+**`normalize`** (files/register) locator steps must keep those ids too, or a path that names no
+run stops being recognised as member-wide and every `inputs/` upload starts 404ing. Renaming any
+of the four is a rule-set-wide change, not a local tidy-up.
+
 **Live verification needs a second member.** The `ownership` walk (`pnpm workflow-live:walk
 ownership`, `packages/workflow-live`) proves the four doors — owner, drive nonce, asked-for
 all-scope, and files following the run — against a real second identity, which the walk cannot

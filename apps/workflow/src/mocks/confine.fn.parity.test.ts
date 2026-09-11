@@ -151,6 +151,10 @@ const CASES: { desc: string; path: unknown; ok: boolean; normalized?: string; ha
   { desc: 'a bare other/ path', path: 'other/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'directory traversal', path: 'workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a double slash', path: 'workflows//x', ok: false, hasRun: false, runId: '', runless: false },
+  // Fix round 2: a local-filesystem storage adapter normalises `/./` away
+  // (`path.resolve`), so the two spellings name one object while only one of
+  // them is the path this grammar read the run off.
+  { desc: 'a /./ segment', path: `workflows/hello/./runs/${CASE_RUN_ID}/x`, ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'an empty path', path: '', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a non-string path', path: undefined, ok: false, hasRun: false, runId: '', runless: false },
 ]
@@ -249,6 +253,39 @@ describe('files/sign: run ownership (spec 11 D29)', () => {
     const res = await sign(`workflows/hello/hello/RUNS/${RUN_ID}/poster.svg`)
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe('run not found')
+  })
+
+  /**
+   * Fix round 2: the run ID itself matched case-SENSITIVELY, so a miscased
+   * `RUN_…` was not captured — `runId: ''` → `runless: true` → admitted
+   * member-wide, while a case-insensitive volume served the very same object.
+   * Captured, the miscased id goes verbatim into the `runId eq` filter and
+   * matches no row, so the answer is the same 404 an unknown id gets.
+   */
+  it('refuses a miscased run id rather than reading it as runless — 404 (fix round 2)', async () => {
+    setMockUser(MOCK_OTHER)
+    const res = await sign(`workflows/hello/hello/runs/${RUN_ID.toUpperCase()}/f`)
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('run not found')
+  })
+
+  it('confine.fn.js captures a miscased run id rather than answering runless (fix round 2)', () => {
+    const handler = loadFnHandler()
+    const result = handler({
+      request: { body: { path: `workflows/hello/hello/runs/${RUN_ID.toUpperCase()}/f` } },
+      deployment: DEPLOYMENT,
+    })
+    expect(result.hasRun).toBe(true)
+    expect(result.runId).toBe(RUN_ID.toUpperCase())
+    expect(result.runless).toBe(false)
+  })
+
+  it('refuses a /./ path — 400 on both sides (fix round 2)', async () => {
+    setMockUser(MOCK_MEMBER)
+    expect(loadFnHandler()({ request: { body: { path: `workflows/hello/./runs/${RUN_ID}/f` } }, deployment: DEPLOYMENT }).notOk).toBe(true)
+
+    const res = await sign(`workflows/hello/./runs/${RUN_ID}/f`)
+    expect(res.status).toBe(400)
   })
 
   it('an asked all-scope project admin may sign another member’s run (D27)', async () => {

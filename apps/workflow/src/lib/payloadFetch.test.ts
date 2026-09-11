@@ -9,6 +9,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../mocks/server'
 import { fetchPayload, fetchPayloadCached, forgetPayloads } from './payloadFetch'
+import { SCOPE_HEADER, writeScope } from './scope'
 import type { FileRef } from './runner/types'
 
 const ref = (url: string): FileRef => ({
@@ -23,6 +24,7 @@ const PAYLOAD_URL = '/api/uploads/workflows/hello/hello/runs/run_1/big.json'
 
 afterEach(() => {
   vi.restoreAllMocks()
+  writeScope('mine')
 })
 
 describe('fetchPayload', () => {
@@ -53,6 +55,41 @@ describe('fetchPayload', () => {
     expect(result.$file).toEqual(value)
     expect(typeof result.$error).toBe('string')
     expect(result.$error).not.toBe('')
+  })
+
+  /**
+   * The serve route is gated by the same `runGate` every other run-scoped route
+   * is (spec 11 D29), so the widened ask has to reach it or an owner/admin who
+   * opened someone else's run reads a page of "payload unavailable" chips. It
+   * is a `fetch`, so the header the rest of the SPA sends is available here —
+   * unlike the `<img src>`/download hrefs `coerce.ts`'s `fileUrl` builds, which
+   * carry `?scope=all` on the query instead.
+   */
+  it('sends the all-scope ask while the viewer has widened (D27)', async () => {
+    writeScope('all')
+    let sent: string | null = 'absent'
+    server.use(
+      http.get(PAYLOAD_URL, ({ request }) => {
+        sent = request.headers.get(SCOPE_HEADER)
+        return HttpResponse.json({ n: 1 })
+      }),
+    )
+
+    await expect(fetchPayload(ref(PAYLOAD_URL))).resolves.toEqual({ n: 1 })
+    expect(sent).toBe('all')
+  })
+
+  it('sends no ask while the viewer has not — never implicit (D27)', async () => {
+    let sent: string | null = 'absent'
+    server.use(
+      http.get(PAYLOAD_URL, ({ request }) => {
+        sent = request.headers.get(SCOPE_HEADER)
+        return HttpResponse.json({ n: 1 })
+      }),
+    )
+
+    await expect(fetchPayload(ref(PAYLOAD_URL))).resolves.toEqual({ n: 1 })
+    expect(sent).toBeNull()
   })
 
   it('refuses a url outside the file-serve route without fetching it', async () => {

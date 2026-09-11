@@ -51,6 +51,11 @@ describe('isServeUrl', () => {
     '/api/uploads/a/b.json',
     '/api/uploads/workflows/hello/hello/inputs/u1/cat.png',
     '/api/uploads/x?download=1',
+    // The widened ask rides on the query for a browser-built sink (spec 11
+    // D27; `coerce.ts`'s `fileUrl`) — a query string is not part of the path
+    // this gate reads, so both spellings, and the two composed, stay serve urls.
+    '/api/uploads/x?scope=all',
+    '/api/uploads/x?scope=all&download=1',
     '/api/uploads/my file.png',
   ])('allows the serve url %j', (url) => {
     expect(isServeUrl(url)).toBe(true)

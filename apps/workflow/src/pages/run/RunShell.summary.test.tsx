@@ -627,8 +627,9 @@ describe('RunShell', () => {
   /**
    * Delete (05 retention): the header only offers it when the *server* would
    * allow it, so the affordance is a mirror of the gate rather than a second
-   * policy — a member sees it on their own terminal run, an admin on anyone's,
-   * and neither sees it while the run is still going.
+   * policy — a member sees it on their own terminal run, an owner/admin on
+   * anyone's once they have asked (D27), and neither sees it while the run is
+   * still going.
    */
   describe('deleting a run', () => {
     /** The mock session that started the fixture run — the default member (Decision 12). */

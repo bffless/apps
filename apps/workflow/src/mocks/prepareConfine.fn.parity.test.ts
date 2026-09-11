@@ -76,6 +76,10 @@ const CASES: { desc: string; scope: unknown; ok: boolean; hasRun: boolean; runId
   { desc: 'traversal in a run scope', scope: 'runs/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'traversal in an inputs scope', scope: 'inputs/../secrets', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a double slash', scope: `runs/${RUN_ID}//say`, ok: false, hasRun: false, runId: '', runless: false },
+  // Fix round 2: a local-filesystem storage adapter normalises `/./` away, so
+  // the two spellings name one prefix — see `confine.fn.parity.test.ts`.
+  { desc: 'a /./ segment in a run scope', scope: `runs/${RUN_ID}/./say`, ok: false, hasRun: false, runId: '', runless: false },
+  { desc: 'a /./ segment in an inputs scope', scope: 'inputs/./u1', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'an unrecognised head', scope: 'outputs/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'an empty scope', scope: '', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a non-string scope', scope: undefined, ok: false, hasRun: false, runId: '', runless: false },
@@ -198,5 +202,27 @@ describe('files/prepare: run ownership (spec 11 D29)', () => {
     const res = await prepare({ scope: `RUNS/${OWNED_RUN_ID}/slow/0/start` })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  /**
+   * Fix round 2: the run ID matched case-SENSITIVELY, so a miscased `RUN_…`
+   * scope read `runless` and was prepared member-wide — a presigned PUT into
+   * another member's run prefix on any case-insensitive volume. Captured, the
+   * miscased id matches no run row: the same 404 an unknown id gets.
+   */
+  it('refuses a miscased run id rather than reading it as runless — 404 (fix round 2)', async () => {
+    setMockUser(MOCK_OTHER)
+    const res = await prepare({ scope: `runs/${OWNED_RUN_ID.toUpperCase()}/f` })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  it('confine.fn.js captures a miscased run id rather than answering runless (fix round 2)', () => {
+    const result = loadFnHandler()({
+      request: { body: { impl: 'hello', workflow: 'hello', scope: `runs/${OWNED_RUN_ID.toUpperCase()}/f` } },
+    })
+    expect(result.hasRun).toBe(true)
+    expect(result.runId).toBe(OWNED_RUN_ID.toUpperCase())
+    expect(result.runless).toBe(false)
   })
 })

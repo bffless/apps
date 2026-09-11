@@ -20,7 +20,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MOCK_MEMBER, MOCK_OTHER, db, nextId, setMockUser } from './db'
+import { MOCK_ADMIN, MOCK_MEMBER, MOCK_OTHER, db, nextId, setMockUser } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -103,6 +103,9 @@ const CASES: {
   { desc: 'outside the harness prefix', path: '/api/uploads/other/x.svg', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'directory traversal', path: '/api/uploads/workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a double slash', path: '/api/uploads/workflows//x', ok: false, hasRun: false, runId: '', runless: false },
+  // Fix round 2: `/./` is normalised away by a local-filesystem storage adapter,
+  // so the two spellings name one object — see `confine.fn.parity.test.ts`.
+  { desc: 'a /./ segment', path: `/api/uploads/workflows/hello/./runs/${CASE_RUN_ID}/x`, ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'an empty path', path: '/api/uploads/', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a non-string path', path: undefined, ok: false, hasRun: false, runId: '', runless: false },
 ]
@@ -132,9 +135,14 @@ describe("the serve rule's confine.fn.js parity with the mock re-implementation"
   // to capture, so they are not exercised through a real `fetch()` — the
   // fn-level table above already pins their `ok:false` outcome, and the gate's
   // 404-for-any-failed-parse is proven by the fetchable cases below plus the
-  // ownership `describe` after this one.
+  // ownership `describe` after this one. The `/./` row is excluded for a
+  // different reason: WHATWG url parsing resolves a `.` segment away before a
+  // request is ever made, so `fetch()` cannot deliver one — which is also why
+  // this check is about a client that is NOT a browser (a raw HTTP client, or
+  // an in-process sibling), and why only the fn side of it is meaningful.
   const FETCHABLE = CASES.filter(
-    (c): c is typeof c & { path: string } => typeof c.path === 'string' && c.path !== '/api/uploads/',
+    (c): c is typeof c & { path: string } =>
+      typeof c.path === 'string' && c.path !== '/api/uploads/' && !c.path.includes('/./'),
   )
 
   it.each(FETCHABLE)('mock GET /api/uploads/*: $desc', async ({ path, ok, normalized }) => {
@@ -215,5 +223,64 @@ describe('serve: run ownership (spec 11 D29)', () => {
     const res = await fetch(`/api/uploads/${key}`)
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ error: 'not found' })
+  })
+
+  /**
+   * Fix round 2: the run ID matched case-SENSITIVELY, so a miscased `RUN_…`
+   * read `runless` and was served member-wide — while CE's file_serve_handler,
+   * on a case-insensitive volume, handed back the very same object. Captured,
+   * the miscased id matches no run row and the answer is a plain 404.
+   */
+  it('refuses a miscased run id rather than reading it as runless — 404 (fix round 2)', async () => {
+    setMockUser(MOCK_OTHER)
+    const key = `workflows/hello/hello/runs/${RUN_ID.toUpperCase()}/f`
+    db.files.set(key, { bytes: new Uint8Array([9]), contentType: 'image/png' })
+
+    const res = await fetch(`/api/uploads/${key}`)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'not found' })
+  })
+
+  it('confine.fn.js captures a miscased run id rather than answering runless (fix round 2)', () => {
+    const result = loadFnHandler()({
+      request: { path: `/api/uploads/workflows/hello/hello/runs/${RUN_ID.toUpperCase()}/f` },
+      deployment: DEPLOYMENT,
+    })
+    expect(result.hasRun).toBe(true)
+    expect(result.runId).toBe(RUN_ID.toUpperCase())
+    expect(result.runless).toBe(false)
+  })
+
+  /**
+   * The only channel an `<img src>` / `<video>` / download href has for the
+   * widened ask (`coerce.ts`'s `fileUrl` appends it; no header can ride on a
+   * browser-built sink). The gate reads `request.query.scope` exactly as it
+   * reads the header, so this is the same D27 door those routes already open.
+   */
+  it('serves another member’s run file to an asked all-scope project admin (D27, fix round 2)', async () => {
+    setMockUser({ ...MOCK_ADMIN, id: 'user_admin_serve' })
+    const key = `workflows/hello/hello/runs/${RUN_ID}/poster.png`
+    db.files.set(key, { bytes: new Uint8Array([9]), contentType: 'image/png' })
+
+    expect((await fetch(`/api/uploads/${key}`)).status).toBe(404)
+    const res = await fetch(`/api/uploads/${key}?scope=all`)
+    expect(res.status).toBe(200)
+  })
+
+  /**
+   * `/./` never reaches the gate through a browser — WHATWG url parsing
+   * resolves the segment away first — so this is the fn side only, for the
+   * clients that are not one: a raw HTTP client, or a sibling calling
+   * in-process with a hand-built path. `ok: false` on this route is the same
+   * 404 an unreachable run gets (the rule has no 400).
+   */
+  it('refuses a /./ path — no 200 for a spelling the filesystem normalises away (fix round 2)', () => {
+    setMockUser(MOCK_MEMBER)
+    const result = loadFnHandler()({
+      request: { path: `/api/uploads/workflows/hello/./runs/${RUN_ID}/f` },
+      deployment: DEPLOYMENT,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.runless).toBe(false)
   })
 })

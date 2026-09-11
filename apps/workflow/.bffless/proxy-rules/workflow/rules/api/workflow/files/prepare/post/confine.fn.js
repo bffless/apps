@@ -12,7 +12,16 @@
 // `subDir` templates `workflows/{{impl}}/{{workflow}}/{{scope}}` unchecked, so a caller who
 // controls `workflow` (e.g. `"x/runs/run_VICTIM/step"`) could otherwise plant bytes under
 // another member's run prefix without `scope` itself ever naming that run.
-var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
+//
+// NOTE the two unrelated `scope`s: the body field `scope` read here is the STORAGE scope —
+// where under `workflows/<impl>/<workflow>/` the bytes land. It has nothing to do with the run
+// gate's all-scope ask (`body.scope === 'all'`, `runGate.fn.js`'s `scopeAsked`), which the gate
+// step after this one reads off the same body. A caller may legitimately send either; narrowing
+// one of them to fit the other silently breaks the other.
+//
+// `RUN_ID_PATTERN` carries the same `i` as the `runs` segment (fix round 2), and `/./` is refused
+// alongside `..` and `//` — see `files/sign`'s `confine.fn.js` banner for both.
+var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/i
 
 /** A single path segment: non-empty, no `/`, no `\`, no `..`. */
 function isSegment(v) {
@@ -24,7 +33,7 @@ function handler({ request }) {
   var identifiersOk = isSegment(body.impl) && isSegment(body.workflow)
 
   var scope = typeof body.scope === 'string' ? body.scope.replace(/^\/+|\/+$/g, '') : ''
-  var clean = scope !== '' && scope.indexOf('..') === -1 && scope.indexOf('//') === -1
+  var clean = scope !== '' && scope.indexOf('..') === -1 && scope.indexOf('//') === -1 && scope.indexOf('/./') === -1
 
   var runMatch = clean ? /^runs\/([^/]+)\/.+/i.exec(scope) : null
   var runId = runMatch && RUN_ID_PATTERN.test(runMatch[1]) ? runMatch[1] : ''

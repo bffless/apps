@@ -87,6 +87,21 @@ describe('route', () => {
     const MEMBER: FnUser = { id: 'u', projectRole: 'contributor' }
     const flags = (r: { isMine: boolean; isAll: boolean; scopeForbidden: boolean }) => [r.isMine, r.isAll, r.scopeForbidden]
 
+    /**
+     * The `waiting` step-row query is conditioned on `listRuns`, not `isRuns`
+     * (fix round 2): a refused `scope: "all"` runs NEITHER run query, so the
+     * rows it would decorate are work for a listing `reply` answers with a 403.
+     * A CE step `condition` is a single path, so the "and" has to be a flag.
+     */
+    it('runs the listing’s step-row query only when the listing itself runs', () => {
+      expect(scoped(LIST, MEMBER).listRuns).toBe(true)
+      expect(scoped({ ...LIST, scope: 'all' }, OWNER).listRuns).toBe(true)
+      expect(scoped({ ...LIST, scope: 'all' }, MEMBER).listRuns).toBe(false)
+      // Not a listing at all: neither flag is raised.
+      expect(scoped({ impl: 'hello', scope: 'all' }, MEMBER).listRuns).toBe(false)
+      expect(scoped({ impl: 'hello', scope: 'all' }, MEMBER).isRuns).toBe(false)
+    })
+
     it('defaults to the caller’s own runs, for every role', () => {
       expect(flags(scoped(LIST, MEMBER))).toEqual([true, false, false])
       expect(flags(scoped(LIST, OWNER))).toEqual([true, false, false])

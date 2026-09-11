@@ -183,7 +183,10 @@ function stepDefs(ruleDir) {
     // eq-matches nothing — an unresolvable caller sees an empty list.
     runs: query('runs', 'steps.route.isMine', 'workflow_runs', 50, { impl: { op: 'eq', value: 'steps.route.impl' }, workflow: { op: 'eq', value: 'steps.route.workflow' }, startedBy: { op: 'eq', value: 'user.id' } }),
     runsAll: query('runsAll', 'steps.route.isAll', 'workflow_runs', 50, { impl: { op: 'eq', value: 'steps.route.impl' }, workflow: { op: 'eq', value: 'steps.route.workflow' } }),
-    waiting: query('waiting', 'steps.route.isRuns', 'workflow_run_steps', 1000, { status: { op: 'eq', value: 'waiting' } }),
+    // `listRuns`, not `isRuns`: a refused `scope: "all"` (D27) runs NEITHER run
+    // query, so the step rows they would be decorated with are work for a
+    // listing that never happens — `reply` answers 403 off `scopeForbidden`.
+    waiting: query('waiting', 'steps.route.listRuns', 'workflow_run_steps', 1000, { status: { op: 'eq', value: 'waiting' } }),
     // CE's alias API in-process (spec 06); the caller's credential is forwarded, so CE answers the member's own alias list.
     aliases: { id: 'aliases', name: 'aliases', handler: 'http_request', config: { condition: 'steps.route.isAliases', url: 'steps.route.aliasesUrl', method: 'GET', forwardAuth: true, failOnError: false } },
     // `describe` reads the listing off the index; `start` reads the driver repo off the same file (ADR-0006), so one flag gates one step.

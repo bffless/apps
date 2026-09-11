@@ -8,6 +8,7 @@
  * column yields the documented default rather than an exception, because a
  * half-written row must still render as a run record (08 degraded states).
  */
+import { readScope } from './scope'
 import type { AnnotationCounts, RunRow, StepRow } from './runner/rows'
 import type { Annotation, FileRef, RunStatus, StepError, StepKey, StepKind, StepStatus } from './runner/types'
 
@@ -229,9 +230,19 @@ export const SERVE_PREFIX = '/api/uploads/'
 /**
  * The serve route a storage path is reachable at: `path` is the
  * uploads-relative key, so the url is simply `SERVE_PREFIX` + path.
+ *
+ * Plus `?scope=all` while the viewer has widened (spec 11 D27, fix round 2).
+ * Every other request the SPA makes carries the ask on the `x-workflow-scope`
+ * header, but this url ends up in an `<img src>`, a `<video>` and a download
+ * `href` — sinks the browser fetches itself, where no header can be attached.
+ * The gate reads `request.query.scope` as readily as the header
+ * (`mcp/runGate.ts`'s `scopeAsked`), so the query string is the same ask by
+ * the one route that is available here. `download=1` composes on top of it:
+ * `lib/url.ts`'s `downloadHref` appends with `&` once there is a query.
  */
 export function fileUrl(path: string): string {
-  return `${SERVE_PREFIX}${path.replace(/^\/+/, '')}`
+  const url = `${SERVE_PREFIX}${path.replace(/^\/+/, '')}`
+  return readScope() === 'all' ? `${url}?scope=all` : url
 }
 
 /** The alias list, whether CE answered with a bare array, `{ aliases }` or `{ data }`. */
