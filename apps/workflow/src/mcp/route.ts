@@ -15,6 +15,10 @@
  * `plan`'s job, one step later.
  */
 import { canonicalToolName } from '@bffless/workflow-agent-tools'
+// The gate's own reader of the project role, so "who may widen a listing"
+// is decided by ONE function for both surfaces (spec 11, D27). The import
+// cycle back to this module is types only (`FnRequest`), which esbuild erases.
+import { isAllScopeRole, type FnUser } from './runGate'
 
 export const LIST_FANOUT = 3
 
@@ -71,8 +75,29 @@ export interface Route {
   isAliases: boolean
   /** Read the run row + its step rows (`steps.run`, `steps.steps`). */
   needsRun: boolean
-  /** `workflow.runs` with impl + workflow → `steps.runs` + `steps.waiting`. */
+  /** `workflow.runs` with impl + workflow → `steps.waiting` (and one of the two run queries below). */
   isRuns: boolean
+  /**
+   * `workflow.runs` listing the caller's OWN runs → `steps.runs` (the query
+   * filtered on `startedBy: user.id`). The default: a filter cannot be
+   * conditional, so "mine or everything" is two queries and this flag picks
+   * one (spec 11 §Listing: two queries).
+   */
+  isMine: boolean
+  /** `workflow.runs` listing every run of the workflow → `steps.runsAll` (the unfiltered query). Asked for AND allowed (D27). */
+  isAll: boolean
+  /**
+   * `scope: "all"` from a caller without the project owner/admin role — the
+   * one 403 in the list model (D27). Neither query runs; `reply` refuses.
+   */
+  scopeForbidden: boolean
+  /**
+   * This request names no run, so the shared gate has nothing to judge and
+   * says `ok` rather than refusing (spec 11 §The model, the `runless` door).
+   * Only `workflow.sign` of a member-wide `inputs/` key raises it here: every
+   * other tool either names a run or never reads one.
+   */
+  runless: boolean
   /** Discovery: `steps.aliases` then `plan` then `index1..3`. */
   isList: boolean
   /** `workflow.describe` → `steps.index` (then `plan` names the YAML). */
@@ -129,6 +154,16 @@ export interface Route {
   drivePath: string
 }
 
+/**
+ * The eleven run-scoped tools (spec 11 §One gate, not twenty-five copies): the
+ * seven catalog tools that take a `runId` and the four host tools. Each reads
+ * the run row through the shared gate, so `needsRun` is what makes the `run`
+ * query run and the gate judge it.
+ *
+ * `await` and `cancel` are here even though this endpoint serves neither: a
+ * refusal that explains the tool is still an answer about a specific run, and
+ * a run the caller cannot reach must answer what an unknown id answers.
+ */
 const RUN_SCOPED = new Set([
   'workflow.status',
   'workflow.outputs',
@@ -137,6 +172,11 @@ const RUN_SCOPED = new Set([
   'workflow.annotate',
   'workflow.pipeline',
   'workflow.stepView',
+  'workflow.await',
+  'workflow.cancel',
+  // `sign` is run-scoped through the PATH it signs, not through an argument
+  // (D29) — the branch below replaces this flag with what the path says.
+  'workflow.sign',
   // A resume names nothing but the run: its rows say which implementation to dispatch.
   'workflow.resume',
 ])
@@ -166,6 +206,22 @@ export function confinedSignPath(raw: unknown): string {
   const path = raw.replace(/^\/+/, '').replace(/^api\/uploads\//, '').split('?')[0]
   const ok = path.startsWith('workflows/') && !path.includes('..') && !path.includes('//')
   return ok ? path : ''
+}
+
+/** A run id as the page mints one (`lib/autoStart.ts`), restated here because a bundle imports nothing from the app. */
+const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
+
+/**
+ * The run a confined sign path belongs to, or `''` — the same locator
+ * `files/sign/post/confine.fn.js` runs (spec 11 D29), `runs` matched
+ * CASE-INSENSITIVELY for the same reason: CE's storage key is built from the
+ * raw path with no case folding, so on a case-insensitive volume `RUNS/run_X/…`
+ * and `runs/run_X/…` name the same object and the gate must be at least as
+ * strict as that key equality.
+ */
+export function runIdOfSignPath(path: string): string {
+  const match = /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/i.exec(path)
+  return match && RUN_ID_PATTERN.test(match[1]) ? match[1] : ''
 }
 
 /** Every MCP rule of the harness lives under this prefix: the endpoint (`…/mcp`), the tools (`…/mcp-tools/<name>`), the resources (`…/mcp-resources[/step-view]`). */
@@ -216,7 +272,7 @@ function withAliases(route: Route): Route {
   return route
 }
 
-export function handler(data: { request: FnRequest; deployment?: FnDeployment }): Route {
+export function handler(data: { request: FnRequest; deployment?: FnDeployment; user?: FnUser }): Route {
   const request = data.request ?? { body: undefined, headers: {}, method: 'POST', path: '' }
   const deployment = data.deployment ?? {}
   const path = str(request.path)
@@ -237,6 +293,10 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
     isAliases: false,
     needsRun: false,
     isRuns: false,
+    isMine: false,
+    isAll: false,
+    scopeForbidden: false,
+    runless: false,
     isList: false,
     isDescribe: false,
     isStart: false,
@@ -285,6 +345,16 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
 
   if (RUN_SCOPED.has(route.tool) && route.runId !== '') route.needsRun = true
   if (route.tool === 'workflow.runs' && route.impl !== '' && route.workflow !== '') route.isRuns = true
+  if (route.isRuns) {
+    // The ask is explicit and never implicit (D27): on a project you own, an
+    // implicit exemption would mean nothing ever changes. The role is the
+    // caller's role on THIS project, which the MCP connector's app token
+    // carries like any other credential.
+    const asked = args.scope === 'all'
+    route.scopeForbidden = asked && !isAllScopeRole(data.user?.projectRole)
+    route.isAll = asked && !route.scopeForbidden
+    route.isMine = !asked
+  }
   if (route.tool === 'workflow.list') route.isList = true
   if (route.tool === 'workflow.describe' && route.impl !== '' && route.workflow !== '' && appOrigin !== '') route.isDescribe = true
   if (route.tool === 'workflow.start' && route.impl !== '' && route.workflow !== '' && siblingBase !== '') route.isStart = true
@@ -300,6 +370,16 @@ export function handler(data: { request: FnRequest; deployment?: FnDeployment })
       route.isSign = true
       route.signStoragePath = `${project}/uploads/${route.signPath}`
     }
+    // What the gate judges is the run the PATH is under, never the `runId`
+    // argument: the object is what gets signed, so a key under someone else's
+    // run must be judged against that run even if the caller names their own
+    // (D29, `files/sign/post/confine.fn.js` mirrored). A signable key that is
+    // under no run (`inputs/…`) is member-wide, which is `runless`; an
+    // unsignable path is neither, so the gate refuses, the `signed` step never
+    // runs, and `reply` answers with the confinement refusal.
+    route.runId = route.isSign ? runIdOfSignPath(route.signPath) : ''
+    route.needsRun = route.runId !== ''
+    route.runless = route.isSign && route.runId === ''
   }
   return withAliases(route)
 }

@@ -1,10 +1,21 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { RUN_ID, runRow, stepRows } from './fixtures/index'
-import { aliasNames, handler, queryOf } from './plan'
+import { aliasNames, handler as planOf, queryOf } from './plan'
 import { TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
+import { handler as runGate, type FnUser } from './runGate'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
+/** The member who started the fixture run, so the shared gate's owner door admits them (spec 11, D26). */
+const MEMBER: FnUser = { id: 'member@example.com', projectRole: 'contributor' }
+
+/**
+ * `plan` as its rule reaches it: after the `run` query AND the `runGate` step
+ * that judges it (spec 11, D26), so what it plans is planned off the row the
+ * gate admitted — never one re-derived from the query.
+ */
+const handler = (data: Parameters<typeof planOf>[0], user: FnUser | undefined = MEMBER) =>
+  planOf({ ...data, steps: { ...data.steps, runGate: runGate({ steps: { route: data.steps.route, run: data.steps.run }, user }) } })
 const HEADERS = { host: 'h.example' }
 const request = (name: string, body: unknown): FnRequest => ({ body, headers: HEADERS, method: 'POST', path: `${TOOLS_PATH}${name.replace(/^workflow\./, '')}` })
 const call = (name: string, args: Record<string, unknown> = {}) =>

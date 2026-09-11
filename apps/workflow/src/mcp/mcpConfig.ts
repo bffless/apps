@@ -84,8 +84,10 @@ export function mcpHandlerConfig({ rev }: { rev: string }): Record<string, unkno
 export type StepKey =
   | 'route'
   | 'run'
+  | 'runGate'
   | 'steps'
   | 'runs'
+  | 'runsAll'
   | 'waiting'
   | 'aliases'
   | 'index'
@@ -103,7 +105,13 @@ export type StepKey =
   | 'drive'
   | 'reply'
 
-const RUN_ROWS: StepKey[] = ['run', 'steps']
+/**
+ * The run a run-scoped tool names, and the gate that decides whether this
+ * caller may see it (spec 11, D26): the query, then the ONE shared gate, then
+ * the step rows — which are conditioned on the gate, so a run the caller
+ * cannot reach yields no rows either.
+ */
+const RUN_ROWS: StepKey[] = ['run', 'runGate', 'steps']
 const DISCOVERY: StepKey[] = ['aliases', 'plan', 'index1', 'index2', 'index3']
 
 export const TOOL_STEPS: Readonly<Record<ToolName | HostToolName, StepKey[]>> = {
@@ -111,15 +119,22 @@ export const TOOL_STEPS: Readonly<Record<ToolName | HostToolName, StepKey[]>> = 
   'workflow.describe': ['route', 'index', 'plan', 'yaml', 'reply'],
   'workflow.status': ['route', ...RUN_ROWS, 'reply'],
   'workflow.outputs': ['route', ...RUN_ROWS, 'reply'],
-  'workflow.runs': ['route', 'runs', 'waiting', 'reply'],
-  'workflow.sign': ['route', 'signed', 'reply'],
+  // Filtered, not gated: one of two conditional queries runs (spec 11, D27).
+  'workflow.runs': ['route', 'runs', 'runsAll', 'waiting', 'reply'],
+  // Run-scoped through the path it signs (D29): a `runs/<runId>/` key is that
+  // run's, every other confined key is member-wide and the gate's `runless`
+  // door admits it.
+  'workflow.sign': ['route', 'run', 'runGate', 'signed', 'reply'],
   // The three that dispatch (ADR-0006). `start` reads the implementation's
   // index first (the workflow it lists, the driver it publishes); `resume`
   // reads the run's rows; `submitStep` runs `plan` AFTER its write, because
   // whether to dispatch is whether the write landed.
   'workflow.start': ['route', 'index', 'plan', 'drive', 'reply'],
-  'workflow.await': ['route', 'reply'],
-  'workflow.cancel': ['route', 'reply'],
+  // Neither is served here, but a refusal that explains the tool is still an
+  // answer about a named run: both go through the gate so an unreachable run
+  // answers what an unknown id answers (D26).
+  'workflow.await': ['route', 'run', 'runGate', 'reply'],
+  'workflow.cancel': ['route', 'run', 'runGate', 'reply'],
   'workflow.resume': ['route', ...RUN_ROWS, 'plan', 'drive', 'reply'],
   'workflow.submitStep': ['route', ...RUN_ROWS, 'merge', 'update', 'plan', 'drive', 'reply'],
   'workflow.submit': ['route', ...RUN_ROWS, 'merge', 'update', 'reply'],

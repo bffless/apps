@@ -219,9 +219,14 @@ export const workflowApi = createApi({
       query: ({ impl, file }) => ({ url: publishedPath(impl, file), responseHandler: 'text' }),
     }),
 
-    /** Past runs of one workflow, newest first (sorting is client-side, Decision 6). */
-    listRuns: builder.query<ServerRunRow[], { impl: string; workflow: string }>({
-      query: ({ impl, workflow }) => ({ url: 'api/workflow/runs', params: { impl, workflow } }),
+    /**
+     * Past runs of one workflow, newest first (sorting is client-side,
+     * Decision 6). The caller's own runs unless `scope: 'all'` is asked for,
+     * which the endpoint answers 403 to without the project owner/admin role
+     * (spec 11, D27) — the ask is passed through, never assumed.
+     */
+    listRuns: builder.query<ServerRunRow[], { impl: string; workflow: string; scope?: 'all' }>({
+      query: ({ impl, workflow, scope }) => ({ url: 'api/workflow/runs', params: { impl, workflow, ...(scope ? { scope } : {}) } }),
       transformResponse: (raw: unknown) =>
         unwrapRows(raw)
           .map(toRunRow)

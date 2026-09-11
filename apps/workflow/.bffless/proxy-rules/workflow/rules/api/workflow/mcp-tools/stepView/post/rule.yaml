@@ -20,11 +20,15 @@ pipeline:
           runId:
             op: eq
             value: steps.route.runId
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
     - id: steps
       name: steps
       handler: data_query
       config:
-        condition: steps.route.needsRun
+        condition: steps.runGate.ok
         schemaId: $schema:workflow_run_steps
         limit: 1000
         filters:

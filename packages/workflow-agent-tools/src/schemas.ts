@@ -107,6 +107,8 @@ export interface RunsArgs {
   workflow?: string
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled'
   limit?: number
+  /** Whose runs (spec 11, D27). Absent is `mine`; `all` is refused without the project owner/admin role. */
+  scope?: 'mine' | 'all'
 }
 export const RUNS_SCHEMA: JsonSchema = {
   type: 'object',
@@ -115,6 +117,12 @@ export const RUNS_SCHEMA: JsonSchema = {
     workflow: { ...WORKFLOW, description: 'The workflow id; defaults to the current run’s (or the page’s) on the harness page.' },
     status: { type: 'string', enum: ['running', 'succeeded', 'failed', 'cancelled'], description: 'Only runs in this status.' },
     limit: { type: 'integer', minimum: 1, maximum: 50, description: 'At most this many runs, newest first (default 20).' },
+    scope: {
+      type: 'string',
+      enum: ['mine', 'all'],
+      description:
+        'mine (default): runs you started. all: every run of the workflow — project owner/admin only, and only when asked (D27); refused with errors.scope otherwise.',
+    },
   },
   required: [],
   additionalProperties: false,

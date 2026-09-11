@@ -149,7 +149,7 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       expect(auth, `${file} must be auth_required`).toBeDefined()
       expect(auth!.config?.requiredScopes, `${file} must require [${scope}]`).toEqual([scope])
       for (const s of doc.pipeline.steps as Array<{ handler: string; code?: string; config?: Record<string, unknown> }>) {
-        if (s.handler === 'function_handler') expect(s.code, `${file}: function steps point at mcp-fn/`).toMatch(/^(\.\.\/)+mcp-fn\/(route|plan|merge|reply)\.fn\.js$/)
+        if (s.handler === 'function_handler') expect(s.code, `${file}: function steps point at mcp-fn/`).toMatch(/^(\.\.\/)+mcp-fn\/(route|plan|merge|reply|runGate)\.fn\.js$/)
         if (s.handler === 'http_request') expect(s.config?.forwardAuth, `${file}: sibling calls run as the caller`).toBe(true)
       }
       return
@@ -179,6 +179,96 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       expect(typeof step.code, `${file}: ${step.id} has no code`).toBe('string')
       const resolved = join(file, '..', step.code)
       expect(statSync(resolved).isFile(), `${file}: ${step.id} → ${step.code}`).toBe(true)
+    }
+  })
+
+  /**
+   * The ownership boundary, rule by rule (spec 11 §One gate, not twenty-five
+   * copies). Every rule file of the set falls in exactly one of three classes,
+   * and each class has a shape:
+   *
+   * - **GATED** — it names an existing run, so it queries that run and judges
+   *   it with the ONE shared gate (`mcp-fn/runGate.fn.js`), never with a
+   *   hand-kept copy of the same four `if`s.
+   * - **FILTERED** — a list endpoint, which cannot be gated (there is no one
+   *   run): it has two `workflow_runs` queries, one filtered to the caller's
+   *   own rows and one not, and the caller's `scope` picks which runs (D27).
+   * - **NEITHER** — nothing here names a run, so the gate has nothing to say.
+   *
+   * A new rule must be placed in one of them, which is the point: the fence
+   * fails on an unclassified file rather than letting an ungated route in.
+   */
+  const GATED = [
+    '/run/get/', '/run/update/post/', '/run-step/post/', '/run/lease/post/', '/run/delete/post/', '/run/fork/post/', '/run/drive/post/',
+    '/files/sign/post/', '/files/prepare/post/', '/files/register/post/', '/uploads/workflows/[...path]/',
+    '/mcp-tools/status/', '/mcp-tools/await/', '/mcp-tools/outputs/', '/mcp-tools/sign/', '/mcp-tools/cancel/', '/mcp-tools/resume/', '/mcp-tools/submitStep/',
+    '/mcp-tools/submit/', '/mcp-tools/annotate/', '/mcp-tools/pipeline/', '/mcp-tools/stepView/',
+  ]
+  const FILTERED = ['/runs/get/', '/mcp-tools/runs/']
+  const NEITHER = [
+    '/runs/post/', '/project/get/', '/aliases/get/', '/whoami/get/', '/mcp-tools/list/', '/mcp-tools/describe/', '/mcp-tools/start/',
+    '/_custom/well-known/', '/api/auth/', '/api/workflow/mcp/', '/mcp-resources/',
+  ]
+  const CLASSES: Array<[string, string[]]> = [['GATED', GATED], ['FILTERED', FILTERED], ['NEITHER', NEITHER]]
+  /**
+   * `/runs/post/` (NEITHER — the driver's own create) is also a substring of
+   * `/mcp-tools/runs/post/` (FILTERED), the one overlap between the lists. The
+   * specific fragment wins there; nothing else may match two classes.
+   */
+  const OVERLAP = '/rules/api/workflow/mcp-tools/runs/post/rule.yaml'
+  const GATE_FILE = 'mcp-fn/runGate.fn.js'
+
+  interface Step {
+    id?: string
+    handler: string
+    code?: string
+    config?: { schemaId?: string; filters?: Record<string, { op?: string; value?: unknown } | undefined> }
+  }
+  const stepsOf = (rel: string): Step[] => {
+    const doc = parse(readFileSync(join(SET, rel), 'utf8')) as { pipeline?: { steps?: Step[] } }
+    return doc.pipeline?.steps ?? []
+  }
+
+  it('classifies every rule against the ownership boundary (spec 11)', () => {
+    const classesOf = (rel: string) => CLASSES.filter(([, fragments]) => fragments.some((f) => rel.includes(f))).map(([cls]) => cls)
+    const classified: Record<string, string[]> = { GATED: [], FILTERED: [], NEITHER: [] }
+
+    for (const file of files) {
+      const rel = file.slice(SET.length)
+      const hit = classesOf(rel)
+      if (rel === OVERLAP) expect(hit, `${rel} is the one known overlap`).toEqual(['FILTERED', 'NEITHER'])
+      else expect(hit, `${rel} must be in exactly one class of the ownership boundary (spec 11) — place it`).toHaveLength(1)
+      classified[hit[0]].push(rel)
+    }
+    // Every fragment names a rule that is really there, so a route that is
+    // renamed or retired cannot leave a dead entry standing in for it.
+    for (const [cls, fragments] of CLASSES) {
+      for (const fragment of fragments) {
+        expect(files.some((f) => f.slice(SET.length).includes(fragment)), `${cls}: ${fragment} matches no rule`).toBe(true)
+      }
+    }
+    expect(classified.GATED.length + classified.FILTERED.length + classified.NEITHER.length).toBe(files.length)
+
+    for (const rel of classified.GATED) {
+      const steps = stepsOf(rel)
+      const runAt = steps.findIndex((s) => s.id === 'run' && s.handler === 'data_query' && s.config?.schemaId === '$schema:workflow_runs')
+      expect(runAt, `${rel} names a run: it must query it (data_query \`run\` on $schema:workflow_runs)`).toBeGreaterThan(-1)
+      const gateAt = steps.findIndex((s) => s.handler === 'function_handler' && s.id === 'runGate' && String(s.code).endsWith(GATE_FILE))
+      expect(gateAt, `${rel} must judge that run with the shared gate (a \`runGate\` function step on ${GATE_FILE})`).toBeGreaterThan(-1)
+      expect(gateAt, `${rel}: the gate must come after the \`run\` query it judges`).toBeGreaterThan(runAt)
+    }
+
+    for (const rel of classified.FILTERED) {
+      const text = readFileSync(join(SET, rel), 'utf8')
+      const queries = stepsOf(rel).filter((s) => s.handler === 'data_query' && s.config?.schemaId === '$schema:workflow_runs')
+      const mine = queries.filter((s) => s.config?.filters?.startedBy?.value === 'user.id')
+      expect(mine.length, `${rel} lists runs: one query must filter startedBy on user.id`).toBe(1)
+      expect(queries.length - mine.length, `${rel}: and a second, unfiltered one for an asked-for scope=all (D27)`).toBe(1)
+      expect(text.includes(GATE_FILE), `${rel} is filtered, not gated — there is no one run to judge`).toBe(false)
+    }
+
+    for (const rel of classified.NEITHER) {
+      expect(readFileSync(join(SET, rel), 'utf8').includes(GATE_FILE), `${rel} names no run — it must not reference the gate`).toBe(false)
     }
   })
 
