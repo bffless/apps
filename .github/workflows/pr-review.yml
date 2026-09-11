@@ -106,8 +106,11 @@ jobs:
           # adds a script and its caller has the caller but not the script. Unguarded,
           # the step exits non-zero under `set -e` and the review is never posted — the
           # PR silences its own reviewer (this happened on apps#663).
+          # Non-fatal for the same reason it is guarded: a sanitiser that fails must cost
+          # a scruffy comment, never the review. `set -e` would otherwise turn any throw
+          # in here into the apps#663 failure again — no comment posted at all.
           if [ -f scripts/strip-review-envelope.mjs ]; then
-            node scripts/strip-review-envelope.mjs review.md
+            node scripts/strip-review-envelope.mjs review.md || echo "strip-review-envelope failed — posting the report unstripped"
           fi
           printf '## 🤖 Automated apps review\n\n' > comment.md
           cat review.md >> comment.md
