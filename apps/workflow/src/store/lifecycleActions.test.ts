@@ -87,6 +87,11 @@ function resumableRunAndSteps(runId: string): { run: RunRow; steps: StepRow[] } 
     inputs: { greeting: 'Hello', names: ['world', 'studio'], photo: null, shout: false },
     status: 'running',
     headless: false,
+    // Decision 12 (spec 11): fixtures the mock backend seeds directly belong
+    // to the mock member, or the shared run gate (D26) refuses every read/
+    // write this suite makes against it — a bystander of B4's gate, not a
+    // fact this scenario is testing.
+    startedBy: MOCK_MEMBER.id,
     startedAt: 1_000,
     finishedAt: null,
     leaseOwner: null,

@@ -32,7 +32,7 @@ import {
 } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../../App'
-import { MOCK_ADMIN, MOCK_MEMBER, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../../mocks/db'
+import { MOCK_ADMIN, MOCK_MEMBER, MOCK_OTHER, db, nextId, seedFinishedRun, setMockUser, stepRowKey } from '../../mocks/db'
 import { FINISHED_RUN, FIXTURE_RUN_ID } from '../../mocks/fixtures/finishedRun'
 import { server } from '../../mocks/server'
 import { routes } from '../../routes'
@@ -417,6 +417,20 @@ describe('RunShell', () => {
     expect(await within(page).findByText('No such run')).toBeInTheDocument()
   })
 
+  it('reports a run owned by someone else the same way as an unknown one (spec 11 D26, Decision 4)', async () => {
+    // The default mock session (Decision 12) is MOCK_MEMBER; seed the fixture
+    // owned by someone else instead so the shared run gate refuses it. The
+    // gate's `run/get` door answers exactly like an unknown id — 200
+    // `{ run: null, steps: [] } — so the page cannot and must not tell "not
+    // yours" apart from "never existed".
+    db.runs.set(FIXTURE_RUN_ID, { ...FINISHED_RUN.run, startedBy: MOCK_OTHER.id, _id: nextId() })
+
+    renderApp()
+
+    const page = screen.getByRole('main')
+    expect(await within(page).findByText('No such run')).toBeInTheDocument()
+  })
+
   it('tells a failed read apart from a run that does not exist', async () => {
     seedFinishedRun()
     server.use(
@@ -581,21 +595,33 @@ describe('RunShell', () => {
       expect(await within(page).findByTestId('run-delete')).toBeInTheDocument()
     })
 
-    it('offers no Delete to a member who did not start the run', async () => {
+    // Both cases below used to reach the page and find no Delete affordance
+    // (D14: every member could read every run). Since the shared run gate
+    // (spec 11 D26) now guards `run/get` too, a member who did not start the
+    // run — admin included — cannot reach the page AT ALL without asking for
+    // all-scope, which the SPA has no way to do yet (`x-workflow-scope: all`
+    // lands in B9). So there is no Delete affordance to check here: there is
+    // no page. Both now assert the same "No such run" this file's Decision 4
+    // case above does; B9 restores the admin case once the ask exists,
+    // widening the SAME "someone else's run" case rather than this one.
+    it('a member who did not start the run cannot reach it at all — no Delete to check', async () => {
+      seedFinishedRun()
       setMockUser({ id: 'someone_else', email: 'else@example.test', role: 'user' })
-      const page = await openRun()
+      renderApp()
 
-      // The shell's user chip proves the whoami answer has landed — without it
-      // this would pass merely because the query had not resolved yet.
-      expect(await screen.findByTestId('whoami')).toHaveTextContent('else@example.test')
+      const page = screen.getByRole('main')
+      expect(await within(page).findByText('No such run')).toBeInTheDocument()
       expect(within(page).queryByTestId('run-delete')).not.toBeInTheDocument()
     })
 
-    it("offers Delete to an admin on someone else's run", async () => {
+    it("an admin who has not asked for all-scope cannot reach someone else's run either (D27)", async () => {
+      seedFinishedRun()
       setMockUser(MOCK_ADMIN)
-      const page = await openRun()
+      renderApp()
 
-      expect(await within(page).findByTestId('run-delete')).toBeInTheDocument()
+      const page = screen.getByRole('main')
+      expect(await within(page).findByText('No such run')).toBeInTheDocument()
+      expect(within(page).queryByTestId('run-delete')).not.toBeInTheDocument()
     })
 
     it('deletes the record and leaves for Past runs', async () => {

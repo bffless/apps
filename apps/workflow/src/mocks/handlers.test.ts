@@ -96,9 +96,12 @@ describe('the run record surface', () => {
     expect(run.finishedAt).toBe(99)
     expect(run.impl).toBe('hello')
 
+    // Gated (spec 11 D26): an unknown id refuses the same way an invisible
+    // run does — `{ ok:false, error:'run not found' }`, `steps.runGate.result`
+    // on the real rule's `refuse-404` responder.
     const missing = await json('/api/workflow/run/update', { id: 'run_nope', patch: { status: 'failed' } })
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ code: 'NOT_FOUND' })
+    expect(await missing.json()).toEqual({ ok: false, error: 'run not found' })
   })
 
   it('upserts a step row, merging the patch onto what is there', async () => {

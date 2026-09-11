@@ -19,7 +19,7 @@ import { toRunRow } from '../../lib/coerce'
 import { attachDiagnostics, buildDiagnostics, copyDiagnostics } from '../../lib/diagnostics'
 import { httpJsonWithReauth } from '../../lib/http'
 import { createRunStore } from '../../lib/runStore'
-import { db } from '../../mocks/db'
+import { MOCK_MEMBER, db } from '../../mocks/db'
 import { RunHeader } from './RunHeader'
 import type { RunHeaderProps } from './RunHeader'
 
@@ -208,6 +208,9 @@ describe('RunHeader — diagnostics (apps#526)', () => {
         startedAt: 1_000,
         finishedAt: 2_000,
         annotations: [{ level: 'warning', message: 'already there' }],
+        // Behind the shared run gate now (spec 11 D26) — the `run/update`
+        // write below needs an owner the mock's default identity matches.
+        startedBy: MOCK_MEMBER.id,
       }),
     )
     const runStore = createRunStore(httpJsonWithReauth)

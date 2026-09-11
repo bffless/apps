@@ -24,7 +24,7 @@ import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import { createRunStore } from '../lib/runStore'
-import { db, stepRowKey } from '../mocks/db'
+import { MOCK_MEMBER, db, nextId, stepRowKey } from '../mocks/db'
 import { server } from '../mocks/server'
 import type { ScriptHost, ScriptHostDeps, ScriptRunArgs } from '../scripts/ScriptHost'
 import { getScriptLog } from '../scripts/logStore'
@@ -670,6 +670,11 @@ describe('script steps — resume (Decision 13)', () => {
     const def = scriptDef()
     const runId = 'run_resumed_script'
     const { run, steps } = runningRows(runId)
+    // A resume always presupposes the row exists server-side (that's what is
+    // being resumed); `runReplaced` itself never reads `db.runs`, but the
+    // relaunch's own `run-step` writes do, behind the shared run gate (spec
+    // 11 D26) — so this seeds it, owned by the mock's default identity.
+    db.runs.set(runId, { ...run, startedBy: MOCK_MEMBER.id, _id: nextId() })
 
     store.dispatch(runOpened({ meta: { def, yaml: SCRIPT_YAML, workflowName: 'Scripted' } }))
     store.dispatch(runReplaced({ state: replayRun(run, steps, def), mode: 'live' }))

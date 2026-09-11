@@ -192,4 +192,14 @@ describe('mcp-fn/runGate.fn.js parity with the mock re-implementation', () => {
       bodyScope: c.bodyScope,
     })).toEqual({ ok: c.ok, door: c.door })
   })
+
+  // The gate wired into three real mock routes (run/get, run/update,
+  // run-step/post) is proven in `runGate.endpoints.test.ts`, a SEPARATE file —
+  // this one's `// @vitest-environment node` (see the file banner: the
+  // generator's shebang) leaves no `location` for MSW to resolve the mock
+  // handlers' relative patterns against, so a real `fetch()` here never
+  // reaches them (confirmed: identical requests 404 as "unhandled" only in
+  // this environment). `deleteGate.fn.parity.test.ts`'s "against the mock
+  // endpoint" block runs in the default (jsdom) environment for the same
+  // reason.
 })

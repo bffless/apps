@@ -2,20 +2,43 @@ targetUrl: pipeline
 order: 13
 pipeline:
   name: Update workflow run
-  description: "POST { id, patch } — read-merge-write the workflow_runs row. Writing the full merged column set keeps data_update deterministic (no partial-field semantics to rely on)."
+  description: "POST { id, patch } — read-merge-write the workflow_runs row. Writing the full merged column set keeps data_update deterministic (no partial-field semantics to rely on). Gated by the shared run gate (spec 11 D26): only the owner, the drive nonce, or an asked all-scope may patch."
   steps:
-    - id: find
-      name: find
+    - id: run
+      name: run
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
         limit: 1
         filters:
           runId: { op: eq, value: request.body.id }
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+    # One refusal: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a
+    # ConfigurationError), so the gate's flag gets its own status-carrying
+    # step. A skipped step leaves the response to the last one that ran
+    # (pipeline-execution.service.ts) — which is why `merge` AND `respond`
+    # are BOTH gated on `steps.runGate.ok` below (the ungated `respond` this
+    # rule had before was a latent bug: a gated 404 followed by an ungated
+    # 200 lets the 200 win).
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: merge
       name: merge
       handler: function_handler
       code: ./merge.fn.js
+      config:
+        condition: steps.runGate.ok
     - id: update
       name: update
       handler: data_update
@@ -31,22 +54,16 @@ pipeline:
           outputs: steps.merge.fields.outputs
           annotations: steps.merge.fields.annotations
           annotationCounts: steps.merge.fields.annotationCounts
-    - id: notFound
-      name: notFound
-      handler: response_handler
-      config:
-        condition: steps.merge.missing
-        body: '{"error":"run not found","code":"NOT_FOUND"}'
-        status: 404
-        contentType: application/json
+          driveKey: steps.merge.fields.driveKey
     - id: respond
       name: respond
       handler: response_handler
       config:
+        condition: steps.runGate.ok
         body: '{"ok":true}'
         status: 200
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Patch a run row (status, finishedAt, lease, outputs, annotations, annotationCounts). Two terminal response branches — fine in rules-as-code (the admin UI bug ce#502 does not apply)."
+description: "Patch a run row (status, finishedAt, lease, outputs, annotations, annotationCounts, driveKey). Behind the shared run gate (spec 11 D26); driveKey is cleared at a terminal status and is never taken from the body (D28)."

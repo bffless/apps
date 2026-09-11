@@ -28,6 +28,7 @@ import {
 } from './db'
 import { analyzeLines } from './analyze'
 import { forkGate } from './forkGate'
+import { mockGate } from './runGate'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
 
@@ -274,20 +275,30 @@ const runRecord = [
     return HttpResponse.json({ records }, { headers: { 'Cache-Control': 'no-store' } })
   }),
 
+  // Gated (spec 11 D26): Decision 4 — an id nothing was recorded for and a run
+  // this caller cannot reach answer the SAME 200 `{ run: null, steps: [] }`,
+  // never a 404, so a run id leaks nothing about whether it exists (mirrors
+  // `run/get/shape.fn.js`).
   http.get('/api/workflow/run', ({ request }) => {
     const id = new URL(request.url).searchParams.get('id') ?? ''
     const run = db.runs.get(id)
+    if (!mockGate(run, request, mockUser()).ok) {
+      return HttpResponse.json({ run: null, steps: [] }, { headers: { 'Cache-Control': 'no-store' } })
+    }
     return HttpResponse.json(
       { run: run ? toRecord(run) : null, steps: stepsOf(id).map(toRecord) },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   }),
 
+  // Gated (spec 11 D26): unknown and invisible both refuse with the same 404
+  // `{ ok:false, error:'run not found' }` — `steps.runGate.result` on the real
+  // rule's `refuse-404` responder.
   http.post('/api/workflow/run/update', async ({ request }) => {
     const { id, patch } = await body(request)
     const run = db.runs.get(String(id))
-    if (!run) {
-      return HttpResponse.json({ error: 'run not found', code: 'NOT_FOUND' }, { status: 404 })
+    if (!mockGate(run, request, mockUser()).ok) {
+      return refuse(404, 'run not found')
     }
     const fields = obj(patch)
     const merged = { ...run }
@@ -302,8 +313,16 @@ const runRecord = [
   // query-then-write is race-safe in practice. Mirrors the real rule's column
   // list: only the 12 mutable step columns are ever patched; `job`/`index`/
   // `step`/`kind` are identity, set once on the row's first write.
+  //
+  // Gated (spec 11 D26): a step row belongs to its PARENT run, so the gate
+  // reads THAT row — a caller who cannot reach the run gets the same 404 as
+  // `run/update`, never a stray write to a run they cannot see.
   http.post('/api/workflow/run-step', async ({ request }) => {
     const { runId, key, patch } = await body(request)
+    const parentRun = db.runs.get(String(runId))
+    if (!mockGate(parentRun, request, mockUser()).ok) {
+      return refuse(404, 'run not found')
+    }
     const id = stepRowKey(String(runId), String(key))
     const existing = db.steps.get(id)
     const fields = obj(patch)
