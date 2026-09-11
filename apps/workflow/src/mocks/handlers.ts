@@ -352,8 +352,9 @@ const runRecord = [
 
   // The rule answers with the `data_query` result, envelope and all, after its
   // `shape.fn.js` has joined `waitingOn` onto each record (apps#473) — the keys
-  // of the run's step rows in `waiting`; `runs.shape.fn.parity.test.ts` holds
-  // the mock to the authored function.
+  // of the run's step rows in `waiting` — and stood every unconsumed claim up
+  // as a `queued` entry (apps#671); `runs.shape.fn.parity.test.ts` holds the
+  // mock to the authored function for both halves.
   //
   // Scope (spec 11 §Listing, §D27): the caller's own runs by default;
   // `?scope=all` (or `x-workflow-scope: all`) only for a project owner/admin,
@@ -373,10 +374,36 @@ const runRecord = [
       )
     }
 
-    const records = [...db.runs.values()]
+    const records: Record<string, unknown>[] = [...db.runs.values()]
       .filter((row) => (impl === null || row.impl === impl) && (workflow === null || row.workflow === workflow))
       .filter((row) => asked || row.startedBy === mockUser().id)
       .map((row) => ({ ...toRunRecord(row), waitingOn: waitingKeysOf(row.runId) }))
+
+    // The dispatched runs nobody has picked up yet (apps#671): the claim
+    // queries the rule runs beside `mine`/`all`, scoped the same way, each
+    // unconsumed row stood up as the `queued` entry `shape.fn.js` builds —
+    // from the same allow-list, so the claim's `driveKey` (spec 11 D28) never
+    // rides the page here either. Deduped against the run rows already in it:
+    // the queries are separate snapshots, and a claim outlives a failed
+    // dispatch deliberately.
+    const listed = new Set(records.map((record) => record.runId))
+    for (const claim of db.claims.values()) {
+      if (impl !== null && claim.impl !== impl) continue
+      if (workflow !== null && claim.workflow !== workflow) continue
+      if (!asked && claim.startedBy !== mockUser().id) continue
+      if (listed.has(claim.runId)) continue
+      listed.add(claim.runId)
+      records.push({
+        runId: claim.runId,
+        impl: claim.impl,
+        workflow: claim.workflow,
+        status: 'queued',
+        startedAt: claim.createdAt,
+        waitingOn: [],
+        ...(claim.startedBy === undefined ? {} : { startedBy: claim.startedBy }),
+        ...(claim.startedByEmail === undefined ? {} : { startedByEmail: claim.startedByEmail }),
+      })
+    }
     return HttpResponse.json({ records }, { headers: { 'Cache-Control': 'no-store' } })
   }),
 

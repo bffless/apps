@@ -14,6 +14,14 @@
  * and the step's name is resolved from the definition the row already carries
  * — still one query, still nothing persisted.
  *
+ * Not every row here is a run. A run that was dispatched and has not been
+ * picked up yet has no run row at all — the list endpoint stands its
+ * unconsumed claim up as a `queued` entry (apps#671, spec 11 §Attribution), so
+ * the window between "start" and the driver's first write stops being blind.
+ * Such a row knows only who asked and when: everything else is an em dash, and
+ * Re-run is hidden, because a kickoff prefilled from a run that does not exist
+ * would open empty.
+ *
  * The status filter is client-side (Decision 6): a workflow's runs are a short
  * list, and filtering in the browser keeps one cached query instead of one per
  * filter value. The "All runs" toggle beside it is NOT: whose runs these are is
@@ -32,18 +40,24 @@ import { ANNOTATION_LEVELS } from '../lib/annotations'
 import { pluralize } from '../lib/plural'
 import { stepPath } from '../lib/runRoutes'
 import { waitingSteps } from '../lib/waitingOn'
+import { isQueuedRun } from '../lib/coerce'
 import type { ServerRunRow } from '../lib/coerce'
-import type { RunStatus } from '../lib/runner/types'
 import { isAllScopeRole } from '../lib/scope'
 import type { RunsScope } from '../lib/scope'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { runsScopeChanged, runsStatusFilterChanged } from '../store/uiSlice'
+import type { RunsStatusFilter } from '../store/uiSlice'
 import { useListRunsQuery, useWhoamiQuery, workflowApi } from '../store/workflowApi'
 
-const FILTERS: (RunStatus | 'all')[] = ['all', 'running', 'succeeded', 'failed', 'cancelled']
+/**
+ * Lifecycle order, so the dropdown reads the way a run moves: a dispatched run
+ * waiting to be picked up (apps#671) comes before one that is under way.
+ */
+const FILTERS: RunsStatusFilter[] = ['all', 'queued', 'running', 'succeeded', 'failed', 'cancelled']
 
-const LABELS: Record<RunStatus | 'all', string> = {
+const LABELS: Record<RunsStatusFilter, string> = {
   all: 'All statuses',
+  queued: 'Queued',
   running: 'Running',
   succeeded: 'Succeeded',
   failed: 'Failed',
@@ -183,7 +197,7 @@ export function RunsPage() {
           id="runs-status"
           value={filter}
           onChange={(event) =>
-            dispatch(runsStatusFilterChanged(event.target.value as RunStatus | 'all'))
+            dispatch(runsStatusFilterChanged(event.target.value as RunsStatusFilter))
           }
         >
           {FILTERS.map((value) => (
@@ -249,32 +263,43 @@ export function RunsPage() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((run) => (
-              <tr key={run.runId}>
-                <td>
-                  <Link to={`${base}/runs/${run.runId}`}>{run.runId}</Link>
-                </td>
-                <td>
-                  <StatusPill status={run.status} />
-                  <WaitingOn run={run} base={base} />
-                </td>
-                {/* A person, not a uuid (spec 11 §What the person sees): the
-                    denormalised email written at create time, falling back to
-                    the id for a row written before that column existed. */}
-                <td>{run.startedByEmail ?? run.startedBy ?? '—'}</td>
-                <td>{new Date(run.startedAt).toLocaleString()}</td>
-                <td>
-                  {run.finishedAt == null ? '—' : formatDuration(run.finishedAt - run.startedAt)}
-                </td>
-                <td>
-                  <AnnotationCountsCell run={run} />
-                </td>
-                <td>{outputsCell(run)}</td>
-                <td>
-                  <Link to={`${base}/run?from=${run.runId}`}>Re-run</Link>
-                </td>
-              </tr>
-            ))}
+            {shown.map((row) => {
+              /*
+                The one branch a queued entry costs (apps#671). `run` is null
+                for a dispatched run nobody has picked up yet: there is no
+                `workflow_runs` row behind it, so its duration, annotations and
+                outputs are not empty — they are not known, and the table
+                already renders that as an em dash. Re-run is hidden rather
+                than dashed: it prefills a kickoff from a run row, and until
+                that row exists the link would open an empty form.
+              */
+              const run = isQueuedRun(row) ? null : row
+              return (
+                <tr key={row.runId}>
+                  <td>
+                    {/* The link a queued run resolves into: until its row
+                        lands it reads exactly like the not-found state an
+                        unreachable run already shows. */}
+                    <Link to={`${base}/runs/${row.runId}`}>{row.runId}</Link>
+                  </td>
+                  <td>
+                    <StatusPill status={row.status} />
+                    {run && <WaitingOn run={run} base={base} />}
+                  </td>
+                  {/* A person, not a uuid (spec 11 §What the person sees): the
+                      denormalised email written at create time, falling back to
+                      the id for a row written before that column existed. */}
+                  <td>{row.startedByEmail ?? row.startedBy ?? '—'}</td>
+                  <td>{new Date(row.startedAt).toLocaleString()}</td>
+                  <td>
+                    {run?.finishedAt == null ? '—' : formatDuration(run.finishedAt - run.startedAt)}
+                  </td>
+                  <td>{run ? <AnnotationCountsCell run={run} /> : '—'}</td>
+                  <td>{run ? outputsCell(run) : '—'}</td>
+                  <td>{run && <Link to={`${base}/run?from=${row.runId}`}>Re-run</Link>}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
         </div>

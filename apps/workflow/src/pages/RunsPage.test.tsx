@@ -102,6 +102,106 @@ describe('RunsPage', () => {
   })
 
   /**
+   * The dispatched run nobody has picked up yet (apps#671). `run/drive` writes
+   * a claim before it dispatches and `runs/post` deletes it on the driver's
+   * first write, so between those two points the list has a claim and no run
+   * row — and, before this, nothing at all to show for a run somebody had just
+   * started.
+   */
+  describe('a dispatched run, before its first write (apps#671)', () => {
+    const QUEUED_RUN_ID = 'run_dispatched'
+
+    /** The claim `run/drive` writes, for a run of this workflow started by the viewer. */
+    function seedClaim(startedBy = MOCK_MEMBER): void {
+      db.claims.set(QUEUED_RUN_ID, {
+        runId: QUEUED_RUN_ID,
+        impl: 'hello',
+        workflow: 'hello',
+        startedBy: startedBy.id,
+        startedByEmail: startedBy.email,
+        driveKey: 'nonce-abc',
+        createdAt: Date.parse('2026-09-11T10:00:00Z'),
+      })
+    }
+
+    it('lists it as Queued, with who asked and when, and nothing it cannot know', async () => {
+      seedClaim()
+      renderApp()
+
+      const page = screen.getByRole('main')
+      const row = await within(page).findByRole('row', { name: new RegExp(QUEUED_RUN_ID) })
+
+      expect(within(row).getByText('Queued')).toHaveAttribute('data-state', 'queued')
+      expect(within(row).getByText(MOCK_MEMBER.email)).toBeInTheDocument()
+      // Duration, annotations and outputs are not empty — they are not known
+      // yet, which the table already renders as an em dash.
+      expect(within(row).getAllByText('—')).toHaveLength(3)
+      expect(within(row).queryByTestId('run-annotations')).not.toBeInTheDocument()
+      expect(within(row).queryByTestId('run-waiting')).not.toBeInTheDocument()
+      // The run id still links: it resolves the moment the run row lands, and
+      // until then reads as the not-found state an unreachable run shows.
+      expect(within(row).getByRole('link', { name: QUEUED_RUN_ID })).toHaveAttribute(
+        'href',
+        `/hello/hello/runs/${QUEUED_RUN_ID}`,
+      )
+      // Re-run prefills a kickoff FROM a run row; there is none to read yet.
+      expect(within(row).queryByRole('link', { name: 'Re-run' })).not.toBeInTheDocument()
+    })
+
+    it('is what the Queued filter selects, and is hidden by every other one', async () => {
+      seedFinishedRun()
+      seedClaim()
+      renderApp()
+
+      const page = screen.getByRole('main')
+      await within(page).findByRole('row', { name: new RegExp(QUEUED_RUN_ID) })
+      const status = within(page).getByLabelText('Status')
+
+      fireEvent.change(status, { target: { value: 'queued' } })
+      expect(within(page).getByRole('row', { name: new RegExp(QUEUED_RUN_ID) })).toBeInTheDocument()
+      expect(within(page).queryByRole('row', { name: fixtureRow() })).not.toBeInTheDocument()
+
+      fireEvent.change(status, { target: { value: 'succeeded' } })
+      expect(within(page).queryByRole('row', { name: new RegExp(QUEUED_RUN_ID) })).not.toBeInTheDocument()
+      expect(within(page).getByRole('row', { name: fixtureRow() })).toBeInTheDocument()
+    })
+
+    it('sorts among the runs by when the dispatch was asked for', async () => {
+      seedFinishedRun()
+      seedClaim()
+      renderApp()
+
+      const page = screen.getByRole('main')
+      await within(page).findByRole('row', { name: new RegExp(QUEUED_RUN_ID) })
+      const ids = within(page)
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => within(row).getAllByRole('link')[0].textContent)
+
+      // The claim was written in 2026; the finished fixture ran before it.
+      expect(ids).toEqual([QUEUED_RUN_ID, FIXTURE_RUN_ID])
+    })
+
+    it('is somebody else’s run only when the list was widened to everyone’s', async () => {
+      seedClaim(MOCK_OTHER)
+      setMockUser(MOCK_ADMIN)
+      renderApp()
+
+      const page = screen.getByRole('main')
+      expect(await within(page).findByText('No runs yet')).toBeInTheDocument()
+
+      fireEvent.click(within(page).getByLabelText('All runs'))
+
+      const row = await within(page).findByRole('row', { name: new RegExp(QUEUED_RUN_ID) })
+      expect(within(row).getByText(MOCK_OTHER.email)).toBeInTheDocument()
+    })
+
+    afterEach(() => {
+      writeScope('mine')
+    })
+  })
+
+  /**
    * "Waiting on <step>" (apps#473): a running run parked on a form says so in
    * its Status cell, and the step's name links to that step on the run page.
    * The keys come from the list endpoint's join; the name from the row's own

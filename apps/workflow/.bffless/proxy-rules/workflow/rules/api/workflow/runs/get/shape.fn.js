@@ -12,7 +12,9 @@
 // The run page itself comes from whichever of the rule's two conditional
 // `data_query` steps ran (spec 11 §Listing): `mine` (the caller's own runs)
 // or `all` (asked for, and only ever populated once `scope.fn.js` allowed
-// it) — exactly one of the two is ever anything but `undefined`.
+// it) — exactly one of the two is ever anything but `undefined`. The same is
+// true of `queuedMine`/`queuedAll`, the claim queries whose unconsumed rows
+// this appends to the page as `queued` entries (apps#671).
 function handler({ steps }) {
   // data_query answers a bare array (or one record with returnSingle) — CE's
   // data-query.handler.ts `output = returnSingle ? results[0] : results`; the envelope
@@ -48,7 +50,7 @@ function handler({ steps }) {
     waiting[f.runId].push(f.key)
   }
 
-  return rows(steps.mine !== undefined ? steps.mine : steps.all).map((row) => {
+  const page = rows(steps.mine !== undefined ? steps.mine : steps.all).map((row) => {
     const keys = (waiting[fieldsOf(row).runId] || []).slice().sort()
     // Put the column where the record keeps its other columns, so the client
     // reads it with the rest of the row.
@@ -57,4 +59,48 @@ function handler({ steps }) {
       : Object.assign({}, row, { waitingOn: keys })
     return withoutDriveKey(shaped)
   })
+
+  // The dispatched runs nobody has picked up yet (apps#671). A claim is written
+  // before the dispatch and deleted the instant the driver's first write lands,
+  // so every claim still standing is a run that was asked for and has no
+  // `workflow_runs` row — the window the list was blind to. One synthetic
+  // `queued` entry each, from whichever of the two scoped claim queries ran.
+  //
+  // Built from an explicit allow-list, never by spreading the claim row: that
+  // row carries `driveKey` (spec 11 D28), the dispatched driver's nonce, and it
+  // must not ride a response body under any shape.
+  const seen = Object.create(null)
+  for (const row of page) {
+    const runId = fieldsOf(row).runId
+    if (typeof runId === 'string') seen[runId] = true
+  }
+
+  const claims = rows(steps.queuedMine !== undefined ? steps.queuedMine : steps.queuedAll)
+  for (const row of claims) {
+    const f = fieldsOf(row)
+    // A claim whose run row is already in the page is spent-but-still-listed
+    // (the queries are separate snapshots), and a claim is deliberately
+    // re-usable after a failed dispatch — either way the page must carry one
+    // entry per runId, not two.
+    if (typeof f.runId !== 'string' || f.runId === '' || seen[f.runId]) continue
+    seen[f.runId] = true
+    const queued = {
+      runId: f.runId,
+      impl: typeof f.impl === 'string' ? f.impl : '',
+      workflow: typeof f.workflow === 'string' ? f.workflow : '',
+      status: 'queued',
+      // When the dispatch was asked for — the only time a queued entry has.
+      startedAt: typeof f.createdAt === 'number' ? f.createdAt : 0,
+      // Nothing waits on a run that has not started; `[]` keeps the column
+      // present on every row in the page, as the run rows have it.
+      waitingOn: [],
+    }
+    if (typeof f.startedBy === 'string') queued.startedBy = f.startedBy
+    if (typeof f.startedByEmail === 'string') queued.startedByEmail = f.startedByEmail
+    // Appended, not merged in order: sorting is the client's (Decision 6), and
+    // it sorts on `startedAt`, which these carry.
+    page.push(queued)
+  }
+
+  return page
 }

@@ -47,6 +47,37 @@ export interface ServerRunRow extends RunRow {
   waitingOn?: StepKey[]
 }
 
+/**
+ * A run that has been dispatched and not picked up yet (apps#671): an
+ * unconsumed `workflow_run_claims` row, which the list endpoint joins into the
+ * page as a synthetic `status: 'queued'` entry.
+ *
+ * Deliberately **not** a `ServerRunRow`: there is no `workflow_runs` row behind
+ * it yet, so it has no definition, no yaml, no inputs, no duration and no
+ * outputs — and nothing that switches on a run's status (the run page,
+ * `replay.ts`, `runnerMiddleware.ts`) should ever be handed one by accident.
+ * `RunStatus` stays as it is; `'queued'` is the `StepStatus` value the SPA
+ * already renders, and only Past runs ever sees a row carrying it.
+ */
+export interface ServerQueuedRun {
+  runId: string
+  impl: string
+  workflow: string
+  status: 'queued'
+  startedBy?: string
+  startedByEmail?: string
+  /** The claim's `createdAt` — when the dispatch was asked for. */
+  startedAt: number
+}
+
+/** What Past runs lists: the runs, and the dispatched ones not yet behind a row. */
+export type RunsPageRow = ServerRunRow | ServerQueuedRun
+
+/** Narrows a listed row to the claim half of the union. */
+export function isQueuedRun(row: RunsPageRow): row is ServerQueuedRun {
+  return row.status === 'queued'
+}
+
 export interface ServerStepRow extends StepRow {
   _id?: string
 }
@@ -369,6 +400,34 @@ export function toRunRow(raw: unknown): ServerRunRow {
     // not a row waiting on nothing, so the field stays absent rather than `[]`.
     ...(Array.isArray(maybeJson(f.waitingOn)) ? { waitingOn: stepKeys(f.waitingOn) } : {}),
   }
+}
+
+/**
+ * One claim row as the queued entry it stands for (apps#671). An allow-list,
+ * like the rule's own `shape.fn.js`: the stored claim carries `driveKey` (spec
+ * 11 D28) and the SPA must never hold it, whatever a response put on the wire.
+ */
+export function toQueuedRun(raw: unknown): ServerQueuedRun {
+  const f = fieldsOf(raw)
+  return {
+    runId: str(f.runId),
+    impl: str(f.impl),
+    workflow: str(f.workflow),
+    status: 'queued',
+    ...(optionalStr(f.startedBy) ? { startedBy: str(f.startedBy) } : {}),
+    ...(optionalStr(f.startedByEmail) ? { startedByEmail: str(f.startedByEmail) } : {}),
+    startedAt: num(f.startedAt),
+  }
+}
+
+/**
+ * One row of the Past-runs page, discriminated on the **raw** status before any
+ * coercion runs. It has to happen here: `toRunRow` maps a status outside
+ * `RUN_STATUSES` onto `'running'`, so a queued entry sent through it would
+ * reach the table claiming to be a run that is under way.
+ */
+export function toRunsPageRow(raw: unknown): RunsPageRow {
+  return fieldsOf(raw).status === 'queued' ? toQueuedRun(raw) : toRunRow(raw)
 }
 
 function stepKeys(value: unknown): StepKey[] {

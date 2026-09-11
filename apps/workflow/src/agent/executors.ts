@@ -25,7 +25,8 @@ import {
 } from '@bffless/workflow-agent-tools'
 import { signFile } from '../islands/hostDeps'
 import { initialValues, validateInputs } from '../lib/autoStart'
-import { workflowId } from '../lib/coerce'
+import { isQueuedRun, workflowId } from '../lib/coerce'
+import type { ServerRunRow } from '../lib/coerce'
 import { describeText, describeWorkflow } from '../lib/describe'
 import { httpJsonWithReauth } from '../lib/http'
 import type { AppStore } from '../store'
@@ -227,6 +228,12 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
         return errorResult(message, { errors: { runs: message } })
       }
       const rows = res.data
+        // Run rows only. The list endpoint also carries the dispatched runs
+        // nobody has picked up yet (apps#671), but those have no run row
+        // behind them — no `headless`, no duration, nothing this tool reports
+        // — and the MCP server's own listing (`src/mcp`, its own queries)
+        // does not see them either, so the two agent surfaces agree.
+        .filter((row): row is ServerRunRow => !isQueuedRun(row))
         .filter((row) => wanted === undefined || row.status === wanted)
         .slice(0, limit)
         .map((row) => ({

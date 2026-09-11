@@ -10,10 +10,17 @@ import { readScope, writeScope } from '../lib/scope'
 import type { RunsScope } from '../lib/scope'
 import type { RunStatus, StepKey } from '../lib/runner/types'
 
+/**
+ * What Past runs' Status dropdown can be set to: a run status, the dispatched
+ * runs still waiting to be picked up (apps#671 — `'queued'` is not a
+ * `RunStatus` and never becomes one), or everything.
+ */
+export type RunsStatusFilter = RunStatus | 'queued' | 'all'
+
 export interface UiState {
   /** A read-model of the run page's `?step=` (08) — written by RunShell, never the source of the selection. */
   selectedStep: StepKey | null
-  runsStatusFilter: RunStatus | 'all'
+  runsStatusFilter: RunsStatusFilter
   /**
    * Whose runs Past runs shows (spec 11 D27): the caller's own until an
    * owner/admin turns the "All runs" toggle on. A **mirror** of
@@ -71,7 +78,7 @@ export const uiSlice = createSlice({
     stepSelected(state, action: PayloadAction<StepKey | null>) {
       state.selectedStep = action.payload
     },
-    runsStatusFilterChanged(state, action: PayloadAction<RunStatus | 'all'>) {
+    runsStatusFilterChanged(state, action: PayloadAction<RunsStatusFilter>) {
       state.runsStatusFilter = action.payload
     },
     /**

@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 11
 pipeline:
   name: List workflow runs
-  description: "Latest 50 workflow_runs rows for one (impl, workflow) — the caller's own by default, `?scope=all` for a project owner/admin (D26/D27), 403 otherwise — each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit). Status filtering and sorting are client-side in M1 (Decision 6)."
+  description: "Latest 50 workflow_runs rows for one (impl, workflow) — the caller's own by default, `?scope=all` for a project owner/admin (D26/D27), 403 otherwise — each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit), plus the dispatched runs nobody has picked up yet as synthetic `status: 'queued'` entries built from their unconsumed `workflow_run_claims` rows (apps#671). Status filtering and sorting are client-side in M1 (Decision 6)."
   steps:
     - id: scope
       name: scope
@@ -45,6 +45,36 @@ pipeline:
         filters:
           impl: { op: eq, value: request.query.impl }
           workflow: { op: eq, value: request.query.workflow }
+    # The blind window between dispatch and pickup (apps#671, spec 11
+    # §Attribution): `run/drive` writes a `workflow_run_claims` row *before* it
+    # dispatches, and `runs/post` deletes that row the instant the driven page's
+    # first write lands — so a claim still here is by construction a run that was
+    # asked for and has no `workflow_runs` row yet. Split in two for the same
+    # reason `mine`/`all` are (a filter cannot be conditional), gated on the same
+    # flags with the same filters and the same limit, so a claim can never widen
+    # what the page shows. Per-query limits: a page can hold 50 runs AND the
+    # claims of runs that have not started.
+    - id: queuedMine
+      name: queuedMine
+      handler: data_query
+      config:
+        condition: steps.scope.isMine
+        schemaId: $schema:workflow_run_claims
+        limit: 50
+        filters:
+          impl: { op: eq, value: request.query.impl }
+          workflow: { op: eq, value: request.query.workflow }
+          startedBy: { op: eq, value: user.id }
+    - id: queuedAll
+      name: queuedAll
+      handler: data_query
+      config:
+        condition: steps.scope.isAll
+        schemaId: $schema:workflow_run_claims
+        limit: 50
+        filters:
+          impl: { op: eq, value: request.query.impl }
+          workflow: { op: eq, value: request.query.workflow }
     # Step rows carry no impl/workflow, so this is every waiting step on the
     # instance; shape.fn.js keeps the ones belonging to runs in the page — a
     # page that is already scoped by `mine`/`all` above, so no step key can
@@ -76,4 +106,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:read] }
-description: "List the caller's own runs by default; `?scope=all` for a project owner/admin (D26/D27), 403 otherwise, each carrying `waitingOn` — the keys of its steps parked in `waiting`. no-store: run lists must never be stale."
+description: "List the caller's own runs by default; `?scope=all` for a project owner/admin (D26/D27), 403 otherwise, each carrying `waitingOn` — the keys of its steps parked in `waiting` — plus one `queued` entry per dispatched run still waiting to be picked up (apps#671). no-store: run lists must never be stale."

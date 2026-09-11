@@ -20,11 +20,12 @@ import {
   toAliasList,
   toImplementation,
   toRunRow,
+  toRunsPageRow,
   toStepRow,
   toWhoami,
   unwrapRows,
 } from '../lib/coerce'
-import type { Implementation, ServerRunRow, ServerStepRow, Whoami } from '../lib/coerce'
+import type { Implementation, RunsPageRow, ServerRunRow, ServerStepRow, Whoami } from '../lib/coerce'
 import { aliasesUrl } from '../lib/discovery'
 import { fetchPayloadCached, forgetPayloads } from '../lib/payloadFetch'
 import { scopeHeaders } from '../lib/scope'
@@ -240,12 +241,18 @@ export const workflowApi = createApi({
      * Decision 6). The caller's own runs unless `scope: 'all'` is asked for,
      * which the endpoint answers 403 to without the project owner/admin role
      * (spec 11, D27) — the ask is passed through, never assumed.
+     *
+     * A page holds two kinds of row (apps#671): the runs themselves, and the
+     * dispatched ones that have not been picked up yet — an unconsumed claim,
+     * which has no `workflow_runs` row behind it and so is its own type. They
+     * sort together because a claim's entry carries the `startedAt` of the
+     * dispatch that asked for it.
      */
-    listRuns: builder.query<ServerRunRow[], { impl: string; workflow: string; scope?: 'all' }>({
+    listRuns: builder.query<RunsPageRow[], { impl: string; workflow: string; scope?: 'all' }>({
       query: ({ impl, workflow, scope }) => ({ url: 'api/workflow/runs', params: { impl, workflow, ...(scope ? { scope } : {}) } }),
       transformResponse: (raw: unknown) =>
         unwrapRows(raw)
-          .map(toRunRow)
+          .map(toRunsPageRow)
           .sort((a, b) => b.startedAt - a.startedAt),
       providesTags: ['Runs'],
     }),
