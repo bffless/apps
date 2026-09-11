@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/bffless/apps/compare/workflow-cli-v1.3.2...workflow-cli-v1.4.0) (2026-09-11)
+
+
+### Features
+
+* **workflow-headless:** carry the drive nonce on every request the driven page makes ([#664](https://github.com/bffless/apps/issues/664)) ([0c4297b](https://github.com/bffless/apps/commit/0c4297bb665d8cf8665160e0b6f9b2345848ce7c))
+
 ## [1.3.2](https://github.com/bffless/apps/compare/workflow-cli-v1.3.1...workflow-cli-v1.3.2) (2026-09-09)
 
 
