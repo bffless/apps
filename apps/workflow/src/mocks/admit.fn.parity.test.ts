@@ -341,6 +341,27 @@ describe('the mock run/drive endpoint', () => {
     expect(db.claims.get(RUN_ID_2)!.startedBy).toBe(MOCK_MEMBER.id)
   })
 
+  it('lets another member take over a claim that has gone stale, and leaves the caller’s own alone (apps#672)', async () => {
+    await drive(RUN)
+    const key = db.claims.get(RUN_ID_2)!.driveKey
+    // Their dispatch never produced a run, and the window has passed — the real
+    // rule's `claimReplace` overwrites the row, which here is `set` on the same
+    // `runId` key.
+    db.claims.get(RUN_ID_2)!.createdAt = Date.now() - (8 * 60_000 + 1_000)
+
+    // The claimant's OWN aged claim is still reused, nonce and all: that reuse
+    // is what makes a retry after a dispatch that never landed safe.
+    expect((await drive(RUN)).status).toBe(202)
+    expect(db.claims.get(RUN_ID_2)!.driveKey).toBe(key)
+
+    setMockUser(MOCK_OTHER)
+    expect((await drive(RUN)).status).toBe(202)
+    const taken = db.claims.get(RUN_ID_2)!
+    expect(taken.startedBy).toBe(MOCK_OTHER.id)
+    expect(taken.driveKey).not.toBe(key)
+    expect(db.claims.size).toBe(1)
+  })
+
   it('refuses a malformed body the way the real gate does', async () => {
     for (const body of [{ id: 'nope', mode: 'run' }, { id: RUN_ID_2, mode: 'drive' }, { id: RUN_ID_2, mode: 'run', workflow: 'hello', inputs: {} }]) {
       const res = await drive(body)

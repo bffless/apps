@@ -315,9 +315,11 @@ export function handler(data: {
       // for, so this caller takes the id over (`staleReplace` → the rule's
       // `claimReplace`, which overwrites their row rather than adding a second
       // one beside it) instead of being refused an id nobody will ever use
-      // (apps#672). A row whose `createdAt` is unreadable counts as aged: the
-      // point of the window is that no claim holds an id forever.
-      const claimedAt = typeof existing.createdAt === 'number' ? existing.createdAt : 0
+      // (apps#672). A row whose `createdAt` this CE did not hand back as a
+      // number reads as claimed NOW — the own-claim branch below hedges the
+      // same way, and erring the other way would make every foreign claim
+      // takeable on a guess, which is the one failure this branch must not have.
+      const claimedAt = typeof existing.createdAt === 'number' ? existing.createdAt : Date.now()
       const claimId = recordIdOf(held[0])
       // Inside the window — or a row this CE gave no id for, which `data_update`
       // could not key anyway — is the original answer. Same code as a run that

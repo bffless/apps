@@ -273,6 +273,14 @@ describe('the claim', () => {
     expect(g.payload.drive_key).toBe(g.driveKey)
   })
 
+  it('still refuses a stale claim this CE gave no record id for — `claimReplace` would have nothing to key', () => {
+    const aged = { startedBy: OTHER.id, createdAt: Date.now() - (8 * 60_000 + 1_000) }
+    // The same row without the `id` `found()` wraps it in, and one whose
+    // `createdAt` is not a number at all: neither is a row to take over on a guess.
+    expect(drive(RUN, { claim: [{ fields: claimRow(aged) }], index: idx() }).code).toBe('RUN_EXISTS')
+    expect(drive(RUN, { claim: found(claimRow({ ...aged, createdAt: '0' })), index: idx() }).code).toBe('RUN_EXISTS')
+  })
+
   it('leaves the caller’s OWN claim standing however old it is — that reuse is what makes a retry safe', () => {
     const g = drive(RUN, { claim: found(claimRow({ createdAt: 1_756_800_000_000 })), index: idx() })
 

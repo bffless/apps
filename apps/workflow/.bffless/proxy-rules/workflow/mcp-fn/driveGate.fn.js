@@ -358,7 +358,7 @@ var __mcp = (() => {
       const held = rows(steps.claim);
       const existing = held.length > 0 ? fieldsOf(held[0]) : null;
       if (existing !== null && str(existing.startedBy) !== callerId) {
-        const claimedAt = typeof existing.createdAt === "number" ? existing.createdAt : 0;
+        const claimedAt = typeof existing.createdAt === "number" ? existing.createdAt : Date.now();
         const claimId = recordIdOf(held[0]);
         if (Date.now() - claimedAt <= CLAIM_STALE_MS || claimId === null) {
           return refuse("RUN_EXISTS", "this run id is already claimed by another member");
