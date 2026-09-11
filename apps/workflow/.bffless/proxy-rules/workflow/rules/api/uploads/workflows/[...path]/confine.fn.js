@@ -14,6 +14,20 @@
 // be at least as strict as a case-insensitive filesystem's key equality. `RUN_ID_PATTERN`
 // carries the same `i` for the same reason (fix round 2), and `/./` is refused alongside `..`
 // and `//` — see `files/sign`'s `confine.fn.js` banner for both.
+// The path is matched RAW — percent-encoded exactly as Express hands it — and that is correct,
+// because the handler this rule serves through derives its storage key from the same raw string.
+// CE's `file_serve_handler` (repos/ce/apps/backend/src/pipelines/handlers/file-serve.handler.ts):
+// `requestPath = context.metadata.path` (:93), which `pipeline-execution.service.ts:136` sets to
+// Express's `req.path` (never decoded); path-derived mode slices the `/api/uploads/<subDir>/`
+// prefix off it (:127-131), strips `..` and collapses `//` (:151), and builds
+// `storageKey = <owner>/<repo>/uploads/<subDir>/<filePath>` (:155). No `decodeURIComponent`
+// anywhere on that route. So `%2F` is a literal two-character sequence in the key, not a
+// separator: `runs/run_X%2Fother/o.png` names a DIFFERENT object than `runs/run_X/other/o.png`,
+// and this grammar reads it the same way the handler does — one segment, `run_X%2Fother`, which
+// `RUN_ID_PATTERN` refuses (no `%`), so the request is runless and stays member-wide. It reaches
+// no run-owned object, because no run-owned object has a `%` in its run segment. `%2e%2e` is the
+// same story: a literal key the storage adapter never resolves, not a `..` this check missed.
+// Pinned by `uploadsConfine.fn.parity.test.ts`'s percent-encoding rows.
 var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/i
 
 function handler({ request, deployment }) {

@@ -31,6 +31,7 @@
  * `ValueView` in a test — is unaffected.
  */
 import { useCallback, useRef, useState } from 'react'
+import { viewUrl } from '../../lib/scope'
 import { downloadHref, isLoadableUrl, isSafeUrl } from '../../lib/url'
 import type { FileRef } from '../../lib/runner/types'
 import { formatDuration, mediaKind } from './media'
@@ -72,7 +73,13 @@ function Player({
 }
 
 export function FileCard({ refValue }: { refValue: FileRef }) {
-  const { name, contentType, size, url } = refValue
+  const { name, contentType, size } = refValue
+  // The all-scope ask rides the url here, at the sink, and nowhere earlier
+  // (apps#665 review): the ref itself — which may be persisted onto a row —
+  // never carries one viewer's `?scope=all`. `viewUrl` touches a serve url
+  // only, so a presigned (D6) or cross-origin ref is handed on untouched and
+  // both gates below judge exactly the string they judged before.
+  const url = typeof refValue.url === 'string' ? viewUrl(refValue.url) : refValue.url
   const safe = typeof url === 'string' && isSafeUrl(url)
   const sameOrigin = typeof url === 'string' && isLoadableUrl(url)
   const [duration, setDuration] = useState<number | undefined>(undefined)

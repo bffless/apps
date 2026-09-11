@@ -62,8 +62,10 @@ describe('fetchPayload', () => {
    * is (spec 11 D29), so the widened ask has to reach it or an owner/admin who
    * opened someone else's run reads a page of "payload unavailable" chips. It
    * is a `fetch`, so the header the rest of the SPA sends is available here —
-   * unlike the `<img src>`/download hrefs `coerce.ts`'s `fileUrl` builds, which
-   * carry `?scope=all` on the query instead.
+   * and, since apps#665, `lib/scope.ts`'s `viewUrl` puts the same ask on the
+   * url as well, the one channel a browser-built sink (an `<img src>`, a
+   * download href) has. The ask is never on the ref itself: `coerce.ts`'s
+   * `fileUrl` is pure, because a ref can be persisted.
    */
   it('sends the all-scope ask while the viewer has widened (D27)', async () => {
     writeScope('all')

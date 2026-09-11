@@ -24,6 +24,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { MOCK_MEMBER, MOCK_OTHER, db, seedFinishedRun, setMockUser } from './db'
 import { FIXTURE_RUN_ID } from './fixtures/finishedRun'
+import { DRIVE_KEY_HEADER } from './runGate'
 
 describe('the run gate, against the mock endpoints (Task B4)', () => {
   beforeEach(() => {
@@ -103,5 +104,59 @@ describe('the run gate, against the mock endpoints (Task B4)', () => {
 
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+})
+
+/**
+ * The driver's own contract, after the run is over (apps#665 review; spec 07
+ * §Results). A dispatched run is created by the driver but *owned* by the
+ * member who asked for it, so the driver's only identity is the nonce — and
+ * everything it does last is a read of a **finished** run: `workflow-headless`
+ * polls `run/get` for the sealed record, then downloads each `file` output
+ * from the serve route. The gate's drive door therefore admits regardless of
+ * status, and `run/update`'s merge no longer clears the key at the seal; this
+ * pair is what keeps that true.
+ *
+ * The fixture is `succeeded` already (`finishedRun.ts`), which is exactly the
+ * state both reads happen in. `MOCK_OTHER` stands in for the driver's own
+ * session — a member who did not start the run and asked for no scope.
+ */
+describe('the drive nonce outlives the run it drove (apps#665)', () => {
+  const KEY = 'dk_endpoints0001'
+
+  beforeEach(() => {
+    seedFinishedRun()
+    db.runs.set(FIXTURE_RUN_ID, { ...db.runs.get(FIXTURE_RUN_ID)!, driveKey: KEY })
+    setMockUser(MOCK_OTHER)
+  })
+
+  it('run/get: the driver reads the record it has just sealed', async () => {
+    expect(db.runs.get(FIXTURE_RUN_ID)?.status).toBe('succeeded')
+
+    const res = await fetch(`/api/workflow/run?id=${FIXTURE_RUN_ID}`, { headers: { [DRIVE_KEY_HEADER]: KEY } })
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { run: { runId: string } | null }
+    expect(json.run?.runId).toBe(FIXTURE_RUN_ID)
+  })
+
+  it('the serve route: the driver downloads the finished run’s file outputs', async () => {
+    const key = `workflows/hello/hello/runs/${FIXTURE_RUN_ID}/poster.png`
+    db.files.set(key, { bytes: new Uint8Array([7]), contentType: 'image/png' })
+
+    // Without the nonce the driver is just another member: the same 404.
+    expect((await fetch(`/api/uploads/${key}`)).status).toBe(404)
+
+    const res = await fetch(`/api/uploads/${key}`, { headers: { [DRIVE_KEY_HEADER]: KEY } })
+
+    expect(res.status).toBe(200)
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([7]))
+  })
+
+  it('a nonce that is not this run’s opens nothing, terminal or not', async () => {
+    const res = await fetch(`/api/workflow/run?id=${FIXTURE_RUN_ID}`, { headers: { [DRIVE_KEY_HEADER]: 'dk_wrong' } })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ run: null, steps: [] })
   })
 })

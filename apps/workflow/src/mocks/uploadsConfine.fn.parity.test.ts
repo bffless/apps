@@ -69,6 +69,8 @@ const CASES: {
   hasRun: boolean
   runId: string
   runless: boolean
+  /** Not deliverable through `fetch()` — see `FETCHABLE` below. */
+  fnOnly?: boolean
 }[] = [
   {
     desc: 'a confined run path',
@@ -99,6 +101,39 @@ const CASES: {
     hasRun: true,
     runId: CASE_RUN_ID,
     runless: false,
+  },
+  {
+    // apps#665 review, finding 2 — the grammar is applied to the RAW,
+    // percent-encoded path, and so is the storage key CE builds from it:
+    // `file-serve.handler.ts` reads `context.metadata.path` (Express's
+    // undecoded `req.path`) and never decodes it (see the fn's own banner for
+    // the citation). So `%2F` is two literal characters in the key, not a
+    // separator — this is one segment, `run_1%2Fother`, which is not a run id,
+    // so the request is runless and stays member-wide. It reaches no
+    // run-owned object: the object it names is a *different* key from
+    // `runs/run_1/other/…`, and nothing the harness writes puts a `%` in a run
+    // segment. Pinning the answer so a later "let's decode first" cannot
+    // change it silently.
+    desc: 'a percent-encoded slash is one segment, not a run id (no decoding, either side)',
+    path: `/api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}%2Fother/poster.svg`,
+    ok: true,
+    normalized: `workflows/hello/interactive/runs/${CASE_RUN_ID}%2Fother/poster.svg`,
+    hasRun: false,
+    runId: '',
+    runless: true,
+    fnOnly: true,
+  },
+  {
+    // `%2e%2e` likewise: a literal key no storage adapter resolves, not a `..`
+    // this check missed — CE's own `..` strip works on the same raw string.
+    desc: 'a percent-encoded .. is a literal segment, not traversal',
+    path: '/api/uploads/workflows/hello/%2e%2e/x.svg',
+    ok: true,
+    normalized: 'workflows/hello/%2e%2e/x.svg',
+    hasRun: false,
+    runId: '',
+    runless: true,
+    fnOnly: true,
   },
   { desc: 'outside the harness prefix', path: '/api/uploads/other/x.svg', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'directory traversal', path: '/api/uploads/workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
@@ -139,10 +174,15 @@ describe("the serve rule's confine.fn.js parity with the mock re-implementation"
   // different reason: WHATWG url parsing resolves a `.` segment away before a
   // request is ever made, so `fetch()` cannot deliver one — which is also why
   // this check is about a client that is NOT a browser (a raw HTTP client, or
-  // an in-process sibling), and why only the fn side of it is meaningful.
+  // an in-process sibling), and why only the fn side of it is meaningful. The
+  // two percent-encoded rows (`fnOnly`) are excluded for that same reason:
+  // WHATWG url parsing resolves `%2e%2e` away exactly as it resolves `..`, and
+  // MSW's own path params are decoded, so neither spelling survives a browser
+  // `fetch()` intact — the question they pin is what a RAW client reaches, and
+  // that is the fn's answer, against CE's own undecoded key derivation.
   const FETCHABLE = CASES.filter(
     (c): c is typeof c & { path: string } =>
-      typeof c.path === 'string' && c.path !== '/api/uploads/' && !c.path.includes('/./'),
+      typeof c.path === 'string' && c.path !== '/api/uploads/' && !c.path.includes('/./') && c.fnOnly !== true,
   )
 
   it.each(FETCHABLE)('mock GET /api/uploads/*: $desc', async ({ path, ok, normalized }) => {
@@ -253,9 +293,11 @@ describe('serve: run ownership (spec 11 D29)', () => {
 
   /**
    * The only channel an `<img src>` / `<video>` / download href has for the
-   * widened ask (`coerce.ts`'s `fileUrl` appends it; no header can ride on a
-   * browser-built sink). The gate reads `request.query.scope` exactly as it
-   * reads the header, so this is the same D27 door those routes already open.
+   * widened ask (`lib/scope.ts`'s `viewUrl` appends it at the sink — no header
+   * can ride on a browser-built fetch, and since apps#665 the ref a row holds
+   * carries no viewer's ask of its own). The gate reads `request.query.scope`
+   * exactly as it reads the header, so this is the same D27 door those routes
+   * already open.
    */
   it('serves another member’s run file to an asked all-scope project admin (D27, fix round 2)', async () => {
     setMockUser({ ...MOCK_ADMIN, id: 'user_admin_serve' })

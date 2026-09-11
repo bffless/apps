@@ -1,10 +1,10 @@
 /**
  * Unit coverage for `run/update/post/merge.fn.js`'s `driveKey` handling (spec
  * 11 D28) — the one branch nothing else in this suite exercises. The mock's
- * own `/api/workflow/run/update` handler does not mirror `driveKey` clearing
- * (Task B4 lands the gate and the write-side rule only; the mock's read-merge-
- * write stays byte-for-byte what it was before), so there is no fetch-side
- * path that would otherwise reach this logic.
+ * own `/api/workflow/run/update` handler does not mirror the rule's `driveKey`
+ * handling at all (Task B4 lands the gate and the write-side rule only; the
+ * mock's read-merge-write stays byte-for-byte what it was before), so there is
+ * no fetch-side path that would otherwise reach this logic.
  *
  * `new Function` is test-only tooling to run the authored `.fn.js` source in
  * isolation, the same as `deleteGate.fn.parity.test.ts`'s `loadFnHandler`; it
@@ -46,13 +46,23 @@ const ROW = { id: 'rec_1', runId: 'run_x', status: 'running' }
 describe('run/update/post/merge.fn.js — driveKey (spec 11 D28)', () => {
   const handler = loadFnHandler()
 
-  it('clears driveKey once the patch lands the run on a terminal status', () => {
+  /**
+   * apps#665 review: the key used to be cleared here whenever the patch landed
+   * the run on a terminal status. It is not any more, and this is the case
+   * that says so — the request that seals a run is the DRIVER's own, and its
+   * reads after it (the sealed record, then each file output, spec 07
+   * §Results) carry nothing but this nonce. Clearing it at the seal refused
+   * the driver its own results the moment it produced them. A later dispatch
+   * re-mints the key, so a stale one is replaced rather than left standing.
+   */
+  it.each(['succeeded', 'failed', 'cancelled'])('carries driveKey through a patch to %s', (status) => {
     const result = handler({
       steps: { run: [{ ...ROW, driveKey: 'dk_1' }] },
-      request: { body: { id: 'run_x', patch: { status: 'succeeded' } } },
+      request: { body: { id: 'run_x', patch: { status } } },
     })
 
-    expect(result.fields.driveKey).toBe('')
+    expect(result.fields.status).toBe(status)
+    expect(result.fields.driveKey).toBe('dk_1')
   })
 
   it('keeps a live run’s driveKey', () => {

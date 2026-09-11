@@ -364,11 +364,13 @@ describe('toFileRef', () => {
 })
 
 /**
- * The widened ask has to reach the serve route too (spec 11 D27/D29), and an
- * `<img src>`, a `<video>` and a download `href` are sinks the browser fetches
- * itself — no header can ride on them. The gate reads `request.query.scope` as
- * readily as the header (`mcp/runGate.ts`'s `scopeAsked`), so the ask goes on
- * the query string, which is the one channel available here.
+ * `fileUrl` is **pure** (apps#665 review): the widened ask is a property of the
+ * viewer, not of the file, and this function's answer is persisted — it is the
+ * fallback `toFileRef` (and `fileRefIndex`, and `imageMap`) builds a ref's
+ * `url` from, and a File ref can be written back onto a run or step row. One
+ * session's `?scope=all` in a stored record would be state that belongs to a
+ * browser tab. The ask is applied at the sinks instead: `lib/scope.ts`'s
+ * `viewUrl`, pinned in `scope.test.ts`.
  */
 describe('fileUrl and the all-scope ask (D27)', () => {
   const PATH = 'workflows/hello/hello/runs/run_1/slow/0/start/poster.png'
@@ -378,20 +380,25 @@ describe('fileUrl and the all-scope ask (D27)', () => {
     writeScope('mine')
   })
 
-  it('carries no query while the viewer has not widened — the ask is never implicit', () => {
+  it('carries no query, widened or not', () => {
+    expect(fileUrl(PATH)).toBe(PLAIN)
+
+    writeScope('all')
     expect(fileUrl(PATH)).toBe(PLAIN)
   })
 
-  it('carries scope=all while the viewer has widened', () => {
+  it('leaves the Download action the only thing on the query', () => {
     writeScope('all')
 
-    expect(fileUrl(PATH)).toBe(`${PLAIN}?scope=all`)
+    expect(downloadHref(fileUrl(PATH))).toBe(`${PLAIN}?download=1`)
   })
 
-  it('composes with the Download action, which appends to the query it finds', () => {
-    expect(downloadHref(fileUrl(PATH))).toBe(`${PLAIN}?download=1`)
-
+  it('never puts a viewer’s ask into a File ref — not even the fallback url', () => {
     writeScope('all')
-    expect(downloadHref(fileUrl(PATH))).toBe(`${PLAIN}?scope=all&download=1`)
+
+    const ref = toFileRef({ path: PATH, name: 'poster.png', contentType: 'image/png', size: 12 })
+
+    expect(ref.url).toBe(PLAIN)
+    expect(JSON.stringify(ref)).not.toContain('scope=all')
   })
 })

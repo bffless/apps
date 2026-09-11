@@ -271,7 +271,10 @@ runs. Widening is always asked for, never assumed (D27): `?scope=all` on `runs/g
 a nonce rather than a role: `run/drive` writes a `workflow_run_claims` row and hands the nonce to
 `workflow-headless`, which carries it back as the **`x-workflow-drive-key`** header on the
 `runs/post` that creates the row — injected by the driver via a Playwright route on
-`/api/workflow/**` + `/api/uploads/**`, not `api.ts` (spec 11 §Attribution).
+`/api/workflow/**` + `/api/uploads/**`, not `api.ts` (spec 11 §Attribution). **The nonce stays on
+the row after the run finishes** and the drive door admits it at any status (apps#665): the
+driver's last acts are reads of a *finished* run — the sealed record, then each file output — so a
+key cleared at the seal would refuse the driver its own results. The next dispatch re-mints it.
 
 **Two new optional `workflow_runs` fields need `--adopt-fields`.** `driveKey` and
 `startedByEmail` are additive per `adoptFields`'s rules, but `deploy-workflow.yml`'s

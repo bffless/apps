@@ -121,12 +121,32 @@ const CASES: Case[] = [
     door: 'drive',
   },
   {
+    // apps#665 review: a terminal run admits the nonce exactly as a live one
+    // does. The driver's LAST reads — the sealed record and every file output
+    // (spec 07 §Results) — happen after the run is patched terminal, with the
+    // nonce as its only identity, so the door must outlive the run.
     desc: 'the drive nonce on a run that has succeeded',
     row: { ...RUN, startedBy: 'user_other', driveKey: KEY, status: 'succeeded' },
     user: member('user_driver'),
     driveKey: KEY,
-    ok: false,
-    door: '',
+    ok: true,
+    door: 'drive',
+  },
+  {
+    desc: 'the drive nonce on a run that failed',
+    row: { ...RUN, startedBy: 'user_other', driveKey: KEY, status: 'failed' },
+    user: member('user_driver'),
+    driveKey: KEY,
+    ok: true,
+    door: 'drive',
+  },
+  {
+    desc: 'the drive nonce on a run that was cancelled',
+    row: { ...RUN, startedBy: 'user_other', driveKey: KEY, status: 'cancelled' },
+    user: member('user_driver'),
+    driveKey: KEY,
+    ok: true,
+    door: 'drive',
   },
   {
     desc: 'a drive nonce that does not match',

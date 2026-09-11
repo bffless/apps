@@ -10,7 +10,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SCOPE_HEADER as GATE_SCOPE_HEADER } from '../mcp/runGate'
-import { SCOPE_HEADER, isAllScopeRole, readScope, scopeHeaders, writeScope } from './scope'
+import { SCOPE_HEADER, isAllScopeRole, readScope, scopeHeaders, viewUrl, writeScope } from './scope'
+import { downloadHref, trustSignedUrl } from './url'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -67,6 +68,51 @@ describe('scopeHeaders', () => {
     // The name the SPA sends is the name the gate reads — a header nobody
     // reads is a toggle that silently does nothing.
     expect(SCOPE_HEADER).toBe(GATE_SCOPE_HEADER)
+  })
+})
+
+/**
+ * The sink half of the same ask (apps#665 review). An `<img src>`, a player,
+ * a download `href` and a bare `fetch` of a serve url are all fetched by the
+ * *browser*, where no header can ride — the gate reads `request.query.scope`
+ * as readily as the header (`mcp/runGate.ts`'s `scopeAsked`), so the query
+ * string is the channel there. It is applied here, at the sink, and never in
+ * `coerce.ts`'s `fileUrl`, whose answer ends up inside File refs that get
+ * persisted.
+ */
+describe('viewUrl', () => {
+  const SERVE = '/api/uploads/workflows/hello/hello/runs/run_1/poster.png'
+
+  it('leaves a url alone while the viewer has not widened', () => {
+    expect(viewUrl(SERVE)).toBe(SERVE)
+  })
+
+  it('appends the ask to a serve url while widened, composing with an existing query', () => {
+    writeScope('all')
+
+    expect(viewUrl(SERVE)).toBe(`${SERVE}?scope=all`)
+    expect(viewUrl(`${SERVE}?download=1`)).toBe(`${SERVE}?download=1&scope=all`)
+  })
+
+  it('composes with the Download action either way round', () => {
+    writeScope('all')
+
+    expect(downloadHref(viewUrl(SERVE))).toBe(`${SERVE}?scope=all&download=1`)
+  })
+
+  it('touches nothing that is not a serve url — including a url this page presigned', () => {
+    writeScope('all')
+    const signed = 'https://bucket.example/o/x?sig=abc'
+    trustSignedUrl(signed)
+
+    expect(viewUrl(signed)).toBe(signed)
+    // …which is what keeps `downloadHref`'s signed-url exception working: it
+    // recognises the url by identity, and a decorated one would no longer be
+    // the string that was registered (and its signature would be broken).
+    expect(downloadHref(viewUrl(signed))).toBe(signed)
+    expect(viewUrl('/api/workflow/run?id=run_1')).toBe('/api/workflow/run?id=run_1')
+    expect(viewUrl('')).toBe('')
+    expect(viewUrl(undefined as never)).toBeUndefined()
   })
 })
 

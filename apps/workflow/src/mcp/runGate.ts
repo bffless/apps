@@ -14,8 +14,13 @@
  *
  * 1. **owner** — `startedBy === user.id`, the ordinary path.
  * 2. **drive** — the request carries the run's `driveKey`: how a dispatched
- *    driver acts on a run it does not own (D28). Only while the run is live;
- *    the key is cleared at a terminal status, and a stale one opens nothing.
+ *    driver acts on a run it does not own (D28). Regardless of status: the
+ *    driver's browser reads the *finished* run — `run/get`'s sealed record,
+ *    the outputs, every file under `/api/uploads/` — **after** the SPA has
+ *    patched the row terminal, and the nonce is the only identity it has
+ *    (spec 07 §Results). A door conditioned on "still running" would be shut
+ *    by the very transition the driver waits for (apps#665 review). The key
+ *    stays on the row instead; a later dispatch re-mints it.
  * 3. **all** — a project owner or admin who **asked** (`?scope=all`,
  *    `scope: "all"`, or the `x-workflow-scope` header). Never implicit (D27):
  *    on a project you own an implicit exemption would mean nothing ever
@@ -43,9 +48,6 @@ import { fieldsOf, rows } from './rows'
 
 /** The **project** roles (`project-permissions.schema.ts`) that may ask for all-scope. */
 export const ALL_SCOPE_ROLES: ReadonlyArray<string> = ['owner', 'admin']
-
-/** A run in one of these is over (`lib/runner/types.ts` `RunStatus`), and its `driveKey` is cleared. */
-export const TERMINAL_STATUSES: ReadonlyArray<string> = ['succeeded', 'failed', 'cancelled']
 
 /** How a caller asks for all-scope when there is no query string to put it on (the MCP endpoint's siblings). */
 export const SCOPE_HEADER = 'x-workflow-scope'
@@ -192,12 +194,15 @@ export function gateRun(input: {
   // (`run/delete/post/gate.fn.js`, mirrored).
   if (str(caller.id) !== '' && startedBy !== '' && startedBy === str(caller.id)) return admit('owner', row, f)
 
-  // 2. the drive nonce, while the run is live (D28).
+  // 2. the drive nonce (D28) — whatever the run's status. The driver reads its
+  // own run *after* sealing it (spec 07 §Results: the record, then each file
+  // output), so a door that closed at terminal would close before the driver's
+  // last read rather than after it (apps#665 review). The nonce is not a
+  // standing credential either way: it is a per-dispatch secret only the
+  // dispatched driver was handed, re-minted by the next dispatch.
   const key = header(request, DRIVE_KEY_HEADER)
   const rowKey = str(f.driveKey)
-  if (key !== '' && rowKey !== '' && key === rowKey && TERMINAL_STATUSES.indexOf(str(f.status)) === -1) {
-    return admit('drive', row, f)
-  }
+  if (key !== '' && rowKey !== '' && key === rowKey) return admit('drive', row, f)
 
   // 3. all-scope: the role AND the asking (D27).
   if (scopeAsked(request) && isAllScopeRole(caller.projectRole)) return admit('all', row, f)

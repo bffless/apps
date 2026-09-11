@@ -14,7 +14,6 @@ import type { FnRequest } from './route'
 import {
   DRIVE_KEY_HEADER,
   SCOPE_HEADER,
-  TERMINAL_STATUSES,
   admittedRun,
   gateRun,
   hasGrant,
@@ -105,13 +104,32 @@ const CASES: Case[] = [
     door: 'drive',
   },
   {
-    // The key is cleared at a terminal status (D28); a stale one opens nothing.
+    // apps#665 review: the driver reads the run it just sealed — the record,
+    // then every file output — holding nothing but this nonce. A door that
+    // closed at terminal would close before that last read, not after it, so
+    // a finished run admits the nonce exactly as a live one does.
     desc: 'the drive nonce on a run that has succeeded',
     row: record({ startedBy: 'user_other', driveKey: KEY, status: 'succeeded' }),
     request: request({ headers: { [DRIVE_KEY_HEADER]: KEY } }),
     user: { id: 'user_driver' },
-    ok: false,
-    door: '',
+    ok: true,
+    door: 'drive',
+  },
+  {
+    desc: 'the drive nonce on a run that failed',
+    row: record({ startedBy: 'user_other', driveKey: KEY, status: 'failed' }),
+    request: request({ headers: { [DRIVE_KEY_HEADER]: KEY } }),
+    user: { id: 'user_driver' },
+    ok: true,
+    door: 'drive',
+  },
+  {
+    desc: 'the drive nonce on a cancelled run',
+    row: record({ startedBy: 'user_other', driveKey: KEY, status: 'cancelled' }),
+    request: request({ headers: { [DRIVE_KEY_HEADER]: KEY } }),
+    user: { id: 'user_driver' },
+    ok: true,
+    door: 'drive',
   },
   {
     desc: 'a drive nonce that does not match the row',
@@ -233,7 +251,6 @@ describe('scopeAsked', () => {
 
 describe('isAllScopeRole', () => {
   it('admits only a project owner or admin', () => {
-    expect(TERMINAL_STATUSES).toEqual(['succeeded', 'failed', 'cancelled'])
     expect(isAllScopeRole('owner')).toBe(true)
     expect(isAllScopeRole('ADMIN')).toBe(true)
     expect(isAllScopeRole('contributor')).toBe(false)

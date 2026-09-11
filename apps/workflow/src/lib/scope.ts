@@ -18,6 +18,8 @@
  * reads as "mine", which widens nothing. Redux mirrors the value so the
  * checkbox re-renders; this module is the source of truth for the wire.
  */
+import { isServeUrl } from './url'
+
 export type RunsScope = 'mine' | 'all'
 
 /** How a caller asks for all-scope where there is no query string to put it on (mirrors `mcp/runGate`). */
@@ -47,6 +49,30 @@ export function writeScope(scope: RunsScope): void {
 /** `{ 'x-workflow-scope': 'all' }` while widened, else `{}` — spread into every /api/workflow and /api/uploads request. */
 export function scopeHeaders(): Record<string, string> {
   return readScope() === 'all' ? { [SCOPE_HEADER]: 'all' } : {}
+}
+
+/**
+ * The same ask, for the sinks that cannot carry a header: an `<img src>`, a
+ * `<video>`/`<audio>`/`<object data>` player, a download `href` — urls the
+ * *browser* fetches on its own. The gate reads `request.query.scope` as
+ * readily as the header (`mcp/runGate.ts`'s `scopeAsked`), so the query string
+ * is the same D27 door by the one channel available there.
+ *
+ * Applied **at the sink**, never in the builder (apps#665 review): `fileUrl`
+ * is also the fallback `toFileRef`/`fileRefIndex`/`imageMap` use for a ref's
+ * `url`, and a ref can be written back onto a run or step row — one viewer's
+ * momentary ask has no business being persisted as part of a record. So the
+ * builder stays pure and this decorates the url on its way into the DOM.
+ *
+ * Only a **serve url** is decorated. Two reasons, both load-bearing: nothing
+ * else answers to `scope` anyway, and a url this page presigned itself (D6)
+ * carries a signature over its exact query string — appending to it would both
+ * invalidate the signature and slip past `lib/url.ts`'s `downloadHref`, which
+ * recognises a signed url by identity.
+ */
+export function viewUrl(url: string): string {
+  if (typeof url !== 'string' || readScope() !== 'all' || !isServeUrl(url)) return url
+  return `${url}${url.includes('?') ? '&' : '?'}scope=all`
 }
 
 /**

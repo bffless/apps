@@ -25,9 +25,6 @@ export const SCOPE_HEADER = 'x-workflow-scope'
 /** The project roles that may widen the scope, once they ask (D27). */
 const ALL_SCOPE_ROLES = ['owner', 'admin']
 
-/** A finished run's `driveKey` is cleared, so a stale nonce opens nothing. */
-const TERMINAL = ['succeeded', 'failed', 'cancelled']
-
 /**
  * `driveKey` (D28) is an additive column on `workflow_runs` that the row type
  * does not carry yet; the gate reads it, so the mock widens rather than
@@ -60,9 +57,11 @@ export function mockGate(
   const startedBy = typeof row.startedBy === 'string' ? row.startedBy : ''
   if (callerId !== '' && startedBy === callerId) return { ok: true, door: 'owner' }
 
+  // Whatever the run's status: the driver reads the finished run it just
+  // sealed, holding nothing but this nonce (apps#665 review).
   const sent = (request.headers.get(DRIVE_KEY_HEADER) ?? '').trim()
   const held = typeof row.driveKey === 'string' ? row.driveKey : ''
-  if (sent !== '' && sent === held && !TERMINAL.includes(row.status)) return { ok: true, door: 'drive' }
+  if (sent !== '' && sent === held) return { ok: true, door: 'drive' }
 
   const asked =
     new URL(request.url).searchParams.get('scope') === 'all' ||

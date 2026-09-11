@@ -22,6 +22,7 @@ import { useState } from 'react'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { isUnavailablePayload } from '../../lib/runner/payload'
 import type { UnavailablePayload } from '../../lib/runner/payload'
+import { viewUrl } from '../../lib/scope'
 import { downloadHref, isSafeUrl } from '../../lib/url'
 import type { ImageMap } from '../../lib/imageMap'
 import { useFileRefs } from './fileRefIndex'
@@ -108,7 +109,9 @@ function UnavailablePayload({ payload }: { payload: UnavailablePayload }) {
       data-testid="payload-unavailable"
     >
       {typeof url === 'string' && isSafeUrl(url) && (
-        <a className="value-unavailable-download" href={downloadHref(url)} download>
+        // The widened ask rides the href at the sink (apps#665 review), not on
+        // the `{ $file }` ref the row holds.
+        <a className="value-unavailable-download" href={downloadHref(viewUrl(url))} download>
           Download
         </a>
       )}

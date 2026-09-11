@@ -186,7 +186,9 @@ So the claim lives in a row of its own, which sync creates cleanly:
 - **New schema `workflow_run_claims`** — `{ runId, impl, workflow, startedBy, driveKey, createdAt }`.
   A brand-new schema, so no adoption problem.
 - **New optional field `driveKey` on `workflow_runs`** — additive and optional, so
-  `--adopt-fields` handles it. Cleared when the run reaches a terminal status.
+  `--adopt-fields` handles it. The key stays on the row once the run finishes, so the
+  dispatched driver can still read the record it just sealed and download the run's files;
+  a later dispatch re-mints it.
 
 Flow:
 

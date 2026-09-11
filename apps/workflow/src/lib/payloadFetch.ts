@@ -19,7 +19,7 @@
 import { isUnavailablePayload } from './runner/payload'
 import type { UnavailablePayload } from './runner/payload'
 import type { FileRef } from './runner/types'
-import { scopeHeaders } from './scope'
+import { scopeHeaders, viewUrl } from './scope'
 import { isServeUrl } from './url'
 
 function messageOf(err: unknown): string {
@@ -42,7 +42,11 @@ export async function fetchPayload(ref: FileRef): Promise<unknown> {
     // asked for all-scope and opened someone else's run would otherwise read a
     // page of "payload unavailable" chips — the fetch 404s without the header
     // the rest of the SPA sends (`lib/http.ts`, `store/workflowApi.ts`).
-    const res = await fetch(ref.url, { credentials: 'same-origin', headers: scopeHeaders() })
+    // `viewUrl` puts the ask on the url as well as the header (apps#665
+    // review): the ref itself no longer carries one, since it may be persisted,
+    // and this is a sink like any other. The header is what CE actually reads
+    // here — the query string is belt to its braces, and costs nothing.
+    const res = await fetch(viewUrl(ref.url), { credentials: 'same-origin', headers: scopeHeaders() })
     if (!res.ok) return unavailable(ref, `the payload request answered ${res.status}`)
     return await res.json()
   } catch (err) {

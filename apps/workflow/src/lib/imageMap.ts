@@ -26,6 +26,7 @@
  */
 import { fileUrl } from './coerce'
 import type { DeclSite } from './outputDecls'
+import { viewUrl } from './scope'
 import { buildContexts, buildJobContexts, buildRunContexts, evalDeep } from './runner/contexts'
 import { isFileRefLike } from './runner/fileRef'
 import type { Definition, RunState, StepState } from './runner/types'
@@ -57,7 +58,10 @@ export function resolveImageMap(declared: unknown, contexts: Record<string, unkn
     const path = typeof target === 'string' ? target : isFileRefLike(target) ? target.path : undefined
     if (typeof path !== 'string' || path.trim() === '') continue
     const url = fileUrl(path.trim())
-    if (isServeUrl(url)) out[src] = url
+    // The gate judges the bare serve url; the widened ask is appended after it
+    // (apps#665 review) because this map is only ever read as an `<img src>`
+    // (`lib/markdown`'s image renderer) — a sink no header can ride.
+    if (isServeUrl(url)) out[src] = viewUrl(url)
   }
   return out
 }

@@ -25,7 +25,6 @@ var __mcp = (() => {
     ALL_SCOPE_ROLES: () => ALL_SCOPE_ROLES,
     DRIVE_KEY_HEADER: () => DRIVE_KEY_HEADER,
     SCOPE_HEADER: () => SCOPE_HEADER,
-    TERMINAL_STATUSES: () => TERMINAL_STATUSES,
     admittedRun: () => admittedRun,
     gateRun: () => gateRun,
     handler: () => handler,
@@ -52,7 +51,6 @@ var __mcp = (() => {
 
   // src/mcp/runGate.ts
   var ALL_SCOPE_ROLES = ["owner", "admin"];
-  var TERMINAL_STATUSES = ["succeeded", "failed", "cancelled"];
   var SCOPE_HEADER = "x-workflow-scope";
   var DRIVE_KEY_HEADER = "x-workflow-drive-key";
   function isPlainObject2(value) {
@@ -124,9 +122,7 @@ var __mcp = (() => {
     if (str(caller.id) !== "" && startedBy !== "" && startedBy === str(caller.id)) return admit("owner", row, f);
     const key = header(request, DRIVE_KEY_HEADER);
     const rowKey = str(f.driveKey);
-    if (key !== "" && rowKey !== "" && key === rowKey && TERMINAL_STATUSES.indexOf(str(f.status)) === -1) {
-      return admit("drive", row, f);
-    }
+    if (key !== "" && rowKey !== "" && key === rowKey) return admit("drive", row, f);
     if (scopeAsked(request) && isAllScopeRole(caller.projectRole)) return admit("all", row, f);
     if (hasGrant(f, caller)) return admit("grant", row, f);
     return refuse();
