@@ -1093,6 +1093,7 @@ export function RunShell() {
             workflowName={isLive ? sliceMeta!.workflowName : run!.workflowName || run!.workflow}
             runId={shownRunId}
             startedBy={isLive ? undefined : run!.startedBy}
+            startedByEmail={isLive ? undefined : run!.startedByEmail}
             startedAt={isLive ? sliceState!.startedAt : run!.startedAt}
             forkedFrom={
               isLive

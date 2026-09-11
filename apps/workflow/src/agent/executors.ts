@@ -215,6 +215,14 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     try {
       const res = await read
       if (res.error || !res.data) {
+        // The one refusal that is not a failure: `scope: 'all'` without the
+        // project owner/admin role is a deliberate 403 (spec 11 D27), and
+        // saying "the runs could not be listed" would read as a transport
+        // hiccup worth retrying instead of an answer about who may ask.
+        if ((res.error as { status?: number } | undefined)?.status === 403) {
+          const message = 'Listing everyone’s runs needs the project owner or admin role'
+          return errorResult(message, { errors: { scope: 'forbidden' } })
+        }
         const message = `The runs could not be listed (${JSON.stringify(res.error)})`
         return errorResult(message, { errors: { runs: message } })
       }

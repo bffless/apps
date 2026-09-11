@@ -806,11 +806,14 @@ const hello = [
 // ---------------------------------------------------------------------------
 
 const identity = [
-  // Exactly the three fields `me.fn.js` picks (`whoami.fn.parity.test.ts`) —
-  // `projectRole` is a gate-only signal (spec 11), never part of this contract.
+  // Exactly the four fields `me.fn.js` picks (`whoami.fn.parity.test.ts`).
+  // `projectRole` joined them in B9: the gate reads it server-side, and the SPA
+  // needs it too — whether to offer the "All runs" toggle is the one thing it
+  // cannot work out for itself (spec 11 D27). Empty, never absent, for an
+  // identity with no project role, exactly as CE renders a null.
   http.get('/api/workflow/whoami', () => {
-    const { id, email, role } = mockUser()
-    return HttpResponse.json({ id, email, role }, { headers: NO_STORE })
+    const { id, email, role, projectRole } = mockUser()
+    return HttpResponse.json({ id, email, role, projectRole: projectRole ?? '' }, { headers: NO_STORE })
   }),
 ]
 

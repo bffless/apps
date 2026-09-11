@@ -172,7 +172,7 @@ pipeline:
               readOnlyHint: false
             _meta:
               ui:
-                resourceUri: ui://bffless/workflow/step-view.b4ca7a7a.html
+                resourceUri: ui://bffless/workflow/step-view.4a85c087.html
             rule:
               path: /api/workflow/mcp-tools/submitStep
               method: POST
@@ -322,7 +322,7 @@ pipeline:
               method: POST
         resources:
           static:
-            - uri: ui://bffless/workflow/step-view.b4ca7a7a.html
+            - uri: ui://bffless/workflow/step-view.4a85c087.html
               name: Workflow step view
               description: Mounts a waiting island or form step of a run (spec 10).
               rule:

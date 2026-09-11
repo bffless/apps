@@ -16,7 +16,9 @@
  *
  * The status filter is client-side (Decision 6): a workflow's runs are a short
  * list, and filtering in the browser keeps one cached query instead of one per
- * filter value.
+ * filter value. The "All runs" toggle beside it is NOT: whose runs these are is
+ * the server's decision (spec 11 D27), and the list that comes back is the
+ * answer to an ask the request carried.
  */
 import { skipToken } from '@reduxjs/toolkit/query/react'
 import { Link, useParams } from 'react-router-dom'
@@ -31,9 +33,11 @@ import { stepPath } from '../lib/runRoutes'
 import { waitingSteps } from '../lib/waitingOn'
 import type { ServerRunRow } from '../lib/coerce'
 import type { RunStatus } from '../lib/runner/types'
+import { isAllScopeRole } from '../lib/scope'
+import type { RunsScope } from '../lib/scope'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { runsStatusFilterChanged } from '../store/uiSlice'
-import { useListRunsQuery } from '../store/workflowApi'
+import { runsScopeChanged, runsStatusFilterChanged } from '../store/uiSlice'
+import { useListRunsQuery, useWhoamiQuery, workflowApi } from '../store/workflowApi'
 
 const FILTERS: (RunStatus | 'all')[] = ['all', 'running', 'succeeded', 'failed', 'cancelled']
 
@@ -104,10 +108,28 @@ export function RunsPage() {
   const { impl, workflow } = useParams()
   const dispatch = useAppDispatch()
   const filter = useAppSelector((state) => state.ui.runsStatusFilter)
+  const scope = useAppSelector((state) => state.ui.runsScope)
+  // Whether to offer the toggle at all — the one thing the SPA cannot work out
+  // for itself (spec 11 §Why `projectRole`). Advisory, like every affordance
+  // here: the list rule re-reads the role server-side and answers 403 to an ask
+  // it will not honour, so a wrong answer can only ever offer a refusal.
+  const { data: me } = useWhoamiQuery()
 
   const { data: runs, isLoading, isError, error, refetch } = useListRunsQuery(
-    impl && workflow ? { impl, workflow } : skipToken,
+    impl && workflow ? { impl, workflow, ...(scope === 'all' ? { scope: 'all' as const } : {}) } : skipToken,
   )
+
+  /**
+   * Turning the toggle drops what the *old* scope cached. The list itself is
+   * keyed by its arguments, so it refetches on its own — but every single run
+   * this page links to was fetched under the narrower ask, and a `Run` entry
+   * cached as "not found" would survive the widening and make the toggle look
+   * broken on the very run it was flipped for.
+   */
+  function scopeChanged(next: RunsScope): void {
+    dispatch(runsScopeChanged(next))
+    dispatch(workflowApi.util.invalidateTags(['Runs', 'Run']))
+  }
 
   const base = `/${impl}/${workflow}`
   const shown = (runs ?? []).filter((run) => filter === 'all' || run.status === filter)
@@ -139,6 +161,23 @@ export function RunsPage() {
             </option>
           ))}
         </select>
+        {/*
+          The exemption is asked for, never assumed (D27): a project owner or
+          admin sees their own runs like anyone else until they turn this on.
+          Nobody else is shown it — and a hand-set ask without the role is a
+          403, not a quietly narrowed list.
+        */}
+        {isAllScopeRole(me?.projectRole) && (
+          <label className="filter" htmlFor="runs-scope">
+            <input
+              id="runs-scope"
+              type="checkbox"
+              checked={scope === 'all'}
+              onChange={(event) => scopeChanged(event.target.checked ? 'all' : 'mine')}
+            />{' '}
+            All runs
+          </label>
+        )}
       </div>
       </div>
 
@@ -188,7 +227,10 @@ export function RunsPage() {
                   <StatusPill status={run.status} />
                   <WaitingOn run={run} base={base} />
                 </td>
-                <td>{run.startedBy ?? '—'}</td>
+                {/* A person, not a uuid (spec 11 §What the person sees): the
+                    denormalised email written at create time, falling back to
+                    the id for a row written before that column existed. */}
+                <td>{run.startedByEmail ?? run.startedBy ?? '—'}</td>
                 <td>{new Date(run.startedAt).toLocaleString()}</td>
                 <td>
                   {run.finishedAt == null ? '—' : formatDuration(run.finishedAt - run.startedAt)}

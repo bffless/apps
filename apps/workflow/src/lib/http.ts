@@ -9,6 +9,7 @@
  * run's lifecycle (Phase 3's runtime), not to a single request.
  */
 import type { HttpJson } from './runner/adapters/pipeline'
+import { scopeHeaders } from './scope'
 
 /**
  * `?a=1&b=2` for the values that survive: `undefined`/`null` are *absent*
@@ -49,7 +50,12 @@ async function readBody(res: Response): Promise<unknown> {
 const KEEPALIVE_BUDGET_BYTES = 60 * 1024
 
 export const httpJson: HttpJson = async (path, init) => {
-  const headers: Record<string, string> = { ...init.headers }
+  // The "All runs" ask rides every call (spec 11 D27): a single-run rule and a
+  // file rule have no `scope` parameter of their own, so the header is the only
+  // place an owner/admin's ask can reach the gate — the island's `files/sign`
+  // included. Nothing is sent while the toggle is off, and a caller that set
+  // the header itself wins: the explicit one is the deliberate one.
+  const headers: Record<string, string> = { ...scopeHeaders(), ...init.headers }
   let body: string | undefined
   if (init.body !== undefined) {
     body = JSON.stringify(init.body)

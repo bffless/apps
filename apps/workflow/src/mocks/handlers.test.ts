@@ -395,9 +395,16 @@ describe('whoami', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
-    // Exactly the three fields `me.fn.js` picks (`whoami.fn.parity.test.ts`) —
-    // `projectRole` is a gate-only signal (spec 11), never part of this contract.
-    expect(await res.json()).toEqual({ id: MOCK_MEMBER.id, email: MOCK_MEMBER.email, role: MOCK_MEMBER.role })
+    // Exactly the four fields `me.fn.js` picks (`whoami.fn.parity.test.ts`).
+    // `projectRole` is a gate signal AND a contract field (spec 11 D27): the
+    // SPA renders the "All runs" toggle from it, which is the one thing it
+    // cannot work out for itself.
+    expect(await res.json()).toEqual({
+      id: MOCK_MEMBER.id,
+      email: MOCK_MEMBER.email,
+      role: MOCK_MEMBER.role,
+      projectRole: MOCK_MEMBER.projectRole,
+    })
   })
 
   it('answers the admin identity the mock switch selects (?as=admin)', async () => {
@@ -407,7 +414,17 @@ describe('whoami', () => {
       id: MOCK_ADMIN.id,
       email: MOCK_ADMIN.email,
       role: MOCK_ADMIN.role,
+      projectRole: MOCK_ADMIN.projectRole,
     })
+  })
+
+  // CE renders a null as an empty string, and an identity with no permission
+  // row for this project has no project role at all — the key still arrives,
+  // because an absent one would make the reader guess (`me.fn.js`'s contract).
+  it('keeps the key, empty, for an identity with no project role', async () => {
+    setMockUser({ id: 'user_key', email: '', role: 'user' })
+
+    expect(await (await fetch('/api/workflow/whoami')).json()).toMatchObject({ projectRole: '' })
   })
 })
 

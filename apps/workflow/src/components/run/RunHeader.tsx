@@ -64,6 +64,14 @@ export interface RunHeaderProps {
   runId: string
   /** The session user that started the run (01); absent for an older/unknown row. */
   startedBy?: string
+  /**
+   * That person's email, denormalised onto the run row at create time (spec 11
+   * §What the person sees) — what the header renders when it has one, because
+   * "who started this" only started meaning anything once a page could show
+   * someone else's run. Absent on a row written before the column existed, and
+   * the id stands in.
+   */
+  startedByEmail?: string
   startedAt: number
   /**
    * The run this one was forked from and the job it re-ran from ("Re-run from
@@ -136,6 +144,7 @@ export function RunHeader({
   workflowName,
   runId,
   startedBy,
+  startedByEmail,
   startedAt,
   forkedFrom,
   finishedAt,
@@ -171,10 +180,10 @@ export function RunHeader({
           <h1 className="page-title">{workflowName}</h1>
           <p className="page-sub run-sub">
             <span className="run-id">{runId}</span>
-            {startedBy && (
+            {(startedByEmail ?? startedBy) && (
               <>
                 <span className="sep">·</span>
-                <span>{startedBy}</span>
+                <span>{startedByEmail ?? startedBy}</span>
               </>
             )}
             <span className="sep">·</span>

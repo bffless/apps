@@ -20,7 +20,7 @@
  */
 import { useState } from 'react'
 import { RunStoreError } from '../lib/runStore'
-import { isAllScopeRole } from '../mcp/runGate'
+import { isAllScopeRole, readScope } from '../lib/scope'
 import { deleteRun } from './lifecycleActions'
 import { useAppDispatch } from './hooks'
 import { useWhoamiQuery } from './workflowApi'
@@ -73,11 +73,13 @@ export function useRunDelete({ runId, status, startedBy, onDeleted }: RunDeleteF
     status !== undefined &&
     status !== 'running' &&
     me !== undefined &&
-    (startedBy === me.id ||
-      // `projectRole` lands on `Whoami` in B9 (spec 11 §Why `projectRole`); the
-      // cast reads ahead of the type, structurally, the way `mocks/runGate.ts`'s
-      // `GateUser` widens `MockUser` today.
-      isAllScopeRole((me as { projectRole?: string }).projectRole)) // B9: and the toggle
+    // The run is yours, or you are an owner/admin who **asked** for all-scope
+    // and is therefore reading someone else's run through the gate's third
+    // door (spec 11 D27). The role alone is not enough: with the toggle off
+    // the request carries no ask, the delete rule's gate refuses exactly as it
+    // would for anyone, and the button would be an offer the server has
+    // already decided against.
+    (startedBy === me.id || (isAllScopeRole(me.projectRole) && readScope() === 'all'))
 
   async function remove(id: string) {
     setDeleting(true)

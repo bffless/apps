@@ -248,7 +248,21 @@ describe('toWhoami', () => {
   })
 
   it("treats CE's empty strings for an API-key caller as unknown, not as values", () => {
-    expect(toWhoami({ id: '', email: '', role: '' })).toEqual({ id: '' })
+    expect(toWhoami({ id: '', email: '', role: '', projectRole: '' })).toEqual({ id: '' })
+  })
+
+  // The project role (spec 11 §Why `projectRole`) — what the SPA renders the
+  // "All runs" toggle from. An older CE sends no such key at all, and CE sends
+  // an empty string for a caller with no permission row for this project;
+  // both mean "no toggle", so both must drop rather than arrive as a value.
+  it('reads the project role, and drops it when there is none to read', () => {
+    expect(toWhoami({ id: 'user_1', role: 'user', projectRole: 'owner' })).toEqual({
+      id: 'user_1',
+      role: 'user',
+      projectRole: 'owner',
+    })
+    expect('projectRole' in toWhoami({ id: 'user_1', projectRole: '' })).toBe(false)
+    expect('projectRole' in toWhoami({ id: 'user_1' })).toBe(false)
   })
 
   it('never throws on a body that is not an object', () => {

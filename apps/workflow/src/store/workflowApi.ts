@@ -27,6 +27,7 @@ import {
 import type { Implementation, ServerRunRow, ServerStepRow, Whoami } from '../lib/coerce'
 import { aliasesUrl } from '../lib/discovery'
 import { fetchPayloadCached, forgetPayloads } from '../lib/payloadFetch'
+import { scopeHeaders } from '../lib/scope'
 import { hydrateOutputs } from '../lib/runner/payload'
 
 /** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
@@ -63,7 +64,22 @@ function attemptRefresh(): Promise<boolean> {
 /** The run `getRun` last hydrated — the payload memo's scope. */
 let lastHydratedRunId: string | null = null
 
-const rawBaseQuery = fetchBaseQuery({ baseUrl: '/' })
+/**
+ * Every query carries the "All runs" ask while the toggle is on (spec 11 D27),
+ * the same way `lib/http.ts` does for the pipeline's own calls: `getRun` and
+ * the file reads have no `scope` parameter to put it on, so the header is what
+ * lets an owner/admin open — and act on — a run they did not start. Read from
+ * `localStorage` at request time rather than from the store: `prepareHeaders`
+ * is not a React read, and the value has to be the one in force *now*, not the
+ * one captured when the endpoint was defined.
+ */
+const rawBaseQuery = fetchBaseQuery({
+  baseUrl: '/',
+  prepareHeaders: (headers) => {
+    for (const [name, value] of Object.entries(scopeHeaders())) headers.set(name, value)
+    return headers
+  },
+})
 
 /**
  * `Meta` carries `FetchBaseQueryMeta` (the raw `Response`) through explicitly:

@@ -303,6 +303,14 @@ export interface Whoami {
   id: string
   email?: string
   role?: string
+  /**
+   * The role on **this project** (spec 11 §Why `projectRole`) — what the "All
+   * runs" toggle is rendered from, and nothing else: the widening itself is
+   * decided server-side, every time, by the same gate. Absent for a caller CE
+   * has no permission row for, and on a CE older than the release that added
+   * the field; both mean "no toggle", which is what an absent value reads as.
+   */
+  projectRole?: 'owner' | 'admin' | 'contributor' | 'viewer' | 'guest'
 }
 
 export function toWhoami(raw: unknown): Whoami {
@@ -313,6 +321,7 @@ export function toWhoami(raw: unknown): Whoami {
     id: optionalStr(f.id) ?? '',
     ...(optionalStr(f.email) ? { email: str(f.email) } : {}),
     ...(optionalStr(f.role) ? { role: str(f.role) } : {}),
+    ...(optionalStr(f.projectRole) ? { projectRole: str(f.projectRole) as Whoami['projectRole'] } : {}),
   }
 }
 

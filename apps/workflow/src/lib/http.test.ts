@@ -4,10 +4,11 @@
  * and JSON-or-text out.
  */
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { server } from '../mocks/server'
 import { httpJson, httpJsonWithReauth, toQueryString } from './http'
 import { createRunStore } from './runStore'
+import { SCOPE_HEADER, writeScope } from './scope'
 
 describe('toQueryString', () => {
   it('skips undefined and null, and JSON-stringifies non-primitives', () => {
@@ -92,6 +93,49 @@ describe('httpJson', () => {
     const res = await httpJson('/api/test/unlogged', { method: 'GET' })
 
     expect('logId' in res).toBe(false)
+  })
+
+  /**
+   * The "All runs" toggle rides every call this module makes (spec 11 D27,
+   * Decision 6): the island's `files/sign` and every pipeline step go through
+   * `httpJson`, and none of them has a `scope` of its own to put the ask on —
+   * so the header is where an owner/admin's ask reaches the gate. Off by
+   * default: nothing is widened until someone flips the toggle.
+   */
+  describe('the all-scope ask (spec 11 D27)', () => {
+    afterEach(() => {
+      writeScope('mine')
+    })
+
+    it('sends no scope header while the toggle is off', async () => {
+      let seen: string | null = 'unset'
+      server.use(
+        http.get('/api/test/scope', ({ request }) => {
+          seen = request.headers.get(SCOPE_HEADER)
+          return HttpResponse.json({ ok: true })
+        }),
+      )
+
+      await httpJson('/api/test/scope', { method: 'GET' })
+
+      expect(seen).toBeNull()
+    })
+
+    it('sends the header while the toggle is on, and leaves an explicit header alone', async () => {
+      writeScope('all')
+      const seen: (string | null)[] = []
+      server.use(
+        http.get('/api/test/scope', ({ request }) => {
+          seen.push(request.headers.get(SCOPE_HEADER))
+          return HttpResponse.json({ ok: true })
+        }),
+      )
+
+      await httpJson('/api/test/scope', { method: 'GET' })
+      await httpJson('/api/test/scope', { method: 'GET', headers: { [SCOPE_HEADER]: 'mine' } })
+
+      expect(seen).toEqual(['all', 'mine'])
+    })
   })
 })
 
