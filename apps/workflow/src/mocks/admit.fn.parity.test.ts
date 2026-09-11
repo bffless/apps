@@ -208,6 +208,14 @@ describe('runs/post admit.fn.js parity with the mock re-implementation', () => {
       // door for every later request the driven page makes (D26 door 2).
       expect(stored.driveKey).toBe(KEY)
       expect(db.claims.has(RUN_ID)).toBe(false)
+      // But it must never ride the CREATE response itself (spec 11 D28): the
+      // driver already holds the nonce (it presented it in the request
+      // header), and the harness must not hand it to whoever else can read
+      // this response — nor to the workflow-headless job that writes it into
+      // an uploaded run.json (apps#665 follow-up).
+      const body = await res.clone().json()
+      expect(body).not.toHaveProperty('driveKey')
+      expect(await res.clone().text()).not.toContain(KEY)
     })
 
     it.each([
@@ -232,6 +240,43 @@ describe('runs/post admit.fn.js parity with the mock re-implementation', () => {
       expect(stored.startedByEmail).toBe(MOCK_MEMBER.email)
       expect(stored.driveKey).toBeUndefined()
     })
+  })
+})
+
+/**
+ * `runs/post`'s `shape.fn.js` — the `function_handler` step interposed
+ * between `create` and `respond` (apps#665 follow-up) so the driver's nonce
+ * `admit` wrote onto the row never rides the create response.
+ */
+describe('runs/post shape.fn.js', () => {
+  const SHAPE_FN_PATH = join(
+    appDir,
+    '.bffless',
+    'proxy-rules',
+    'workflow',
+    'rules',
+    'api',
+    'workflow',
+    'runs',
+    'post',
+    'shape.fn.js',
+  )
+  type ShapeHandler = (ctx: { steps: { create: unknown } }) => unknown
+
+  let shape: ShapeHandler
+
+  beforeAll(() => {
+    const src = readFileSync(SHAPE_FN_PATH, 'utf8')
+    shape = new Function(`${src}\nreturn handler;`)()
+  })
+
+  it('strips driveKey from the created row, flat or nested under `fields`, and is a no-op otherwise', () => {
+    expect(shape({ steps: { create: { id: 'rec_1', runId: 'r', driveKey: 'k' } } })).toEqual({ id: 'rec_1', runId: 'r' })
+    expect(shape({ steps: { create: { id: 'rec_1', fields: { runId: 'r', driveKey: 'k' } } } })).toEqual({
+      id: 'rec_1',
+      fields: { runId: 'r' },
+    })
+    expect(shape({ steps: { create: { id: 'rec_1', runId: 'r' } } })).toEqual({ id: 'rec_1', runId: 'r' })
   })
 })
 

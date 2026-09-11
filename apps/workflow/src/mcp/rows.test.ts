@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { fieldsOf, recordIdOf, rows, runsWithWaiting } from './rows'
+import { fieldsOf, recordIdOf, rows, runsWithWaiting, withoutDriveKey } from './rows'
 
 describe('rows', () => {
   it('reads every data_query envelope', () => {
@@ -29,5 +29,18 @@ describe('rows', () => {
       { runId: 'a', status: 'running', waitingOn: ['b/0/s', 'z/0/s'] },
       { runId: 'b', status: 'succeeded', waitingOn: [] },
     ])
+  })
+
+  // The driver's nonce (spec 11 D28) must never ride a row that feeds a
+  // response — `withoutDriveKey` is a no-op when the row never had one, so a
+  // caller need not check before calling it.
+  it('strips driveKey, and is a no-op when the row never carried one', () => {
+    expect(withoutDriveKey({ runId: 'a', driveKey: 'k' })).toEqual({ runId: 'a' })
+    expect(withoutDriveKey({ runId: 'a' })).toEqual({ runId: 'a' })
+  })
+
+  it('never carries driveKey onto a listed run, even when the row has one', () => {
+    const joined = runsWithWaiting([{ runId: 'a', status: 'running', driveKey: 'k' }], [])
+    expect(joined).toEqual([{ runId: 'a', status: 'running', waitingOn: [] }])
   })
 })

@@ -275,6 +275,9 @@ a nonce rather than a role: `run/drive` writes a `workflow_run_claims` row and h
 the row after the run finishes** and the drive door admits it at any status (apps#665): the
 driver's last acts are reads of a *finished* run — the sealed record, then each file output — so a
 key cleared at the seal would refuse the driver its own results. The next dispatch re-mints it.
+**The nonce never appears in a response body** — `run/get`, `runs/get`, `runs/post` and the MCP
+results all strip `driveKey` before answering (apps#665 follow-up); it travels only in
+`client_payload.drive_key` and the `x-workflow-drive-key` request header.
 
 **Two new optional `workflow_runs` fields need `--adopt-fields`.** `driveKey` and
 `startedByEmail` are additive per `adoptFields`'s rules, but `deploy-workflow.yml`'s

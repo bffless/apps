@@ -272,6 +272,30 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     }
   })
 
+  // `driveKey` (spec 11 D28) is a column on `workflow_runs`, never something a
+  // response body may carry. A `response_handler` that renders a `data_create`
+  // or `data_query` step's OWN output verbatim — `{{{steps.<id>}}}`, no
+  // shaping step in between — would ship the row (and the nonce) unfiltered;
+  // `run/get`, `runs/get` and `runs/post` all interpose a `shape` step
+  // (apps#665 follow-up) precisely so this can never be the wire.
+  it('never answers a bare workflow_runs row — every response_handler body naming a data_create/data_query step on it must be a shaping step\'s own output, not the query\'s', () => {
+    for (const file of files) {
+      const doc = parse(readFileSync(file, 'utf8')) as { pipeline?: { steps?: Array<Step & { config?: { body?: string } }> } }
+      const steps = doc.pipeline?.steps ?? []
+      const rawRunSteps = new Set(
+        steps
+          .filter((s) => (s.handler === 'data_create' || s.handler === 'data_query') && s.config?.schemaId === '$schema:workflow_runs')
+          .map((s) => s.id),
+      )
+      for (const s of steps) {
+        if (s.handler !== 'response_handler') continue
+        const match = String(s.config?.body ?? '').match(/^\{\{\{steps\.(\w+)\}\}\}$/)
+        if (!match) continue
+        expect(rawRunSteps.has(match[1]), `${file}: response_handler '${s.id}' renders steps.${match[1]} — a raw workflow_runs row — verbatim; interpose a shaping step that strips driveKey`).toBe(false)
+      }
+    }
+  })
+
   it('ships its schemas', () => {
     for (const s of SCHEMAS[name]) {
       const doc = parse(readFileSync(join(SET, 'schemas', `${s}.schema.yaml`), 'utf8'))

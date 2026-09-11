@@ -22,6 +22,23 @@ function handler({ steps }) {
   // `fieldsOf` reads both the same way).
   const nested = (r) => r && r.fields && typeof r.fields === 'object' && Object.keys(r.fields).length > 0
   const fieldsOf = (r) => (nested(r) ? r.fields : r) || {}
+  // `driveKey` (spec 11 D28) is the dispatched driver's nonce: legitimate on
+  // the stored row, never on a response body — it travels only in
+  // `client_payload.drive_key` and the `x-workflow-drive-key` request header.
+  // Strip it from whichever shape this CE answered before it rides the page.
+  const withoutDriveKey = (row) => {
+    if (!row) return row
+    if (nested(row)) {
+      if (!('driveKey' in row.fields)) return row
+      const fields = Object.assign({}, row.fields)
+      delete fields.driveKey
+      return Object.assign({}, row, { fields })
+    }
+    if (!('driveKey' in row)) return row
+    const copy = Object.assign({}, row)
+    delete copy.driveKey
+    return copy
+  }
 
   const waiting = {}
   for (const row of rows(steps.waiting)) {
@@ -35,9 +52,9 @@ function handler({ steps }) {
     const keys = (waiting[fieldsOf(row).runId] || []).slice().sort()
     // Put the column where the record keeps its other columns, so the client
     // reads it with the rest of the row.
-    if (nested(row)) {
-      return Object.assign({}, row, { fields: Object.assign({}, row.fields, { waitingOn: keys }) })
-    }
-    return Object.assign({}, row, { waitingOn: keys })
+    const shaped = nested(row)
+      ? Object.assign({}, row, { fields: Object.assign({}, row.fields, { waitingOn: keys }) })
+      : Object.assign({}, row, { waitingOn: keys })
+    return withoutDriveKey(shaped)
   })
 }
