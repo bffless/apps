@@ -25,7 +25,8 @@
  * 6. `NO_DRIVER` — the implementation publishes no driver repo (or its index
  *    could not be fetched), so there is no `workflow-drive.yml` to reach.
  * 7. `RUN_EXISTS` again, at the very end: this id is already claimed by
- *    another member (D28).
+ *    another member (D28) — unless that claim has gone stale, in which case
+ *    this caller takes the id over instead (`CLAIM_STALE_MS`, apps#672).
  *
  * Past the refusals it decides one more thing the pipeline executes for it:
  * **whose run this is** (spec 11 §Attribution, D28). The run will be created
@@ -47,7 +48,7 @@
  * `DISPATCH_FAILED`. There is no `failOnError` on that handler to soften it,
  * and softening it would be wrong anyway: an undispatched run is not a run.
  */
-import { fieldsOf, rows } from './rows'
+import { fieldsOf, recordIdOf, rows } from './rows'
 import { IMPL_PATTERN, type DrivePlan } from './drivePlan'
 import { admittedRun, type FnUser } from './runGate'
 import type { FnRequest, FnUtils } from './route'
@@ -60,6 +61,20 @@ const DRIVER_REPO_PATTERN = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/
 
 /** A run in one of these is over (`lib/runner/types.ts` `RunStatus`); only `running` can be driven. */
 const TERMINAL = ['succeeded', 'failed', 'cancelled']
+
+/**
+ * How long another member's claim holds a run id (apps#672). A claim is written
+ * BEFORE the dispatch, so a dispatch that never lands leaves one standing with
+ * no run behind it; without a window, that row refuses the id to everyone else
+ * forever. Eight minutes is not a new number: it is the driven walk's
+ * `POLL_TIMEOUT_MS` (`packages/workflow-live/src/walks/driven.ts`), the
+ * harness's own estimate of how long a dispatch may reasonably take to start
+ * producing writes — *"an Actions cold start is ~1–2 minutes; two of them plus
+ * the run itself fit well inside this"*. Past it, a claim with no run is not
+ * pending, it is abandoned. (`workflow-headless`'s 60-minute `--timeout` bounds
+ * a whole RUN, not a dispatch's pickup, and is the wrong figure here.)
+ */
+const CLAIM_STALE_MS = 8 * 60_000
 
 /** The `repository_dispatch` event type `workflow-drive.yml` listens for. */
 export const EVENT_TYPE = 'workflow-drive'
@@ -105,10 +120,14 @@ export interface DriveGate {
   // --- attribution (spec 11 §Attribution, D28) ----------------------------
   /** Gate of the `claimWrite` step: `mode: run` with no claim of this caller's yet. */
   writeClaim: boolean
+  /** Gate of the `claimReplace` step: another member's claim has gone stale, so `claim` overwrites their row in place (apps#672). */
+  staleReplace: boolean
   /** Gate of the `rekey` step: `mode: resume` writes the nonce straight onto the run row. */
   rekey: boolean
   /** The run row's record id, for `rekey`'s `data_update`; `''` unless `rekey`. */
   recordId: string
+  /** The STALE CLAIM row's record id, for `claimReplace`'s `data_update`; `''` unless `staleReplace`. */
+  claimRecordId: string
   /** The nonce the driver will carry back as `x-workflow-drive-key`; `''` on a refusal. */
   driveKey: string
   /** The claim row `claimWrite` inserts — or the one this caller already holds; `null` on `resume` and on a refusal. */
@@ -175,8 +194,10 @@ function refuse(code: DriveCode, message: string): DriveGate {
     payload: {},
     response: JSON.stringify({ code, message }),
     writeClaim: false,
+    staleReplace: false,
     rekey: false,
     recordId: '',
+    claimRecordId: '',
     driveKey: '',
     claim: null,
   }
@@ -259,8 +280,10 @@ export function handler(data: {
   // inside the browser the job opens. This request is the last place the
   // requester's credential exists, so whose run it is has to be decided here.
   let writeClaim = false
+  let staleReplace = false
   let rekey = false
   let recordId = ''
+  let claimRecordId = ''
   // No initialiser: every branch below mints or reuses a key before anything
   // reads it, and a placeholder here would be a key-shaped value that is not one.
   let driveKey: string
@@ -284,12 +307,29 @@ export function handler(data: {
     const held = rows(steps.claim)
     const existing = held.length > 0 ? fieldsOf(held[0]) : null
     if (existing !== null && str(existing.startedBy) !== callerId) {
-      // Someone else asked for this id first. Same code as a run that already
-      // exists, and deliberately so: from the caller's side an id that is
-      // spoken for is an id that is spoken for.
-      return refuse('RUN_EXISTS', 'this run id is already claimed by another member')
+      // Someone else asked for this id first — but a claim is evidence of a
+      // DISPATCH, not of a run: `claimWrite` commits before `dispatch`, so a
+      // `github_api` failure, a driver whose repo never picks the event up, or
+      // a job that dies before its first write all leave a claim standing with
+      // no run behind it. Past `CLAIM_STALE_MS` there is nothing left to wait
+      // for, so this caller takes the id over (`staleReplace` → the rule's
+      // `claimReplace`, which overwrites their row rather than adding a second
+      // one beside it) instead of being refused an id nobody will ever use
+      // (apps#672). A row whose `createdAt` is unreadable counts as aged: the
+      // point of the window is that no claim holds an id forever.
+      const claimedAt = typeof existing.createdAt === 'number' ? existing.createdAt : 0
+      const claimId = recordIdOf(held[0])
+      // Inside the window — or a row this CE gave no id for, which `data_update`
+      // could not key anyway — is the original answer. Same code as a run that
+      // already exists, and deliberately so: from the caller's side an id that
+      // is spoken for is an id that is spoken for.
+      if (Date.now() - claimedAt <= CLAIM_STALE_MS || claimId === null) {
+        return refuse('RUN_EXISTS', 'this run id is already claimed by another member')
+      }
+      staleReplace = true
+      claimRecordId = claimId
     }
-    if (existing !== null) {
+    if (existing !== null && !staleReplace) {
       // Our own claim, from a dispatch that did not land (or a duplicate call).
       // Reusing it — rather than writing a second row or a second key — is what
       // makes a retry after a failed `github_api` step safe.
@@ -304,8 +344,12 @@ export function handler(data: {
         createdAt: typeof existing.createdAt === 'number' ? existing.createdAt : Date.now(),
       }
     } else {
+      // A free id and a staled-out one mint exactly the same claim — a fresh
+      // nonce and this caller's name. All that differs is which step writes it:
+      // `claimWrite`'s `data_create` for a free id, `claimReplace`'s
+      // `data_update` over the abandoned row for a stale one.
       driveKey = mint(24)
-      writeClaim = true
+      writeClaim = !staleReplace
       claim = {
         runId,
         impl,
@@ -342,8 +386,10 @@ export function handler(data: {
     // driver through `client_payload` and nowhere else.
     response: JSON.stringify({ dispatched: true, runId, repo: full, eventType: EVENT_TYPE }),
     writeClaim,
+    staleReplace,
     rekey,
     recordId,
+    claimRecordId,
     driveKey,
     claim,
   }

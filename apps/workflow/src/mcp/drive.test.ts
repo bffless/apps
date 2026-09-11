@@ -244,12 +244,40 @@ describe('the claim', () => {
     expect(g.claim).toMatchObject({ startedBy: MEMBER.id, driveKey: 'a'.repeat(48) })
   })
 
-  it('refuses a run id another member has already claimed', () => {
-    const g = drive(RUN, { claim: found(claimRow({ startedBy: OTHER.id, startedByEmail: OTHER.email })), index: idx() })
+  it('refuses a run id another member has just claimed', () => {
+    const theirs = { startedBy: OTHER.id, startedByEmail: OTHER.email, createdAt: Date.now() }
+    const g = drive(RUN, { claim: found(claimRow(theirs)), index: idx() })
 
     expect(g).toMatchObject({ dispatch: false, refused: true, code: 'RUN_EXISTS', status: 400, writeClaim: false, driveKey: '' })
     expect(g.message).toContain('another member')
     expect(g.payload).toEqual({})
+    // Seven minutes and fifty-nine seconds in — still inside the window, so the
+    // refusal holds; only a claim that has OUTLIVED it is taken over.
+    expect(drive(RUN, { claim: found(claimRow({ ...theirs, createdAt: Date.now() - (8 * 60_000 - 1_000) })), index: idx() }).code).toBe('RUN_EXISTS')
+  })
+
+  it('takes over another member’s stale claim in place rather than holding the id forever', () => {
+    // Their dispatch never produced a run — a github_api failure, a driver that
+    // never picked the event up — and the claim has outlived the window
+    // (apps#672). `found()` ids the record `rec`, which is what `claimReplace`
+    // overwrites.
+    const stale = claimRow({ startedBy: OTHER.id, startedByEmail: OTHER.email, createdAt: Date.now() - (8 * 60_000 + 1_000) })
+    const g = drive(RUN, { claim: found(stale), index: idx() })
+
+    expect(g).toMatchObject({ dispatch: true, refused: false, code: '', staleReplace: true, writeClaim: false, claimRecordId: 'rec' })
+    // A fresh nonce and this caller's name — never the abandoned row's.
+    expect(g.driveKey).toMatch(/^[0-9a-f]{48}$/)
+    expect(g.driveKey).not.toBe('a'.repeat(48))
+    expect(g.claim).toMatchObject({ runId: RUN_ID, startedBy: MEMBER.id, startedByEmail: MEMBER.email, driveKey: g.driveKey })
+    expect(g.claim!.createdAt).toBeGreaterThan(stale.createdAt as number)
+    expect(g.payload.drive_key).toBe(g.driveKey)
+  })
+
+  it('leaves the caller’s OWN claim standing however old it is — that reuse is what makes a retry safe', () => {
+    const g = drive(RUN, { claim: found(claimRow({ createdAt: 1_756_800_000_000 })), index: idx() })
+
+    expect(g).toMatchObject({ dispatch: true, staleReplace: false, writeClaim: false, claimRecordId: '', driveKey: 'a'.repeat(48) })
+    expect(g.claim).toMatchObject({ startedBy: MEMBER.id, createdAt: 1_756_800_000_000 })
   })
 
   it('refuses a caller the endpoint cannot tie to a member — an unattributable run is not a run', () => {

@@ -233,6 +233,14 @@ const IMPL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$/
 /** A run in one of these is over (`lib/runner/types.ts` `RunStatus`); only a live run can be driven. */
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled']
 
+/**
+ * How long another member's claim holds a run id before this one may take it
+ * over (apps#672) — `driveGate.ts`'s `CLAIM_STALE_MS`, re-stated here the way
+ * the patterns above are. There is no parity test over `driveGate.fn.js`, so
+ * this number and that one only stay equal by hand.
+ */
+const CLAIM_STALE_MS = 8 * 60_000
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -325,13 +333,20 @@ const runRecord = [
     } else {
       if (db.runs.has(id)) return drivenRefusal('RUN_EXISTS', 'a run with this id already exists — resume it instead')
       const existing = db.claims.get(id)
-      if (existing && existing.startedBy !== mockUser().id) {
+      // Another member's claim holds the id — but only until it goes stale
+      // (apps#672): a claim is written before the dispatch, so one older than
+      // CLAIM_STALE_MS with no run behind it is abandoned, and the real rule
+      // overwrites that row in place (`claimReplace`) rather than refusing.
+      // Keyed by `runId` here, `set` IS that overwrite.
+      const stale = existing !== undefined && Date.now() - existing.createdAt > CLAIM_STALE_MS
+      const theirs = existing !== undefined && existing.startedBy !== mockUser().id
+      if (theirs && !stale) {
         return drivenRefusal('RUN_EXISTS', 'this run id is already claimed by another member')
       }
       // The claim is written BEFORE the (notional) dispatch, and the caller's
       // own standing claim is reused rather than re-keyed, so a retry after a
       // dispatch that never landed is safe.
-      if (!existing) {
+      if (!existing || theirs) {
         db.claims.set(id, {
           runId: id,
           impl,
