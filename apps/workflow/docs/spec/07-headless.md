@@ -326,7 +326,8 @@ Three things exist, and a fourth does not.
   driven run dispatches (ADR-0006). `@bffless/workflow init` writes it; `index.json`'s
   `driver.repo` names the repo the harness's `drive` rule dispatches to. It listens on
   `repository_dispatch` `types: [workflow-drive]` and reads `client_payload`
-  (`mode`, `run_id`, `harness_url`, and for `mode: run` a `workflow` and `inputs`), running
+  (`mode`, `run_id`, `harness_url`, and for `mode: run` a `workflow` and `inputs`, and, from
+  spec 11 (D28), a `drive_key` the job passes to the driver as `WORKFLOW_DRIVE_KEY`), running
   `workflow-headless run --wait park --run-id …` or `workflow-headless resume …`. It carries
   **one secret**, `WORKFLOW_APP_TOKEN` — an app token minted with `workflow:read workflow:run
   workflow:files auth:session` — which signs the browser in through CE's session exchange and

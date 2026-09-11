@@ -63,6 +63,11 @@ jobs:
         env:
           WORKFLOW_INPUTS: ${{ toJSON(github.event.client_payload.inputs) }}
         run: printf '%s' "$WORKFLOW_INPUTS" > inputs.json
+      # The drive key is a per-run nonce (spec 11, D28), not a secret — but it's still
+      # not something the job log should echo back verbatim.
+      - name: Mask the drive key
+        if: ${{ github.event.client_payload.drive_key != '' }}
+        run: echo "::add-mask::${{ github.event.client_payload.drive_key }}"
       - name: Drive
         env:
           MODE: ${{ github.event.client_payload.mode }}

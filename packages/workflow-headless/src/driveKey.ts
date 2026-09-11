@@ -21,11 +21,29 @@ import type { PageLike, RouteLike } from './page.js'
 
 export const DRIVE_KEY_HEADER = 'x-workflow-drive-key'
 
-/** Same-origin API paths the header rides on: the SPA's runs/post and every read/write in resume mode, the run page's file loads. Never the bucket (different origin, never matched). */
+/**
+ * Same-origin API paths the header rides on: the SPA's runs/post and every read/write
+ * in resume mode, the run page's file loads. Tests `url.pathname` only, deliberately —
+ * scoping to the harness origin too would silently drop the key on a harness redirect,
+ * and a dropped key is a 409, worse than a header sent one hop too far. The bucket is
+ * never matched not because it's a different origin but because no presigned URL's path
+ * begins `/api/`: the harness mints keys under `workflows/<impl>/<workflow>/<scope>/`
+ * (`apps/workflow/.bffless/proxy-rules/workflow/rules/api/workflow/files/prepare/post/rule.yaml:11`),
+ * so a virtual-host URL is `/workflows/…` and a path-style one is `/<bucket>/workflows/…`.
+ */
 export const isHarnessApiPath = (url: URL): boolean => /^\/api\/(workflow|uploads)\//.test(url.pathname)
 
 export async function installDriveKey(page: PageLike, key: string): Promise<void> {
   await page.route(isHarnessApiPath, async (route: RouteLike) => {
-    await route.continue({ headers: { ...route.request().headers(), [DRIVE_KEY_HEADER]: key } })
+    try {
+      await route.continue({ headers: { ...route.request().headers(), [DRIVE_KEY_HEADER]: key } })
+    } catch {
+      // The SPA polls `/api/workflow/run` continuously, and the driver closes the
+      // page/browser the moment a run goes terminal — so a `continue()` can lose the
+      // race and reject with a `TargetClosedError` for a request that no longer
+      // matters. Playwright rethrows that out of this handler; left uncaught it's an
+      // unhandled rejection that aborts the Node process on an otherwise-successful
+      // run. The request died with the page it belonged to — nothing to do here.
+    }
   })
 }

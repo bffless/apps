@@ -6,7 +6,7 @@ import { DRIVE_KEY_HEADER } from '../src/driveKey.js'
 import { EXIT } from '../src/errors.js'
 import type { RouteLike } from '../src/page.js'
 import { graceVerdict, runWorkflow } from '../src/run.js'
-import { fakeBrowser, helloRoutes, type Route } from './fakes.js'
+import { fakeBrowser, fakeRoute, helloRoutes, type Route } from './fakes.js'
 
 const out = () => mkdtempSync(join(tmpdir(), 'wfh-run-'))
 
@@ -425,18 +425,6 @@ describe('runWorkflow — which login', () => {
 })
 
 describe('runWorkflow — driveKey', () => {
-  /** A synthetic Playwright `route` callback, for calling the installed handler directly. */
-  const fakeRoute = (headers: Record<string, string>) => {
-    const calls: Array<{ headers?: Record<string, string> } | undefined> = []
-    const route: RouteLike = {
-      request: () => ({ headers: () => headers }),
-      continue: async (overrides) => {
-        calls.push(overrides)
-      },
-    }
-    return { route, calls }
-  }
-
   test('with a driveKey, installs one route whose matcher accepts the harness API paths and rejects everything else', async () => {
     const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
     await runWorkflow({ ...options(5_000), driveKey: 'dk_abc123' }, { browser, log: () => {}, warn: () => {} })
@@ -447,6 +435,10 @@ describe('runWorkflow — driveKey', () => {
     expect(matcher(new URL('https://harness.test/api/uploads/x'))).toBe(true)
     expect(matcher(new URL('https://bucket.example/o'))).toBe(false)
     expect(matcher(new URL('https://harness.test/w/hello/x'))).toBe(false)
+    // The bucket is never matched because no presigned URL's path begins `/api/` —
+    // the harness mints keys under `workflows/<impl>/<workflow>/<scope>/`, so a
+    // virtual-host GCS URL is `/workflows/…`, not because of the origin.
+    expect(matcher(new URL('https://storage.googleapis.com/b/workflows/hello/demo/inputs/x.png'))).toBe(false)
   })
 
   test('the handler adds x-workflow-drive-key and preserves the request’s existing headers', async () => {
@@ -459,6 +451,20 @@ describe('runWorkflow — driveKey', () => {
     expect(calls).toEqual([
       { headers: { 'content-type': 'application/json', [DRIVE_KEY_HEADER]: 'dk_abc123' } },
     ])
+  })
+
+  test('a handler whose route.continue rejects (page/browser gone) does not throw', async () => {
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow({ ...options(5_000), driveKey: 'dk_abc123' }, { browser, log: () => {}, warn: () => {} })
+
+    const { handler } = page.routes[0]!
+    const route: RouteLike = {
+      request: () => ({ headers: () => ({}) }),
+      continue: async () => {
+        throw new Error('Target page, context or browser has been closed')
+      },
+    }
+    await expect(handler(route)).resolves.toBeUndefined()
   })
 
   test('without a driveKey, no route is installed', async () => {

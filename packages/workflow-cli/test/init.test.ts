@@ -195,6 +195,9 @@ describe('runInit', () => {
     expect(drive).not.toContain('WORKFLOW_PASSWORD')
     // The drive key from the harness's dispatch payload, passed to the driver.
     expect(drive).toContain('WORKFLOW_DRIVE_KEY')
+    // Masked in the job log before the Drive step runs — it's a nonce, not a secret,
+    // but still shouldn't be echoed back verbatim.
+    expect(drive).toContain('::add-mask::${{ github.event.client_payload.drive_key }}')
     expect(drive).not.toMatch(/__[A-Z_]+__/)
     // The browser install (apps#648): the headless shell behind a cache, with the
     // version read from the driver at run time rather than pinned in the template.

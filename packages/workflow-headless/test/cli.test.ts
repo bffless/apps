@@ -14,20 +14,7 @@ import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
 import { runCli, type CliIo } from '../src/cli.js'
 import { EXIT } from '../src/errors.js'
-import type { RouteLike } from '../src/page.js'
-import { fakeBrowser, helloRoutes, type FakeOptions } from './fakes.js'
-
-/** A synthetic Playwright `route` callback, for calling an installed handler directly. */
-function fakeRoute(headers: Record<string, string> = {}) {
-  const calls: Array<{ headers?: Record<string, string> } | undefined> = []
-  const route: RouteLike = {
-    request: () => ({ headers: () => headers }),
-    continue: async (overrides) => {
-      calls.push(overrides)
-    },
-  }
-  return { route, calls }
-}
+import { fakeBrowser, fakeRoute, helloRoutes, type FakeOptions } from './fakes.js'
 
 const inputsFile = (() => {
   const path = join(mkdtempSync(join(tmpdir(), 'wfh-cli-')), 'inputs.json')

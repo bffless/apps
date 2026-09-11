@@ -36,7 +36,7 @@ export {
   type Transition,
   type WatchOptions,
 } from './observe.js'
-export type { BrowserLike, ConsoleMessageLike, PageLike, RequestLike, ResponseLike } from './page.js'
+export type { BrowserLike, ConsoleMessageLike, PageLike, RequestLike, ResponseLike, RouteLike } from './page.js'
 export {
   PageToolError,
   WORKFLOW_PAGE_TOOLS,
@@ -78,6 +78,7 @@ export { putFromDisk, type PutFromDisk } from './putFromDisk.js'
 export { contentTypeFor, extensionFor as mimeExtensionFor } from './mime.js'
 export {
   credentialsFromEnv,
+  driveKeyFromEnv,
   loadInputs,
   parseArgs,
   parseDuration,

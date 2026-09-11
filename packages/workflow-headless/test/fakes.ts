@@ -80,6 +80,22 @@ export function helloRoutes(status: string, runId = 'run_1'): Record<string, Rou
   }
 }
 
+/**
+ * A synthetic Playwright `route` callback, for calling an installed
+ * `driveKey.ts` handler directly. Shared by `cli.test.ts`, `run.test.ts` and
+ * `resume.test.ts`, which otherwise each carried an identical copy.
+ */
+export function fakeRoute(headers: Record<string, string> = {}) {
+  const calls: Array<{ headers?: Record<string, string> } | undefined> = []
+  const route: RouteLike = {
+    request: () => ({ headers: () => headers }),
+    continue: async (overrides) => {
+      calls.push(overrides)
+    },
+  }
+  return { route, calls }
+}
+
 export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakePage } {
   const consoleHandlers: Array<(message: ConsoleMessageLike) => void> = []
   let emitted = false
