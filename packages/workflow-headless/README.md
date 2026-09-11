@@ -67,7 +67,7 @@ A `list: true` file input takes an array, mixing paths and URLs per entry.
 | `--mocks` | drive the dev harness's MSW mock backend, and skip the login (see the note below) |
 | `--headed` | show the browser |
 | `--last <n>` | (`runs`) how many past runs to list |
-| `--all` | (`runs`) list every run, not just this login's own (adds `&scope=all`) |
+| `--all` | (`runs`) every run of the workflow, not just yours (adds `&scope=all`). Needs a harness with run ownership (spec 11); an older harness ignores the flag and already lists everyone's runs |
 
 `--timeout` bounds each **follow leg** — from a start or a `resume` to the next park or
 terminal status — not the job as a whole: a run that parks and is later resumed can take up

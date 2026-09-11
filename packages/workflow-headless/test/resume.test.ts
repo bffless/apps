@@ -239,4 +239,21 @@ describe('resumeRun — driveKey', () => {
     await resumeRun(options(), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
     expect(page.routes).toEqual([])
   })
+
+  test('the route is installed before the first goto', async () => {
+    // Ordering, not just presence: a refactor that moved `installDriveKey`
+    // below the navigation would leave the resumed page's own first calls
+    // unkeyed, and every other test here would pass.
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('succeeded', { outputs: {} }) },
+      globals: [undefined],
+    })
+    await resumeRun(options({ driveKey: 'dk_abc123' }), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
+
+    expect(page.gotos.length).toBeGreaterThan(0)
+    expect(page.calls[0]).toEqual({ kind: 'route' })
+    expect(page.calls.findIndex((c) => c.kind === 'route')).toBeLessThan(
+      page.calls.findIndex((c) => c.kind === 'goto'),
+    )
+  })
 })

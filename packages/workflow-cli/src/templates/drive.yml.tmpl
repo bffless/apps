@@ -67,7 +67,9 @@ jobs:
       # not something the job log should echo back verbatim.
       - name: Mask the drive key
         if: ${{ github.event.client_payload.drive_key != '' }}
-        run: echo "::add-mask::${{ github.event.client_payload.drive_key }}"
+        env:
+          DRIVE_KEY: ${{ github.event.client_payload.drive_key }}
+        run: echo "::add-mask::$DRIVE_KEY"
       - name: Drive
         env:
           MODE: ${{ github.event.client_payload.mode }}

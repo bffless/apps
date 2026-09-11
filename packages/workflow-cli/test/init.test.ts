@@ -65,6 +65,21 @@ function freshCwd(): string {
 
 const baseArgs = { harnessAlias: 'workflow', dryRun: false, skipExisting: false } as const
 
+/** One step of a rendered workflow, as far as these tests read it. */
+type Step = {
+  id?: string
+  name?: string
+  uses?: string
+  run?: string
+  with?: Record<string, string>
+  env?: Record<string, string>
+}
+
+/** Every step of every job in a parsed workflow document. */
+function allSteps(doc: { jobs: Record<string, { steps?: Step[] }> }): Step[] {
+  return Object.values(doc.jobs ?? {}).flatMap((job) => job.steps ?? [])
+}
+
 function run(args: string[], cwd: string): { stdout: string; stderr: string; status: number } {
   try {
     return { stdout: execFileSync(process.execPath, [cliPath, ...args], { cwd, encoding: 'utf8' }), stderr: '', status: 0 }
@@ -196,8 +211,20 @@ describe('runInit', () => {
     // The drive key from the harness's dispatch payload, passed to the driver.
     expect(drive).toContain('WORKFLOW_DRIVE_KEY')
     // Masked in the job log before the Drive step runs — it's a nonce, not a secret,
-    // but still shouldn't be echoed back verbatim.
-    expect(drive).toContain('::add-mask::${{ github.event.client_payload.drive_key }}')
+    // but still shouldn't be echoed back verbatim. Through `env:`, never
+    // interpolated into `run:`: a dispatch body is shell source (apps#664).
+    const driveDoc = parseYaml(drive) as { jobs: Record<string, { steps: Step[] }> }
+    const maskStep = allSteps(driveDoc).find((s) => s.name === 'Mask the drive key')
+    expect(maskStep).toBeDefined()
+    expect(maskStep?.env?.DRIVE_KEY).toBe('${{ github.event.client_payload.drive_key }}')
+    expect(maskStep?.run).toBe('echo "::add-mask::$DRIVE_KEY"')
+    // The general rule, not just this one step: no untrusted dispatch payload
+    // reaches a shell. Every payload field goes through `env:` and is read as "$VAR".
+    for (const step of allSteps(driveDoc)) {
+      if (typeof step.run === 'string') {
+        expect(step.run).not.toContain('${{ github.event.client_payload.')
+      }
+    }
     expect(drive).not.toMatch(/__[A-Z_]+__/)
     // The browser install (apps#648): the headless shell behind a cache, with the
     // version read from the driver at run time rather than pinned in the template.
@@ -211,9 +238,6 @@ describe('runInit', () => {
     // The point of the change is that one resolved version both keys the cache and
     // is what gets installed. A constant key, or an install unrelated to the `pw`
     // step, would satisfy the presence assertions above while defeating the change.
-    const driveDoc = parseYaml(drive) as {
-      jobs: Record<string, { steps: { id?: string; uses?: string; run?: string; with?: Record<string, string> }[] }>
-    }
     const steps = driveDoc.jobs.drive.steps
     const cacheStep = steps.find((s) => s.uses?.startsWith('actions/cache@'))
     expect(cacheStep?.with?.path).toBe('~/.cache/ms-playwright')

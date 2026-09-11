@@ -66,7 +66,7 @@ export interface PageLike {
    * because it has to catch the harness SPA's own `fetch`/`XHR` calls, not
    * just this driver's.
    */
-  route(matcher: (url: URL) => boolean, handler: (route: RouteLike) => Promise<void>): Promise<void>
+  route(matcher: (url: URL) => boolean, handler: (route: RouteLike) => Promise<void>): Promise<unknown>
   close(): Promise<void>
 }
 

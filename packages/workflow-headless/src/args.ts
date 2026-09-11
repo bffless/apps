@@ -51,8 +51,10 @@ Options (run):
 
 Options (runs):
   --last <n>        how many past runs to list (default 10)
-  --all             list every run, not just this login's own (adds
-                    &scope=all)
+  --all             every run of the workflow, not just yours (adds
+                    &scope=all). Needs a harness with run ownership
+                    (spec 11); an older harness ignores the flag and
+                    already lists everyone's runs
   --mocks           list the mock harness's runs, and skip the login
 
 Options (resume):
@@ -137,8 +139,12 @@ export interface RunsCommand {
   impl: string
   workflow: string
   last: number
-  /** `--all`: list every run, not just this login's own (`listRuns`'s `scope=all`). */
-  all: boolean
+  /**
+   * `--all`: every run of the workflow, not just yours (`listRuns`'s `scope=all`).
+   * Needs a harness with run ownership (spec 11); an older harness ignores the
+   * flag and already lists everyone's runs.
+   */
+  all?: boolean
   mocks: boolean
 }
 

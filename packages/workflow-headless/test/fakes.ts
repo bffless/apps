@@ -53,6 +53,12 @@ export interface FakePage extends PageLike {
   globalReads: number
   /** Every `page.route(...)` install, in order — `driveKey.ts`'s only caller. */
   routes: Array<{ matcher: (url: URL) => boolean; handler: (route: RouteLike) => Promise<void> }>
+  /**
+   * `goto` and `route` interleaved, in call order. Pins the ordering the two
+   * lists on their own can't: the drive-key route has to be installed BEFORE
+   * the first navigation, or the SPA's own first calls go out unkeyed.
+   */
+  calls: Array<{ kind: 'goto' | 'route'; url?: string }>
 }
 
 /** Discovery for `hello/demo`, plus the run record `run.json` is written from. */
@@ -109,6 +115,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     posts: [] as FakePage['posts'],
     globalReads: 0,
     routes: [] as FakePage['routes'],
+    calls: [] as FakePage['calls'],
 
     request: {
       async post(url: string, options?: { headers?: Record<string, string> }) {
@@ -120,6 +127,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
 
     async goto(url: string) {
       page.gotos.push(url)
+      page.calls.push({ kind: 'goto', url })
       if (!emitted) {
         emitted = true
         for (const line of o.consoleLines ?? []) {
@@ -183,6 +191,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     },
     async route(matcher: (url: URL) => boolean, handler: (route: RouteLike) => Promise<void>) {
       page.routes.push({ matcher, handler })
+      page.calls.push({ kind: 'route' })
     },
     async close() {},
   } as unknown as FakePage

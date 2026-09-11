@@ -472,4 +472,18 @@ describe('runWorkflow — driveKey', () => {
     await runWorkflow(options(5_000), { browser, log: () => {}, warn: () => {} })
     expect(page.routes).toEqual([])
   })
+
+  test('the route is installed before the first goto', async () => {
+    // Ordering, not just presence: a refactor that moved `installDriveKey`
+    // below the navigation would leave the SPA's own first calls (the
+    // `runs/post` among them) unkeyed, and every other test here would pass.
+    const { browser, page } = fakeBrowser({ globals: [{ runId: 'run_1', status: 'succeeded' }], routes: helloRoutes('succeeded') })
+    await runWorkflow({ ...options(5_000), driveKey: 'dk_abc123' }, { browser, log: () => {}, warn: () => {} })
+
+    expect(page.gotos.length).toBeGreaterThan(0)
+    expect(page.calls[0]).toEqual({ kind: 'route' })
+    expect(page.calls.findIndex((c) => c.kind === 'route')).toBeLessThan(
+      page.calls.findIndex((c) => c.kind === 'goto'),
+    )
+  })
 })
